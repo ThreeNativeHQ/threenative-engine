@@ -1,0 +1,208 @@
+{
+  "capture_source_ref": "refs/prd723-recovery/rts-pinned-qualified",
+  "capture_source_commit": "763fa3ca412dae9e624d029536d78fdee8eec513",
+  "source_state": "Uncommitted external approved candidate; baseline53fbfa18; complete game has no source commit. Root source port does not relabel capture provenance.",
+  "host": "joao-cachyos desktop",
+  "gpu": "NVIDIA Turing, owned Wasm/WebGPU headed DISPLAY0",
+  "tier": "high",
+  "comparison": "Two genuine BEFORE and two candidate AFTER captures for each of seven poses.",
+  "acceptance": "Fresh Sonnet5.5/high all7poses and whole IMPROVEMENT; evidence sufficient, no confirmed actual weaker cue. Pale thin-bar relative contrast watch and temporal limitations retained in full verdict. Named full-resolution override is not an autoscaler fix or proven causal benefit.",
+  "captures": [
+    {
+      "posted": "rts-pinned-whole/raw/01-performance-before1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/01-playtests-performance.playtest.json/after.png",
+      "sha256": "f31d288344d7252e11cecaaf36568e80a52de7c6dd3fcc5ae398e92f2ef5a0b1",
+      "original_runner_output_write_utc": "2026-10-24T23:20:33.339846+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/01-performance-before2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/01-playtests-performance.playtest.json/after.png",
+      "sha256": "0d377d961beb0e3f989d63946a34ee62dc7bb1d6e417d50e905e59441dbc619c",
+      "original_runner_output_write_utc": "2026-10-24T23:22:32.192727+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/01-performance-after1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-PREFLIGHT-run1/01-playtests-performance.playtest.json/after.png",
+      "sha256": "d9d2cfbdf1dc0cb582c6be548a044f79d8732fb6429f7158aab7551388ca3c9f",
+      "original_runner_output_write_utc": "2026-10-25T01:23:18.991474+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/01-performance-after2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-PREFLIGHT-run2/01-playtests-performance.playtest.json/after.png",
+      "sha256": "1eba23a2ac3bca7d5fecddc4ab30cf375d5eaff2f9d3487e45381907884bf490",
+      "original_runner_output_write_utc": "2026-10-25T01:23:38.063320+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/02-rts-ai-attack-before1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/02-playtests-rts-ai-attack.playtest.json/after.png",
+      "sha256": "6fc63f693a605f6eb76c1e4ad436b08199b28373fc9a2789906c80d70067ba9b",
+      "original_runner_output_write_utc": "2026-10-24T23:21:01.770579+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/02-rts-ai-attack-before2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/02-playtests-rts-ai-attack.playtest.json/after.png",
+      "sha256": "b6b86d35d2d6032cedb07d796a6c8911a0c0d374e37278ea3f8f5c1ddb7d4459",
+      "original_runner_output_write_utc": "2026-10-24T23:22:53.327528+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/02-rts-ai-attack-after1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-PREFLIGHT-run1/02-playtests-rts-ai-attack.playtest.json/after.png",
+      "sha256": "ff3ca47c48f04a335027ecc3c05095985359d01867ff0923bbbf63a1bc8e2694",
+      "original_runner_output_write_utc": "2026-10-25T01:22:36.590816+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/02-rts-ai-attack-after2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-PREFLIGHT-run2/02-playtests-rts-ai-attack.playtest.json/after.png",
+      "sha256": "d4d11a83bbf32f4c288dde87a72332b806df9439aca474afe4e093408ab4c90d",
+      "original_runner_output_write_utc": "2026-10-25T01:22:59.442632+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/03-rts-attack-before1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/03-playtests-rts-attack.playtest.json/after.png",
+      "sha256": "477cd01d7ece4599509b9d82766f307aa382b0c1ebe8821eb2c3e441e2e38368",
+      "original_runner_output_write_utc": "2026-10-24T23:21:28.928324+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/03-rts-attack-before2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/03-playtests-rts-attack.playtest.json/after.png",
+      "sha256": "fbf90d9ccee80717344eb148c0ce4ceb4000661466e7119710cf9f903ac6366f",
+      "original_runner_output_write_utc": "2026-10-24T23:23:20.581270+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/03-rts-attack-after1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run1/03-playtests-rts-attack.playtest.json/after.png",
+      "sha256": "3afc668943546288513d8341fa29cef99b4aab5dd54a362cab5f4c3923b4e34b",
+      "original_runner_output_write_utc": "2026-10-25T01:54:27.122117+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/03-rts-attack-after2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run2/03-playtests-rts-attack.playtest.json/after.png",
+      "sha256": "7b9365a303ff874ab4c600ed4614589c3cf56affbc871c0b85a6f0fe3f604a1d",
+      "original_runner_output_write_utc": "2026-10-25T01:54:50.750903+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/04-rts-build-before1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/04-playtests-rts-build.playtest.json/after.png",
+      "sha256": "e96d70034489f374eafc8acff1f53e7947283f89e070fac5739220bef6fca44d",
+      "original_runner_output_write_utc": "2026-10-24T23:21:40.998705+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/04-rts-build-before2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/04-playtests-rts-build.playtest.json/after.png",
+      "sha256": "e19a9846369ea78016bcf1f980b6b3b9733828b366fe2103f35b12445a99a814",
+      "original_runner_output_write_utc": "2026-10-24T23:23:32.858155+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/04-rts-build-after1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run1/04-playtests-rts-build.playtest.json/after.png",
+      "sha256": "4640d2c1d467a027a53d568c7578b327d33b9a8fafc362f6ba3c23a0eb543252",
+      "original_runner_output_write_utc": "2026-10-25T01:55:03.546787+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/04-rts-build-after2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run2/04-playtests-rts-build.playtest.json/after.png",
+      "sha256": "1cab55d8a12357a5c57f8bf3871afb472269bd3cd6850d93fc94012a5828c756",
+      "original_runner_output_write_utc": "2026-10-25T01:55:16.793667+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/05-rts-orders-before1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/05-playtests-rts-orders.playtest.json/after.png",
+      "sha256": "57fef164f444fb6d0801059c93e0977349878267e07f4cd34c6123aa3d14965f",
+      "original_runner_output_write_utc": "2026-10-24T23:21:55.116077+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/05-rts-orders-before2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/05-playtests-rts-orders.playtest.json/after.png",
+      "sha256": "ae32a35f2b45b7866508cd8ca1a776ba31b0a688393466de39c2b8db5f32a7fc",
+      "original_runner_output_write_utc": "2026-10-24T23:23:45.840032+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/05-rts-orders-after1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run1/05-playtests-rts-orders.playtest.json/after.png",
+      "sha256": "ad45ebc778d96bc1b1def4d9542b861a91a60fc9287c364dbce6acc5294aa2a0",
+      "original_runner_output_write_utc": "2026-10-25T01:55:31.121538+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/05-rts-orders-after2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run2/05-playtests-rts-orders.playtest.json/after.png",
+      "sha256": "157fc5e5f5722ca63256f36bc55bb50a51ba49459f715f03239f6c5cf9e764a1",
+      "original_runner_output_write_utc": "2026-10-25T01:55:45.209410+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/06-rts-train-before1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/06-playtests-rts-train.playtest.json/after.png",
+      "sha256": "54bd72f6c89f2e0b0625ce8ff1799c5d8906836c3e6e63d195980eae50d775d5",
+      "original_runner_output_write_utc": "2026-10-24T23:22:06.637968+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/06-rts-train-before2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/06-playtests-rts-train.playtest.json/after.png",
+      "sha256": "ef24c0c7784b6db355a28b7bff1b422fdc51c50c968695f722fb414b60f6abc5",
+      "original_runner_output_write_utc": "2026-10-24T23:23:56.645619+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/06-rts-train-after1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run1/06-playtests-rts-train.playtest.json/after.png",
+      "sha256": "af7ab82896824bfbb11747fe56d485ed2021abf53196fa01b5c7acafd96d1c97",
+      "original_runner_output_write_utc": "2026-10-25T01:55:58.149294+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/06-rts-train-after2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run2/06-playtests-rts-train.playtest.json/after.png",
+      "sha256": "9e6773840243a2c6545d5b29820aa4caec08ac72851d45f8dbf53ed83b8ef865",
+      "original_runner_output_write_utc": "2026-10-25T01:56:12.171168+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/07-survives-before1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/07-playtests-survives.playtest.json/after.png",
+      "sha256": "d2799ee9447826fbf527912bb6d9f777b6aff0b07536904fc7db0b915c6f09c5",
+      "original_runner_output_write_utc": "2026-10-24T23:22:17.411867+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/07-survives-before2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/07-playtests-survives.playtest.json/after.png",
+      "sha256": "1eac6e46c52c3888cdc57d37948a7e7519f3fd667d0b7f10b95c5fc7d463c3d6",
+      "original_runner_output_write_utc": "2026-10-24T23:24:06.856833+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/07-survives-after1.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run1/07-playtests-survives.playtest.json/after.png",
+      "sha256": "62d217c23f4b77a58075ea5af70c11942c4b2a500e2374824f5e81f74bfe5214",
+      "original_runner_output_write_utc": "2026-10-25T01:56:25.623047+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    },
+    {
+      "posted": "rts-pinned-whole/raw/07-survives-after2.png",
+      "original_path": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run2/07-playtests-survives.playtest.json/after.png",
+      "sha256": "2f41b713b025eff1f7351264143d0b3ad6ce8bc9ea07c49965dfcea45121af24",
+      "original_runner_output_write_utc": "2026-10-25T01:56:38.747929+00:00",
+      "timestamp_basis": "Original runner output write time, exact shutter UTC unrecorded."
+    }
+  ]
+}

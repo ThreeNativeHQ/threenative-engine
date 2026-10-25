@@ -1,0 +1,18 @@
+{
+  "frames": [
+    {
+      "name": "rts-ai-attack-watch-items",
+      "sheet": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-infantry-exact-crops.png",
+      "raw": [
+        "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/02-playtests-rts-ai-attack.playtest.json/after.png",
+        "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/02-playtests-rts-ai-attack.playtest.json/after.png",
+        "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-PREFLIGHT-run1/02-playtests-rts-ai-attack.playtest.json/after.png",
+        "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-PREFLIGHT-run2/02-playtests-rts-ai-attack.playtest.json/after.png",
+        "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-bars-exact-crops.png",
+        "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-rings-exact-crops.png",
+        "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-minimap-exact-crops.png"
+      ]
+    }
+  ],
+  "references": []
+}

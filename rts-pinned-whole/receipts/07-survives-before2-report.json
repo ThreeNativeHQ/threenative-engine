@@ -1,0 +1,5339 @@
+{
+  "after": {
+    "frame": 3,
+    "position": [
+      -27,
+      62,
+      79.99999999999991
+    ],
+    "rotation": [
+      -0.3298473558500293,
+      0.29407025653429997,
+      0.10893483563024935,
+      0.8904249590205824
+    ],
+    "tick": 211
+  },
+  "before": {
+    "frame": 0,
+    "position": [
+      -27,
+      62,
+      116
+    ],
+    "rotation": [
+      -0.3298473558500293,
+      0.29407025653429997,
+      0.10893483563024935,
+      0.8904249590205824
+    ],
+    "tick": 60
+  },
+  "capture": {
+    "adapter": {
+      "architecture": "turing",
+      "vendor": "nvidia",
+      "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "16384",
+      "limit.maxStorageBufferBindingSize": "2147483644"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    }
+  },
+  "diagnostics": [],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 36.000000000000085,
+  "entity": "camera.main",
+  "expectMoved": true,
+  "frames": 150,
+  "trivialityOptOuts": [],
+  "target": "web",
+  "movementDelta": [
+    0,
+    0,
+    -36.000000000000085
+  ],
+  "observations": {
+    "components": {
+      "selection": {
+        "count": {
+          "before": 10,
+          "after": 10
+        },
+        "order": {
+          "before": "idle",
+          "after": "idle"
+        },
+        "x": {
+          "before": -56.7,
+          "after": -56.7
+        },
+        "z": {
+          "before": 48.88,
+          "after": 48.88
+        }
+      },
+      "material-lighting": {
+        "status": {
+          "before": "unknown",
+          "after": "unknown"
+        },
+        "meanRadiance": {
+          "before": null,
+          "after": null
+        },
+        "meanRGB": {
+          "before": null,
+          "after": null
+        },
+        "reason": {
+          "before": "Environment source pixels are not CPU-readable; no radiance was inferred.",
+          "after": "Environment source pixels are not CPU-readable; no radiance was inferred."
+        },
+        "scope": {
+          "before": "scene environment source availability; not material-specific reflected contribution",
+          "after": "scene environment source availability; not material-specific reflected contribution"
+        },
+        "environmentState": {
+          "before": "unknown",
+          "after": "unknown"
+        },
+        "ibl": {
+          "before": "unknown",
+          "after": "unknown"
+        },
+        "analyticFill": {
+          "before": {
+            "requestedGain": 1,
+            "admitted": false,
+            "effectiveGain": 0,
+            "color": [
+              0.13286832154414627,
+              0.19806931954941637,
+              0.3371636150376657
+            ],
+            "blackColorOverride": false,
+            "reason": "not admitted by this qualification"
+          },
+          "after": {
+            "requestedGain": 1,
+            "admitted": false,
+            "effectiveGain": 0,
+            "color": [
+              0.13286832154414627,
+              0.19806931954941637,
+              0.3371636150376657
+            ],
+            "blackColorOverride": false,
+            "reason": "not admitted by this qualification"
+          }
+        },
+        "rimGain": {
+          "before": 0.12,
+          "after": 0.12
+        },
+        "fillGain": {
+          "before": 1,
+          "after": 1
+        },
+        "darkThreshold": {
+          "before": 0.001,
+          "after": 0.001
+        },
+        "enabled": {
+          "before": true,
+          "after": true
+        },
+        "convertedMaterials": {
+          "before": 11,
+          "after": 11
+        },
+        "enrolledMeshes": {
+          "before": 59,
+          "after": 59
+        },
+        "excludedSlots": {
+          "before": 16,
+          "after": 16
+        },
+        "exclusions": {
+          "before": [
+            "Mesh:MeshStandardNodeMaterial:unsupported material type",
+            "InstancedMesh:MeshStandardNodeMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type"
+          ],
+          "after": [
+            "Mesh:MeshStandardNodeMaterial:unsupported material type",
+            "InstancedMesh:MeshStandardNodeMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type",
+            "InstancedMesh:MeshBasicMaterial:unsupported material type"
+          ]
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "settle",
+        "snapshots": {
+          "selection": {
+            "count": 10,
+            "order": "idle",
+            "x": -56.7,
+            "z": 48.88
+          },
+          "material-lighting": {
+            "status": "unknown",
+            "meanRadiance": null,
+            "meanRGB": null,
+            "reason": "Environment source pixels are not CPU-readable; no radiance was inferred.",
+            "scope": "scene environment source availability; not material-specific reflected contribution",
+            "environmentState": "unknown",
+            "ibl": "unknown",
+            "analyticFill": {
+              "requestedGain": 1,
+              "admitted": false,
+              "effectiveGain": 0,
+              "color": [
+                0.13286832154414627,
+                0.19806931954941637,
+                0.3371636150376657
+              ],
+              "blackColorOverride": false,
+              "reason": "not admitted by this qualification"
+            },
+            "rimGain": 0.12,
+            "fillGain": 1,
+            "darkThreshold": 0.001,
+            "enabled": true,
+            "convertedMaterials": 11,
+            "enrolledMeshes": 59,
+            "excludedSlots": 16,
+            "exclusions": [
+              "Mesh:MeshStandardNodeMaterial:unsupported material type",
+              "InstancedMesh:MeshStandardNodeMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type"
+            ]
+          }
+        },
+        "tick": 120
+      },
+      {
+        "label": "pan",
+        "snapshots": {
+          "selection": {
+            "count": 10,
+            "order": "idle",
+            "x": -56.7,
+            "z": 48.88
+          },
+          "material-lighting": {
+            "status": "unknown",
+            "meanRadiance": null,
+            "meanRGB": null,
+            "reason": "Environment source pixels are not CPU-readable; no radiance was inferred.",
+            "scope": "scene environment source availability; not material-specific reflected contribution",
+            "environmentState": "unknown",
+            "ibl": "unknown",
+            "analyticFill": {
+              "requestedGain": 1,
+              "admitted": false,
+              "effectiveGain": 0,
+              "color": [
+                0.13286832154414627,
+                0.19806931954941637,
+                0.3371636150376657
+              ],
+              "blackColorOverride": false,
+              "reason": "not admitted by this qualification"
+            },
+            "rimGain": 0.12,
+            "fillGain": 1,
+            "darkThreshold": 0.001,
+            "enabled": true,
+            "convertedMaterials": 11,
+            "enrolledMeshes": 59,
+            "excludedSlots": 16,
+            "exclusions": [
+              "Mesh:MeshStandardNodeMaterial:unsupported material type",
+              "InstancedMesh:MeshStandardNodeMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type"
+            ]
+          }
+        },
+        "tick": 181
+      },
+      {
+        "label": "after-pan",
+        "snapshots": {
+          "selection": {
+            "count": 10,
+            "order": "idle",
+            "x": -56.7,
+            "z": 48.88
+          },
+          "material-lighting": {
+            "status": "unknown",
+            "meanRadiance": null,
+            "meanRGB": null,
+            "reason": "Environment source pixels are not CPU-readable; no radiance was inferred.",
+            "scope": "scene environment source availability; not material-specific reflected contribution",
+            "environmentState": "unknown",
+            "ibl": "unknown",
+            "analyticFill": {
+              "requestedGain": 1,
+              "admitted": false,
+              "effectiveGain": 0,
+              "color": [
+                0.13286832154414627,
+                0.19806931954941637,
+                0.3371636150376657
+              ],
+              "blackColorOverride": false,
+              "reason": "not admitted by this qualification"
+            },
+            "rimGain": 0.12,
+            "fillGain": 1,
+            "darkThreshold": 0.001,
+            "enabled": true,
+            "convertedMaterials": 11,
+            "enrolledMeshes": 59,
+            "excludedSlots": 16,
+            "exclusions": [
+              "Mesh:MeshStandardNodeMaterial:unsupported material type",
+              "InstancedMesh:MeshStandardNodeMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type",
+              "InstancedMesh:MeshBasicMaterial:unsupported material type"
+            ]
+          }
+        },
+        "tick": 211
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":1}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":0,\"materialCheckStaleFrames\":0,\"path\":\"host\"}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_FRAME_HITCH:{\"gapMs\":2951.6,\"uptimeMs\":3596.5,\"wallClock\":1792884244385}",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_QUALITY_TIER high mobile=false software=false source=platform",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"ambientOcclusion\"},{\"graphOutputChanged\":true,\"name\":\"traa\"},{\"graphOutputChanged\":true,\"name\":\"motionBlur\"},{\"graphOutputChanged\":true,\"name\":\"bloom\"},{\"graphOutputChanged\":true,\"name\":\"vignette\"}],\"dropped\":[],\"requested\":[\"ambientOcclusion\",\"traa\",\"motionBlur\",\"bloom\",\"vignette\"],\"source\":\"pinned\",\"stages\":[\"ambientOcclusion\",\"traa\",\"motionBlur\",\"bloom\",\"vignette\"],\"tier\":\"high\",\"velocity\":{\"provisioned\":true,\"required\":true,\"source\":\"mrt\"}},\"marker\":\"TN_RENDER_CHAIN\"}",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":true,\"exposure\":0.62,\"localExposure\":true,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"temporalAA\":true,\"ssgiQuality\":\"medium\",\"stages\":[{\"applied\":true,\"name\":\"ambientOcclusion\"},{\"applied\":false,\"name\":\"antialias\",\"reason\":\"traa resolves the edges\"},{\"applied\":true,\"name\":\"bloom\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":true,\"name\":\"motionBlur\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":false,\"name\":\"ssr\",\"reason\":\"ssrEnabled is false\"},{\"applied\":false,\"name\":\"temporalAA\",\"reason\":\"temporalAA is false\"},{\"applied\":true,\"name\":\"vignette\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"aces\",\"unrealBloom\":true}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_ENVIRONMENT_CONTRIBUTION:{\"status\":\"unknown\",\"meanRadiance\":null,\"meanRGB\":null,\"reason\":\"Environment source pixels are not CPU-readable; no radiance was inferred.\",\"scope\":\"scene environment source availability; not material-specific reflected contribution\",\"environmentState\":\"unknown\",\"ibl\":\"unknown\",\"analyticFill\":{\"requestedGain\":1,\"admitted\":false,\"effectiveGain\":0,\"color\":[0.13286832154414627,0.19806931954941637,0.3371636150376657],\"blackColorOverride\":false,\"reason\":\"not admitted by this qualification\"},\"rimGain\":0.12,\"fillGain\":1,\"darkThreshold\":0.001}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_ALPHA_ANTIALIASING:{\"applied\":false,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":0,\"reason\":\"no cutout material has been drawn; nothing in this scene carves its silhouette with an alpha test\",\"sampleCount\":4}",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDERER: TN_TRAA_VELOCITY_SKIPPED: instanced draws carry the camera's motion only (no previous vertex data)",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_RENDERER: TN_POST_NORMAL_SKIPPED: transparent draws write no normal (depth-derived there)",
+        "type": "log"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":59,\"candidates\":59,\"attempted\":1,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"unavailable\"},\"slices\":1,\"elapsedMs\":73,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"passes\":[\"main\",\"shadow\"],\"passPipelines\":0,\"cullingForced\":11,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+        "type": "log"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "pipelineCensus": {
+      "version": 1,
+      "complete": false,
+      "overflowed": false,
+      "unsupported": true,
+      "limit": 512,
+      "clock": {
+        "originMs": 551.1000000089407,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:Object"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.6"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 94.79999999701977,
+        "eventsSettled": 0
+      },
+      "warmUpSettled": {
+        "boundaryMs": 3874.7999999970198,
+        "eventsSettled": 0,
+        "nodeBuilds": 0,
+        "renderPipelineCreations": 0
+      },
+      "counts": {
+        "lookups": 0,
+        "creations": 0,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 0,
+        "uniquePipelines": 0,
+        "recordedEvents": 0,
+        "droppedEvents": 0,
+        "nodeBuilds": 0
+      },
+      "events": [],
+      "incompleteReasons": [
+        "backend creation observation unavailable",
+        "device creation observation unavailable",
+        "no pipeline creations observed"
+      ]
+    },
+    "renderChain": {
+      "contributions": [
+        {
+          "graphOutputChanged": true,
+          "name": "ambientOcclusion"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "traa"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "motionBlur"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "bloom"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "vignette"
+        }
+      ],
+      "dropped": [],
+      "requested": [
+        "ambientOcclusion",
+        "traa",
+        "motionBlur",
+        "bloom",
+        "vignette"
+      ],
+      "source": "pinned",
+      "stages": [
+        "ambientOcclusion",
+        "traa",
+        "motionBlur",
+        "bloom",
+        "vignette"
+      ],
+      "tier": "high",
+      "velocity": {
+        "provisioned": true,
+        "required": true,
+        "source": "mrt"
+      }
+    },
+    "resources": {
+      "state": {
+        "before": {
+          "cameraX": -70,
+          "cameraZoom": 30,
+          "cameraZ": 58,
+          "dragBox": null,
+          "gathered": 0,
+          "gas": 150,
+          "kills": 0,
+          "minimapDots": [
+            53,
+            223,
+            0,
+            1,
+            70,
+            220,
+            0,
+            1,
+            44,
+            203,
+            0,
+            1,
+            34,
+            240,
+            0,
+            1,
+            41,
+            216,
+            0,
+            0,
+            38,
+            216,
+            0,
+            0,
+            36,
+            217,
+            0,
+            0,
+            34,
+            217,
+            0,
+            0,
+            34,
+            216,
+            0,
+            0,
+            34,
+            214,
+            0,
+            0,
+            40,
+            216,
+            0,
+            0,
+            39,
+            217,
+            0,
+            0,
+            36,
+            229,
+            0,
+            0,
+            38,
+            231,
+            0,
+            0,
+            69,
+            200,
+            0,
+            0,
+            71,
+            200,
+            0,
+            0,
+            74,
+            200,
+            0,
+            0,
+            69,
+            203,
+            0,
+            0,
+            71,
+            203,
+            0,
+            0,
+            74,
+            203,
+            0,
+            0,
+            70,
+            205,
+            0,
+            0,
+            73,
+            205,
+            0,
+            0,
+            56,
+            200,
+            0,
+            0,
+            65,
+            194,
+            0,
+            0,
+            39,
+            213,
+            9,
+            2,
+            37,
+            217,
+            9,
+            2,
+            33,
+            218,
+            9,
+            2,
+            29,
+            215,
+            9,
+            2,
+            28,
+            211,
+            9,
+            2,
+            31,
+            208,
+            9,
+            2,
+            35,
+            207,
+            9,
+            2,
+            34,
+            240,
+            9,
+            3
+          ],
+          "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###...............................................................................",
+          "mode": "",
+          "notice": "",
+          "ore": 700,
+          "paused": false,
+          "primaryBuilt": true,
+          "primaryHp": 100,
+          "primaryMaxHp": 100,
+          "primaryProgress": 1,
+          "primaryTeam": 0,
+          "primaryType": "ranger",
+          "queue": [],
+          "result": "",
+          "selection": 10,
+          "selectionOrder": "idle",
+          "selectionTeams": 1,
+          "selectionX": -56.7,
+          "selectionZ": 48.88,
+          "simTime": 20,
+          "supplyCap": 30,
+          "supplyUsed": 23,
+          "uiReady": true
+        },
+        "after": {
+          "cameraX": -70,
+          "cameraZoom": 30,
+          "cameraZ": 22,
+          "dragBox": null,
+          "gathered": 30,
+          "gas": 150,
+          "kills": 0,
+          "minimapDots": [
+            53,
+            223,
+            0,
+            1,
+            70,
+            220,
+            0,
+            1,
+            44,
+            203,
+            0,
+            1,
+            34,
+            240,
+            0,
+            1,
+            44,
+            217,
+            0,
+            0,
+            42,
+            218,
+            0,
+            0,
+            42,
+            220,
+            0,
+            0,
+            36,
+            218,
+            0,
+            0,
+            33,
+            214,
+            0,
+            0,
+            34,
+            212,
+            0,
+            0,
+            37,
+            210,
+            0,
+            0,
+            44,
+            219,
+            0,
+            0,
+            35,
+            235,
+            0,
+            0,
+            37,
+            235,
+            0,
+            0,
+            69,
+            200,
+            0,
+            0,
+            71,
+            200,
+            0,
+            0,
+            74,
+            200,
+            0,
+            0,
+            69,
+            203,
+            0,
+            0,
+            71,
+            203,
+            0,
+            0,
+            74,
+            203,
+            0,
+            0,
+            70,
+            205,
+            0,
+            0,
+            73,
+            205,
+            0,
+            0,
+            56,
+            200,
+            0,
+            0,
+            65,
+            194,
+            0,
+            0,
+            39,
+            213,
+            9,
+            2,
+            37,
+            217,
+            9,
+            2,
+            33,
+            218,
+            9,
+            2,
+            29,
+            215,
+            9,
+            2,
+            28,
+            211,
+            9,
+            2,
+            31,
+            208,
+            9,
+            2,
+            35,
+            207,
+            9,
+            2,
+            34,
+            240,
+            9,
+            3
+          ],
+          "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+          "mode": "",
+          "notice": "",
+          "ore": 730,
+          "paused": false,
+          "primaryBuilt": true,
+          "primaryHp": 100,
+          "primaryMaxHp": 100,
+          "primaryProgress": 1,
+          "primaryTeam": 0,
+          "primaryType": "ranger",
+          "queue": [],
+          "result": "",
+          "selection": 10,
+          "selectionOrder": "idle",
+          "selectionTeams": 1,
+          "selectionX": -56.7,
+          "selectionZ": 48.88,
+          "simTime": 69,
+          "supplyCap": 30,
+          "supplyUsed": 23,
+          "uiReady": true
+        }
+      },
+      "GameState": {
+        "before": {
+          "cameraX": -70,
+          "cameraZoom": 30,
+          "cameraZ": 58,
+          "dragBox": null,
+          "gathered": 0,
+          "gas": 150,
+          "kills": 0,
+          "minimapDots": [
+            53,
+            223,
+            0,
+            1,
+            70,
+            220,
+            0,
+            1,
+            44,
+            203,
+            0,
+            1,
+            34,
+            240,
+            0,
+            1,
+            41,
+            216,
+            0,
+            0,
+            38,
+            216,
+            0,
+            0,
+            36,
+            217,
+            0,
+            0,
+            34,
+            217,
+            0,
+            0,
+            34,
+            216,
+            0,
+            0,
+            34,
+            214,
+            0,
+            0,
+            40,
+            216,
+            0,
+            0,
+            39,
+            217,
+            0,
+            0,
+            36,
+            229,
+            0,
+            0,
+            38,
+            231,
+            0,
+            0,
+            69,
+            200,
+            0,
+            0,
+            71,
+            200,
+            0,
+            0,
+            74,
+            200,
+            0,
+            0,
+            69,
+            203,
+            0,
+            0,
+            71,
+            203,
+            0,
+            0,
+            74,
+            203,
+            0,
+            0,
+            70,
+            205,
+            0,
+            0,
+            73,
+            205,
+            0,
+            0,
+            56,
+            200,
+            0,
+            0,
+            65,
+            194,
+            0,
+            0,
+            39,
+            213,
+            9,
+            2,
+            37,
+            217,
+            9,
+            2,
+            33,
+            218,
+            9,
+            2,
+            29,
+            215,
+            9,
+            2,
+            28,
+            211,
+            9,
+            2,
+            31,
+            208,
+            9,
+            2,
+            35,
+            207,
+            9,
+            2,
+            34,
+            240,
+            9,
+            3
+          ],
+          "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###...............................................................................",
+          "mode": "",
+          "notice": "",
+          "ore": 700,
+          "paused": false,
+          "primaryBuilt": true,
+          "primaryHp": 100,
+          "primaryMaxHp": 100,
+          "primaryProgress": 1,
+          "primaryTeam": 0,
+          "primaryType": "ranger",
+          "queue": [],
+          "result": "",
+          "selection": 10,
+          "selectionOrder": "idle",
+          "selectionTeams": 1,
+          "selectionX": -56.7,
+          "selectionZ": 48.88,
+          "simTime": 20,
+          "supplyCap": 30,
+          "supplyUsed": 23,
+          "uiReady": true
+        },
+        "after": {
+          "cameraX": -70,
+          "cameraZoom": 30,
+          "cameraZ": 22,
+          "dragBox": null,
+          "gathered": 30,
+          "gas": 150,
+          "kills": 0,
+          "minimapDots": [
+            53,
+            223,
+            0,
+            1,
+            70,
+            220,
+            0,
+            1,
+            44,
+            203,
+            0,
+            1,
+            34,
+            240,
+            0,
+            1,
+            44,
+            217,
+            0,
+            0,
+            42,
+            218,
+            0,
+            0,
+            42,
+            220,
+            0,
+            0,
+            36,
+            218,
+            0,
+            0,
+            33,
+            214,
+            0,
+            0,
+            34,
+            212,
+            0,
+            0,
+            37,
+            210,
+            0,
+            0,
+            44,
+            219,
+            0,
+            0,
+            35,
+            235,
+            0,
+            0,
+            37,
+            235,
+            0,
+            0,
+            69,
+            200,
+            0,
+            0,
+            71,
+            200,
+            0,
+            0,
+            74,
+            200,
+            0,
+            0,
+            69,
+            203,
+            0,
+            0,
+            71,
+            203,
+            0,
+            0,
+            74,
+            203,
+            0,
+            0,
+            70,
+            205,
+            0,
+            0,
+            73,
+            205,
+            0,
+            0,
+            56,
+            200,
+            0,
+            0,
+            65,
+            194,
+            0,
+            0,
+            39,
+            213,
+            9,
+            2,
+            37,
+            217,
+            9,
+            2,
+            33,
+            218,
+            9,
+            2,
+            29,
+            215,
+            9,
+            2,
+            28,
+            211,
+            9,
+            2,
+            31,
+            208,
+            9,
+            2,
+            35,
+            207,
+            9,
+            2,
+            34,
+            240,
+            9,
+            3
+          ],
+          "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+          "mode": "",
+          "notice": "",
+          "ore": 730,
+          "paused": false,
+          "primaryBuilt": true,
+          "primaryHp": 100,
+          "primaryMaxHp": 100,
+          "primaryProgress": 1,
+          "primaryTeam": 0,
+          "primaryType": "ranger",
+          "queue": [],
+          "result": "",
+          "selection": 10,
+          "selectionOrder": "idle",
+          "selectionTeams": 1,
+          "selectionX": -56.7,
+          "selectionZ": 48.88,
+          "simTime": 69,
+          "supplyCap": 30,
+          "supplyUsed": 23,
+          "uiReady": true
+        }
+      },
+      "assets": {
+        "before": {
+          "sky": {
+            "jpg": {
+              "url": "sky.4b898c57.jpg",
+              "via": "manifest"
+            }
+          }
+        },
+        "after": {
+          "sky": {
+            "jpg": {
+              "url": "sky.4b898c57.jpg",
+              "via": "manifest"
+            }
+          }
+        }
+      },
+      "__threenativeFrameCounts": {
+        "before": {
+          "updates": 60,
+          "renders": 11
+        },
+        "after": {
+          "updates": 211,
+          "renders": 72
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "settle",
+        "snapshots": {
+          "state": {
+            "cameraX": -70,
+            "cameraZoom": 30,
+            "cameraZ": 58,
+            "dragBox": null,
+            "gathered": 0,
+            "gas": 150,
+            "kills": 0,
+            "minimapDots": [
+              53,
+              223,
+              0,
+              1,
+              70,
+              220,
+              0,
+              1,
+              44,
+              203,
+              0,
+              1,
+              34,
+              240,
+              0,
+              1,
+              41,
+              216,
+              0,
+              0,
+              39,
+              216,
+              0,
+              0,
+              36,
+              217,
+              0,
+              0,
+              32,
+              217,
+              0,
+              0,
+              31,
+              213,
+              0,
+              0,
+              32,
+              211,
+              0,
+              0,
+              37,
+              210,
+              0,
+              0,
+              40,
+              217,
+              0,
+              0,
+              35,
+              235,
+              0,
+              0,
+              36,
+              236,
+              0,
+              0,
+              69,
+              200,
+              0,
+              0,
+              71,
+              200,
+              0,
+              0,
+              74,
+              200,
+              0,
+              0,
+              69,
+              203,
+              0,
+              0,
+              71,
+              203,
+              0,
+              0,
+              74,
+              203,
+              0,
+              0,
+              70,
+              205,
+              0,
+              0,
+              73,
+              205,
+              0,
+              0,
+              56,
+              200,
+              0,
+              0,
+              65,
+              194,
+              0,
+              0,
+              39,
+              213,
+              9,
+              2,
+              37,
+              217,
+              9,
+              2,
+              33,
+              218,
+              9,
+              2,
+              29,
+              215,
+              9,
+              2,
+              28,
+              211,
+              9,
+              2,
+              31,
+              208,
+              9,
+              2,
+              35,
+              207,
+              9,
+              2,
+              34,
+              240,
+              9,
+              3
+            ],
+            "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+            "mode": "",
+            "notice": "",
+            "ore": 700,
+            "paused": false,
+            "primaryBuilt": true,
+            "primaryHp": 100,
+            "primaryMaxHp": 100,
+            "primaryProgress": 1,
+            "primaryTeam": 0,
+            "primaryType": "ranger",
+            "queue": [],
+            "result": "",
+            "selection": 10,
+            "selectionOrder": "idle",
+            "selectionTeams": 1,
+            "selectionX": -56.7,
+            "selectionZ": 48.88,
+            "simTime": 40,
+            "supplyCap": 30,
+            "supplyUsed": 23,
+            "uiReady": true
+          },
+          "GameState": {
+            "cameraX": -70,
+            "cameraZoom": 30,
+            "cameraZ": 58,
+            "dragBox": null,
+            "gathered": 0,
+            "gas": 150,
+            "kills": 0,
+            "minimapDots": [
+              53,
+              223,
+              0,
+              1,
+              70,
+              220,
+              0,
+              1,
+              44,
+              203,
+              0,
+              1,
+              34,
+              240,
+              0,
+              1,
+              41,
+              216,
+              0,
+              0,
+              39,
+              216,
+              0,
+              0,
+              36,
+              217,
+              0,
+              0,
+              32,
+              217,
+              0,
+              0,
+              31,
+              213,
+              0,
+              0,
+              32,
+              211,
+              0,
+              0,
+              37,
+              210,
+              0,
+              0,
+              40,
+              217,
+              0,
+              0,
+              35,
+              235,
+              0,
+              0,
+              36,
+              236,
+              0,
+              0,
+              69,
+              200,
+              0,
+              0,
+              71,
+              200,
+              0,
+              0,
+              74,
+              200,
+              0,
+              0,
+              69,
+              203,
+              0,
+              0,
+              71,
+              203,
+              0,
+              0,
+              74,
+              203,
+              0,
+              0,
+              70,
+              205,
+              0,
+              0,
+              73,
+              205,
+              0,
+              0,
+              56,
+              200,
+              0,
+              0,
+              65,
+              194,
+              0,
+              0,
+              39,
+              213,
+              9,
+              2,
+              37,
+              217,
+              9,
+              2,
+              33,
+              218,
+              9,
+              2,
+              29,
+              215,
+              9,
+              2,
+              28,
+              211,
+              9,
+              2,
+              31,
+              208,
+              9,
+              2,
+              35,
+              207,
+              9,
+              2,
+              34,
+              240,
+              9,
+              3
+            ],
+            "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+            "mode": "",
+            "notice": "",
+            "ore": 700,
+            "paused": false,
+            "primaryBuilt": true,
+            "primaryHp": 100,
+            "primaryMaxHp": 100,
+            "primaryProgress": 1,
+            "primaryTeam": 0,
+            "primaryType": "ranger",
+            "queue": [],
+            "result": "",
+            "selection": 10,
+            "selectionOrder": "idle",
+            "selectionTeams": 1,
+            "selectionX": -56.7,
+            "selectionZ": 48.88,
+            "simTime": 40,
+            "supplyCap": 30,
+            "supplyUsed": 23,
+            "uiReady": true
+          },
+          "assets": {
+            "sky": {
+              "jpg": {
+                "url": "sky.4b898c57.jpg",
+                "via": "manifest"
+              }
+            }
+          },
+          "__threenativeFrameCounts": {
+            "updates": 120,
+            "renders": 34
+          }
+        },
+        "tick": 120
+      },
+      {
+        "label": "pan",
+        "snapshots": {
+          "state": {
+            "cameraX": -70,
+            "cameraZoom": 30,
+            "cameraZ": 22,
+            "dragBox": null,
+            "gathered": 10,
+            "gas": 150,
+            "kills": 0,
+            "minimapDots": [
+              53,
+              223,
+              0,
+              1,
+              70,
+              220,
+              0,
+              1,
+              44,
+              203,
+              0,
+              1,
+              34,
+              240,
+              0,
+              1,
+              44,
+              218,
+              0,
+              0,
+              45,
+              219,
+              0,
+              0,
+              43,
+              219,
+              0,
+              0,
+              32,
+              217,
+              0,
+              0,
+              31,
+              213,
+              0,
+              0,
+              32,
+              211,
+              0,
+              0,
+              37,
+              210,
+              0,
+              0,
+              41,
+              217,
+              0,
+              0,
+              35,
+              235,
+              0,
+              0,
+              36,
+              236,
+              0,
+              0,
+              69,
+              200,
+              0,
+              0,
+              71,
+              200,
+              0,
+              0,
+              74,
+              200,
+              0,
+              0,
+              69,
+              203,
+              0,
+              0,
+              71,
+              203,
+              0,
+              0,
+              74,
+              203,
+              0,
+              0,
+              70,
+              205,
+              0,
+              0,
+              73,
+              205,
+              0,
+              0,
+              56,
+              200,
+              0,
+              0,
+              65,
+              194,
+              0,
+              0,
+              39,
+              213,
+              9,
+              2,
+              37,
+              217,
+              9,
+              2,
+              33,
+              218,
+              9,
+              2,
+              29,
+              215,
+              9,
+              2,
+              28,
+              211,
+              9,
+              2,
+              31,
+              208,
+              9,
+              2,
+              35,
+              207,
+              9,
+              2,
+              34,
+              240,
+              9,
+              3
+            ],
+            "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+            "mode": "",
+            "notice": "",
+            "ore": 710,
+            "paused": false,
+            "primaryBuilt": true,
+            "primaryHp": 100,
+            "primaryMaxHp": 100,
+            "primaryProgress": 1,
+            "primaryTeam": 0,
+            "primaryType": "ranger",
+            "queue": [],
+            "result": "",
+            "selection": 10,
+            "selectionOrder": "idle",
+            "selectionTeams": 1,
+            "selectionX": -56.7,
+            "selectionZ": 48.88,
+            "simTime": 59,
+            "supplyCap": 30,
+            "supplyUsed": 23,
+            "uiReady": true
+          },
+          "GameState": {
+            "cameraX": -70,
+            "cameraZoom": 30,
+            "cameraZ": 22,
+            "dragBox": null,
+            "gathered": 10,
+            "gas": 150,
+            "kills": 0,
+            "minimapDots": [
+              53,
+              223,
+              0,
+              1,
+              70,
+              220,
+              0,
+              1,
+              44,
+              203,
+              0,
+              1,
+              34,
+              240,
+              0,
+              1,
+              44,
+              218,
+              0,
+              0,
+              45,
+              219,
+              0,
+              0,
+              43,
+              219,
+              0,
+              0,
+              32,
+              217,
+              0,
+              0,
+              31,
+              213,
+              0,
+              0,
+              32,
+              211,
+              0,
+              0,
+              37,
+              210,
+              0,
+              0,
+              41,
+              217,
+              0,
+              0,
+              35,
+              235,
+              0,
+              0,
+              36,
+              236,
+              0,
+              0,
+              69,
+              200,
+              0,
+              0,
+              71,
+              200,
+              0,
+              0,
+              74,
+              200,
+              0,
+              0,
+              69,
+              203,
+              0,
+              0,
+              71,
+              203,
+              0,
+              0,
+              74,
+              203,
+              0,
+              0,
+              70,
+              205,
+              0,
+              0,
+              73,
+              205,
+              0,
+              0,
+              56,
+              200,
+              0,
+              0,
+              65,
+              194,
+              0,
+              0,
+              39,
+              213,
+              9,
+              2,
+              37,
+              217,
+              9,
+              2,
+              33,
+              218,
+              9,
+              2,
+              29,
+              215,
+              9,
+              2,
+              28,
+              211,
+              9,
+              2,
+              31,
+              208,
+              9,
+              2,
+              35,
+              207,
+              9,
+              2,
+              34,
+              240,
+              9,
+              3
+            ],
+            "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+            "mode": "",
+            "notice": "",
+            "ore": 710,
+            "paused": false,
+            "primaryBuilt": true,
+            "primaryHp": 100,
+            "primaryMaxHp": 100,
+            "primaryProgress": 1,
+            "primaryTeam": 0,
+            "primaryType": "ranger",
+            "queue": [],
+            "result": "",
+            "selection": 10,
+            "selectionOrder": "idle",
+            "selectionTeams": 1,
+            "selectionX": -56.7,
+            "selectionZ": 48.88,
+            "simTime": 59,
+            "supplyCap": 30,
+            "supplyUsed": 23,
+            "uiReady": true
+          },
+          "assets": {
+            "sky": {
+              "jpg": {
+                "url": "sky.4b898c57.jpg",
+                "via": "manifest"
+              }
+            }
+          },
+          "__threenativeFrameCounts": {
+            "updates": 181,
+            "renders": 59
+          }
+        },
+        "tick": 181
+      },
+      {
+        "label": "after-pan",
+        "snapshots": {
+          "state": {
+            "cameraX": -70,
+            "cameraZoom": 30,
+            "cameraZ": 22,
+            "dragBox": null,
+            "gathered": 30,
+            "gas": 150,
+            "kills": 0,
+            "minimapDots": [
+              53,
+              223,
+              0,
+              1,
+              70,
+              220,
+              0,
+              1,
+              44,
+              203,
+              0,
+              1,
+              34,
+              240,
+              0,
+              1,
+              44,
+              217,
+              0,
+              0,
+              42,
+              218,
+              0,
+              0,
+              42,
+              220,
+              0,
+              0,
+              36,
+              218,
+              0,
+              0,
+              33,
+              214,
+              0,
+              0,
+              34,
+              212,
+              0,
+              0,
+              37,
+              210,
+              0,
+              0,
+              44,
+              219,
+              0,
+              0,
+              35,
+              235,
+              0,
+              0,
+              37,
+              235,
+              0,
+              0,
+              69,
+              200,
+              0,
+              0,
+              71,
+              200,
+              0,
+              0,
+              74,
+              200,
+              0,
+              0,
+              69,
+              203,
+              0,
+              0,
+              71,
+              203,
+              0,
+              0,
+              74,
+              203,
+              0,
+              0,
+              70,
+              205,
+              0,
+              0,
+              73,
+              205,
+              0,
+              0,
+              56,
+              200,
+              0,
+              0,
+              65,
+              194,
+              0,
+              0,
+              39,
+              213,
+              9,
+              2,
+              37,
+              217,
+              9,
+              2,
+              33,
+              218,
+              9,
+              2,
+              29,
+              215,
+              9,
+              2,
+              28,
+              211,
+              9,
+              2,
+              31,
+              208,
+              9,
+              2,
+              35,
+              207,
+              9,
+              2,
+              34,
+              240,
+              9,
+              3
+            ],
+            "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+            "mode": "",
+            "notice": "",
+            "ore": 730,
+            "paused": false,
+            "primaryBuilt": true,
+            "primaryHp": 100,
+            "primaryMaxHp": 100,
+            "primaryProgress": 1,
+            "primaryTeam": 0,
+            "primaryType": "ranger",
+            "queue": [],
+            "result": "",
+            "selection": 10,
+            "selectionOrder": "idle",
+            "selectionTeams": 1,
+            "selectionX": -56.7,
+            "selectionZ": 48.88,
+            "simTime": 69,
+            "supplyCap": 30,
+            "supplyUsed": 23,
+            "uiReady": true
+          },
+          "GameState": {
+            "cameraX": -70,
+            "cameraZoom": 30,
+            "cameraZ": 22,
+            "dragBox": null,
+            "gathered": 30,
+            "gas": 150,
+            "kills": 0,
+            "minimapDots": [
+              53,
+              223,
+              0,
+              1,
+              70,
+              220,
+              0,
+              1,
+              44,
+              203,
+              0,
+              1,
+              34,
+              240,
+              0,
+              1,
+              44,
+              217,
+              0,
+              0,
+              42,
+              218,
+              0,
+              0,
+              42,
+              220,
+              0,
+              0,
+              36,
+              218,
+              0,
+              0,
+              33,
+              214,
+              0,
+              0,
+              34,
+              212,
+              0,
+              0,
+              37,
+              210,
+              0,
+              0,
+              44,
+              219,
+              0,
+              0,
+              35,
+              235,
+              0,
+              0,
+              37,
+              235,
+              0,
+              0,
+              69,
+              200,
+              0,
+              0,
+              71,
+              200,
+              0,
+              0,
+              74,
+              200,
+              0,
+              0,
+              69,
+              203,
+              0,
+              0,
+              71,
+              203,
+              0,
+              0,
+              74,
+              203,
+              0,
+              0,
+              70,
+              205,
+              0,
+              0,
+              73,
+              205,
+              0,
+              0,
+              56,
+              200,
+              0,
+              0,
+              65,
+              194,
+              0,
+              0,
+              39,
+              213,
+              9,
+              2,
+              37,
+              217,
+              9,
+              2,
+              33,
+              218,
+              9,
+              2,
+              29,
+              215,
+              9,
+              2,
+              28,
+              211,
+              9,
+              2,
+              31,
+              208,
+              9,
+              2,
+              35,
+              207,
+              9,
+              2,
+              34,
+              240,
+              9,
+              3
+            ],
+            "minimapFog": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###...............................................................................",
+            "mode": "",
+            "notice": "",
+            "ore": 730,
+            "paused": false,
+            "primaryBuilt": true,
+            "primaryHp": 100,
+            "primaryMaxHp": 100,
+            "primaryProgress": 1,
+            "primaryTeam": 0,
+            "primaryType": "ranger",
+            "queue": [],
+            "result": "",
+            "selection": 10,
+            "selectionOrder": "idle",
+            "selectionTeams": 1,
+            "selectionX": -56.7,
+            "selectionZ": 48.88,
+            "simTime": 69,
+            "supplyCap": 30,
+            "supplyUsed": 23,
+            "uiReady": true
+          },
+          "assets": {
+            "sky": {
+              "jpg": {
+                "url": "sky.4b898c57.jpg",
+                "via": "manifest"
+              }
+            }
+          },
+          "__threenativeFrameCounts": {
+            "updates": 211,
+            "renders": 70
+          }
+        },
+        "tick": 211
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": [
+          {
+            "id": "camera.main",
+            "visible": false
+          }
+        ]
+      }
+    },
+    "runtimeDiagnosticsBefore": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": [
+          {
+            "id": "camera.main",
+            "visible": false
+          }
+        ]
+      }
+    },
+    "runtimeObservations": {
+      "gameplayBefore": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [
+          {
+            "from": 0,
+            "path": "state.simTime",
+            "tick": 2,
+            "to": 1
+          },
+          {
+            "from": 1,
+            "path": "state.simTime",
+            "tick": 5,
+            "to": 2
+          },
+          {
+            "from": 2,
+            "path": "state.simTime",
+            "tick": 8,
+            "to": 3
+          },
+          {
+            "from": 3,
+            "path": "state.simTime",
+            "tick": 11,
+            "to": 4
+          },
+          {
+            "from": 4,
+            "path": "state.simTime",
+            "tick": 14,
+            "to": 5
+          },
+          {
+            "from": 5,
+            "path": "state.simTime",
+            "tick": 17,
+            "to": 6
+          },
+          {
+            "from": 6,
+            "path": "state.simTime",
+            "tick": 20,
+            "to": 7
+          },
+          {
+            "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########....................#######.....................#######....................########....................######.......................###...............................................................................",
+            "path": "state.minimapFog",
+            "tick": 26,
+            "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###..............................................................................."
+          },
+          {
+            "from": 7,
+            "path": "state.simTime",
+            "tick": 26,
+            "to": 9
+          },
+          {
+            "from": 9,
+            "path": "state.simTime",
+            "tick": 32,
+            "to": 10
+          },
+          {
+            "from": 10,
+            "path": "state.simTime",
+            "tick": 35,
+            "to": 12
+          },
+          {
+            "from": 12,
+            "path": "state.simTime",
+            "tick": 38,
+            "to": 13
+          },
+          {
+            "from": 13,
+            "path": "state.simTime",
+            "tick": 41,
+            "to": 14
+          },
+          {
+            "from": 14,
+            "path": "state.simTime",
+            "tick": 44,
+            "to": 15
+          },
+          {
+            "from": 15,
+            "path": "state.simTime",
+            "tick": 47,
+            "to": 16
+          },
+          {
+            "from": 16,
+            "path": "state.simTime",
+            "tick": 50,
+            "to": 17
+          },
+          {
+            "from": 17,
+            "path": "state.simTime",
+            "tick": 53,
+            "to": 18
+          },
+          {
+            "from": 18,
+            "path": "state.simTime",
+            "tick": 56,
+            "to": 19
+          },
+          {
+            "from": 19,
+            "path": "state.simTime",
+            "tick": 59,
+            "to": 20
+          }
+        ],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 471,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.6",
+            "randomState": 471,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [
+          {
+            "from": 0,
+            "path": "state.simTime",
+            "tick": 2,
+            "to": 1
+          },
+          {
+            "from": 1,
+            "path": "state.simTime",
+            "tick": 5,
+            "to": 2
+          },
+          {
+            "from": 2,
+            "path": "state.simTime",
+            "tick": 8,
+            "to": 3
+          },
+          {
+            "from": 3,
+            "path": "state.simTime",
+            "tick": 11,
+            "to": 4
+          },
+          {
+            "from": 4,
+            "path": "state.simTime",
+            "tick": 14,
+            "to": 5
+          },
+          {
+            "from": 5,
+            "path": "state.simTime",
+            "tick": 17,
+            "to": 6
+          },
+          {
+            "from": 6,
+            "path": "state.simTime",
+            "tick": 20,
+            "to": 7
+          },
+          {
+            "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########....................#######.....................#######....................########....................######.......................###...............................................................................",
+            "path": "state.minimapFog",
+            "tick": 26,
+            "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###..............................................................................."
+          },
+          {
+            "from": 7,
+            "path": "state.simTime",
+            "tick": 26,
+            "to": 9
+          },
+          {
+            "from": 9,
+            "path": "state.simTime",
+            "tick": 32,
+            "to": 10
+          },
+          {
+            "from": 10,
+            "path": "state.simTime",
+            "tick": 35,
+            "to": 12
+          },
+          {
+            "from": 12,
+            "path": "state.simTime",
+            "tick": 38,
+            "to": 13
+          },
+          {
+            "from": 13,
+            "path": "state.simTime",
+            "tick": 41,
+            "to": 14
+          },
+          {
+            "from": 14,
+            "path": "state.simTime",
+            "tick": 44,
+            "to": 15
+          },
+          {
+            "from": 15,
+            "path": "state.simTime",
+            "tick": 47,
+            "to": 16
+          },
+          {
+            "from": 16,
+            "path": "state.simTime",
+            "tick": 50,
+            "to": 17
+          },
+          {
+            "from": 17,
+            "path": "state.simTime",
+            "tick": 53,
+            "to": 18
+          },
+          {
+            "from": 18,
+            "path": "state.simTime",
+            "tick": 56,
+            "to": 19
+          },
+          {
+            "from": 19,
+            "path": "state.simTime",
+            "tick": 59,
+            "to": 20
+          },
+          {
+            "from": 20,
+            "path": "state.simTime",
+            "tick": 62,
+            "to": 21
+          },
+          {
+            "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###...............................................................................",
+            "path": "state.minimapFog",
+            "tick": 65,
+            "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###..............................................................................."
+          },
+          {
+            "from": 21,
+            "path": "state.simTime",
+            "tick": 65,
+            "to": 22
+          },
+          {
+            "from": 22,
+            "path": "state.simTime",
+            "tick": 68,
+            "to": 23
+          },
+          {
+            "from": 23,
+            "path": "state.simTime",
+            "tick": 71,
+            "to": 24
+          },
+          {
+            "from": 24,
+            "path": "state.simTime",
+            "tick": 74,
+            "to": 25
+          },
+          {
+            "from": 25,
+            "path": "state.simTime",
+            "tick": 77,
+            "to": 26
+          },
+          {
+            "from": 26,
+            "path": "state.simTime",
+            "tick": 80,
+            "to": 27
+          },
+          {
+            "from": 27,
+            "path": "state.simTime",
+            "tick": 83,
+            "to": 28
+          },
+          {
+            "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###...............................................................................",
+            "path": "state.minimapFog",
+            "tick": 86,
+            "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###..............................................................................."
+          },
+          {
+            "from": 28,
+            "path": "state.simTime",
+            "tick": 86,
+            "to": 29
+          },
+          {
+            "from": 29,
+            "path": "state.simTime",
+            "tick": 89,
+            "to": 30
+          },
+          {
+            "from": 30,
+            "path": "state.simTime",
+            "tick": 92,
+            "to": 31
+          },
+          {
+            "from": 31,
+            "path": "state.simTime",
+            "tick": 95,
+            "to": 32
+          },
+          {
+            "from": 32,
+            "path": "state.simTime",
+            "tick": 98,
+            "to": 33
+          },
+          {
+            "from": 33,
+            "path": "state.simTime",
+            "tick": 101,
+            "to": 34
+          },
+          {
+            "from": 34,
+            "path": "state.simTime",
+            "tick": 104,
+            "to": 35
+          },
+          {
+            "from": 35,
+            "path": "state.simTime",
+            "tick": 107,
+            "to": 36
+          },
+          {
+            "from": 36,
+            "path": "state.simTime",
+            "tick": 110,
+            "to": 37
+          },
+          {
+            "from": 37,
+            "path": "state.simTime",
+            "tick": 113,
+            "to": 38
+          },
+          {
+            "from": 38,
+            "path": "state.simTime",
+            "tick": 116,
+            "to": 39
+          },
+          {
+            "from": 39,
+            "path": "state.simTime",
+            "tick": 119,
+            "to": 40
+          },
+          {
+            "from": 58,
+            "path": "state.cameraZ",
+            "tick": 120,
+            "to": 57.4
+          },
+          {
+            "from": 57.4,
+            "path": "state.cameraZ",
+            "tick": 121,
+            "to": 56.8
+          },
+          {
+            "from": 56.8,
+            "path": "state.cameraZ",
+            "tick": 122,
+            "to": 56.2
+          },
+          {
+            "from": 40,
+            "path": "state.simTime",
+            "tick": 122,
+            "to": 41
+          },
+          {
+            "from": 56.2,
+            "path": "state.cameraZ",
+            "tick": 123,
+            "to": 55.6
+          },
+          {
+            "from": 55.6,
+            "path": "state.cameraZ",
+            "tick": 124,
+            "to": 55
+          },
+          {
+            "from": 55,
+            "path": "state.cameraZ",
+            "tick": 125,
+            "to": 54.4
+          },
+          {
+            "from": 41,
+            "path": "state.simTime",
+            "tick": 125,
+            "to": 42
+          },
+          {
+            "from": 54.4,
+            "path": "state.cameraZ",
+            "tick": 126,
+            "to": 53.8
+          },
+          {
+            "from": 53.8,
+            "path": "state.cameraZ",
+            "tick": 127,
+            "to": 53.2
+          },
+          {
+            "from": 53.2,
+            "path": "state.cameraZ",
+            "tick": 128,
+            "to": 52.6
+          },
+          {
+            "from": 42,
+            "path": "state.simTime",
+            "tick": 128,
+            "to": 43
+          },
+          {
+            "from": 52.6,
+            "path": "state.cameraZ",
+            "tick": 129,
+            "to": 52
+          },
+          {
+            "from": 52,
+            "path": "state.cameraZ",
+            "tick": 130,
+            "to": 51.4
+          },
+          {
+            "from": 51.4,
+            "path": "state.cameraZ",
+            "tick": 131,
+            "to": 50.8
+          },
+          {
+            "from": 43,
+            "path": "state.simTime",
+            "tick": 131,
+            "to": 44
+          },
+          {
+            "from": 50.8,
+            "path": "state.cameraZ",
+            "tick": 132,
+            "to": 50.2
+          },
+          {
+            "from": 50.2,
+            "path": "state.cameraZ",
+            "tick": 133,
+            "to": 49.6
+          },
+          {
+            "from": 49.6,
+            "path": "state.cameraZ",
+            "tick": 134,
+            "to": 49
+          },
+          {
+            "from": 44,
+            "path": "state.simTime",
+            "tick": 134,
+            "to": 45
+          },
+          {
+            "from": 49,
+            "path": "state.cameraZ",
+            "tick": 135,
+            "to": 48.4
+          },
+          {
+            "from": 48.4,
+            "path": "state.cameraZ",
+            "tick": 136,
+            "to": 47.8
+          },
+          {
+            "from": 47.8,
+            "path": "state.cameraZ",
+            "tick": 137,
+            "to": 47.2
+          },
+          {
+            "from": 45,
+            "path": "state.simTime",
+            "tick": 137,
+            "to": 46
+          },
+          {
+            "from": 47.2,
+            "path": "state.cameraZ",
+            "tick": 138,
+            "to": 46.6
+          },
+          {
+            "from": 46.6,
+            "path": "state.cameraZ",
+            "tick": 139,
+            "to": 46
+          },
+          {
+            "from": 46,
+            "path": "state.cameraZ",
+            "tick": 140,
+            "to": 45.4
+          },
+          {
+            "from": 45.4,
+            "path": "state.cameraZ",
+            "tick": 141,
+            "to": 44.8
+          },
+          {
+            "from": 44.8,
+            "path": "state.cameraZ",
+            "tick": 142,
+            "to": 44.2
+          },
+          {
+            "from": 44.2,
+            "path": "state.cameraZ",
+            "tick": 143,
+            "to": 43.6
+          },
+          {
+            "from": 46,
+            "path": "state.simTime",
+            "tick": 143,
+            "to": 47
+          },
+          {
+            "from": 43.6,
+            "path": "state.cameraZ",
+            "tick": 144,
+            "to": 43
+          },
+          {
+            "from": 43,
+            "path": "state.cameraZ",
+            "tick": 145,
+            "to": 42.4
+          },
+          {
+            "from": 42.4,
+            "path": "state.cameraZ",
+            "tick": 146,
+            "to": 41.8
+          },
+          {
+            "from": 47,
+            "path": "state.simTime",
+            "tick": 146,
+            "to": 48
+          },
+          {
+            "from": 41.8,
+            "path": "state.cameraZ",
+            "tick": 147,
+            "to": 41.2
+          },
+          {
+            "from": 41.2,
+            "path": "state.cameraZ",
+            "tick": 148,
+            "to": 40.6
+          },
+          {
+            "from": 40.6,
+            "path": "state.cameraZ",
+            "tick": 149,
+            "to": 40
+          },
+          {
+            "from": 48,
+            "path": "state.simTime",
+            "tick": 149,
+            "to": 49
+          },
+          {
+            "from": 40,
+            "path": "state.cameraZ",
+            "tick": 150,
+            "to": 39.4
+          },
+          {
+            "from": 39.4,
+            "path": "state.cameraZ",
+            "tick": 151,
+            "to": 38.8
+          },
+          {
+            "from": 38.8,
+            "path": "state.cameraZ",
+            "tick": 152,
+            "to": 38.2
+          },
+          {
+            "from": 49,
+            "path": "state.simTime",
+            "tick": 152,
+            "to": 50
+          },
+          {
+            "from": 38.2,
+            "path": "state.cameraZ",
+            "tick": 153,
+            "to": 37.6
+          },
+          {
+            "from": 37.6,
+            "path": "state.cameraZ",
+            "tick": 154,
+            "to": 37
+          },
+          {
+            "from": 37,
+            "path": "state.cameraZ",
+            "tick": 155,
+            "to": 36.4
+          },
+          {
+            "from": 50,
+            "path": "state.simTime",
+            "tick": 155,
+            "to": 51
+          },
+          {
+            "from": 36.4,
+            "path": "state.cameraZ",
+            "tick": 156,
+            "to": 35.8
+          },
+          {
+            "from": 35.8,
+            "path": "state.cameraZ",
+            "tick": 157,
+            "to": 35.2
+          },
+          {
+            "from": 35.2,
+            "path": "state.cameraZ",
+            "tick": 158,
+            "to": 34.6
+          },
+          {
+            "from": 51,
+            "path": "state.simTime",
+            "tick": 158,
+            "to": 52
+          },
+          {
+            "from": 34.6,
+            "path": "state.cameraZ",
+            "tick": 159,
+            "to": 34
+          },
+          {
+            "from": 34,
+            "path": "state.cameraZ",
+            "tick": 160,
+            "to": 33.4
+          },
+          {
+            "from": 33.4,
+            "path": "state.cameraZ",
+            "tick": 161,
+            "to": 32.8
+          },
+          {
+            "from": 52,
+            "path": "state.simTime",
+            "tick": 161,
+            "to": 53
+          },
+          {
+            "from": 32.8,
+            "path": "state.cameraZ",
+            "tick": 162,
+            "to": 32.2
+          },
+          {
+            "from": 32.2,
+            "path": "state.cameraZ",
+            "tick": 163,
+            "to": 31.6
+          },
+          {
+            "from": 31.6,
+            "path": "state.cameraZ",
+            "tick": 164,
+            "to": 31
+          },
+          {
+            "from": 53,
+            "path": "state.simTime",
+            "tick": 164,
+            "to": 54
+          },
+          {
+            "from": 31,
+            "path": "state.cameraZ",
+            "tick": 165,
+            "to": 30.4
+          },
+          {
+            "from": 30.4,
+            "path": "state.cameraZ",
+            "tick": 166,
+            "to": 29.8
+          },
+          {
+            "from": 29.8,
+            "path": "state.cameraZ",
+            "tick": 167,
+            "to": 29.2
+          },
+          {
+            "from": 54,
+            "path": "state.simTime",
+            "tick": 167,
+            "to": 55
+          },
+          {
+            "from": 29.2,
+            "path": "state.cameraZ",
+            "tick": 168,
+            "to": 28.6
+          },
+          {
+            "from": 28.6,
+            "path": "state.cameraZ",
+            "tick": 169,
+            "to": 28
+          },
+          {
+            "from": 28,
+            "path": "state.cameraZ",
+            "tick": 170,
+            "to": 27.4
+          },
+          {
+            "from": 55,
+            "path": "state.simTime",
+            "tick": 170,
+            "to": 56
+          },
+          {
+            "from": 27.4,
+            "path": "state.cameraZ",
+            "tick": 171,
+            "to": 26.8
+          },
+          {
+            "from": 26.8,
+            "path": "state.cameraZ",
+            "tick": 172,
+            "to": 26.2
+          },
+          {
+            "from": 26.2,
+            "path": "state.cameraZ",
+            "tick": 173,
+            "to": 25.6
+          },
+          {
+            "from": 56,
+            "path": "state.simTime",
+            "tick": 173,
+            "to": 57
+          },
+          {
+            "from": 25.6,
+            "path": "state.cameraZ",
+            "tick": 174,
+            "to": 25
+          },
+          {
+            "from": 25,
+            "path": "state.cameraZ",
+            "tick": 175,
+            "to": 24.4
+          },
+          {
+            "from": 24.4,
+            "path": "state.cameraZ",
+            "tick": 176,
+            "to": 23.8
+          },
+          {
+            "from": 0,
+            "path": "state.gathered",
+            "tick": 176,
+            "to": 10
+          },
+          {
+            "from": 700,
+            "path": "state.ore",
+            "tick": 176,
+            "to": 710
+          },
+          {
+            "from": 57,
+            "path": "state.simTime",
+            "tick": 176,
+            "to": 58
+          },
+          {
+            "from": 23.8,
+            "path": "state.cameraZ",
+            "tick": 177,
+            "to": 23.2
+          },
+          {
+            "from": 23.2,
+            "path": "state.cameraZ",
+            "tick": 178,
+            "to": 22.6
+          },
+          {
+            "from": 22.6,
+            "path": "state.cameraZ",
+            "tick": 179,
+            "to": 22
+          },
+          {
+            "from": 58,
+            "path": "state.simTime",
+            "tick": 179,
+            "to": 59
+          },
+          {
+            "from": 59,
+            "path": "state.simTime",
+            "tick": 182,
+            "to": 60
+          },
+          {
+            "from": 60,
+            "path": "state.simTime",
+            "tick": 185,
+            "to": 61
+          },
+          {
+            "from": 10,
+            "path": "state.gathered",
+            "tick": 188,
+            "to": 30
+          },
+          {
+            "from": 710,
+            "path": "state.ore",
+            "tick": 188,
+            "to": 730
+          },
+          {
+            "from": 61,
+            "path": "state.simTime",
+            "tick": 188,
+            "to": 62
+          },
+          {
+            "from": 62,
+            "path": "state.simTime",
+            "tick": 191,
+            "to": 63
+          },
+          {
+            "from": 63,
+            "path": "state.simTime",
+            "tick": 194,
+            "to": 64
+          },
+          {
+            "from": 64,
+            "path": "state.simTime",
+            "tick": 197,
+            "to": 65
+          },
+          {
+            "from": 65,
+            "path": "state.simTime",
+            "tick": 200,
+            "to": 66
+          },
+          {
+            "from": 66,
+            "path": "state.simTime",
+            "tick": 203,
+            "to": 67
+          },
+          {
+            "from": 67,
+            "path": "state.simTime",
+            "tick": 206,
+            "to": 68
+          },
+          {
+            "from": 68,
+            "path": "state.simTime",
+            "tick": 209,
+            "to": 69
+          }
+        ],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 471,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.6",
+            "randomState": 471,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 0,
+                "path": "state.simTime",
+                "tick": 2,
+                "to": 1
+              },
+              {
+                "from": 1,
+                "path": "state.simTime",
+                "tick": 5,
+                "to": 2
+              },
+              {
+                "from": 2,
+                "path": "state.simTime",
+                "tick": 8,
+                "to": 3
+              },
+              {
+                "from": 3,
+                "path": "state.simTime",
+                "tick": 11,
+                "to": 4
+              },
+              {
+                "from": 4,
+                "path": "state.simTime",
+                "tick": 14,
+                "to": 5
+              },
+              {
+                "from": 5,
+                "path": "state.simTime",
+                "tick": 17,
+                "to": 6
+              },
+              {
+                "from": 6,
+                "path": "state.simTime",
+                "tick": 20,
+                "to": 7
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########....................#######.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 26,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 7,
+                "path": "state.simTime",
+                "tick": 26,
+                "to": 9
+              },
+              {
+                "from": 9,
+                "path": "state.simTime",
+                "tick": 32,
+                "to": 10
+              },
+              {
+                "from": 10,
+                "path": "state.simTime",
+                "tick": 35,
+                "to": 12
+              },
+              {
+                "from": 12,
+                "path": "state.simTime",
+                "tick": 38,
+                "to": 13
+              },
+              {
+                "from": 13,
+                "path": "state.simTime",
+                "tick": 41,
+                "to": 14
+              },
+              {
+                "from": 14,
+                "path": "state.simTime",
+                "tick": 44,
+                "to": 15
+              },
+              {
+                "from": 15,
+                "path": "state.simTime",
+                "tick": 47,
+                "to": 16
+              },
+              {
+                "from": 16,
+                "path": "state.simTime",
+                "tick": 50,
+                "to": 17
+              },
+              {
+                "from": 17,
+                "path": "state.simTime",
+                "tick": 53,
+                "to": 18
+              },
+              {
+                "from": 18,
+                "path": "state.simTime",
+                "tick": 56,
+                "to": 19
+              },
+              {
+                "from": 19,
+                "path": "state.simTime",
+                "tick": 59,
+                "to": 20
+              },
+              {
+                "from": 20,
+                "path": "state.simTime",
+                "tick": 62,
+                "to": 21
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 65,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 21,
+                "path": "state.simTime",
+                "tick": 65,
+                "to": 22
+              },
+              {
+                "from": 22,
+                "path": "state.simTime",
+                "tick": 68,
+                "to": 23
+              },
+              {
+                "from": 23,
+                "path": "state.simTime",
+                "tick": 71,
+                "to": 24
+              },
+              {
+                "from": 24,
+                "path": "state.simTime",
+                "tick": 74,
+                "to": 25
+              },
+              {
+                "from": 25,
+                "path": "state.simTime",
+                "tick": 77,
+                "to": 26
+              },
+              {
+                "from": 26,
+                "path": "state.simTime",
+                "tick": 80,
+                "to": 27
+              },
+              {
+                "from": 27,
+                "path": "state.simTime",
+                "tick": 83,
+                "to": 28
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 86,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 28,
+                "path": "state.simTime",
+                "tick": 86,
+                "to": 29
+              },
+              {
+                "from": 29,
+                "path": "state.simTime",
+                "tick": 89,
+                "to": 30
+              },
+              {
+                "from": 30,
+                "path": "state.simTime",
+                "tick": 92,
+                "to": 31
+              },
+              {
+                "from": 31,
+                "path": "state.simTime",
+                "tick": 95,
+                "to": 32
+              },
+              {
+                "from": 32,
+                "path": "state.simTime",
+                "tick": 98,
+                "to": 33
+              },
+              {
+                "from": 33,
+                "path": "state.simTime",
+                "tick": 101,
+                "to": 34
+              },
+              {
+                "from": 34,
+                "path": "state.simTime",
+                "tick": 104,
+                "to": 35
+              },
+              {
+                "from": 35,
+                "path": "state.simTime",
+                "tick": 107,
+                "to": 36
+              },
+              {
+                "from": 36,
+                "path": "state.simTime",
+                "tick": 110,
+                "to": 37
+              },
+              {
+                "from": 37,
+                "path": "state.simTime",
+                "tick": 113,
+                "to": 38
+              },
+              {
+                "from": 38,
+                "path": "state.simTime",
+                "tick": 116,
+                "to": 39
+              },
+              {
+                "from": 39,
+                "path": "state.simTime",
+                "tick": 119,
+                "to": 40
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 471,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.6",
+                "randomState": 471,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "settle",
+          "tick": 120
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 0,
+                "path": "state.simTime",
+                "tick": 2,
+                "to": 1
+              },
+              {
+                "from": 1,
+                "path": "state.simTime",
+                "tick": 5,
+                "to": 2
+              },
+              {
+                "from": 2,
+                "path": "state.simTime",
+                "tick": 8,
+                "to": 3
+              },
+              {
+                "from": 3,
+                "path": "state.simTime",
+                "tick": 11,
+                "to": 4
+              },
+              {
+                "from": 4,
+                "path": "state.simTime",
+                "tick": 14,
+                "to": 5
+              },
+              {
+                "from": 5,
+                "path": "state.simTime",
+                "tick": 17,
+                "to": 6
+              },
+              {
+                "from": 6,
+                "path": "state.simTime",
+                "tick": 20,
+                "to": 7
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########....................#######.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 26,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 7,
+                "path": "state.simTime",
+                "tick": 26,
+                "to": 9
+              },
+              {
+                "from": 9,
+                "path": "state.simTime",
+                "tick": 32,
+                "to": 10
+              },
+              {
+                "from": 10,
+                "path": "state.simTime",
+                "tick": 35,
+                "to": 12
+              },
+              {
+                "from": 12,
+                "path": "state.simTime",
+                "tick": 38,
+                "to": 13
+              },
+              {
+                "from": 13,
+                "path": "state.simTime",
+                "tick": 41,
+                "to": 14
+              },
+              {
+                "from": 14,
+                "path": "state.simTime",
+                "tick": 44,
+                "to": 15
+              },
+              {
+                "from": 15,
+                "path": "state.simTime",
+                "tick": 47,
+                "to": 16
+              },
+              {
+                "from": 16,
+                "path": "state.simTime",
+                "tick": 50,
+                "to": 17
+              },
+              {
+                "from": 17,
+                "path": "state.simTime",
+                "tick": 53,
+                "to": 18
+              },
+              {
+                "from": 18,
+                "path": "state.simTime",
+                "tick": 56,
+                "to": 19
+              },
+              {
+                "from": 19,
+                "path": "state.simTime",
+                "tick": 59,
+                "to": 20
+              },
+              {
+                "from": 20,
+                "path": "state.simTime",
+                "tick": 62,
+                "to": 21
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 65,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 21,
+                "path": "state.simTime",
+                "tick": 65,
+                "to": 22
+              },
+              {
+                "from": 22,
+                "path": "state.simTime",
+                "tick": 68,
+                "to": 23
+              },
+              {
+                "from": 23,
+                "path": "state.simTime",
+                "tick": 71,
+                "to": 24
+              },
+              {
+                "from": 24,
+                "path": "state.simTime",
+                "tick": 74,
+                "to": 25
+              },
+              {
+                "from": 25,
+                "path": "state.simTime",
+                "tick": 77,
+                "to": 26
+              },
+              {
+                "from": 26,
+                "path": "state.simTime",
+                "tick": 80,
+                "to": 27
+              },
+              {
+                "from": 27,
+                "path": "state.simTime",
+                "tick": 83,
+                "to": 28
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 86,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 28,
+                "path": "state.simTime",
+                "tick": 86,
+                "to": 29
+              },
+              {
+                "from": 29,
+                "path": "state.simTime",
+                "tick": 89,
+                "to": 30
+              },
+              {
+                "from": 30,
+                "path": "state.simTime",
+                "tick": 92,
+                "to": 31
+              },
+              {
+                "from": 31,
+                "path": "state.simTime",
+                "tick": 95,
+                "to": 32
+              },
+              {
+                "from": 32,
+                "path": "state.simTime",
+                "tick": 98,
+                "to": 33
+              },
+              {
+                "from": 33,
+                "path": "state.simTime",
+                "tick": 101,
+                "to": 34
+              },
+              {
+                "from": 34,
+                "path": "state.simTime",
+                "tick": 104,
+                "to": 35
+              },
+              {
+                "from": 35,
+                "path": "state.simTime",
+                "tick": 107,
+                "to": 36
+              },
+              {
+                "from": 36,
+                "path": "state.simTime",
+                "tick": 110,
+                "to": 37
+              },
+              {
+                "from": 37,
+                "path": "state.simTime",
+                "tick": 113,
+                "to": 38
+              },
+              {
+                "from": 38,
+                "path": "state.simTime",
+                "tick": 116,
+                "to": 39
+              },
+              {
+                "from": 39,
+                "path": "state.simTime",
+                "tick": 119,
+                "to": 40
+              },
+              {
+                "from": 58,
+                "path": "state.cameraZ",
+                "tick": 120,
+                "to": 57.4
+              },
+              {
+                "from": 57.4,
+                "path": "state.cameraZ",
+                "tick": 121,
+                "to": 56.8
+              },
+              {
+                "from": 56.8,
+                "path": "state.cameraZ",
+                "tick": 122,
+                "to": 56.2
+              },
+              {
+                "from": 40,
+                "path": "state.simTime",
+                "tick": 122,
+                "to": 41
+              },
+              {
+                "from": 56.2,
+                "path": "state.cameraZ",
+                "tick": 123,
+                "to": 55.6
+              },
+              {
+                "from": 55.6,
+                "path": "state.cameraZ",
+                "tick": 124,
+                "to": 55
+              },
+              {
+                "from": 55,
+                "path": "state.cameraZ",
+                "tick": 125,
+                "to": 54.4
+              },
+              {
+                "from": 41,
+                "path": "state.simTime",
+                "tick": 125,
+                "to": 42
+              },
+              {
+                "from": 54.4,
+                "path": "state.cameraZ",
+                "tick": 126,
+                "to": 53.8
+              },
+              {
+                "from": 53.8,
+                "path": "state.cameraZ",
+                "tick": 127,
+                "to": 53.2
+              },
+              {
+                "from": 53.2,
+                "path": "state.cameraZ",
+                "tick": 128,
+                "to": 52.6
+              },
+              {
+                "from": 42,
+                "path": "state.simTime",
+                "tick": 128,
+                "to": 43
+              },
+              {
+                "from": 52.6,
+                "path": "state.cameraZ",
+                "tick": 129,
+                "to": 52
+              },
+              {
+                "from": 52,
+                "path": "state.cameraZ",
+                "tick": 130,
+                "to": 51.4
+              },
+              {
+                "from": 51.4,
+                "path": "state.cameraZ",
+                "tick": 131,
+                "to": 50.8
+              },
+              {
+                "from": 43,
+                "path": "state.simTime",
+                "tick": 131,
+                "to": 44
+              },
+              {
+                "from": 50.8,
+                "path": "state.cameraZ",
+                "tick": 132,
+                "to": 50.2
+              },
+              {
+                "from": 50.2,
+                "path": "state.cameraZ",
+                "tick": 133,
+                "to": 49.6
+              },
+              {
+                "from": 49.6,
+                "path": "state.cameraZ",
+                "tick": 134,
+                "to": 49
+              },
+              {
+                "from": 44,
+                "path": "state.simTime",
+                "tick": 134,
+                "to": 45
+              },
+              {
+                "from": 49,
+                "path": "state.cameraZ",
+                "tick": 135,
+                "to": 48.4
+              },
+              {
+                "from": 48.4,
+                "path": "state.cameraZ",
+                "tick": 136,
+                "to": 47.8
+              },
+              {
+                "from": 47.8,
+                "path": "state.cameraZ",
+                "tick": 137,
+                "to": 47.2
+              },
+              {
+                "from": 45,
+                "path": "state.simTime",
+                "tick": 137,
+                "to": 46
+              },
+              {
+                "from": 47.2,
+                "path": "state.cameraZ",
+                "tick": 138,
+                "to": 46.6
+              },
+              {
+                "from": 46.6,
+                "path": "state.cameraZ",
+                "tick": 139,
+                "to": 46
+              },
+              {
+                "from": 46,
+                "path": "state.cameraZ",
+                "tick": 140,
+                "to": 45.4
+              },
+              {
+                "from": 45.4,
+                "path": "state.cameraZ",
+                "tick": 141,
+                "to": 44.8
+              },
+              {
+                "from": 44.8,
+                "path": "state.cameraZ",
+                "tick": 142,
+                "to": 44.2
+              },
+              {
+                "from": 44.2,
+                "path": "state.cameraZ",
+                "tick": 143,
+                "to": 43.6
+              },
+              {
+                "from": 46,
+                "path": "state.simTime",
+                "tick": 143,
+                "to": 47
+              },
+              {
+                "from": 43.6,
+                "path": "state.cameraZ",
+                "tick": 144,
+                "to": 43
+              },
+              {
+                "from": 43,
+                "path": "state.cameraZ",
+                "tick": 145,
+                "to": 42.4
+              },
+              {
+                "from": 42.4,
+                "path": "state.cameraZ",
+                "tick": 146,
+                "to": 41.8
+              },
+              {
+                "from": 47,
+                "path": "state.simTime",
+                "tick": 146,
+                "to": 48
+              },
+              {
+                "from": 41.8,
+                "path": "state.cameraZ",
+                "tick": 147,
+                "to": 41.2
+              },
+              {
+                "from": 41.2,
+                "path": "state.cameraZ",
+                "tick": 148,
+                "to": 40.6
+              },
+              {
+                "from": 40.6,
+                "path": "state.cameraZ",
+                "tick": 149,
+                "to": 40
+              },
+              {
+                "from": 48,
+                "path": "state.simTime",
+                "tick": 149,
+                "to": 49
+              },
+              {
+                "from": 40,
+                "path": "state.cameraZ",
+                "tick": 150,
+                "to": 39.4
+              },
+              {
+                "from": 39.4,
+                "path": "state.cameraZ",
+                "tick": 151,
+                "to": 38.8
+              },
+              {
+                "from": 38.8,
+                "path": "state.cameraZ",
+                "tick": 152,
+                "to": 38.2
+              },
+              {
+                "from": 49,
+                "path": "state.simTime",
+                "tick": 152,
+                "to": 50
+              },
+              {
+                "from": 38.2,
+                "path": "state.cameraZ",
+                "tick": 153,
+                "to": 37.6
+              },
+              {
+                "from": 37.6,
+                "path": "state.cameraZ",
+                "tick": 154,
+                "to": 37
+              },
+              {
+                "from": 37,
+                "path": "state.cameraZ",
+                "tick": 155,
+                "to": 36.4
+              },
+              {
+                "from": 50,
+                "path": "state.simTime",
+                "tick": 155,
+                "to": 51
+              },
+              {
+                "from": 36.4,
+                "path": "state.cameraZ",
+                "tick": 156,
+                "to": 35.8
+              },
+              {
+                "from": 35.8,
+                "path": "state.cameraZ",
+                "tick": 157,
+                "to": 35.2
+              },
+              {
+                "from": 35.2,
+                "path": "state.cameraZ",
+                "tick": 158,
+                "to": 34.6
+              },
+              {
+                "from": 51,
+                "path": "state.simTime",
+                "tick": 158,
+                "to": 52
+              },
+              {
+                "from": 34.6,
+                "path": "state.cameraZ",
+                "tick": 159,
+                "to": 34
+              },
+              {
+                "from": 34,
+                "path": "state.cameraZ",
+                "tick": 160,
+                "to": 33.4
+              },
+              {
+                "from": 33.4,
+                "path": "state.cameraZ",
+                "tick": 161,
+                "to": 32.8
+              },
+              {
+                "from": 52,
+                "path": "state.simTime",
+                "tick": 161,
+                "to": 53
+              },
+              {
+                "from": 32.8,
+                "path": "state.cameraZ",
+                "tick": 162,
+                "to": 32.2
+              },
+              {
+                "from": 32.2,
+                "path": "state.cameraZ",
+                "tick": 163,
+                "to": 31.6
+              },
+              {
+                "from": 31.6,
+                "path": "state.cameraZ",
+                "tick": 164,
+                "to": 31
+              },
+              {
+                "from": 53,
+                "path": "state.simTime",
+                "tick": 164,
+                "to": 54
+              },
+              {
+                "from": 31,
+                "path": "state.cameraZ",
+                "tick": 165,
+                "to": 30.4
+              },
+              {
+                "from": 30.4,
+                "path": "state.cameraZ",
+                "tick": 166,
+                "to": 29.8
+              },
+              {
+                "from": 29.8,
+                "path": "state.cameraZ",
+                "tick": 167,
+                "to": 29.2
+              },
+              {
+                "from": 54,
+                "path": "state.simTime",
+                "tick": 167,
+                "to": 55
+              },
+              {
+                "from": 29.2,
+                "path": "state.cameraZ",
+                "tick": 168,
+                "to": 28.6
+              },
+              {
+                "from": 28.6,
+                "path": "state.cameraZ",
+                "tick": 169,
+                "to": 28
+              },
+              {
+                "from": 28,
+                "path": "state.cameraZ",
+                "tick": 170,
+                "to": 27.4
+              },
+              {
+                "from": 55,
+                "path": "state.simTime",
+                "tick": 170,
+                "to": 56
+              },
+              {
+                "from": 27.4,
+                "path": "state.cameraZ",
+                "tick": 171,
+                "to": 26.8
+              },
+              {
+                "from": 26.8,
+                "path": "state.cameraZ",
+                "tick": 172,
+                "to": 26.2
+              },
+              {
+                "from": 26.2,
+                "path": "state.cameraZ",
+                "tick": 173,
+                "to": 25.6
+              },
+              {
+                "from": 56,
+                "path": "state.simTime",
+                "tick": 173,
+                "to": 57
+              },
+              {
+                "from": 25.6,
+                "path": "state.cameraZ",
+                "tick": 174,
+                "to": 25
+              },
+              {
+                "from": 25,
+                "path": "state.cameraZ",
+                "tick": 175,
+                "to": 24.4
+              },
+              {
+                "from": 24.4,
+                "path": "state.cameraZ",
+                "tick": 176,
+                "to": 23.8
+              },
+              {
+                "from": 0,
+                "path": "state.gathered",
+                "tick": 176,
+                "to": 10
+              },
+              {
+                "from": 700,
+                "path": "state.ore",
+                "tick": 176,
+                "to": 710
+              },
+              {
+                "from": 57,
+                "path": "state.simTime",
+                "tick": 176,
+                "to": 58
+              },
+              {
+                "from": 23.8,
+                "path": "state.cameraZ",
+                "tick": 177,
+                "to": 23.2
+              },
+              {
+                "from": 23.2,
+                "path": "state.cameraZ",
+                "tick": 178,
+                "to": 22.6
+              },
+              {
+                "from": 22.6,
+                "path": "state.cameraZ",
+                "tick": 179,
+                "to": 22
+              },
+              {
+                "from": 58,
+                "path": "state.simTime",
+                "tick": 179,
+                "to": 59
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 471,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.6",
+                "randomState": 471,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "pan",
+          "tick": 181
+        },
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [
+              {
+                "from": 0,
+                "path": "state.simTime",
+                "tick": 2,
+                "to": 1
+              },
+              {
+                "from": 1,
+                "path": "state.simTime",
+                "tick": 5,
+                "to": 2
+              },
+              {
+                "from": 2,
+                "path": "state.simTime",
+                "tick": 8,
+                "to": 3
+              },
+              {
+                "from": 3,
+                "path": "state.simTime",
+                "tick": 11,
+                "to": 4
+              },
+              {
+                "from": 4,
+                "path": "state.simTime",
+                "tick": 14,
+                "to": 5
+              },
+              {
+                "from": 5,
+                "path": "state.simTime",
+                "tick": 17,
+                "to": 6
+              },
+              {
+                "from": 6,
+                "path": "state.simTime",
+                "tick": 20,
+                "to": 7
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########....................#######.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 26,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 7,
+                "path": "state.simTime",
+                "tick": 26,
+                "to": 9
+              },
+              {
+                "from": 9,
+                "path": "state.simTime",
+                "tick": 32,
+                "to": 10
+              },
+              {
+                "from": 10,
+                "path": "state.simTime",
+                "tick": 35,
+                "to": 12
+              },
+              {
+                "from": 12,
+                "path": "state.simTime",
+                "tick": 38,
+                "to": 13
+              },
+              {
+                "from": 13,
+                "path": "state.simTime",
+                "tick": 41,
+                "to": 14
+              },
+              {
+                "from": 14,
+                "path": "state.simTime",
+                "tick": 44,
+                "to": 15
+              },
+              {
+                "from": 15,
+                "path": "state.simTime",
+                "tick": 47,
+                "to": 16
+              },
+              {
+                "from": 16,
+                "path": "state.simTime",
+                "tick": 50,
+                "to": 17
+              },
+              {
+                "from": 17,
+                "path": "state.simTime",
+                "tick": 53,
+                "to": 18
+              },
+              {
+                "from": 18,
+                "path": "state.simTime",
+                "tick": 56,
+                "to": 19
+              },
+              {
+                "from": 19,
+                "path": "state.simTime",
+                "tick": 59,
+                "to": 20
+              },
+              {
+                "from": 20,
+                "path": "state.simTime",
+                "tick": 62,
+                "to": 21
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######.....................########...................########.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 65,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 21,
+                "path": "state.simTime",
+                "tick": 65,
+                "to": 22
+              },
+              {
+                "from": 22,
+                "path": "state.simTime",
+                "tick": 68,
+                "to": 23
+              },
+              {
+                "from": 23,
+                "path": "state.simTime",
+                "tick": 71,
+                "to": 24
+              },
+              {
+                "from": 24,
+                "path": "state.simTime",
+                "tick": 74,
+                "to": 25
+              },
+              {
+                "from": 25,
+                "path": "state.simTime",
+                "tick": 77,
+                "to": 26
+              },
+              {
+                "from": 26,
+                "path": "state.simTime",
+                "tick": 80,
+                "to": 27
+              },
+              {
+                "from": 27,
+                "path": "state.simTime",
+                "tick": 83,
+                "to": 28
+              },
+              {
+                "from": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########.....................#######....................########....................######.......................###...............................................................................",
+                "path": "state.minimapFog",
+                "tick": 86,
+                "to": "......................................................................................................................................................................................................................................................................................................................................................................................................................................................................#.........................#####......................######.....................#######....................#########...................########....................########....................########....................######.......................###..............................................................................."
+              },
+              {
+                "from": 28,
+                "path": "state.simTime",
+                "tick": 86,
+                "to": 29
+              },
+              {
+                "from": 29,
+                "path": "state.simTime",
+                "tick": 89,
+                "to": 30
+              },
+              {
+                "from": 30,
+                "path": "state.simTime",
+                "tick": 92,
+                "to": 31
+              },
+              {
+                "from": 31,
+                "path": "state.simTime",
+                "tick": 95,
+                "to": 32
+              },
+              {
+                "from": 32,
+                "path": "state.simTime",
+                "tick": 98,
+                "to": 33
+              },
+              {
+                "from": 33,
+                "path": "state.simTime",
+                "tick": 101,
+                "to": 34
+              },
+              {
+                "from": 34,
+                "path": "state.simTime",
+                "tick": 104,
+                "to": 35
+              },
+              {
+                "from": 35,
+                "path": "state.simTime",
+                "tick": 107,
+                "to": 36
+              },
+              {
+                "from": 36,
+                "path": "state.simTime",
+                "tick": 110,
+                "to": 37
+              },
+              {
+                "from": 37,
+                "path": "state.simTime",
+                "tick": 113,
+                "to": 38
+              },
+              {
+                "from": 38,
+                "path": "state.simTime",
+                "tick": 116,
+                "to": 39
+              },
+              {
+                "from": 39,
+                "path": "state.simTime",
+                "tick": 119,
+                "to": 40
+              },
+              {
+                "from": 58,
+                "path": "state.cameraZ",
+                "tick": 120,
+                "to": 57.4
+              },
+              {
+                "from": 57.4,
+                "path": "state.cameraZ",
+                "tick": 121,
+                "to": 56.8
+              },
+              {
+                "from": 56.8,
+                "path": "state.cameraZ",
+                "tick": 122,
+                "to": 56.2
+              },
+              {
+                "from": 40,
+                "path": "state.simTime",
+                "tick": 122,
+                "to": 41
+              },
+              {
+                "from": 56.2,
+                "path": "state.cameraZ",
+                "tick": 123,
+                "to": 55.6
+              },
+              {
+                "from": 55.6,
+                "path": "state.cameraZ",
+                "tick": 124,
+                "to": 55
+              },
+              {
+                "from": 55,
+                "path": "state.cameraZ",
+                "tick": 125,
+                "to": 54.4
+              },
+              {
+                "from": 41,
+                "path": "state.simTime",
+                "tick": 125,
+                "to": 42
+              },
+              {
+                "from": 54.4,
+                "path": "state.cameraZ",
+                "tick": 126,
+                "to": 53.8
+              },
+              {
+                "from": 53.8,
+                "path": "state.cameraZ",
+                "tick": 127,
+                "to": 53.2
+              },
+              {
+                "from": 53.2,
+                "path": "state.cameraZ",
+                "tick": 128,
+                "to": 52.6
+              },
+              {
+                "from": 42,
+                "path": "state.simTime",
+                "tick": 128,
+                "to": 43
+              },
+              {
+                "from": 52.6,
+                "path": "state.cameraZ",
+                "tick": 129,
+                "to": 52
+              },
+              {
+                "from": 52,
+                "path": "state.cameraZ",
+                "tick": 130,
+                "to": 51.4
+              },
+              {
+                "from": 51.4,
+                "path": "state.cameraZ",
+                "tick": 131,
+                "to": 50.8
+              },
+              {
+                "from": 43,
+                "path": "state.simTime",
+                "tick": 131,
+                "to": 44
+              },
+              {
+                "from": 50.8,
+                "path": "state.cameraZ",
+                "tick": 132,
+                "to": 50.2
+              },
+              {
+                "from": 50.2,
+                "path": "state.cameraZ",
+                "tick": 133,
+                "to": 49.6
+              },
+              {
+                "from": 49.6,
+                "path": "state.cameraZ",
+                "tick": 134,
+                "to": 49
+              },
+              {
+                "from": 44,
+                "path": "state.simTime",
+                "tick": 134,
+                "to": 45
+              },
+              {
+                "from": 49,
+                "path": "state.cameraZ",
+                "tick": 135,
+                "to": 48.4
+              },
+              {
+                "from": 48.4,
+                "path": "state.cameraZ",
+                "tick": 136,
+                "to": 47.8
+              },
+              {
+                "from": 47.8,
+                "path": "state.cameraZ",
+                "tick": 137,
+                "to": 47.2
+              },
+              {
+                "from": 45,
+                "path": "state.simTime",
+                "tick": 137,
+                "to": 46
+              },
+              {
+                "from": 47.2,
+                "path": "state.cameraZ",
+                "tick": 138,
+                "to": 46.6
+              },
+              {
+                "from": 46.6,
+                "path": "state.cameraZ",
+                "tick": 139,
+                "to": 46
+              },
+              {
+                "from": 46,
+                "path": "state.cameraZ",
+                "tick": 140,
+                "to": 45.4
+              },
+              {
+                "from": 45.4,
+                "path": "state.cameraZ",
+                "tick": 141,
+                "to": 44.8
+              },
+              {
+                "from": 44.8,
+                "path": "state.cameraZ",
+                "tick": 142,
+                "to": 44.2
+              },
+              {
+                "from": 44.2,
+                "path": "state.cameraZ",
+                "tick": 143,
+                "to": 43.6
+              },
+              {
+                "from": 46,
+                "path": "state.simTime",
+                "tick": 143,
+                "to": 47
+              },
+              {
+                "from": 43.6,
+                "path": "state.cameraZ",
+                "tick": 144,
+                "to": 43
+              },
+              {
+                "from": 43,
+                "path": "state.cameraZ",
+                "tick": 145,
+                "to": 42.4
+              },
+              {
+                "from": 42.4,
+                "path": "state.cameraZ",
+                "tick": 146,
+                "to": 41.8
+              },
+              {
+                "from": 47,
+                "path": "state.simTime",
+                "tick": 146,
+                "to": 48
+              },
+              {
+                "from": 41.8,
+                "path": "state.cameraZ",
+                "tick": 147,
+                "to": 41.2
+              },
+              {
+                "from": 41.2,
+                "path": "state.cameraZ",
+                "tick": 148,
+                "to": 40.6
+              },
+              {
+                "from": 40.6,
+                "path": "state.cameraZ",
+                "tick": 149,
+                "to": 40
+              },
+              {
+                "from": 48,
+                "path": "state.simTime",
+                "tick": 149,
+                "to": 49
+              },
+              {
+                "from": 40,
+                "path": "state.cameraZ",
+                "tick": 150,
+                "to": 39.4
+              },
+              {
+                "from": 39.4,
+                "path": "state.cameraZ",
+                "tick": 151,
+                "to": 38.8
+              },
+              {
+                "from": 38.8,
+                "path": "state.cameraZ",
+                "tick": 152,
+                "to": 38.2
+              },
+              {
+                "from": 49,
+                "path": "state.simTime",
+                "tick": 152,
+                "to": 50
+              },
+              {
+                "from": 38.2,
+                "path": "state.cameraZ",
+                "tick": 153,
+                "to": 37.6
+              },
+              {
+                "from": 37.6,
+                "path": "state.cameraZ",
+                "tick": 154,
+                "to": 37
+              },
+              {
+                "from": 37,
+                "path": "state.cameraZ",
+                "tick": 155,
+                "to": 36.4
+              },
+              {
+                "from": 50,
+                "path": "state.simTime",
+                "tick": 155,
+                "to": 51
+              },
+              {
+                "from": 36.4,
+                "path": "state.cameraZ",
+                "tick": 156,
+                "to": 35.8
+              },
+              {
+                "from": 35.8,
+                "path": "state.cameraZ",
+                "tick": 157,
+                "to": 35.2
+              },
+              {
+                "from": 35.2,
+                "path": "state.cameraZ",
+                "tick": 158,
+                "to": 34.6
+              },
+              {
+                "from": 51,
+                "path": "state.simTime",
+                "tick": 158,
+                "to": 52
+              },
+              {
+                "from": 34.6,
+                "path": "state.cameraZ",
+                "tick": 159,
+                "to": 34
+              },
+              {
+                "from": 34,
+                "path": "state.cameraZ",
+                "tick": 160,
+                "to": 33.4
+              },
+              {
+                "from": 33.4,
+                "path": "state.cameraZ",
+                "tick": 161,
+                "to": 32.8
+              },
+              {
+                "from": 52,
+                "path": "state.simTime",
+                "tick": 161,
+                "to": 53
+              },
+              {
+                "from": 32.8,
+                "path": "state.cameraZ",
+                "tick": 162,
+                "to": 32.2
+              },
+              {
+                "from": 32.2,
+                "path": "state.cameraZ",
+                "tick": 163,
+                "to": 31.6
+              },
+              {
+                "from": 31.6,
+                "path": "state.cameraZ",
+                "tick": 164,
+                "to": 31
+              },
+              {
+                "from": 53,
+                "path": "state.simTime",
+                "tick": 164,
+                "to": 54
+              },
+              {
+                "from": 31,
+                "path": "state.cameraZ",
+                "tick": 165,
+                "to": 30.4
+              },
+              {
+                "from": 30.4,
+                "path": "state.cameraZ",
+                "tick": 166,
+                "to": 29.8
+              },
+              {
+                "from": 29.8,
+                "path": "state.cameraZ",
+                "tick": 167,
+                "to": 29.2
+              },
+              {
+                "from": 54,
+                "path": "state.simTime",
+                "tick": 167,
+                "to": 55
+              },
+              {
+                "from": 29.2,
+                "path": "state.cameraZ",
+                "tick": 168,
+                "to": 28.6
+              },
+              {
+                "from": 28.6,
+                "path": "state.cameraZ",
+                "tick": 169,
+                "to": 28
+              },
+              {
+                "from": 28,
+                "path": "state.cameraZ",
+                "tick": 170,
+                "to": 27.4
+              },
+              {
+                "from": 55,
+                "path": "state.simTime",
+                "tick": 170,
+                "to": 56
+              },
+              {
+                "from": 27.4,
+                "path": "state.cameraZ",
+                "tick": 171,
+                "to": 26.8
+              },
+              {
+                "from": 26.8,
+                "path": "state.cameraZ",
+                "tick": 172,
+                "to": 26.2
+              },
+              {
+                "from": 26.2,
+                "path": "state.cameraZ",
+                "tick": 173,
+                "to": 25.6
+              },
+              {
+                "from": 56,
+                "path": "state.simTime",
+                "tick": 173,
+                "to": 57
+              },
+              {
+                "from": 25.6,
+                "path": "state.cameraZ",
+                "tick": 174,
+                "to": 25
+              },
+              {
+                "from": 25,
+                "path": "state.cameraZ",
+                "tick": 175,
+                "to": 24.4
+              },
+              {
+                "from": 24.4,
+                "path": "state.cameraZ",
+                "tick": 176,
+                "to": 23.8
+              },
+              {
+                "from": 0,
+                "path": "state.gathered",
+                "tick": 176,
+                "to": 10
+              },
+              {
+                "from": 700,
+                "path": "state.ore",
+                "tick": 176,
+                "to": 710
+              },
+              {
+                "from": 57,
+                "path": "state.simTime",
+                "tick": 176,
+                "to": 58
+              },
+              {
+                "from": 23.8,
+                "path": "state.cameraZ",
+                "tick": 177,
+                "to": 23.2
+              },
+              {
+                "from": 23.2,
+                "path": "state.cameraZ",
+                "tick": 178,
+                "to": 22.6
+              },
+              {
+                "from": 22.6,
+                "path": "state.cameraZ",
+                "tick": 179,
+                "to": 22
+              },
+              {
+                "from": 58,
+                "path": "state.simTime",
+                "tick": 179,
+                "to": 59
+              },
+              {
+                "from": 59,
+                "path": "state.simTime",
+                "tick": 182,
+                "to": 60
+              },
+              {
+                "from": 60,
+                "path": "state.simTime",
+                "tick": 185,
+                "to": 61
+              },
+              {
+                "from": 10,
+                "path": "state.gathered",
+                "tick": 188,
+                "to": 30
+              },
+              {
+                "from": 710,
+                "path": "state.ore",
+                "tick": 188,
+                "to": 730
+              },
+              {
+                "from": 61,
+                "path": "state.simTime",
+                "tick": 188,
+                "to": 62
+              },
+              {
+                "from": 62,
+                "path": "state.simTime",
+                "tick": 191,
+                "to": 63
+              },
+              {
+                "from": 63,
+                "path": "state.simTime",
+                "tick": 194,
+                "to": 64
+              },
+              {
+                "from": 64,
+                "path": "state.simTime",
+                "tick": 197,
+                "to": 65
+              },
+              {
+                "from": 65,
+                "path": "state.simTime",
+                "tick": 200,
+                "to": 66
+              },
+              {
+                "from": 66,
+                "path": "state.simTime",
+                "tick": 203,
+                "to": 67
+              },
+              {
+                "from": 67,
+                "path": "state.simTime",
+                "tick": 206,
+                "to": 68
+              },
+              {
+                "from": 68,
+                "path": "state.simTime",
+                "tick": 209,
+                "to": 69
+              }
+            ],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 471,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.6",
+                "randomState": 471,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "after-pan",
+          "tick": 211
+        }
+      ]
+    },
+    "scene": {
+      "background": "DataTexture",
+      "camera": {
+        "far": 600,
+        "forward": [
+          -0.4518312572622618,
+          -0.651477626750238,
+          -0.6094468121211903
+        ],
+        "near": 1,
+        "position": [
+          -27,
+          62,
+          79.99999999999991
+        ],
+        "type": "OrthographicCamera"
+      },
+      "fog": {
+        "color": "#acb1c1",
+        "density": 0.0032281223062087423,
+        "type": "exponential"
+      },
+      "lights": [
+        {
+          "color": "#fff1e0",
+          "intensity": 4.5,
+          "type": "DirectionalLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshStandardNodeMaterial": 13,
+        "MeshBasicMaterial": 8
+      },
+      "objects": 67,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          400,
+          7.4289737194776535,
+          400
+        ],
+        "min": [
+          -400,
+          -1.7500000000000244,
+          -400
+        ]
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "settle",
+        "signals": [],
+        "tick": 120
+      },
+      {
+        "label": "pan",
+        "signals": [],
+        "tick": 181
+      },
+      {
+        "label": "after-pan",
+        "signals": [],
+        "tick": 211
+      }
+    ],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "warmup": {
+        "attempted": 1,
+        "candidates": 59,
+        "observed": {
+          "created": 0,
+          "failed": 0,
+          "pending": 0,
+          "uniquePrograms": 0,
+          "uniquePipelines": 0,
+          "status": "unavailable"
+        },
+        "status": "unavailable"
+      },
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 562.7000000029802,
+        "enteredMs": 3789,
+        "compileSettledMs": 4425.9000000059605,
+        "frameworkReadyMs": 4736.9000000059605,
+        "readyMs": 4737
+      },
+      "rule": "sustained-frames"
+    },
+    "visual": {},
+    "tone": [
+      {
+        "code": "TN_TONE",
+        "label": "after.png",
+        "mean": 80.69801323784722,
+        "p1": 23,
+        "p50": 80,
+        "p99": 141,
+        "clipFraction": 0,
+        "blackFraction": 0
+      }
+    ]
+  },
+  "artifactDirectory": "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run2/07-playtests-survives.playtest.json",
+  "assertionResults": [
+    {
+      "details": {
+        "after": 69,
+        "before": 20,
+        "expected": {
+          "gte": 30,
+          "allowTrivial": "The clock only advances while the simulation is running, so a positive value after the settle proves the rules stepped; zero would be a frozen scene."
+        },
+        "id": "state",
+        "path": "simTime",
+        "trivial": false
+      },
+      "id": "resource.state.simTime",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 30,
+        "before": 0,
+        "expected": {
+          "gte": 1,
+          "allowTrivial": "The ten Surveyors the world seeds are already mining, so any banked ore proves the harvest cycle ran rather than a counter being painted."
+        },
+        "id": "state",
+        "path": "gathered",
+        "trivial": false
+      },
+      "id": "resource.state.gathered",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    },
+    {
+      "details": {
+        "distance": 36.000000000000085,
+        "entity": "camera.main",
+        "minimum": 0.5,
+        "observed": true
+      },
+      "id": "movement.distance",
+      "pass": true
+    }
+  ],
+  "clock": "fixed-step",
+  "pass": true,
+  "runtime": "web",
+  "scenario": "survives",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "warmup": {
+      "attempted": 1,
+      "candidates": 59,
+      "observed": {
+        "created": 0,
+        "failed": 0,
+        "pending": 0,
+        "uniquePrograms": 0,
+        "uniquePipelines": 0,
+        "status": "unavailable"
+      },
+      "status": "unavailable"
+    },
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 562.7000000029802,
+      "enteredMs": 3789,
+      "compileSettledMs": 4425.9000000059605,
+      "frameworkReadyMs": 4736.9000000059605,
+      "readyMs": 4737
+    },
+    "rule": "sustained-frames"
+  },
+  "trivialityOptOutCount": 0,
+  "url": "http://127.0.0.1:43017",
+  "acquisition": {
+    "requestUrls": [
+      "http://127.0.0.1:43017/",
+      "http://127.0.0.1:43017/assets/index-Bxc0Fdem.js",
+      "http://127.0.0.1:43017/assets/rolldown-runtime-4tVxZq34.js",
+      "http://127.0.0.1:43017/assets/_threenative_web-engine-Dsg6MxK9.js",
+      "http://127.0.0.1:43017/assets/index-DXoHuvy7.css",
+      "http://127.0.0.1:43017/assets/tn-native-engine-web-CrW4rprp.wasm",
+      "http://127.0.0.1:43017/favicon.svg",
+      "http://127.0.0.1:43017/assets/_threenative_web-engine-B0jG27i2.js",
+      "http://127.0.0.1:43017/assets/KTX2Loader-DbwdCRSn.js",
+      "http://127.0.0.1:43017/assets.manifest.json",
+      "http://127.0.0.1:43017/sky.4b898c57.jpg"
+    ]
+  }
+}

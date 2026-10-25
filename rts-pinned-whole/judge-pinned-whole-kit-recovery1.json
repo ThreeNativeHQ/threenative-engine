@@ -1,0 +1,101 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "timeoutMinutes": 15,
+  "requiredImages": 13,
+  "openedRequiredImages": 13,
+  "requiredInputs": 20,
+  "openedRequiredInputs": 20,
+  "openedImages": 17,
+  "optionalDetailImages": 4,
+  "successfulReadPaths": [
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/04-playtests-rts-build.playtest.json/after.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/BEFORE-run1/07-playtests-survives.playtest.json/after.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run1/04-playtests-rts-build.playtest.json/after.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-run1/07-playtests-survives.playtest.json/after.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-sheets/01-performance.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-sheets/02-rts-ai-attack.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-sheets/03-rts-attack.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-sheets/04-rts-build.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-sheets/05-rts-orders.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-sheets/06-rts-train.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/PINNED-sheets/07-survives.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/harness-L9-full-sun60.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/harness-L9-source.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/judge-pinned-full-batch1.json",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/judge-pinned-full-batch2.json",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/judge-pinned-full-batch3.json",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/judge-resolution-pin-aiattack.json",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/judge-resolution-pin-watch.json",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-bars-exact-crops.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-infantry-exact-crops.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-local-contrast.json",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-minimap-exact-crops.png",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-relative-contrast-followup.json",
+    "/home/joao/projects/threenative/threenative-engine/.worktrees/prd-723/.afk/prd723-live/rts/resolution-pin-rings-exact-crops.png"
+  ],
+  "durationSeconds": 653.4,
+  "cliExit": 0,
+  "overall": "IMPROVEMENT",
+  "reason": "All seven poses are state-matched across BEFORE/PINNED and both repeats (same HUD values, camera and object positions). I found no action, debris or animation mismatch. AFTER moves toward the Unreal L9 panels (far-right of the source board, right column of the full board). Crushed charcoal floors lift to neutral blue-grey shade and warm khaki lit ground. Grid, crater warp, facet separation and contact shadows survive. Accents saturate rather than wash out, and no new flat or clipped highlight appears. Beyond tone, three changes are genuine readability gains: bolder dark-rimmed building rings, near-black HUD backings, and a minimap frame that stands off its panel more. The RTS shows no sky or specular, so only tone, depth and grounding are judged against L9. The new hint strip covers only floor/grid in every pose. Only survives has identifiable content under a BEFORE panel; there the core ring, left body and two small units stay identifiable on near-black. The cost is that lifting the floor compresses relative lightness on pale thin cues (mint bars, ring-edge pixel, orange build bar). Absolute separation and RGB distance rise, and I cannot see any whole bar, arc or infantry cue as fainter in the crops or native frames. I therefore record no confirmed cue regression, while leaving the watch open. The resolution pin gets no credit. The temporal exposure criterion is unverified.",
+  "frames": [
+    {
+      "name": "performance.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": "1920x1080, coordinates by eye from the sheet and the leaf's native raw reads. Lit khaki floor x0-1150,y0-680 and shade floor right/lower. Core ring and two-tone bar x250-458,y262-415. Barracks x490-662,y345-480. Infantry cluster x675-825,y224-345. Crater warp and pool x800-1260,y730-1010. Strike panel x16-304,y925-1064. Minimap x1728-1904,y663-850. Hint strip x1584-1904,y994-1024, over floor only.",
+      "reason": "HUD state and object positions match across arms and both repeats (ORE 890, CLOCK 00:12, 10 Vanguard idle). The PINNED repeats are the reused preflight frames. Shade lifts from crushed charcoal-teal to blue-grey and the lit area to warm khaki. Grid, crater warp, base shadows and facets stay, with no clipped patch. This reads closer to the Unreal L9 neutral-lift look, not brightness alone. Rings are bolder with dark rims, bars keep extents, and HUD is crisper on near-black. The pool is lighter with a crisp edge and lip. The lit/shade step is flatter but still clear.",
+      "hardContradictions": []
+    },
+    {
+      "name": "rts-ai-attack.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": "1280x720. Infantry cluster x795-900,y312-398: eight bars x~797-897,y316-362; 1px arcs x802-893,y350-397. Rings: core x515-650,y345-442; foundry x682-782,y440-487; extractor x298-378; turret x597-663. Minimap x1088-1264,y303-497: frame, L outline, marker 1101-1104,351-354, blob x1103-1153,y419-476. Hint strip x944-1264,y634-664, over floor only.",
+      "reason": "Same state in all four frames (ORE 1,380, CLOCK 00:42, 10 idle Vanguard); the PINNED frames are the reused preflight frames. The gains are a lifted floor with grid and shadows kept, bolder dark-rimmed building rings, near-black legible HUD, and a minimap frame that stands off its panel more (frame L* step 21.3 to 46.6). The cluster keeps all eight bars, arcs and bodies crisp and unghosted, but equal rather than stronger. Mint-on-pale-head lightness margin shrinks at x827-838/y330-333 and x839-845/y326-329. Ring pixel (890,361) loses margin in repeat 2. Nothing is visibly fainter, so no confirmed loss.",
+      "hardContradictions": []
+    },
+    {
+      "name": "rts-attack.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": "1280x720. Core x526-662,y347-448: ring and two-tone bar x558-630,y347-351. Barracks x685-800,y400-490. Blue tank dark bar x837-873,y277-281. Infantry cluster x805-905,y320-400. Lit band and top-left void x0-430,y50-330. Minimap x1088-1264,y303-497 with the larger blob. Hint strip x944-1264,y634-664, over floor only; pool sliver y>=708 lies below it.",
+      "reason": "State matches (ORE 1,590, CLOCK 01:01, -21/9, 10 idle). No hostile units, orders or debris appear in any frame. Void and shade lift from near-black to blue-grey and the lit band to khaki. Grid, base shadows and dark chests stay, with no clipped patch. Rings are bolder with dark rims, and two-tone bars keep their fill/track split with darker tracks. Minimap marker and blob are unchanged, and HUD text is crisper on near-black. Cluster bars and arcs are equal rather than stronger on the lifted floor (same watch caveat); nothing is visibly fainter.",
+      "hardContradictions": []
+    },
+    {
+      "name": "rts-build.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": "1280x720, run1 read at native size. Banner x880-1264,y16-64. Core ring x515-651,y358-443. Barracks x675-790,y395-490, roof slash x733-757,y428-445. Cluster x800-890,y320-392: orange bar x818-855,y317 and mint bar x838-875,y327. Ore piles x498-540,y295-327. VANGUARD/MENDER x1123-1264,y449-473 over the minimap. Hint strip x944-1264,y634-664, floor only.",
+      "reason": "State matches (ORE 620, CLOCK 00:05, Barracks 850/850, SITE 8%). The lit oval goes from dim taupe to khaki with crisp grid and retained shadow. Barracks roof, teal pad and dark base shadow stay unclipped. Rings and the banner text read stronger on near-black. Both thin cluster bars sit at the same extents. The orange bar (warm on khaki) has the lowest lightness margin of any cue I inspected. It is discernible by hue and edge at native size and not confirmed fainter. Tan ore piles are warm-on-warm but still visible.",
+      "hardContradictions": []
+    },
+    {
+      "name": "rts-orders.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": "1280x720. Drone cluster x795-900,y312-398: about seven bars x798-896,y316-360; arcs x800-892,y355-395. Tank x713-767,y262-313: base ring x~718-765,y~296-316; bar y272. Hover vehicle dark bar x826-862,y273. Core, barracks, left-building and tower rings. Minimap x1088-1264,y303-497. Hint strip over empty floor.",
+      "reason": "State matches (ORE 790, CLOCK 00:11, 20 Surveyors IDLE,MOVE). No hostile units or order markers appear. The same lifted floor, retained facets and shadows, no clipping, bolder rings and a legible near-black HUD apply. The tank base ring is readable only in AFTER; attribution is unproven and it is not a regression. This is the densest tiny-cue pose. Bars, arcs and bodies keep extents but are equal, not stronger. Pale mint bars over pale drone tops are the exact watch scenario and stay traceable by tint; none is confirmed fainter.",
+      "hardContradictions": []
+    },
+    {
+      "name": "rts-train.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": "1280x720. Core x515-651,y345-445: bar x548-618,y343; ring y355-443. Barracks x673-790,y395-490. Left building: bar y381, ring y405-441. Infantry bar x818-853,y317 over floor. Queue chip x28-76,y645-669 (SURVEYOI clip unchanged). SURVEYOR QUEUED x1098-1264,y16-48. Hint strip floor only.",
+      "reason": "State matches (ORE 730, SUPPLY 24/30, CLOCK 00:05, core 1800/1800). Plateau and void lift with grid, dark facets and contact shadows intact. Teal accents are more saturated, not washed. Dark-rimmed rings are bolder, all five mint bar sites persist, and the queue chip fill reads better against black. Nothing identifiable lies under the BEFORE panels or the new hint strip. The single infantry bar sits over floor, so there is no pale-head overlap. Clear gain with no confirmed regression.",
+      "hardContradictions": []
+    },
+    {
+      "name": "survives.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": "1280x720, run1 read at native size. Infantry cluster x540-640,y540-620: stacked bars y543-577; 1px arcs y583-620. Core x258-395,y570-668, partly under the strike panel x16-304,y565-704: ring and dark bar start x290-304,y569. Two small units under the panel x135-175,y583-625. Barracks x418-530,y625-712. Top pool x570-800,y0-80. Hint strip floor only.",
+      "reason": "State matches (ORE 730, CLOCK 00:03, 10 Vanguard idle). The dark upper floor lifts to readable grid and terrain, and the pool is more saturated. Buildings keep pale tops, dark sides and contact shadows with no clipping, and rings are bolder. Through-panel check at native size: the core ring, left body and the two small units (dark silhouettes with amber bits) stay identifiable on near-black, comparable to BEFORE's pale ghost. The 14 px dark bar start under the panel is faint in both arms. Not confirmed fainter, but these are the kit's lowest-contrast through-panel items.",
+      "hardContradictions": []
+    }
+  ],
+  "hardContradictions": [],
+  "contrastWatchDecision": "No WHOLE bar, ring or infantry cue is confirmed weaker, so actualCueRegression=false. The watch is NOT closed by this enum.\n\nPreserved, from the four AI-attack crop sheets (both repeats per arm) plus native frames:\n- All EIGHT cluster bars (x\u2248797-897; y316-319, 326-329, 330-333, 337-340, 340-343, 349-352, 350-353, 359-362; the preflight's five was wrong) keep position, length and crisp ends.\n- 1px cyan arcs (x\u2248802-893,y\u2248350-397; right arc x870-892,y357-374) stay continuous and more saturated on khaki.\n- Bodies keep dark chests, cyan slits and lower-left shadows, with no doubling or blur.\n- Minimap frame, L outline, marker (1101-1104,351-354) and blob match. Only the outside fill changes, and the frame L* step rises 21.3\u219246.6.\n- Building rings (core x515-650,y345-442 and others) gain dark rims, and building bars keep black tracks.\n- At native size, the build orange bar x818-855,y317, build mint bar x838-875,y327, survives stacked bars/arcs x540-640,y540-620, and the under-panel core ring and two small units remain identifiable.\n\nResidual, unconfirmed:\n- Top bar: L* step 25.870\u219220.754 and linear-Y ratio 2.829\u21922.021 in both repeats; Michelson .478\u2192.338. Absolute Y separation rises .285\u2192.317 and RGB distance .435\u2192.508.\n- Ring pixel (890,361): L* 14.93/15.26\u219211.09/8.83; Y-ratio 1.93/1.95\u21921.49/1.38; RGB distance .270/.276\u2192.374/.342. Absolute Y separation goes .135/.139\u2192.148 (r1) but .115 (r2).\n- Bar crossings of pale heads (x827-838/y330-333, x839-845/y326-329): my arithmetic on the supplied medians gives bar-vs-pale-facet L* of about 14\u21928.5. This is a proxy, not a measured crossing. Lightness margin there is clearly smaller and tint/edges carry the cue, though only about 7-11 px of each 36 px bar overlaps.\n- Dark backing is obvious on big rings and bar tracks but not resolvable on 3px infantry bars or 1px arcs. It does not demonstrably offset this.\n- The orange build bar (warm on khaki) is the weakest-margin candidate.\n- No threshold exists. A strict any-relative-lightness-drop rule would flag these.",
+  "actualCueRegression": false,
+  "evidenceSufficient": true,
+  "limitations": "Read-only and by eye. I opened four optional raws at native size: survives and build, run1, BEFORE and PINNED. Performance and the other poses rest on the sheets plus leaf raw reads, so thin 3px bars and 1px arcs there are partly second-hand. Static endpoint frames only. Exposure settling, pumping, flicker, adaptation, shimmer in motion, FPS and audio are NOT verified; matching repeats show endpoint repeatability only. No hostile units, order markers, damage or partial bar fills appear, so enemy colours and fill/track partial states are unassessed. Metrics are single-patch examples with no threshold. The bar-vs-pale-facet figure is my arithmetic on the supplied medians. Panel teal\u2192near-black and the black hint box are the declared intent and were judged on legibility only. The performance and AI-attack PINNED frames are reused preflight frames. No benefit is attributed to the resolution pin.",
+  "acceptance": true
+}
