@@ -968,7 +968,11 @@ function wrapRenderer(
         disposed ||
         kind !== "webgpu" ||
         !timestampCapable ||
-        typeof raw.resolveTimestampsAsync !== "function"
+        typeof raw.resolveTimestampsAsync !== "function" ||
+        // Three's backend creates the pool record at construction; a backend without it (the owned web
+        // engine's facade) never allocates one, so an observer would wait on it forever.
+        raw.backend === undefined ||
+        !("timestampQueryPool" in raw.backend)
       )
         throw new Error("TN_GPU_FRAME_OBSERVATION_UNSUPPORTED");
       if (gpuObservation !== undefined && gpuObservation.status().state !== "disposed")

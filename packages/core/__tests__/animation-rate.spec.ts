@@ -927,4 +927,29 @@ describe("camera-rate walk cost", () => {
     expect(state?.rate).toBe(1);
     rig.dispose();
   });
+
+  // A respawn disposes the rig's player and makes a new one on the same root within one frame. Each
+  // registration added a root of its own, so the camera pass walked that rig once more per respawn.
+  it("walks a rig once per frame however many players it has had", () => {
+    const rig = player();
+    const view = rendered(rig, -20);
+    let current = rig;
+    for (let respawn = 0; respawn < 5; respawn += 1) {
+      current.dispose();
+      current = new AnimationPlayer({
+        root: rig.root,
+        clips: [
+          new AnimationClip("idle", 1, [new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1])]),
+        ],
+        strideSync: false,
+        updateRate: "auto",
+      });
+      current.play("idle");
+    }
+    const walks = vi.spyOn(rig.root, "traverse");
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(walks).toHaveBeenCalledTimes(1);
+    expect(animationRateStates.get(rig.root)?.frame).toBe(view.cull.animationFrame);
+    current.dispose();
+  });
 });

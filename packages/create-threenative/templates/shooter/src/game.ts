@@ -75,7 +75,9 @@ const game = defineGame<GameState, IPhysicsContext>({
   ],
   display: config.display,
   render: config.renderer,
-  renderer: { antialias: true },
+  // The town's authored meshes are unique (geometry, material) pairs; the batching projection
+  // measures `notWorthwhile` and falls back, so the game states the opt-out.
+  renderer: { antialias: true, projection: false },
   // warmUp stays OFF here, measured on the Pixel 8 (PRD-327 device lane, 2026-09-03): the
   // whole-scene compileAsync walk is synchronous on the native host — ~33 s for this town —
   // and its per-item yield falls back to requestAnimationFrame, which cannot resolve while the
