@@ -887,21 +887,23 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   let manifestRequest: Promise<IAssetManifest | undefined> | undefined;
   const manifestOnce = (): Promise<IAssetManifest | undefined> => {
     if (manifestRequest === undefined) {
-      manifestRequest = readManifest(manifestUrl).catch((error: unknown) => {
-        // A malformed manifest still has to release the fill gate; otherwise a game that awaits
-        // the documented `startBackgroundFill()` promise waits forever.
-        assetCache.setManifest("", []);
-        throw error;
-      }).then((manifest) => {
-        if (manifest !== undefined) {
-          const entries = fillEntries(manifest);
-          assetCache.setManifest(manifestFingerprint(entries), entries);
-        } else {
-          // No manifest means nothing is content-addressed, so the cache stays out of the way.
+      manifestRequest = readManifest(manifestUrl)
+        .catch((error: unknown) => {
+          // A malformed manifest still has to release the fill gate; otherwise a game that awaits
+          // the documented `startBackgroundFill()` promise waits forever.
           assetCache.setManifest("", []);
-        }
-        return manifest;
-      });
+          throw error;
+        })
+        .then((manifest) => {
+          if (manifest !== undefined) {
+            const entries = fillEntries(manifest);
+            assetCache.setManifest(manifestFingerprint(entries), entries);
+          } else {
+            // No manifest means nothing is content-addressed, so the cache stays out of the way.
+            assetCache.setManifest("", []);
+          }
+          return manifest;
+        });
     }
     return manifestRequest;
   };
