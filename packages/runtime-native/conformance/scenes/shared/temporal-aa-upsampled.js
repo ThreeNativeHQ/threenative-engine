@@ -44,8 +44,8 @@ export function startScene(canvas, dimensions) {
         );
         renderer.setRenderScale(INPUT_SCALE);
       }
-      let frame = 0,
-        complete = false;
+      let frame = 0;
+      let complete = false;
       return {
         detail: {
           inputScale: owned ? INPUT_SCALE : 1,
