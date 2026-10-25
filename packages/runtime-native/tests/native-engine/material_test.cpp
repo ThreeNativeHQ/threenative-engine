@@ -595,6 +595,28 @@ void bloomPasses() {
 }
 
 
+// The denoise filters 17 taps a pixel. sampleNormal's depth-derived fallback (nine depth loads) inlined there cost
+// the filter about 1 ms of 2.4 at 2560x1440 by register pressure, taken or not; the pass reads raw normals instead.
+void denoiseReadsRawNormals() {
+    namespace g = graph;
+    const auto effect = g::denoiseEffect(g::texture("scene", g::uv()), g::texture("depth", g::uv()), g::texture("normal", g::uv()), 1);
+    const auto passes = g::postPasses(g::effectNode(effect));
+    CHECK(passes.size() == 1);
+    if (passes.size() != 1) return;
+    CHECK(passes[0].package.ok() && !passes[0].package.variants.empty());
+    if (passes[0].package.variants.empty()) return;
+    std::string code;
+    for (const auto& stage : passes[0].package.variants[0].stages) code += stage.wgsl.code;
+    const auto calls = [&](const std::string& name) {
+        std::size_t n = 0;
+        for (auto at = code.find(name); at != std::string::npos; at = code.find(name, at + 1)) ++n;
+        return n;
+    };
+    std::fprintf(stderr, "denoise: sampleNormal( %zu, sampleNormalRaw( %zu\n", calls("sampleNormal("), calls("sampleNormalRaw("));
+    CHECK(calls("sampleNormal(") == 1);  // its definition, called by no line of the filter
+    CHECK(calls("sampleNormalRaw(") >= 3);
+}
+
 void ssrPasses() {
     namespace g = graph;
     const auto color = g::texture("scene", g::uv());
@@ -705,4 +727,4 @@ void depthTextureLowering() {
 
 }  // namespace
 
-TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

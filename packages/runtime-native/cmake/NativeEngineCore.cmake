@@ -318,6 +318,7 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_fog_node_mixes_color=fog_node_mixes_color
     native_engine_material_node_key=node_key
     native_engine_material_ssr_passes=ssr_passes
+    native_engine_material_denoise_reads_raw_normals=denoise_reads_raw_normals
     native_engine_material_ssr_rejects_inputs=ssr_rejects_inputs
     native_engine_material_depth_texture_lowering=depth_texture_lowering
     native_engine_material_bloom_passes=bloom_passes

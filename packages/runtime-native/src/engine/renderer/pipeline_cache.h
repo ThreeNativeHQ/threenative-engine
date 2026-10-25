@@ -13,6 +13,7 @@
 #endif
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <webgpu/webgpu.h>
@@ -75,6 +76,40 @@ struct PipelineTarget {
 WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* descriptor);
 /** How many bind groups createBindGroup has made in this process. */
 uint64_t bindGroupsCreated();
+
+/**
+ * The bind groups of the last `capacity` binding sets of one pass, for a pass whose inputs alternate frame by
+ * frame (a ping-pong history): each cached group holds a reference on its layout and resources, so a released
+ * handle cannot come back as a new one and match. The owner calls clear() before it goes away.
+ */
+class RecentBindGroups {
+public:
+    RecentBindGroups() = default;
+    explicit RecentBindGroups(size_t capacity) : capacity_(capacity) {}
+    ~RecentBindGroups() { clear(); }
+    // The slots own references: a copy would release them twice, a move leaves the source empty.
+    RecentBindGroups(const RecentBindGroups&) = delete;
+    RecentBindGroups& operator=(const RecentBindGroups&) = delete;
+    RecentBindGroups(RecentBindGroups&& other) noexcept
+        : capacity_(other.capacity_), slots_(std::exchange(other.slots_, {})) {}
+    RecentBindGroups& operator=(RecentBindGroups&& other) noexcept {
+        if (this != &other) { clear(); capacity_ = other.capacity_; slots_ = std::exchange(other.slots_, {}); }
+        return *this;
+    }
+    /** A group the cache keeps: the caller binds it and never releases it. */
+    WGPUBindGroup get(WGPUDevice device, WGPUBindGroupLayout layout, const std::vector<WGPUBindGroupEntry>& entries);
+    void clear();
+
+private:
+    struct Slot {
+        WGPUBindGroupLayout layout;
+        std::vector<WGPUBindGroupEntry> entries;
+        WGPUBindGroup group;
+    };
+    static void release(const Slot& slot);
+    size_t capacity_ = 2;
+    std::vector<Slot> slots_;
+};
 
 /**
  * Render pipelines by what they are made of (PRD-514): the stages' WGSL text — deterministic by

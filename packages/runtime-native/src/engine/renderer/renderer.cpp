@@ -627,8 +627,7 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
 
 void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
     // Unreal's texel rule on this view: a size change rebuilds that light's atlas.
-    WGPULimits limits = {};
-    if (tanHalfFov > 0 && width_ > 0) wgpuDeviceGetLimits(device_, &limits);
+    const WGPULimits limits = tanHalfFov > 0 && width_ > 0 ? deviceLimits() : WGPULimits{};
     const auto measured = [&](const shadows::AtlasOptions& options) {
         auto resolved = options;
         if (options.autoMapSize && tanHalfFov > 0 && width_ > 0)
@@ -852,6 +851,7 @@ Renderer::~Renderer() {
         if (atlas.texture) wgpuTextureRelease(atlas.texture);
     }
     releaseTargets();
+    outputGroups_.clear();
     releaseOutputGroup();
     if (depthResolve_) wgpuRenderPipelineRelease(depthResolve_);
     if (overlayView_) wgpuTextureViewRelease(overlayView_);
@@ -910,12 +910,12 @@ void Renderer::releaseTargets() {
     depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = materialTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     msaaAuxColor_ = nullptr;
     msaaAuxColorView_ = nullptr;
-    releaseOutputGroup();  // it binds the scene target
+    outputGroups_.clear();  // they hold the scene target
+    releaseOutputGroup();
 }
 
 void Renderer::releaseOutputGroup() {
-    if (outputGroup_) wgpuBindGroupRelease(outputGroup_);
-    outputGroup_ = nullptr;
+    outputGroup_ = nullptr;  // outputGroups_ owns it
 }
 
 std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
@@ -1286,7 +1286,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps,
                                   WGPUTextureView pmremView, WGPUSampler pmremSampler,
                                   WGPUTextureView reflectorView, WGPUSampler reflectorSampler,
-                                  const GraphTextures* graphTextures) {
+                                  const GraphTextures* graphTextures, RecentBindGroups* cache) {
     // A graph texture's GPU texture, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto graph = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
         if (!graphTextures) return nullptr;
@@ -1385,7 +1385,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     desc.layout = layout;
     desc.entryCount = entries.size();
     desc.entries = entries.data();
-    return createBindGroup(device_, &desc);
+    return cache ? cache->get(device_, layout, entries) : createBindGroup(device_, &desc);
 }
 
 void Renderer::copyDepthToTexture(const Texture& texture) {
@@ -2669,7 +2669,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         Matrix4 viewProjection; viewProjection.elements = camera.projectionMatrix; viewProjection.multiply(view);
         const auto& p = camera.projectionMatrix;
         const double screenRadius = std::min(1 / (inputWidth_ * std::abs(p[0])), 1 / (inputHeight_ * std::abs(p[5])));
-        WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
+        const WGPULimits& limits = deviceLimits();
         for (std::size_t i = 0; i < lights.direct.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
@@ -2760,7 +2760,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             WGPUTextureDescriptor desc = {};
             desc.dimension = WGPUTextureDimension_2D;
             desc.size = {uint32_t(shadow.atlas.edge()), uint32_t(shadow.atlas.edge()), 1};
-            WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
+            const WGPULimits& limits = deviceLimits();
             if (desc.size.width > limits.maxTextureDimension2D)
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: atlas exceeds device texture limit");
             desc.format = WGPUTextureFormat_Depth24Plus;
@@ -3436,8 +3436,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // GBuffer (PRD-740), one pass over the opaque lit draws writes every target the post graph reads, each at its own
     // colour attachment: each draw's own vertex stage (skinning, morphs, instancing and position nodes included, so
     // the depth matches the colour pass exactly) with a fragment of one output per target, depth-tested Equal against
-    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite, alpha-tested) leaves every
-    // target cleared there: the effects read a depth-derived normal, no surface, no albedo and no emission.
+    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite) leaves every target cleared
+    // there: the effects read a depth-derived normal, no surface, no albedo and no emission. An alpha-tested draw writes
+    // its targets where its fragment survives, as three's MRT and Unreal's masked base pass do: its own fragment
+    // discards, so the cut holds at 4x too, where the depth test alone would let it through.
     const bool normalPass = postEffects_ && postEffects_->reads("normal");
     const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
     const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
@@ -3474,16 +3476,18 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.background || item.kind == MaterialKind::Basic) continue;
             // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
             // frame, not thrown: a transparent particle must not cost the frame.
-            if (item.transparent || item.sprite || item.material->alphaTest > 0) {
+            if (item.transparent || item.sprite) {
                 if (!normalPass) continue;
-                const std::string reason = item.transparent ? "transparent" : item.sprite ? "sprite" : "alpha-tested";
+                const std::string reason = item.transparent ? "transparent" : "sprite";
                 const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
             if (normalPass && item.nodes.normalNode)
                 throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
-            const shader::StageModule* fragment = auxMask == kAuxNormal ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+            const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
+            const shader::StageModule* fragment =
+                auxMask == kAuxNormal && !cut ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
             if (!fragment) {
                 const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -3866,7 +3870,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     if (!postTextures_.empty() && !outputGroup_)
         outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_,
-            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
     for (const auto& node : shader::graph::uniformNodes(output_.customToneMapping)) postUniforms_[node->name] = node->values;
@@ -4345,7 +4349,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     // group serves both and needs no rebuild when the present format changes.
     WGPUBindGroup& group = outputGroup_;
     if (!group) {
-        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
+        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
     }
     WGPURenderPassColorAttachment color = {};
     color.view = present ? present : colorView_;

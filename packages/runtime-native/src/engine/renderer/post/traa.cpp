@@ -298,11 +298,14 @@ TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
 }
 TraaPass::~TraaPass() {
     releaseTargets();
+    if (layout_) wgpuBindGroupLayoutRelease(layout_);
+    if (fillLayout_) wgpuBindGroupLayoutRelease(fillLayout_);
     wgpuRenderPipelineRelease(pipeline_); wgpuRenderPipelineRelease(fillPipeline_);
     wgpuBufferRelease(uniforms_); wgpuBufferRelease(fillUniforms_); wgpuBufferRelease(ownStats_);
     wgpuSamplerRelease(sampler_);
 }
 void TraaPass::releaseTargets() {
+    fillGroups_.clear(); resolveGroups_.clear();  // they hold the views released here
     for (auto v : {historyView_, historyDepthView_, resolveView_, velocityView_}) if (v) wgpuTextureViewRelease(v);
     for (auto t : {historyColor_, historyDepth_, resolve_, velocity_}) if (t) wgpuTextureRelease(t);
     historyView_ = historyDepthView_ = resolveView_ = velocityView_ = nullptr;
@@ -394,12 +397,11 @@ void TraaPass::fillVelocity(WGPUCommandEncoder encoder, WGPUTextureView depthVie
     for (size_t i = 0; i < 6; ++i) for (size_t j = 0; j < 16; ++j) data[i * 16 + j] = float((*matrices[i])[j]);
     data[96] = float(width_); data[97] = float(height_);
     wgpuQueueWriteBuffer(queue_, fillUniforms_, 0, data.data(), sizeof data);
-    auto layout = wgpuRenderPipelineGetBindGroupLayout(fillPipeline_, 0);
-    WGPUBindGroupEntry entries[2]{};
+    if (!fillLayout_) fillLayout_ = wgpuRenderPipelineGetBindGroupLayout(fillPipeline_, 0);
+    std::vector<WGPUBindGroupEntry> entries(2);
     entries[0].binding = 0; entries[0].buffer = fillUniforms_; entries[0].size = sizeof data;
     entries[1].binding = 1; entries[1].textureView = depthView;
-    WGPUBindGroupDescriptor groupDesc{}; groupDesc.layout = layout; groupDesc.entryCount = 2; groupDesc.entries = entries;
-    auto group = createBindGroup(device_, &groupDesc);
+    auto group = fillGroups_.get(device_, fillLayout_, entries);  // the same views each frame: no new group
     WGPURenderPassColorAttachment color{}; color.view = velocityView_;
     color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -409,7 +411,6 @@ void TraaPass::fillVelocity(WGPUCommandEncoder encoder, WGPUTextureView depthVie
     auto pass = beginTimedRenderPass(encoder, &desc, 2, {"traaVelocity", width_, height_});
     wgpuRenderPassEncoderSetPipeline(pass, fillPipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
-    wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);
 }
 void TraaPass::seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty) {
     if (!needsSeed()) return;
@@ -460,16 +461,15 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
         measuredFrame_ = history_.frame();
     }
     wgpuQueueWriteBuffer(queue_, uniforms_, 0, data.data(), sizeof data);
-    auto layout = wgpuRenderPipelineGetBindGroupLayout(pipeline_, 0);
-    WGPUBindGroupEntry entries[8]{};
+    if (!layout_) layout_ = wgpuRenderPipelineGetBindGroupLayout(pipeline_, 0);
+    std::vector<WGPUBindGroupEntry> entries(8);
     for (uint32_t i = 0; i < 8; ++i) entries[i].binding = i;
     entries[0].buffer = uniforms_; entries[0].size = sizeof data;
     entries[1].textureView = beautyView; entries[2].textureView = depthView;
     entries[3].textureView = velocityView_; entries[4].textureView = historyView_;
     entries[5].textureView = historyDepthView_; entries[6].sampler = sampler_;
     entries[7].buffer = stats_; entries[7].size = 8;
-    WGPUBindGroupDescriptor groupDesc{}; groupDesc.layout = layout; groupDesc.entryCount = 8; groupDesc.entries = entries;
-    auto group = createBindGroup(device_, &groupDesc);
+    auto group = resolveGroups_.get(device_, layout_, entries);
     WGPURenderPassColorAttachment color{}; color.view = outputView ? outputView : resolveView_;
     color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -479,7 +479,6 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     auto pass = beginTimedRenderPass(encoder, &desc, 2, {"traaResolve", outputWidth_, outputHeight_});
     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
-    wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);
     if (debugDump_) stageDebugTexture(encoder, resolved, "resolved");
     copy(resolved, historyColor_, false); copy(depth, historyDepth_, true);
     history_.endFrame();

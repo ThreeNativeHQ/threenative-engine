@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/renderer/graph/history.h"
+#include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/shader/output.h"
 #include <webgpu/webgpu.h>
@@ -128,6 +129,8 @@ private:
     WGPUSampler sampler_ = nullptr;
     WGPURenderPipeline pipeline_ = nullptr, fillPipeline_ = nullptr;
     WGPUBuffer fillUniforms_ = nullptr;
+    WGPUBindGroupLayout layout_ = nullptr, fillLayout_ = nullptr;
+    RecentBindGroups fillGroups_, resolveGroups_;
     void releaseTargets();
 };
 

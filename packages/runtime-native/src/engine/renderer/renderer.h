@@ -673,6 +673,17 @@ public:
         return out;
     }
     GpuResources& gpu() { return gpu_; }
+    /** The device's limits, read once: each read is a JS call that fills ~30 fields on the web (one per draw before). */
+    const WGPULimits& deviceLimits() {
+        if (!deviceLimitsRead_) {
+            wgpuDeviceGetLimits(device_, &deviceLimits_);
+            deviceLimitsRead_ = true;
+            ++deviceLimitReads_;
+        }
+        return deviceLimits_;
+    }
+    /** Device limit reads so far; a test bounds it. */
+    uint32_t deviceLimitReads() const { return deviceLimitReads_; }
     const GeometryCache& geometry() const { return geometry_->cache; }
     const PipelineCache& pipelines() const { return *pipelines_; }
     /** Material programs built or refused so far; a steady frame adds none. */
@@ -774,7 +785,7 @@ private:
                             const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr,
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
                             WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
-                            const GraphTextures* graphTextures = nullptr);
+                            const GraphTextures* graphTextures = nullptr, RecentBindGroups* cache = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         WGPUTexture texture = nullptr;
@@ -858,6 +869,9 @@ private:
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
     GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
     void releaseOutputGroup();
+    // The output pass's groups for its last two binding sets: a post graph texture that ping-pongs between two
+    // render targets (an exposure history) finds its group again. outputGroup_ is borrowed from here.
+    RecentBindGroups outputGroups_;
     void outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat);
 
     WGPUInstance instance_;
@@ -1032,6 +1046,9 @@ private:
     std::vector<uint32_t> postTextureVersions_;
     std::vector<WGPUTextureView> postTextureViews_;  // a resized render target's texture is a new view
     std::unique_ptr<TraaPass> traa_;
+    WGPULimits deviceLimits_ = {};
+    bool deviceLimitsRead_ = false;
+    uint32_t deviceLimitReads_ = 0;
     std::shared_ptr<const shader::graph::PostEffect> liveTraa_;
     TemporalStatus temporalStatus_;
     /** What the newest counted frame's readback brought back (`TemporalStatus::rejected`): shared with the callback, which can outlive the renderer. */

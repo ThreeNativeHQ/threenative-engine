@@ -124,6 +124,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_emissive_target=emissive_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
+        native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
+        native_engine_renderer_denoise_face_normal=denoise_face_normal
         native_engine_renderer_emissive_validation=emissive_validation
         native_engine_renderer_output_ramp=output_ramp
         native_engine_renderer_lit_reference=lit_reference
@@ -370,7 +372,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_pipeline_cache=pipelines
         native_engine_renderer_sibling_pipelines=sibling_pipelines
         native_engine_renderer_pipeline_compile_async=compile_before_render
-        native_engine_renderer_init_texture=init_texture)
+        native_engine_renderer_init_texture=init_texture
+        native_engine_renderer_recent_bind_groups=recent_bind_groups)
     target_link_libraries(tn-native-engine-renderer-caches-test PRIVATE tn_engine_renderer tn_host_services)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
         target_compile_definitions(tn-native-engine-renderer-caches-test PRIVATE TN_TEST_PIPELINE_WORKERS)
