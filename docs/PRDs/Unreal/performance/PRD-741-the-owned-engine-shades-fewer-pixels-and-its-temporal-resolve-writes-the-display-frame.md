@@ -105,6 +105,8 @@ Frame after the GTAO work: ~21 ms. Not scaled by the input size: local exposure 
 
 - Per-pass attribution follow-up: opt-in `TN_GPU_PASSES=1` reuses the existing shared timestamp stream, with pass names/extents and complete validated sample totals; browser activation reads `globalThis.TN_GPU_PASSES === true` at device initialization. Default timing/query policy stays unchanged. The new metadata test first failed compilation, then all three registered timer tests passed. Native player and Wasm builds pass. A private-Xvfb native temporal fixture emitted 374 valid complete samples; every pass sum matched its total, scene/velocity 922x518 and resolve/output 1280x720. The bounded diagnostic process ended with timeout 124 after collecting the stream; this is a trace observation, not a performance or completion gate. Iris profiling on the rebuilt cohort remains pending; prior hashes/results above qualify the previous integrated build only.
 
+- Trace cohort qualification: Wasm SHA `d519c305c3a36bffa54c60486f7e51a0ad7443ffa5c47380432025468de24ac3`, player SHA `50da0b5c6d96682b2eb9cb198e79c2dde50aac21f71cf8c6868f89b50093a638`. All three clean kits install, build and typecheck; packed/installed/compiled facades remain ABI 3. Host ABI tests pass 3/3, documentation checks pass (3549 links), and regenerated native coverage exits 0 on the trace source. No strict performance or independent visual gate is implied.
+
 ## Decisions
 
 - 2026-10-24 (filing agent): the brief asked for 5 phases. `docs/PRDs/AGENTS.md` R5 allows at most 3, so measurement + red test, engine + routing + tier defaults, and gates are the 3 phases. Every requested item keeps its own box.
