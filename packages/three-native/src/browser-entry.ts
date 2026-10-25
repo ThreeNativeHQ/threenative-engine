@@ -199,7 +199,8 @@ export async function bindWebEngine(
       module,
       classes.Color as never,
       (frame) => {
-        const frameId = frame?.frameId;
+        // A compute dispatch passes no frame: it belongs to the frame already collected.
+        const frameId = frame?.frameId ?? collectedFrame;
         if (updating || (frameId !== undefined && frameId === collectedFrame)) {
           tsl?.sync(frame);
           return;

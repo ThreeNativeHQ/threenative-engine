@@ -180,6 +180,8 @@ describe("web engine nested render safe points", () => {
       expect(sync).toHaveBeenCalledTimes(13);
       // A second draw in the same renderer frame (a post pass) syncs uniforms but does not collect again.
       renderHook({ renderer: {}, frameId: 2 });
+      // A compute dispatch passes no frame; it belongs to the frame already collected.
+      renderHook();
       expect(collect).toHaveBeenCalledTimes(3);
       expect(updateAudio).toHaveBeenCalledTimes(2);
     } finally {
