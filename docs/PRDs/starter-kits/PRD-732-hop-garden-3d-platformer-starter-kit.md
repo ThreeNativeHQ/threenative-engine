@@ -608,3 +608,9 @@ Unreal default look, and no frame is blank or white.
   TN_FRAME_HITCH gapMs BEFORE 11750, 9283, 8733, 9483, 8916 over 5 launches (4 of them crashed or
   failed), AFTER 3400 and 2800 (exit 0); `combat` and `collect` exit 0 at 3083 and 2600. The
   engine cause (value math crossing the facade per call) is its own PRD.
+  Post chain "regression" after 39295d1f3 (D13, closed as a stale pack): packs that paired an
+  11:35 facade with a newer Wasm drew every world frame after the first without post. With a
+  matched pair, post reaches the screen (vignette corners 160/198/124/66 off, 129/172/94/50 on).
+  Since 2ee81c747 a mismatched facade and Wasm stop at start with `TN_WASM_ABI_MISMATCH` (both
+  directions, browser and specs). The engine row `post_survives_overlay` passes, but it was never
+  red: it guards a present path that was never broken.
