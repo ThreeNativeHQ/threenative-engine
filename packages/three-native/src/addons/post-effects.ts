@@ -43,6 +43,16 @@ function uniforms(node: IEffectNode, names: readonly string[]): IEffectNode {
 }
 
 /** `node.gpuStage = "SSGI"` makes the effect's pass report its GPU time under that stage (gpu-stages.ts). */
+function scaled(node: IEffectNode): IEffectNode {
+  return Object.defineProperty(node, "resolutionScale", {
+    configurable: true,
+    get: () => node.__effect("resolutionScale"),
+    set: (value: number) => {
+      node.__effect("resolutionScale", value);
+    },
+  });
+}
+
 function stageLabel(node: IEffectNode): IEffectNode {
   return Object.defineProperty(node, "gpuStage", {
     configurable: true,
@@ -237,32 +247,28 @@ export function definePostEffects(tsl: IEffectTsl) {
         "scale",
         "samples",
       ]);
-      Object.defineProperty(node, "resolutionScale", {
-        configurable: true,
-        get() {
-          return node.__effect("resolutionScale");
-        },
-        set(value: number) {
-          node.__effect("resolutionScale", value);
-        },
-      });
+      scaled(node);
       node.getTextureNode = () => node;
       return node;
     },
+    // The filter pass's target size, as on ao(): Unreal filters GTAO at the AO resolution
+    // (UE 5.8.3: Engine/Shaders/Private/PostProcessAmbientOcclusion.usf:1600-1602).
     denoise: (
       node: unknown,
       depthNode: unknown,
       normalNode: unknown,
       camera: unknown,
     ): IEffectNode =>
-      stageLabel(
-        uniforms(tsl.denoise(node, depthNode, normalNode ?? null, camera), [
-          "lumaPhi",
-          "depthPhi",
-          "normalPhi",
-          "radius",
-          "index",
-        ]),
+      scaled(
+        stageLabel(
+          uniforms(tsl.denoise(node, depthNode, normalNode ?? null, camera), [
+            "lumaPhi",
+            "depthPhi",
+            "normalPhi",
+            "radius",
+            "index",
+          ]),
+        ),
       ),
     smaa: (node: unknown): IEffectNode => tsl.smaa(node),
     bloom: (node: unknown, strength?: number, radius?: number, threshold?: number): IEffectNode =>

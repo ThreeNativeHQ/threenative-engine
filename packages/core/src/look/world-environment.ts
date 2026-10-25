@@ -1219,6 +1219,12 @@ export class WorldEnvironment {
           if (filter && options.gtaoDenoiseRadius !== undefined)
             (filter as typeof filter & { radius: { value: number } }).radius.value =
               options.gtaoDenoiseRadius;
+          // Filtered at the AO resolution, as Unreal's GTAO spatial filter reads the AO texture at its own size (UE
+          // 5.8.3: Engine/Shaders/Private/PostProcessAmbientOcclusion.usf:1600-1602). The owned engine runs the filter
+          // as its own pass and sizes it by this; upstream three filters inline and ignores it.
+          if (filter)
+            (filter as typeof filter & { resolutionScale: number }).resolutionScale =
+              options.gtaoResolutionScale;
           if (filter && resolutionSubrect) {
             const denoiser = filter as typeof filter & {
               textureNode: TextureNode;
