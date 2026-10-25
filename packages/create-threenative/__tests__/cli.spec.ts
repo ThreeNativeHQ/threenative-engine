@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   cliHelp,
   discoverKitManifests,
@@ -41,7 +41,7 @@ describe("create-threenative CLI", () => {
   });
 
   it("resolves a word a kit lists in kit.json aliases, and rejects a word two kits claim", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "tn-kits-"));
+    const root = makeTempDirSync("tn-kits-");
     const kit = (name: string, aliases: string[]) => {
       mkdirSync(path.join(root, name));
       const manifest = { aliases, blurb: "b", genre: name, kit: true, name, title: "T" };
