@@ -4,10 +4,12 @@ prd_contract: v1
 
 # PRD-729 — Assets ship as few bytes as they can and preload as fast as they can
 
-**Status:** PARTIAL — Phases 1 and 2 are done; Phase 3 has cut the corpus from 5.37 to 3.68 MiB and
-both preload goals are met. The bytes goal is open.
-**Priority:** P1 — the corpus ships 3.68 MiB against a 3 MiB goal and 30.9% of source against 25%;
-preload is 372 ms local and 1162 ms at 40 Mbps on the RTX 2080.
+**Status:** COMPLETE WITH AN OWNER-APPROVED SIZE EXCEPTION — Phases 1-3 are done; the corpus ships
+3.68 MiB / 30.9% instead of 3 MiB / 25%, and both preload goals are met. The PR is blocked on a GPU
+texture-memory regression, not on the size exception.
+**Priority:** P1 — 3.68 MiB against 3 MiB and 30.9% against 25% are accepted by the owner
+(2026-10-24); preload is 372 ms local and 1162 ms at 40 Mbps on the RTX 2080. GPU texture bytes rise
++3.67 MB because three `player-viewmodel` maps are JPEG instead of KTX2.
 **Complexity:** 5 (MEDIUM) — 3–5 files in Phase 1 (+1): a loop script, its spec, the ledger, the
 generated page and this PRD; Phase 2 adds a probe game and a playtest network option (+2); each
 Phase 3 lever changes `packages/assets` defaults that every game inherits (+2).
@@ -131,7 +133,7 @@ Candidates, ranked by baseline bytes:
 5. Preload order: critical assets first, the rest after `enter()`.
 
 - [x] Each kept lever lowers `shippedMiB` or a preload metric, holds every texture floor, passes the visual judge and keeps the template playtests green. proof: ledger iterations #6, #7, #9 and #10 are `keep`; judges NEUTRAL/IMPROVEMENT (iterations #6, #9, #10) or pixel-identical (#7); every texture floor holds; template gate green across two hosts — snow, rain and the other templates on the idle laptop, shooter and action-rpg on the quiet RTX 2080 (`TN_TEMPLATE_ONLY=shooter|action-rpg`); `pnpm test:tone` passes (`underexposed failed and restored passed`).
-- [ ] The corpus ships at most 3 MiB and at most 25% of its source. proof: `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
+- [ ] The corpus ships at most 3 MiB and at most 25% of its source. **NOT MET — owner-approved exception (2026-10-24): retain current texture quality and accept 3.68 MiB / 30.9%.** proof: `node scripts/asset-perf-loop.mjs show` — iteration #14: 3.68 MiB, 30.9%. The arithmetic behind the shortfall is under "Remaining gap".
 - [x] Both preload goals are met. proof: iteration #14, a quiet RTX 2080 run on `nvidia/turing`: local samples [422,372,382,362,362] ms, median **372 ms** ≤ 450; 40 Mbps samples [1168,1162,1243,1118,1134] ms, median **1162 ms** ≤ 1200. `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
 
 ## Decisions
@@ -145,6 +147,16 @@ Candidates, ranked by baseline bytes:
 - **2026-10-23: judge a lever against its own paired control.** `measure --pair` cooks the default
   beside the candidate and alternates their preload runs in one browser. Bytes do not need it.
 
+- **2026-10-24, João: retain current texture quality.** Keep the PRD-351 floors; do not add lossy
+  normal/ORM maps or any further quality cut to reach 3 MiB. Accept 3.68 MiB / 30.9% as an explicit
+  owner-approved size shortfall, recorded here as an exception, never as a 3 MiB pass.
+- **2026-10-24: GPU texture memory regressed.** The cook's own embedded-texture estimate is
+  baseline (origin/develop `31b4432ed`) 27,088,208 B against candidate 30,758,222 B for the two
+  model corpora, **+3,670,014 B**. All of it is `player-viewmodel.glb` 18,699,602 → 22,369,616 B:
+  three maps that were KTX2 are JPEG under lever 5. Frame/GPU time did not change measurably in the
+  candidate template gate, but the owner's no-regression gate names GPU memory, so the PR stays
+  local until the owner accepts the trade or lever 5 is reverted (corpus 4.23 MiB, VRAM back to
+  baseline).
 - **2026-10-23, João: the compression is automatic.** A kept lever becomes the `packages/assets`
   default, and the cook picks its setting for each asset from what it measures there (codec,
   quality, geometry filter, cap). A game sets nothing to get the win. A lever that wins only through
