@@ -228,6 +228,28 @@ describe("createWebEnginePlugin", () => {
       expect(plugin.resolveId(id)).toBe(WEB_ENGINE_ID);
     expect(plugin.resolveId("three/addons/controls/OrbitControls.js")).toBeNull();
     expect(() => plugin.resolveId("three/src/nodes/Nodes.js")).toThrow("TN_NATIVE_UPSTREAM_IMPORT");
+    // The browser back end's value classes borrow three's math, as the V8 player bundles it.
+    expect(
+      plugin.resolveId(
+        "three/src/math/Color.js",
+        "/repo/packages/three-native/src/browser-math.ts",
+      ),
+    ).toBeNull();
+    expect(
+      plugin.resolveId(
+        "three/src/math/Vector3.js",
+        "/game/node_modules/create-threenative/dist/web-engine-runtime.js",
+      ),
+    ).toBeNull();
+    expect(
+      plugin.resolveId(
+        "three/src/math/Color.js",
+        "/game/node_modules/create-threenative/dist/web-engine-runtime.js",
+      ),
+    ).toBeNull();
+    expect(() => plugin.resolveId("three/src/math/Color.js", "/game/src/main.ts")).toThrow(
+      "TN_NATIVE_UPSTREAM_IMPORT",
+    );
   });
 
   it("resolves three-mesh-bvh to the engine's own MeshBVH, never the upstream package", () => {

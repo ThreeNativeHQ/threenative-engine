@@ -12,7 +12,7 @@
  * collected wrapper releases its object.
  */
 
-import { defineMath } from "./browser-math.js";
+import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
@@ -56,6 +56,7 @@ export type EngineValue =
   | number
   | boolean
   | string
+  | TypedArray
   | readonly EngineValue[]
   | IEngineRef
   | { readonly [key: string]: EngineValue };
@@ -70,6 +71,8 @@ export interface IBrowserRuntime {
   release(self: IEngineRef): void;
   /** For each ref, how many references other engine objects hold to its object; one call a batch. */
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
+  /** A numeric typed array argument crosses as is, no boxed copy; Wasm only. */
+  readonly typedArrays?: boolean;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
   readDoubles?(address: number, count: number): number | number[];
   /**
@@ -384,8 +387,9 @@ export function defineBrowserClasses(
   // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
   // Writes still go through the engine's setters, which it reacts to.
   const addresses = new WeakMap<object, number>();
-  // Each object's kept `rotation` Euler -> the object, whose quaternion a rotation write syncs.
+  // Each object's kept `rotation` Euler (or `quaternion`) -> the object, whose other form a write syncs.
   const rotations = new WeakMap<object, object>();
+  const quaternions = new WeakMap<object, object>();
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
   // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
   // geometry and material. The answer is kept until JS sets it or calls a method on that object.
@@ -426,6 +430,7 @@ export function defineBrowserClasses(
         const member = fromEngine(runtime.get(refOf(this), property));
         Object.defineProperty(this, property, { value: member, writable: false });
         if (property === "rotation") rotations.set(member as object, this);
+        if (property === "quaternion") quaternions.set(member as object, this);
         return member;
       };
     return undefined;
@@ -443,21 +448,173 @@ export function defineBrowserClasses(
   // An engine call takes a JS value by value: a method borrows a pooled engine object and copies
   // the lanes back after the call (an output argument); a constructor or setter, which may keep the
   // object, gets the value itself turned into an engine object in place, so identity survives.
+  //
+  // A class may store its lanes under three's private names (`Quaternion._x`, `Matrix4.elements`) or
+  // hold them in member vectors (`Box3.min`): its plan reads and writes those, and says which own
+  // properties a promoted value must drop so the engine accessors take over.
+  /** A value class's JS storage: its public lanes, three's private names, and member vectors. */
+  interface IValueLanes {
+    [key: string]: unknown;
+    _x?: number;
+    _y?: number;
+    _z?: number;
+    _w?: number;
+    _order?: string;
+    elements?: number[];
+    radius?: number;
+    min?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
+    max?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
+    center?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
+  }
+  interface IValuePlan {
+    /** The engine's lane names, in the order its constructor takes them. */
+    lanes: readonly string[];
+    /** Own JS properties the class keeps its storage in; a promoted value drops them. */
+    drop: readonly string[];
+    /** The lanes of a JS value, in `lanes` order (Euler appends its order). */
+    read(value: IValueLanes): number[];
+    /** Writes engine lanes back into a JS value, as `lend` copies them back. */
+    write(value: IValueLanes, values: readonly number[]): void;
+    /** Engine constructor arguments; the lanes themselves by default. */
+    args?(values: number[], make: (name: string, values: number[]) => IEngineRef): EngineValue[];
+    /** A method argument becomes an engine object in place: whole-object lanes and output targets. */
+    promote?: boolean;
+  }
   interface IValueClass {
     name: string;
-    lanes: string[];
     engine: object;
     pool: object[];
     top: number;
+    plan: IValuePlan;
   }
-  const math = defineMath(
-    () =>
-      new (classes.Quaternion as new () => object)() as ReturnType<
-        Parameters<typeof defineMath>[0]
-      >,
-  ) as Record<string, new (...args: unknown[]) => object>;
+  const eulerOrders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
+  const defaultPlan = (lanes: readonly string[]): IValuePlan => ({
+    lanes,
+    drop: lanes,
+    read: (value) => lanes.map((lane) => value[lane] as number),
+    write: (value, values) => {
+      lanes.forEach((lane, index) => {
+        value[lane] = values[index] as number;
+      });
+    },
+  });
+  /** A value's member vector (`Box3.min`, `Sphere.center`): present on every real instance. */
+  const memberVector = (vector: IValueLanes["min"]): NonNullable<IValueLanes["min"]> => {
+    if (vector === undefined)
+      throw new TypeError("TN_BROWSER_VALUE_MEMBER: the value has no vector");
+    return vector;
+  };
+  // three's private storage names, and the classes whose lanes are not plain fields.
+  const valuePlans: Record<string, IValuePlan> = {
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Color: defaultPlan(["r", "g", "b"]),
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Vector4: defaultPlan(["x", "y", "z", "w"]),
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Quaternion: {
+      lanes: ["x", "y", "z", "w"],
+      drop: ["_x", "_y", "_z", "_w"],
+      read: (value) => [value._x, value._y, value._z, value._w] as number[],
+      write: (value, values) => {
+        value._x = values[0];
+        value._y = values[1];
+        value._z = values[2];
+        value._w = values[3];
+      },
+    },
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Euler: {
+      lanes: ["x", "y", "z"],
+      drop: ["_x", "_y", "_z", "_order"],
+      read: (value) =>
+        [
+          value._x,
+          value._y,
+          value._z,
+          eulerOrders.indexOf(value._order as (typeof eulerOrders)[number]),
+        ] as number[],
+      write: (value, values) => {
+        value._x = values[0];
+        value._y = values[1];
+        value._z = values[2];
+        value._order = eulerOrders[values[3] as number] ?? "XYZ";
+      },
+      args: (values) => [
+        values[0],
+        values[1],
+        values[2],
+        eulerOrders[values[3] as number] ?? "XYZ",
+      ],
+    },
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Matrix3: {
+      promote: true,
+      lanes: ["elements"],
+      drop: ["elements"],
+      read: (value) => Array.from(value.elements as number[]),
+      write: (value, values) => {
+        value.elements = Array.from(values);
+      },
+      // `elements` is column-major; the engine constructor takes three's row-major set order.
+      args: (values) => [0, 3, 6, 1, 4, 7, 2, 5, 8].map((index) => values[index] as number),
+    },
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Matrix4: {
+      promote: true,
+      lanes: ["elements"],
+      drop: ["elements"],
+      read: (value) => Array.from(value.elements as number[]),
+      write: (value, values) => {
+        value.elements = Array.from(values);
+      },
+      // `elements` is column-major; the engine constructor takes three's row-major set order.
+      args: (values) =>
+        [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15].map(
+          (index) => values[index] as number,
+        ),
+    },
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Box3: {
+      promote: true,
+      lanes: [],
+      drop: ["min", "max"],
+      read: (value) => {
+        const min = memberVector(value.min);
+        const max = memberVector(value.max);
+        return [min.x, min.y, min.z, max.x, max.y, max.z];
+      },
+      write: (value, values) => {
+        memberVector(value.min).set(values[0] as number, values[1] as number, values[2] as number);
+        memberVector(value.max).set(values[3] as number, values[4] as number, values[5] as number);
+      },
+      args: (values, make) => [
+        make("Vector3", values.slice(0, 3).map(Number)),
+        make("Vector3", values.slice(3, 6).map(Number)),
+      ],
+    },
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Sphere: {
+      promote: true,
+      lanes: ["radius"],
+      drop: ["center", "radius"],
+      read: (value) => {
+        const center = memberVector(value.center);
+        return [center.x, center.y, center.z, value.radius as number];
+      },
+      write: (value, values) => {
+        memberVector(value.center).set(
+          values[0] as number,
+          values[1] as number,
+          values[2] as number,
+        );
+        value.radius = values[3] as number;
+      },
+      args: (values, make) => [make("Vector3", values.slice(0, 3).map(Number)), values[3]],
+    },
+  };
+  const math = defineMath() as Record<string, new (...args: unknown[]) => object>;
   const valueClasses = new Map<object, IValueClass>(); // JS prototype -> its engine side
-  const loans: [Record<string, number>, Record<string, number>, IValueClass][] = [];
+  const loans: [IValueLanes, IValueLanes, IValueClass][] = [];
   let borrowing = false;
   const toEngineArgs = (args: readonly unknown[]): EngineValue[] => {
     borrowing = true;
@@ -467,15 +624,35 @@ export function defineBrowserClasses(
       borrowing = false;
     }
   };
-  const lend = (value: Record<string, number>, info: IValueClass): IEngineRef => {
+  // A plan's member-vector arguments (Box3's two, Sphere's one) are native temporaries: the engine
+  // copies them, so they are released as soon as the value that owns the lanes is constructed.
+  const engineArgs = (
+    info: IValueClass,
+    values: number[],
+  ): { args: EngineValue[]; temporaries: IEngineRef[] } => {
+    if (info.plan.args === undefined) return { args: values, temporaries: [] };
+    const temporaries: IEngineRef[] = [];
+    const args = info.plan.args(values, (name, lanes) => {
+      const ref = runtime.construct(name, lanes);
+      temporaries.push(ref);
+      return ref;
+    });
+    return { args, temporaries };
+  };
+  const lend = (value: IValueLanes, info: IValueClass): IEngineRef => {
     let scratch = info.pool[info.top];
     if (scratch === undefined) {
-      scratch = wrap(runtime.construct(info.name, []));
+      const built = engineArgs(info, info.plan.read(value));
+      try {
+        scratch = wrap(runtime.construct(info.name, built.args));
+      } finally {
+        for (const temporary of built.temporaries) runtime.release(temporary);
+      }
       info.pool.push(scratch);
     }
     info.top++;
-    const lanes = scratch as Record<string, number>;
-    for (const lane of info.lanes) lanes[lane] = value[lane] as number;
+    const lanes = scratch as IValueLanes;
+    info.plan.write(lanes, info.plan.read(value));
     loans.push([value, lanes, info]);
     return refOf(scratch);
   };
@@ -484,18 +661,183 @@ export function defineBrowserClasses(
     let result = returned;
     for (let i = loans.length - 1; i >= mark; i--) {
       const [value, scratch, info] = loans[i] as (typeof loans)[number];
-      for (const lane of info.lanes) value[lane] = scratch[lane] as number;
+      info.plan.write(value, info.plan.read(scratch));
       info.top--;
       if (result === scratch) result = value;
     }
     loans.length = mark;
     return result;
   };
-  const promote = (value: Record<string, number>, info: IValueClass): void => {
-    const lanes = info.lanes.map((lane) => value[lane] as number);
-    for (const lane of info.lanes) delete value[lane];
+  const promote = (value: IValueLanes, info: IValueClass): void => {
+    const values = info.plan.read(value);
+    for (const key of info.plan.drop) delete value[key];
     Object.setPrototypeOf(value, info.engine);
-    adopt(value, runtime.construct(info.name, lanes));
+    const built = engineArgs(info, values);
+    try {
+      adopt(value, runtime.construct(info.name, built.args));
+    } finally {
+      for (const temporary of built.temporaries) runtime.release(temporary);
+    }
+  };
+  // An engine-owned value reads and writes its lanes in the engine's memory through accessors named
+  // for the storage its class actually uses. Quaternion and Euler store `_x`, Matrix stores
+  // `elements`, and an Euler's order is a string over the engine's byte enum; Box3 and Sphere reach
+  // their vectors through the registry's fixed members, so they need nothing here.
+  const defineValueView = (
+    name: string,
+    accessors: Record<string, unknown>,
+    binding: IRegistryClass,
+    skip: Set<string>,
+  ): void => {
+    const read = runtime.readDoubles;
+    const write = runtime.writeDouble;
+    const peek = runtime.readByte;
+    if (read === undefined || write === undefined) return;
+    const heap = runtime.heapF64;
+    const lane = heap
+      ? (address: number): number => heap()[address / 8] as number
+      : (address: number): number => read(address, 1) as number;
+    if (name === "Quaternion" && binding.fields !== undefined) {
+      const offsets = ["x", "y", "z", "w"].map((key) => binding.fields?.[key]?.[0] ?? 0);
+      ["_x", "_y", "_z", "_w"].forEach((key, index) => {
+        const offset = offsets[index] as number;
+        Object.defineProperty(accessors, key, {
+          configurable: true,
+          get(this: object): number {
+            return lane(addressOf(this) + offset);
+          },
+          set(this: object, value: number): void {
+            write(addressOf(this) + offset, Number(value));
+          },
+        });
+      });
+      skip.add("x").add("y").add("z").add("w");
+      // three syncs an Object3D's rotation from its quaternion; the engine does it in C++.
+      Object.defineProperty(accessors, "_onChangeCallback", {
+        configurable: true,
+        writable: true,
+        value(this: object): void {
+          const owner = quaternions.get(this) as
+            | { rotation?: object & { _order?: string } }
+            | undefined;
+          if (owner?.rotation === undefined) return;
+          // The rotation's own order; the engine refuses a missing one on this call.
+          runtime.invoke(refOf(owner.rotation), "setFromQuaternion", [
+            refOf(this),
+            owner.rotation._order ?? "XYZ",
+          ]);
+        },
+      });
+      return;
+    }
+    if (name === "Euler" && binding.fields !== undefined && peek !== undefined) {
+      const offsets = ["x", "y", "z"].map((key) => binding.fields?.[key]?.[0] ?? 0) as number[];
+      const orderAt = binding.fields.__order?.[0] ?? 0;
+      const quaternionFields = registry.classes.Quaternion?.fields;
+      const targets = ["x", "y", "z", "w"].map((key) => quaternionFields?.[key]?.[0] ?? 0);
+      // three's setFromEuler: each order only signs the second terms, in the engine enum's order.
+      const signs = [
+        [1, -1, 1, -1],
+        [1, -1, -1, 1],
+        [-1, 1, 1, -1],
+        [-1, 1, -1, 1],
+        [1, 1, -1, -1],
+        [-1, -1, 1, 1],
+      ];
+      const sync = (euler: object): void => {
+        const owner = rotations.get(euler) as { quaternion?: object } | undefined;
+        if (owner?.quaternion === undefined) return;
+        const at = addressOf(euler);
+        const q = addressOf(owner.quaternion);
+        const x = lane(at + (offsets[0] as number)) / 2;
+        const y = lane(at + (offsets[1] as number)) / 2;
+        const z = lane(at + (offsets[2] as number)) / 2;
+        const sign = signs[peek(at + orderAt)] ?? (signs[0] as number[]);
+        const c1 = Math.cos(x);
+        const c2 = Math.cos(y);
+        const c3 = Math.cos(z);
+        const s1 = Math.sin(x);
+        const s2 = Math.sin(y);
+        const s3 = Math.sin(z);
+        write(q + (targets[0] as number), s1 * c2 * c3 + (sign[0] as number) * c1 * s2 * s3);
+        write(q + (targets[1] as number), c1 * s2 * c3 + (sign[1] as number) * s1 * c2 * s3);
+        write(q + (targets[2] as number), c1 * c2 * s3 + (sign[2] as number) * s1 * s2 * c3);
+        write(q + (targets[3] as number), c1 * c2 * c3 + (sign[3] as number) * s1 * s2 * s3);
+      };
+      ["_x", "_y", "_z"].forEach((key, index) => {
+        const offset = offsets[index] as number;
+        Object.defineProperty(accessors, key, {
+          configurable: true,
+          get(this: object): number {
+            return lane(addressOf(this) + offset);
+          },
+          set(this: object, value: number): void {
+            write(addressOf(this) + offset, Number(value));
+          },
+        });
+      });
+      Object.defineProperty(accessors, "_order", {
+        configurable: true,
+        get(this: object): string {
+          return eulerOrders[peek(addressOf(this) + orderAt)] ?? "XYZ";
+        },
+        set(this: object, value: unknown): void {
+          const index = eulerOrders.indexOf(value as (typeof eulerOrders)[number]);
+          if (index < 0)
+            throw new TypeError(
+              `Euler order is not one of ${eulerOrders.join(", ")}: ${String(value)}`,
+            );
+          // The order is the engine's byte enum: its setter reorders and syncs, so only a change
+          // crosses (four numbers are not worth a call on every `rotation.set`).
+          if (index !== peek(addressOf(this) + orderAt))
+            runtime.set(refOf(this), "order", value as string);
+        },
+      });
+      Object.defineProperty(accessors, "_onChangeCallback", {
+        configurable: true,
+        writable: true,
+        value(this: object): void {
+          sync(this);
+        },
+      });
+      skip.add("x").add("y").add("z").add("order");
+      return;
+    }
+    if ((name === "Matrix3" || name === "Matrix4") && binding.fields?.elements !== undefined) {
+      const [offset = 0, count = 0] = binding.fields.elements;
+      // three keeps one `elements` array; this keeps one proxy per matrix over a mirrored array and
+      // writes every element it sets straight to engine memory, so the array never detaches.
+      const mirrors = new WeakMap<object, { values: number[]; view: number[] }>();
+      Object.defineProperty(accessors, "elements", {
+        configurable: true,
+        get(this: object): number[] {
+          const address = addressOf(this) + offset;
+          let mirror = mirrors.get(this);
+          if (mirror === undefined) {
+            const values = new Array<number>(count);
+            const view = new Proxy(values, {
+              set: (target, key, value): boolean => {
+                const index = typeof key === "string" ? Number(key) : Number.NaN;
+                if (Number.isInteger(index) && index >= 0 && index < count)
+                  write(address + index * 8, Number(value));
+                target[key as never] = value as never;
+                return true;
+              },
+            });
+            mirror = { values, view };
+            mirrors.set(this, mirror);
+          }
+          const memory = read(address, count) as number[];
+          for (let i = 0; i < count; i++) mirror.values[i] = memory[i] as number;
+          return mirror.view;
+        },
+        set(this: object, value: ArrayLike<number>): void {
+          const address = addressOf(this) + offset;
+          for (let i = 0; i < count; i++) write(address + i * 8, Number(value[i]));
+        },
+      });
+      skip.add("elements");
+    }
   };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
@@ -624,6 +966,8 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      if (runtime.typedArrays === true && SCALARS.some((scalar) => value instanceof scalar))
+        return value as TypedArray;
       // quality-allow: a typed-array view read as its numeric index signature, which ArrayBufferView does not declare.
       const list = Array.from(value as unknown as ArrayLike<number>);
       Object.defineProperty(list, TYPED, { value: value.constructor.name });
@@ -632,8 +976,8 @@ export function defineBrowserClasses(
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     const info = valueClasses.get(Object.getPrototypeOf(value) as object);
     if (info !== undefined) {
-      if (borrowing) return lend(value as Record<string, number>, info);
-      promote(value as Record<string, number>, info);
+      if (borrowing && info.plan.promote !== true) return lend(value as IValueLanes, info);
+      promote(value as IValueLanes, info);
     }
     if (typeof value === "object" && REF in value) {
       // A wrapper passed into the engine is held until the next safe point decides (collect()).
@@ -777,14 +1121,22 @@ export function defineBrowserClasses(
       string,
       unknown
     >;
-    if (valueClass !== undefined && binding.fields !== undefined)
-      valueClasses.set(prototype, {
+    // Engine properties a class's own view already names: the generic accessors stay off them.
+    const skip = new Set<string>();
+    if (valueClass !== undefined) {
+      const info: IValueClass = {
         name,
-        lanes: Object.keys(binding.fields ?? {}),
         engine: accessors,
         pool: [],
         top: 0,
-      });
+        plan: valuePlans[name] ?? defaultPlan(Object.keys(binding.fields ?? {})),
+      };
+      valueClasses.set(prototype, info);
+      // Box3 and Sphere build their default members from three's own Vector3 module, not the
+      // hand-written class; both are the same value and cross the same way.
+      if (name === "Vector3") valueClasses.set(UpstreamVector3.prototype, info);
+      defineValueView(name, accessors, binding, skip);
+    }
     for (const method of binding.methods) {
       if (valueClass !== undefined && Object.hasOwn(prototype, method)) continue;
       // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
@@ -885,7 +1237,12 @@ export function defineBrowserClasses(
     // cut 2, the web side of the desktop's TransformPage views). Anything else takes the engine method.
     const elements = binding.fields?.elements;
     const heapF64 = runtime.heapF64;
-    if (elements !== undefined && heapF64 !== undefined && binding.methods.includes("copy")) {
+    if (
+      valueClass === undefined &&
+      elements !== undefined &&
+      heapF64 !== undefined &&
+      binding.methods.includes("copy")
+    ) {
       const [offset = 0, count = 0] = elements;
       const engineCopy = prototype.copy as (this: object, other: unknown) => object;
       const engineEquals = prototype.equals as (this: object, other: unknown) => boolean;
@@ -986,7 +1343,13 @@ export function defineBrowserClasses(
         (path) => path.startsWith(`${head}.`) && /^\d+$/u.test(path.slice(head.length + 1)),
       );
     for (const property of binding.getters) {
-      if (property.includes(".") || setters.has(property) || !indexed(property)) continue;
+      if (
+        property.includes(".") ||
+        setters.has(property) ||
+        skip.has(property) ||
+        !indexed(property)
+      )
+        continue;
       Object.defineProperty(prototype, property, {
         configurable: true,
         get(this: object) {
@@ -1014,7 +1377,8 @@ export function defineBrowserClasses(
       if (
         property.includes(".") ||
         binding.methods.includes(property) ||
-        Object.hasOwn(accessors, property)
+        Object.hasOwn(accessors, property) ||
+        skip.has(property)
       )
         continue;
       // A value class's lane is written in place: its engine setter is a plain store.
@@ -1098,95 +1462,6 @@ export function defineBrowserClasses(
       Object.defineProperty(accessors, property, accessor);
       if (materialClass) own.push({ key: property, descriptor: { ...accessor, enumerable: true } });
     }
-    // Games turn objects every frame: an object's `rotation` is written in place (the transform page's
-    // rotation column), and its quaternion follows here, as three's onRotationChange does. Any other
-    // Euler, or a set with a new order, still crosses, callback and all. Ported from feat/native-engine
-    // 07297c986 and 5ef18a54f.
-    const order = binding.fields?.__order;
-    const quaternion = registry.classes.Quaternion?.fields;
-    const readLane = runtime.readDoubles;
-    const readByte = runtime.readByte;
-    if (name === "Euler" && order && quaternion && readLane && readByte && write) {
-      const angles = ["x", "y", "z"].map((lane) => binding.fields?.[lane]?.[0] ?? 0);
-      const targets = ["x", "y", "z", "w"].map((lane) => quaternion[lane]?.[0] ?? 0);
-      // three's setFromEuler: each order only signs the second terms, in the engine enum's order.
-      const names = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"];
-      const signs = [
-        [1, -1, 1, -1],
-        [1, -1, -1, 1],
-        [-1, 1, 1, -1],
-        [-1, 1, -1, 1],
-        [1, 1, -1, -1],
-        [-1, -1, 1, 1],
-      ];
-      // Two writes per object per frame land here (R5 turns x then y on 4,096 cubes), so the hot path
-      // allocates nothing: offsets are numbers, the owner's quaternion address is kept per Euler (an
-      // engine object never moves), and lanes are read off HEAPF64 when the runtime has it.
-      const [ox = 0, oy = 0, oz = 0] = angles;
-      const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
-      const orderAt = order[0] ?? 0;
-      const heap = runtime.heapF64;
-      const lane = heap
-        ? (address: number) => heap()[address / 8] as number
-        : (address: number) => readLane(address, 1) as number;
-      // An object's rotation -> [its address, its owner's quaternion address]: one lookup per write.
-      const places = new WeakMap<object, [number, number]>();
-      const placeOf = (euler: object): [number, number] | undefined => {
-        let place = places.get(euler);
-        if (place === undefined) {
-          const owner = rotations.get(euler);
-          if (owner === undefined) return undefined;
-          place = [addressOf(euler), addressOf((owner as { quaternion: object }).quaternion)];
-          places.set(euler, place);
-        }
-        return place;
-      };
-      const sync = (at: number, q: number) => {
-        const x = lane(at + ox) / 2;
-        const y = lane(at + oy) / 2;
-        const z = lane(at + oz) / 2;
-        const sign = (signs[readByte(at + orderAt)] ?? signs[0]) as number[];
-        const c1 = Math.cos(x);
-        const c2 = Math.cos(y);
-        const c3 = Math.cos(z);
-        const s1 = Math.sin(x);
-        const s2 = Math.sin(y);
-        const s3 = Math.sin(z);
-        write(q + qx, s1 * c2 * c3 + (sign[0] as number) * c1 * s2 * s3);
-        write(q + qy, c1 * s2 * c3 + (sign[1] as number) * s1 * c2 * s3);
-        write(q + qz, c1 * c2 * s3 + (sign[2] as number) * s1 * s2 * c3);
-        write(q + qw, c1 * c2 * c3 + (sign[3] as number) * s1 * s2 * s3);
-      };
-      angles.forEach((offset, i) => {
-        const lane = "xyz"[i] as string;
-        const crossing = Object.getOwnPropertyDescriptor(prototype, lane);
-        Object.defineProperty(prototype, lane, {
-          ...crossing,
-          set(this: object, value: number) {
-            const place = placeOf(this);
-            if (place === undefined) return crossing?.set?.call(this, value);
-            write(place[0] + offset, value);
-            sync(place[0], place[1]);
-          },
-        });
-      });
-      const set = prototype.set as (...args: unknown[]) => unknown;
-      Object.defineProperty(prototype, "set", {
-        configurable: true,
-        writable: true,
-        value(this: object, ...args: unknown[]) {
-          const place = placeOf(this);
-          if (place === undefined) return set.apply(this, args);
-          const [at, q] = place;
-          // Games pass their one order on every set; only a new order goes to the engine.
-          if (args[3] !== undefined && args[3] !== names[readByte(at + (order[0] ?? 0))])
-            return set.apply(this, args);
-          angles.forEach((offset, i) => write(at + offset, args[i] as number));
-          sync(at, q);
-          return this;
-        },
-      });
-    }
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
     // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.
     const holders = new Map<string, string[]>();
@@ -1234,7 +1509,8 @@ export function defineBrowserClasses(
     // A write-only setter (three's `texture.needsUpdate`) is a property too: without an accessor
     // the write lands on a plain JS property and never reaches the engine.
     for (const property of binding.setters) {
-      if (property.includes(".") || Object.hasOwn(accessors, property)) continue;
+      if (property.includes(".") || Object.hasOwn(accessors, property) || skip.has(property))
+        continue;
       Object.defineProperty(accessors, property, {
         configurable: true,
         set(this: object, value: unknown) {
@@ -1447,8 +1723,13 @@ export function defineBrowserClasses(
       link !== undefined;
       link = link.extends ? entries.get(link.extends) : undefined
     )
+      // Writable: three's own value classes assign `this.isColor = true` in their constructors.
       for (const field of (link.fields ?? []).filter(isFlag))
-        Object.defineProperty(cls.prototype, field.name, { configurable: true, value: true });
+        Object.defineProperty(cls.prototype, field.name, {
+          configurable: true,
+          writable: true,
+          value: true,
+        });
   }
   return {
     classes,
@@ -1974,6 +2255,18 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
     }
+    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      // A forwarded typed array (see `toEngine`): one heap copy, its view bounds kept, no boxed list.
+      const typed = value as TypedArray;
+      const numbers = alloc(Math.max(8, typed.length * 8));
+      abi.HEAPF64.set(typed, numbers / 8);
+      const name = string(typed.constructor.name).pointer;
+      const w = view();
+      w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer + 32, name, true);
+      w.setUint32(pointer + 48, numbers, true);
+      return w.setBigUint64(pointer + 40, BigInt(typed.length), true);
+    }
     if (!Array.isArray(value)) {
       // A record: count key/value pairs, each key a string value, as the engine returns one.
       const entries = Object.entries(value as Record<string, EngineValue>);
@@ -2129,6 +2422,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
+    typedArrays: true,
     typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
       scoped(() => {

@@ -41,8 +41,10 @@ const abi = await createTnAbi();
 const runtime = createWasmRuntime(abi);
 const engine = defineBrowserClasses(registry, runtime);
 const {
+  AmbientLight,
   Box3,
   BoxGeometry,
+  Color,
   DataTexture,
   Mesh,
   MeshBasicNodeMaterial,
@@ -1771,5 +1773,53 @@ if (runtime.tsl !== undefined) {
       "screenUV is built once, and flipX takes it as its receiver",
     );
   }
+}
+// PRD-742: Color's srgb and srgb-linear spaces agree with three's JS; native has no ColorManagement global.
+{
+  const near = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-12;
+  for (const space of ["srgb", "srgb-linear"] as const) {
+    const nativeColor = runtime.construct("Color", []);
+    try {
+      for (const [method, input] of [
+        ["setHex", 0x123456],
+        ["setHex", 0x80c020],
+        ["setStyle", "#123456"],
+        ["setStyle", "rgb(18,52,86)"],
+      ] as const) {
+        runtime.invoke(nativeColor, method, [input, space]);
+        const colour = new Color();
+        if (method === "setHex") colour.setHex(input, space);
+        else colour.setStyle(input, space);
+        const red = runtime.get(nativeColor, "r") as number;
+        const green = runtime.get(nativeColor, "g") as number;
+        const blue = runtime.get(nativeColor, "b") as number;
+        check(
+          near(red, colour.r) && near(green, colour.g) && near(blue, colour.b),
+          `native Color.${method}(${String(input)}, ${space}) RGB (${red}, ${green}, ${blue}) is three's (${colour.r}, ${colour.g}, ${colour.b})`,
+        );
+        const hex = runtime.invoke(nativeColor, "getHex", [space]) as number;
+        const style =
+          space === "srgb"
+            ? `rgb(${(hex >> 16) & 255},${(hex >> 8) & 255},${hex & 255})`
+            : `color(${space} ${red.toFixed(3)} ${green.toFixed(3)} ${blue.toFixed(3)})`;
+        check(colour.getStyle(space) === style, `Color.getStyle(${space}) formats native channels`);
+        check(
+          hex === colour.getHex(space),
+          `native Color.getHex(${space}) after ${method}(${String(input)}) packs three's hex`,
+        );
+      }
+    } finally {
+      runtime.release(nativeColor);
+    }
+  }
+  const Light = AmbientLight as unknown as new (
+    colour: InstanceType<typeof Color>,
+  ) => InstanceType<typeof AmbientLight>;
+  const light = new Light(new Color().set(0.25, 0.5, 0.75));
+  const { r, g, b } = light.color;
+  check(
+    near(r, 0.25) && near(g, 0.5) && near(b, 0.75) && r !== g && g !== b,
+    `a promoted Color(0.25, 0.5, 0.75) keeps distinct AmbientLight channels: (${r}, ${g}, ${b})`,
+  );
 }
 process.stdout.write("TN_BROWSER_BACKEND_OK\n");

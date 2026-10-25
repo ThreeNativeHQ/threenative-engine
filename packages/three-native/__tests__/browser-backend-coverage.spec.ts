@@ -27,6 +27,19 @@ import { type ICatalogClassEntry, loadCatalog } from "../src/catalog.js";
 
 // Resolved from this module, so the spec passes from the repository root or `packages/three-native`.
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+/** The ten math classes the browser back end runs as three's own JS (PRD-742). */
+const VALUE_CLASSES = new Set([
+  "Vector2",
+  "Vector3",
+  "Vector4",
+  "Quaternion",
+  "Euler",
+  "Matrix3",
+  "Matrix4",
+  "Color",
+  "Box3",
+  "Sphere",
+]);
 const registry = JSON.parse(
   readFileSync(path.join(REPO, "packages", "three-native", "api", "native-registry.json"), "utf8"),
 ) as IRegistryDump;
@@ -106,6 +119,13 @@ describe("the browser-JS back end", () => {
           .map((key) => key.slice(0, key.indexOf(".")))
           .filter((head) => !binding.members.includes(head) && !binding.getters.includes(head)),
       ]);
+      // PRD-742: a math value class is three's own module, so it carries three's full method set;
+      // the registry surface must be present, and its own extra methods are three's.
+      const valueClass = VALUE_CLASSES.has(name);
+      if (valueClass) {
+        expect(exposed, name).toEqual(expect.arrayContaining([...expected]));
+        continue;
+      }
       expect(exposed.sort(), name).toEqual([...expected].sort());
       for (const key of exposed) {
         const descriptor = sides
@@ -274,6 +294,31 @@ describe("the browser-JS back end", () => {
     texture.needsUpdate = true;
     expect(writes).toEqual([["DataTexture", "needsUpdate", true]]);
     expect(Object.hasOwn(texture, "needsUpdate")).toBe(false);
+  });
+
+  it("hands a numeric typed array to construct unchanged when the runtime accepts typed arrays", () => {
+    const seen: (readonly EngineValue[])[] = [];
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      typedArrays: true,
+      construct: (name, args) => {
+        seen.push(args);
+        return { key: name, type: runtime.typeId(name) };
+      },
+    };
+    const { classes: bound } = defineBrowserClasses(registry, runtime);
+    const Attribute = bound.BufferAttribute as new (
+      array: Float32Array,
+      itemSize: number,
+    ) => object;
+    const backing = new Float32Array([0, 1, 2, 3, 4, 0]);
+    const view = backing.subarray(1, 5);
+    void new Attribute(view, 2);
+    const handed = seen[0]?.[0];
+    expect(handed).toBe(view);
+    expect(Array.isArray(handed)).toBe(false);
+    expect((handed as Float32Array).byteOffset).toBe(backing.BYTES_PER_ELEMENT);
+    expect((handed as Float32Array).length).toBe(4);
   });
 
   it("refuses to construct a class the registry gives no constructor", () => {
@@ -470,7 +515,12 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           geometries.set(key, new Map());
           return ref;
         }
-        if (name === "Matrix4") return ref;
+        if (name === "Matrix4") {
+          // A JS Matrix4 that a call takes is promoted with its sixteen row-major numbers (PRD-742):
+          // the translation is the fourth column, so n14/n24/n34 are indices 3, 7 and 11.
+          matrices.set(key, [Number(args[3] ?? 0), Number(args[7] ?? 0), Number(args[11] ?? 0)]);
+          return ref;
+        }
         const handed = args[0];
         stores.set(
           key,
@@ -685,17 +735,18 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
   });
 
   it("follows a geometry applyMatrix4 in a retained position array", () => {
-    const { classes, matrices } = facade();
+    const { classes } = facade();
     const Geometry = classes.BufferGeometry as unknown as new () => IGeometry;
     const Attribute = attributeClass(classes);
-    const Matrix = classes.Matrix4 as unknown as new () => object;
+    const Matrix = classes.Matrix4 as unknown as {
+      new (): { makeTranslation(x: number, y: number, z: number): object };
+    };
     const geometry = new Geometry();
     const position = new Float32Array([0, 0, 0, 1, 0, 0]);
     geometry.setAttribute("position", new Attribute(position, 3));
-    const matrix = new Matrix();
-    const ref = engineRef(matrix) as IEngineRef;
-    matrices.set(ref.key, [2, 3, 0]);
+    const matrix = new Matrix().makeTranslation(2, 3, 0);
     geometry.applyMatrix4(matrix);
+    expect(engineRef(matrix)).toBeDefined();
     expect(Array.from(position)).toEqual([2, 3, 0, 3, 3, 0]);
   });
 

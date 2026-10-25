@@ -1,11 +1,26 @@
 /**
- * three's math value classes in JavaScript (three r185's Vector3, MIT), for the browser back end.
+ * three's math value classes in JavaScript (three r185's, MIT), for the browser back end.
  *
- * A `new Vector3()` is a plain JS value: its arithmetic never calls the engine, which cost Midway
- * hundreds of thousands of engine calls at load. A vector the engine owns (`mesh.position`) is the
- * same class over the engine's memory (see `defineBrowserClasses`), so `copy`, `add` and the rest run
+ * A `new Color()` is a plain JS value: its arithmetic never calls the engine, which cost Hop Garden
+ * 7.7 s in `Color.lerp` at load. A value the engine owns (`material.color`, `mesh.position`) is the
+ * same class over the engine's memory (see `defineBrowserClasses`), so `copy`, `lerp` and the rest run
  * the same code on both. A value crosses to the engine by value only when an engine call takes it.
+ *
+ * The nine classes the V8 player already runs as JS (PRD-573 step 4a) are three's own modules, as
+ * that player bundles them; Vector3 stays the hand-ported subset this file shipped first.
  */
+import { Box3 } from "three/src/math/Box3.js";
+import { Color } from "three/src/math/Color.js";
+import { Euler } from "three/src/math/Euler.js";
+import { Matrix3 } from "three/src/math/Matrix3.js";
+import { Matrix4 } from "three/src/math/Matrix4.js";
+import { Quaternion } from "three/src/math/Quaternion.js";
+import { Sphere } from "three/src/math/Sphere.js";
+import { Vector2 } from "three/src/math/Vector2.js";
+import { Vector3 as UpstreamVector3 } from "three/src/math/Vector3.js";
+import { Vector4 } from "three/src/math/Vector4.js";
+
+export { UpstreamVector3 };
 
 interface IVec3 {
   x: number;
@@ -45,15 +60,17 @@ interface IQuaternionScratch extends IQuat {
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 
-/** The JS classes; `quaternion` makes the engine Quaternion `applyEuler` and `applyAxisAngle` use. */
-export function defineMath(quaternion: () => IQuaternionScratch) {
+/** The JS classes, with three's MathUtils subset the engine binds. */
+export function defineMath() {
   let rotation: IQuaternionScratch | undefined;
   const scratchQuaternion = (): IQuaternionScratch => {
-    rotation ??= quaternion();
+    rotation ??= new Quaternion() as unknown as IQuaternionScratch;
     return rotation;
   };
 
   class Vector3 implements IVec3 {
+    // three's type flag: upstream math (`Matrix4.setPosition`) branches on it.
+    readonly isVector3 = true;
     declare x: number;
     declare y: number;
     declare z: number;
@@ -444,5 +461,20 @@ export function defineMath(quaternion: () => IQuaternionScratch) {
     }
   }
 
-  return { Vector3, MathUtils };
+  return {
+    Vector2,
+    Vector3,
+    Vector4,
+    Quaternion,
+    Euler,
+    Matrix3,
+    Matrix4,
+    Color,
+    Box3,
+    Sphere,
+    MathUtils,
+    // three's own Vector3, whose prototype Box3 and Sphere use for their default members; the
+    // back end registers it beside the hand-written Vector3 so those members can cross too.
+    UpstreamVector3,
+  };
 }
