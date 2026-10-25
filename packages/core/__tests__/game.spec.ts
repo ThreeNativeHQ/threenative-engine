@@ -2977,77 +2977,86 @@ describe("IGame", () => {
     }
   });
 
-  it("draws the overlay while the start scene is still loading, without stepping the simulation", async () => {
-    // A phone has no DOM, so the render loop is the only thing that can put a loading screen on
-    // the screen. Booting with the loop stopped until `scene.load` resolves means every native
-    // game shows a black screen for its whole asset load, and the HUD's own !ready branch is
-    // unreachable. The loop must run during load; the simulation must not.
-    let releaseLoad: () => void = () => undefined;
-    const loadGate = new Promise<void>((resolve) => {
-      releaseLoad = resolve;
-    });
-    let updates = 0;
-    let renders = 0;
-    const worldRenders: unknown[] = [];
-    let overlayScene: unknown;
-    class SlowScene extends Scene {
-      static override readonly initialState = {};
-      override load(ctx: ICtx): Promise<void> {
-        ctx.canvasLayer.scene.add(new Mesh());
-        overlayScene = ctx.canvasLayer.scene;
-        return loadGate;
+  it.each([
+    { opaque: false, worldDrawn: false },
+    { opaque: true, worldDrawn: true },
+  ])(
+    "draws the overlay while the start scene is still loading, without stepping the simulation (opaque cover: $opaque)",
+    async ({ opaque, worldDrawn }) => {
+      // A phone has no DOM, so the render loop is the only thing that can put a loading screen on
+      // the screen. Booting with the loop stopped until `scene.load` resolves means every native
+      // game shows a black screen for its whole asset load, and the HUD's own !ready branch is
+      // unreachable. The loop must run during load; the simulation must not.
+      let releaseLoad: () => void = () => undefined;
+      const loadGate = new Promise<void>((resolve) => {
+        releaseLoad = resolve;
+      });
+      let updates = 0;
+      let renders = 0;
+      const worldRenders: unknown[] = [];
+      let overlayScene: unknown;
+      class SlowScene extends Scene {
+        static override readonly initialState = {};
+        override load(ctx: ICtx): Promise<void> {
+          ctx.canvasLayer.scene.add(new Mesh());
+          ctx.canvasLayer.opaque = opaque;
+          overlayScene = ctx.canvasLayer.scene;
+          return loadGate;
+        }
+        override update(): void {
+          updates += 1;
+        }
       }
-      override update(): void {
-        updates += 1;
+      const canvas = testCanvas();
+      const game = defineGame({
+        renderer: {
+          canvas,
+          preferWebGPU: false,
+          webgl2Factory: () => ({
+            dispose: () => undefined,
+            domElement: canvas,
+            render: (scene: unknown) => {
+              renders += 1;
+              if (scene !== overlayScene) worldRenders.push(scene);
+            },
+            setSize: () => undefined,
+          }),
+        },
+        scenes: { test: SlowScene },
+        start: "test",
+      });
+      const pending: FrameRequestCallback[] = [];
+      const requestFrame = globalThis.requestAnimationFrame;
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: FrameRequestCallback) => {
+          pending.push(callback);
+          return pending.length;
+        },
+      });
+      try {
+        const started = game.start();
+        for (let flush = 0; flush < 20; flush += 1) await Promise.resolve();
+        // Drive real frames while `load` is still outstanding.
+        for (let frame = 1; frame <= 6; frame += 1) {
+          const callback = pending.shift();
+          if (callback === undefined) break;
+          callback(frame * 32);
+          for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
+        }
+        expect(renders).toBeGreaterThan(0);
+        // A world that has not entered is only the clear colour; drawn with nothing over it, it
+        // flashes before the cover. Under an opaque cover it is drawn, so its first-use compile
+        // lands inside the load instead of after a playtest's setup has released enter().
+        expect(worldRenders.length > 0).toBe(worldDrawn);
+        expect(updates).toBe(0);
+        releaseLoad();
+        await started;
+        game.stop();
+      } finally {
+        if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
       }
-    }
-    const canvas = testCanvas();
-    const game = defineGame({
-      renderer: {
-        canvas,
-        preferWebGPU: false,
-        webgl2Factory: () => ({
-          dispose: () => undefined,
-          domElement: canvas,
-          render: (scene: unknown) => {
-            renders += 1;
-            if (scene !== overlayScene) worldRenders.push(scene);
-          },
-          setSize: () => undefined,
-        }),
-      },
-      scenes: { test: SlowScene },
-      start: "test",
-    });
-    const pending: FrameRequestCallback[] = [];
-    const requestFrame = globalThis.requestAnimationFrame;
-    Object.defineProperty(globalThis, "requestAnimationFrame", {
-      configurable: true,
-      value: (callback: FrameRequestCallback) => {
-        pending.push(callback);
-        return pending.length;
-      },
-    });
-    try {
-      const started = game.start();
-      for (let flush = 0; flush < 20; flush += 1) await Promise.resolve();
-      // Drive real frames while `load` is still outstanding.
-      for (let frame = 1; frame <= 6; frame += 1) {
-        const callback = pending.shift();
-        if (callback === undefined) break;
-        callback(frame * 32);
-        for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
-      }
-      expect(renders).toBeGreaterThan(0);
-      // A world that has not entered is only the clear colour; drawn, it flashes before the cover.
-      expect(worldRenders).toEqual([]);
-      expect(updates).toBe(0);
-      releaseLoad();
-      await started;
-      game.stop();
-    } finally {
-      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
-      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
-    }
-  });
+    },
+  );
 });
