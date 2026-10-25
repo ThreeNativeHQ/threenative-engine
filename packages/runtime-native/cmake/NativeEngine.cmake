@@ -85,8 +85,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_deferred_destroy=deferred_destroy
         native_engine_gpu_async_only=async_only
         native_engine_gpu_thread_ordering=gpu_thread_ordering
-        native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu
-        native_engine_gpu_batched_submits=batched_submits)
+        native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
     # A real window, so the ctest runs it under the repository's private Xvfb with SDL's dummy audio.
     add_executable(tn-native-engine-presentation-test EXCLUDE_FROM_ALL tests/native-engine/presentation_test.cpp)

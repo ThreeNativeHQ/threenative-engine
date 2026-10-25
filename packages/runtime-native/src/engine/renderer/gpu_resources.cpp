@@ -1,7 +1,6 @@
 #include "gpu_resources.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cstring>
 #include <utility>
 
@@ -118,7 +117,7 @@ GpuResources::GpuResources(WGPUInstance instance, WGPUDevice device, WGPUQueue q
     : instance_(instance), device_(device), queue_(queue), events_(events), handles_(deviceGeneration) {}
 
 GpuResources::~GpuResources() {
-    sync();  // a posted job or a waiting batched submit may still read these
+    sync();  // a posted job may still read these
     for (Record& record : records_) release(record);
     if (shared_.use_count() > 1) return;  // a table sharing the serial still submits: it frees them
     for (PendingDestroy& entry : shared_->pending) release(entry.record);
@@ -208,9 +207,6 @@ GpuStatus GpuResources::writeBuffer(Handle buffer, uint64_t offset, const void* 
     if (offset > target->size || size > target->size - offset || size % 4 != 0 || offset % 4 != 0) {
         return GpuStatus::OutOfRange;
     }
-    // A waiting submit that may read this buffer goes first. A batching table's own write is safe until its own
-    // work waits, since no other table's submit reads its buffers.
-    if (waitingMayRead(target->buffer)) flushSubmits();
     if (shared_->thread) {
         // Queued behind the submits already posted, with its own copy of the bytes, as a browser's
         // GPU process takes a write: the game thread never waits for the GPU thread here.
@@ -233,7 +229,6 @@ GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_
     Record* target = record(texture, kTexture, status);
     if (!target) return status;
     if (size != target->size) return GpuStatus::OutOfRange;
-    flushSubmits();
     WGPUImageCopyTexture_Compat destination = {};
     destination.texture = target->texture;
     destination.aspect = WGPUTextureAspect_All;
@@ -267,7 +262,6 @@ void GpuResources::readInto(WGPUCommandEncoder encoder, WGPUBuffer staging, uint
     WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, &commandDesc);
     wgpuCommandEncoderRelease(encoder);
     submit(commands);
-    flushSubmits();  // the copy reaches the queue before the map below
 
     struct MapRequest {
         std::weak_ptr<Shared> owner;
@@ -396,125 +390,42 @@ WGPUTexture GpuResources::texture(Handle handle) const {
     return handles_.check(handle, kTexture) == HandleError::None ? records_[handle.index].texture : nullptr;
 }
 
-namespace {
-
-// One completion callback per queue submit: it raises `completed` to the last serial the submit carried.
-void onWorkDone(WGPUQueue queue, std::weak_ptr<void> owner, EventQueue* events, uint64_t serial,
-                void (*complete)(const std::shared_ptr<void>&, uint64_t)) {
-    struct WorkDone {
-        std::weak_ptr<void> owner;
-        EventQueue* events;
-        uint64_t serial;
-        void (*complete)(const std::shared_ptr<void>&, uint64_t);
-    };
-    WGPUQueueWorkDoneCallbackInfo info = {};
-    info.mode = WGPUCallbackMode_AllowProcessEvents;
-    info.userdata1 = new WorkDone{std::move(owner), events, serial, complete};
-    info.callback = [](WGPUQueueWorkDoneStatus,
-#if defined(MYSTRAL_WEBGPU_DAWN)
-                       WGPUStringView,
-#endif
-                       void* userdata, void*) {
-        std::unique_ptr<WorkDone> done(static_cast<WorkDone*>(userdata));
-        // A backend may fire this at device release, after the resource table and the event queue
-        // it posts to are gone (wgpu does); the queue outlives the table, so a live owner is the test.
-        if (done->owner.expired()) return;
-        done->events->post([owner = done->owner, serial = done->serial, complete = done->complete]() {
-            if (auto shared = owner.lock()) complete(shared, serial);
-        });
-    };
-    wgpuQueueOnSubmittedWorkDone(queue, info);
-}
-
-// Batched submits wait here (web host: one thread, one queue), with the table serial each one took.
-// ponytail: one process-wide batch, since the web host has one device; key it by queue if a second appears.
-struct Batched {
-    WGPUCommandBuffer commands;
-    const void* table;
-    std::weak_ptr<void> owner;
-    EventQueue* events;
-    uint64_t serial;
-    std::optional<std::vector<WGPUBuffer>> reads;  // none: any buffer of `table`, or of a table that does not batch
-};
-struct Batch {
-    WGPUQueue queue = nullptr;
-    std::vector<Batched> waiting;
-    std::atomic<uint64_t> queueSubmits = 0;  // a GPU thread's submits count too
-};
-Batch& batch() {
-    static Batch instance;
-    return instance;
-}
-
-}  // namespace
-
-void GpuResources::flushSubmits() {
-    Batch& b = batch();
-    if (b.waiting.empty()) return;
-    std::vector<WGPUCommandBuffer> commands;
-    commands.reserve(b.waiting.size());
-    for (const Batched& entry : b.waiting) commands.push_back(entry.commands);
-    wgpuQueueSubmit(b.queue, commands.size(), commands.data());
-    ++b.queueSubmits;
-    for (WGPUCommandBuffer command : commands) wgpuCommandBufferRelease(command);
-    // Completion is in order: one callback per submission table, for the last serial it waited with.
-    for (size_t i = 0; i < b.waiting.size(); ++i) {
-        const Batched& entry = b.waiting[i];
-        bool last = true;
-        for (size_t j = i + 1; j < b.waiting.size() && last; ++j)
-            last = b.waiting[j].owner.owner_before(entry.owner) || entry.owner.owner_before(b.waiting[j].owner);
-        if (last) onWorkDone(b.queue, entry.owner, entry.events, entry.serial, complete);
-    }
-    b.waiting.clear();
-}
-
-uint64_t GpuResources::queueSubmits() { return batch().queueSubmits; }
-
-void GpuResources::complete(const std::shared_ptr<void>& owner, uint64_t serial) {
-    auto* shared = static_cast<Shared*>(owner.get());
-    std::lock_guard lock(shared->mutex);
-    shared->completed = std::max(shared->completed, serial);
-    shared->collect();
-}
-
-bool GpuResources::waitingMayRead(WGPUBuffer buffer) const {
-    for (const Batched& entry : batch().waiting) {
-        if (entry.reads ? std::find(entry.reads->begin(), entry.reads->end(), buffer) != entry.reads->end()
-                        : !batching_ || entry.table == this)
-            return true;
-    }
-    return false;
-}
-
-uint64_t GpuResources::submit(WGPUCommandBuffer commands) { return submit(commands, batching_, nullptr); }
-
-uint64_t GpuResources::submit(WGPUCommandBuffer commands, std::vector<WGPUBuffer> reads) {
-    return submit(commands, true, &reads);
-}
-
-uint64_t GpuResources::submit(WGPUCommandBuffer commands, bool batch_, std::vector<WGPUBuffer>* reads) {
+uint64_t GpuResources::submit(WGPUCommandBuffer commands) {
     uint64_t serial;
     {
         std::lock_guard lock(shared_->mutex);
         serial = ++shared_->submitted;
     }
-    if (batch_ && !shared_->thread) {
-        batch().queue = queue_;
-        batch().waiting.push_back(Batched{commands, this, std::weak_ptr<void>(shared_), &events_, serial,
-                                          reads ? std::optional(std::move(*reads)) : std::nullopt});
-        return serial;
-    }
-    if (!shared_->thread && !batch().waiting.empty()) {
-        // The waiting work and this submit reach the queue together, in order.
-        batch().waiting.push_back(Batched{commands, this, std::weak_ptr<void>(shared_), &events_, serial, std::nullopt});
-        flushSubmits();
-        return serial;
-    }
-    post([queue = queue_, commands, owner = std::weak_ptr<void>(shared_), events = &events_, serial] {
+    post([queue = queue_, commands, owner = std::weak_ptr<Shared>(shared_), events = &events_, serial] {
         wgpuQueueSubmit(queue, 1, &commands);
-        ++batch().queueSubmits;
         wgpuCommandBufferRelease(commands);
-        onWorkDone(queue, owner, events, serial, complete);
+
+        struct WorkDone {
+            std::weak_ptr<Shared> owner;
+            EventQueue* events;
+            uint64_t serial;
+        };
+        WGPUQueueWorkDoneCallbackInfo info = {};
+        info.mode = WGPUCallbackMode_AllowProcessEvents;
+        info.userdata1 = new WorkDone{owner, events, serial};
+        info.callback = [](WGPUQueueWorkDoneStatus,
+#if defined(MYSTRAL_WEBGPU_DAWN)
+                           WGPUStringView,
+#endif
+                           void* userdata, void*) {
+            std::unique_ptr<WorkDone> done(static_cast<WorkDone*>(userdata));
+            // A backend may fire this at device release, after the resource table and the event queue
+            // it posts to are gone (wgpu does); the queue outlives the table, so a live owner is the test.
+            if (done->owner.expired()) return;
+            done->events->post([owner = done->owner, serial = done->serial]() {
+                if (auto shared = owner.lock()) {
+                    std::lock_guard lock(shared->mutex);
+                    shared->completed = std::max(shared->completed, serial);
+                    shared->collect();
+                }
+            });
+        };
+        wgpuQueueOnSubmittedWorkDone(queue, info);
     });
     return serial;
 }

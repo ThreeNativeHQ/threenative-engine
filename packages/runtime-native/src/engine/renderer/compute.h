@@ -60,7 +60,6 @@ public:
                         const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock = {},
                         std::span<const WGPUBindGroupEntry> textures = {});
     const shader::StageModule& module() const { return module_; }
-    WGPUBuffer uniformBuffer() const { return gpu_.buffer(uniforms_); }
 
 private:
     bool encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
@@ -102,9 +101,8 @@ public:
     GraphCompute(WGPUDevice device, GpuResources& gpu, GeometryCache& cache) : device_(device), gpu_(gpu), cache_(cache) {}
     /** Compiles the node's pass if it has none; throws std::runtime_error TN_COMPUTE_* with the reason. */
     ComputePass& prepare(const shader::graph::Node& node);
-    /** Records one dispatch into `encoder`; returns the buffers it binds, which queue writes must not change before it runs. */
-    std::vector<WGPUBuffer> record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock,
-                                   Renderer& renderer);
+    /** Records one dispatch into `encoder`. */
+    void record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer);
 
 private:
     WGPUDevice device_;

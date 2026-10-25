@@ -382,7 +382,7 @@ ComputePass& GraphCompute::prepare(const graph::Node& node) {
     return *passes_.emplace(id, std::move(pass)).first->second;
 }
 
-std::vector<WGPUBuffer> GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer) {
+void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer) {
     ComputePass& pass = prepare(dispatch.node);
     std::unordered_map<std::string, std::shared_ptr<BufferAttribute>> attributes;
     std::unordered_set<const graph::NodeData*> seen;
@@ -421,9 +421,6 @@ std::vector<WGPUBuffer> GraphCompute::record(WGPUCommandEncoder encoder, const C
         textures.push_back(entry);
     }
     pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms, clock, textures);
-    std::vector<WGPUBuffer> reads{pass.uniformBuffer()};
-    for (const Handle handle : storage) reads.push_back(gpu_.buffer(handle));
-    return reads;
 }
 
 void ComputeQueue::bindDisposal(const std::shared_ptr<BufferAttribute>& attribute) {

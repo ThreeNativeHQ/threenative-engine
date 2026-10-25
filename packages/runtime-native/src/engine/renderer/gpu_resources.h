@@ -6,7 +6,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <thread>
 #include <vector>
 
@@ -122,7 +121,6 @@ public:
     GpuThread* thread() const { return shared_->thread.get(); }
     /** Waits for the posted queue work; a no-op without a GPU thread. */
     void sync() const {
-        flushSubmits();
         if (shared_->thread) shared_->thread->wait();
     }
     /** Runs `job` on the GPU thread after the work posted before it, or now without one. */
@@ -133,19 +131,6 @@ public:
 
     /** The only path to the queue, so every submission has a serial a destroy can wait for. */
     uint64_t submit(WGPUCommandBuffer commands);
-    /**
-     * Without a GPU thread, this table's submits wait and reach the queue in one wgpuQueueSubmit with the next
-     * submit of a table that does not batch: a render target draw then costs no queue submit and no work-done
-     * callback of its own (29 per Lantern Vale frame). Order holds: any other queue write or read sends the
-     * waiting work first, and so does this table's own write once its work waits.
-     */
-    void batchSubmits() { batching_ = true; }
-    /** A submit that reads no queue-written buffer but `reads` (a compute dispatch): it waits too, from any table. */
-    uint64_t submit(WGPUCommandBuffer commands, std::vector<WGPUBuffer> reads);
-    /** Sends the waiting batched submits to the queue now; a no-op when none wait. */
-    static void flushSubmits();
-    /** wgpuQueueSubmit calls so far, by every table; a test reads it. */
-    static uint64_t queueSubmits();
     /** Non-blocking: lets the backend deliver finished callbacks into the event queue. */
     void poll();
 
@@ -183,9 +168,6 @@ private:
     };
 
     static void release(Record& record);
-    static void complete(const std::shared_ptr<void>& owner, uint64_t serial);
-    bool waitingMayRead(WGPUBuffer buffer) const;
-    uint64_t submit(WGPUCommandBuffer commands, bool batch, std::vector<WGPUBuffer>* reads);
     Record* record(Handle handle, uint16_t type, GpuStatus& status);
     void readInto(WGPUCommandEncoder encoder, WGPUBuffer staging, uint64_t size,
                   std::function<void(const uint8_t*)> unpack, ReadbackCallback done);
@@ -198,7 +180,6 @@ private:
     std::vector<Record> records_;
     std::shared_ptr<Shared> shared_ = std::make_shared<Shared>();
     uint64_t queueWriteBytes_ = 0;
-    bool batching_ = false;
 };
 
 }  // namespace tn::engine

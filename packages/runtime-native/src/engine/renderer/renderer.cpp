@@ -4516,7 +4516,6 @@ void Renderer::dispatchCompute(const ComputeDispatch& dispatch) {
     FrameGpuTimer::Scope timerScope(passTimer_.get());
     WGPUCommandEncoderDescriptor desc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &desc);
-    std::vector<WGPUBuffer> reads;
     try {
         // The clock moves once per rendered frame, as three's NodeFrame does; a dispatch before the first render gets 1/60.
         const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
@@ -4525,16 +4524,14 @@ void Renderer::dispatchCompute(const ComputeDispatch& dispatch) {
             computeTime_ = now;
             computeFrame_ = renderId_;
         }
-        reads = graphCompute().record(encoder, dispatch, {now, computeDelta_}, *this);
+        graphCompute().record(encoder, dispatch, {now, computeDelta_}, *this);
     } catch (...) {
         wgpuCommandEncoderRelease(encoder);
         throw;
     }
     WGPUCommandBufferDescriptor commandDesc = {};
-    // Its own submission, batched with the frame's next one: a queue write to a buffer it binds sends it first,
-    // so the uniform block written for this dispatch is not rewritten before it runs.
-    flushMipmaps();
-    gpu_.submit(wgpuCommandEncoderFinish(encoder, &commandDesc), std::move(reads));
+    // Its own submission: the uniform block written for this dispatch is not rewritten before it runs.
+    submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
     wgpuCommandEncoderRelease(encoder);
 }
 
