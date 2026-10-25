@@ -1,0 +1,1314 @@
+{
+  "freezeId": "263a370b49c23dc1",
+  "pngSha256": "bb8e9edcc2dcc916c2fb9d945320074865433bc958f977f3052aa8eb809ea82c",
+  "snapshot": {
+    "clock": {
+      "mode": "fixed-step",
+      "tick": 660
+    },
+    "entities": [
+      {
+        "bounds": {
+          "height": 389.46075207099864,
+          "width": 528.7727177427325,
+          "x": 695.6136983368635,
+          "y": 499.75082927857693
+        },
+        "id": "player",
+        "transform": {
+          "position": [
+            0.00005152674566488713,
+            0.8601000905036926,
+            7.999998092651367
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "visible": true
+      }
+    ],
+    "gameplay": {
+      "animation": {},
+      "contacts": [],
+      "states": {
+        "player": "idle",
+        "dummy.0": "standing",
+        "dummy.1": "standing",
+        "mossling.0": "idle",
+        "mossling.1": "idle",
+        "mossling.2": "idle",
+        "flicker.0": "idle",
+        "flicker.1": "idle",
+        "thornback.0": "idle",
+        "thornback.1": "idle",
+        "warden": "dormant",
+        "block": "resting"
+      },
+      "tags": {
+        "player": {
+          "count": 1
+        },
+        "hostile": {
+          "count": 10
+        },
+        "boss": {
+          "count": 1
+        }
+      },
+      "transitions": [
+        {
+          "from": 0,
+          "path": "state.companionFarthest",
+          "tick": 1,
+          "to": 0.33
+        },
+        {
+          "from": 0,
+          "path": "state.companionNearest",
+          "tick": 1,
+          "to": 0.33
+        },
+        {
+          "from": 0,
+          "path": "state.fightFramedShare",
+          "tick": 1,
+          "to": 1
+        },
+        {
+          "from": 0,
+          "path": "state.heroViewNearest",
+          "tick": 1,
+          "to": 5.84
+        },
+        {
+          "from": "",
+          "path": "state.prompt",
+          "tick": 1,
+          "to": "Open chest"
+        },
+        {
+          "from": 0.33,
+          "path": "state.companionFarthest",
+          "tick": 2,
+          "to": 0.34
+        },
+        {
+          "from": 0.34,
+          "path": "state.companionFarthest",
+          "tick": 3,
+          "to": 0.35
+        },
+        {
+          "from": 0.35,
+          "path": "state.companionFarthest",
+          "tick": 4,
+          "to": 0.37
+        },
+        {
+          "from": 0.37,
+          "path": "state.companionFarthest",
+          "tick": 5,
+          "to": 0.39
+        },
+        {
+          "from": 0.39,
+          "path": "state.companionFarthest",
+          "tick": 6,
+          "to": 0.41
+        },
+        {
+          "from": 0.41,
+          "path": "state.companionFarthest",
+          "tick": 7,
+          "to": 0.43
+        },
+        {
+          "from": 0.43,
+          "path": "state.companionFarthest",
+          "tick": 8,
+          "to": 0.44
+        },
+        {
+          "from": 0.44,
+          "path": "state.companionFarthest",
+          "tick": 9,
+          "to": 0.46
+        },
+        {
+          "from": 0.46,
+          "path": "state.companionFarthest",
+          "tick": 10,
+          "to": 0.48
+        },
+        {
+          "from": 0.48,
+          "path": "state.companionFarthest",
+          "tick": 11,
+          "to": 0.5
+        },
+        {
+          "from": 0.5,
+          "path": "state.companionFarthest",
+          "tick": 12,
+          "to": 0.52
+        },
+        {
+          "from": 0.52,
+          "path": "state.companionFarthest",
+          "tick": 13,
+          "to": 0.54
+        },
+        {
+          "from": 0.54,
+          "path": "state.companionFarthest",
+          "tick": 14,
+          "to": 0.55
+        },
+        {
+          "from": 0.55,
+          "path": "state.companionFarthest",
+          "tick": 15,
+          "to": 0.57
+        },
+        {
+          "from": 0,
+          "path": "state.motesSpawned",
+          "tick": 15,
+          "to": 14
+        },
+        {
+          "from": 0.57,
+          "path": "state.companionFarthest",
+          "tick": 16,
+          "to": 0.58
+        },
+        {
+          "from": 0.58,
+          "path": "state.companionFarthest",
+          "tick": 17,
+          "to": 0.6
+        },
+        {
+          "from": 0.6,
+          "path": "state.companionFarthest",
+          "tick": 18,
+          "to": 0.61
+        },
+        {
+          "from": 0.61,
+          "path": "state.companionFarthest",
+          "tick": 19,
+          "to": 0.63
+        },
+        {
+          "from": 0.63,
+          "path": "state.companionFarthest",
+          "tick": 20,
+          "to": 0.64
+        },
+        {
+          "from": 0.64,
+          "path": "state.companionFarthest",
+          "tick": 21,
+          "to": 0.65
+        },
+        {
+          "from": 0.65,
+          "path": "state.companionFarthest",
+          "tick": 22,
+          "to": 0.66
+        },
+        {
+          "from": 0.66,
+          "path": "state.companionFarthest",
+          "tick": 23,
+          "to": 0.68
+        },
+        {
+          "from": 0.68,
+          "path": "state.companionFarthest",
+          "tick": 24,
+          "to": 0.69
+        },
+        {
+          "from": 0.69,
+          "path": "state.companionFarthest",
+          "tick": 25,
+          "to": 0.7
+        },
+        {
+          "from": 0.7,
+          "path": "state.companionFarthest",
+          "tick": 26,
+          "to": 0.71
+        },
+        {
+          "from": 0.71,
+          "path": "state.companionFarthest",
+          "tick": 27,
+          "to": 0.72
+        },
+        {
+          "from": 0.72,
+          "path": "state.companionFarthest",
+          "tick": 28,
+          "to": 0.73
+        },
+        {
+          "from": 0.73,
+          "path": "state.companionFarthest",
+          "tick": 29,
+          "to": 0.74
+        },
+        {
+          "from": 0.74,
+          "path": "state.companionFarthest",
+          "tick": 31,
+          "to": 0.75
+        },
+        {
+          "from": 14,
+          "path": "state.motesSpawned",
+          "tick": 31,
+          "to": 28
+        },
+        {
+          "from": 0.75,
+          "path": "state.companionFarthest",
+          "tick": 32,
+          "to": 0.76
+        },
+        {
+          "from": 0.76,
+          "path": "state.companionFarthest",
+          "tick": 33,
+          "to": 0.77
+        },
+        {
+          "from": 0.77,
+          "path": "state.companionFarthest",
+          "tick": 35,
+          "to": 0.78
+        },
+        {
+          "from": 0.78,
+          "path": "state.companionFarthest",
+          "tick": 36,
+          "to": 0.79
+        },
+        {
+          "from": 0.79,
+          "path": "state.companionFarthest",
+          "tick": 37,
+          "to": 0.8
+        },
+        {
+          "from": 0.8,
+          "path": "state.companionFarthest",
+          "tick": 39,
+          "to": 0.81
+        },
+        {
+          "from": 0.81,
+          "path": "state.companionFarthest",
+          "tick": 41,
+          "to": 0.82
+        },
+        {
+          "from": 0.82,
+          "path": "state.companionFarthest",
+          "tick": 42,
+          "to": 0.83
+        },
+        {
+          "from": 0.83,
+          "path": "state.companionFarthest",
+          "tick": 44,
+          "to": 0.84
+        },
+        {
+          "from": 0.84,
+          "path": "state.companionFarthest",
+          "tick": 46,
+          "to": 0.85
+        },
+        {
+          "from": 28,
+          "path": "state.motesSpawned",
+          "tick": 47,
+          "to": 42
+        },
+        {
+          "from": 0.85,
+          "path": "state.companionFarthest",
+          "tick": 48,
+          "to": 0.86
+        },
+        {
+          "from": 0.86,
+          "path": "state.companionFarthest",
+          "tick": 51,
+          "to": 0.87
+        },
+        {
+          "from": 0.87,
+          "path": "state.companionFarthest",
+          "tick": 53,
+          "to": 0.88
+        },
+        {
+          "from": 0.88,
+          "path": "state.companionFarthest",
+          "tick": 56,
+          "to": 0.89
+        },
+        {
+          "from": 0.89,
+          "path": "state.companionFarthest",
+          "tick": 59,
+          "to": 0.9
+        },
+        {
+          "from": 0.9,
+          "path": "state.companionFarthest",
+          "tick": 62,
+          "to": 0.91
+        },
+        {
+          "from": 42,
+          "path": "state.motesSpawned",
+          "tick": 63,
+          "to": 56
+        },
+        {
+          "from": 0.91,
+          "path": "state.companionFarthest",
+          "tick": 65,
+          "to": 0.92
+        },
+        {
+          "from": 0.92,
+          "path": "state.companionFarthest",
+          "tick": 69,
+          "to": 0.93
+        },
+        {
+          "from": 0.93,
+          "path": "state.companionFarthest",
+          "tick": 74,
+          "to": 0.94
+        },
+        {
+          "from": 0.94,
+          "path": "state.companionFarthest",
+          "tick": 79,
+          "to": 0.95
+        },
+        {
+          "from": 56,
+          "path": "state.motesSpawned",
+          "tick": 79,
+          "to": 70
+        },
+        {
+          "from": 0.95,
+          "path": "state.companionFarthest",
+          "tick": 85,
+          "to": 0.96
+        },
+        {
+          "from": 0.96,
+          "path": "state.companionFarthest",
+          "tick": 92,
+          "to": 0.97
+        },
+        {
+          "from": 70,
+          "path": "state.motesSpawned",
+          "tick": 95,
+          "to": 84
+        },
+        {
+          "from": 0.97,
+          "path": "state.companionFarthest",
+          "tick": 102,
+          "to": 0.98
+        },
+        {
+          "from": 84,
+          "path": "state.motesSpawned",
+          "tick": 111,
+          "to": 98
+        },
+        {
+          "from": 0.98,
+          "path": "state.companionFarthest",
+          "tick": 117,
+          "to": 0.99
+        },
+        {
+          "from": 98,
+          "path": "state.motesSpawned",
+          "tick": 127,
+          "to": 112
+        },
+        {
+          "from": 112,
+          "path": "state.motesSpawned",
+          "tick": 143,
+          "to": 126
+        },
+        {
+          "from": 126,
+          "path": "state.motesSpawned",
+          "tick": 159,
+          "to": 140
+        },
+        {
+          "from": 140,
+          "path": "state.motesSpawned",
+          "tick": 175,
+          "to": 154
+        },
+        {
+          "from": 154,
+          "path": "state.motesSpawned",
+          "tick": 191,
+          "to": 168
+        },
+        {
+          "from": 168,
+          "path": "state.motesSpawned",
+          "tick": 207,
+          "to": 182
+        },
+        {
+          "from": 182,
+          "path": "state.motesSpawned",
+          "tick": 223,
+          "to": 196
+        },
+        {
+          "from": 196,
+          "path": "state.motesSpawned",
+          "tick": 239,
+          "to": 210
+        },
+        {
+          "from": 210,
+          "path": "state.motesSpawned",
+          "tick": 255,
+          "to": 224
+        },
+        {
+          "from": 224,
+          "path": "state.motesSpawned",
+          "tick": 271,
+          "to": 238
+        },
+        {
+          "from": 238,
+          "path": "state.motesSpawned",
+          "tick": 287,
+          "to": 252
+        },
+        {
+          "from": 252,
+          "path": "state.motesSpawned",
+          "tick": 303,
+          "to": 266
+        },
+        {
+          "from": 266,
+          "path": "state.motesSpawned",
+          "tick": 319,
+          "to": 280
+        },
+        {
+          "from": 280,
+          "path": "state.motesSpawned",
+          "tick": 335,
+          "to": 294
+        },
+        {
+          "from": 294,
+          "path": "state.motesSpawned",
+          "tick": 351,
+          "to": 308
+        },
+        {
+          "from": 308,
+          "path": "state.motesSpawned",
+          "tick": 367,
+          "to": 322
+        },
+        {
+          "from": 322,
+          "path": "state.motesSpawned",
+          "tick": 383,
+          "to": 336
+        },
+        {
+          "from": 0.99,
+          "path": "state.companionFarthest",
+          "tick": 384,
+          "to": 1
+        },
+        {
+          "from": 1,
+          "path": "state.companionFarthest",
+          "tick": 390,
+          "to": 1.01
+        },
+        {
+          "from": 336,
+          "path": "state.motesSpawned",
+          "tick": 399,
+          "to": 350
+        },
+        {
+          "from": 1.01,
+          "path": "state.companionFarthest",
+          "tick": 401,
+          "to": 1.02
+        },
+        {
+          "from": 350,
+          "path": "state.motesSpawned",
+          "tick": 415,
+          "to": 364
+        },
+        {
+          "from": 364,
+          "path": "state.motesSpawned",
+          "tick": 431,
+          "to": 378
+        },
+        {
+          "from": 378,
+          "path": "state.motesSpawned",
+          "tick": 447,
+          "to": 392
+        },
+        {
+          "from": 392,
+          "path": "state.motesSpawned",
+          "tick": 463,
+          "to": 406
+        },
+        {
+          "from": 406,
+          "path": "state.motesSpawned",
+          "tick": 479,
+          "to": 420
+        },
+        {
+          "from": 420,
+          "path": "state.motesSpawned",
+          "tick": 495,
+          "to": 434
+        },
+        {
+          "from": 434,
+          "path": "state.motesSpawned",
+          "tick": 511,
+          "to": 448
+        },
+        {
+          "from": 448,
+          "path": "state.motesSpawned",
+          "tick": 527,
+          "to": 462
+        },
+        {
+          "from": 462,
+          "path": "state.motesSpawned",
+          "tick": 543,
+          "to": 476
+        },
+        {
+          "from": 476,
+          "path": "state.motesSpawned",
+          "tick": 559,
+          "to": 490
+        },
+        {
+          "from": 490,
+          "path": "state.motesSpawned",
+          "tick": 575,
+          "to": 504
+        },
+        {
+          "from": 504,
+          "path": "state.motesSpawned",
+          "tick": 591,
+          "to": 518
+        },
+        {
+          "from": 518,
+          "path": "state.motesSpawned",
+          "tick": 607,
+          "to": 532
+        },
+        {
+          "from": 532,
+          "path": "state.motesSpawned",
+          "tick": 623,
+          "to": 546
+        },
+        {
+          "from": 546,
+          "path": "state.motesSpawned",
+          "tick": 639,
+          "to": 560
+        },
+        {
+          "from": 560,
+          "path": "state.motesSpawned",
+          "tick": 655,
+          "to": 574
+        }
+      ],
+      "audio": {
+        "cues": {},
+        "paused": 0,
+        "pooled": 0,
+        "queued": 0,
+        "recentCues": [],
+        "unsupported": [],
+        "voices": 0
+      },
+      "world": {
+        "seed": 1986,
+        "runtime": {
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+          "core": "0.3.6",
+          "randomState": 1986,
+          "rapier": "0.19.3",
+          "step": 0.016666666666666666
+        }
+      }
+    },
+    "performance": {
+      "drawCalls": 0,
+      "triangles": 0
+    },
+    "renderChain": {
+      "contributions": [
+        {
+          "graphOutputChanged": true,
+          "name": "ambientOcclusion"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "ssr"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "traa"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "bloom"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "vignette"
+        }
+      ],
+      "dropped": [],
+      "requested": [
+        "ambientOcclusion",
+        "ssr",
+        "traa",
+        "bloom",
+        "vignette"
+      ],
+      "source": "pinned",
+      "stages": [
+        "ambientOcclusion",
+        "ssr",
+        "traa",
+        "bloom",
+        "vignette"
+      ],
+      "tier": "medium",
+      "velocity": {
+        "provisioned": true,
+        "required": true,
+        "source": "mrt"
+      },
+      "stageSizes": {
+        "traa": {
+          "input": [
+            1382,
+            778
+          ],
+          "output": [
+            1920,
+            1080
+          ]
+        }
+      }
+    },
+    "resources": {
+      "state": {
+        "assetLoads": 5,
+        "blockSteps": 0,
+        "cameraInGround": 0,
+        "capacity": 3,
+        "cleared": false,
+        "companionFarthest": 1.02,
+        "companionNearest": 0.33,
+        "heightFog": true,
+        "hutLanterns": 3,
+        "motesSpawned": 574,
+        "pathCover": 0.57,
+        "pathStones": 179,
+        "reliefLevelShare": 0.399,
+        "reliefRange": 7.07,
+        "reliefSteepShare": 0.127,
+        "sunShafts": 9,
+        "untexturedSurfaces": 0,
+        "defeated": 0,
+        "doorOpen": false,
+        "grateOpen": false,
+        "cameraBlocked": 0,
+        "fightFramedShare": 1,
+        "fightOccluded": 0,
+        "fightOutRun": 0,
+        "hearts": 3,
+        "hintOverlap": 0,
+        "toastOverlap": 0,
+        "openingFramedShare": 0,
+        "cameraTurnWorst": 0,
+        "torsoCovered": 0,
+        "torsoContactWorst": 0,
+        "ringFacingLeast": 0,
+        "heroViewNearest": 5.84,
+        "hitsTaken": 0,
+        "keys": 0,
+        "lastRespawn": "",
+        "lockFacingError": 0,
+        "lockMarkerLowest": 0,
+        "lockMarkerShown": false,
+        "lockStrafeDrift": 0,
+        "nearWallWorst": 0,
+        "lockStrafeSeconds": 0,
+        "lockTarget": "",
+        "paused": false,
+        "prompt": "Open chest",
+        "respawns": 0,
+        "shieldBlocks": 0,
+        "slashHits": 0,
+        "slashes": 0,
+        "stopSeconds": 0,
+        "sword": false,
+        "toast": "",
+        "topSpeed": 0,
+        "turnSeconds": 0,
+        "uiReady": true,
+        "wardenHealth": 3,
+        "wardenStuns": 0,
+        "wardenState": "dormant",
+        "zone": "vale",
+        "loaded": true
+      },
+      "GameState": {
+        "assetLoads": 5,
+        "blockSteps": 0,
+        "cameraInGround": 0,
+        "capacity": 3,
+        "cleared": false,
+        "companionFarthest": 1.02,
+        "companionNearest": 0.33,
+        "heightFog": true,
+        "hutLanterns": 3,
+        "motesSpawned": 574,
+        "pathCover": 0.57,
+        "pathStones": 179,
+        "reliefLevelShare": 0.399,
+        "reliefRange": 7.07,
+        "reliefSteepShare": 0.127,
+        "sunShafts": 9,
+        "untexturedSurfaces": 0,
+        "defeated": 0,
+        "doorOpen": false,
+        "grateOpen": false,
+        "cameraBlocked": 0,
+        "fightFramedShare": 1,
+        "fightOccluded": 0,
+        "fightOutRun": 0,
+        "hearts": 3,
+        "hintOverlap": 0,
+        "toastOverlap": 0,
+        "openingFramedShare": 0,
+        "cameraTurnWorst": 0,
+        "torsoCovered": 0,
+        "torsoContactWorst": 0,
+        "ringFacingLeast": 0,
+        "heroViewNearest": 5.84,
+        "hitsTaken": 0,
+        "keys": 0,
+        "lastRespawn": "",
+        "lockFacingError": 0,
+        "lockMarkerLowest": 0,
+        "lockMarkerShown": false,
+        "lockStrafeDrift": 0,
+        "nearWallWorst": 0,
+        "lockStrafeSeconds": 0,
+        "lockTarget": "",
+        "paused": false,
+        "prompt": "Open chest",
+        "respawns": 0,
+        "shieldBlocks": 0,
+        "slashHits": 0,
+        "slashes": 0,
+        "stopSeconds": 0,
+        "sword": false,
+        "toast": "",
+        "topSpeed": 0,
+        "turnSeconds": 0,
+        "uiReady": true,
+        "wardenHealth": 3,
+        "wardenStuns": 0,
+        "wardenState": "dormant",
+        "zone": "vale",
+        "loaded": true
+      },
+      "assets": {
+        "tex-planks": {
+          "webp": {
+            "url": "tex-planks.e921fe06.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-stone-wall": {
+          "webp": {
+            "url": "tex-stone-wall.23503328.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-bark": {
+          "webp": {
+            "url": "tex-bark.886e1653.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-rock": {
+          "webp": {
+            "url": "tex-rock.9fe28243.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-grass": {
+          "webp": {
+            "url": "tex-grass.8331daea.webp",
+            "via": "manifest"
+          }
+        }
+      },
+      "__threenativeFrameCounts": {
+        "updates": 660,
+        "renders": 623
+      }
+    },
+    "scene": {
+      "background": "DataTexture",
+      "camera": {
+        "far": 600,
+        "forward": [
+          2.342441238410365e-16,
+          -0.2921444231509435,
+          -0.9563742133818762
+        ],
+        "fov": 55,
+        "near": 0.1,
+        "position": [
+          0.0000512452045873208,
+          3.4264264508200486,
+          13.454942414014141
+        ],
+        "type": "PerspectiveCamera"
+      },
+      "fog": {
+        "color": "#819d90",
+        "density": 0.016,
+        "type": "exponential"
+      },
+      "lights": [
+        {
+          "color": "#ffb055",
+          "intensity": 9,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ff8a2a",
+          "intensity": 2.5,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffa65a",
+          "intensity": 14,
+          "type": "PointLight",
+          "visible": true
+        },
+        {
+          "color": "#ffd9a0",
+          "intensity": 4,
+          "type": "DirectionalLight",
+          "visible": true
+        },
+        {
+          "color": "#cfe6ff",
+          "intensity": 1.2,
+          "type": "PointLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshStandardNodeMaterial": 26,
+        "MeshBasicMaterial": 6,
+        "MeshStandardMaterial": 57,
+        "MeshBasicNodeMaterial": 1,
+        "SpriteNodeMaterial": 5
+      },
+      "objects": 540,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          112,
+          23.080459984258056,
+          72
+        ],
+        "min": [
+          -72,
+          -1.3712404565884526,
+          -72
+        ]
+      }
+    },
+    "components": {
+      "player": {
+        "feetY": 0.010100090503692538,
+        "grounded": true,
+        "health": 6,
+        "position": [
+          0.00005152674566488713,
+          0.8601000905036926,
+          7.999998092651367
+        ],
+        "state": "idle",
+        "stride": {
+          "clipGroundSpeed": 0,
+          "groundSpeed": 0.0000030692172003909945,
+          "inPlace": true,
+          "overridden": false,
+          "rate": 1,
+          "synced": false,
+          "clip": "idle",
+          "footRatio": 1,
+          "inBand": true
+        },
+        "yawDegrees": 180,
+        "tags": [
+          "player"
+        ]
+      },
+      "dummy.0": {
+        "health": 2,
+        "state": "standing",
+        "tags": [
+          "hostile"
+        ]
+      },
+      "dummy.1": {
+        "health": 2,
+        "state": "standing",
+        "tags": [
+          "hostile"
+        ]
+      },
+      "mossling.0": {
+        "health": 2,
+        "position": [
+          -5.99995756149292,
+          0.43010029196739197,
+          -10
+        ],
+        "state": "idle",
+        "wallFollowed": 0,
+        "tags": [
+          "hostile"
+        ]
+      },
+      "mossling.1": {
+        "health": 2,
+        "position": [
+          6.999999523162842,
+          0.4314523935317993,
+          -8.991829872131348
+        ],
+        "state": "idle",
+        "wallFollowed": 0,
+        "tags": [
+          "hostile"
+        ]
+      },
+      "mossling.2": {
+        "health": 2,
+        "position": [
+          102,
+          0.4301000237464905,
+          -8.000001907348633
+        ],
+        "state": "idle",
+        "wallFollowed": 0,
+        "tags": [
+          "hostile"
+        ]
+      },
+      "flicker.0": {
+        "bounced": 0,
+        "health": 2,
+        "position": [
+          12,
+          1.899999976158142,
+          -6
+        ],
+        "state": "idle",
+        "struck": 0,
+        "swoops": 0,
+        "telegraphs": 0,
+        "tags": [
+          "hostile"
+        ]
+      },
+      "flicker.1": {
+        "bounced": 0,
+        "health": 2,
+        "position": [
+          96,
+          1.899999976158142,
+          -5
+        ],
+        "state": "idle",
+        "struck": 0,
+        "swoops": 0,
+        "telegraphs": 0,
+        "tags": [
+          "hostile"
+        ]
+      },
+      "thornback.0": {
+        "clanks": 0,
+        "health": 2,
+        "lunges": 0,
+        "position": [
+          -13.000001907348633,
+          0.5601000189781189,
+          5.000001907348633
+        ],
+        "state": "idle",
+        "telegraphs": 0,
+        "tags": [
+          "hostile"
+        ]
+      },
+      "thornback.1": {
+        "clanks": 0,
+        "health": 2,
+        "lunges": 0,
+        "position": [
+          104,
+          0.5594381093978882,
+          -9.000001907348633
+        ],
+        "state": "idle",
+        "telegraphs": 0,
+        "tags": [
+          "hostile"
+        ]
+      },
+      "warden": {
+        "clanks": 0,
+        "health": 3,
+        "position": [
+          100,
+          1.3098857402801514,
+          -38
+        ],
+        "state": "dormant",
+        "stuns": 0,
+        "tags": [
+          "hostile",
+          "boss"
+        ]
+      },
+      "block": {
+        "position": [
+          97,
+          0,
+          -23
+        ],
+        "refused": 0,
+        "state": "resting",
+        "steps": 0
+      },
+      "chest.sword": {
+        "contents": "sword",
+        "opened": false
+      },
+      "chest.key": {
+        "contents": "key",
+        "opened": false
+      },
+      "effects": {
+        "ember": 0,
+        "mote": 574,
+        "spark": 0,
+        "wisp": 660
+      },
+      "door.grate": {
+        "open": false,
+        "travel": 0
+      },
+      "door.locked": {
+        "open": false,
+        "travel": 0
+      }
+    },
+    "physicsSteps": 660,
+    "pipelineCensus": {
+      "version": 1,
+      "complete": false,
+      "overflowed": false,
+      "unsupported": true,
+      "limit": 512,
+      "clock": {
+        "originMs": 573.6999999880791,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:Object"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.6"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 4795.200000017881,
+        "eventsSettled": 0
+      },
+      "warmUpSettled": {
+        "boundaryMs": 4786.4000000059605,
+        "eventsSettled": 0,
+        "nodeBuilds": 0,
+        "renderPipelineCreations": 0
+      },
+      "counts": {
+        "lookups": 0,
+        "creations": 0,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 0,
+        "uniquePipelines": 0,
+        "recordedEvents": 0,
+        "droppedEvents": 0,
+        "nodeBuilds": 0
+      },
+      "events": [],
+      "incompleteReasons": [
+        "backend creation observation unavailable",
+        "device creation observation unavailable",
+        "no pipeline creations observed"
+      ]
+    }
+  },
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "arm": "AFTER",
+  "scale": 0.72,
+  "run": 2
+}
