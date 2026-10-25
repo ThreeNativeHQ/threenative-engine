@@ -91,3 +91,46 @@ describe("boolean uniforms", () => {
     expect(uniform(3).value).toBe(3);
   });
 });
+
+describe("uniform sync cost", () => {
+  // Lantern Vale renders about ten post passes a frame, and every pass synced every uniform: 832 engine
+  // writes a frame for values that had not changed.
+  it("writes a hooked uniform only when its value changes", () => {
+    const { live, pushed } = setup();
+    let gain = 5;
+    live.uniform(0).onRenderUpdate?.(() => gain);
+    for (let pass = 0; pass < 10; pass++) live.sync({ frameId: 1 } as never);
+    expect(pushed).toEqual([[5]]);
+    gain = 6;
+    live.sync({ frameId: 2 } as never);
+    expect(pushed).toEqual([[5], [6]]);
+  });
+
+  it("writes an edited vector once per edit, however many renders follow", () => {
+    const { live, pushed } = setup();
+    const origin = { x: 1, y: 2 };
+    live.uniform(origin);
+    for (let pass = 0; pass < 10; pass++) live.sync();
+    expect(pushed).toEqual([[1, 2]]);
+    origin.x = 3;
+    live.sync();
+    live.sync();
+    expect(pushed).toEqual([
+      [1, 2],
+      [3, 2],
+    ]);
+  });
+
+  it("runs a frame update once per renderer frame and a render update once per render", () => {
+    const { live } = setup();
+    let frames = 0;
+    let renders = 0;
+    const hooked = live.uniform(0) as IFakeNode & { onFrameUpdate(callback: () => unknown): void };
+    hooked.onFrameUpdate(() => ++frames);
+    live.uniform(0).onRenderUpdate?.(() => ++renders);
+    for (let pass = 0; pass < 10; pass++) live.sync({ frameId: 7 } as never);
+    live.sync({ frameId: 8 } as never);
+    expect(frames).toBe(2);
+    expect(renders).toBe(11);
+  });
+});

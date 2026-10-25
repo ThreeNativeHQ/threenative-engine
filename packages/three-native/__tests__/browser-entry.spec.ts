@@ -168,7 +168,8 @@ describe("web engine nested render safe points", () => {
       expect(collect).toHaveBeenCalledTimes(1);
       expect(updateAudio).toHaveBeenCalledTimes(1);
       expect(sync).toHaveBeenCalledTimes(6);
-      expect(setUniform.mock.calls.map(([, lanes]) => lanes[0])).toEqual([1, 2, 3, 4, 5, 5]);
+      // The outer sync finds x already at 5: an unchanged value is not written again.
+      expect(setUniform.mock.calls.map(([, lanes]) => lanes[0])).toEqual([1, 2, 3, 4, 5]);
       sync.mockImplementationOnce(() => {
         throw new Error("meter draw failed");
       });
@@ -177,6 +178,10 @@ describe("web engine nested render safe points", () => {
       expect(collect).toHaveBeenCalledTimes(3);
       expect(updateAudio).toHaveBeenCalledTimes(2);
       expect(sync).toHaveBeenCalledTimes(13);
+      // A second draw in the same renderer frame (a post pass) syncs uniforms but does not collect again.
+      renderHook({ renderer: {}, frameId: 2 });
+      expect(collect).toHaveBeenCalledTimes(3);
+      expect(updateAudio).toHaveBeenCalledTimes(2);
     } finally {
       vi.restoreAllMocks();
     }
