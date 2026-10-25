@@ -22,6 +22,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
+  canonicalRenderSourcePath,
   cliHelp,
   createProject,
   discoverKitManifests,
@@ -306,14 +307,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
   // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
-  collectathon: "defc1e4bc80bb496de58dd3253f04f492da2d458c4e705e50634f6002fc3d06b",
+  collectathon: "f81548e5708b06cdda241dc598b34c644c2afd1c1775a4389819431a793cdbb3",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
   // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
-  adventure: "cd51c1a05b5a5aa1ede87f4d09bcd1c3779f797d9a8eb93d0b697b7b83bd5ce7",
+  adventure: "e5f6bd6cc87166896923c655885a4d33c5564d39148c77b218c2971aa6d0c4a5",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "f5253c53b519a6124a6aff0f10898d6c05370adc39cb505c55f840bdb85e2cc7",
+  kart: "b63cb78ef8567c4d48ab944cef660fb2e4d22e238828f842488cec4003a504c2",
   minimal: "feb73967c52019009fe034bd20756e25e0906e37caf1bb05d984e271160cfe59",
   platformer: "d01108608d138acbbdf31e0df8dfca3f3bd9befc46513d89f5a1ebdecd3d68ed",
   puzzle: "e7f9370513c60a8c50ab5a8392b857e35c658e745c493bbc5e6b6b27e8611013",
@@ -330,7 +331,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "6e7c0eba446394f834d344fb5e4885ed48e53ffbb93154d585ce29dbf0487029",
+  starter: "e039d4da28b5d73e7954cef4028475234a9348c9b6b8f025f06f56968d6b75d0",
   "tower-defense": "afbd7c71d9420c2fdd31138ff9cca3f778082b68a8e81732b41cb33a0de46bc7",
 };
 
@@ -1831,4 +1832,39 @@ describe("create-threenative", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("authored temporal detail distribution", () => {
+  it("retains global shared assets for a custom template root", () => {
+    expect(canonicalRenderSourcePath("src/render/loading.ts", "/tmp/tn-absent-templates")).toBe(
+      path.resolve("packages/create-threenative/template-assets/loading.ts"),
+    );
+  });
+  it.each(["collectathon", "adventure", "kart"])(
+    "copies the canonical detail stage with a closed local import graph into %s",
+    async (template) => {
+      const parent = await makeTempDir("tn-temporal-detail-");
+      const target = path.join(parent, "game");
+      try {
+        await createProject({ target, template, install: false }, parent, TEMPLATE_ROOT);
+        const relative = "src/render/temporalDetailStage.ts";
+        const generated = await readFile(path.join(target, relative), "utf8");
+        expect(generated).toBe(
+          await readFile(path.join(TEMPLATE_ROOT, "starter", relative), "utf8"),
+        );
+        const post = await readFile(path.join(target, "src/render/postprocessing.ts"), "utf8");
+        expect(post).toContain('from "./temporalDetailStage.js"');
+        // The generated helper depends only on public Three/TSL plus an erased core type.
+        for (const match of generated.matchAll(/from ["'](\.[^"']+)["']/g)) {
+          const specifier = match[1];
+          if (specifier === undefined) throw new Error("Missing local import specifier capture");
+          expect(
+            existsSync(path.resolve(target, "src/render", specifier.replace(/\.js$/, ".ts"))),
+          ).toBe(true);
+        }
+      } finally {
+        await rm(parent, { recursive: true, force: true });
+      }
+    },
+  );
 });

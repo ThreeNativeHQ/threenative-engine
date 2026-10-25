@@ -16,6 +16,11 @@ import {
   type TemporalAAProvider,
   temporalAAStages,
 } from "../templates/starter/src/render/temporalAAStage.js";
+import {
+  temporalDetail,
+  temporalDetailRequested,
+  temporalDetailStage,
+} from "../templates/starter/src/render/temporalDetailStage.js";
 import { createTemporalDepthRejection } from "../templates/starter/src/render/temporalResolveDepth.js";
 
 afterEach(() => vi.restoreAllMocks());
@@ -1138,5 +1143,59 @@ describe("reconstruction uses the input camera that actually drew", () => {
       temporal.dispose();
       scenePass.dispose();
     }
+  });
+});
+
+describe("generated temporal detail controls", () => {
+  it("keeps the named Three override free of detail unless an authored TRAA provides it", () => {
+    const renderer = { kind: "webgpu" as const, raw: { info: {} } };
+    expect(temporalDetailRequested(renderer, { temporalAA: true })).toBe(false);
+    expect(temporalDetailRequested(renderer, { temporalAA: false })).toBe(false);
+    expect(temporalDetailRequested(renderer, { authoredStageNames: ["traa"] })).toBe(true);
+    expect(
+      temporalDetailRequested({ ...renderer, raw: { info: { engine: {} } } }, { temporalAA: true }),
+    ).toBe(true);
+    expect(
+      temporalDetailRequested(
+        { ...renderer, raw: { info: { engine: {} } } },
+        { temporalAA: false },
+      ),
+    ).toBe(false);
+    expect(
+      temporalDetailRequested(
+        { ...renderer, kind: "webgl", raw: { info: { engine: {} } } },
+        { temporalAA: true },
+      ),
+    ).toBe(false);
+  });
+  afterEach(() => {
+    temporalDetail.strength = 1;
+  });
+  function stage() {
+    return temporalDetailStage();
+  }
+  it("refuses missing temporal motion and reports an explicit zero override", () => {
+    expect(stage().available?.({} as never)).toBe("temporal-detail:velocity-missing");
+    temporalDetail.strength = 0;
+    expect(stage().available?.({ velocityNode: rtt(output) } as never)).toBe(
+      "temporal-detail:strength=0",
+    );
+  });
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid strength %s", (strength) => {
+    temporalDetail.strength = strength;
+    expect(() => temporalDetailStage()).toThrow(/temporalDetail.strength/);
+  });
+  it("retains the automatic output transform and requires measured motion texture", () => {
+    const sharpen = stage();
+    expect(sharpen.afterOutputTransform).not.toBe(true);
+    const result = sharpen.build(rtt(output), {
+      velocityNode: rtt(output),
+    } as never) as unknown as {
+      node: { nodes: { components?: string }[] };
+    };
+    // Alpha comes directly from the centre sample, outside the RGB-only sharpening selection.
+    expect(result.node.nodes[1]?.components).toBe("w");
+    expect(sharpen.available?.({ velocityNode: rtt(output) } as never)).toBe(true);
+    expect(() => sharpen.build(output, {} as never)).toThrow(/velocity/);
   });
 });

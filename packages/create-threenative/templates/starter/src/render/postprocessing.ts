@@ -22,6 +22,7 @@ import {
 import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
+import { temporalDetailRequested, temporalDetailStage } from "./temporalDetailStage.js";
 import type { FogMedium } from "./volumetricFog.js";
 
 interface IPostController {
@@ -102,9 +103,15 @@ export function setupPost(
       // orders and reports them, and `quality.ts` decides whether each tier runs them. The kit's
       // `traa` stage is offered beside them: a tier that lists `traa` in its `authoredStageNames`
       // runs it in place of the chain's own temporal AA (`temporalAA`).
-      authoredStageNames: ["grade", "grain", ...(settings.authoredStageNames ?? [])],
+      authoredStageNames: [
+        "grade",
+        "grain",
+        ...(settings.authoredStageNames ?? []),
+        ...(temporalDetailRequested(renderer, settings) ? ["sharpen" as const] : []),
+      ],
       authoredStages: (stage) => [
         ...gradeStages(gradePreset(policy.tier), table),
+        temporalDetailStage(),
         ...temporalAAStages(stage, {
           onProvider: (provider) => {
             temporal = provider;
