@@ -9,7 +9,6 @@ import {
   LoopOnce,
   LoopRepeat,
   Matrix4,
-  type Matrix4Tuple,
   type Object3D,
   Vector3,
   type VectorKeyframeTrack,
@@ -194,8 +193,22 @@ function contactPoint(elements: Float64Array, box: Box3 | undefined, target: Vec
   // Plain arithmetic over one read of the matrix and the box, Vector3.applyMatrix4's own formula:
   // on the owned engine each vector call crosses into the engine, and 8 corners per mesh per sample
   // held Lantern Vale's first walk and first run for 43 ms each.
-  const [e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15] =
-    elements as unknown as Matrix4Tuple;
+  const e0 = elements[0] as number;
+  const e1 = elements[1] as number;
+  const e2 = elements[2] as number;
+  const e3 = elements[3] as number;
+  const e4 = elements[4] as number;
+  const e5 = elements[5] as number;
+  const e6 = elements[6] as number;
+  const e7 = elements[7] as number;
+  const e8 = elements[8] as number;
+  const e9 = elements[9] as number;
+  const e10 = elements[10] as number;
+  const e11 = elements[11] as number;
+  const e12 = elements[12] as number;
+  const e13 = elements[13] as number;
+  const e14 = elements[14] as number;
+  const e15 = elements[15] as number;
   const { x: minX, y: minY, z: minZ } = box.min;
   const { x: maxX, y: maxY, z: maxZ } = box.max;
   for (let index = 0; index < 8; index += 1) {
@@ -277,12 +290,44 @@ function composeLocal(object: Object3D, te: Float64Array): void {
   te[15] = 1;
 }
 
-/** Matrix4.multiplyMatrices(a, b) into `te`, three's own formula. */
+/**
+ * Matrix4.multiplyMatrices(a, b) into `te`, three's own formula. Indexed reads on purpose: this runs
+ * on a clip's first play, before the JIT warms, where destructuring a Float64Array runs its
+ * iterator at twice the cost.
+ */
 function multiplyInto(ae: Float64Array, be: Float64Array, te: Float64Array): void {
-  const [a11, a21, a31, a41, a12, a22, a32, a42, a13, a23, a33, a43, a14, a24, a34, a44] =
-    ae as unknown as Matrix4Tuple;
-  const [b11, b21, b31, b41, b12, b22, b32, b42, b13, b23, b33, b43, b14, b24, b34, b44] =
-    be as unknown as Matrix4Tuple;
+  const a11 = ae[0] as number;
+  const a21 = ae[1] as number;
+  const a31 = ae[2] as number;
+  const a41 = ae[3] as number;
+  const a12 = ae[4] as number;
+  const a22 = ae[5] as number;
+  const a32 = ae[6] as number;
+  const a42 = ae[7] as number;
+  const a13 = ae[8] as number;
+  const a23 = ae[9] as number;
+  const a33 = ae[10] as number;
+  const a43 = ae[11] as number;
+  const a14 = ae[12] as number;
+  const a24 = ae[13] as number;
+  const a34 = ae[14] as number;
+  const a44 = ae[15] as number;
+  const b11 = be[0] as number;
+  const b21 = be[1] as number;
+  const b31 = be[2] as number;
+  const b41 = be[3] as number;
+  const b12 = be[4] as number;
+  const b22 = be[5] as number;
+  const b32 = be[6] as number;
+  const b42 = be[7] as number;
+  const b13 = be[8] as number;
+  const b23 = be[9] as number;
+  const b33 = be[10] as number;
+  const b43 = be[11] as number;
+  const b14 = be[12] as number;
+  const b24 = be[13] as number;
+  const b34 = be[14] as number;
+  const b44 = be[15] as number;
   te[0] = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
   te[4] = a11 * b12 + a12 * b22 + a13 * b32 + a14 * b42;
   te[8] = a11 * b13 + a12 * b23 + a13 * b33 + a14 * b43;
