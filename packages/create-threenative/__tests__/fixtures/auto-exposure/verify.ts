@@ -31,11 +31,14 @@ interface IFixtureCase extends IExposureCaseProof {
   histogram?: boolean;
 }
 // Scene-linear readings of the clipped-histogram meter (PRD-571), independently of adaptation.
-// The 5c3b176 mean meter read 0.0019189 / 3.8961 on the same frames; the 10/90 log mean sits 0.37
-// stop under that arithmetic mean at both lighting levels. This pins the meter against a
-// constant/doubled-meter bug; display-tone metrics remain PRD341-owned.
-const darkLuminance = 0.0014869463630020618;
-const sunlightLuminance = 3.0578835010528564;
+// The 5c3b176 mean meter read 0.0019189 / 3.8961 on the same frames; the 10/90 log mean sat 0.37
+// stop under that arithmetic mean at both lighting levels. Since 4a0375cfa the fixture meters
+// with core's Unreal luminance (equal channel weights, no bottom-of-frame preference; PRD-632),
+// not the template copy's Rec. 709 bottom-weighted one that read 0.0014869 / 3.0579: the same
+// frames now read 6.1% and 6.5% lower. This pins the meter against a constant/doubled-meter bug;
+// display-tone metrics remain PRD341-owned.
+const darkLuminance = 0.0013968388084322214;
+const sunlightLuminance = 2.8592607975006104;
 // The dark room's settled target; a backlit patch must leave it where it was.
 const darkTargetStops = Math.log2(exposureSettings.key / darkLuminance);
 const cases: IFixtureCase[] = [

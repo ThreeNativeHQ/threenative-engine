@@ -26,7 +26,7 @@ const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], {
 const runtime = resolve(
   process.env.TN_NATIVE_EXECUTABLE ?? join(root, "packages/runtime-native/build/tn-linux/mystral"),
 );
-const expectedLuminance = 3.0578835010528564; // Same bright-room browser fixture reference and 2% tolerance.
+const expectedLuminance = 2.8592607975006104; // Same bright-room browser fixture reference and 2% tolerance.
 type ConsoleEntry = { text: string; type: string };
 
 function marker(entries: readonly ConsoleEntry[], prefix: string) {
