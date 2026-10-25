@@ -1,0 +1,25 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 7,
+  "openedImages": 7,
+  "overall": "NEUTRAL",
+  "frames": [
+    {
+      "name": "breakable-time-matched.playtest.json",
+      "verdict": "NEUTRAL",
+      "regions": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reason": "Both runs of BEFORE (a753) and AFTER (Fog alias cache), in the raw frames and the sheet panels, look visually indistinguishable. All seven cues are present in both arms and runs at the same positions, sizes and tone: (693,393) dark shard, (599,402) red disc, (735,350) hex fragment, (663,333) tiny fragments, (603,380) and (555,343) small discs, and (642,361) dark-core impact decal with a pale smudge just lower-right of the reticle. None is lost, fainter, lower-contrast or newly haloed. The pot shard and its contact shadow are unchanged. Wheel, bumper, fender, blue-box and pot contacts keep the same shadow weight with no new light fringes. Floor, fender highlight and the white lamp show no new clipping or headroom loss. No grain or noise, no added blur, and no material-detail loss on tile lines, truck trim, gun or glove. Haze, sky and the distant buildings, figure and palm keep the same gradient and tint, so there is no sign of a stale or shifted fog color. HUD text, minimap, weapon and the same dark-outlined reticle are equally readable in both arms. There is no improvement either, as expected for a CPU property-lookup change. The L9 references have different geometry and earn no credit."
+    }
+  ],
+  "limitations": "1) Visual inspection only, with no pixel diff or metrics because commands were disallowed. Differences of a few LSB, sub-pixel shifts or very slight fog tint changes below the visual threshold cannot be excluded. Sheet panels are about 0.5x downscaled and the crops are about 1.5x interpolated upscales, which can mask 1px-scale cue differences. The raw 1280x720 frames were compared at the scale the viewer presented. 2) Raw frames are unlabelled. I assigned FOG-AFTER-run1/2 to BEFORE a753 and FOG-CACHE-AFTER-run1/2 to AFTER from folder names and sheet labels, and the sheet panels match those frames, but the runtime build identity cannot be verified from images. 3) This is one static pose in one scene (breakable-shatters, HUD clock 1:39) with two runs per arm. It cannot establish pumping, motion, fading or fullkit acceptance, behaviour in other scenes or fog parameters, or what happens if Fog.color changes at runtime. A stale-alias bug would only show when the color changes. 4) Timing is resolved on the images only to visible precision. The HUD clock, camera, debris layout, decal appearance and run1/run2 repeatability all match. Debris is at rest and the clock has 1 s granularity, so sub-second effect-age or decal-fade offsets are not excluded. 5) The L9 source and full-sun60 references show different geometry (sphere and sky reflection; exterior, spheres, interior, backlit harness). They give no improvement credit and no calibration for this scene.",
+  "timingConfoundResolved": true
+}
