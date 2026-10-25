@@ -3,6 +3,7 @@
   "compilerOptions": {
     "types": ["node"],
     "noEmit": true,
+    "allowJs": true,
     "paths": {
       "three": ["./generated/three.d.ts"]
     }

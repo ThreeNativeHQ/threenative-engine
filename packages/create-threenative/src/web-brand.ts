@@ -8,7 +8,7 @@ export interface IWebBrandVitePlugin {
   config(config: { readonly root?: string }): Promise<
     { optimizeDeps: { exclude: string[] } } | undefined
   >;
-  resolveId(source: string): string | null;
+  resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
   configResolved(config: { readonly root: string }): Promise<void>;
   transformIndexHtml(html: string): string;
@@ -124,8 +124,8 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
         };
       return undefined;
     },
-    resolveId(source) {
-      return engine?.resolveId(source) ?? null;
+    resolveId(source, importer) {
+      return engine?.resolveId(source, importer) ?? null;
     },
     async load(id) {
       return engine?.load(id) ?? null;

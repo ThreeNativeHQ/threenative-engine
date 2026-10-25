@@ -140,18 +140,29 @@ describe("three's math values on the browser back end", () => {
     expect(calls.filter((call) => call === "construct Vector3")).toHaveLength(1);
   });
 
-  it("turns a value a constructor keeps into an engine object in place", () => {
-    const { runtime, heap } = memoryRuntime();
+  it("keeps a JS box's member vectors in JS until the box itself crosses", () => {
+    const { runtime, calls } = memoryRuntime();
     const { classes } = defineBrowserClasses(registry, runtime);
     const Vector3 = classes.Vector3 as new (x?: number, y?: number, z?: number) => IVec;
-    const Box3 = classes.Box3 as new (min: IVec, max: IVec) => object;
+    const Box3 = classes.Box3 as new (
+      min: IVec,
+      max: IVec,
+    ) => {
+      min: IVec;
+      max: IVec;
+      expandByPoint(point: IVec): unknown;
+    };
     const min = new Vector3(1, 2, 3);
-    new Box3(min, new Vector3(4, 5, 6));
-    expect(engineRef(min)).toBeDefined();
-    expect(min).toBeInstanceOf(Vector3);
-    min.x = 10;
-    const at = (runtime.get(engineRef(min) as IEngineRef, "__address") as number) / 8;
-    expect([...heap.subarray(at, at + 3)]).toEqual([10, 2, 3]);
+    const max = new Vector3(4, 5, 6);
+    const box = new Box3(min, max);
+    // three keeps the vectors it is handed; the box crosses to the engine, not its members.
+    expect(box.min).toBe(min);
+    expect(box.max).toBe(max);
+    box.expandByPoint(new Vector3(1, 1, 1));
+    expect(calls).toEqual([]);
+    const geometry = new (classes.BufferGeometry as new () => { boundingBox: object | null })();
+    geometry.boundingBox = box;
+    expect(engineRef(box)).toBeDefined();
   });
 
   it("answers MathUtils without calling the engine", () => {
@@ -267,12 +278,14 @@ describe("three's math values on the browser back end", () => {
       expect([x, y, z, w]).toEqual([expected.x, expected.y, expected.z, expected.w]);
     });
     expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toEqual([]);
-    rotation.set(0, 0, 0, "XYZ"); // a new order: the engine reorders and syncs
-    expect(calls.at(-1)).toBe("invoke set");
-    // An Euler no object owns still crosses, so its own callback (if any) runs in the engine.
+    rotation.set(0, 0, 0, "XYZ"); // a new order: the engine owns the reorder
+    expect(calls.at(-1)).toBe("set order");
+    // A JS Euler crosses nothing: its angles and its callback are JS.
     const free = new (classes.Euler as new () => IRotation)();
+    const before = calls.length;
     free.x = 1;
-    expect(calls.at(-1)).toBe("set x");
+    free.set(0, 0, 0, "ZYX");
+    expect(calls).toHaveLength(before);
   });
 
   it("asks every fresh wrapper immediately, then covers settled wrappers within 64 bounded safe points", () => {

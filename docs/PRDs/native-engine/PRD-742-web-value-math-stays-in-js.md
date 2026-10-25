@@ -1,6 +1,6 @@
 # PRD-742 — Value math stays in JS on the web Wasm engine
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — engine implemented; AC-1 met, AC-2 improved 9.7x but above its target; visual judge and Midway open.
 **Priority:** P1 — on the default web engine every `Color`, `Quaternion`, `Matrix4`, `Euler`, `Vector2` and `Box3` call crosses the Wasm facade, about 200x the cost in three.js; Hop Garden's sky alone spends 7.7 s of main thread in it at load.
 **Complexity:** 5 (MEDIUM)
 **Owner:** João
@@ -63,8 +63,8 @@ Borrow three r185's classes (MIT), as `browser-math.ts` does for `Vector3`.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: on the owned web engine, each micro-measure row above is within 3x of three.js. proof: the micro-measure script on a fresh scaffold, both arms, 3 runs each
-- [ ] AC-2: Hop Garden's original `sky.ts` (before the game-side plain-number fix) spends under 0.3 s in `skyTexture` at launch. proof: the CDP CPU profile recipe above
+- [x] AC-1: on the owned web engine, each micro-measure row above is within 3x of three.js. proof: the micro-measure script on a fresh scaffold, both arms, 3 runs each — DONE 2026-10-24 (Node, real Wasm ABI module, 3 runs): Color.lerp 5/4 ms, copy 5/5, Vector2.add 5/4, Quaternion.multiply 9/9, Matrix4.multiply 36/37, Euler.set 4/4, Box3.expandByPoint 8/7, Vector3.add 4/4 (owned engine / three.js per 1 M calls); 0 crossings. Not the scaffold page: the ABI is the same module the page uses.
+- [ ] AC-2: Hop Garden's original `sky.ts` (before the game-side plain-number fix) spends under 0.3 s in `skyTexture` at launch. proof: the CDP CPU profile recipe above — OPEN: the original sky on the old engine spends 6336.9 ms in skyTexture at launch; the new engine spends 653.5 ms (CDP 1 ms, RTX 2080, launch window), a 9.7x cut but above 0.3 s. The rest is per-texel JS math (convertLinearToSRGB, allocation), not crossings; the game-side plain-number fix is the hop-garden-look lane.
 
 ## Blocked on
 
@@ -74,21 +74,23 @@ Nothing.
 
 - 2026-10-24, team lead: the game-side fix (plain-number lerps in Hop's `sky.ts`) goes to the hop-garden-look lane. This PRD fixes the engine, so that every game's CPU-side value math gets fast, not only Hop.
 
+- 2026-10-24: browser-math.ts imports three's math modules, as the V8 player bundles them; the web-engine bundler permits three/src/math/* only from the runtime's own module and still refuses a game's deep import.
+
 ## Execution Phases
 
 ### Phase 1 — Colour and the call guard
 
-- [ ] `Color` is JS in `browser-math.ts`, and engine-owned colours (`material.color`, `light.color`, `scene.background`) are the same class over engine memory. proof: a `packages/three-native/__tests__` spec with a counting runtime stub: 10k `lerp`/`copy`/`setHex` calls on a JS colour make 0 engine calls (red first), and `vitest run packages/three-native`
-- [ ] Colour management matches the engine: `setHex`, `setStyle`, `getHex` and `getStyle` give the same linear values as the C++ `Color` for the sRGB and linear working spaces. proof: the same spec against values read from the engine; `pnpm parity` colour rows unchanged
-- [ ] No visual change on two kits. proof: Hop Garden and Clover Cup captures, BEFORE/AFTER, 2 runs per arm, fresh visual judge NEUTRAL or better
+- [x] `Color` is JS in `browser-math.ts`, and engine-owned colours (`material.color`, `light.color`, `scene.background`) are the same class over engine memory. proof: a `packages/three-native/__tests__` spec with a counting runtime stub: 10k `lerp`/`copy`/`setHex` calls on a JS colour make 0 engine calls (red first), and `vitest run packages/three-native` — DONE 2026-10-24: browser-value-math.spec.ts proves 0 engine calls over 10k Color lerp/copy/setHex; `vitest run packages/three-native` 349/349 pass.
+- [ ] Colour management matches the engine: `setHex`, `setStyle`, `getHex` and `getStyle` give the same linear values as the C++ `Color` for the sRGB and linear working spaces. proof: the same spec against values read from the engine; `pnpm parity` colour rows unchanged — OPEN: the same spec matches three r185 setHex/setStyle/getHex/getStyle; `pnpm parity --target web --engine threenative --only-tests 63-color-management` fails at TN_NATIVE_UNCATALOGUED_COLORMANAGEMENT (the engine binds no ColorManagement), which predates this change. Colour rows 16-vertex-colors, 22-hemisphere-light and 71-tsl-color-node pass 3/3.
+- [ ] No visual change on two kits. proof: Hop Garden and Clover Cup captures, BEFORE/AFTER, 2 runs per arm, fresh visual judge NEUTRAL or better — OPEN: two-kit BEFORE/AFTER captures and the fresh visual judge are not run.
 
 ### Phase 2 — The other value classes
 
-- [ ] `Quaternion` and `Euler` are JS, with three's `_onChange` sync over an engine-owned `Object3D`. proof: spec with a 0-call guard over 10k operations and a rotation-to-quaternion sync case; `pnpm parity`
-- [ ] `Matrix3` and `Matrix4` are JS, with engine-owned `matrix` and `matrixWorld` as views. proof: spec with a 0-call guard; `pnpm parity`
-- [ ] `Vector2`, `Vector4`, `Box3` and `Sphere` are JS. proof: spec with a 0-call guard for each; `vitest run packages/three-native`
+- [x] `Quaternion` and `Euler` are JS, with three's `_onChange` sync over an engine-owned `Object3D`. proof: spec with a 0-call guard over 10k operations and a rotation-to-quaternion sync case; `pnpm parity` — DONE: the spec guards Quaternion/Euler over 10k ops with 0 calls; native_engine_wasm_browser_backend passes TN_BROWSER_BACKEND_OK, including the in-place rotation-to-quaternion sync. pnpm parity has no math rows.
+- [x] `Matrix3` and `Matrix4` are JS, with engine-owned `matrix` and `matrixWorld` as views. proof: spec with a 0-call guard; `pnpm parity` — DONE: the spec guards Matrix3/Matrix4 over 10k ops with 0 calls; the real-Wasm smoke keeps Matrix4 copy and equals over memory.
+- [x] `Vector2`, `Vector4`, `Box3` and `Sphere` are JS. proof: spec with a 0-call guard for each; `vitest run packages/three-native` — DONE: the spec guards Vector2, Vector4, Box3 and Sphere over 10k ops with 0 calls each.
 
 ### Phase 3 — Outcome
 
-- [ ] The micro-measure and the Hop sky profile meet AC-1 and AC-2. proof: the micro-measure script and the CDP CPU profile, recorded beside AC-1 and AC-2
-- [ ] Midway frame CPU on the web Wasm arm stays the same or improves. proof: `flight.sh native` against the PRD-612 baseline, 3 pairs
+- [ ] The micro-measure and the Hop sky profile meet AC-1 and AC-2. proof: the micro-measure script and the CDP CPU profile, recorded beside AC-1 and AC-2 — PARTIAL: AC-1 met; AC-2 improved but above target (see AC rows).
+- [ ] Midway frame CPU on the web Wasm arm stays the same or improves. proof: `flight.sh native` against the PRD-612 baseline, 3 pairs — OPEN: not measured.
