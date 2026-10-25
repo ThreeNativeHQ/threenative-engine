@@ -87,6 +87,12 @@ std::array<float, 8> TraaPass::historyDepthRows(const Matrix& projection, const 
 // shader's previous depth is two dot products against the same clip position, not a camera chain.
 // Out-of-image loads: depth reads zero, as upstream; a beauty neighbour reads (0, 0, 0, 1), which
 // is what the browser returns there (WGSL leaves it implementation-defined; measured with TN_TRAA_DUMP).
+// Counted frames record rejection/clipping only. Projection jitter has the opposite sign to UE's;
+// depth uses nearest sampling and CPU-composed reprojection rows. The current radial filter shares
+// its nine texels with the UE High clamp; incomplete motion uses responsive history.
+// UE 5.8.3 TemporalAA.usf:2175-2190,2334-2343 rejects departed dynamic history;
+// a separate R8 target keeps the authored colour alpha intact.
+// UE 5.8.3 TemporalAA.usf:1463-1478,1772-1808,1961-1990,2278: responsive history for incomplete motion.
 const char* traaResolveWgsl() { return R"WGSL(
 struct Params {
     depthNumerator: vec4<f32>, depthDenominator: vec4<f32>,
@@ -101,9 +107,8 @@ struct Params {
 @group(0) @binding(4) var history: texture_2d<f32>;
 @group(0) @binding(5) var previousDepth: texture_depth_2d;
 @group(0) @binding(6) var linearSampler: sampler;
-// On a counted frame (`u.count`): [0] the pixels whose history was discarded, [1] the pixels whose history was pulled into
-// the colour neighbourhood. Other frames never touch it.
 @group(0) @binding(7) var<storage, read_write> stats: array<atomic<u32>, 2>;
+@group(0) @binding(8) var previousDynamic: texture_2d<f32>;
 struct Vertex { @builtin(position) position: vec4<f32>, @location(0) uv: vec2<f32> }
 @vertex fn vs(@builtin(vertex_index) index: u32) -> Vertex {
     var positions = array<vec2<f32>, 3>(vec2(-1, -1), vec2(3, -1), vec2(-1, 3));
@@ -119,10 +124,12 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     if (largest > 1) { return vec4(center, current.a) + delta / largest; }
     return old;
 }
-@fragment fn fs(input: Vertex) -> @location(0) vec4<f32> {
+const rgbToNeighborhood = mat3x3<f32>(vec3<f32>(1,2,-1), vec3<f32>(2,0,2), vec3<f32>(1,-2,-1));
+const neighborhoodToRgb = mat3x3<f32>(vec3<f32>(.25), vec3<f32>(.25,0,-.25), vec3<f32>(-.25,.25,-.25));
+struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
+@fragment fn fs(input: Vertex) -> Resolved {
     let outputSize = vec2<f32>(textureDimensions(history));
     let upsampling = any(outputSize != u.size);
-    // Our projection moves the raster by -jitter pixels (UE's TemporalJitterPixels has the opposite sign).
     let currentUV = input.uv - select(vec2<f32>(0), u.jitter / u.size, upsampling);
     let texel = clamp(vec2<i32>(floor(currentUV * u.size)), vec2<i32>(0), vec2<i32>(u.size) - 1);
     var closest = 2.0;
@@ -130,44 +137,59 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     var closestPosition = vec2<f32>(0);
     for (var x = -1; x <= 1; x++) {
         for (var y = -1; y <= 1; y++) {
-            // Upstream adds to the floating pixel centre before converting to integer.
             let neighbor = currentUV * u.size + vec2<f32>(f32(x), f32(y));
             let d = textureLoad(depth, vec2<i32>(neighbor), 0);
             if (d < closest) { closest = d; closestPosition = neighbor; }
             if (d > farthest) { farthest = d; }
         }
     }
-    let offset = textureLoad(velocity, vec2<i32>(closestPosition), 0).xy * vec2(0.5, -0.5);
+    let motionSample = textureLoad(velocity, vec2<i32>(closestPosition), 0);
+    let offset = motionSample.xy * vec2(0.5, -0.5);
     let historyUV = input.uv - offset;
-    // DepthTexture defaults to nearest filtering; the colour history uses bilinear sampling.
     let previousDepthUV = historyUV - select(vec2<f32>(0), u.previousJitter / u.size, upsampling);
     let previousTexel = clamp(vec2<i32>(floor(previousDepthUV * u.size)), vec2<i32>(0), vec2<i32>(u.size) - 1);
     let d = textureLoad(previousDepth, previousTexel, 0);
     let previousClip = vec4(previousDepthUV * vec2(2, -2) + vec2(-1, 1), d, 1);
-    // Equivalent to the old inverse projection, divide, world, view and projection chain in two rows.
     let oldDepth = dot(u.depthNumerator, previousClip) / dot(u.depthDenominator, previousClip);
     let validUV = all(historyUV >= vec2(0)) && all(historyUV <= vec2(1));
     let edge = farthest - closest > u.edgeDepthDiff;
     let disocclusion = closest - oldDepth > u.depthThreshold;
-    let valid = u.historyValid != 0 && validUV && (edge || !disocclusion);
+    let dynamic = motionSample.z != 1;
+    var dynamicNeighborhood = dynamic;
+    var completeMotion = motionSample.z > 0.5;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let step = vec2<i32>(x,y);
+            let pixel = clamp(texel + step, vec2<i32>(0), vec2<i32>(u.size) - 1);
+            completeMotion = completeMotion && textureLoad(velocity, pixel, 0).z > 0.5;
+            if (x == 0 || y == 0) {
+                let nearest = clamp(vec2<i32>(closestPosition) + step, vec2<i32>(0), vec2<i32>(u.size) - 1);
+                dynamicNeighborhood = dynamicNeighborhood || textureLoad(velocity, nearest, 0).z != 1;
+            }
+        }
+    }
+    let highClamp = upsampling;
+    let oldDynamic = textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
+    let departed = !dynamicNeighborhood && oldDynamic;
+    let valid = u.historyValid != 0 && validUV && (edge || !disocclusion) && !departed;
     let counting = u.count != 0;
     if (counting && !valid) { atomicAdd(&stats[0], 1u); }
     var current: vec4<f32>;
     var moment1 = vec4<f32>(0);
     var moment2 = vec4<f32>(0);
-    var gatheredMoments = false;
+    var low = vec4(1e30);
+    var high = vec4(-1e30);
     if (upsampling) {
-        // UE 5.8.3 TemporalAA.usf:1463-1478: filter nearby input samples in output-pixel units.
         let centre = floor(currentUV * u.size);
-        // The reconstruction and clamp share nine input texels, except beyond the jittered viewport edge.
-        gatheredMoments = all(vec2<i32>(centre) == texel);
         let upscale = outputSize / u.size;
+        let radius = 1.51 - 0.21 * (max(upscale.x, upscale.y) - 1);
         var sum = vec4<f32>(0);
         var weights = 0.0;
         for (var y = -1; y <= 1; y++) {
             for (var x = -1; x <= 1; x++) {
                 let samplePosition = centre + vec2<f32>(f32(x), f32(y));
-                let delta = (samplePosition + 0.5 - currentUV * u.size) * upscale;
+                let distance = samplePosition + 0.5 - currentUV * u.size;
+                let delta = distance * upscale;
                 let x2 = clamp(dot(delta, delta), 0.0, 1.0);
                 let weight = (0.905 * x2 - 1.9) * x2 + 1.0;
                 let sourcePixel = vec2<i32>(samplePosition);
@@ -175,11 +197,10 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
                 let color = textureLoad(beauty, pixel, 0);
                 sum += color * weight;
                 weights += weight;
-                if (gatheredMoments) {
-                    let inside = all(sourcePixel >= vec2<i32>(0)) && all(sourcePixel < vec2<i32>(u.size));
-                    let neighbor = max(select(vec4(0.0, 0.0, 0.0, 1.0), color, inside), vec4(0.0));
-                    let sample = select(neighbor, color, x == 0 && y == 0);
-                    moment1 += sample; moment2 += sample * sample;
+                if (highClamp && ((x == 0 && y == 0) || dot(distance, distance) < radius * radius)) {
+                    let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
+                    low = min(low, neighborhood);
+                    high = max(high, neighborhood);
                 }
             }
         }
@@ -195,11 +216,12 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
         let weight = max(phase, 1 - phase);
         currentWeight += (1 - weight.x * weight.y) / 0.75 * 0.25;
     }
+    if (upsampling && !completeMotion) { currentWeight = max(currentWeight, 0.25); }
     currentWeight = select(1.0, clamp(currentWeight + motion, 0.0, 1.0), valid);
     let gamma = mix(0.5, 1.0, (1 - motion) * (1 - motion));
     var offsets = array<vec2<i32>, 8>(vec2(-1,-1), vec2(-1,1), vec2(1,-1), vec2(1,1),
         vec2(1,0), vec2(0,-1), vec2(0,1), vec2(-1,0));
-    if (!gatheredMoments) {
+    if (!highClamp) {
         let centreSample = select(current, textureLoad(beauty, texel, 0), upsampling);
         moment1 = centreSample;
         moment2 = centreSample * centreSample;
@@ -208,18 +230,25 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
             moment1 += neighbor; moment2 += neighbor * neighbor;
         }
     }
-    let mean = moment1 / 9;
-    let variance = sqrt(max(moment2 / 9 - mean * mean, vec4(0.0))) * gamma;
-    let low = mean - variance;
-    let high = mean + variance;
-    let clipped = clipAABB(clamp(mean, low, high), old, low, high);
+    var clipped = old;
+    if (highClamp) {
+        let historyColor = vec4(rgbToNeighborhood * old.rgb, old.a);
+        let bounded = clamp(historyColor, low, high);
+        if (any(bounded != historyColor)) { clipped = vec4(neighborhoodToRgb * bounded.rgb, bounded.a); }
+    } else {
+        let mean = moment1 / 9;
+        let variance = sqrt(max(moment2 / 9 - mean * mean, vec4(0.0))) * gamma;
+        low = mean - variance;
+        high = mean + variance;
+        clipped = clipAABB(clamp(mean, low, high), old, low, high);
+    }
     if (counting && valid && any(clipped.rgb != old.rgb)) { atomicAdd(&stats[1], 1u); }
     let compressedCurrent = current / (max(max(current.r, current.g), current.b) + 1);
     let compressedHistory = clipped / (max(max(clipped.r, clipped.g), clipped.b) + 1);
     let luminance = vec3(0.2126, 0.7152, 0.0722);
     let historyWeight = (1 - currentWeight) / (dot(compressedHistory.rgb, luminance) + 1);
     currentWeight /= dot(compressedCurrent.rgb, luminance) + 1;
-    return (current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001);
+    return Resolved((current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001), select(0.f, 1.f, dynamic || (valid && oldDynamic)));
 }
 )WGSL"; }
 
@@ -245,7 +274,7 @@ struct Vertex { @builtin(position) position: vec4<f32> }
     let worldPoint = u.world * vec4(viewPoint.xyz / viewPoint.w, 1);
     let current = u.projection * (u.view * worldPoint);
     let previous = u.previousProjection * (u.previousView * worldPoint);
-    return vec4(current.xy / current.w - previous.xy / previous.w, 0, 1);
+    return vec4(current.xy / current.w - previous.xy / previous.w, select(0.f, 1.f, clip.z == 1), 1);
 }
 )WGSL"; }
 
@@ -271,8 +300,9 @@ TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
     setupShaderModuleWGSL(&moduleDesc, &wgsl, traaResolveWgsl());
     auto module = wgpuDeviceCreateShaderModule(device_, &moduleDesc);
     WGPUColorTargetState color{}; color.format = WGPUTextureFormat_RGBA16Float; color.writeMask = WGPUColorWriteMask_All;
+    WGPUColorTargetState colors[2] = {color, color}; colors[1].format = WGPUTextureFormat_R8Unorm;
     WGPUFragmentState fragment{}; fragment.module = module; WGPU_SET_ENTRY_POINT(fragment, "fs");
-    fragment.targetCount = 1; fragment.targets = &color;
+    fragment.targetCount = 2; fragment.targets = colors;
     WGPURenderPipelineDescriptor pipeline{};
     pipeline.vertex.module = module; WGPU_SET_ENTRY_POINT(pipeline.vertex, "vs");
     pipeline.fragment = &fragment; pipeline.primitive.topology = WGPUPrimitiveTopology_TriangleList;
@@ -306,10 +336,11 @@ TraaPass::~TraaPass() {
 }
 void TraaPass::releaseTargets() {
     fillGroups_.clear(); resolveGroups_.clear();  // they hold the views released here
-    for (auto v : {historyView_, historyDepthView_, resolveView_, velocityView_}) if (v) wgpuTextureViewRelease(v);
-    for (auto t : {historyColor_, historyDepth_, resolve_, velocity_}) if (t) wgpuTextureRelease(t);
+    for (auto v : {historyView_, historyDepthView_, resolveView_, velocityView_, dynamicView_, historyDynamicView_}) if (v) wgpuTextureViewRelease(v);
+    for (auto t : {historyColor_, historyDepth_, resolve_, velocity_, dynamic_, historyDynamic_}) if (t) wgpuTextureRelease(t);
     historyView_ = historyDepthView_ = resolveView_ = velocityView_ = nullptr;
-    historyColor_ = historyDepth_ = resolve_ = velocity_ = nullptr;
+    historyColor_ = historyDepth_ = resolve_ = velocity_ = dynamic_ = historyDynamic_ = nullptr;
+    dynamicView_ = historyDynamicView_ = nullptr;
 }
 void TraaPass::resize(uint32_t width, uint32_t height) {
     resize(width, height, width, height);
@@ -341,6 +372,8 @@ void TraaPass::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uin
                      WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
         return wgpuDeviceCreateTexture(device_, &desc);
     };
+    dynamic_ = texture(WGPUTextureFormat_R8Unorm, true); dynamicView_ = view(dynamic_);
+    historyDynamic_ = texture(WGPUTextureFormat_R8Unorm, true); historyDynamicView_ = view(historyDynamic_);
     historyColor_ = texture(WGPUTextureFormat_RGBA16Float, true); historyView_ = view(historyColor_);
     resolve_ = texture(WGPUTextureFormat_RGBA16Float, true); resolveView_ = view(resolve_);
     velocity_ = texture(WGPUTextureFormat_RGBA16Float, false); velocityView_ = view(velocity_);
@@ -352,10 +385,13 @@ void TraaPass::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uin
     const auto beauty = graph_.external("beauty", hdr), z = graph_.external("depth", depth);
     const auto motion = graph_.external("velocity", hdr), old = graph_.external("traa-history", outputHdr);
     const auto oldZ = graph_.external("traa-previous-depth", depth), result = graph_.external("traa-resolve", outputHdr);
+    const graph::TextureDesc mask{outputWidth, outputHeight, WGPUTextureFormat_R8Unorm, WGPUTextureUsage_TextureBinding};
+    const auto oldMask = graph_.external("traa-history-dynamic", mask), currentMask = graph_.external("traa-dynamic", mask);
     graph_.pass("traa-velocity", graph::PassKind::Render, {{z}}, {motion});
-    graph_.pass("traa-resolve", graph::PassKind::Render, {{beauty}, {z}, {motion}, {old}, {oldZ}}, {result});
+    graph_.pass("traa-resolve", graph::PassKind::Render, {{beauty}, {z}, {motion}, {old}, {oldZ}, {oldMask}}, {result, currentMask});
     const auto next = graph_.external("traa-next-history", outputHdr), nextZ = graph_.external("traa-next-depth", depth);
-    graph_.pass("traa-store-history", graph::PassKind::Render, {{result}, {z}}, {next, nextZ});
+    const auto nextMask = graph_.external("traa-next-dynamic", mask);
+    graph_.pass("traa-store-history", graph::PassKind::Render, {{result}, {z}, {currentMask}}, {next, nextZ, nextMask});
     if (!graph_.compile().ok()) throw std::runtime_error("TN_GRAPH_INVALID: TRAA");
 }
 TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, const Matrix& view,
@@ -452,7 +488,7 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     // One frame in kMeasureEvery counts. The first frame has no history to judge, so it never counts.
     measured_ = history_.historyValid(0) && history_.frame() % kMeasureEvery == 0;
     data[14] = measured_ ? 1.f : 0.f;
-    data[15] = (width_ == outputWidth_ && height_ == outputHeight_) || history_.historyValid(0) ? 1.f : 0.f;
+    data[15] = history_.historyValid(0) ? 1.f : 0.f;
     data[16] = float(jitter_[0]); data[17] = float(jitter_[1]);
     data[18] = float(previousJitter_[0]); data[19] = float(previousJitter_[1]);
     if (measured_) {
@@ -462,25 +498,28 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     }
     wgpuQueueWriteBuffer(queue_, uniforms_, 0, data.data(), sizeof data);
     if (!layout_) layout_ = wgpuRenderPipelineGetBindGroupLayout(pipeline_, 0);
-    std::vector<WGPUBindGroupEntry> entries(8);
-    for (uint32_t i = 0; i < 8; ++i) entries[i].binding = i;
+    std::vector<WGPUBindGroupEntry> entries(9);
+    for (uint32_t i = 0; i < 9; ++i) entries[i].binding = i;
     entries[0].buffer = uniforms_; entries[0].size = sizeof data;
     entries[1].textureView = beautyView; entries[2].textureView = depthView;
     entries[3].textureView = velocityView_; entries[4].textureView = historyView_;
     entries[5].textureView = historyDepthView_; entries[6].sampler = sampler_;
     entries[7].buffer = stats_; entries[7].size = 8;
+    entries[8].textureView = historyDynamicView_;
     auto group = resolveGroups_.get(device_, layout_, entries);
     WGPURenderPassColorAttachment color{}; color.view = outputView ? outputView : resolveView_;
     color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
-    WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 1; desc.colorAttachments = &color;
+    WGPURenderPassColorAttachment colors[2] = {color, color}; colors[1].view = dynamicView_;
+    WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 2; desc.colorAttachments = colors;
     auto pass = beginTimedRenderPass(encoder, &desc, 2, {"traaResolve", outputWidth_, outputHeight_});
     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
     if (debugDump_) stageDebugTexture(encoder, resolved, "resolved");
     copy(resolved, historyColor_, false); copy(depth, historyDepth_, true);
+    copy(dynamic_, historyDynamic_, false);
     history_.endFrame();
 }
 } // namespace tn::engine

@@ -122,6 +122,8 @@ private:
     uint32_t depthGeneration_ = 0;
     WGPUTexture historyColor_ = nullptr, historyDepth_ = nullptr, resolve_ = nullptr, velocity_ = nullptr;
     WGPUTextureView historyView_ = nullptr, historyDepthView_ = nullptr, resolveView_ = nullptr, velocityView_ = nullptr;
+    WGPUTexture dynamic_ = nullptr, historyDynamic_ = nullptr;
+    WGPUTextureView dynamicView_ = nullptr, historyDynamicView_ = nullptr;
     WGPUBuffer uniforms_ = nullptr;
     WGPUBuffer ownStats_ = nullptr, stats_ = nullptr;
     bool measured_ = false;

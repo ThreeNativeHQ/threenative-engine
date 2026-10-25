@@ -2128,6 +2128,22 @@
       "androidReadyTimeoutMs": 120000,
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "local-exposure-histogram",
+      "title": "actual local-exposure histogram matches independent original per-bin CPU reduction",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/local-exposure-histogram.js",
+      "captureFrames": 2,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": true,
+      "required": true
     }
   ],
   "generatedPlaytestProofs": [

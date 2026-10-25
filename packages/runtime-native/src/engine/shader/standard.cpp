@@ -453,13 +453,14 @@ OutputPrograms velocityPrograms(const VertexVariant& variant) {
     v.output("previousClip", v.mul(v.uniform("previousProjection", Type::mat(4, 4)),
         v.mul(v.uniform("previousView", Type::mat(4, 4)),
             v.mul(v.uniform("previousModel", Type::mat(4, 4)), previous.position))));
+    v.output("velocityDynamic", v.uniform("velocityDynamic", Type::f32()));
     auto& f = out.fragment;
     const auto now = f.varying("currentClip", Type::vec(4));
     const auto before = f.varying("previousClip", Type::vec(4));
     f.output("color", f.construct(Type::vec(4), {
         f.sub(f.div(f.swizzle(now, "xy"), f.swizzle(now, "w")),
               f.div(f.swizzle(before, "xy"), f.swizzle(before, "w"))),
-        f.constant(0.f), f.constant(1.f)}));
+        f.add(f.constant(1.f), f.mul(f.constant(2.f), f.varying("velocityDynamic", Type::f32()))), f.constant(1.f)}));
     return out;
 }
 

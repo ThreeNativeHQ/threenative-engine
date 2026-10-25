@@ -1116,9 +1116,9 @@ private:
     };
     std::shared_ptr<Timing> timing_ = std::make_shared<Timing>();
     struct DeformationFrame {
-        std::string program;
+        Program* program = nullptr;
         std::vector<uint64_t> buffers;
-        std::unordered_map<std::string, std::vector<uint8_t>> uniforms;
+        std::vector<uint8_t> uniforms;
     };
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;

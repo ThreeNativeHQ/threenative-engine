@@ -3390,10 +3390,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 item.material->alphaHash;
             const auto skip = [&](const char* reason) {
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
-                    " draws carry the camera's motion only (no previous vertex data)";
+                    "; camera motion only";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
             };
-            if (unsupported) { skip("unsupported vertex or coverage"); continue; }
+            if (unsupported) { skip("unsupported vertex/coverage"); continue; }
             const std::string key = "traa-velocity|" + variant.key();
             if (!programs_.count(key)) {
                 auto source = shader::velocityPrograms(variant);
@@ -3405,7 +3405,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (std::any_of(velocity.vertex.bindings.begin(), velocity.vertex.bindings.end(), [](const auto& binding) {
                 return binding.kind != shader::BindingKind::Uniform &&
                     !(binding.kind == shader::BindingKind::Storage && binding.name == "s_instances");
-            })) { skip("storage or texture-deformed"); continue; }
+            })) { skip("storage/texture history"); continue; }
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
@@ -3418,7 +3418,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 continue;
             }
             DeformationFrame current;
-            current.program = key;
+            current.program = &velocity;
             current.buffers.push_back(item.instanceCount);
             const auto remember = [&](BufferStore* store) {
                 current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(store),
@@ -3429,7 +3429,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
             const auto prior = deformationFrames_.find(item.key);
             const DeformationFrame* previous = !traa_->needsSeed() && prior != deformationFrames_.end() &&
-                prior->second.program == key ? &prior->second : nullptr;
+                prior->second.program == &velocity ? &prior->second : nullptr;
             const uint32_t offset = frameUniforms_.size();
             frameUniforms_.resize(offset + aligned(velocity.vertex.uniformBlockSize), 0);
             // Copy by field name: the colour and velocity stages have different uniform layouts.
@@ -3440,27 +3440,30 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         frameUniforms_.data() + draw.vertexOffset + from->offset, field.size);
             }
             putNodes(frameUniforms_, offset, velocity.vertex, item.nodes, frameTime_, frameDelta_, lights);
+            const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
+            const std::array<double, 1> dynamic{previousModel != item.matrixWorld || item.nodes.positionNode ? 1.0 : 0.0};
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
-                if (field.name == "previousModel") put(frameUniforms_, offset, &field, traa_->previousModel(item.key, item.matrixWorld));
+                if (field.name == "previousModel") put(frameUniforms_, offset, &field, previousModel);
+                if (field.name == "velocityDynamic") put(frameUniforms_, offset, &field, dynamic);
                 if (field.name == "previousProjection") put(frameUniforms_, offset, &field, traa_->previousProjection());
                 if (field.name == "previousView") put(frameUniforms_, offset, &field, traa_->previousView());
                 const std::string_view prefix = shader::previousDeformationUniformPrefix;
                 if (!field.name.starts_with(prefix)) continue;
-                const std::string name = field.name.substr(prefix.size());
+                const std::string_view name = std::string_view(field.name).substr(prefix.size());
                 const auto from = std::ranges::find(velocity.vertex.uniforms, name, &shader::UniformField::name);
                 if (from == velocity.vertex.uniforms.end() || from->type != field.type || from->size != field.size)
-                    throw std::runtime_error("TN_TRAA_PREVIOUS_UNIFORM: " + name);
-                auto& bytes = current.uniforms[name];
-                const auto* source = frameUniforms_.data() + offset + from->offset;
-                bytes.assign(source, source + field.size);
-                const auto old = previous ? previous->uniforms.find(name) : current.uniforms.end();
-                const auto& retained = previous && old != previous->uniforms.end() && old->second.size() == field.size ? old->second : bytes;
-                std::memcpy(frameUniforms_.data() + offset + field.offset, retained.data(), field.size);
+                    throw std::runtime_error("TN_TRAA_PREVIOUS_UNIFORM: " + field.name);
+                const auto* retained = previous && previous->uniforms.size() == velocity.vertex.uniformBlockSize
+                    ? previous->uniforms.data() : frameUniforms_.data() + offset;
+                std::memcpy(frameUniforms_.data() + offset + field.offset, retained + from->offset, field.size);
             }
+            if (item.nodes.positionNode)
+                current.uniforms.assign(frameUniforms_.begin() + offset,
+                    frameUniforms_.begin() + offset + velocity.vertex.uniformBlockSize);
             const bool changedBuffers = previous && previous->buffers != current.buffers;
             job.deformationFrames[item.key] = std::move(current);
-            if (changedBuffers) { skip("changed vertex buffers"); continue; }
+            if (changedBuffers) { skip("changed vertex data"); continue; }
             const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
@@ -3869,14 +3872,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
                 reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
                 p.vertexOffset, p.fragmentOffset, item.instanceCount});
-            std::vector<BufferStore*> stores{item.indices};
-            for (const auto& attribute : p.program->vertex.attributes) stores.push_back(vertexSourceOf(item, attribute));
-            for (BufferStore* store : stores) {
+            const auto appendStore = [&](BufferStore* store) {
                 const Handle handle = store ? geometry_->cache.sync(*store,
                     store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
                 key.insert(key.end(), {handle.type, handle.context, handle.index, handle.generation,
                     store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
-            }
+            };
+            appendStore(item.indices);
+            for (const auto& attribute : p.program->vertex.attributes) appendStore(vertexSourceOf(item, attribute));
         }
     };
     bundleKeyOf(plan, job.bundleKey);

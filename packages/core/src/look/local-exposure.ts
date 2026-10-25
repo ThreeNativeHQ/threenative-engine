@@ -89,8 +89,8 @@ export function localExposureSizes(
     Math.max(1e-4, blur[0] * BLUR_KERNEL_PERCENT * 0.01 * 0.5),
   );
   const cells = [Math.ceil(half[0] / CELL), Math.ceil(half[1] / CELL)] as const;
-  // The grid's row sums: one texel per cell, bin and half resolution row, CELL texels each.
-  return { half, blur, cells, rows: [cells[0] * DEPTH, cells[1] * CELL], blurRadius };
+  // The grid's row sums: one RGBA texel per pair of bins and half resolution cell row.
+  return { half, blur, cells, rows: [cells[0] * (DEPTH / 2), cells[1] * CELL], blurRadius };
 }
 
 function scratch(type: typeof FloatType | typeof HalfFloatType, linear: boolean): RenderTarget {
@@ -221,42 +221,52 @@ export class LocalExposureNode extends TempNode<"float"> {
     // Passes 5 and 6: the bilateral grid. Texel (cell x * DEPTH + bin, cell y) holds the summed weight
     // and weighted log luminance of the half resolution texels in that cell, each texel shared
     // between its two nearest bins by linear weights (PostProcessHistogram.usf). Pass 5 sums each
-    // cell row, pass 6 sums the rows: one fragment looping over the whole cell ran 7,680 threads of
-    // 4,096 serial taps at 2560x1440, 1.3 ms on an RTX 2080. Unreal also spreads a cell over 64
+    // cell row, packing two bins into RG/BA; pass 6 sums those rows. The former whole-cell pass
+    // ran 7,680 fragments of 4,096 serial taps at 2560x1440, 1.3 ms on an RTX 2080. Unreal spreads a cell over 64
     // threads and reduces their histograms after (UE 5.8.3: Engine/Shaders/Private/PostProcessHistogram.usf:99-102,209-224).
     this.#rowMaterial.fragmentNode = Fn(() => {
       const c = uv();
-      const column = c.x.mul(this.#grid.x).floor();
+      const column = c.x.mul(this.#grid.x.div(2)).floor();
       const y = c.y.mul(this.#grid.y.mul(CELL)).floor();
-      const cell = column.div(DEPTH).floor();
-      const bin = column.sub(cell.mul(DEPTH));
-      const weight = float(0).toVar();
-      const logSum = float(0).toVar();
+      const cell = column.div(DEPTH / 2).floor();
+      const bin = column.sub(cell.mul(DEPTH / 2)).mul(2);
+      const weight = vec2(0).toVar();
+      const logSum = vec2(0).toVar();
       Loop(CELL, ({ i }) => {
         const x = cell.mul(CELL).add(float(i));
         If(x.lessThan(half.x).and(y.lessThan(half.y)), () => {
           const log = this.#logTexture
             .sample(vec2(x.add(0.5).div(half.x), y.add(0.5).div(half.y)))
-            .level(float(0)).r;
+            .level(float(0))
+            .r.toVar();
           const position = log
             .sub(LOG_MIN)
             .div(LOG_SPAN)
             .clamp(0, 1)
-            .mul(DEPTH - 1);
-          const share = position.sub(bin).abs().oneMinus().max(0);
+            .mul(DEPTH - 1)
+            .toVar();
+          const share = vec2(position)
+            .sub(vec2(bin, bin.add(1)))
+            .abs()
+            .oneMinus()
+            .max(0);
           weight.addAssign(share);
           logSum.addAssign(share.mul(log));
         });
       });
-      return vec4(logSum, weight, 0, 1);
+      return vec4(logSum.x, weight.x, logSum.y, weight.y);
     })();
     this.#gridMaterial.fragmentNode = Fn(() => {
       const c = uv();
       const row = c.y.mul(this.#grid.y).floor();
+      const column = c.x.mul(this.#grid.x).floor();
+      const u = column.div(2).floor().add(0.5).div(this.#grid.x.div(2));
+      const even = column.mod(2).equal(0);
       const sum = vec2(0).toVar();
       Loop(CELL, ({ i }) => {
         const v = row.mul(CELL).add(float(i)).add(0.5).div(this.#grid.y.mul(CELL));
-        sum.addAssign(this.#rowTexture.sample(vec2(c.x, v)).level(float(0)).rg);
+        const bins = this.#rowTexture.sample(vec2(u, v)).level(float(0)).toVar();
+        sum.addAssign(even.select(bins.rg, bins.ba));
       });
       return vec4(sum, 0, 1);
     })();
