@@ -61,6 +61,10 @@ export interface IEmbeddedTextureRow {
   readonly gpuBytesAfter: number;
   readonly gpuBytesBefore: number;
   readonly resized: number;
+  /** Bytes KTX2 saves over the decoder-free container here; the build sums it once per bake. */
+  readonly transcoderSavings?: number;
+  /** Some image ships Basis KTX2 whatever the transcoder charge. */
+  readonly transcoderRequired?: true;
 }
 
 /** What the cluster-DAG bake produced for one model. */

@@ -1055,6 +1055,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           shared,
           embeddedTextures?.formats,
           embeddedTextures?.quality,
+          embeddedTextures?.transcoderByImage,
         );
       if (enabled.meshopt) {
         document
@@ -1217,6 +1218,10 @@ async function recallSharedImages(
       codec: stored.codec,
       sourceBytes: image.byteLength,
       quality: stored.quality,
+      ...(stored.transcoderSavings === undefined
+        ? {}
+        : { transcoderSavings: stored.transcoderSavings }),
+      ...(stored.transcoderRequired === true ? { transcoderRequired: true as const } : {}),
     });
   }
   return { keys, recalled };
@@ -1238,6 +1243,7 @@ async function rememberSharedImages(
   plan: ISharedImagePlan,
   formats?: Readonly<Record<string, string>>,
   quality?: Readonly<Record<string, ITextureQuality>>,
+  transcoder?: Readonly<Record<string, { readonly savings?: number; readonly required?: true }>>,
 ): Promise<void> {
   const textures = document.getRoot().listTextures();
   const names = textureKeys(document.getRoot());
@@ -1246,13 +1252,15 @@ async function rememberSharedImages(
     const key = plan.keys[index];
     const image = texture.getImage();
     if (key === undefined || key === "" || image === null) continue;
+    const name = names[index] ?? "";
+    const contribution = transcoder?.[name];
     await store.put(key, {
       buffer: Buffer.from(image.buffer, image.byteOffset, image.byteLength),
-      codec: codecOf(texture.getMimeType(), formats, names[index] ?? ""),
+      codec: codecOf(texture.getMimeType(), formats, name),
       mimeType: texture.getMimeType(),
-      ...(quality?.[names[index] ?? ""] === undefined
-        ? {}
-        : { quality: quality?.[names[index] ?? ""] }),
+      ...(quality?.[name] === undefined ? {} : { quality: quality?.[name] }),
+      ...(contribution?.savings === undefined ? {} : { transcoderSavings: contribution.savings }),
+      ...(contribution?.required === true ? { transcoderRequired: true as const } : {}),
     });
   }
 }

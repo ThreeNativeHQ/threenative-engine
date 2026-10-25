@@ -1540,8 +1540,8 @@
       "commit": "290f8f3f5",
       "dirty": true,
       "label": "lever 5: KTX2 only when it repays the Basis transcoder",
-      "notes": "Measured under host load; the paired control on the same host was 1483/2086 ms and the candidate 1109/1823 ms. The quiet measurement of the kept build is iteration #14 (372/1162 ms).",
-      "decision": "provisional",
+      "notes": "Measured under host load; the paired control on the same host was 1483/2086 ms and the candidate 1109/1823 ms. The quiet measurement of the kept build is iteration #14 (372/1162 ms). | Owner 2026-10-24 accepts +3.67 MB GPU texture memory on player-viewmodel for -0.55 MiB and faster preload; quiet rerun #14 meets both preload goals; the transcoder charge is now decided once per build (compileAssets), so a build that ships the transcoder anyway keeps KTX2 model maps.",
+      "decision": "keep",
       "arm": "default",
       "config": {},
       "metrics": {

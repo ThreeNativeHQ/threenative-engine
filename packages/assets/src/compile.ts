@@ -67,7 +67,11 @@ import { decodeImageBytes } from "./passes/decode-image.js";
 import { globMatch } from "./passes/glob.js";
 import { createLightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
-import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
+import {
+  BASIS_TRANSCODER_BYTES,
+  TEXTURE_SIZE_SLOTS,
+  type TextureMaxSize,
+} from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
 import type {
   IModelPassOptions,
@@ -828,6 +832,10 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
     gpuBytesAfter: value.gpuBytesAfter as number,
     gpuBytesBefore: value.gpuBytesBefore as number,
     resized: value.resized as number,
+    ...(typeof value.transcoderSavings === "number" && value.transcoderSavings > 0
+      ? { transcoderSavings: value.transcoderSavings }
+      : {}),
+    ...(value.transcoderRequired === true ? { transcoderRequired: true as const } : {}),
   };
 }
 
@@ -2612,9 +2620,55 @@ async function copyBasisTranscoder(
   }
 }
 
+/**
+ * The Basis transcoder is one download per build, so whether model images may use KTX2 is decided
+ * for the whole build: free when a standalone texture or a required model image already ships it,
+ * or when the KTX2 savings summed over every model repay it; otherwise each image pays it alone.
+ */
+function modelTranscoderCharge(
+  entries: Readonly<Record<string, IAssetManifestEntry>>,
+): 0 | undefined | "either" {
+  let savings = 0;
+  let paid = false;
+  const counted = new Set<string>();
+  for (const entry of Object.values(entries)) {
+    if (entry.kind === "texture" && entry.format !== undefined) {
+      if (entry.format !== "none" && entry.format !== "astc4x4") paid = true;
+      continue;
+    }
+    const row = entry.embeddedTextures;
+    // Content-identical sources share one output; its images download once.
+    if (row === undefined || counted.has(entry.output)) continue;
+    counted.add(entry.output);
+    if (row.transcoderRequired === true) paid = true;
+    savings += row.transcoderSavings ?? 0;
+  }
+  // No model image would save bytes as KTX2, so the charge changes nothing.
+  if (savings === 0) return "either";
+  return paid || savings >= BASIS_TRANSCODER_BYTES ? 0 : undefined;
+}
+
 export async function compileAssets(
   options: IAssetCompileOptions = {},
 ): Promise<IAssetCompileResult> {
+  if (options.modelTranscoderBytes !== undefined) return compileOnce(options);
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  const manifestPath = path.join(resolveLayout(cwd, options).outputRoot, MANIFEST_NAME);
+  const charge = async () =>
+    modelTranscoderCharge((await readExistingManifest(manifestPath)).entries);
+  // The last bake's manifest predicts the decision, so a warm build cooks once.
+  const predicted = await charge();
+  const used = predicted === "either" ? undefined : predicted;
+  const result = await compileOnce({ ...options, modelTranscoderBytes: used });
+  const decided = await charge();
+  if (decided === "either" || decided === used) return result;
+  // ponytail: a build whose decision flips cooks its models twice, once; the manifest then
+  // carries the decision. Decide inside one cook if cold builds of large projects hurt.
+  const second = await compileOnce({ ...options, modelTranscoderBytes: decided });
+  return { ...second, written: result.written + second.written };
+}
+
+async function compileOnce(options: IAssetCompileOptions): Promise<IAssetCompileResult> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const layout = resolveLayout(cwd, options);
   const receiptPath = path.join(layout.outputRoot, RECEIPT_NAME);

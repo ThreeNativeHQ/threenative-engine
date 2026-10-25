@@ -1779,6 +1779,42 @@ describe("embedded textures through the compile step", () => {
     await expect(stat(path.join(root, "public", "basis"))).rejects.toThrow();
   });
 
+  it("should give model images KTX2 once a standalone texture already ships the transcoder", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const root = await makeTempDir("threenative-model-textures-paid-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(
+        path.join(root, "assets", "prop.glb"),
+        await fixtureWithTextures({ width: 32 }),
+      );
+      // An unfiltered flat PNG: ETC1S undercuts it, so the build ships the transcoder anyway.
+      const ground = new PNG({ height: 64, width: 64 });
+      ground.data.fill(200);
+      await writeFile(
+        path.join(root, "assets", "ground.png"),
+        PNG.sync.write(ground, { deflateLevel: 0 }),
+      );
+      const manifestPath = path.join(root, "public", "assets.manifest.json");
+      const readManifest = async () =>
+        JSON.parse(await readFile(manifestPath, "utf8")) as {
+          entries: Record<string, Record<string, unknown>>;
+        };
+
+      await compileAssets({ cwd: root, transcoder: basisTranscoderPaths() });
+
+      const manifest = await readManifest();
+      expect(manifest.entries["ground.png"]?.format).not.toBe("none");
+      // The download is paid once per build, so the 32-pixel images no longer have to repay it.
+      expect(manifest.entries["prop.glb"]?.extensions).toContain("KHR_texture_basisu");
+      // A warm build starts from that decision and cooks nothing again.
+      const warm = await compileAssets({ cwd: root, transcoder: basisTranscoderPaths() });
+      expect(warm.written).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it('should ship images as authored and need no transcoder when models.textures is "none"', async () => {
     const root = await makeTempDir("threenative-model-textures-none-");
     await mkdir(path.join(root, "assets"));
