@@ -109,6 +109,13 @@ describe("sceneWarning", () => {
     expect(sceneWarning(window, describeSceneShape(window, MIDWAY_CULL), 60)).toBeUndefined();
   });
 
+  it("refuses a verdict on a software adapter, whose rasteriser runs inside the render phase", () => {
+    const window = midwayWindow();
+    const shape = describeSceneShape(window, MIDWAY_CULL);
+    expect(sceneWarning(window, shape, 60)).toBeDefined();
+    expect(sceneWarning(window, shape, 60, "software")).toBeUndefined();
+  });
+
   it("refuses a verdict on a window whose GPU was never measured", () => {
     const { gpu: _gpu, ...rest } = midwayWindow();
     const window = rest as IFrameBudgetWindow;

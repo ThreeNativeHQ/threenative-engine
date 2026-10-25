@@ -2436,7 +2436,7 @@ const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: 
 `function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
 
 ```ts
-export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, ): ISceneWarning | undefined { … }
+export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, gpuClass?: string, ): ISceneWarning | undefined { … }
 ```
 
 - **Use when:** find out whether a slow frame is the scene's shape or the device · tell an authoring agent what to reduce before it promises a merge
