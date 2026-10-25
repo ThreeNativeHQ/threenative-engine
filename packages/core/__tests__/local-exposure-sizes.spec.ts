@@ -17,4 +17,11 @@ describe("local exposure pass sizes", () => {
     expect(tiny.blur).toEqual([1, 1]);
     expect(tiny.blurRadius).toBeGreaterThan(0);
   });
+
+  // 2560x1440 on an RTX 2080: one fragment per grid texel looping over its whole 64x64 cell cost 1.3 ms of GPU.
+  it("sums the bilateral grid by rows first, one half resolution row of a cell per texel", () => {
+    const sizes = localExposureSizes(2560, 1440);
+    expect(sizes.cells).toEqual([20, 12]);
+    expect(sizes.rows).toEqual([20 * 32, 12 * 64]);
+  });
 });

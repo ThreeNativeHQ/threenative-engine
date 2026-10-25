@@ -75,6 +75,7 @@ export function localExposureSizes(
   readonly half: readonly [number, number];
   readonly blur: readonly [number, number];
   readonly cells: readonly [number, number];
+  readonly rows: readonly [number, number];
   readonly blurRadius: number;
 } {
   const half = [Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2))] as const;
@@ -87,7 +88,9 @@ export function localExposureSizes(
     BLUR_RADIUS,
     Math.max(1e-4, blur[0] * BLUR_KERNEL_PERCENT * 0.01 * 0.5),
   );
-  return { half, blur, cells: [Math.ceil(half[0] / CELL), Math.ceil(half[1] / CELL)], blurRadius };
+  const cells = [Math.ceil(half[0] / CELL), Math.ceil(half[1] / CELL)] as const;
+  // The grid's row sums: one texel per cell, bin and half resolution row, CELL texels each.
+  return { half, blur, cells, rows: [cells[0] * DEPTH, cells[1] * CELL], blurRadius };
 }
 
 function scratch(type: typeof FloatType | typeof HalfFloatType, linear: boolean): RenderTarget {
@@ -123,16 +126,19 @@ export class LocalExposureNode extends TempNode<"float"> {
   readonly #lumMaterial = new NodeMaterial();
   readonly #blurXMaterial = new NodeMaterial();
   readonly #blurYMaterial = new NodeMaterial();
+  readonly #rowMaterial = new NodeMaterial();
   readonly #gridMaterial = new NodeMaterial();
   readonly #logTarget = scratch(FloatType, false);
   readonly #lumTarget = scratch(FloatType, false);
   readonly #blurXTarget = scratch(FloatType, false);
   readonly #blurTarget = scratch(HalfFloatType, true);
+  readonly #rowTarget = scratch(FloatType, false);
   readonly #gridTarget = scratch(FloatType, false);
   readonly #logTexture = texture(this.#logTarget.texture);
   readonly #lumTexture = texture(this.#lumTarget.texture);
   readonly #blurXTexture = texture(this.#blurXTarget.texture);
   readonly #blurTexture = texture(this.#blurTarget.texture);
+  readonly #rowTexture = texture(this.#rowTarget.texture);
   readonly #gridTexture = texture(this.#gridTarget.texture);
   // Three's runtime accepts undefined on first use, but its declaration requires a state.
   #rendererState: Parameters<typeof RendererUtils.resetRendererState>[1] | undefined;
@@ -212,20 +218,22 @@ export class LocalExposureNode extends TempNode<"float"> {
     this.#blurXMaterial.fragmentNode = blur(this.#lumTexture, 0);
     this.#blurYMaterial.fragmentNode = blur(this.#blurXTexture, 1);
 
-    // Pass 5: the bilateral grid. Texel (cell x * DEPTH + bin, cell y) holds the summed weight
+    // Passes 5 and 6: the bilateral grid. Texel (cell x * DEPTH + bin, cell y) holds the summed weight
     // and weighted log luminance of the half resolution texels in that cell, each texel shared
-    // between its two nearest bins by linear weights (PostProcessHistogram.usf).
-    this.#gridMaterial.fragmentNode = Fn(() => {
+    // between its two nearest bins by linear weights (PostProcessHistogram.usf). Pass 5 sums each
+    // cell row, pass 6 sums the rows: one fragment looping over the whole cell ran 7,680 threads of
+    // 4,096 serial taps at 2560x1440, 1.3 ms on an RTX 2080. Unreal also spreads a cell over 64
+    // threads and reduces their histograms after (UE 5.8.3: Engine/Shaders/Private/PostProcessHistogram.usf:99-102,209-224).
+    this.#rowMaterial.fragmentNode = Fn(() => {
       const c = uv();
       const column = c.x.mul(this.#grid.x).floor();
-      const row = c.y.mul(this.#grid.y).floor();
+      const y = c.y.mul(this.#grid.y.mul(CELL)).floor();
       const cell = column.div(DEPTH).floor();
       const bin = column.sub(cell.mul(DEPTH));
       const weight = float(0).toVar();
       const logSum = float(0).toVar();
-      Loop(CELL * CELL, ({ i }) => {
-        const x = cell.mul(CELL).add(float(i).mod(CELL));
-        const y = row.mul(CELL).add(float(i).div(CELL).floor());
+      Loop(CELL, ({ i }) => {
+        const x = cell.mul(CELL).add(float(i));
         If(x.lessThan(half.x).and(y.lessThan(half.y)), () => {
           const log = this.#logTexture
             .sample(vec2(x.add(0.5).div(half.x), y.add(0.5).div(half.y)))
@@ -241,6 +249,16 @@ export class LocalExposureNode extends TempNode<"float"> {
         });
       });
       return vec4(logSum, weight, 0, 1);
+    })();
+    this.#gridMaterial.fragmentNode = Fn(() => {
+      const c = uv();
+      const row = c.y.mul(this.#grid.y).floor();
+      const sum = vec2(0).toVar();
+      Loop(CELL, ({ i }) => {
+        const v = row.mul(CELL).add(float(i)).add(0.5).div(this.#grid.y.mul(CELL));
+        sum.addAssign(this.#rowTexture.sample(vec2(c.x, v)).level(float(0)).rg);
+      });
+      return vec4(sum, 0, 1);
     })();
   }
 
@@ -322,6 +340,7 @@ export class LocalExposureNode extends TempNode<"float"> {
     const [halfWidth, halfHeight] = sizes.half;
     const [blurWidth, blurHeight] = sizes.blur;
     const [cellsX, cellsY] = sizes.cells;
+    const [rowsWidth, rowsHeight] = sizes.rows;
     this.#half.value.set(halfWidth, halfHeight);
     this.#blurSize.value.set(blurWidth, blurHeight);
     this.#blurRadius.value = sizes.blurRadius;
@@ -331,6 +350,7 @@ export class LocalExposureNode extends TempNode<"float"> {
     this.#lumTarget.setSize(blurWidth, blurHeight);
     this.#blurXTarget.setSize(blurWidth, blurHeight);
     this.#blurTarget.setSize(blurWidth, blurHeight);
+    this.#rowTarget.setSize(rowsWidth, rowsHeight);
     this.#gridTarget.setSize(cellsX * DEPTH, cellsY);
     this.#rendererState ??= RendererUtils.saveRendererState(renderer);
     this.#rendererState = RendererUtils.resetRendererState(renderer, this.#rendererState);
@@ -340,6 +360,7 @@ export class LocalExposureNode extends TempNode<"float"> {
         [this.#lumMaterial, this.#lumTarget],
         [this.#blurXMaterial, this.#blurXTarget],
         [this.#blurYMaterial, this.#blurTarget],
+        [this.#rowMaterial, this.#rowTarget],
         [this.#gridMaterial, this.#gridTarget],
       ] as const) {
         this.#quad.material = material;
@@ -359,6 +380,7 @@ export class LocalExposureNode extends TempNode<"float"> {
       this.#lumTarget,
       this.#blurXTarget,
       this.#blurTarget,
+      this.#rowTarget,
       this.#gridTarget,
     ])
       target.dispose();
@@ -367,6 +389,7 @@ export class LocalExposureNode extends TempNode<"float"> {
       this.#lumMaterial,
       this.#blurXMaterial,
       this.#blurYMaterial,
+      this.#rowMaterial,
       this.#gridMaterial,
     ])
       material.dispose();
