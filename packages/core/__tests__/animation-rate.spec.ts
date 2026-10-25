@@ -674,6 +674,27 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  it("sizes a many-part rig by the whole rig, not by its largest part (Lantern Vale's hero held every other pose)", () => {
+    const rig = player();
+    // Eleven 29 px parts stacked into a 175 px figure, off the centre ray.
+    for (let index = 0; index < 11; index += 1) {
+      const part = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshBasicMaterial());
+      part.position.y = index * 0.2 - 1;
+      rig.root.add(part);
+    }
+    rig.root.position.set(3, 0, -8);
+    const scene = new Scene();
+    scene.add(rig.root);
+    const cull = new RenderCameraCull();
+    scene.updateMatrixWorld(true);
+    cull.apply(scene, new PerspectiveCamera(60, 1, 0.1, 1000), 720);
+    cull.restore();
+    rig.update(1 / 60);
+    expect(rig.updateRateReport.rate).toBe(1);
+    cull.dispose();
+    rig.dispose();
+  });
+
   it("keeps a distant unparented camera target at full rate and retargeting drops promotion", () => {
     const rig = player();
     const view = rendered(rig, -120);

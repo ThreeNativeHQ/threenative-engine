@@ -255,6 +255,8 @@ export class RenderCameraCull {
   #scale = 0;
   #cameraResolved = true;
   readonly #animationRay = new Ray();
+  /** Per rig: [frame, x, y, z, radius] of the union of its parts' spheres so far this frame. */
+  readonly #rigSpheres = new WeakMap<IAnimationRateState, Float64Array>();
   #considered = 0;
   #culled = 0;
   #exemptCameraAttached = 0;
@@ -586,6 +588,7 @@ export class RenderCameraCull {
     const states = this.#animated.get(object);
     if (states === undefined) return;
     let rate = notRendered ? 8 : 1;
+    let radius = 0;
     if (
       !notRendered &&
       this.#cameraResolved &&
@@ -595,37 +598,63 @@ export class RenderCameraCull {
       sphere.radius > 0
     ) {
       this.#center.copy(sphere.center).applyMatrix4(object.matrixWorld);
-      const radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
+      radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
       // A known bound on the camera's forward centre ray is the conservative observable target
       // signal. Test each source independently so a nearer bound cannot hide a farther target.
       if (this.#animationRay.intersectsSphere(this.#animationSphere.set(this.#center, radius)))
-        rate = 1;
-      else {
-        const distance = Math.hypot(
-          this.#center.x - this.#cameraX,
-          this.#center.y - this.#cameraY,
-          this.#center.z - this.#cameraZ,
-        );
-        const pixels = projectedDiameterPixels(radius, distance, this.#scale);
-        // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
-        rate = this.#frustum.intersectsSphere(this.#animationSphere.set(this.#center, radius))
-          ? pixels >= 128
-            ? 1
-            : pixels >= 32
-              ? 2
-              : pixels >= 8
-                ? 4
-                : 8
-          : 8;
-      }
+        radius = 0;
     }
+    const { x, y, z } = this.#center;
     for (const state of states) {
+      // The pixel band reads the whole rig this frame, not this part: Lantern Vale's hero is 51 rigid
+      // parts, the largest 80 px at 720p while the hero stands 170 px, and per part it held every
+      // other pose. A one-mesh rig's union is its own sphere.
+      if (radius > 0) rate = this.#bandRate(this.#rigSphere(state, x, y, z, radius));
       if (state.source === this && state.frame === this.#animationFrame)
         state.rate = Math.min(state.rate, rate);
       else state.rate = rate;
       state.source = this;
       state.frame = this.#animationFrame;
     }
+  }
+
+  /** Grows `state`'s sphere for this frame to hold the part at `x, y, z` and `radius`, into `#animationSphere`. */
+  #rigSphere(state: IAnimationRateState, x: number, y: number, z: number, radius: number): Sphere {
+    let union = this.#rigSpheres.get(state);
+    if (union === undefined) {
+      union = new Float64Array(5);
+      this.#rigSpheres.set(state, union);
+    }
+    if (union[0] !== this.#animationFrame) union.set([this.#animationFrame, x, y, z, radius]);
+    else {
+      const [, ux, uy, uz, ur] = union as unknown as [number, number, number, number, number];
+      const distance = Math.hypot(x - ux, y - uy, z - uz);
+      if (distance + radius > ur) {
+        if (distance + ur <= radius) union.set([this.#animationFrame, x, y, z, radius]);
+        else {
+          const grown = (distance + ur + radius) / 2;
+          const shift = (grown - ur) / distance;
+          union.set([
+            this.#animationFrame,
+            ux + (x - ux) * shift,
+            uy + (y - uy) * shift,
+            uz + (z - uz) * shift,
+            grown,
+          ]);
+        }
+      }
+    }
+    this.#center.set(union[1] as number, union[2] as number, union[3] as number);
+    return this.#animationSphere.set(this.#center, union[4] as number);
+  }
+
+  #bandRate(sphere: Sphere): number {
+    if (!this.#frustum.intersectsSphere(sphere)) return 8;
+    const { x, y, z } = sphere.center;
+    const distance = Math.hypot(x - this.#cameraX, y - this.#cameraY, z - this.#cameraZ);
+    const pixels = projectedDiameterPixels(sphere.radius, distance, this.#scale);
+    // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
+    return pixels >= 128 ? 1 : pixels >= 32 ? 2 : pixels >= 8 ? 4 : 8;
   }
 
   #observeAnimationSources(object: Object3D): void {
