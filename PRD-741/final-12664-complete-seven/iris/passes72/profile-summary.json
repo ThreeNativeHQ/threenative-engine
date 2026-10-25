@@ -1,0 +1,285 @@
+{
+  "diagnosticOnly": true,
+  "timestampProfiling": true,
+  "warmupSourceFrame": 3600,
+  "traceCount": 2953,
+  "retainedFrames": 1765,
+  "sourceRange": [
+    3602,
+    10234
+  ],
+  "input": [
+    1382,
+    778
+  ],
+  "output": [
+    1920,
+    1080
+  ],
+  "groups": {
+    "compute": {
+      "n": 1765,
+      "p50": 0.026040999999999998,
+      "p95": 0.048489
+    },
+    "meter": {
+      "n": 1765,
+      "p50": 0.447967,
+      "p95": 0.48806900000000003
+    },
+    "localExposure": {
+      "n": 1765,
+      "p50": 1.237233,
+      "p95": 1.646865
+    },
+    "bloom": {
+      "n": 1765,
+      "p50": 1.299368,
+      "p95": 1.456239
+    },
+    "shadow": {
+      "n": 1765,
+      "p50": 0.3238,
+      "p95": 0.355414
+    },
+    "scene": {
+      "n": 1765,
+      "p50": 3.675394,
+      "p95": 4.227838
+    },
+    "aux": {
+      "n": 1765,
+      "p50": 0.662391,
+      "p95": 0.744735
+    },
+    "velocity": {
+      "n": 1765,
+      "p50": 0.610621,
+      "p95": 0.6819230000000001
+    },
+    "inputPost": {
+      "n": 1765,
+      "p50": 2.537641,
+      "p95": 2.840659
+    },
+    "TRAA": {
+      "n": 1765,
+      "p50": 2.555609,
+      "p95": 2.781857
+    },
+    "postResolveCopy": {
+      "n": 1765,
+      "p50": 0.491872,
+      "p95": 0.524059
+    },
+    "detailMaterialization": {
+      "n": 1765,
+      "p50": 0.53557,
+      "p95": 0.576559
+    },
+    "output": {
+      "n": 1765,
+      "p50": 1.293951,
+      "p95": 1.436033
+    },
+    "total": {
+      "n": 1765,
+      "p50": 15.747093,
+      "p95": 17.254785
+    },
+    "inputAuxVelocityAndPost": {
+      "n": 1765,
+      "p50": 3.812426,
+      "p95": 4.325026
+    },
+    "autoAndLocalExposure": {
+      "n": 1765,
+      "p50": 1.685928,
+      "p95": 2.1135800000000002
+    }
+  },
+  "canonicalPasses": {
+    "offscreen-0 480x270": {
+      "n": 1765,
+      "p50": 0.250936,
+      "p95": 0.271769
+    },
+    "offscreen-1 120x68": {
+      "n": 1765,
+      "p50": 0.037708,
+      "p95": 0.040677
+    },
+    "offscreen-2 64x64": {
+      "n": 1765,
+      "p50": 0.095469,
+      "p95": 0.106614
+    },
+    "offscreen-3 64x1": {
+      "n": 1765,
+      "p50": 0.02474,
+      "p95": 0.027135
+    },
+    "offscreen-4 1x1": {
+      "n": 1765,
+      "p50": 0.038697,
+      "p95": 0.042812
+    },
+    "offscreen-5 240x540": {
+      "n": 1765,
+      "p50": 0.177082,
+      "p95": 0.566403
+    },
+    "offscreen-6 120x68": {
+      "n": 1765,
+      "p50": 0.319217,
+      "p95": 0.355727
+    },
+    "offscreen-7 120x68": {
+      "n": 1765,
+      "p50": 0.045833,
+      "p95": 0.050937
+    },
+    "offscreen-8 120x68": {
+      "n": 1765,
+      "p50": 0.044322,
+      "p95": 0.049271
+    },
+    "offscreen-9 240x576": {
+      "n": 1765,
+      "p50": 0.58234,
+      "p95": 0.708068
+    },
+    "offscreen-10 480x9": {
+      "n": 1765,
+      "p50": 0.053594,
+      "p95": 0.059219
+    },
+    "offscreen-11 960x540": {
+      "n": 1765,
+      "p50": 0.297446,
+      "p95": 0.316769
+    },
+    "offscreen-12 480x270": {
+      "n": 1765,
+      "p50": 0.059739,
+      "p95": 0.063749
+    },
+    "offscreen-13 240x135": {
+      "n": 1765,
+      "p50": 0.02302,
+      "p95": 0.024739
+    },
+    "offscreen-14 120x68": {
+      "n": 1765,
+      "p50": 0.013125,
+      "p95": 0.014271
+    },
+    "offscreen-15 60x34": {
+      "n": 1765,
+      "p50": 0.010625,
+      "p95": 0.011615
+    },
+    "offscreen-16 30x17": {
+      "n": 1765,
+      "p50": 0.009687,
+      "p95": 0.010729
+    },
+    "offscreen-17 30x17": {
+      "n": 1765,
+      "p50": 0.019844,
+      "p95": 0.021875
+    },
+    "offscreen-18 30x17": {
+      "n": 1765,
+      "p50": 0.018385,
+      "p95": 0.020156
+    },
+    "offscreen-19 60x34": {
+      "n": 1765,
+      "p50": 0.022083,
+      "p95": 0.024322
+    },
+    "offscreen-20 60x34": {
+      "n": 1765,
+      "p50": 0.020781,
+      "p95": 0.022917
+    },
+    "offscreen-21 120x68": {
+      "n": 1765,
+      "p50": 0.022031,
+      "p95": 0.024375
+    },
+    "offscreen-22 120x68": {
+      "n": 1765,
+      "p50": 0.021563,
+      "p95": 0.023749
+    },
+    "offscreen-23 240x135": {
+      "n": 1765,
+      "p50": 0.033073,
+      "p95": 0.036979
+    },
+    "offscreen-24 240x135": {
+      "n": 1765,
+      "p50": 0.033594,
+      "p95": 0.036927
+    },
+    "offscreen-25 480x270": {
+      "n": 1765,
+      "p50": 0.090885,
+      "p95": 0.103645
+    },
+    "offscreen-26 480x270": {
+      "n": 1765,
+      "p50": 0.09328,
+      "p95": 0.104479
+    },
+    "offscreen-27 960x540": {
+      "n": 1765,
+      "p50": 0.247759,
+      "p95": 0.277967
+    },
+    "offscreen-28 960x540": {
+      "n": 1765,
+      "p50": 0.26078,
+      "p95": 0.293488
+    },
+    "inputPost-0 691x389": {
+      "n": 1765,
+      "p50": 0.563642,
+      "p95": 0.633329
+    },
+    "inputPost-1 1382x778": {
+      "n": 1765,
+      "p50": 0.141614,
+      "p95": 0.158072
+    },
+    "inputPost-2 691x389": {
+      "n": 1765,
+      "p50": 0.827599,
+      "p95": 0.927234
+    },
+    "inputPost-3 1382x778": {
+      "n": 1765,
+      "p50": 0.519841,
+      "p95": 0.561871
+    },
+    "inputPost-4 1382x778": {
+      "n": 1765,
+      "p50": 0.241717,
+      "p95": 0.267968
+    },
+    "inputPost-5 1382x778": {
+      "n": 1765,
+      "p50": 0.234738,
+      "p95": 0.26104
+    }
+  },
+  "selfCheck": "pass: every timed pass accounted exactly once per frame",
+  "attribution": {
+    "timedPassNames": "The two full-display passes after traaResolve are both labelled post in raw traces. Copy/detail assignment follows compiler dependency order, not explicit trace shader names.",
+    "postResolveCopy": "convertToTexture(PostEffect TRAANode) creates a RenderTexture pass; compiler lowers its source as an ordinary sample of the resolved target.",
+    "detailMaterialization": "Following bloom subrectTexture() materializes the authored five-sample detail expression before bloom; automatic output remains a separate pass.",
+    "limits": "No strength-zero A/B or full-resolution counterpart was run. Profiling enables timestamp passes and does not qualify frame timing. Copies outside render passes are not independently timed."
+  }
+}

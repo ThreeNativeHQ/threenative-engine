@@ -1,0 +1,7 @@
+Sun Oct 25 08:49:57 PM UTC 2026
+ 13:49:57 up 17 days, 19:14,  8 users,  load average: 2.55, 1.37, 0.92
+83000
+/sys/class/drm/card0/gt_cur_freq_mhz=1367
+/sys/class/drm/card0/gt_min_freq_mhz=100
+/sys/class/drm/card0/gt_max_freq_mhz=1500
+/sys/class/drm/card0/gt_act_freq_mhz=0

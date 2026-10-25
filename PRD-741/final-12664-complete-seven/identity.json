@@ -1,0 +1,676 @@
+{
+  "id": "12664-complete-seven",
+  "sourceCommit": "12664e84472ac00d4f370cb6454d6a27df853173",
+  "cohortIdentity": "78cfb9d5ed28fbc9c150e00bf99b73c1f658b02b90d7b5367a99aa2010f6dd3b",
+  "animationPhase": "unknown: GPU steady_clock animation; player/camera transforms matched",
+  "projects": [
+    {
+      "kit": "collectathon",
+      "path": "/home/joao/Downloads/PRD-741/final-12664-complete-seven/projects/collectathon",
+      "files": {
+        "dist/assets.manifest.json": "08cfd30578e270e257120837ec653c0e7e7daea5d6477129fdf2c68e86fa1a53",
+        "dist/bake.receipt.json": "80646a02337dbd92155797c1ebbae6bd9f40e2b8e8bb75c53c804cbda68f0c64",
+        "dist/favicon.svg": "2d208c58ea4c25b3bef0208ff84c5847eab49455481e001275ddd0aa7d7746bb",
+        "dist/icon.png": "e6284520e340124d9300889add523251d93705457e7cd8c2d6e05aebd7ed04b7",
+        "dist/tex-PROVENANCE.e82c0e85.md": "c63591c02a7950ea66b02929a5d766a9a82f694adad00e2a83279be14ca8e23e",
+        "dist/tex-bark-normal.cda9ac42.webp": "f64ab54578bad88be8692845c9514bd4d674fd6c8aa15f5bc55ca78d8a3f4ab5",
+        "dist/tex-bark.886e1653.webp": "2b4f3259ac9a8bc868b18b06c1f5eca20d8586eb9e5715b36f1fc8973a3d4b35",
+        "dist/tex-birch-bark.6f747149.webp": "23758a53ddfc6bd5893c107e5f6fce4e53aabb1c2394735665a27c9fdcef4d6a",
+        "dist/tex-grass.8331daea.webp": "6d2890a5220ceab5da00b1e9711f868273df5791e349a6aca1f55bb0a288e801",
+        "dist/tex-planks-normal.7385b2f9.webp": "bd10254b427464be0106db74a360c6420dc3f8c6d620a234c74ed9a603b14e20",
+        "dist/tex-planks.e921fe06.webp": "c8bf02f06844fada0124f97449b47373159351d3941ff5e0beb970e12bd14813",
+        "dist/tex-rock-normal.de1aa88b.webp": "47fa61a7a8ea42ba17a5200c3837e03df72761a3e940b24ac0a970e2d2114d83",
+        "dist/tex-rock.9fe28243.webp": "9147a4091d3384c6724b6568e34614dbfe4d51fba06f47d84a5c506782a34d52",
+        "dist/tex-sand-normal.7d454d39.webp": "4ee707c35e13a07fba0f334f0a306819cfcc6b802ca655e384a55291fea4e078",
+        "dist/tex-sand.00614774.webp": "2ca6a35888c3ef99ea60bfc60645b9647326d7d6be1b07149614ea6203941596",
+        "dist/tex-stone-wall-normal.d2f41342.webp": "03c4c9d059e9000a402799c66863440dbf94adf39618ebc9dbabd1cf0d2d13a4",
+        "dist/tex-stone-wall.23503328.webp": "0e452d8b711b55b8b863435fe15569bf2d7e4ec924fee6e87abd461ca2719a01",
+        "dist/manifest.webmanifest": "e8a8a9db3ca44e17ef6661955186ee5c11d1531e398778a41b89ff47f1de776d",
+        "dist/index.html": "5d089af23e34d4d73296e130435362acc4361e9ae063de5679589f446e5f28c1",
+        "dist/assets.manifest.json.br": "15eac1a51ad0a667df999e34cc2fc8ea63ce1ffce0f70fe559a481594df10dea",
+        "dist/assets.manifest.json.gz": "04893f3004a2c190b447f369bc1eadb85ac5675f85a717736245122541b5547c",
+        "dist/bake.receipt.json.br": "096c505aad2f72e6536625f63165104c9607d45eb76acdcd08a51f96b721d331",
+        "dist/bake.receipt.json.gz": "513b6fe2c6865ec7236d6f5b56c919588bba07dd3918a4425caf976d241a595f",
+        "dist/assets/index-BdkghBug.js": "5293436d5945b988deeee27861b9914c48a8ab30b470598c9181682df58d0872",
+        "dist/assets/DRACOLoader-DqF8eDHn.js": "2d2a10f93b2ca49d9c8871e813991c079df7c58b7e20bf6e50938537cfe97a50",
+        "dist/assets/KTX2Loader-BvRCTb6x.js": "07cdd597f1ef2eeb8f79fe530c4a8b6fd12595633ea1609d34e6d862ab9f0d1f",
+        "dist/assets/_threenative_web-engine-CEco00g_.js": "f2cec9a1534b1b38aa145dbbd4d24a98a58d8bd45133f5e6c650486d63e82ef2",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js": "dda6ac5d42308df8c06aeb3af718170a0ebf03593a462891d7cc3e813dc065b3",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js": "6bf68170d437477fb3411dfb24339df33257d69a4322c3907e14af33cff083c7",
+        "dist/assets/rolldown-runtime-4tVxZq34.js": "e1a1c25cf197ccd96571062973f07d34fb794a4745cd7284f8f64c63be00c578",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js": "9081d114ddd28bb3a01fba61cb2478459546ad6da27a5c5f3d2f5841da1bec9d",
+        "dist/assets/index-B-hVCN5q.css": "047d15c0037596af1a285aa34f7706a83600c95198f0c0a5f7997fa816260f76",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm": "879a42398a8a32320ada5e4e1f1d862a4b73ec982c3e0268f2a8d35faa081511",
+        "dist/assets/terrain-jobs-worker-7u6rman0.js": "0c5b69d98074f8636f8e0ae8a137e0c478c9f229e037a814c7a2e556bb21507b",
+        "dist/assets/DRACOLoader-DqF8eDHn.js.br": "7f483564045e01d21ffa515199cb8714ef52c06a542cb7ecdea88c139d578a9a",
+        "dist/assets/DRACOLoader-DqF8eDHn.js.gz": "5befbbe68825344ba47d2df6fcada2e638004ee09ab86fbd90c92947c726f256",
+        "dist/assets/KTX2Loader-BvRCTb6x.js.br": "3739881f743a168c93cce5805154b563041f14ebc509f1774189b2355a8f7d79",
+        "dist/assets/KTX2Loader-BvRCTb6x.js.gz": "2f7794db81b23d25581412ba2b49bd58db0dd1e81bbaaa3bdbd446efbee0e792",
+        "dist/assets/_threenative_web-engine-CEco00g_.js.br": "5140ab0b7d0ae640f8aefce91f3e61a12d411462edd75f06c42676ffac6fd97d",
+        "dist/assets/_threenative_web-engine-CEco00g_.js.gz": "6a5e13086ca41cc2ab54fc34b4bafee6dc2bd7f39903f0bc72db675dc276ba62",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js.br": "d08c1f872f4595f587db2971fbdd8b49f0bad4eba38775d0535595f6f4dc3709",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js.gz": "01ceb52b0cd29b805d1a05c4a54bcc56fb1c6d041d188b76c7ecad6c568d1a33",
+        "dist/assets/index-B-hVCN5q.css.br": "d14e0d3ddc41d2e7d1007a9abc6f0c35c67fd92ea59a91ee509bccad89224e6d",
+        "dist/assets/index-B-hVCN5q.css.gz": "b7bb4aa43e9db952d72390d44ae95ffe6e634137560cb69bd4554fe42308e067",
+        "dist/assets/index-BdkghBug.js.br": "6ae37d5269c59ce549ba66476638951470d5a6bfad2709b398b43662f7173a8e",
+        "dist/assets/index-BdkghBug.js.gz": "bcb75fa5450a4119321d91f4c77b93466d03b89c6aa83ffce3eb9a6b43689eab",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js.br": "b266a2f59fc0d4b0bc89707fc2c9b9fd2941d4ef42c76301488299de0f374b46",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js.gz": "68e3867e131e5df061123b46e8f4eee3e798def0c5b87adc7d0d3858a3caeaf1",
+        "dist/assets/terrain-jobs-worker-7u6rman0.js.br": "c84400905f5b81230d89db888858486cca863b4104fcd4be060bba13ae397556",
+        "dist/assets/terrain-jobs-worker-7u6rman0.js.gz": "6237ef4ded0ea311557f5ea72621cb89f15e2c345234478cf178835fb29132a0",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm.br": "6ab741a97c188862ca20a93b52612bd9346a10376a7c54da05f4d9d673758438",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm.gz": "2a1e628bf095b11f70a2aaf62504818703e5140b56bf0d544c688fc2367edbb8",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js.br": "b592e37a7f438daaf66ec0a80426e771cd93eae81dbd11e1053bd6736af013c4",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js.gz": "1b8c64c450b881cdf14e1a6898e072a49cc2d3c41555e769b6b2db4d90a9178f"
+      }
+    },
+    {
+      "kit": "adventure",
+      "path": "/home/joao/Downloads/PRD-741/final-12664-complete-seven/projects/adventure",
+      "files": {
+        "dist/assets.manifest.json": "9c0008b892994b0f68568cbb8e55831fa41ea1d5c2b3016464940e644bc8e059",
+        "dist/bake.receipt.json": "fb3fac53a0d871f4ed1c745e693ebbc1608d88ba7cd9ec15612164f6d82091a3",
+        "dist/favicon.svg": "2d208c58ea4c25b3bef0208ff84c5847eab49455481e001275ddd0aa7d7746bb",
+        "dist/icon.png": "e6284520e340124d9300889add523251d93705457e7cd8c2d6e05aebd7ed04b7",
+        "dist/tex-PROVENANCE.e82c0e85.md": "c63591c02a7950ea66b02929a5d766a9a82f694adad00e2a83279be14ca8e23e",
+        "dist/tex-bark.886e1653.webp": "2b4f3259ac9a8bc868b18b06c1f5eca20d8586eb9e5715b36f1fc8973a3d4b35",
+        "dist/tex-grass.8331daea.webp": "6d2890a5220ceab5da00b1e9711f868273df5791e349a6aca1f55bb0a288e801",
+        "dist/tex-planks.e921fe06.webp": "c8bf02f06844fada0124f97449b47373159351d3941ff5e0beb970e12bd14813",
+        "dist/tex-rock.9fe28243.webp": "9147a4091d3384c6724b6568e34614dbfe4d51fba06f47d84a5c506782a34d52",
+        "dist/tex-stone-wall.23503328.webp": "0e452d8b711b55b8b863435fe15569bf2d7e4ec924fee6e87abd461ca2719a01",
+        "dist/manifest.webmanifest": "fb0023573f6a1bd891f861c1cb70283f6120948528c110abe1579eb89ec7546c",
+        "dist/index.html": "2dccd9e518e21be6afa02d0cc6fb1666cafac104f444bc90d93846dbe986f3ad",
+        "dist/assets.manifest.json.br": "fc250e35cca1547b701379d2f26f17cb5bc541838e4df7291d246d417deb3378",
+        "dist/assets.manifest.json.gz": "42b98b184bb2c0eceb3565aa0b8efdec98354b99fc8172768263ad0cad613d02",
+        "dist/assets/index-oqA7LY2u.js": "678ea7b4731b8fbe2ac4fdead5ba1942d83c81aed04a5c50c2d94ff7eb1d693f",
+        "dist/assets/DRACOLoader-DqF8eDHn.js": "2d2a10f93b2ca49d9c8871e813991c079df7c58b7e20bf6e50938537cfe97a50",
+        "dist/assets/KTX2Loader-BvRCTb6x.js": "07cdd597f1ef2eeb8f79fe530c4a8b6fd12595633ea1609d34e6d862ab9f0d1f",
+        "dist/assets/_threenative_web-engine-CEco00g_.js": "f2cec9a1534b1b38aa145dbbd4d24a98a58d8bd45133f5e6c650486d63e82ef2",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js": "dda6ac5d42308df8c06aeb3af718170a0ebf03593a462891d7cc3e813dc065b3",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js": "6bf68170d437477fb3411dfb24339df33257d69a4322c3907e14af33cff083c7",
+        "dist/assets/rolldown-runtime-4tVxZq34.js": "e1a1c25cf197ccd96571062973f07d34fb794a4745cd7284f8f64c63be00c578",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js": "9081d114ddd28bb3a01fba61cb2478459546ad6da27a5c5f3d2f5841da1bec9d",
+        "dist/assets/index-C8gZORpo.css": "986ce19a8431842260bd6fbdba1443090174f1fe339e638ee2975ba9e9489b95",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm": "879a42398a8a32320ada5e4e1f1d862a4b73ec982c3e0268f2a8d35faa081511",
+        "dist/assets/terrain-jobs-worker-7u6rman0.js": "0c5b69d98074f8636f8e0ae8a137e0c478c9f229e037a814c7a2e556bb21507b",
+        "dist/assets/DRACOLoader-DqF8eDHn.js.br": "7f483564045e01d21ffa515199cb8714ef52c06a542cb7ecdea88c139d578a9a",
+        "dist/assets/DRACOLoader-DqF8eDHn.js.gz": "5befbbe68825344ba47d2df6fcada2e638004ee09ab86fbd90c92947c726f256",
+        "dist/assets/KTX2Loader-BvRCTb6x.js.br": "3739881f743a168c93cce5805154b563041f14ebc509f1774189b2355a8f7d79",
+        "dist/assets/KTX2Loader-BvRCTb6x.js.gz": "2f7794db81b23d25581412ba2b49bd58db0dd1e81bbaaa3bdbd446efbee0e792",
+        "dist/assets/_threenative_web-engine-CEco00g_.js.br": "5140ab0b7d0ae640f8aefce91f3e61a12d411462edd75f06c42676ffac6fd97d",
+        "dist/assets/_threenative_web-engine-CEco00g_.js.gz": "6a5e13086ca41cc2ab54fc34b4bafee6dc2bd7f39903f0bc72db675dc276ba62",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js.br": "d08c1f872f4595f587db2971fbdd8b49f0bad4eba38775d0535595f6f4dc3709",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js.gz": "01ceb52b0cd29b805d1a05c4a54bcc56fb1c6d041d188b76c7ecad6c568d1a33",
+        "dist/assets/index-C8gZORpo.css.br": "db980ed214ee8ba3515124ed1766fa7ddf9e54b9b30864f204c3b222c63b21d5",
+        "dist/assets/index-C8gZORpo.css.gz": "c9c7eae1314b95dd833eab08f1f5b1ba3a1ffbe153f286e772703862230170e3",
+        "dist/assets/index-oqA7LY2u.js.br": "39908242a3eae61362b95e52ee87f9054ccdf4b925cdabc821d035f404cac0cb",
+        "dist/assets/index-oqA7LY2u.js.gz": "256bae2e91be00eccc15c9b7b0dd218e45772d66a741349a5f8c66e65b6763a0",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js.br": "b266a2f59fc0d4b0bc89707fc2c9b9fd2941d4ef42c76301488299de0f374b46",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js.gz": "68e3867e131e5df061123b46e8f4eee3e798def0c5b87adc7d0d3858a3caeaf1",
+        "dist/assets/terrain-jobs-worker-7u6rman0.js.br": "c84400905f5b81230d89db888858486cca863b4104fcd4be060bba13ae397556",
+        "dist/assets/terrain-jobs-worker-7u6rman0.js.gz": "6237ef4ded0ea311557f5ea72621cb89f15e2c345234478cf178835fb29132a0",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm.br": "6ab741a97c188862ca20a93b52612bd9346a10376a7c54da05f4d9d673758438",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm.gz": "2a1e628bf095b11f70a2aaf62504818703e5140b56bf0d544c688fc2367edbb8",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js.br": "b592e37a7f438daaf66ec0a80426e771cd93eae81dbd11e1053bd6736af013c4",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js.gz": "1b8c64c450b881cdf14e1a6898e072a49cc2d3c41555e769b6b2db4d90a9178f"
+      }
+    },
+    {
+      "kit": "kart",
+      "path": "/home/joao/Downloads/PRD-741/final-12664-complete-seven/projects/kart",
+      "files": {
+        "dist/assets.manifest.json": "e7fb31abe2d96f08288f85661e3197868d0f01f7292a4185efcd0e4cff24bd8a",
+        "dist/favicon.svg": "2d208c58ea4c25b3bef0208ff84c5847eab49455481e001275ddd0aa7d7746bb",
+        "dist/icon.png": "e6284520e340124d9300889add523251d93705457e7cd8c2d6e05aebd7ed04b7",
+        "dist/manifest.webmanifest": "6fabf02b6173f589cbe8cd7efc312afca3b482ef07e248dee2fa414e5a560327",
+        "dist/index.html": "b0fed23459766dab24a84b71a2afe5603917c45ec3f1c0606ab032a0f64f7851",
+        "dist/assets/index-BgtHHYuS.js": "8f942e46f040c163a06b14a63ddd6be61fbb83708821842b29958b3aa6f4cdce",
+        "dist/assets/DRACOLoader-DqF8eDHn.js": "2d2a10f93b2ca49d9c8871e813991c079df7c58b7e20bf6e50938537cfe97a50",
+        "dist/assets/KTX2Loader-BvRCTb6x.js": "07cdd597f1ef2eeb8f79fe530c4a8b6fd12595633ea1609d34e6d862ab9f0d1f",
+        "dist/assets/_threenative_web-engine-CEco00g_.js": "f2cec9a1534b1b38aa145dbbd4d24a98a58d8bd45133f5e6c650486d63e82ef2",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js": "dda6ac5d42308df8c06aeb3af718170a0ebf03593a462891d7cc3e813dc065b3",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js": "6bf68170d437477fb3411dfb24339df33257d69a4322c3907e14af33cff083c7",
+        "dist/assets/rolldown-runtime-4tVxZq34.js": "e1a1c25cf197ccd96571062973f07d34fb794a4745cd7284f8f64c63be00c578",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js": "9081d114ddd28bb3a01fba61cb2478459546ad6da27a5c5f3d2f5841da1bec9d",
+        "dist/assets/index-C3FYPsMU.css": "e8ee4b71bf97829921ad1b986faffca284abb2bd92d5fa4a57f5bb54618e01f5",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm": "879a42398a8a32320ada5e4e1f1d862a4b73ec982c3e0268f2a8d35faa081511",
+        "dist/assets/DRACOLoader-DqF8eDHn.js.br": "7f483564045e01d21ffa515199cb8714ef52c06a542cb7ecdea88c139d578a9a",
+        "dist/assets/DRACOLoader-DqF8eDHn.js.gz": "5befbbe68825344ba47d2df6fcada2e638004ee09ab86fbd90c92947c726f256",
+        "dist/assets/KTX2Loader-BvRCTb6x.js.br": "3739881f743a168c93cce5805154b563041f14ebc509f1774189b2355a8f7d79",
+        "dist/assets/KTX2Loader-BvRCTb6x.js.gz": "2f7794db81b23d25581412ba2b49bd58db0dd1e81bbaaa3bdbd446efbee0e792",
+        "dist/assets/_threenative_web-engine-CEco00g_.js.br": "5140ab0b7d0ae640f8aefce91f3e61a12d411462edd75f06c42676ffac6fd97d",
+        "dist/assets/_threenative_web-engine-CEco00g_.js.gz": "6a5e13086ca41cc2ab54fc34b4bafee6dc2bd7f39903f0bc72db675dc276ba62",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js.br": "d08c1f872f4595f587db2971fbdd8b49f0bad4eba38775d0535595f6f4dc3709",
+        "dist/assets/_threenative_web-engine-CJw56nLL.js.gz": "01ceb52b0cd29b805d1a05c4a54bcc56fb1c6d041d188b76c7ecad6c568d1a33",
+        "dist/assets/index-BgtHHYuS.js.br": "65ead25b7f0740baad678f5b683a3882a82172097faf8613fd14ab214ddba98d",
+        "dist/assets/index-BgtHHYuS.js.gz": "2006647d6bbe90e79f24d9f84443ca879ac95e77a450672ab8d5e47aed234686",
+        "dist/assets/index-C3FYPsMU.css.br": "8d3132833ff179bc22118784d2da71773181f3c351b77edd69ceb74225d29c62",
+        "dist/assets/index-C3FYPsMU.css.gz": "48f69169bdd3a2743ae57230a987f80d96c5c2d84117d833b0204ec5d699bbb4",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js.br": "b266a2f59fc0d4b0bc89707fc2c9b9fd2941d4ef42c76301488299de0f374b46",
+        "dist/assets/meshopt_decoder.module-DXTYc6wn.js.gz": "68e3867e131e5df061123b46e8f4eee3e798def0c5b87adc7d0d3858a3caeaf1",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm.br": "6ab741a97c188862ca20a93b52612bd9346a10376a7c54da05f4d9d673758438",
+        "dist/assets/tn-native-engine-web-nN7ug-v1.wasm.gz": "2a1e628bf095b11f70a2aaf62504818703e5140b56bf0d544c688fc2367edbb8",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js.br": "b592e37a7f438daaf66ec0a80426e771cd93eae81dbd11e1053bd6736af013c4",
+        "dist/assets/web-engine-gltf-loader-GG_JfhAL.js.gz": "1b8c64c450b881cdf14e1a6898e072a49cc2d3c41555e769b6b2db4d90a9178f"
+      }
+    }
+  ],
+  "wasmSha256": "879a42398a8a32320ada5e4e1f1d862a4b73ec982c3e0268f2a8d35faa081511",
+  "mjsSha256": "ff591b14cf3955736aaeb00de79f66cbc81c31ffa9ef6fd4cf7b9d039293e27b",
+  "coreSha256": "7a6dafab313a71f61c57ba52ff2f6682e3569b99b87940ea656470aee120cc59",
+  "helperSha256": "93d77fb0b1d65981dceb6ed8fbc14a10453c34d453dbe03dc3968fe547efc0b1",
+  "engineSourceStamp": "940e077d45393acac4eca16ffff49651f65eccd8d33dc29495a4b0e26e43be8a",
+  "captureProtocol": {
+    "primaryFrames": 12,
+    "stationary": true,
+    "gpuAnimationPhase": "unknown: renderer steady_clock animation not frozen; no motion/shimmer acceptance claim",
+    "normalCohortIdentitySHA256": "d7a9d699955687af4579f21893380c6fdb8302930634b67798fbfeca7a1fe40a",
+    "controls": "NOT CAPTURED: shared capture-lock ENOENT during acquisition after waiting other owner; no browser launched; full native coverage takes priority"
+  },
+  "captures": [
+    {
+      "name": "collectathon-BEFORE-run1",
+      "pngSha256": "2defcb78a4fb1f98068664ae0f3d45c4c2e1876128fa58dbd1d2322080094b4f",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            0,
+            0.8100999593734741,
+            14
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 2000,
+          "forward": [
+            0,
+            -0.14263084339857812,
+            -0.9897759557149338
+          ],
+          "fov": 60,
+          "near": 0.1,
+          "position": [
+            0,
+            4.741199004918534,
+            22.54311876274197
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "collectathon-AFTER-run1",
+      "pngSha256": "327069dd0eb3acd54366cec4ee8afdca97e2de4b1973b2e94bfeffe47c84c760",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            0,
+            0.8100999593734741,
+            14
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 2000,
+          "forward": [
+            0,
+            -0.14263084339857812,
+            -0.9897759557149338
+          ],
+          "fov": 60,
+          "near": 0.1,
+          "position": [
+            0,
+            4.741199004918534,
+            22.54311876274197
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "collectathon-BEFORE-run2",
+      "pngSha256": "69ec01c7fd618c3cd6ecc6b7ecc39548fcea69a828590a2a3cb9bb43418bdff5",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            0,
+            0.8100999593734741,
+            14
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 2000,
+          "forward": [
+            0,
+            -0.14263084339857812,
+            -0.9897759557149338
+          ],
+          "fov": 60,
+          "near": 0.1,
+          "position": [
+            0,
+            4.741199004918534,
+            22.54311876274197
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "collectathon-AFTER-run2",
+      "pngSha256": "52af921f94545db69e23e252b81dccedd07dd7e00f99b8c552ac9798282b437b",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            0,
+            0.8100999593734741,
+            14
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 2000,
+          "forward": [
+            0,
+            -0.14263084339857812,
+            -0.9897759557149338
+          ],
+          "fov": 60,
+          "near": 0.1,
+          "position": [
+            0,
+            4.741199004918534,
+            22.54311876274197
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "adventure-BEFORE-run1",
+      "pngSha256": "513b2e841879cf48a57af74541a94410c3be4b6270b69d523cea71d744d27fea",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            5.152674566488713e-05,
+            0.8601000905036926,
+            7.999998092651367
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 600,
+          "forward": [
+            2.342441238410365e-16,
+            -0.2921444231509435,
+            -0.9563742133818762
+          ],
+          "fov": 55,
+          "near": 0.1,
+          "position": [
+            5.12452045873208e-05,
+            3.4264264508200486,
+            13.454942414014141
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "adventure-AFTER-run1",
+      "pngSha256": "0ce576e22c213a7bbc994a034313a2c246cf9d689d93ff25aba9e17fe477ac39",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            5.152674566488713e-05,
+            0.8601000905036926,
+            7.999998092651367
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 600,
+          "forward": [
+            2.342441238410365e-16,
+            -0.2921444231509435,
+            -0.9563742133818762
+          ],
+          "fov": 55,
+          "near": 0.1,
+          "position": [
+            5.12452045873208e-05,
+            3.4264264508200486,
+            13.454942414014141
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "adventure-BEFORE-run2",
+      "pngSha256": "4c3cf6827a2b3f713af33f7e81d4e5587aa899cb659651517793803c0a6252d3",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            5.152674566488713e-05,
+            0.8601000905036926,
+            7.999998092651367
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 600,
+          "forward": [
+            2.342441238410365e-16,
+            -0.2921444231509435,
+            -0.9563742133818762
+          ],
+          "fov": 55,
+          "near": 0.1,
+          "position": [
+            5.12452045873208e-05,
+            3.4264264508200486,
+            13.454942414014141
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "adventure-AFTER-run2",
+      "pngSha256": "fe959e9ab3241c18b66271f5043e40d83f977e785d125633373f7b01ac868951",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            5.152674566488713e-05,
+            0.8601000905036926,
+            7.999998092651367
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 600,
+          "forward": [
+            2.342441238410365e-16,
+            -0.2921444231509435,
+            -0.9563742133818762
+          ],
+          "fov": 55,
+          "near": 0.1,
+          "position": [
+            5.12452045873208e-05,
+            3.4264264508200486,
+            13.454942414014141
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "kart-BEFORE-run1",
+      "pngSha256": "0199da6b82eb988f0874ab52ae002361a6f282843a5660cd89715a1e72eb17b7",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            49.06077891588211,
+            0.16564086079597473,
+            41.8724091053009
+          ],
+          "rotation": [
+            -0.020590565826881714,
+            -0.8552805419479934,
+            -0.034087491867981344,
+            0.516632621949317
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 1200,
+          "forward": [
+            0.878300294435324,
+            -0.12403473458920844,
+            0.46174016222352576
+          ],
+          "fov": 62,
+          "near": 0.2,
+          "position": [
+            43.57293931642044,
+            2.4656408607959746,
+            38.987341249845784
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "kart-AFTER-run1",
+      "pngSha256": "b36e2c168a7d42ca1ef9df786bb131784c7b870eb53ac6c723dc9d9a52e44179",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            49.06077891588211,
+            0.16564086079597473,
+            41.8724091053009
+          ],
+          "rotation": [
+            -0.020590565826881714,
+            -0.8552805419479934,
+            -0.034087491867981344,
+            0.516632621949317
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 1200,
+          "forward": [
+            0.878300294435324,
+            -0.12403473458920844,
+            0.46174016222352576
+          ],
+          "fov": 62,
+          "near": 0.2,
+          "position": [
+            43.57293931642044,
+            2.4656408607959746,
+            38.987341249845784
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "kart-BEFORE-run2",
+      "pngSha256": "a8cd7544ef4c0953e407070359bfc896e128178b97fafe0c284613741a0cba54",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            49.06077891588211,
+            0.16564086079597473,
+            41.8724091053009
+          ],
+          "rotation": [
+            -0.020590565826881714,
+            -0.8552805419479934,
+            -0.034087491867981344,
+            0.516632621949317
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 1200,
+          "forward": [
+            0.878300294435324,
+            -0.12403473458920844,
+            0.46174016222352576
+          ],
+          "fov": 62,
+          "near": 0.2,
+          "position": [
+            43.57293931642044,
+            2.4656408607959746,
+            38.987341249845784
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    },
+    {
+      "name": "kart-AFTER-run2",
+      "pngSha256": "224b4b9ab93b3c16171ba866dc7be5e575ecd81ede5d71a1f248204cd84cc6c5",
+      "mode": "RGB",
+      "tick": 660,
+      "pose": {
+        "player": {
+          "position": [
+            49.06077891588211,
+            0.16564086079597473,
+            41.8724091053009
+          ],
+          "rotation": [
+            -0.020590565826881714,
+            -0.8552805419479934,
+            -0.034087491867981344,
+            0.516632621949317
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "camera": {
+          "far": 1200,
+          "forward": [
+            0.878300294435324,
+            -0.12403473458920844,
+            0.46174016222352576
+          ],
+          "fov": 62,
+          "near": 0.2,
+          "position": [
+            43.57293931642044,
+            2.4656408607959746,
+            38.987341249845784
+          ],
+          "type": "PerspectiveCamera"
+        }
+      }
+    }
+  ]
+}

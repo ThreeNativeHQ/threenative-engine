@@ -1,0 +1,27 @@
+{
+  "reviewedImplementationSource": "12664e84472ac00d4f370cb6454d6a27df853173",
+  "model": "claude-opus-5-5",
+  "effortArgument": "high",
+  "sessionId": "17a743a8-ba64-47a3-883d-f386e7b59cb9",
+  "completed": false,
+  "terminalReason": "api_error",
+  "apiError": "usage_limit_reached",
+  "apiErrorStatus": 429,
+  "message": "You've hit your weekly limit \u00b7 resets Oct 29, 3pm (America/Vancouver)",
+  "permissionDenials": [],
+  "durationMs": 1833566,
+  "rawCliOutputSha256": "79149efe6380d2d1989b2584a7833c4f37da25ad5236f6b9e9d9dbd6ea9b6511",
+  "visualOverall": null,
+  "mergeReady": false,
+  "blockers": [
+    "Required Opus final verdict absent: weekly account usage limit",
+    "Final Iris GPU p50 16.10 ms exceeds 15 ms",
+    "Final Iris presented p95 16.8 ms exceeds 16.7 ms; three pairs incomplete",
+    "Parent563 delivery unresolved; full product CI not run"
+  ],
+  "unverified": [
+    "Final required Opus visual/code acceptance",
+    "Motion/shimmer quality",
+    "Full product CI"
+  ]
+}

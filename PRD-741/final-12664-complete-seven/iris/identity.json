@@ -1,0 +1,386 @@
+{
+  "sourceCommit": "12664e84472ac00d4f370cb6454d6a27df853173",
+  "status": "final-frozen-seven-package-normal-and-pooled",
+  "packages": [
+    {
+      "name": "create-threenative",
+      "path": "/tmp/prd741-kits/final-12664e844/.packages/create-threenative-82c38fbe23b488f9.tgz",
+      "sha256": "82c38fbe23b488f9aa3c3c3ae483e131b44ae874fe06624254ff9afb31ca9e68"
+    },
+    {
+      "name": "@threenative/assets",
+      "path": "/tmp/prd741-kits/final-12664e844/.packages/threenative-assets-753d4f2c72285e08.tgz",
+      "sha256": "753d4f2c72285e08c2b9fc414cbc3af789a54219e2bb488349e3ffdc7418d98d"
+    },
+    {
+      "name": "@threenative/core",
+      "path": "/tmp/prd741-kits/final-12664e844/.packages/threenative-core-6a19ad8a2fdb5c00.tgz",
+      "sha256": "6a19ad8a2fdb5c001865defe22ac43195f1b132d704c70c7c39729e363bd5d6a"
+    },
+    {
+      "name": "@threenative/physics",
+      "path": "/tmp/prd741-kits/final-12664e844/.packages/threenative-physics-e3b8fb71ae3c1acf.tgz",
+      "sha256": "e3b8fb71ae3c1acfdb8f372119ba48faeb3e476982e1171956f1b254b91f5124"
+    },
+    {
+      "name": "@threenative/playtest",
+      "path": "/tmp/prd741-kits/final-12664e844/.packages/threenative-playtest-4c97c417741e106a.tgz",
+      "sha256": "4c97c417741e106a61530bdc1567ae0a0b7145a32afd0b517865d94c574c74fd"
+    },
+    {
+      "name": "@threenative/runtime-native",
+      "path": "/tmp/prd741-kits/final-12664e844/.packages/threenative-runtime-native-3382744327a3034a.tgz",
+      "sha256": "3382744327a3034a58096b6eb1a504624ea6c0c9d871627d4281aee82d8d8dc8"
+    },
+    {
+      "name": "@threenative/three-native",
+      "path": "/tmp/prd741-kits/final-12664e844/.packages/threenative-three-native-721f2de7793a1135.tgz",
+      "sha256": "721f2de7793a11355c11511a8485ea445dd91ca4232b9e79c04b9b03f0ae891c"
+    }
+  ],
+  "installedPayloadClosure": [
+    {
+      "kit": "collectathon",
+      "package": "create-threenative",
+      "verifiedFiles": 1270,
+      "installedPayloadTreeSha256": "6807e780d9dc7b4161c12e975f8cd81b19e8ea92385ad5d07ec0266b0a40be5f"
+    },
+    {
+      "kit": "collectathon",
+      "package": "@threenative/assets",
+      "verifiedFiles": 18,
+      "installedPayloadTreeSha256": "4a87f265a316c15add019b4563670cfe2863b9a33943316d82035d46779fa2f1"
+    },
+    {
+      "kit": "collectathon",
+      "package": "@threenative/core",
+      "verifiedFiles": 234,
+      "installedPayloadTreeSha256": "c02378252b20697761de3fa027fc9f178200cd457f3807686be2a47a84c31f9c"
+    },
+    {
+      "kit": "collectathon",
+      "package": "@threenative/physics",
+      "verifiedFiles": 10,
+      "installedPayloadTreeSha256": "d29f0643227798d92aec3c1cd2000f530b41e52c58702ea1ff3fc84b73b3cf91"
+    },
+    {
+      "kit": "collectathon",
+      "package": "@threenative/playtest",
+      "verifiedFiles": 18,
+      "installedPayloadTreeSha256": "565d693d67799ab3ac9ca6585f0cf7c9739eb3c52c201d464e4b011d49cab9c2"
+    },
+    {
+      "kit": "collectathon",
+      "package": "@threenative/runtime-native",
+      "verifiedFiles": 57,
+      "installedPayloadTreeSha256": "72fc5d30aeed01cda98d5bba3d4bcffe7330dcb2ddc41c65cf99b573d3da2253"
+    },
+    {
+      "kit": "collectathon",
+      "package": "@threenative/three-native",
+      "verifiedFiles": 53,
+      "installedPayloadTreeSha256": "48ee20ef93ce2ea64fa2d1ee8edd7ca057940e765c47ab889d1089968adbe495"
+    },
+    {
+      "kit": "adventure",
+      "package": "create-threenative",
+      "verifiedFiles": 1270,
+      "installedPayloadTreeSha256": "6807e780d9dc7b4161c12e975f8cd81b19e8ea92385ad5d07ec0266b0a40be5f"
+    },
+    {
+      "kit": "adventure",
+      "package": "@threenative/assets",
+      "verifiedFiles": 18,
+      "installedPayloadTreeSha256": "4a87f265a316c15add019b4563670cfe2863b9a33943316d82035d46779fa2f1"
+    },
+    {
+      "kit": "adventure",
+      "package": "@threenative/core",
+      "verifiedFiles": 234,
+      "installedPayloadTreeSha256": "c02378252b20697761de3fa027fc9f178200cd457f3807686be2a47a84c31f9c"
+    },
+    {
+      "kit": "adventure",
+      "package": "@threenative/physics",
+      "verifiedFiles": 10,
+      "installedPayloadTreeSha256": "d29f0643227798d92aec3c1cd2000f530b41e52c58702ea1ff3fc84b73b3cf91"
+    },
+    {
+      "kit": "adventure",
+      "package": "@threenative/playtest",
+      "verifiedFiles": 18,
+      "installedPayloadTreeSha256": "565d693d67799ab3ac9ca6585f0cf7c9739eb3c52c201d464e4b011d49cab9c2"
+    },
+    {
+      "kit": "adventure",
+      "package": "@threenative/runtime-native",
+      "verifiedFiles": 57,
+      "installedPayloadTreeSha256": "72fc5d30aeed01cda98d5bba3d4bcffe7330dcb2ddc41c65cf99b573d3da2253"
+    },
+    {
+      "kit": "adventure",
+      "package": "@threenative/three-native",
+      "verifiedFiles": 53,
+      "installedPayloadTreeSha256": "48ee20ef93ce2ea64fa2d1ee8edd7ca057940e765c47ab889d1089968adbe495"
+    },
+    {
+      "kit": "kart",
+      "package": "create-threenative",
+      "verifiedFiles": 1270,
+      "installedPayloadTreeSha256": "6807e780d9dc7b4161c12e975f8cd81b19e8ea92385ad5d07ec0266b0a40be5f"
+    },
+    {
+      "kit": "kart",
+      "package": "@threenative/assets",
+      "verifiedFiles": 18,
+      "installedPayloadTreeSha256": "4a87f265a316c15add019b4563670cfe2863b9a33943316d82035d46779fa2f1"
+    },
+    {
+      "kit": "kart",
+      "package": "@threenative/core",
+      "verifiedFiles": 234,
+      "installedPayloadTreeSha256": "c02378252b20697761de3fa027fc9f178200cd457f3807686be2a47a84c31f9c"
+    },
+    {
+      "kit": "kart",
+      "package": "@threenative/physics",
+      "verifiedFiles": 10,
+      "installedPayloadTreeSha256": "d29f0643227798d92aec3c1cd2000f530b41e52c58702ea1ff3fc84b73b3cf91"
+    },
+    {
+      "kit": "kart",
+      "package": "@threenative/playtest",
+      "verifiedFiles": 18,
+      "installedPayloadTreeSha256": "565d693d67799ab3ac9ca6585f0cf7c9739eb3c52c201d464e4b011d49cab9c2"
+    },
+    {
+      "kit": "kart",
+      "package": "@threenative/runtime-native",
+      "verifiedFiles": 57,
+      "installedPayloadTreeSha256": "72fc5d30aeed01cda98d5bba3d4bcffe7330dcb2ddc41c65cf99b573d3da2253"
+    },
+    {
+      "kit": "kart",
+      "package": "@threenative/three-native",
+      "verifiedFiles": 53,
+      "installedPayloadTreeSha256": "48ee20ef93ce2ea64fa2d1ee8edd7ca057940e765c47ab889d1089968adbe495"
+    }
+  ],
+  "engineSourceStamp": "940e077d45393acac4eca16ffff49651f65eccd8d33dc29495a4b0e26e43be8a",
+  "normal": [
+    {
+      "kit": "collectathon",
+      "path": "/tmp/prd741-kits/final-12664e844/collectathon",
+      "install": "exit0",
+      "buildWeb": "exit0",
+      "typecheck": "exit0",
+      "buildDesktop": "exit0",
+      "wasmSha256": "879a42398a8a32320ada5e4e1f1d862a4b73ec982c3e0268f2a8d35faa081511",
+      "generatedMjsSha256": "ff591b14cf3955736aaeb00de79f66cbc81c31ffa9ef6fd4cf7b9d039293e27b",
+      "playerSha256": "91d06d2c627f061f34b3d1ca830e4f7a5471094acf9938a9271c45a25ba9bec6",
+      "compiledWebHostAbi": 4,
+      "helperSha256": "93d77fb0b1d65981dceb6ed8fbc14a10453c34d453dbe03dc3968fe547efc0b1",
+      "coreDistSha256": "7a6dafab313a71f61c57ba52ff2f6682e3569b99b87940ea656470aee120cc59",
+      "assetsDistSha256": "16c818c353b8be83d9c070ceb80f7b2acda1566cb7d5c01d930bef0de3f7a866",
+      "physicsDistSha256": "923e55caffdfa73cf86df11104efcfd62190b9afc3e4ef2b404113b24d7c03f7",
+      "gameBundleSha256": "a6c2529008f7b5059c8e7f701b794866ea6d0c27c68fe049b1e14551235cae86",
+      "nativePackageSha256": "3adc7755047c31cfd73233f41c77b460211bc95f15bbc1c73e70a554ad8a6cfa",
+      "nativePackageEntries": 15,
+      "authoredTiles": [
+        {
+          "name": "tex-bark-normal.webp",
+          "width": 256,
+          "height": 256,
+          "rgbaSha256": "45832a80dc4ca577ebfefa4bb749adfdb35bbb55e0de23fbf6b8d2cfb4c37296",
+          "entrySha256": "30276834056fe835811569d46e26b9359cb2212cb3b78999c441ffebcc2f037f"
+        },
+        {
+          "name": "tex-bark.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "956c7c5af82306918496a8fb1b5ca4c8007ab5a2f927b693434fac39a8850cf5",
+          "entrySha256": "99aa1d8eae351b7408847170e6102a94443e440c0b53001a607307b2553b5369"
+        },
+        {
+          "name": "tex-birch-bark.webp",
+          "width": 256,
+          "height": 256,
+          "rgbaSha256": "bebe31d04ed49bcd057f84ebac415cc26dc44b979292103a86d0ee1e8926b980",
+          "entrySha256": "a02eae75f1413bc7059eacd4b165f9ca0000fdd0febd80c8ffc697d6a44454fb"
+        },
+        {
+          "name": "tex-grass.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "cfc653171866bd67f0ee6b25b2176674c38c9f93aaaf3c3a1697feafb865738d",
+          "entrySha256": "426893aebf8b857054020c0d3291e5bd676275f8a46ecbf1fbc86d99a60b4f69"
+        },
+        {
+          "name": "tex-planks-normal.webp",
+          "width": 256,
+          "height": 256,
+          "rgbaSha256": "c4fbb99e4e56028b3fd121cef607ee29a3e71d69b85bf94b2323b554ca01e96c",
+          "entrySha256": "dc010a50904478e959f6ae4a2af8c137f786c5325854763bb3aa651a20deb644"
+        },
+        {
+          "name": "tex-planks.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "3ee8ae3f2fa239176669db3c3a90b2147c1f5af172abae95688722956b693815",
+          "entrySha256": "04dab4828a98513d0690eb63e2d71d8e9298cd73cabbb9e30fa0e372ea3ffdeb"
+        },
+        {
+          "name": "tex-rock-normal.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "4948ca581eb4e0b71c7be91e86cc8dc5a6c512381571584141064139cd5cae71",
+          "entrySha256": "1999840fc5aa6cc6a0810ff5f7e5450b11cfb95c7dcea84aefd5b3ecbf7acd17"
+        },
+        {
+          "name": "tex-rock.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "a0c2ec998faa43bb32d8e3e06c0e47929cfc1cb58a16d4469f3992e600f0190b",
+          "entrySha256": "0df2378d65f3cfbcc5f1a9d293c5df88b091321cc6a1fc5b6e3a069b7d683a67"
+        },
+        {
+          "name": "tex-sand-normal.webp",
+          "width": 256,
+          "height": 256,
+          "rgbaSha256": "85d6973429158b9c8a9060bd8c8d5cbb7140ab9e1d7d55d58ca6cb97f7a2dabe",
+          "entrySha256": "3c8b555cc2c3d8b6acdafbbfd5cf4689000b9ae6a160aed1b3cb6e6b532bb701"
+        },
+        {
+          "name": "tex-sand.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "55a12f4a91e78b2cbaa71156a9617ad3d3fae42b58068122a8be20550d30a9f8",
+          "entrySha256": "82d3d6cb6065ae2e26b84510891c5c36c39935c37758deff82896c94d3a85d00"
+        },
+        {
+          "name": "tex-stone-wall-normal.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "53920110f4933407f79a0c711f1edf607190de13356a9585a18f405e8f979041",
+          "entrySha256": "1785d48a5f7e967882b359b2fc2bb7f74b8c20b1d0caf67de732602565d08f0b"
+        },
+        {
+          "name": "tex-stone-wall.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "05e71e8362997ead078353f535982289f9fb8cb625abc7298b4314c4ab2d5041",
+          "entrySha256": "d71d1c87d924b60c5a2d3a285d2a3fe5fef0643254a52635a38912d79a9dc919"
+        }
+      ]
+    },
+    {
+      "kit": "adventure",
+      "path": "/tmp/prd741-kits/final-12664e844/adventure",
+      "install": "exit0",
+      "buildWeb": "exit0",
+      "typecheck": "exit0",
+      "buildDesktop": "exit0",
+      "wasmSha256": "879a42398a8a32320ada5e4e1f1d862a4b73ec982c3e0268f2a8d35faa081511",
+      "generatedMjsSha256": "ff591b14cf3955736aaeb00de79f66cbc81c31ffa9ef6fd4cf7b9d039293e27b",
+      "playerSha256": "91d06d2c627f061f34b3d1ca830e4f7a5471094acf9938a9271c45a25ba9bec6",
+      "compiledWebHostAbi": 4,
+      "helperSha256": "93d77fb0b1d65981dceb6ed8fbc14a10453c34d453dbe03dc3968fe547efc0b1",
+      "coreDistSha256": "7a6dafab313a71f61c57ba52ff2f6682e3569b99b87940ea656470aee120cc59",
+      "assetsDistSha256": "16c818c353b8be83d9c070ceb80f7b2acda1566cb7d5c01d930bef0de3f7a866",
+      "physicsDistSha256": "923e55caffdfa73cf86df11104efcfd62190b9afc3e4ef2b404113b24d7c03f7",
+      "gameBundleSha256": "39434e4cafe9ed118d80dd0c8deaab6be26f23e64fe8c4ead138c6a1450809ad",
+      "nativePackageSha256": "010ac7af582de503a5932db7075525cf923e96dec93196d6d56eb65bd0b26c82",
+      "nativePackageEntries": 8,
+      "authoredTiles": [
+        {
+          "name": "tex-bark.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "956c7c5af82306918496a8fb1b5ca4c8007ab5a2f927b693434fac39a8850cf5",
+          "entrySha256": "99aa1d8eae351b7408847170e6102a94443e440c0b53001a607307b2553b5369"
+        },
+        {
+          "name": "tex-grass.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "cfc653171866bd67f0ee6b25b2176674c38c9f93aaaf3c3a1697feafb865738d",
+          "entrySha256": "426893aebf8b857054020c0d3291e5bd676275f8a46ecbf1fbc86d99a60b4f69"
+        },
+        {
+          "name": "tex-planks.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "3ee8ae3f2fa239176669db3c3a90b2147c1f5af172abae95688722956b693815",
+          "entrySha256": "04dab4828a98513d0690eb63e2d71d8e9298cd73cabbb9e30fa0e372ea3ffdeb"
+        },
+        {
+          "name": "tex-rock.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "a0c2ec998faa43bb32d8e3e06c0e47929cfc1cb58a16d4469f3992e600f0190b",
+          "entrySha256": "0df2378d65f3cfbcc5f1a9d293c5df88b091321cc6a1fc5b6e3a069b7d683a67"
+        },
+        {
+          "name": "tex-stone-wall.webp",
+          "width": 512,
+          "height": 512,
+          "rgbaSha256": "05e71e8362997ead078353f535982289f9fb8cb625abc7298b4314c4ab2d5041",
+          "entrySha256": "d71d1c87d924b60c5a2d3a285d2a3fe5fef0643254a52635a38912d79a9dc919"
+        }
+      ]
+    },
+    {
+      "kit": "kart",
+      "path": "/tmp/prd741-kits/final-12664e844/kart",
+      "install": "exit0",
+      "buildWeb": "exit0",
+      "typecheck": "exit0",
+      "buildDesktop": "exit0",
+      "wasmSha256": "879a42398a8a32320ada5e4e1f1d862a4b73ec982c3e0268f2a8d35faa081511",
+      "generatedMjsSha256": "ff591b14cf3955736aaeb00de79f66cbc81c31ffa9ef6fd4cf7b9d039293e27b",
+      "playerSha256": "91d06d2c627f061f34b3d1ca830e4f7a5471094acf9938a9271c45a25ba9bec6",
+      "compiledWebHostAbi": 4,
+      "helperSha256": "93d77fb0b1d65981dceb6ed8fbc14a10453c34d453dbe03dc3968fe547efc0b1",
+      "coreDistSha256": "7a6dafab313a71f61c57ba52ff2f6682e3569b99b87940ea656470aee120cc59",
+      "assetsDistSha256": "16c818c353b8be83d9c070ceb80f7b2acda1566cb7d5c01d930bef0de3f7a866",
+      "physicsDistSha256": "923e55caffdfa73cf86df11104efcfd62190b9afc3e4ef2b404113b24d7c03f7",
+      "gameBundleSha256": "4eed83b2c120292bbdbe9541c15ba0ab139897cff67db20e6312fb27f78a0423",
+      "nativePackageSha256": "0753379719c25d0d0471664397f794781b8b5d70458217e8a1a31404f797e946",
+      "nativePackageEntries": 2,
+      "authoredTiles": []
+    }
+  ],
+  "pooled": [
+    {
+      "kit": "collectathon",
+      "path": "/tmp/prd741-kits/final-12664e844/perf-pooled/collectathon",
+      "buildWeb": "exit0",
+      "typecheck": "exit0",
+      "normalGameSourceSha256": "b3f67fac37f709b178d81fe43030f85533181bf09f99c51f867a2de96040a03a",
+      "pooledGameSourceSha256": "edfaedb013c12d022e722cfef0edbed42fac6577a7a4529e85eddab57be8caf1",
+      "authoringChange": "frameBudget: { reportEvery: 3600, capacity: 8192 }",
+      "sharedInstalledPayloads": true
+    },
+    {
+      "kit": "adventure",
+      "path": "/tmp/prd741-kits/final-12664e844/perf-pooled/adventure",
+      "buildWeb": "exit0",
+      "typecheck": "exit0",
+      "normalGameSourceSha256": "f5d16187563453a5193dd3ce1276223e4774c846ebdc700c2134e89cad1987fe",
+      "pooledGameSourceSha256": "cc09a27371c1db6f7e251a457035b8711307eecc2d0f00546e73af45308f6c37",
+      "authoringChange": "frameBudget: { reportEvery: 3600, capacity: 8192 }",
+      "sharedInstalledPayloads": true
+    },
+    {
+      "kit": "kart",
+      "path": "/tmp/prd741-kits/final-12664e844/perf-pooled/kart",
+      "buildWeb": "exit0",
+      "typecheck": "exit0",
+      "normalGameSourceSha256": "fe9175d640ec4edca1c0968d9cac2938e36a3dec541beecd8fec7fc7550d16a7",
+      "pooledGameSourceSha256": "2d8d88d989374323b015f9c6af9d3a665c05f98fbd11d0b9a5bb9dd2135eb033",
+      "authoringChange": "frameBudget: { reportEvery: 3600, capacity: 8192 }",
+      "sharedInstalledPayloads": true
+    }
+  ],
+  "sourcePolicy": "normal: final template defaults; pooled: only frameBudget sampling added"
+}

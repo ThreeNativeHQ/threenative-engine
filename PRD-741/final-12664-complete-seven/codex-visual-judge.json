@@ -1,0 +1,53 @@
+{
+  "reviewer": "Fresh Codex visual judge; not Opus",
+  "agentTask": "/root/final_visual_judge",
+  "reviewedImplementationSource": "12664e84472ac00d4f370cb6454d6a27df853173",
+  "visualOverall": "NEUTRAL",
+  "frames": [
+    {
+      "kit": "collectathon",
+      "run": 1,
+      "verdict": "NEUTRAL",
+      "basis": "Castle masonry, foreground stone and bark remain readable; slightly crisper grass; no objectionable halos, white terrain or geometry breaks."
+    },
+    {
+      "kit": "collectathon",
+      "run": 2,
+      "verdict": "NEUTRAL",
+      "basis": "Masonry, bridge/sign and trunks preserved; windmill blades intact; rotation phase differs."
+    },
+    {
+      "kit": "adventure",
+      "run": 1,
+      "verdict": "NEUTRAL",
+      "basis": "Chest wood, stepping stones and terrain remain clear; haze, sunbeams and colour consistent."
+    },
+    {
+      "kit": "adventure",
+      "run": 2,
+      "verdict": "NEUTRAL",
+      "basis": "Stone, chest and sign retain detail; foliage edges acceptable; no white terrain or lighting shift."
+    },
+    {
+      "kit": "kart",
+      "run": 1,
+      "verdict": "NEUTRAL",
+      "basis": "Kart silhouette, barriers and road boundaries intact; terrain, shadows and colour closely match."
+    },
+    {
+      "kit": "kart",
+      "run": 2,
+      "verdict": "NEUTRAL",
+      "basis": "Stable geometry/appearance; no objectionable ringing or haloing."
+    }
+  ],
+  "scope": "Direct original-resolution inspection of exactly six full1/.72 comparison sheets and identity.json; all12captures tick660; camera/player match per kit.",
+  "limitations": [
+    "Does not satisfy explicitly required Opus5.5high review",
+    "Stationary only; motion/shimmer not assessed",
+    "Animation phase unfrozen",
+    "Adapter/capture-environment claims supplied by parent, not independently verified by this judge"
+  ],
+  "confidence": "moderate-high for stationary frames",
+  "mergeReady": false
+}
