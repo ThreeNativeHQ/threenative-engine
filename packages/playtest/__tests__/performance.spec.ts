@@ -73,7 +73,7 @@ function costedReport(series: Record<string, unknown>[]) {
     ...base,
     observations: {
       ...base.observations,
-      console: [{ level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` }],
+      console: [{ type: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` }],
     },
   };
 }

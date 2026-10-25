@@ -96,7 +96,7 @@ export interface IHarvestCandidate {
 }
 
 export interface ICapabilitySearchResponse {
-  readonly verdict: "matched" | "none";
+  readonly verdict: "matched" | "none" | "starterKit";
   readonly results: readonly ICapabilitySearchResult[];
   readonly guidance: string;
 }

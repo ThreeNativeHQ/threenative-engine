@@ -136,7 +136,7 @@ it("caps the reflection march at Unreal's steps per tier, reports it, and keeps 
   expect(marker({ renderChainTier: "low" })).toBe(8);
   expect(marker({ ssrMaxSteps: 64 })).toBe(64);
   // The core three patch adds the cap to the mirror trace; stock three has no such uniform.
-  const node = ssr(texture(new Texture()), texture(new Texture()), texture(new Texture()), {
+  const node = ssr(texture(new Texture()), texture(new Texture()), texture(new Texture()).xyz, {
     camera: new PerspectiveCamera(),
   }) as unknown as { maxSteps?: { value: number } };
   expect(node.maxSteps?.value).toBe(1e6);

@@ -671,7 +671,7 @@ function readStarterKits(root: string): readonly IStarterKit[] {
     )
     .map((entry) => {
       const kit = JSON.parse(
-        readFileSync(path.join(directory, entry.name, "kit.json"), "utf8"),
+        readFileSync(path.join(directory, entry.name, "kit.json")),
       ) as {
         aliases?: string[];
         blurb: string;
