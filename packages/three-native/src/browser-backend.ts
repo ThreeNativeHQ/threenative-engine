@@ -56,6 +56,7 @@ export type EngineValue =
   | number
   | boolean
   | string
+  | TypedArray
   | readonly EngineValue[]
   | IEngineRef
   | { readonly [key: string]: EngineValue };
@@ -70,6 +71,8 @@ export interface IBrowserRuntime {
   release(self: IEngineRef): void;
   /** For each ref, how many references other engine objects hold to its object; one call a batch. */
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
+  /** A numeric typed array argument crosses as is, no boxed copy; Wasm only. */
+  readonly typedArrays?: boolean;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
   readDoubles?(address: number, count: number): number | number[];
   /**
@@ -963,6 +966,8 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      if (runtime.typedArrays === true && SCALARS.some((scalar) => value instanceof scalar))
+        return value as TypedArray;
       // quality-allow: a typed-array view read as its numeric index signature, which ArrayBufferView does not declare.
       const list = Array.from(value as unknown as ArrayLike<number>);
       Object.defineProperty(list, TYPED, { value: value.constructor.name });
@@ -2250,6 +2255,18 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
     }
+    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      // A forwarded typed array (see `toEngine`): one heap copy, its view bounds kept, no boxed list.
+      const typed = value as TypedArray;
+      const numbers = alloc(Math.max(8, typed.length * 8));
+      abi.HEAPF64.set(typed, numbers / 8);
+      const name = string(typed.constructor.name).pointer;
+      const w = view();
+      w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer + 32, name, true);
+      w.setUint32(pointer + 48, numbers, true);
+      return w.setBigUint64(pointer + 40, BigInt(typed.length), true);
+    }
     if (!Array.isArray(value)) {
       // A record: count key/value pairs, each key a string value, as the engine returns one.
       const entries = Object.entries(value as Record<string, EngineValue>);
@@ -2405,6 +2422,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
+    typedArrays: true,
     typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
       scoped(() => {

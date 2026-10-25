@@ -10,7 +10,7 @@ import { TSL_NODE } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { definePass } from "../src/pass-node.js";
 import { defineRtt } from "../src/rtt.js";
-import { liveUniforms } from "../src/tsl-uniforms.js";
+import { booleanUniforms, liveUniforms } from "../src/tsl-uniforms.js";
 
 interface INode {
   readonly [TSL_NODE]: number;
@@ -35,9 +35,17 @@ it("the V8 facade preserves live boolean uniforms over numeric lanes", () => {
     source.indexOf("export const uniform ="),
     source.indexOf("\nexport const uniformArray"),
   );
-  const uniform = new Function("live", expression.replace("export const uniform =", "return"))(
-    live,
-  );
+  const uniform = new Function(
+    "live",
+    "booleanUniforms",
+    "globalThis",
+    expression.replace("export const uniform =", "return"),
+  )(live, booleanUniforms, {
+    tsl: {
+      notEqual: (scalar: { notEqual(value: number): unknown }, value: number) =>
+        scalar.notEqual(value),
+    },
+  });
   const enabled = uniform(false);
   expect(enabled.value).toBe(false);
   expect(nativeUniform).toHaveBeenLastCalledWith(0);

@@ -296,6 +296,31 @@ describe("the browser-JS back end", () => {
     expect(Object.hasOwn(texture, "needsUpdate")).toBe(false);
   });
 
+  it("hands a numeric typed array to construct unchanged when the runtime accepts typed arrays", () => {
+    const seen: (readonly EngineValue[])[] = [];
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      typedArrays: true,
+      construct: (name, args) => {
+        seen.push(args);
+        return { key: name, type: runtime.typeId(name) };
+      },
+    };
+    const { classes: bound } = defineBrowserClasses(registry, runtime);
+    const Attribute = bound.BufferAttribute as new (
+      array: Float32Array,
+      itemSize: number,
+    ) => object;
+    const backing = new Float32Array([0, 1, 2, 3, 4, 0]);
+    const view = backing.subarray(1, 5);
+    void new Attribute(view, 2);
+    const handed = seen[0]?.[0];
+    expect(handed).toBe(view);
+    expect(Array.isArray(handed)).toBe(false);
+    expect((handed as Float32Array).byteOffset).toBe(backing.BYTES_PER_ELEMENT);
+    expect((handed as Float32Array).length).toBe(4);
+  });
+
   it("refuses to construct a class the registry gives no constructor", () => {
     for (const [name, binding] of Object.entries(registry.classes)) {
       if (binding.constructor) continue;
