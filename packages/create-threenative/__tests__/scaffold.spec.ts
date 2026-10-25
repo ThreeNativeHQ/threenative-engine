@@ -321,7 +321,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   runner: "2d483f4c797a6e6dcdaae055dfab05a0c4ad498678aadffce38ac0dc8d74e1f8",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "f5aab39585f1d612e60cc2a1b27aca29e1e6932f693e694aad84be51c8491d55",
-  shooter: "5bbf94164445a91361b89e19c519a835f485d4f899591009eedf06cf342a056d",
+  shooter: "0a296e383f2c5e7280a81567e4d0828a5ff625c617afc4cecb7333eff1e15412",
   snow: "dedd4e1b27bfc9e9b4dd0a8701f7c66dfc59409213b5d488e7469e37ddfe1122",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts

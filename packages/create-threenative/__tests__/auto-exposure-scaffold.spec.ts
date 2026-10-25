@@ -36,7 +36,7 @@ describe("generated eye adaptation", () => {
     if (policy.includes("coreExposureSettings")) {
       expect(policy).toContain('from "@threenative/core"');
       expect(policy).toContain("exposureSettings as coreExposureSettings");
-      expect(policy).toContain("{ ...coreExposureSettings }");
+      expect(policy).toContain("...coreExposureSettings");
     } else {
       const { exposureSettings } = await import(
         pathToFileURL(path.join(directory, "src/render/exposure.ts")).href
