@@ -441,6 +441,38 @@ void compileBeforeRender() {
     CHECK(renderer.deviceLimitReads() == 1);  // seven renders and an atlas, one read of the device limits
 }
 
+// The shooter's tracers at 4x MSAA: the aux pass biases depth by -4, and WebGPU refuses a depth bias on a
+// line pipeline ("depthBias must be 0 when using PrimitiveTopology::LineStrip"), which lost the renderer.
+void lineDepthBias() {
+    CompileDevice d;
+    CHECK(d.device);
+    if (!d.device) return;
+    const auto standard = shader::buildStandard(shader::StandardMaterial{});
+    const auto vs = shader::buildStage(standard.vertex, 0), fs = shader::buildStage(standard.fragment, 1);
+    PipelineCache cache(d.device);
+    for (const WGPUPrimitiveTopology topology :
+         {WGPUPrimitiveTopology_LineStrip, WGPUPrimitiveTopology_LineList, WGPUPrimitiveTopology_PointList}) {
+        PipelineTarget target;
+        target.topology = topology;
+        target.cull = WGPUCullMode_None;
+        target.depthBias = -4;
+        target.depthBiasSlopeScale = -1.5f;
+        wgpuDevicePushErrorScope(d.device, WGPUErrorFilter_Validation);
+        CHECK(cache.get(vs, &fs, target) != nullptr);
+        bool done = false;
+        WGPUErrorType error = WGPUErrorType_Unknown;
+        WGPUPopErrorScopeCallbackInfo callback = {};
+        callback.mode = WGPUCallbackMode_AllowProcessEvents;
+        callback.userdata1 = &error; callback.userdata2 = &done;
+        callback.callback = [](WGPUPopErrorScopeStatus, WGPUErrorType type, WGPUStringView, void* out, void* done) {
+            *static_cast<WGPUErrorType*>(out) = type; *static_cast<bool*>(done) = true;
+        };
+        wgpuDevicePopErrorScope(d.device, callback);
+        for (int i = 0; i < 1000 && !done; ++i) wgpuInstanceProcessEvents(d.instance);
+        CHECK(done && error == WGPUErrorType_NoError);
+    }
+}
+
 #ifdef TN_TEST_PIPELINE_WORKERS
 void waitFor(const auto& ready) {
     for (int i = 0; i < 2000 && !ready(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -616,7 +648,7 @@ void recentBindGroups() {
     groups.clear();
 }
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}
