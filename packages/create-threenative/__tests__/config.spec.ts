@@ -1235,7 +1235,14 @@ const SEAM_SAMPLE = {
   models: {
     compact: false,
     lightmap: { atlasSize: 128, padding: 2 },
-    passes: { dedup: true, meshopt: false, prune: true, quantize: true, reorder: false },
+    passes: {
+      dedup: true,
+      meshopt: false,
+      prune: true,
+      quantize: true,
+      reorder: false,
+      restTracks: false,
+    },
     quantize: { normalBits: 8, positionBits: 12, uvBits: 12 },
     sharedImages: true,
     simplify: { ratio: 0.5 },

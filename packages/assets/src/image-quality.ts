@@ -518,7 +518,7 @@ export function readTextureQuality(value: unknown): ITextureQuality | undefined 
     !["pass", "below-floor", "unvalidated-slots"].includes(row.status) ||
     !Array.isArray(row.slots) ||
     !row.slots.every((slot) => typeof slot === "string") ||
-    !["uastc", "etc1s", "none"].includes(row.codec) ||
+    !["uastc", "etc1s", "jpeg", "none"].includes(row.codec) ||
     (row.compressionSkipped !== undefined &&
       !["block-size", "not-smaller", "below-floor"].includes(row.compressionSkipped)) ||
     !bounded(row.floor?.ssim, 0, 1) ||
@@ -527,7 +527,8 @@ export function readTextureQuality(value: unknown): ITextureQuality | undefined 
       !["etc1s@150", "uastc+rdo λ3 +zstd", "uastc+rdo λ1 +zstd", "uastc", "none"].includes(
         row.rung,
       ) &&
-      !/^etc1s@\d+$/u.test(row.rung)) ||
+      !/^etc1s@\d+$/u.test(row.rung) &&
+      !/^jpeg@\d+$/u.test(row.rung)) ||
     !bounded(row.alpha?.ssim, -1, 1) ||
     !bounded(row.alpha?.meanAbsoluteError, 0, 1) ||
     !Array.isArray(row.alpha?.coverage) ||

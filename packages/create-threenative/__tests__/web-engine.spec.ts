@@ -387,7 +387,7 @@ describe("createWebEnginePlugin", () => {
     const root = await project(false);
     await expect(
       createWebEnginePlugin({ root, engine: "threenative" }).load(WEB_ENGINE_ID),
-    ).rejects.toThrow("TN_WASM_ENGINE_MISSING");
+    ).rejects.toThrow("pnpm wasm:build");
   });
 
   it("bundles the Wasm engine binding instead of upstream three; legacy still bundles three", async () => {
