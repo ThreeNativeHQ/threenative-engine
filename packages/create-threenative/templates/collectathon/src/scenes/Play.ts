@@ -74,6 +74,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #pickups: Pickup[] = [];
   #walkers: Walker[] = [];
   #post: ReturnType<typeof setupPost> | undefined;
+  #loading: ReturnType<typeof createLoadingScreen> | undefined;
 
   /**
    * Everything a scenario can place is built and registered here: `setup.place` is applied after
@@ -81,6 +82,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
    * `enter()` then re-reads every placed transform.
    */
   override async load(ctx: GameCtx): Promise<void> {
+    // The cover first, before the surfaces and the course: the page shows its CSS cover until the
+    // canvas draws this one, so nothing else may reach the screen in between.
+    this.#loading = createLoadingScreen(ctx);
+    // The HUD is page UI the cover cannot hide, so it waits for the same readiness.
+    void ctx.startup.whenReady().then(() => ctx.state.set({ loaded: true }));
     const surfaces = await loadSurfaces(ctx.assets);
     this.#sky = skyTexture();
     this.#fill = skyTexture(0.3, 128);
@@ -139,7 +145,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const course = this.#course;
     const hero = this.#hero;
-    if (course === undefined || hero === undefined || this.#sky === undefined)
+    const loading = this.#loading;
+    if (
+      course === undefined ||
+      hero === undefined ||
+      this.#sky === undefined ||
+      loading === undefined
+    )
       throw new Error("Play.enter ran before load() built the course.");
     // `userData.solid` marks exactly the walkable meshes in `level/Course.ts`. The shaft's walls
     // reach 16 m, so the default 4.5 m reachable ceiling is raised to keep their tops solid.
@@ -170,9 +182,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     const camera = ctx.camera as PerspectiveCamera;
     ctx.add(camera);
-    const loading = createLoadingScreen(ctx);
-    // The HUD is page UI the cover cannot hide, so it waits for the same readiness.
-    void ctx.startup.whenReady().then(() => ctx.state.set({ loaded: true }));
     const touchControls =
       isMobile() && isTouchscreenAvailable()
         ? ctx.entities.add("touch-controls", new TouchControls(camera))
