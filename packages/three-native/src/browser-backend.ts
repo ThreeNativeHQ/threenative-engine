@@ -497,7 +497,8 @@ export function defineBrowserClasses(
   });
   /** A value's member vector (`Box3.min`, `Sphere.center`): present on every real instance. */
   const memberVector = (vector: IValueLanes["min"]): NonNullable<IValueLanes["min"]> => {
-    if (vector === undefined) throw new TypeError("TN_BROWSER_VALUE_MEMBER: the value has no vector");
+    if (vector === undefined)
+      throw new TypeError("TN_BROWSER_VALUE_MEMBER: the value has no vector");
     return vector;
   };
   // three's private storage names, and the classes whose lanes are not plain fields.
@@ -519,7 +520,12 @@ export function defineBrowserClasses(
       lanes: ["x", "y", "z"],
       drop: ["_x", "_y", "_z", "_order"],
       read: (value) =>
-        [value._x, value._y, value._z, eulerOrders.indexOf(value._order as (typeof eulerOrders)[number])] as number[],
+        [
+          value._x,
+          value._y,
+          value._z,
+          eulerOrders.indexOf(value._order as (typeof eulerOrders)[number]),
+        ] as number[],
       write: (value, values) => {
         value._x = values[0];
         value._y = values[1];
