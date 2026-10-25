@@ -164,6 +164,10 @@ export function defineWebRenderer(
         graphKeys: 0,
         programs: 0,
         frameGateSkips: 0,
+        // True while prepareEnvironmentAsync draws the held scene under the loading cover. The world
+        // is still unlit, so these pixels are not the view's first frame: core's eye adaptation holds
+        // its history rather than adopting this bake's black target.
+        environmentBake: false,
         // The temporal pass, read from the engine each frame. `active` is false until a traa() effect is in the post
         // graph, so a graph that never reached the engine shows here as a pass that never ran.
         temporal: {
@@ -648,18 +652,24 @@ export function defineWebRenderer(
         ]);
         clearTimeout(timer);
       } else await compiling;
-      while (performance.now() < deadlineMs) {
-        const gated = this.info.engine.frameGateSkips;
-        this.render(scene, camera);
-        // Read before `afterDraw`: the cover is a draw too, and the engine's "skipped for an unbaked
-        // environment" flag describes the last draw it made.
-        const baked = this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
-        afterDraw?.();
-        if (baked) return true;
-        // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      this.info.engine.environmentBake = true;
+      try {
+        while (performance.now() < deadlineMs) {
+          const gated = this.info.engine.frameGateSkips;
+          this.render(scene, camera);
+          // Read before `afterDraw`: the cover is a draw too, and the engine's "skipped for an unbaked
+          // environment" flag describes the last draw it made.
+          const baked =
+            this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
+          afterDraw?.();
+          if (baked) return true;
+          // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        return false;
+      } finally {
+        this.info.engine.environmentBake = false;
       }
-      return false;
     }
 
     async resolveTimestampsAsync(type = "render"): Promise<number | undefined> {

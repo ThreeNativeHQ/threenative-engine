@@ -1507,6 +1507,16 @@ export function rendererFrameGateSkips(raw: unknown): number | undefined {
 }
 
 /**
+ * Whether the renderer is drawing under the loading cover to finish its environment bake. A bake
+ * draw presents nothing and its world is still unlit, so its pixels are not the view's first frame:
+ * the eye adaptation must not adopt them. A renderer without an engine report answers false.
+ */
+export function rendererEnvironmentBake(raw: unknown): boolean {
+  const info = (raw as { info?: { engine?: { environmentBake?: unknown } } } | null)?.info;
+  return info?.engine?.environmentBake === true;
+}
+
+/**
  * Runs a covered warm-up draw until the renderer takes it. The Wasm web engine's frame gate declines
  * a draw while two frames are still on the GPU, and a declined draw compiles nothing: on Lantern Vale
  * the startup pass was declined, so the TRAA, aux and post pipelines (92) compiled synchronously
