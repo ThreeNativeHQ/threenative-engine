@@ -237,6 +237,12 @@ describe("createWebEnginePlugin", () => {
     ).toBeNull();
     expect(
       plugin.resolveId(
+        "three/src/math/Vector3.js",
+        "/game/node_modules/create-threenative/dist/web-engine-runtime.js",
+      ),
+    ).toBeNull();
+    expect(
+      plugin.resolveId(
         "three/src/math/Color.js",
         "/game/node_modules/create-threenative/dist/web-engine-runtime.js",
       ),

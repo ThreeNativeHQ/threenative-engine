@@ -61,6 +61,7 @@ const ENGINE_MATH_MODULES = new Set([
   "three/src/math/Quaternion.js",
   "three/src/math/Sphere.js",
   "three/src/math/Vector2.js",
+  "three/src/math/Vector3.js",
   "three/src/math/Vector4.js",
 ]);
 /** Where the browser back end's value classes live: only these may import three's math modules. */
