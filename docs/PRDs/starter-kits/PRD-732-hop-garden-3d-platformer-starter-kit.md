@@ -532,6 +532,9 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
   27.9 -> 27.1 ms (3 pairs): neutral. Hop's BEFORE arm (2239dfda8) lost the device twice with
   VK_ERROR_OUT_OF_DEVICE_MEMORY, read as GPU memory pressure from overlapping jobs. Open: stills
   0.9 s apart cannot rule out fine shimmer at full frame rate; a full-rate capture would.
+  A/B: ad1d08404 does not move the calibration locks (auditor, sunlit-room: the 5 moved bounds are
+  the same with and without the `shadowNoiseFrame` Wasm, pixels within 0.001 to 0.004 levels; they
+  moved at an earlier commit before 2239dfda8, which the auditor bisects).
 
 ## Execution Phases
 
