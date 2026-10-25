@@ -504,6 +504,10 @@ export function defineBrowserClasses(
   // three's private storage names, and the classes whose lanes are not plain fields.
   const valuePlans: Record<string, IValuePlan> = {
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Color: defaultPlan(["r", "g", "b"]),
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Vector4: defaultPlan(["x", "y", "z", "w"]),
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Quaternion: {
       lanes: ["x", "y", "z", "w"],
       drop: ["_x", "_y", "_z", "_w"],

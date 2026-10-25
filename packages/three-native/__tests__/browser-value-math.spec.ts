@@ -261,6 +261,41 @@ describe("PRD-742 value math stays in JS on the web engine", () => {
     expect([promoted?.args[3], promoted?.args[7], promoted?.args[11]]).toEqual([1, 2, 3]);
   });
 
+  it.each([
+    { name: "Color", lanes: [0.25, 0.5, 0.75] },
+    { name: "Vector4", lanes: [1, 2, 3, 4] },
+  ])("crosses a JS $name to the engine with its lanes in order", ({ name, lanes }) => {
+    const constructed: { name: string; args: unknown[] }[] = [];
+    const types = new Map<string, number>();
+    const typeId = (className: string) =>
+      types.get(className) ?? types.set(className, types.size + 1).get(className) ?? 0;
+    const { classes } = defineBrowserClasses(registry, {
+      typeId,
+      construct(className, args) {
+        constructed.push({ name: className, args: [...args] });
+        return { key: `${className}:${constructed.length}`, type: typeId(className) };
+      },
+      invoke: () => null,
+      get: () => 0,
+      set: () => undefined,
+      release: () => undefined,
+      setCallback: () => undefined,
+    });
+    const InstancedMesh = classes.InstancedMesh as new (
+      geometry: object,
+      material: object,
+      count: number,
+    ) => { setColorAt(index: number, value: object): void };
+    const Geometry = classes.BufferGeometry as new () => object;
+    const Material = classes.MeshBasicMaterial as new () => object;
+    const Value = classes[name] as new (...valueLanes: number[]) => object;
+    // The runtime spy checks argument marshalling before native method signature validation.
+    const mesh = new InstancedMesh(new Geometry(), new Material(), 1);
+    mesh.setColorAt(0, new Value(...lanes));
+    const sent = constructed.find((entry) => entry.name === name);
+    expect(sent?.args).toEqual(lanes);
+  });
+
   it("releases the temporary vectors a Box3 or Sphere promotion builds", () => {
     let released = 0;
     const types = new Map<string, number>();
