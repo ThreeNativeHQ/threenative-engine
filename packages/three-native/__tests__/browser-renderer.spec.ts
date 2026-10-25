@@ -14,7 +14,12 @@ import {
   TSL_NODE,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
-import { WEB_HOST_ABI, type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
+import {
+  PIPELINE_POST,
+  WEB_HOST_ABI,
+  type WebEngineModule,
+  defineWebRenderer,
+} from "../src/browser-renderer.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
 import { defineQuadMesh } from "../src/quad-mesh.js";
@@ -913,5 +918,64 @@ describe("custom tone mapping", () => {
     expect(curve).toHaveBeenCalledTimes(1);
     expect(runtime.setToneMapping).toHaveBeenCalledWith(curve.mock.results[0]?.value[TSL_NODE]);
     expect(state.mock.calls.at(-1)?.[0]).toBe(5);
+  });
+});
+
+describe("the Wasm engine's compileAsync", () => {
+  async function compiling(statuses: number[], id = 7) {
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    const start = vi.fn((..._args: number[]) => id);
+    const status = vi.fn((_id: number) => statuses.shift() ?? 1);
+    engine._tnw_web_compile_async = start;
+    engine._tnw_web_compile_status = status;
+    engine.UTF8ToString = () => "TN_WASM_PIPELINE_REFUSED: the fragment did not validate";
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      compileAsync(scene: unknown, camera: unknown, target?: unknown): Promise<void>;
+    };
+    await renderer.init();
+    return { compile: () => renderer.compileAsync(scene, camera), start, status };
+  }
+
+  it("builds the pipelines in the engine and resolves once every one is built (Lantern Vale compiled 205 in its first frames)", async () => {
+    const { compile, start, status } = await compiling([0, 0, 1]);
+    await compile();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(start.mock.calls[0]?.[2]).toBe(0); // no target scene
+    expect(status.mock.calls.map(([id]) => id)).toEqual([7, 7, 7]);
+  });
+
+  it("rejects, naming the refusal, when a pipeline is refused or the compile cannot start", async () => {
+    await expect((await compiling([0, -1])).compile()).rejects.toThrow("TN_WASM_PIPELINE_REFUSED");
+    await expect((await compiling([], 0)).compile()).rejects.toThrow("TN_WASM_PIPELINE_REFUSED");
+  });
+
+  it("compiles and bakes with the game's RenderPipeline graph installed first (Lantern Vale built a 4x pass it never drew)", async () => {
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    const order: string[] = [];
+    engine._tnw_web_compile_async = () => {
+      order.push("compile");
+      return 7;
+    };
+    engine._tnw_web_compile_status = () => 1;
+    const render = engine._tnw_web_render as (...args: unknown[]) => number;
+    engine._tnw_web_render = (...args: unknown[]) => {
+      order.push("draw");
+      return render(...args);
+    };
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      compileAsync(scene: unknown, camera: unknown): Promise<void>;
+      prepareEnvironmentAsync(scene: unknown, camera: unknown): Promise<boolean>;
+      [PIPELINE_POST]?: () => void;
+    };
+    await renderer.init();
+    renderer[PIPELINE_POST] = () => order.push("post");
+    await renderer.compileAsync(scene, camera);
+    await renderer.prepareEnvironmentAsync(scene, camera);
+    // The bake compiles the scene off the queue before the draw that would compile it synchronously.
+    expect(order).toEqual(["post", "compile", "post", "post", "compile", "draw"]);
   });
 });

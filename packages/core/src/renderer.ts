@@ -829,7 +829,11 @@ function wrapRenderer(
         }),
     get warmUpWorldPass() {
       if (outputPipeline === undefined) return undefined;
-      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> => {
+      const drawOnce = (
+        scene: Object3D,
+        camera: Camera,
+        targetScene?: Object3D,
+      ): void | Promise<void> => {
         const outputRoot = targetScene ?? scene;
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
@@ -940,6 +944,8 @@ function wrapRenderer(
         // no async cache still returns synchronously, exactly as before.
         return asyncPipelines?.settled();
       };
+      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> =>
+        drawPastFrameGate(raw, () => drawOnce(scene, camera, targetScene));
     },
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
@@ -1488,6 +1494,48 @@ function wrapRenderer(
 
 function isOutputPassNode(node: unknown): node is PassNode {
   return isObject(node) && node.isPassNode === true;
+}
+
+/** How long a covered warm-up draw waits for the GPU to take a frame before it fails. */
+const FRAME_GATE_WAIT_MS = 5000;
+
+/** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
+export function rendererFrameGateSkips(raw: unknown): number | undefined {
+  const info = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | null)?.info;
+  const skips = info?.engine?.frameGateSkips;
+  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
+}
+
+/**
+ * Runs a covered warm-up draw until the renderer takes it. The Wasm web engine's frame gate declines
+ * a draw while two frames are still on the GPU, and a declined draw compiles nothing: on Lantern Vale
+ * the startup pass was declined, so the TRAA, aux and post pipelines (92) compiled synchronously
+ * 1.1 s after the reveal and stalled the queue for 2.3 s. A renderer with no gate, or one that took
+ * the first draw, returns that draw's result unchanged.
+ */
+export function drawPastFrameGate(
+  raw: unknown,
+  draw: () => void | Promise<void>,
+  waitMs = FRAME_GATE_WAIT_MS,
+): void | Promise<void> {
+  const before = rendererFrameGateSkips(raw);
+  const first = draw();
+  if (before === undefined || rendererFrameGateSkips(raw) === before) return first;
+  const now = (): number => globalThis.performance?.now() ?? Date.now();
+  const deadline = now() + waitMs;
+  return (async () => {
+    await first;
+    while (now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+      const skips = rendererFrameGateSkips(raw);
+      const drawn = draw();
+      if (rendererFrameGateSkips(raw) === skips) return drawn;
+      await drawn;
+    }
+    throw new Error(
+      `TN_WARMUP_FRAME_GATE: the covered warm-up draw waited ${waitMs} ms for the GPU to take a frame and never drew.`,
+    );
+  })();
 }
 
 function selectOutputPass(node: unknown, worldPass: unknown): PassNode | undefined {
