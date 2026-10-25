@@ -59,6 +59,14 @@
     "movement": {
       "entity": "camera.main",
       "rotationChanged": true
-    }
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lookOffCentreWorst",
+        "lte": 0.25,
+        "allowTrivial": "Unlocked, how far Wren's centre strayed from the middle of the frame (0 is the middle, 1 the edge, 2 behind the lens) while the mouse turned the view; a running maximum. The view follows the mouse at once, so a fast turn never leaves her at the edge."
+      }
+    ]
   }
 }

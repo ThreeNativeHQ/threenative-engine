@@ -2,7 +2,12 @@ import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
-import { beginAsyncPipelines, createRenderer, prewarm } from "../src/renderer.js";
+import {
+  beginAsyncPipelines,
+  createRenderer,
+  drawPastFrameGate,
+  prewarm,
+} from "../src/renderer.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -1958,5 +1963,50 @@ describe("beginAsyncPipelines", () => {
   it("does nothing on a renderer without async device creation", () => {
     expect(beginAsyncPipelines({})).toBeUndefined();
     expect(beginAsyncPipelines({ _pipelines: { getForRender: () => undefined } })).toBeUndefined();
+  });
+});
+
+describe("drawPastFrameGate", () => {
+  const gated = (declines: number) => {
+    const raw = { info: { engine: { frameGateSkips: 0 } } };
+    const draws: boolean[] = [];
+    const draw = () => {
+      const declined = draws.length < declines;
+      if (declined) raw.info.engine.frameGateSkips += 1;
+      draws.push(!declined);
+    };
+    return { raw, draws, draw };
+  };
+
+  it("draws a covered warm-up pass again until the frame gate takes it", async () => {
+    // Lantern Vale: the startup pass was declined, so its post pipelines compiled after the reveal.
+    const { raw, draws, draw } = gated(2);
+    await drawPastFrameGate(raw, draw);
+    expect(draws).toEqual([false, false, true]);
+  });
+
+  it("returns the first draw's result unchanged when the renderer has no gate or takes it", () => {
+    const { raw, draws, draw } = gated(0);
+    expect(drawPastFrameGate(raw, draw)).toBeUndefined();
+    expect(drawPastFrameGate({}, () => undefined)).toBeUndefined();
+    expect(draws).toEqual([true]);
+  });
+
+  it("starts its wait once the declined draw settled, so a slow settle keeps its retries", async () => {
+    const { raw, draws, draw } = gated(1);
+    let first = true;
+    const slow = () => {
+      draw();
+      if (!first) return undefined;
+      first = false;
+      return new Promise<void>((resolve) => setTimeout(resolve, 80));
+    };
+    await drawPastFrameGate(raw, slow, 50);
+    expect(draws).toEqual([false, true]);
+  });
+
+  it("fails, naming the gate, when the GPU never takes a frame", async () => {
+    const { raw, draw } = gated(Number.POSITIVE_INFINITY);
+    await expect(drawPastFrameGate(raw, draw, 50)).rejects.toThrow("TN_WARMUP_FRAME_GATE");
   });
 });

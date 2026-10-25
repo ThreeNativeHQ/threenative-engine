@@ -51,9 +51,13 @@ const LOOK_RADIANS_PER_PIXEL = 0.0035;
 /**
  * The fastest the view may turn, in radians per second (140°/s, about 2.3° a 60 Hz tick): a lock,
  * a target switch or a boss charging past swings the picture no faster, so it reads instead of
- * smearing. A snap (respawn, room change) is a cut and ignores it.
+ * smearing. A snap (respawn, room change) is a cut and ignores it. So does the mouse: the cap holds
+ * back the camera's own swings, never a turn the player asked for, or the camera would orbit Wren
+ * at once while the picture lagged and she slid out of the frame.
  */
 const MAX_TURN = MathUtils.degToRad(140);
+/** Seconds after a mouse movement that the view turns as fast as the arm follows the yaw. */
+const LOOK_HOLD = 0.6;
 /** Wren's body around her origin (her waist), for the framing: soles to the top of her cap. */
 const HERO = { below: 0.85, above: 0.95, radius: 0.35 };
 /** Locked framing: both bodies stay inside `share` of the frame, the lens never wider than this. */
@@ -159,6 +163,8 @@ export function setupCamera(
   let watching = false;
   // The view's orientation last tick: the next one turns from it by at most MAX_TURN.
   const held = new Quaternion();
+  // Seconds left that the mouse has the view free of MAX_TURN.
+  let looked = 0;
   const pivot = new Vector3();
   const desired = new Vector3();
   const aim = new Vector3();
@@ -377,12 +383,18 @@ export function setupCamera(
       const reveal = watch !== undefined && !watching && lock === undefined;
       watching = watch !== undefined;
       place(focus, lock?.bounds ?? watch, quick, reveal ? 1 : quick);
-      camera.quaternion.copy(held.rotateTowards(camera.quaternion, MAX_TURN * dt));
+      // A lock owns the view at once, even inside a look's hold: its swing keeps the cap.
+      if (lock !== undefined) looked = 0;
+      if (looked > 0) {
+        looked -= dt;
+        held.copy(camera.quaternion);
+      } else camera.quaternion.copy(held.rotateTowards(camera.quaternion, MAX_TURN * dt));
     },
     recenter(to: number): void {
       home = to;
     },
     look(dx: number): void {
+      if (dx !== 0) looked = LOOK_HOLD;
       yaw -= dx * LOOK_RADIANS_PER_PIXEL;
       home -= dx * LOOK_RADIANS_PER_PIXEL;
     },

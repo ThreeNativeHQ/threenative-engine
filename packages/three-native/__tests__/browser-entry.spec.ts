@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as audioBinding from "../src/audio.js";
 import * as backend from "../src/browser-backend.js";
-import { bindUpstreamExports, bindWebEngine } from "../src/browser-entry.js";
+import { bindUpstreamExports, bindWebEngine, defineRenderPipeline } from "../src/browser-entry.js";
 import * as rendererBinding from "../src/browser-renderer.js";
 import * as tslBinding from "../src/browser-tsl.js";
 import { type ICatalog, loadCatalog } from "../src/catalog.js";
@@ -187,5 +187,21 @@ describe("web engine nested render safe points", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("registers its post graph for the renderer's warm-up, and withdraws it on dispose", () => {
+    const setPost = vi.fn();
+    const tslRuntime = {
+      setPost,
+      release() {},
+      call: () => 0,
+    } as unknown as tslBinding.ITslRuntime;
+    const Pipeline = defineRenderPipeline(tslRuntime, {});
+    const renderer: { [rendererBinding.PIPELINE_POST]?: () => void } = {};
+    const pipeline = new Pipeline(renderer, { [backend.TSL_NODE]: 9 });
+    renderer[rendererBinding.PIPELINE_POST]?.();
+    expect(setPost).toHaveBeenLastCalledWith(9);
+    pipeline.dispose();
+    expect(renderer[rendererBinding.PIPELINE_POST]).toBeUndefined();
   });
 });

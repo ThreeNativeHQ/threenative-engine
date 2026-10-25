@@ -83,6 +83,7 @@ import {
   type IRendererOptions,
   type RendererKind,
   createRenderer,
+  rendererFrameGateSkips,
 } from "./renderer.js";
 import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
 import type {
@@ -604,13 +605,6 @@ function rendererDrawCallCount(raw: unknown): number | undefined {
   const drawCalls = (render as { drawCalls?: unknown }).drawCalls;
   const calls = drawCalls ?? (render as { calls?: unknown }).calls;
   return typeof calls === "number" && Number.isFinite(calls) && calls >= 0 ? calls : undefined;
-}
-
-/** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
-function rendererFrameGateSkips(raw: unknown): number | undefined {
-  const info = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | null)?.info;
-  const skips = info?.engine?.frameGateSkips;
-  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
 }
 
 function rendererPerformanceMetrics(raw: unknown): {

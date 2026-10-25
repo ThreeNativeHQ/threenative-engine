@@ -90,6 +90,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     toastOverlap: 0,
     openingFramedShare: 0,
     cameraTurnWorst: 0,
+    lookOffCentreWorst: 0,
     torsoCovered: 0,
     torsoContactWorst: 0,
     ringFacingLeast: 0,
@@ -459,6 +460,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       openingFramed: 0,
       toast: 0,
       turn: 0,
+      centre: 0,
       torso: 0,
       contact: 0,
       ring: Number.POSITIVE_INFINITY,
@@ -625,6 +627,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       heroBox.min.set(hero.mesh.position.x, feet, hero.mesh.position.z).sub(across);
       heroBox.max.set(hero.mesh.position.x, feet + 1.8, hero.mesh.position.z).add(across);
       const heroIn = project(heroBox, heroRect);
+      // Unlocked, the view follows the mouse with Wren near its middle: how far she strays from it.
+      if (lock.target === undefined && !awake) {
+        heroCentre
+          .set(hero.mesh.position.x, feet + 0.9, hero.mesh.position.z)
+          .applyMatrix4(camera.matrixWorldInverse);
+        const half = Math.tan(MathUtils.degToRad(camera.fov / 2)) * camera.aspect;
+        fight.centre = Math.max(
+          fight.centre,
+          heroCentre.z > -0.1 ? 2 : Math.min(2, Math.abs(heroCentre.x / heroCentre.z) / half),
+        );
+      }
       if (hero.rig.group.visible && heroRect.x1 > HINT.x0 && heroRect.y1 > HINT.y0) fight.hint += 1;
       const target = fightTarget();
       if (target === undefined) {
@@ -887,6 +900,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.hintOverlap = fight.hint;
       statePatch.toastOverlap = fight.toast;
       statePatch.cameraTurnWorst = Math.round(fight.turn * 100) / 100;
+      statePatch.lookOffCentreWorst = Math.round(fight.centre * 1000) / 1000;
       statePatch.torsoCovered = Math.round(fight.torso * 1000) / 1000;
       statePatch.torsoContactWorst = Math.round(fight.contact * 1000) / 1000;
       statePatch.ringFacingLeast =

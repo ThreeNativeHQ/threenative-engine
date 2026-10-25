@@ -808,6 +808,17 @@ export function defineBrowserClasses(
       // three keeps one `elements` array; this keeps one proxy per matrix over a mirrored array and
       // writes every element it sets straight to engine memory, so the array never detaches.
       const mirrors = new WeakMap<object, { values: number[]; view: number[] }>();
+      // Off the heap view when there is one: a game reads `matrixWorld.elements` hundreds of times
+      // a frame, and a copy call allocates two arrays a read.
+      const refresh = heap
+        ? (address: number, values: number[]): void => {
+            const memory = heap();
+            for (let i = 0, at = address / 8; i < count; i++) values[i] = memory[at + i] as number;
+          }
+        : (address: number, values: number[]): void => {
+            const memory = read(address, count) as number[];
+            for (let i = 0; i < count; i++) values[i] = memory[i] as number;
+          };
       Object.defineProperty(accessors, "elements", {
         configurable: true,
         get(this: object): number[] {
@@ -827,8 +838,7 @@ export function defineBrowserClasses(
             mirror = { values, view };
             mirrors.set(this, mirror);
           }
-          const memory = read(address, count) as number[];
-          for (let i = 0; i < count; i++) mirror.values[i] = memory[i] as number;
+          refresh(address, mirror.values);
           return mirror.view;
         },
         set(this: object, value: ArrayLike<number>): void {

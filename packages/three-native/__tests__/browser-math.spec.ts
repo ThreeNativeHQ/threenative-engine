@@ -441,6 +441,38 @@ describe("three's math values on the browser back end", () => {
     expect(calls.slice(before).filter((call) => /^(invoke|get|set) /u.test(call))).toEqual([]);
   });
 
+  it("reads an engine matrix's elements off the heap view, with no copy call (Lantern Vale reads ~700 a frame)", () => {
+    const { runtime, heap } = memoryRuntime();
+    let copies = 0;
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      heapF64: () => heap,
+      readDoubles(address, count) {
+        copies++;
+        return runtime.readDoubles?.(address, count) as number[];
+      },
+      get(self, property) {
+        if (property === "matrixWorld") {
+          const matrix = runtime.construct("Matrix4", []);
+          runtime.construct("Object3D", []); // the spacer: a matrix is 16 doubles, an object 8
+          return matrix;
+        }
+        return runtime.get(self, property);
+      },
+    });
+    const matrix = new (classes.Group as new () => { matrixWorld: { elements: number[] } })()
+      .matrixWorld;
+    const [offset = 0] = registry.classes.Matrix4?.fields?.elements ?? [];
+    const values = Array.from({ length: 16 }, (_, i) => i + 0.25);
+    heap.set(values, (64 + offset) / 8);
+    copies = 0;
+    for (let i = 0; i < 100; i++) void matrix.elements;
+    expect(copies).toBe(0);
+    expect([...matrix.elements]).toEqual(values);
+    heap[(64 + offset) / 8 + 12] = 7; // the engine moved it: the next read sees it
+    expect(matrix.elements[12]).toBe(7);
+  });
+
   it("binds the host projection report as one engine call, which core's projection takes (web cut 3)", () => {
     const { runtime } = memoryRuntime();
     const invoked: string[] = [];

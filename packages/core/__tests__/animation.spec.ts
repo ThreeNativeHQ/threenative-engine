@@ -16,6 +16,7 @@ import {
   QuaternionKeyframeTrack,
   Skeleton,
   SkinnedMesh,
+  Vector3,
   VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
@@ -1029,6 +1030,18 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     aboveSole.play("walk");
     expect(atSole.stride.clipGroundSpeed).toBeGreaterThan(0.2);
     expect(aboveSole.stride.clipGroundSpeed).toBeCloseTo(atSole.stride.clipGroundSpeed, 6);
+  });
+
+  it("measures a boot's sole with no vector call per corner (the owned engine held Lantern Vale's first walk 43 ms)", () => {
+    const leg = swingingLeg(0.1);
+    const apply = vi.spyOn(Vector3.prototype, "applyMatrix4");
+    try {
+      leg.play("walk");
+      expect(leg.stride.clipGroundSpeed).toBeCloseTo(0.6444015098802138, 12); // the per-corner applyMatrix4 code measured this
+      expect(apply).not.toHaveBeenCalled();
+    } finally {
+      apply.mockRestore();
+    }
   });
 });
 

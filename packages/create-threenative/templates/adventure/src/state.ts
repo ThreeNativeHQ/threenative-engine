@@ -43,6 +43,8 @@ export type GameState = {
   toastOverlap: number;
   /** The most the view turned in one tick, in degrees (60 ticks a second): the fastest swing. */
   cameraTurnWorst: number;
+  /** Unlocked, the most Wren strayed from the middle of the frame (0 middle, 1 edge, 2 behind the lens). */
+  lookOffCentreWorst: number;
   /** Locked on the Warden within 5 m once the lock has glided in, its chest rune ring facing the
    * lens: the most of the box round the ring that Wren's on-screen box covers (0-1) while the ring
    * stands 0.4 m or more from her, and the same closer in (shield contact), where no lens clears it. */

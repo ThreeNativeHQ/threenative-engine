@@ -26,6 +26,7 @@
 
 #include <emscripten/emscripten.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -36,8 +37,8 @@ namespace {
 // The tnw_* contract with the facade (browser-renderer.ts `WEB_HOST_ABI`). Bump both on every tnw_*
 // signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
 // 2 = tnw_web_render's overlay argument (39295d1f3).
-// 3 = tnw_web_renderer_state's temporal input scale.
-constexpr uint32_t kWebHostAbi = 3;
+// 3 = startup compilation. 4 = compilation plus temporal input scale in renderer state.
+constexpr uint32_t kWebHostAbi = 4;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -324,6 +325,75 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     const RenderDatabase& drawn = overlay ? overlayDatabase : database;
     if (!drawn.diagnostics().empty()) return fail(drawn.diagnostics().front());
     return 0;
+}
+
+namespace {
+// three's compileAsync, by the id tnw_web_compile_async returned: the pipelines still compiling.
+std::map<uint32_t, std::vector<std::shared_ptr<PipelineCompilation>>> compilations;
+uint32_t nextCompilation = 1;
+} // namespace
+
+/**
+ * three's compileAsync(root, camera, targetScene), as the V8 player's: builds every pipeline the first draw of `root`
+ * will take, with the renderer settings that draw will use, through createRenderPipelineAsync, so the browser compiles
+ * them off the queue instead of stalling the first frames behind each one. Returns the id tnw_web_compile_status
+ * polls, or 0 when it refused (tnw_web_error names it; the host keeps drawing, and the first draw compiles instead).
+ */
+extern "C" uint32_t tnw_web_compile_async(const tn_handle_t* rootHandle, const tn_handle_t* cameraHandle,
+                                          const tn_handle_t* sceneHandle) {
+    tnw_web_poll();
+    if (state != Ready) {
+        if (state == Pending) refuse("TN_WASM_COMPILE: device not ready");  // a Failed host keeps its message
+        return 0;
+    }
+    auto* root = rootOf(rootHandle);
+    auto* camera = cameraOf(cameraHandle);
+    auto* scene = sceneHandle ? rootOf(sceneHandle) : nullptr;
+    if (!root || !camera || (sceneHandle && !scene)) {
+        refuse("TN_WASM_COMPILE: root, camera or target scene invalid");
+        return 0;
+    }
+    try {
+        if (outputChanged) renderer->setOutput(output);
+        outputChanged = false;
+        if (postChanged) renderer->setPostGraph(pendingPost);
+        postChanged = false;
+        renderer->setSampleCount(sampleCount);
+        RenderDatabase compiling;  // the frame's own database keeps its records for the draws
+        compiling.shadowMapEnabled = shadowMap;
+        compiling.shadowMapType = shadowMapType;
+        compilations[nextCompilation] = compiling.compileAsync(*renderer, *root, *camera, scene, surfaceFormat);
+    } catch (const std::exception& error) {
+        refuse(std::string("TN_WASM_COMPILE: ") + error.what());
+        return 0;
+    }
+    return nextCompilation++;
+}
+
+/** 0 while a pipeline of compilation `id` still compiles, 1 once every one is built, -1 when one was refused (named by tnw_web_error). */
+extern "C" int tnw_web_compile_status(uint32_t id) {
+    tnw_web_poll();
+    const auto found = compilations.find(id);
+    if (state == Failed && found != compilations.end()) {
+        compilations.erase(found);  // a lost device may never complete the pipelines; its failure names why
+        return -1;
+    }
+    if (found == compilations.end()) {
+        refuse("TN_WASM_COMPILE: no compilation " + std::to_string(id));
+        return -1;
+    }
+    for (const auto& pipeline : found->second)
+        if (!pipeline->ready()) return 0;
+    std::string refused;
+    for (const auto& pipeline : found->second) {
+        try { pipeline->get(); } catch (const std::exception& error) { refused = error.what(); break; }
+    }
+    compilations.erase(found);
+    if (!refused.empty()) {
+        refuse("TN_WASM_PIPELINE_REFUSED: " + refused);
+        return -1;
+    }
+    return 1;
 }
 
 /**

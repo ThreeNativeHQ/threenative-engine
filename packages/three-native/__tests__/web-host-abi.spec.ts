@@ -16,7 +16,8 @@ import { WEB_HOST_ABI } from "../src/browser-renderer.js";
 const NATIVE = path.join(process.cwd(), "packages/runtime-native");
 const PINNED: Record<number, string> = {
   2: "49a13523783fbb35",
-  3: "5cdb0d90812f406d",
+  3: "4afe732b2264c45b",
+  4: "61297e45c5c4af17",
 };
 
 function signatures(): string[] {

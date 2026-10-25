@@ -25,6 +25,8 @@ type HostCall =
   | "_tnw_web_adapter"
   | "_tnw_web_resize"
   | "_tnw_web_render"
+  | "_tnw_web_compile_async"
+  | "_tnw_web_compile_status"
   | "_tnw_web_renderer_state"
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
@@ -46,13 +48,15 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 3;
+export const WEB_HOST_ABI = 4;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
 const READY = 1;
 /** The facade's own redraw, for RenderPipeline (browser-entry.ts). */
 export const RENDER_AGAIN = Symbol("tn.renderAgain");
+/** The last RenderPipeline's post graph install, which the warm-up entry points run first (browser-entry.ts). */
+export const PIPELINE_POST = Symbol("tn.pipelinePost");
 const DRAW_TARGET = Symbol("tn.drawTarget");
 const FAILED = 2;
 /**
@@ -72,6 +76,19 @@ interface IColorLike {
   readonly r: number;
   readonly g: number;
   readonly b: number;
+}
+
+/** Resolves once compilation `id` (0: it never started) has built every pipeline; rejects naming the refusal. */
+async function compiled(module: WebEngineModule, id: number): Promise<void> {
+  const refused = (): Error => new Error(module.UTF8ToString(module._tnw_web_error()));
+  if (id === 0) throw refused();
+  for (;;) {
+    const status = module._tnw_web_compile_status(id);
+    if (status === 1) return;
+    if (status < 0) throw refused();
+    // A macrotask: the browser delivers the pipelines' completions between tasks.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 function unsupported(name: string): never {
@@ -244,6 +261,7 @@ export function defineWebRenderer(
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
+    [PIPELINE_POST]?: () => void;
     /** The host is Failed for good (the GPU process destroyed the device, an uncaptured error): see #drawStatus. */
     #lost = false;
     /** A draw got through in this task, so later draws land on its surface texture: see render(). */
@@ -596,8 +614,28 @@ export function defineWebRenderer(
       return 16;
     }
 
-    compileAsync(): Promise<void> {
-      return Promise.resolve();
+    /**
+     * three's compileAsync: the engine builds the pipelines the first draw of `scene` takes through
+     * createRenderPipelineAsync (tnw_web_compile_async), and this resolves once every one is built. A no-op
+     * here left them to that draw, which compiled each one synchronously: all 205 of Lantern Vale's, behind
+     * its loading screen. A refusal rejects; the first draw then compiles instead.
+     */
+    async compileAsync(scene: unknown, camera: unknown, targetScene?: unknown): Promise<void> {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: compileAsync() before init() finished.");
+      if (this.#lost) return;
+      // The game's first draw runs through its RenderPipeline: compile with that graph's settings.
+      this[PIPELINE_POST]?.();
+      this.#applyState();
+      writeHandle(0, scene, "scene");
+      writeHandle(12, camera, "camera");
+      if (targetScene != null) writeHandle(24, targetScene, "target scene");
+      const id = module._tnw_web_compile_async(
+        handles,
+        handles + 12,
+        targetScene == null ? 0 : handles + 24,
+      );
+      await compiled(module, id);
     }
 
     /**
@@ -618,6 +656,25 @@ export function defineWebRenderer(
       deadlineMs = Number.POSITIVE_INFINITY,
       afterDraw?: () => void,
     ): Promise<boolean> {
+      // Lantern Vale's bake drew the main pass at 4x MSAA before its TRAA graph was installed: 39
+      // pipelines the game never drew, compiled synchronously behind the cover.
+      this[PIPELINE_POST]?.();
+      // The bake's last draw is the scene's first, so build its pipelines off the queue first: on
+      // Lantern Vale that draw compiled 84 synchronously and held the GPU queue for over a second
+      // (ready 6.3 s -> 4.5 s). A refusal is the draw's to report, where it compiles that pipeline again.
+      // It waits at most half the time left, so a slow compile still leaves the bake its draws.
+      const compiling = this.compileAsync(scene, camera).catch(() => undefined);
+      const left = (deadlineMs - performance.now()) / 2;
+      if (Number.isFinite(left)) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          compiling,
+          new Promise((resolve) => {
+            timer = setTimeout(resolve, Math.max(0, left));
+          }),
+        ]);
+        clearTimeout(timer);
+      } else await compiling;
       while (performance.now() < deadlineMs) {
         const gated = this.info.engine.frameGateSkips;
         this.render(scene, camera);

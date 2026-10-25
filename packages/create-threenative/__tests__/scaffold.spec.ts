@@ -303,11 +303,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "b63ede76ac9d6f5d7fc683df9c630ad535ac6c7f5038c79310a61383865b8aa8",
+  // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
+  collectathon: "defc1e4bc80bb496de58dd3253f04f492da2d458c4e705e50634f6002fc3d06b",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
-  adventure: "9f779917db247afffbab8fb820dfb006c14b432021c131cfe63d37dc151d942e",
+  adventure: "a503d5b0ad62852eab1b77f110415df95151da9f92b2ddc35b0f3417fdf4e701",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "f5253c53b519a6124a6aff0f10898d6c05370adc39cb505c55f840bdb85e2cc7",
   minimal: "feb73967c52019009fe034bd20756e25e0906e37caf1bb05d984e271160cfe59",

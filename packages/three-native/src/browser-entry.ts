@@ -21,7 +21,12 @@ import {
   defineBrowserClasses,
 } from "./browser-backend.js";
 import { ColorManagement } from "./browser-math.js";
-import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
+import {
+  PIPELINE_POST,
+  RENDER_AGAIN,
+  defineWebRenderer,
+  isWebHostModule,
+} from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { withMathUtilsExtras } from "./math-utils.js";
@@ -267,6 +272,7 @@ export function withTextureSources(
 
 interface IPipelineRenderer {
   [RENDER_AGAIN]?: () => void;
+  [PIPELINE_POST]?: () => void;
   render?(scene: unknown, camera: unknown): void;
 }
 
@@ -275,7 +281,10 @@ interface IPipelineRenderer {
  * the web host, which draws it between the scene and the output, over the scene and camera the
  * graph's `pass(scene, camera)` points at (`target`), else the renderer's last scene.
  */
-function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camera?: unknown }) {
+export function defineRenderPipeline(
+  tsl: ITslRuntime,
+  target: { scene?: unknown; camera?: unknown },
+) {
   return class RenderPipeline {
     outputNode: unknown;
     outputColorTransform = true;
@@ -288,14 +297,21 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
     constructor(renderer: IPipelineRenderer, outputNode?: unknown) {
       this.renderer = renderer;
       this.outputNode = outputNode;
+      // The engine's post graph sets the main pass's sample count (TRAA draws it at 1x), so a warm-up
+      // that compiles before the first render() installs it too, or it builds a pass the game never draws.
+      renderer[PIPELINE_POST] = this.install;
     }
+
+    private readonly install = (): void => {
+      if (isTslNode(this.outputNode)) tsl.setPost(this.graph(this.outputNode[TSL_NODE]));
+    };
 
     render(): void {
       if (!isTslNode(this.outputNode))
         throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
       this.context.onBeforeRenderPipeline?.();
       try {
-        tsl.setPost(this.graph(this.outputNode[TSL_NODE]));
+        this.install();
         if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
           this.renderer.render(target.scene, target.camera);
         else this.renderer[RENDER_AGAIN]?.();
@@ -319,6 +335,7 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
     }
 
     dispose(): void {
+      if (this.renderer[PIPELINE_POST] === this.install) delete this.renderer[PIPELINE_POST];
       tsl.setPost(null);
       if (this.outputGraph !== undefined) tsl.release(this.outputGraph);
       this.outputGraph = undefined;
