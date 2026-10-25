@@ -8,8 +8,8 @@ ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics b
 
 ## Start every change
 
-1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search `engine_search_capabilities` for the full request and each concrete mechanic, inspect relevant matches with `engine_capability_detail`, and record a capability or no-match for the plan. Apply the `ponytail` ladder before writing code; never hand-write what the capability search already installs.
-2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints, direct the user to review it, and wait for explicit approval plus an instruction to implement it.
+1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art.
+2. **New game only:** run discovery in `threenative-capabilities` before `prd-creator`. Draft the core-mechanics plan from the kit, both discovery passes and binding constraints, direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM, and this course needs no navigation: walkers chase in a straight line inside a leash, and the course is authored geometry, so the hero collides with exactly the triangles it sees and desktop/native stays honest.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and `npx @threenative/playtest doctor`; missing observations are not zero. For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
