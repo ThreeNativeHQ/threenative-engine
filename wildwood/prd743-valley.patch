@@ -1,0 +1,86 @@
+--- prd743-before/src/scenes/Valley.ts	2026-09-05 20:32:26.034936359 -0700
++++ prd743-after/src/scenes/Valley.ts	2026-10-25 13:42:52.690955373 -0700
+@@ -44,7 +44,11 @@
+ import { type ILandmarkMaps, createBannerMaterial, createMaterials } from "../render/materials.js";
+ import { preparePost, setupPost } from "../render/postprocessing.js";
+ import { setupSkyHdri } from "../render/sky-hdri.js";
+-import { spawnWildwoodAnimals, type IWildwoodAnimals } from "../entities/animals/spawnWildwoodAnimals.js";
++import {
++  spawnWildwoodAnimals,
++  WILDWOOD_ANIMAL_MODELS,
++  type IWildwoodAnimals,
++} from "../entities/animals/spawnWildwoodAnimals.js";
+ import {
+   type ITerrainMaps,
+   LAKE,
+@@ -382,7 +386,9 @@
+     // 45 s is the budget: long enough for a cold cache on this valley's ~70 GLBs, short enough
+     // that a tier which never settles costs seconds rather than a game that never starts. When it
+     // expires the player gets the critical world — thinner, and playable.
+-    ctx.startup.hold("wildwood:detail-tier", this.#detailSettled, 45_000);
++    // PRD-743: the curtain lifts on the spawn scene, and the detail tier downloads to disk
++    // after the reveal instead of holding it. The first playable frame is the critical tier;
++    // the rest of the wood arrives from disk once prefetch has warmed it.
+ 
+     // This synchronous game-owned view exists before the first `ctx.assets` request below.
+     preparePost(ctx.renderer, isMobile());
+@@ -621,7 +627,7 @@
+     //
+     // Framework readiness fires before the holds, which is exactly the boundary this wanted all
+     // along: first-use compilation has stopped competing for the main thread.
+-    void ctx.startup.whenFrameworkReady().then(() => {
++    void ctx.startup.whenReady().then(async () => {
+       if (this.#generation !== generation || !generation.live) return;
+       // The engine holds input updates through first-use compilation. This is the first moment the
+       // entered valley is actually controllable, so it is the critical-ready marker and the detail
+@@ -629,6 +635,18 @@
+       console.info(
+         `TN_VALLEY_BUILT generation=${String(generation.id)} trees=1 ferns=0 grass=0 boulders=0 terrain=${String(terrain.triangles)}`,
+       );
++      // After the reveal: the network is free and the player is playing. Warm every detail file
++      // on disk first, so the tier below parses local bytes instead of waiting on the link.
++      const detailPaths = detailAssetPaths();
++      console.info(
++        `TN_VALLEY_DETAIL_PREFETCH generation=${String(generation.id)} files=${String(detailPaths.length)}`,
++      );
++      const progress = await ctx.assets.prefetch(detailPaths);
++      if (this.#generation !== generation || !generation.live) return;
++      console.info(
++        `TN_VALLEY_DETAIL_PREFETCHED generation=${String(generation.id)} settled=${String(progress.settled)} requested=${String(progress.requested)} bytes=${String(progress.settledBytes)}`,
++      );
++      console.info(`TN_VALLEY_ASSET_CACHE ${JSON.stringify(ctx.assets.cache)}`);
+       void this.#loadDetail(ctx, generation, startupControls());
+     });
+ 
+@@ -1104,6 +1122,31 @@
+ }
+ 
+ /**
++ * Every logical path the detail tier reads, in the order it starts. Built from the same constants
++ * the loaders use, so a species added to a niche is prefetched without a second list to update.
++ */
++function detailAssetPaths(): readonly string[] {
++  const paths = new Set<string>();
++  for (const niche of Object.values(FLORA)) {
++    for (const name of niche) paths.add(`${FAB}/${name}.glb`);
++  }
++  for (const name of LANDMARK_STONE.boughs) paths.add(`${FAB}/${name}.glb`);
++  for (const name of LANDMARK_STONE.stumps) paths.add(`${FAB}/${name}.glb`);
++  for (const file of [
++    "cliffrocks_diffuse.jpg",
++    "cliffrocks_normal.jpg",
++    "dead_tree_trunk_diffuse.jpg",
++    "dead_tree_trunk_normal.jpg",
++  ]) {
++    paths.add(`landscape/${file}`);
++  }
++  for (const model of WILDWOOD_ANIMAL_MODELS) {
++    paths.add(`fab/${ANIMAL_LISTING}/ue/Models/${model}`);
++  }
++  return [...paths];
++}
++
++/**
+  * Load every imported flora species, by niche.
+  *
+  * The GLB materials arrive as plain `MeshStandardMaterial`s; the maps and alpha thresholds travel

@@ -1,0 +1,127 @@
+{
+  "name": "wildwood-streaming",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "network": {
+    "downloadKbps": 20000,
+    "latencyMs": 40
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "console": true,
+    "network": true,
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "spawn-pose",
+      "waitTicks": 30,
+      "release": true,
+      "screenshot": "spawn"
+    },
+    {
+      "label": "wait-for-the-whole-wood",
+      "timeoutMs": 240000,
+      "waitForResource": {
+        "id": "state",
+        "path": "treeCount",
+        "gte": 100
+      },
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "let-the-environment-settle",
+      "waitTicks": 900,
+      "release": true,
+      "screenshot": "settled"
+    },
+    {
+      "kind": "input",
+      "label": "walk-north-east",
+      "press": "KeyW",
+      "holdTicks": 480,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 45,
+      "release": true,
+      "screenshot": "walked"
+    },
+    {
+      "kind": "input",
+      "label": "keep-going-uphill",
+      "press": "KeyW",
+      "holdTicks": 420,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-2",
+      "waitTicks": 45,
+      "release": true,
+      "screenshot": "walked-2"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "walker",
+      "minDistance": 15
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "valleyReady",
+        "equals": true,
+        "allowTrivial": "Guard: the critical tier must be built before the first observation. A run that never entered the valley has no wood to compare, so this row fails instead of passing on nothing."
+      },
+      {
+        "id": "state",
+        "path": "treeCount",
+        "gte": 100,
+        "allowTrivial": "Guard: the detail tier is the subject, and the wait step above already proved it landed. A run with one tree cannot compare the AFTER wood with the BEFORE wood."
+      },
+      {
+        "id": "state",
+        "path": "odometer",
+        "gte": 25,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "groundGap",
+        "gte": -0.6,
+        "lte": 0.6,
+        "allowTrivial": "The gap starts near zero and the proof is that it stays there across the walk; a collider that mirrors the valley about its diagonal reads metres here."
+      },
+      {
+        "id": "state",
+        "path": "walkerX",
+        "gte": -95,
+        "lte": 95,
+        "changed": true,
+        "allowTrivial": "Containment: the walker is still inside the valley after the walk. The distance it covered is the movement row; this row is the bound."
+      },
+      {
+        "id": "state",
+        "path": "walkerZ",
+        "gte": -95,
+        "lte": 95,
+        "changed": true,
+        "allowTrivial": "Containment, second axis: a collider it can fall through leaves this bound, and the movement row still reads a distance."
+      }
+    ]
+  }
+}

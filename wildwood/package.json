@@ -1,0 +1,59 @@
+{
+  "name": "wildwood",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "studio": "threenative-studio",
+    "build": "threenative build",
+    "build:web": "threenative build --target web",
+    "build:desktop": "threenative build --target desktop",
+    "build:android": "threenative build --target android",
+    "build:ios": "threenative build --target ios",
+    "test:native": "pnpm build:desktop && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs",
+    "pretest": "playwright install chromium",
+    "test": "pnpm test:render && pnpm test:audio && vite build && node tools/run-playtests.mjs",
+    "test:render": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:audio": "threenative-playtest audio --dir public/audio --expect audio.expect.json --text"
+  },
+  "dependencies": {
+    "@threenative/core": "file:/tmp/prd743-tarballs/threenative-core-0.3.6-final2.tgz",
+    "@threenative/physics": "file:/tmp/prd743-tarballs/threenative-physics-0.3.6-final.tgz",
+    "@threenative/ui": "file:/tmp/prd743-tarballs/threenative-ui-0.3.6-final.tgz",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-reconciler": "0.33.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "@gltf-transform/cli": "4.4.2",
+    "@tailwindcss/vite": "4.3.3",
+    "@threenative/assets": "file:/tmp/prd743-tarballs/threenative-assets-0.3.7-final.tgz",
+    "@threenative/playtest": "file:/tmp/prd743-tarballs/threenative-playtest-0.3.6-final.tgz",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@types/three": "0.185.3",
+    "@vitejs/plugin-react": "6.0.5",
+    "create-threenative": "0.2.6",
+    "esbuild": "0.27.0",
+    "playwright": "1.62.1",
+    "tailwindcss": "4.3.3",
+    "threenative-engine-mcp": "0.2.3",
+    "typescript": "5.9.3",
+    "vite": "8.2.0"
+  },
+  "optionalDependencies": {
+    "@threenative/runtime-native": "0.3.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@threenative/core",
+      "@threenative/runtime-native"
+    ],
+    "patchedDependencies": {
+      "three@0.185.1": "patches/three@0.185.1.patch"
+    }
+  }
+}

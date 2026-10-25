@@ -1,0 +1,14 @@
+--- prd743-before/src/entities/animals/spawnWildwoodAnimals.ts	2026-09-03 12:00:06.391712428 -0700
++++ prd743-after/src/entities/animals/spawnWildwoodAnimals.ts	2026-10-25 11:26:46.419707096 -0700
+@@ -3,6 +3,11 @@
+ import { ANIMAL_SPECS, type AnimalSpec } from "./animalSpecs.js";
+ import { waterFromGround, type WaterTest } from "./shore.js";
+ 
++/** Every animal GLB the roster can ask for, so a scene can warm them before it spawns any. */
++export const WILDWOOD_ANIMAL_MODELS: readonly string[] = [
++  ...new Set(ANIMAL_SPECS.map((spec) => `${spec.glb}.glb`)),
++];
++
+ /** Where one animal starts. Omitted animals from the roster simply do not spawn. */
+ export interface IAnimalPlacement {
+   readonly id: string;

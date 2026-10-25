@@ -1,0 +1,335 @@
+
+> threenative@0.1.0 native:verify:desktop /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743
+> pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop
+
+
+> threenative-native-smoke@0.1.0 test /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/examples/native-smoke
+> pnpm run build && node scripts/verify-bundle.mjs && pnpm --dir ../.. exec vitest run --config examples/native-smoke/vitest.config.ts
+
+
+> threenative-native-smoke@0.1.0 build /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/examples/native-smoke
+> vite build
+
+[36mvite v8.2.0 [32mbuilding client environment for production...[36m[39m
+[2Ktransforming...[32m✓[0m 115 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[0m[36mnative-smoke.js  [0m[33;1m7,615.22 kB[0m[2m │ gzip: 1,912.81 kB[0m
+
+[32m✓ built in 973ms[39m
+Verified native-smoke.js (7615227 bytes), one file with no imports
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743
+
+
+ Test Files  2 passed (2)
+      Tests  4 passed (4)
+   Start at  14:03:55
+   Duration  211ms (transform 72ms, setup 0ms, import 97ms, tests 64ms, environment 0ms)
+
+
+> @threenative/runtime-native@0.3.6 native:verify:desktop /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native
+> node scripts/verify-desktop-audio.mjs && node scripts/verify-desktop-stability.mjs && node scripts/verify-desktop-core.mjs && node scripts/verify-desktop-physics.mjs && sh ../../scripts/xvfb.sh node scripts/verify-native-contracts.mjs && pnpm --dir ../playtest build && sh ../../scripts/xvfb.sh node scripts/verify-desktop-loading.mjs && sh ../../scripts/xvfb.sh node scripts/verify-desktop-ui-frame.mjs && vitest run --config vitest.config.ts tests/external-bundle-discovery.test.mjs
+
+desktop audio decodeAudioData Promise proof passed on V8
+desktop audio Ogg Vorbis decode proof passed on V8
+PASS Android with no MYSTRAL_SHOW_CRASH_DIALOG leaves the handlers to the platform
+PASS Android with MYSTRAL_SHOW_CRASH_DIALOG=1 still leaves the handlers to the platform
+PASS desktop with no MYSTRAL_SHOW_CRASH_DIALOG suppresses its crash dialog
+PASS desktop with MYSTRAL_SHOW_CRASH_DIALOG=1 installs nothing
+PASS a sanitizer build leaves the disposition to the sanitizer
+PASS the sanitizer outranks MYSTRAL_SHOW_CRASH_DIALOG
+PASS Android still names debuggerd, not the sanitizer
+PASS a non-sanitizer desktop build is unchanged
+[Mystral] Crash handlers left to the platform; debuggerd owns the tombstone
+PASS the Android policy leaves SIGSEGV chained to debuggerd's stand-in
+[Mystral] Crash handlers left to the sanitizer; ASan owns the report
+PASS the sanitizer policy leaves SIGSEGV to AddressSanitizer's own handler
+PASS MYSTRAL_SHOW_CRASH_DIALOG=1 leaves SIGSEGV chained too
+PASS negative control: the desktop policy replaces SIGSEGV, which on Android is how the tombstone was lost
+[Mystral] Crash handlers left to the platform; debuggerd owns the tombstone
+PASS the Android policy leaves SIGABRT chained to debuggerd's stand-in
+[Mystral] Crash handlers left to the sanitizer; ASan owns the report
+PASS the sanitizer policy leaves SIGABRT to AddressSanitizer's own handler
+PASS MYSTRAL_SHOW_CRASH_DIALOG=1 leaves SIGABRT chained too
+PASS negative control: the desktop policy replaces SIGABRT, which on Android is how the tombstone was lost
+[Mystral] Crash handlers left to the platform; debuggerd owns the tombstone
+PASS the Android policy leaves SIGBUS chained to debuggerd's stand-in
+[Mystral] Crash handlers left to the sanitizer; ASan owns the report
+PASS the sanitizer policy leaves SIGBUS to AddressSanitizer's own handler
+PASS MYSTRAL_SHOW_CRASH_DIALOG=1 leaves SIGBUS chained too
+PASS negative control: the desktop policy replaces SIGBUS, which on Android is how the tombstone was lost
+[Mystral] Crash handlers left to the platform; debuggerd owns the tombstone
+PASS the Android policy leaves SIGILL chained to debuggerd's stand-in
+[Mystral] Crash handlers left to the sanitizer; ASan owns the report
+PASS the sanitizer policy leaves SIGILL to AddressSanitizer's own handler
+PASS MYSTRAL_SHOW_CRASH_DIALOG=1 leaves SIGILL chained too
+PASS negative control: the desktop policy replaces SIGILL, which on Android is how the tombstone was lost
+compiled for desktop; resolved policy SuppressDialog
+PASS the live resolver is the same pure decision, read from the real environment
+PASS no signal was raised while proving this
+PASS a frame count is read as a frame count
+PASS an unset deliberate-crash setting never crashes
+PASS an empty deliberate-crash setting never crashes
+PASS a non-numeric deliberate-crash setting never crashes
+PASS a partly numeric deliberate-crash setting never crashes
+PASS a negative deliberate-crash setting never crashes
+PASS zero frames never crashes
+PASS nothing in this environment asked for a crash
+native crash-handler policy contract passed
+
+desktop stability proof passed: Android leaves crash signals to debuggerd
+RED (negative control): a NULL encoder into wgpuCommandEncoderBeginRenderPass killed the child with Segmentation fault (signal 11) — no JS frame, no named operation
+[JS] Creating V8 engine
+[V8] Creating engine...
+[V8] Initializing V8 JavaScript engine...
+[V8] V8 initialized successfully
+[V8] Version: 13.1.201.22
+[V8] Engine created successfully
+TN_COLD_START:{"segment":"compile_begin","atMs":0.000}
+TN_COLD_START:{"segment":"compile_complete","atMs":6.618}
+TN_COLD_START:{"segment":"execute_begin","atMs":6.632}
+TN_COLD_START:{"segment":"execute_complete","atMs":6.827}
+PASS a NULL handle throws into V8 rather than returning undefined and letting the caller continue
+PASS the thrown message names the operation, not just an address
+PASS the thrown message carries the TN_WGPU_NULL_HANDLE marker a logcat filter finds
+PASS the thrown message carries the arguments the call was made with
+PASS a non-NULL handle passes the check and throws nothing
+GREEN on V8: TN_WGPU_NULL_HANDLE: device.createCommandEncoder returned no handle (label=frame); refusing to pass NULL to wgpu
+[V8] Destroying engine...
+SKIP QuickJS: not compiled into this build
+SKIP JavaScriptCore: not compiled into this build
+PASS the host-side check refuses a NULL handle
+PASS the host-side check passes a live handle
+native wgpu NULL-handle contract passed
+
+[WebGPU] TN_WGPU_NULL_HANDLE: device.createCommandEncoder returned no handle (label=frame); refusing to pass NULL to wgpu
+[JS] QuickJS not compiled in
+[JS] JavaScriptCore not available (Apple platforms only)
+[WebGPU] TN_WGPU_NULL_HANDLE: canvas2DComposite.surfaceView returned no handle; refusing to pass NULL to wgpu
+desktop stability proof passed: a NULL wgpu handle throws to JS instead of reaching the FFI
+PASS SDL_EVENT_WILL_ENTER_BACKGROUND maps to paused
+PASS SDL_EVENT_DID_ENTER_BACKGROUND maps to paused
+PASS SDL_EVENT_WINDOW_MINIMIZED maps to paused
+PASS SDL_EVENT_WINDOW_HIDDEN maps to paused
+PASS SDL_EVENT_WILL_ENTER_FOREGROUND maps to resumed
+PASS SDL_EVENT_DID_ENTER_FOREGROUND maps to resumed
+PASS SDL_EVENT_WINDOW_RESTORED maps to resumed
+PASS SDL_EVENT_WINDOW_SHOWN maps to resumed
+PASS SDL_EVENT_TERMINATING maps to terminating
+PASS SDL_EVENT_WINDOW_DESTROYED maps to terminating
+PASS SDL_EVENT_LOW_MEMORY maps to memoryTrim
+PASS SDL_EVENT_WINDOW_FOCUS_LOST maps to observed
+PASS SDL_EVENT_WINDOW_OCCLUDED maps to observed
+PASS SDL_EVENT_KEY_DOWN maps to none
+PASS SDL_EVENT_MOUSE_MOTION maps to none
+PASS the loop starts unpaused
+PASS backgrounding pauses the loop
+PASS the pause is reported as a TN_LIFECYCLE marker
+PASS the pause marker says the pause was applied
+PASS pausing queues the Android UI-hidden trim callback level
+PASS pausing records the host trim measurement
+PASS foregrounding resumes the loop
+PASS the resume is reported as a TN_LIFECYCLE marker
+TN_SURFACE_FORMAT:{"native":"bgra8unorm","render":"bgra8unorm","bridge":false,"present":"fifo"}
+[WebGPU] Surface republished to bindings: 0x1 720x1280 (format=27)
+TN_PIPELINE_COMPLETE:{"version":1,"eventCount":0}
+PASS surface detach and republish update the binding state
+PASS the default background mode is pause
+PASS a host that has not resumed has nothing to revalidate
+PASS backgrounding alone does not queue a rebuild; the window is not back yet
+PASS resuming queues the surface rebuild that resume never did
+PASS the loop takes the request
+PASS and it is taken exactly once, so one resume is not rebuilt on every later frame
+PASS moderate Android pressure records a trim measurement
+PASS moderate Android pressure takes the host trim action
+PASS moderate Android pressure queues its level for the game callback
+PASS an advisory Android trim level remains observable
+PASS an advisory Android trim level does not claim a host trim
+PASS an advisory Android level still reaches the game callback
+PASS coalesced low-memory events preserve the most severe pending level
+PASS the preserved severe level still trims host-owned memory
+PASS the game callback receives the most severe coalesced level
+PASS backgroundMode=continue still queues the surface rebuild
+PASS startup can drop a request it raised against a surface it just built
+PASS revalidation is on unless something explicitly asks for the pre-fix behaviour
+PASS the documented control switch reinstates the pre-fix resume
+PASS and anything but 1 leaves the fix in place
+PASS losing focus does not pause the loop
+PASS losing focus is still recorded
+PASS backgroundMode=continue keeps the loop running
+PASS the marker names the mode that executed
+PASS the marker says the pause was not applied
+PASS a terminal event stops the loop even under backgroundMode=continue
+PASS the terminal event is reported
+PASS "pause" parses
+PASS "continue" parses
+PASS an unrecognized backgroundMode is rejected rather than guessed
+PASS a missing backgroundMode is rejected rather than guessed
+[Audio] AudioContext created (sample rate: 44100 Hz)
+[Audio] AudioContext resumed
+PASS a constructed AudioContext registers itself with the host
+[Audio] AudioContext suspended by the host lifecycle
+PASS backgrounding suspends every live AudioContext
+PASS the host records that it owns the suspension
+[Audio] AudioContext resumed
+PASS foregrounding resumes the contexts the host suspended
+PASS resuming does not un-suspend a context the game suspended itself
+PASS a destroyed AudioContext leaves the registry
+PASS the SDL event watch installs
+PASS installing twice is idempotent
+PASS an event pushed through SDL reaches the watch synchronously, before any poll
+native lifecycle policy contract passed
+
+desktop stability proof passed: backgrounding pauses the loop and foregrounding resumes it
+desktop core gate: SDL video driver x11
+desktop core gate passed: 300 frames, 1280x720, /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-core-2026-10-25.png
+desktop physics actuation bindings proof passed
+desktop physics playtest proof passed: 14 assertions
+desktop physics query proof passed: {"clearHitCount":0,"maskedHitCount":0,"pointCount":1,"pointMaskedHitCount":0,"pointMissCount":0,"rayDistance":2,"rayNormal":[0,1,0],"rayPosition":[0,0,1],"shapeCount":1,"shapeMaskedHitCount":0,"shapeMissCount":0}
+_XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
+_XSERVTransMakeAllCOTSServerListeners: server already running
+_XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
+_XSERVTransMakeAllCOTSServerListeners: server already running
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
+>                   Using F23, ignoring XF86TouchpadOff
+> Warning:          Symbol map for key <FK23> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Symbol map for key <FK24> redefined
+>                   Using last definition for conflicting fields
+Errors from xkbcomp are not fatal to the X server
+PASS threenative-async-pipeline-thread-test
+PASS threenative-audio-decode-ogg-test
+PASS threenative-audio-decode-promise-test
+PASS threenative-audio-graph-test
+PASS threenative-bindings-creation-test
+PASS threenative-canvas-audio-comprehensive-test
+PASS threenative-canvas-presentation-test
+PASS threenative-canvas2d-dirty-test
+PASS threenative-cli-network-fs-test
+PASS threenative-command-encoder-class-table-test
+PASS threenative-crash-handler-policy-test
+PASS threenative-css-ui-overlay-test
+PASS threenative-device-pixel-ratio-test
+PASS threenative-dom-dispatch-lifetime-test
+PASS threenative-embedded-bundle-test
+PASS threenative-exposure-graph-test
+PASS threenative-frame-op-stream-replay-test
+PASS threenative-handle-lifetime-test
+PASS threenative-input-restart-test
+PASS threenative-js-engine-contract-test
+PASS threenative-js-module-comprehensive-test
+PASS threenative-lifecycle-policy-test
+PASS threenative-local-storage-test
+PASS threenative-metahuman-bindings-test
+PASS threenative-physics-actuation-bindings-test
+PASS threenative-pipeline-cache-api-test
+PASS threenative-pipeline-cache-lifecycle-test
+PASS threenative-pipeline-cache-test
+PASS threenative-presentation-pacing-test
+PASS threenative-raytracing-probe-test
+PASS threenative-render-pass-class-table-test
+PASS threenative-rg11b10-renderable-test
+PASS threenative-rt-handle-allocation-test
+PASS threenative-runtime-platform-comprehensive-test
+PASS threenative-screenshot-capture-gate-test
+PASS threenative-shader-module-metadata-test
+PASS threenative-shutdown-lifetime-test
+PASS threenative-stall-budget-hitch-test
+PASS threenative-surface-format-selection-test
+PASS threenative-surface-texture-status-test
+PASS threenative-timer-delivery-test
+PASS threenative-timer-engine-first-test
+PASS threenative-timestamp-query-test
+PASS threenative-transient-attachments-test
+PASS threenative-video-recorder-state-test
+PASS threenative-webgpu-bindings-reentrancy-test
+PASS threenative-webgpu-comprehensive-test
+PASS threenative-webtransport-surface-test
+PASS threenative-webtransport-wire-test
+PASS threenative-wgpu-null-handle-test
+PASS threenative-worker-production-test
+native contract lane passed: 51 of 51 targets
+
+> @threenative/playtest@0.3.6 build /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/playtest
+> pnpm --workspace-root exec tsx scripts/generate-assertion-validators.ts --check && tsup --config tsup.config.ts && publint
+
+assertion validators: 31 kinds are current
+[34mCLI[39m Building entry: src/capture.ts, src/index.ts, src/protocol.ts, src/three/index.ts, src/runner/cli.ts, src/runner/index.ts
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.5.1
+[34mCLI[39m Using tsup config: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/playtest/tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mCLI[39m Cleaning output folder
+[34mESM[39m Build start
+"default" is imported from external module "path" but never used in "dist/runner/index.js".
+"createHash" is imported from external module "crypto" but never used in "dist/runner/index.js".
+[34mDTS[39m Build start
+[32mESM[39m [1mdist/capture.js      [22m[32m6.99 KB[39m
+[32mESM[39m [1mdist/three/index.js  [22m[32m58.25 KB[39m
+[32mESM[39m [1mdist/protocol.js     [22m[32m2.12 KB[39m
+[32mESM[39m [1mdist/index.js        [22m[32m471.66 KB[39m
+[32mESM[39m [1mdist/runner/index.js [22m[32m857.93 KB[39m
+[32mESM[39m [1mdist/runner/cli.js   [22m[32m1017.85 KB[39m
+[32mESM[39m ⚡️ Build success in 1303ms
+[32mDTS[39m ⚡️ Build success in 6559ms
+[32mDTS[39m [1mdist/capture.d.ts              [22m[32m3.58 KB[39m
+[32mDTS[39m [1mdist/index.d.ts                [22m[32m5.97 KB[39m
+[32mDTS[39m [1mdist/runner/cli.d.ts           [22m[32m2.84 KB[39m
+[32mDTS[39m [1mdist/runner/index.d.ts         [22m[32m33.82 KB[39m
+[32mDTS[39m [1mdist/three/index.d.ts          [22m[32m10.79 KB[39m
+[32mDTS[39m [1mdist/protocol.d.ts             [22m[32m26.73 KB[39m
+[32mDTS[39m [1mdist/shared-BcXE6N7R.d.ts      [22m[32m20.10 KB[39m
+[32mDTS[39m [1mdist/diagnostics-icfq1Ewq.d.ts [22m[32m35.32 KB[39m
+[32mDTS[39m [1mdist/schema-base-Bt3FkeY3.d.ts [22m[32m30.68 KB[39m
+Running [1mpublint v0.3.22[22m for [1m@threenative/playtest[22m...
+Packing files with `pnpm pack`...
+Linting...
+[1m[32mAll good![39m[22m
+_XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
+_XSERVTransMakeAllCOTSServerListeners: server already running
+_XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
+_XSERVTransMakeAllCOTSServerListeners: server already running
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
+>                   Using F23, ignoring XF86TouchpadOff
+> Warning:          Symbol map for key <FK23> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Symbol map for key <FK24> redefined
+>                   Using last definition for conflicting fields
+Errors from xkbcomp are not fatal to the X server
+desktop loading playtest proof passed: 222720 startup loading pixels, 0 settled loading pixels
+desktop loading proof artifacts: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-loading-2026-10-25T21-04-56-660Z
+_XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
+_XSERVTransMakeAllCOTSServerListeners: server already running
+_XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
+_XSERVTransMakeAllCOTSServerListeners: server already running
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
+>                   Using F23, ignoring XF86TouchpadOff
+> Warning:          Symbol map for key <FK23> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Symbol map for key <FK24> redefined
+>                   Using last definition for conflicting fields
+Errors from xkbcomp are not fatal to the X server
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
+>                   Using F23, ignoring XF86TouchpadOff
+> Warning:          Symbol map for key <FK23> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Symbol map for key <FK24> redefined
+>                   Using last definition for conflicting fields
+Errors from xkbcomp are not fatal to the X server
+desktop UI frame gate passed on the in-frame contract: overlay attached after 1 report(s), 2 hit region(s), 20500 ms of page-startup window, game frame 743 -> 1063, ui phase p95 0.03 ms under 2 ms
+desktop UI frame gate: page frame 1280x720, counter 1, uploads 1; 72519 #7fffd4 pixel(s) in the game's own 1280x720 frame
+desktop UI frame proof artifacts: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-ui-frame-2026-10-25T21-05-41-879Z
+
+ RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native
+
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  14:06:13
+   Duration  1.69s (transform 22ms, setup 0ms, import 33ms, tests 1.56s, environment 0ms)
+
