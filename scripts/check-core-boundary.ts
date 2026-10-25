@@ -13,9 +13,8 @@ const CORE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
 const RENDER_EXTENSIONS = new Set([".css", ".js", ".jsx", ".ts", ".tsx"]);
 
 // A template's `src/render/` stays portable: it must not reach into the framework for anything
-// that decides how the game looks. These names are the exception, and they are an exception on a
-// principle, not on a case — each one runs a simulation and draws nothing, so the mesh, the
-// material, the colours and the tessellation are still the game's own decisions in its own file.
+// that decides how the game looks. The spectral exceptions run a simulation and draw nothing;
+// meshes, materials, colours and tessellation stay in the game.
 // `SpectralOcean` is the shape: it inverse-transforms cascaded wave spectra on the GPU into a
 // displacement buffer, and the game builds every visible thing that reads it.
 //
@@ -25,7 +24,10 @@ const RENDER_EXTENSIONS = new Set([".css", ".js", ".jsx", ".ts", ".tsx"]);
 // Everything around it is the game's: the options carry no defaults at all and the constructor
 // throws on each missing number.
 //
-// Adding a name here needs the same proof: the game must be able to change the appearance
+// PRD-723 also admits the owner-approved shared WorldEnvironment, preset and meter plumbing,
+// including their named type re-exports. Games keep named look overrides on the same objects.
+//
+// Adding another name here needs the same proof: the game must be able to change the appearance
 // without editing package code. A symbol that picks a material, a colour or a timing curve
 // belongs in `src/render/` as generated source instead.
 //
@@ -45,10 +47,14 @@ const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
   "ISpectralOceanHeight",
   "ISpectralOceanOptions",
   "SpectralOcean",
+  "exposureSettings",
+  "IExposureSettings",
+  "ChainStage",
+  "IWorldEnvironmentStageContext",
 ]);
 
 const FRAMEWORK_IMPORT =
-  /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["']@threenative\/([^"']+)["'];?/gu;
+  /(?:import\s+(?:type\s+)?|export\s+type\s+)\{([^}]*)\}\s+from\s+["']@threenative\/([^"']+)["'];?/gu;
 
 function importedNames(clause: string): readonly string[] {
   return clause
@@ -65,7 +71,7 @@ function importedNames(clause: string): readonly string[] {
 }
 
 /**
- * Removes every framework import a render file is allowed to make. Whatever `@threenative/` text
+ * Removes allowed framework imports and named type re-exports. Whatever `@threenative/` text
  * survives is a portability violation — a wildcard import, a dynamic one, a package other than
  * core, or a named symbol that is not on the list above.
  */

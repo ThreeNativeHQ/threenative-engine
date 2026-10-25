@@ -42,6 +42,7 @@ import {
   If,
   color,
   convertToTexture,
+  cross,
   diffuseColor,
   emissive,
   float,
@@ -61,7 +62,13 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import {
+  BlendMode,
+  type Node,
+  type NodeBuilder,
+  NodeUpdateType,
+  type TextureNode,
+} from "three/webgpu";
 import { RENDER_CHAIN_TIERS } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
@@ -1169,10 +1176,52 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
-          // No normal input: GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
+          // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
-          const contact = ao(subrectTexture(depth()), null as never, view);
+          const aoDepth = subrectTexture(depth());
+          let reconstructedNormal: { sample: (at: Node<"vec2">) => Node<"vec3"> } | null = null;
+          if (!ownedEngine) {
+            const extent = new Vector2(1, 1);
+            // The pass viewport is the active pixel extent, including for multisampled depth.
+            const activeSize = uniform(extent).onRenderUpdate(() =>
+              extent.set(scenePass.renderTarget.viewport.z, scenePass.renderTarget.viewport.w),
+            );
+            const inverseProjection = uniform(view.projectionMatrixInverse);
+            // Reconstruct through TextureNode samplers: Three's raw depth path bypasses retained clamps and misqueries MSAA dimensions.
+            reconstructedNormal = {
+              sample: Fn(([at]: [Node<"vec2">]) => {
+                const size = activeSize.toVar();
+                const pixel = at.mul(size).floor().add(0.5).div(size);
+                const tap = (x: number, y: number) =>
+                  aoDepth.sample(pixel.add(vec2(x, y).div(size))).r.toVar();
+                const c = tap(0, 0);
+                const l2 = tap(-2, 0);
+                const l1 = tap(-1, 0);
+                const r1 = tap(1, 0);
+                const r2 = tap(2, 0);
+                const b2 = tap(0, 2);
+                const b1 = tap(0, 1);
+                const t1 = tap(0, -1);
+                const t2 = tap(0, -2);
+                const dl = l1.mul(2).sub(l2).sub(c).abs();
+                const dr = r1.mul(2).sub(r2).sub(c).abs();
+                const db = b1.mul(2).sub(b2).sub(c).abs();
+                const dt = t1.mul(2).sub(t2).sub(c).abs();
+                const center = getViewPosition(at, c, inverseProjection).toVar();
+                const position = (x: number, y: number, z: Node<"float">) =>
+                  getViewPosition(at.add(vec2(x, y).div(size)), z, inverseProjection);
+                const dx = dl
+                  .lessThan(dr)
+                  .select(center.sub(position(-1, 0, l1)), position(1, 0, r1).sub(center));
+                const dy = db
+                  .lessThan(dt)
+                  .select(center.sub(position(0, 1, b1)), position(0, -1, t1).sub(center));
+                return cross(dx, dy).normalize();
+              }),
+            };
+          }
+          const contact = ao(aoDepth, reconstructedNormal as never, view);
           if (options.gtaoRadius !== undefined) {
             contact.radius.value = options.gtaoRadius;
           } else {
@@ -1198,7 +1247,20 @@ export class WorldEnvironment {
           };
           resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
           sample(contact.getTextureNode());
+          let filterTexture:
+            | (ReturnType<typeof convertToTexture> & {
+                setResolutionScale(scale: number): void;
+                renderTarget: RenderTarget;
+                _quadMesh: { material: { dispose(): void } };
+              })
+            | undefined;
           releaseAo = () => {
+            if (filterTexture) {
+              resolutionSubrect?.release(filterTexture);
+              filterTexture.renderTarget.dispose();
+              filterTexture._quadMesh.material.dispose();
+              filterTexture = undefined;
+            }
             contactOcclusion = undefined;
             resolutionSubrect?.release(retained);
             contact.dispose();
@@ -1240,7 +1302,14 @@ export class WorldEnvironment {
               if (fraction) this._resolution.value.multiply(fraction);
             };
           }
-          const occlusion = filter ? denoised(filter) : contact;
+          if (filter && !ownedEngine && options.gtaoResolutionScale < 1) {
+            // Upstream Denoise is inline: materialise it at the authored AO extent before the composite.
+            filterTexture = convertToTexture(denoised(filter)) as NonNullable<typeof filterTexture>;
+            filterTexture.setResolutionScale(options.gtaoResolutionScale);
+            filterTexture.updateBeforeType = NodeUpdateType.FRAME;
+            sample(filterTexture);
+          }
+          const occlusion = filterTexture ?? (filter ? denoised(filter) : contact);
           // The factor the indirect diffuse light keeps: the occlusion through multi-bounce for the pixel's own albedo
           // (the diffuse colour target already has the metal's share removed), per channel. The fit is a cubic of the
           // occlusion with linear coefficients of the capped albedo (Jimenez et al. 2016, as Unreal's composite).

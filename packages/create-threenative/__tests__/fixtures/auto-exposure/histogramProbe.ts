@@ -1,12 +1,12 @@
 import { DataTexture, FloatType, NearestFilter, RGBAFormat } from "three";
 import { texture, uniform } from "three/tsl";
 import { NodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
-import { exposureSettings } from "../../../template-assets/exposure.js";
 import {
   adaptExposure,
   exposureBins,
   exposureTarget,
-} from "../../../template-assets/exposureGraph.js";
+} from "../../../../core/src/look/exposure-graph.js";
+import { exposureSettings } from "../../../template-assets/exposure.js";
 import { histogramCases } from "./histogramReference.js";
 
 /**

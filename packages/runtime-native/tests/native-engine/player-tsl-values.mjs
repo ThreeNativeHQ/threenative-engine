@@ -19,8 +19,8 @@ process.once("exit", () => rmSync(work, { recursive: true, force: true }));
 const entry = resolve(work, "game.ts");
 const outfile = resolve(work, "game.js");
 await writeFile(entry, `
-import { PerspectiveCamera, Scene, Vector2, Vector3 } from "three";
-import { float, uniform, vec2, vec3 } from "three/tsl";
+import { DepthTexture, PerspectiveCamera, RenderTarget, Scene, Texture, Vector2, Vector3 } from "three";
+import { float, texture, uniform, vec2, vec3 } from "three/tsl";
 
 globalThis.tn.onUpdate(() => {
   if (globalThis.tn.scene !== undefined) return;
@@ -36,6 +36,13 @@ globalThis.tn.onUpdate(() => {
   if (!refused.includes("TN_TSL_UNIFORM_VALUE") || offset.value !== next) faults.push("refusal " + refused);
   const three = vec3(1, 2, 3).value;
   if (float(2).value !== 2 || !(three instanceof Vector3) || three.z !== 3 || vec2(4).value?.y !== 4) faults.push("const");
+  const sampled = texture(new Texture());
+  const replacement = new RenderTarget(2, 2).texture;
+  try { sampled.value = replacement; } catch (error) { faults.push("texture replacement " + error); }
+  if (sampled.value !== replacement) faults.push("texture replacement");
+  refused = "";
+  try { sampled.value = new DepthTexture(2, 2); } catch (error) { refused = String(error); }
+  if (!refused.includes("TN_NATIVE_TEXTURE_VALUE_TYPE") || sampled.value !== replacement) faults.push("texture refusal " + refused);
   globalThis.tn.log(faults.length === 0 ? "TSL_VALUES_OK" : "TSL_VALUES_BAD " + faults.join(", "));
 });
 `);
@@ -63,4 +70,4 @@ const verdict = await new Promise((done) => {
 });
 child.kill();
 assert.equal(verdict, "TSL_VALUES_OK", `${verdict}\n${output.slice(-2000)}`);
-console.log("PASS uniform and constant values on the V8 player keep r185's semantics");
+console.log("PASS uniform, constant and texture values on the V8 player keep r185's semantics");

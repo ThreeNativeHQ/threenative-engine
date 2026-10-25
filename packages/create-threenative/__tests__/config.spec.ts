@@ -219,7 +219,9 @@ describe("threenative.config.ts", () => {
   // shipped templates rather than a fixture means the next key is caught the same way.
   it("accepts every renderer key the shipped templates actually set", async () => {
     const templates = path.resolve("packages/create-threenative/templates");
-    const names = await readdir(templates);
+    const names = (await readdir(templates, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) {
       const source = await readFile(path.join(templates, name, "threenative.config.ts"), "utf8");

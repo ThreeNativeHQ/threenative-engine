@@ -43,13 +43,10 @@ it("routes the actual exposure policy imported by tone and generated worlds", as
     "utf8",
   );
   const world = await readFile(
-    new URL(
-      "../../packages/create-threenative/template-assets/worldEnvironment.ts",
-      import.meta.url,
-    ),
+    new URL("../../packages/core/src/look/world-environment.ts", import.meta.url),
     "utf8",
   );
-  expect(world).toMatch(/exposureSettings.*from "\.\/exposure\.js"/u);
+  expect(world).toMatch(/exposureSettings.*from "\.\/exposure-settings\.js"/u);
   for (const path of ["template-assets/exposure.ts", "templates/rain/src/render/exposure.ts"]) {
     const result = integrationSelection({
       before: source,

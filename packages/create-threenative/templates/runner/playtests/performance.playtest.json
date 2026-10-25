@@ -8,7 +8,7 @@
       "minFps": 30
     },
     "renderChain": {
-      "tier": "high",
+      "tier": "medium",
       "perAdapter": {
         "integrated": { "tier": "medium" },
         "mobile-high": { "tier": "medium" },

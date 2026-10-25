@@ -209,6 +209,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
+  // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
   // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
   // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
@@ -420,8 +422,6 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/qualityPolicy.ts",
-  "src/render/worldEnvironment.ts",
-  "src/render/tonemap.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
   "src/render/temporalAAResolve.ts",
@@ -434,7 +434,6 @@ const STARTER_PATHS = [
   "src/render/temporalCurrentVisibility.ts",
   "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
-  "src/render/autoExposure.ts",
   "src/render/volumetricFog.ts",
   "src/render/volumetricFogOptions.ts",
   "src/render/volumetricFogVolume.ts",
@@ -1101,7 +1100,9 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, "src/render", file), "utf8"),
         ),
       );
-      expect(renderFiles.join("\n")).not.toContain("@threenative/");
+      expect(
+        renderFiles.join("\n").replaceAll('from "@threenative/core"', 'from "shared-core"'),
+      ).not.toContain("@threenative/");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

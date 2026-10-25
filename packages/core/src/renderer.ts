@@ -1719,6 +1719,9 @@ const TEXTURE_LIMITS = {
   // three stores every morph target of a mesh as one layer of a texture array: a MetaHuman head
   // carries 821, and past the default 256 the mesh never draws.
   maxTextureArrayLayers: 256,
+  // Seven RGBA16Float render targets carry 56 bytes per sample; the device default of 32 invalidates
+  // the pipeline even when the adapter reports 128.
+  maxColorAttachmentBytesPerSample: 32,
 } as const;
 
 /**

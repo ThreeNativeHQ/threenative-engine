@@ -96,7 +96,8 @@ int main(int argc, char** argv) {
     tn::engine::graph::RenderGraph renderGraph;
     using Desc = tn::engine::graph::TextureDesc;
     std::map<std::string, tn::engine::graph::ResourceId> resources;
-    for (const std::string name : {"scene", "depth", "normal"}) resources[name] = renderGraph.external(name, Desc{320,240,1,1});
+    for (const std::string name : {"scene", "depth", "normal", "roughness", "metalness", "diffuseColor", "emissive"})
+        resources[name] = renderGraph.external(name, Desc{320,240,1,1});
     const auto passes = graph::postPasses(node);
     for (const auto& pass : passes) {
         for (const auto& image : pass.images) resources[image.name] = renderGraph.external(image.name, Desc{image.width,image.height,1,1});

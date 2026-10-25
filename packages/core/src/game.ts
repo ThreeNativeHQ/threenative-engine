@@ -763,14 +763,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
-  /**
-   * The scene a `goto()` is loading right now, or undefined when none is.
-   *
-   * Between a `goto()` and its `enter()` the registry is cleared and nothing owns the world, so a
-   * reader that needs the world's entities has to wait for this rather than for the scene it
-   * navigated from. The playtest handshake reads exactly that.
-   */
+  /** The full `goto()` transition, including first-use warm-up, or undefined when none is. */
   #pendingSceneEnter: Promise<void> | undefined;
+  /** One-shot notification after the scene that owns the world has entered, before warm-up. */
+  #onStartSceneEntered: (() => void) | undefined;
   #paused = false;
   #started = false;
   #uiBridge: IUiBridge | undefined;
@@ -966,6 +962,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const unlit = unlitFoliageWarning(ctx.scene);
     if (unlit !== undefined)
       console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
+    const entered = this.#onStartSceneEntered;
+    this.#onStartSceneEntered = undefined;
+    entered?.();
     return true;
   }
 
@@ -976,17 +975,29 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (!this.#enterScene(scene, ctx)) return;
     const renderer = this.#renderer;
     const nodes = this.#computeDriven.warmupNodes;
-    if (renderer === undefined || nodes.length === 0) return;
+    const hasEnvironment = ctx.scene.environment?.isTexture === true;
+    if (renderer === undefined || (nodes.length === 0 && !hasEnvironment)) return;
     this.#sceneEntered = false;
     let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
     let failure: string | undefined;
     try {
-      report = await warmUpComputeNodes(renderer, nodes, this.#warmUpOptions());
+      const options = this.#warmUpOptions();
+      if (hasEnvironment) {
+        const projection = this.#projection;
+        projection?.reconcile();
+        const root = projection?.root ?? ctx.scene;
+        this.#matrixWorld?.apply(root);
+        // A new environment skips world draws until its retained bake has completed.
+        report = await warmUpScene(renderer, root, ctx.camera, {
+          ...options,
+          computeNodes: [...(options.computeNodes ?? []), ...nodes],
+        });
+      } else report = await warmUpComputeNodes(renderer, nodes, options);
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
     }
     console.log(
-      `TN_TRANSITION_COMPUTE_WARMUP:${JSON.stringify(
+      `${hasEnvironment ? "TN_TRANSITION_WARMUP" : "TN_TRANSITION_COMPUTE_WARMUP"}:${JSON.stringify(
         report === undefined
           ? { failed: failure ?? "unknown" }
           : {
@@ -1149,11 +1160,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     threeScene.matrixWorldAutoUpdate = false;
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
+    // The owned renderer retains its own velocity history; JS snapshots serve Three's accessors.
+    const engineInfo = (renderer.raw as { info?: object }).info;
+    const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
     const projection = new SceneRenderProjection(threeScene, {
       // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
       // names the material check beside accepting it, and the projection owns both readings.
       projection: this.#config.render?.projection,
-      velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
+      velocity: () => !ownedEngine && (renderer.renderChainUsesPerObjectVelocity?.() ?? false),
       matrixWorld: matrixWorldPass,
     });
     this.#projection = projection;
@@ -2110,7 +2124,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
-        if (frame !== undefined) {
+        if (this.#sceneEntered && frame !== undefined) {
           frame(ctx, dt);
           updates += 1;
         }
@@ -2263,21 +2277,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     try {
-      this.#enterScene(scene, ctx);
-      timeline.enteredMs ??= now();
-      // A start scene that navigates inside `enter()` — every `boot` template does — has handed the
-      // run a world that is still in `load()`, and the entity registry is empty until it enters.
-      // Releasing the gate there described a game that had not been built yet, so every
-      // entity-derived capability was read off nothing. The gate follows the scene that entered.
-      const worldEntered = this.#pendingSceneEnter;
-      const entered = (): void => {
+      // A boot scene can navigate during enter(). Describe the destination's registered entities
+      // after it enters, while readiness and the full goto() still wait for first-use warm-up.
+      this.#onStartSceneEntered = () => {
         for (const startGate of startGates) startGate.resolveEntered();
       };
-      if (worldEntered === undefined) entered();
-      else
-        void worldEntered.then(entered, (error: unknown) => {
-          for (const startGate of startGates) startGate.rejectEntered(error);
-        });
+      this.#enterScene(scene, ctx);
+      timeline.enteredMs ??= now();
+      void this.#pendingSceneEnter?.catch((error: unknown) => {
+        for (const startGate of startGates) startGate.rejectEntered(error);
+      });
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);
@@ -2387,6 +2396,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   }
 
   #teardown(startingCtx?: ICtx<TState, TPhysics>): void {
+    this.#onStartSceneEntered = undefined;
     const ctx = this.#ctx ?? startingCtx;
     // Teardown is failure-atomic: one throwing release must not strand the resources after it.
     // Every attempt runs, errors are collected, and the first — the original cause — is thrown

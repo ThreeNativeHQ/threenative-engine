@@ -52,6 +52,48 @@ describe("visual gate", () => {
     }
   });
 
+  it("follows a live core WorldEnvironment and keeps a local pipeline implementation", async () => {
+    const root = await makeTempDir("threenative-visual-core-world-");
+    const kit = path.join(root, "core-world-kit");
+    try {
+      await cp(path.resolve("packages/create-threenative/templates/platformer"), kit, {
+        recursive: true,
+      });
+      const manifest = JSON.parse(await readFile(path.join(kit, "kit.json"), "utf8")) as {
+        name: string;
+      };
+      await writeFile(
+        path.join(kit, "kit.json"),
+        `${JSON.stringify({ ...manifest, name: "core-world-kit" })}\n`,
+      );
+      const inspect = () =>
+        inspectAllTemplates(root).find(({ template }) => template === "core-world-kit");
+      expect(inspect()?.errors).toEqual([]);
+
+      const postPath = path.join(kit, "src/render/postprocessing.ts");
+      const post = await readFile(postPath, "utf8");
+      await writeFile(postPath, post.replaceAll("new WorldEnvironment(", "constructWorld("));
+      expect(inspect()?.errors).toContain("core-world-kit: render pipeline is missing toneMapping");
+
+      await writeFile(
+        postPath,
+        post.replace(
+          'import { WorldEnvironment } from "@threenative/core"',
+          'import { WorldEnvironment } from "./world-environment.js"',
+        ),
+      );
+      expect(inspect()?.errors).toContain("core-world-kit: render pipeline is missing toneMapping");
+
+      await writeFile(
+        path.join(kit, "src/render/worldEnvironment.ts"),
+        'export const markers = ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("];\n',
+      );
+      expect(inspect()?.errors).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("asks for soft shadow-map settings only from a light that casts a shadow", async () => {
     const root = await makeTempDir("threenative-visual-shadow-");
     const kit = path.join(root, "shadow-kit");
@@ -105,6 +147,9 @@ describe("visual gate", () => {
         ({ template }) => template === "unregistered-broken",
       );
       expect(result?.errors).toContain("unregistered-broken: missing src/render/postprocessing.ts");
+      expect(result?.errors).toContain(
+        "unregistered-broken: render pipeline is missing toneMapping",
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   DataTexture,
   EquirectangularReflectionMapping,
   Group,
@@ -20,6 +21,7 @@ import {
   resetLaunchFailures,
 } from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
+import { VelocityTracker } from "../src/render/velocity.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { SoftBody3D } from "../src/softbody.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
@@ -2261,6 +2263,77 @@ describe("IGame", () => {
     game.stop();
   });
 
+  it("holds restarted scene updates until its environment is prepared", async () => {
+    const canvas = testCanvas();
+    let advance: ((ticks: number) => number) | undefined;
+    let enters = 0;
+    let updates = 0;
+    let release: ((ready: boolean) => void) | undefined;
+    const prepareEnvironmentAsync = vi.fn(() =>
+      enters === 1
+        ? Promise.resolve(true)
+        : new Promise<boolean>((resolve) => {
+            release = resolve;
+          }),
+    );
+    class Restartable extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): () => void {
+        enters += 1;
+        ctx.scene.environment = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
+        ctx.add(new Mesh(new SphereGeometry(), new MeshBasicMaterial()));
+        return () => updates++;
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: () => Promise.resolve(),
+          dispose: () => undefined,
+          domElement: canvas,
+          prepareEnvironmentAsync,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Restartable },
+      start: "play",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    try {
+      await game.start();
+      expect(prepareEnvironmentAsync).toHaveBeenCalled();
+      if (advance === undefined) throw new Error("Missing fixed-step runtime");
+      advance(1);
+      const before = updates;
+      let settled = false;
+      const transition = game.goto("play").then(() => {
+        settled = true;
+      });
+      await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+      expect(settled).toBe(false);
+      advance(1);
+      expect(updates).toBe(before);
+      release?.(true);
+      await transition;
+      advance(1);
+      expect(updates).toBe(before + 1);
+    } finally {
+      release?.(true);
+      game.stop();
+    }
+  });
+
   it("resets goto to the destination scene and merges a serializable carry patch", async () => {
     type ScreenState = { characterName: string; screen: "menu" | "play" };
 
@@ -2341,6 +2414,87 @@ describe("IGame", () => {
    * it. These drive the real frame loop and assert on the scene the renderer was handed, because a
    * projection that works in isolation and is not wired in is a module, not an optimization.
    */
+  it.each([
+    { backend: "owned", info: { engine: {} }, tracks: false },
+    { backend: "upstream", info: {}, tracks: true },
+    { backend: "missing marker", info: undefined, tracks: true },
+  ])("keeps world matrices live with $backend velocity ownership", async ({ info, tracks }) => {
+    const update = vi.spyOn(VelocityTracker.prototype, "update");
+    const commit = vi.spyOn(VelocityTracker.prototype, "commit");
+    const canvas = testCanvas();
+    const firstParent = new Group();
+    const secondParent = new Group();
+    firstParent.position.x = 10;
+    secondParent.position.x = 20;
+    const moving = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    moving.position.x = 2;
+    firstParent.add(moving);
+    const spawned = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    spawned.position.x = 8;
+    const drawn: number[][] = [];
+    let renderFrame: ((time: number) => void) | undefined;
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        renderFrame = callback;
+        return 1;
+      },
+    });
+    class Level extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.add(firstParent);
+        ctx.add(secondParent);
+        ctx.renderer.setRenderChainVelocityEnabled?.(true);
+      }
+    }
+    const game = defineGame({
+      render: { projection: false },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          ...(info === undefined ? {} : { info }),
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => {
+            drawn.push([
+              moving.matrixWorld.elements[12] ?? 0,
+              ...(spawned.parent === null ? [] : [spawned.matrixWorld.elements[12] ?? 0]),
+            ]);
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Level },
+      start: "play",
+    });
+    try {
+      await game.start();
+      update.mockClear();
+      commit.mockClear();
+      drawn.length = 0;
+      if (renderFrame === undefined) throw new Error("Game did not schedule a frame.");
+      renderFrame(17);
+      expect(drawn.at(-1)).toEqual([12]);
+      secondParent.add(moving, spawned);
+      moving.position.x = 5;
+      renderFrame(34);
+      expect(drawn.at(-1)).toEqual([25, 28]);
+      expect(game.ctx?.renderer.renderChainUsesPerObjectVelocity?.()).toBe(true);
+      expect(update).toHaveBeenCalledTimes(tracks ? 2 : 0);
+      expect(commit).toHaveBeenCalledTimes(tracks ? 2 : 0);
+    } finally {
+      game.stop();
+      update.mockRestore();
+      commit.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
   it("hands the renderer the projection, not the authored scene, and draws far fewer objects", async () => {
     let renderFrame: ((time: number) => void) | undefined;
     const drawn: { candidates: number; scene: unknown }[] = [];

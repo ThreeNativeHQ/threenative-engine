@@ -199,7 +199,7 @@
     },
     {
       "id": "local-exposure",
-      "title": "local exposure and Unreal bloom",
+      "title": "metered exposure, local exposure and Unreal bloom",
       "category": "rendering",
       "status": "implemented",
       "scene": "conformance/scenes/shared/local-exposure.js",
@@ -223,7 +223,7 @@
       },
       "desktopGate": true,
       "required": true,
-      "reason": "The template's LocalExposureNode (a bilateral grid of log luminance, read as a per pixel gain) and UnrealBloomNode (a downsample chain and six Gaussians) on one frame, on the host as well as the browser. Both are generated template source, so a host that drops a pass, a float render target or a wide loop leaves a game broken where it ships. The frame has a near black half, a bright half, the same mid grey card in each (local exposure moves the two cards by different amounts) and a small bright lamp (the bloom halo), so a stage that silently does nothing on the host cannot match the browser reference. Phones are not registered: local exposure is off on the low tier, as in Unreal's mobile profile. Measured 2026-10-21 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter): 0 pixels differ and the mean deltaE is 0. The tolerance stays at 0.06 and 9.0 because no software adapter was measured."
+      "reason": "The template's LocalExposureNode (a bilateral grid of log luminance, read as a per pixel gain) and UnrealBloomNode (a downsample chain and six Gaussians) on one frame, on the host as well as the browser. Both are generated template source, so a host that drops a pass, a float render target or a wide loop leaves a game broken where it ships. The frame has a near black half, a bright half, the same mid grey card in each (local exposure moves the two cards by different amounts) and a small bright lamp (the bloom halo), so a stage that silently does nothing on the host cannot match the browser reference. Phones are not registered: local exposure is off on the low tier, as in Unreal's mobile profile. AutoExposureNode also meters a drawing-buffer-sized linear RGBA byte texture (46/255 luminance) against key 0.36: readiness requires applied, measured and settled readback at that luminance and current/target stops log2(0.36/(46/255)). Its measured gain divided by the expected gain preserves the local/bloom image and makes an ignored meter fail. The tolerance remains 0.06 and 9.0."
     },
     {
       "id": "auto-exposure",
@@ -1766,7 +1766,7 @@
     },
     {
       "id": "realism-ssgi",
-      "title": "realism-effects screen-space global illumination",
+      "title": "realism-effects screen-space GI and neutral owned AO output",
       "category": "realism-effects",
       "realismEffect": "SSGIEffect",
       "status": "implemented",
@@ -1783,7 +1783,8 @@
       },
       "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
       "desktopGate": true,
-      "required": true
+      "required": true,
+      "reason": "The left half displays actual gathered GI; the right displays the public scalar AO output. The owned implementation deliberately answers AO with constant one because GTAO is a separate stage. Owned Wasm/V8 parity proves those owned outputs, not equivalence to upstream Three SSGI, whose AO and GI algorithms and defaults differ. The required upstream comparison and its tolerances remain unchanged."
     },
     {
       "id": "realism-ssr",

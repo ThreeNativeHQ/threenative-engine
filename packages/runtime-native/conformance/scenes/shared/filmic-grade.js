@@ -3,7 +3,7 @@ import {
   FILMIC_CURVE,
   installFilmicToneMapping,
   resolveColorGrade,
-} from "../../../../create-threenative/templates/starter/src/render/tonemap.ts";
+} from "../../../../core/src/look/filmic-tone-mapping.ts";
 import { assertCondition, startVisualScene } from "./scene-support.js";
 
 /**

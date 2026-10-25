@@ -33,7 +33,10 @@ import {
   createVolumetricFog,
 } from "../templates/starter/src/render/volumetricFog.js";
 
-import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
+import {
+  type OutputRenderer,
+  WorldEnvironment,
+} from "../../../test-support/isolated-world-environment.js";
 
 /**
  * The owned engine's TSL front-end takes a node, a number, a string, a colour or a Vector2 to 4 as a uniform value

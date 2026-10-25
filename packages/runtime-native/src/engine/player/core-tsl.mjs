@@ -117,3 +117,7 @@ export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");
 export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
+
+// Refused at use, as on Wasm: core's WorldEnvironment imports textureSize for the
+// resolutionSubrect && !ownedEngine geometric-normals branch, which the owned path never takes.
+export const textureSize = unsupportedExport("textureSize");

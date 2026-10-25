@@ -189,14 +189,24 @@ export async function bindWebEngine(
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).
+  let updating = false;
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(
       module,
       classes.Color as never,
       (frame) => {
-        collect();
-        tsl?.sync(frame);
-        audio.updateAudio();
+        if (updating) {
+          tsl?.sync(frame);
+          return;
+        }
+        updating = true;
+        try {
+          collect();
+          tsl?.sync(frame);
+          audio.updateAudio();
+        } finally {
+          updating = false;
+        }
       },
       runtime.tsl,
       (surface, draw) => drawSecondaryPasses(surface, draw),

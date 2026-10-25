@@ -841,6 +841,10 @@ export async function measureCompletionWindow(label: string,
       timer = setTimeout(() => reject(new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: operation timeout")), timeoutMs);
     })]); } finally { clearTimeout(timer); }
   };
+  const minimumFrames = Number(process.env.TN_PLAYTEST_COMPLETION_WINDOW_MIN_FRAMES ?? 101);
+  const timeoutMs = Number(process.env.TN_PLAYTEST_COMPLETION_WINDOW_TIMEOUT_MS ?? 10000);
+  if (!Number.isSafeInteger(minimumFrames) || minimumFrames < 1 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1)
+    fail("invalid completion frame count or timeout");
   const samples: ICompletionWindow["samples"] = [];
   let previous: { sequence: number; completedAtMs: number } | undefined;
   let failure: unknown;
@@ -857,7 +861,7 @@ export async function measureCompletionWindow(label: string,
     if (negotiated?.mode !== "wall-clock" || !Number.isSafeInteger(negotiated.tick)
       || !Number.isSafeInteger(negotiated.epoch) || negotiated.epoch! < 0) fail("clock negotiation unavailable");
     epoch = negotiated.epoch;
-    const deadline = Date.now() + 10000;
+    const deadline = Date.now() + timeoutMs;
     measurement: while (Date.now() <= deadline) {
       const value = await bounded(poll, Math.max(1, deadline - Date.now())) as { clock?: { mode?: string }; epoch?: number; valid?: boolean; dropped?: number;
         source?: string; timebase?: string; samples?: ICompletionWindow["samples"] };
@@ -888,6 +892,7 @@ export async function measureCompletionWindow(label: string,
         samples.push({ sequence: sample.sequence, completedAtMs: sample.completedAtMs });
         if (sample.completedAtMs - samples[0]!.completedAtMs >= 5000) {
           if (samples.length < 101) fail("fewer than 100 complete intervals");
+          if (samples.length < minimumFrames) continue;
           const intervals = samples.slice(1).map((entry, index) => entry.completedAtMs - samples[index]!.completedAtMs).sort((a, b) => a - b);
           result = { label, metric: "application-completion-interval", clock: "wall-clock", source: source!, timebase: timebase!, epoch: epoch!,
             startTick: negotiated.tick!, startMs: samples[0]!.completedAtMs, endMs: sample.completedAtMs,

@@ -7195,23 +7195,6 @@ createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWeatherWorld
 src/render/world.ts — edit the shader there, or the weather it is fed from src/state.ts
 ```
 
-## `src/render/worldEnvironment.ts`
-
-### `WorldEnvironment`
-
-`class` — The generated file that composes every lighting stage and prints TN_RENDER_CHAIN naming each one as applied or refused with a reason. It is the game's source, not the framework's — edit it.
-
-```ts
-class WorldEnvironment
-```
-
-- **Use when:** turn a lighting or post-processing effect on or off · find out why an effect you enabled is not visible · change how the scene is lit, graded, or tonemapped · match a reference image's lighting
-- **Constraints:** Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped. · A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it. · Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.
-
-```ts
-src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
-```
-
 ## `three/addons/tsl/display/BloomNode.js`
 
 ### `bloom`

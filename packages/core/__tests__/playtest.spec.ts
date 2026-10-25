@@ -1070,6 +1070,85 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("describes the entered world while transition environment warm-up is pending", async () => {
+    let releaseEnvironment: ((ready: boolean) => void) | undefined;
+    const environment = new Promise<boolean>((resolve) => {
+      releaseEnvironment = resolve;
+    });
+    const prepareEnvironmentAsync = vi.fn(() => environment);
+    let transition: Promise<void> | undefined;
+    let transitionSettled = false;
+    let described: Awaited<ReturnType<IPlaytestBridgeV1["describe"]>> | undefined;
+    let advance: ((ticks: number) => number) | undefined;
+    let updates = 0;
+    class Boot extends Scene {
+      override enter(ctx: ICtx): void {
+        transition = ctx.goto("race").then(() => {
+          transitionSettled = true;
+        });
+      }
+    }
+    class Race extends Scene {
+      override async load(): Promise<void> {
+        await Promise.resolve();
+      }
+
+      override enter(ctx: ICtx): () => void {
+        ctx.scene.environment = new Texture();
+        ctx.entities.add("player", {
+          health: 100,
+          mesh: new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()),
+        });
+        return () => updates++;
+      }
+    }
+    const renderer = stubRenderer(testCanvas());
+    const game = defineGame({
+      initialState: {},
+      plugins: [
+        playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 }),
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+          },
+        },
+      ],
+      renderer: {
+        ...renderer,
+        webgl2Factory: () => ({ ...renderer.webgl2Factory(), prepareEnvironmentAsync }),
+      },
+      scenes: { boot: Boot, race: Race },
+      start: "boot",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    const started = game.start();
+    try {
+      await vi.waitFor(() => expect(bridge()).toBeDefined());
+      const description = Promise.resolve(bridge().describe()).then((value) => {
+        described = value;
+      });
+      await vi.waitFor(() => expect(prepareEnvironmentAsync).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(described).toMatchObject({
+        capabilities: expect.arrayContaining(["runtime.components"]),
+      });
+      expect(await bridge().ready?.()).toMatchObject({ startup: { phase: "collapsing" } });
+      expect(transitionSettled).toBe(false);
+      expect(advance).toBeTypeOf("function");
+      advance?.(1);
+      expect(updates).toBe(0);
+      releaseEnvironment?.(true);
+      await transition;
+      await description;
+      expect(transitionSettled).toBe(true);
+    } finally {
+      releaseEnvironment?.(true);
+      await transition;
+      await started;
+      game.stop();
+    }
+  });
+
   it("collects per-frame render samples for a native endpoint run", async () => {
     // The device and desktop lanes never set the browser's runner-expected global: a native host
     // announces itself through `TN_PLAYTEST_ENDPOINT`, which is why this run carries one and not

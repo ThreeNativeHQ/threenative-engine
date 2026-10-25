@@ -7,7 +7,7 @@ import {
   type IWorldEnvironmentOptions,
   type OutputRenderer,
   WorldEnvironment,
-} from "../template-assets/worldEnvironment.js";
+} from "../../../test-support/isolated-world-environment.js";
 
 type ChainOptions = Parameters<NonNullable<OutputRenderer["createRenderChain"]>>[0];
 

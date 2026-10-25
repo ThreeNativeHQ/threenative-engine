@@ -3,8 +3,8 @@ import { texture } from "three/tsl";
 import { type NodeBuilder, NodeFrame, QuadMesh, type Renderer, RendererUtils } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetLaunchFailures, watchStartupStall } from "../../core/src/launch-diagnostics.js";
+import { AutoExposureNode } from "../../core/src/look/auto-exposure.js";
 import { STARTUP_STALL_MS, StartupReadiness } from "../../core/src/startup-readiness.js";
-import { AutoExposureNode } from "../template-assets/autoExposure.js";
 import { exposureSettings } from "../template-assets/exposure.js";
 import {
   ObservedExposureNode,

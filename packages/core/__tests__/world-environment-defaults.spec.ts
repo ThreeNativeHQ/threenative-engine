@@ -1,9 +1,27 @@
-import { ACESFilmicToneMapping, CustomToneMapping, PerspectiveCamera, Scene, Texture } from "three";
+import {
+  ACESFilmicToneMapping,
+  CustomToneMapping,
+  PerspectiveCamera,
+  type RenderTarget,
+  Scene,
+  Texture,
+  type Vector2,
+} from "three";
+import DenoiseNode from "three/addons/tsl/display/DenoiseNode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
-import { texture } from "three/tsl";
+import { texture, vec4 } from "three/tsl";
+import {
+  type Node,
+  NodeFrame,
+  NodeMaterial,
+  QuadMesh,
+  WGSLNodeBuilder,
+  WebGPURenderer,
+} from "three/webgpu";
 import { afterEach, expect, it, vi } from "vitest";
 import { qualityPreset } from "../src/look/quality.js";
 import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
+import { ResolutionSubrect } from "../src/render/resolution-subrect.js";
 
 const host = vi.hoisted(() => ({ native: false }));
 vi.mock("../src/platform.js", () => ({ isNative: () => host.native }));
@@ -134,3 +152,136 @@ it("does not let an undefined option cancel the preset", () => {
   apply({ gtaoEnabled: undefined }, target);
   expect(requested[0]?.stages).toContain("ambientOcclusion");
 });
+
+it.each([
+  [0.25, false, 1, 1],
+  [1, false, 1, 0],
+  [0.25, true, 1, 0],
+  [0.25, false, 0, 0],
+] as const)(
+  "compiles AO scale %s, owned %s, filter radius %s with %s filter producers",
+  (scale, owned, radius, count) => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const controller = new ResolutionSubrect();
+    const target = renderer("webgpu", { info: owned ? { engine: "native" } : {} }).target;
+    target.createResolutionSubrect = () => controller;
+    let composite: Node | undefined;
+    let release = () => {};
+    target.createRenderChain = ({ stages }) => {
+      const stage = stages?.find((entry) => entry.name === "ambientOcclusion");
+      if (!stage) throw new Error("missing AO stage");
+      composite = stage.build(vec4(1), { tier: "medium" }) as Node;
+      release = () => stage.dispose?.();
+      return { applied: { stages: ["ambientOcclusion"], dropped: [] }, dispose: release };
+    };
+    const environment = new WorldEnvironment({
+      autoExposureEnabled: false,
+      tonemapMode: "aces",
+      gtaoEnabled: true,
+      gtaoRadius: 0.35,
+      gtaoResolutionScale: scale,
+      gtaoDenoiseRadius: radius,
+      bloomEnabled: false,
+      screenSpaceAA: "disabled",
+    }).apply(target, new Scene(), new PerspectiveCamera());
+    if (!environment.dispose) throw new Error("missing environment disposal");
+    const gpu = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+    vi.spyOn(gpu, "hasFeature").mockReturnValue(false);
+    vi.spyOn(Reflect.get(gpu.backend, "capabilities"), "getUniformBufferLimit").mockReturnValue(
+      65536,
+    );
+    const material = new NodeMaterial();
+    material.fragmentNode = composite ?? null;
+    const builder = new WGSLNodeBuilder(new QuadMesh(material), gpu) as WGSLNodeBuilder & {
+      setShaderStage(stage: string): void;
+      flowStagesNode(node: unknown, output: string): { code: string; result: string };
+      nodes: Set<Node>;
+      getBindings(): { bindings: object[] }[];
+      buildUpdateNodes(): void;
+      updateBeforeNodes: Node[];
+    };
+    builder.setShaderStage("fragment");
+    const flow = builder.flowStagesNode(composite, "vec4");
+    expect(flow.result).toBeTruthy();
+    const producers = [...builder.nodes].filter(
+      (node) =>
+        Reflect.get(node, "isRTTNode") === true && Reflect.get(node, "node") instanceof DenoiseNode,
+    );
+    expect(producers).toHaveLength(count);
+    if (count === 1) {
+      const producer = producers[0] as Node & {
+        renderTarget: RenderTarget;
+        _quadMesh: QuadMesh & { material: NodeMaterial };
+        updateBefore(frame: NodeFrame): void;
+        getResolutionScale(): number;
+      };
+      expect(producer.getResolutionScale()).toBe(scale);
+      const texture = producer.renderTarget.texture;
+      expect(
+        builder
+          .getBindings()
+          .some((group) =>
+            group.bindings.some((binding) => Reflect.get(binding, "texture") === texture),
+          ),
+      ).toBe(true);
+      const draw = vi.spyOn(QuadMesh.prototype, "render").mockImplementation(() => {});
+      const frame = {
+        renderer: {
+          getRenderTarget: () => null,
+          getDrawingBufferSize: (size: Vector2) => size.set(1920, 1080),
+          setRenderTarget: vi.fn(),
+        },
+      } as unknown as NodeFrame;
+      producer.updateBefore(frame);
+      expect([producer.renderTarget.width, producer.renderTarget.height]).toEqual([480, 270]);
+      controller.setSize(1920, 1080);
+      controller.activate(0.5);
+      producer.updateBefore(frame);
+      expect([producer.renderTarget.width, producer.renderTarget.height]).toEqual([480, 272]);
+      expect(producer.renderTarget.viewport.toArray()).toEqual([0, 0, 240, 136]);
+      const filterBuilder = new WGSLNodeBuilder(producer._quadMesh, gpu) as typeof builder;
+      filterBuilder.setShaderStage("fragment");
+      const filterFlow = filterBuilder.flowStagesNode(
+        producer._quadMesh.material.fragmentNode,
+        "vec4",
+      );
+      expect(filterFlow.code).toMatch(/< 16/);
+      expect(flow.code).not.toMatch(/< 16/);
+      builder.buildUpdateNodes();
+      expect(builder.updateBeforeNodes).toContain(producer);
+      filterBuilder.buildUpdateNodes();
+      expect(filterBuilder.updateBeforeNodes).toContain(Reflect.get(producer, "node"));
+      expect(
+        filterBuilder.updateBeforeNodes.some((node) => node.constructor.name === "GTAONode"),
+      ).toBe(true);
+      controller.setSize(2560, 1440);
+      producer.updateBefore(frame);
+      expect([producer.renderTarget.width, producer.renderTarget.height]).toEqual([640, 360]);
+      expect(producer.renderTarget.viewport.toArray()).toEqual([0, 0, 320, 180]);
+      const disposeTarget = vi.spyOn(producer.renderTarget, "dispose");
+      producer.updateBefore(frame);
+      expect(disposeTarget).not.toHaveBeenCalled();
+      expect(draw).toHaveBeenCalledTimes(4);
+      draw.mockClear();
+      const scheduledFrame = new NodeFrame();
+      scheduledFrame.renderer = frame.renderer;
+      scheduledFrame.frameId = 1;
+      for (let renderId = 1; renderId <= 5; renderId++) {
+        scheduledFrame.renderId = renderId;
+        scheduledFrame.updateBeforeNode(producer);
+      }
+      expect(draw).toHaveBeenCalledTimes(1);
+      scheduledFrame.frameId++;
+      scheduledFrame.renderId++;
+      scheduledFrame.updateBeforeNode(producer);
+      expect(draw).toHaveBeenCalledTimes(2);
+      const disposeMaterial = vi.spyOn(producer._quadMesh.material, "dispose");
+      release();
+      environment.dispose();
+      environment.dispose();
+      expect(disposeTarget).toHaveBeenCalledTimes(1);
+      expect(disposeMaterial).toHaveBeenCalledTimes(1);
+    } else environment.dispose();
+    material.dispose();
+  },
+);

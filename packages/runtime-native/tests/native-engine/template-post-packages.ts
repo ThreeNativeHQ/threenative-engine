@@ -20,7 +20,7 @@ import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import GTAONode, { ao } from "three/addons/tsl/display/GTAONode.js";
 import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
-import { float, texture, texture3D, vec2 } from "three/tsl";
+import { float, texture, texture3D, uniform, vec2 } from "three/tsl";
 import { TempNode } from "three/webgpu";
 import { type IRenderChainOptions, RenderChain } from "../../../core/src/render/chain.js";
 import { exportTslGraph } from "../../scripts/tsl-export.js";
@@ -83,7 +83,7 @@ const HOST_RUN: Record<string, { row: string; lanes: string }> = {
   UnrealBloomNode: { row: "local-exposure", lanes: "xyz" },
   // The owned engine's live screen-space effects (post_effects.cpp, not a cooked package): core's chain builds them for
   // the kits that take the engine look, and each row draws the effect on the host as well as the browser.
-  SSGINode: { row: "realism-ssgi", lanes: "xyz" },
+  SSGINode: { row: "realism-ssgi", lanes: "xyzw" },
   SSRNode: { row: "realism-ssr", lanes: "xyzw" },
 };
 const registry = JSON.parse(
@@ -94,6 +94,17 @@ const registry = JSON.parse(
 function standIn(exported: ReturnType<typeof exportTslGraph>): string[] {
   const rows = new Set<string>();
   const count = exported.nodes.length;
+  // Owned Wasm/V8 parity proves real GI and neutral AO=1 separately; upstream SSGI parity remains distinct.
+  const giOwners = new Set(
+    exported.nodes.flatMap((node, id) => (node.kind === "SSGINode" ? [id] : [])),
+  );
+  for (const node of exported.nodes) {
+    if (node.kind !== "PassTextureNode" || !node.dependencies.some((id) => giOwners.has(id)))
+      continue;
+    if (node.name !== "SSGI_AO" && node.name !== "SSGI_GI")
+      throw new Error(`TN_TEMPLATE_POST_HOST_RUN: unknown SSGI output '${node.name}'`);
+    node.name = `host_${node.name}`;
+  }
   for (let id = 0; id < count; id++) {
     const node = exported.nodes[id];
     if (node === undefined) continue;
@@ -336,6 +347,15 @@ if (lowering) {
   process.exit(failures === 0 ? 0 : 1);
 }
 let noPostChains = 0;
+// Native-export carrier only: the real native importer/shader implements reachPx; upstream Three does not.
+Object.defineProperty(GTAONode.prototype, "reachPx", {
+  configurable: true,
+  get() {
+    const value = uniform(0);
+    Object.defineProperty(this, "reachPx", { value });
+    return value;
+  },
+});
 for (const name of names) {
   const authored = await import(
     pathToFileURL(path.join(templates, name, "src/render/postprocessing.ts")).href
