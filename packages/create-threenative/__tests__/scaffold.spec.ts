@@ -289,7 +289,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "f29f66ba7a84f16c8f8f24acfe973e443de682c435d3624048ab966c46de8747",
+  // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
+  // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
+  "action-rpg": "92f593cb14ccd5a26ddf35d6c56fcdfefff5799b44eebcb05beb3ba7be016fa0",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -321,7 +323,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   runner: "f3cd04eb19dcc39cde90b5115b0b5b44cbbb285213f715a30d7226b136731d35",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "2e77feed7c4caf6eace5dda2265ff8efb88522624188c29d44884293b8df63cb",
-  shooter: "8e4204b7afd8f21210a3fe22643e9161df25791d4590812194ead38941099e1b",
+  shooter: "5bbf94164445a91361b89e19c519a835f485d4f899591009eedf06cf342a056d",
   snow: "dedd4e1b27bfc9e9b4dd0a8701f7c66dfc59409213b5d488e7469e37ddfe1122",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts

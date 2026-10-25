@@ -757,6 +757,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
+  /** Startup readiness has begun its first-use gate; before that, it bakes the entered environment. */
+  #startupGateStarted = false;
   /** The full `goto()` transition, including first-use warm-up, or undefined when none is. */
   #pendingSceneEnter: Promise<void> | undefined;
   /** One-shot notification after the scene that owns the world has entered, before warm-up. */
@@ -973,7 +975,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (!this.#enterScene(scene, ctx)) return;
     const renderer = this.#renderer;
     const nodes = this.#computeDriven.warmupNodes;
-    const hasEnvironment = ctx.scene.environment?.isTexture === true;
+    // Before startup readiness has begun, its own warm-up bakes the entered scene's environment.
+    // Baking here too held the world pass for the whole bake: the runner kit's Boot calls
+    // goto("run") from enter(), the bake took 35 s on SwiftShader (about 50 s on CI), the startup
+    // warm-up then prepared it again, and the launch sat at 80% until TN_STARTUP_STALLED. An
+    // explicit warm-up runs once, right after the start scene, so a transition keeps its bake.
+    const hasEnvironment =
+      ctx.scene.environment?.isTexture === true &&
+      (this.#startupGateStarted || this.#warmUpConfiguredExplicitly());
     if (renderer === undefined || (nodes.length === 0 && !hasEnvironment)) return;
     this.#sceneEntered = false;
     let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
@@ -1799,6 +1808,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const mustPresentLoader =
           firstWorldPass && canvasLayer.opaque && loaderHasPixels && !loadingFramePresented;
         if (firstWorldPass && !explicitWarmUpPending) {
+          this.#startupGateStarted = true;
           // `startupCompile` is the fallback that compiles inside the readiness gate. When warm-up
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.

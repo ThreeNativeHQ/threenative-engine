@@ -40,6 +40,9 @@ const config: IThreeNativeConfig = {
     // extra pass; set it false for a deliberately hard-edged look. `TN_ALPHA_ANTIALIASING`
     // reports what it did, and says so when a single-sampled surface leaves it nothing to do.
     alphaAntialiasing: true,
+    // The town's authored meshes are unique (geometry, material) pairs; the batching projection
+    // measures `notWorthwhile` and falls back, so the game states the opt-out.
+    projection: false,
   },
   // One UI on every target: src/ui/ renders through the platform's own browser-class renderer,
   // so the same React, Tailwind, CSS and SVG run on web, desktop, Android and iOS alike.

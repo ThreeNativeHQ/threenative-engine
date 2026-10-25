@@ -694,6 +694,7 @@ describe("the Wasm engine's environment preparation presents", () => {
       },
     );
     const renderer = new Renderer({ canvas }) as {
+      info: { engine: { environmentBake: boolean } };
       init(): Promise<unknown>;
       prepareEnvironmentAsync(
         scene: unknown,
@@ -703,11 +704,16 @@ describe("the Wasm engine's environment preparation presents", () => {
       ): Promise<boolean>;
     };
     await renderer.init();
+    const bakeStates: boolean[] = [];
     await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, () => {
       coverIsLastDraw = true;
+      bakeStates.push(renderer.info.engine.environmentBake);
       order.push("cover");
     });
     expect(order).toEqual(["draw", "cover", "draw", "cover", "draw", "cover"]);
+    // The bake draws (and the cover repaint in the same task) are not presented world frames.
+    expect(bakeStates).toEqual([true, true, true]);
+    expect(renderer.info.engine.environmentBake).toBe(false);
   });
 });
 
