@@ -581,10 +581,8 @@ void outputScreenSize() {
             for (int c = 0; c < 3; ++c) CHECK(std::abs(int(pixels[texel * 4 + c]) - 128) <= 1);
 }
 
-// The velocity pass leaves out what it holds no previous vertices for (an instanced draw threw TN_TRAA_VELOCITY_UNSUPPORTED
-// and cost the frame). The camera-motion fill gives those pixels the velocity a rigid draw of the same surface writes:
-// the same sphere drawn rigid and drawn as one instance reads the same velocity under a moving camera, and every pixel
-// of the target is a written one (alpha 1).
+// A static instance uses the same camera/object velocity as an ordinary rigid draw of the same surface.
+// Every pixel of the velocity target remains written (alpha 1), including the camera-filled background.
 void traaCameraVelocity() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -627,7 +625,7 @@ void traaCameraVelocity() {
     bool rigidNoted = false, instancedNoted = false;
     const auto rigid = velocity(false, rigidNoted);
     const auto filled = velocity(true, instancedNoted);
-    CHECK(!rigidNoted && instancedNoted);
+    CHECK(!rigidNoted && !instancedNoted);
     size_t moving = 0;
     for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
         CHECK(rigid[texel * 4 + 3] == 1 && filled[texel * 4 + 3] == 1);
@@ -697,6 +695,82 @@ void traaFeedsTheChain() {
         // The sphere's front is 3 units away: the 0.02 slide moves it P00 * 0.02 / 3 = 0.0107 in NDC, x 50 = 0.536.
         CHECK(std::abs(int(pixels[centre]) - 128) <= 3);
         CHECK(std::abs(int(pixels[centre + 1]) - 137) <= 12);
+    }
+}
+
+// Authored GPU deformation must contribute object velocity even when object/camera matrices stay fixed.
+// Read the actual shared velocity texture through the same temporal output graph used by games.
+void traaDeformationVelocity() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    constexpr uint32_t width = 32, height = 24;
+    for (const int mode : {0, 1, 2}) {
+        const bool instanced = mode == 1, timed = mode == 2;
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        const auto temporal = temporalColour();
+        const auto motion = g::add(g::float_(0.5f),
+            g::mul(g::swizzle(g::texture("velocity", g::uv()), "x"), g::float_(10)));
+        renderer.setPostGraph(g::vec4({motion, g::swizzle(temporal, "x"), g::float_(0), g::float_(1)}));
+        const auto offset = g::uniform("deformationOffset", shader::Type::f32(), {0});
+        DrawItem item;
+        shader::StandardMaterial material;
+        item.key = item.id = 1; item.kind = MaterialKind::Basic;
+        item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
+        item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        const auto deformation = timed ? g::mul(g::uniform("time", shader::Type::f32()), g::float_(0.5f)) : offset;
+        item.nodes.positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
+        BufferStore matrices(Scalar::F32, 16);
+        std::array<float, 16> matrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        matrices.write(0, matrix.data(), sizeof matrix);
+        if (instanced) { item.instanceMatrices = &matrices; item.instanceCount = 1; }
+        const auto view = slidingCamera(double(width) / height, 0);
+        const auto centre = [&] {
+            const auto pixels = read(renderer, events);
+            CHECK(pixels.size() == size_t{width} * height * 4);
+            return pixels.size() == size_t{width} * height * 4 ? int(pixels[(height / 2 * width + width / 2) * 4]) : -1;
+        };
+        const auto frame = [&](double value) {
+            g::setUniformValues(offset, {value});
+            renderer.render({&item, 1}, view, LightState{}, {0, 0, 0, 1});
+            return centre();
+        };
+        CHECK(std::abs(frame(0) - 128) <= 2);  // first submitted appearance seeds previous=current
+        if (timed) {
+            // Use elapsed real time, without assuming a render cadence or advancing the camera.
+            std::this_thread::sleep_for(std::chrono::milliseconds(40));
+            CHECK(frame(0) > 140);
+            renderer.cutHistory();
+            CHECK(std::abs(frame(0) - 128) <= 2);
+            continue;
+        }
+        const int moving = frame(0.02);
+        CHECK(moving > 140 && moving < 180);  // camera-only fill is exactly the neutral 128
+        CHECK(std::abs(frame(0.04) - moving) <= 4);
+        g::setUniformValues(offset, {0.9});
+        renderer.compileAsync({&item, 1}, view, LightState{});  // preparation is not a submitted frame
+        CHECK(std::abs(frame(0.06) - moving) <= 4);
+        g::setUniformValues(offset, {0.08});
+        renderer.renderDeferred({&item, 1}, view, LightState{}, {0, 0, 0, 1});
+        g::setUniformValues(offset, {0.7});  // encode and history must use the already prepared bytes
+        renderer.encodePending();
+        CHECK(std::abs(centre() - moving) <= 4);
+        CHECK(std::abs(frame(0.10) - moving) <= 4);
+        renderer.cutHistory();
+        CHECK(std::abs(frame(0.12) - 128) <= 2);
+        CHECK(std::abs(frame(0.14) - moving) <= 4);
+        if (instanced) {
+            matrix[12] = 0.04f;
+            matrices.write(0, matrix.data(), sizeof matrix);
+            CHECK(std::abs(frame(0.16) - 128) <= 2);  // changing instance data has no retained previous buffer
+            CHECK(std::abs(frame(0.18) - moving) <= 4);  // unchanged instance data recovers next frame
+        }
     }
 }
 
@@ -2096,6 +2170,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
+             {"traa_deformation_velocity", traaDeformationVelocity},
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},
              {"traa_replaces_multisampling", traaReplacesMultisampling},

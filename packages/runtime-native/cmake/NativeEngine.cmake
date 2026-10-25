@@ -140,6 +140,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_alpha=traa_alpha
         native_engine_traa_reset_seed=traa_reset_seed
         native_engine_traa_camera_velocity=traa_camera_velocity
+        native_engine_traa_deformation_velocity=traa_deformation_velocity
         native_engine_traa_feeds_the_chain=traa_feeds_the_chain
         native_engine_velocity_needs_traa=velocity_needs_traa
         native_engine_traa_replaces_multisampling=traa_replaces_multisampling

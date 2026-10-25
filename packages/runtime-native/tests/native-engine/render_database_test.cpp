@@ -1096,7 +1096,7 @@ void invariantScope() {
     std::size_t colour = 0, velocity = 0;
     for (const auto& [key, source] : renderer.programVertexSources()) {
         const bool before = std::any_of(plain.begin(), plain.end(), [&](const auto& p) { return p.first == key; });
-        if (key == "traa-velocity") { ++velocity; CHECK(flagged(source)); }
+        if (key.starts_with("traa-velocity|")) { ++velocity; CHECK(flagged(source)); }
         else if (key.rfind("depth|", 0) == 0) CHECK(!flagged(source));  // the shadow depth program shares its stage with nothing, TRAA or not
         else if (before) CHECK(!flagged(source));                         // built by the plain frame, untouched
         else { ++colour; CHECK(flagged(source)); }

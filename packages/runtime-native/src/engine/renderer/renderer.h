@@ -1115,6 +1115,13 @@ private:
         uint64_t source = 0;  // the caller frame id the successful sample was submitted with
     };
     std::shared_ptr<Timing> timing_ = std::make_shared<Timing>();
+    struct DeformationFrame {
+        std::string program;
+        std::vector<uint64_t> buffers;
+        std::unordered_map<std::string, std::vector<uint8_t>> uniforms;
+    };
+    // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
+    std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;

@@ -294,6 +294,8 @@ ExprId Lowerer::emit(Node node) {
             if (d.type.scalar == Type::Scalar::Bool) return program_.constant(d.bits != 0);
             return kInvalid;
         case Kind::Uniform: {
+            if (const auto input = inputs_.find("uniform:" + d.name); input != inputs_.end())
+                return convert(input->second, d.type);
             if (d.bits == 1)
                 if (const auto input = inputs_.find("material:" + d.name); input != inputs_.end())
                     return convert(input->second, d.type);

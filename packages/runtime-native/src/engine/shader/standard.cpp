@@ -305,7 +305,8 @@ static ExprId nodeType(Program& p, ExprId id, Type type) {
     return p.construct(type, {id});
 }
 
-static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal) {
+static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal,
+                               const std::unordered_map<std::string, ExprId>& uniformInputs = {}) {
     ExprId position = v.attribute("position", Type::vec(3));
     ExprId normal = withNormal ? v.attribute("normal", Type::vec(3)) : kInvalid;
     if (variant.morphTargets > 0) {
@@ -404,7 +405,9 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     if (variant.positionNode) position = variant.positionNode->build(v, position);
     if (variant.nodes.positionNode) {
         tsl::Build build(v);
-        position = nodeType(v, graph::lower(variant.nodes.positionNode, v, {{"positionLocal", position}}), Type::vec(3));
+        auto inputs = uniformInputs;
+        inputs["positionLocal"] = position;
+        position = nodeType(v, graph::lower(variant.nodes.positionNode, v, inputs), Type::vec(3));
     }
     ExprId instanceColor = !variant.instanceColor ? kInvalid : variant.instanceStorage
         ? v.swizzle(v.loadStorage(instances, v.add(instanceBase, v.construct(Type::u32(), {v.constant(4)}))), "xyz")
@@ -428,6 +431,36 @@ static ExprId clipPosition(Program& v, const VertexVariant& variant, const Local
     tsl::Build build(v);
     return nodeType(v, graph::lower(variant.nodes.vertexNode, v, {{"positionLocal", v.swizzle(local.position, "xyz")}}),
                     Type::vec(4));
+}
+
+OutputPrograms velocityPrograms(const VertexVariant& variant) {
+    OutputPrograms out;
+    auto& v = out.vertex;
+    const auto model = v.uniform("modelMatrix", Type::mat(4, 4));
+    const auto view = v.uniform("viewMatrix", Type::mat(4, 4));
+    const auto current = localVertex(v, variant, false);
+    v.output("position", clipPosition(v, variant, current,
+        v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), v.mul(view, v.mul(model, current.position)))));
+    v.output("currentClip", v.mul(v.uniform("unjitteredProjection", Type::mat(4, 4)),
+        v.mul(view, v.mul(model, current.position))));
+    std::unordered_map<std::string, ExprId> previousUniforms;
+    if (variant.nodes.positionNode) {
+        for (const auto& uniform : graph::uniformList(variant.nodes.positionNode))
+            previousUniforms["uniform:" + uniform->name] =
+                v.uniform(std::string(previousDeformationUniformPrefix) + uniform->name, uniform->type);
+    }
+    const auto previous = localVertex(v, variant, false, previousUniforms);
+    v.output("previousClip", v.mul(v.uniform("previousProjection", Type::mat(4, 4)),
+        v.mul(v.uniform("previousView", Type::mat(4, 4)),
+            v.mul(v.uniform("previousModel", Type::mat(4, 4)), previous.position))));
+    auto& f = out.fragment;
+    const auto now = f.varying("currentClip", Type::vec(4));
+    const auto before = f.varying("previousClip", Type::vec(4));
+    f.output("color", f.construct(Type::vec(4), {
+        f.sub(f.div(f.swizzle(now, "xy"), f.swizzle(now, "w")),
+              f.div(f.swizzle(before, "xy"), f.swizzle(before, "w"))),
+        f.constant(0.f), f.constant(1.f)}));
+    return out;
 }
 
 static void outputInstanceColor(Program& v, const LocalVertex& local) {

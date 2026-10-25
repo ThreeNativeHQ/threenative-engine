@@ -458,6 +458,7 @@ struct Renderer::ShadowPass {
 struct Renderer::FrameJob {
     uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
     std::vector<Planned> plan, velocityPlan, auxPlan;
+    std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
     std::vector<ShadowPass> shadowPasses;
     std::deque<DrawItem> shadowLodItems;
     WGPURenderPassColorAttachment color{};
@@ -2592,7 +2593,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.instanceMatrices) {
                 Box3 instances;
                 diameter = 0;
-                const auto* matrices = reinterpret_cast<const float*>(item.instanceMatrices->data());
+                const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
                 for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
                     Matrix4 transform;
                     for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
@@ -2844,8 +2845,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (const auto& [depth, drawn] : opaque) {
         if (!drawn->instanceMatrices) continue;
         instanceBases[drawn] = double(written / 4);
-        const auto* matrices = reinterpret_cast<const float*>(drawn->instanceMatrices->data());
-        const auto* colors = drawn->instanceColors ? reinterpret_cast<const float*>(drawn->instanceColors->data()) : nullptr;
+        const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*drawn->instanceMatrices).data());
+        const auto* colors = drawn->instanceColors ? reinterpret_cast<const float*>(static_cast<const BufferStore&>(*drawn->instanceColors).data()) : nullptr;
         const std::size_t end = written + std::size_t{drawn->instanceCount} * 20;
         if (instances.size() < end) instances.resize(end);
         float* out = instances.data() + written;
@@ -3011,6 +3012,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -3380,52 +3382,87 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
     if (traa_) {
-        const std::string key = "traa-velocity";
-        if (!programs_.count(key)) {
-            auto source = traaVelocityPrograms();
-            source.vertex.setInvariantPosition(true);  // drawn depth-Equal against the colour pass, which is flagged under TRAA
-            add(key, shader::buildStage(source.vertex, 0), shader::buildStage(source.fragment, 1));
-        }
-        Program& velocity = *programs_.at(key);
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
-            // Previous deformed vertex data is not yet retained by these variants, and a transparent or alpha-tested
-            // draw has no depth of its own to match. The velocity pass leaves them out and the camera-motion fill
-            // keeps their pixels moving with the camera, so a game with a skinned character, grass or glass still draws.
-            // Ordinary rigid object/camera motion goes through the real VelocityNode equations. Named once a frame.
-            if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
-                item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || !item.attributes.empty() ||
-                item.transparent || item.material->alphaTest > 0) {
-                const char* reason = item.instanceMatrices ? "instanced" : item.skinIndices ? "skinned" : item.morphGeometry ? "morphed"
-                    : item.sprite ? "sprite" : item.transparent ? "transparent" : item.material->alphaTest > 0 ? "alpha-tested" : "node-deformed";
+            const auto& variant = draw.program->variant;
+            const bool unsupported = item.skinIndices || item.morphGeometry || item.sprite || item.background ||
+                item.positionNode || item.nodes.vertexNode || item.transparent || item.material->alphaTest > 0 ||
+                item.material->alphaHash;
+            const auto skip = [&](const char* reason) {
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
                     " draws carry the camera's motion only (no previous vertex data)";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
-                continue;
+            };
+            if (unsupported) { skip("unsupported vertex or coverage"); continue; }
+            const std::string key = "traa-velocity|" + variant.key();
+            if (!programs_.count(key)) {
+                auto source = shader::velocityPrograms(variant);
+                source.vertex.setInvariantPosition(true);
+                add(key, shader::buildStage(source.vertex, 0), shader::buildStage(source.fragment, 1));
             }
+            Program& velocity = *programs_.at(key);
+            // GPU-written storage and sampled displacement have no retained previous contents.
+            if (std::any_of(velocity.vertex.bindings.begin(), velocity.vertex.bindings.end(), [](const auto& binding) {
+                return binding.kind != shader::BindingKind::Uniform &&
+                    !(binding.kind == shader::BindingKind::Storage && binding.name == "s_instances");
+            })) { skip("storage or texture-deformed"); continue; }
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
             target.sampleCount = sampleCount_;
+            target.instanceStepMask = instanceStepMask(velocity.vertex, item);
             lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             if (compilation) {
                 compilation->push_back(pipelines_->getAsync(velocity.vertex, &velocity.fragment, target));
                 continue;
             }
-            const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
-            if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
+            DeformationFrame current;
+            current.program = key;
+            current.buffers.push_back(item.instanceCount);
+            const auto remember = [&](BufferStore* store) {
+                current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(store),
+                    store ? store->epoch() : 0, store ? store->writes() : 0,
+                    store ? store->version() : 0, store ? store->count() : 0});
+            };
+            remember(item.instanceMatrices);
+            for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
+            const auto prior = deformationFrames_.find(item.key);
+            const DeformationFrame* previous = !traa_->needsSeed() && prior != deformationFrames_.end() &&
+                prior->second.program == key ? &prior->second : nullptr;
             const uint32_t offset = frameUniforms_.size();
             frameUniforms_.resize(offset + aligned(velocity.vertex.uniformBlockSize), 0);
-            put(frameUniforms_, offset, velocity.vertexSlots[kModelMatrix], item.matrixWorld);
-            put(frameUniforms_, offset, velocity.vertexSlots[kViewMatrix], camera.matrixWorldInverse);
-            put(frameUniforms_, offset, velocity.vertexSlots[kProjectionMatrix], camera.projectionMatrix);
+            // Copy by field name: the colour and velocity stages have different uniform layouts.
+            for (const auto& field : velocity.vertex.uniforms) {
+                const auto from = std::ranges::find(draw.program->vertex.uniforms, field.name, &shader::UniformField::name);
+                if (from != draw.program->vertex.uniforms.end() && from->type == field.type && from->size == field.size)
+                    std::memcpy(frameUniforms_.data() + offset + field.offset,
+                        frameUniforms_.data() + draw.vertexOffset + from->offset, field.size);
+            }
+            putNodes(frameUniforms_, offset, velocity.vertex, item.nodes, frameTime_, frameDelta_, lights);
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, traa_->previousModel(item.key, item.matrixWorld));
                 if (field.name == "previousProjection") put(frameUniforms_, offset, &field, traa_->previousProjection());
                 if (field.name == "previousView") put(frameUniforms_, offset, &field, traa_->previousView());
+                const std::string_view prefix = shader::previousDeformationUniformPrefix;
+                if (!field.name.starts_with(prefix)) continue;
+                const std::string name = field.name.substr(prefix.size());
+                const auto from = std::ranges::find(velocity.vertex.uniforms, name, &shader::UniformField::name);
+                if (from == velocity.vertex.uniforms.end() || from->type != field.type || from->size != field.size)
+                    throw std::runtime_error("TN_TRAA_PREVIOUS_UNIFORM: " + name);
+                auto& bytes = current.uniforms[name];
+                const auto* source = frameUniforms_.data() + offset + from->offset;
+                bytes.assign(source, source + field.size);
+                const auto old = previous ? previous->uniforms.find(name) : current.uniforms.end();
+                const auto& retained = previous && old != previous->uniforms.end() && old->second.size() == field.size ? old->second : bytes;
+                std::memcpy(frameUniforms_.data() + offset + field.offset, retained.data(), field.size);
             }
+            const bool changedBuffers = previous && previous->buffers != current.buffers;
+            job.deformationFrames[item.key] = std::move(current);
+            if (changedBuffers) { skip("changed vertex buffers"); continue; }
+            const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
+            if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
         }
         // A post pass that reads "velocity" (motion blur) samples the target the temporal pass draws.
@@ -3832,7 +3869,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
                 reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
                 p.vertexOffset, p.fragmentOffset, item.instanceCount});
-            for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
+            std::vector<BufferStore*> stores{item.indices};
+            for (const auto& attribute : p.program->vertex.attributes) stores.push_back(vertexSourceOf(item, attribute));
+            for (BufferStore* store : stores) {
                 const Handle handle = store ? geometry_->cache.sync(*store,
                     store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
                 key.insert(key.end(), {handle.type, handle.context, handle.index, handle.generation,
@@ -4264,6 +4303,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     WGPUCommandBufferDescriptor commandDesc = {};
     submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+    deformationFrames_.swap(job.deformationFrames);
     wgpuCommandEncoderRelease(encoder);
     if (resolveTiming) {
         passTimer_->pending = true;
