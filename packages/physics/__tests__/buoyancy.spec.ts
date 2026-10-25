@@ -34,7 +34,9 @@ describe("Buoyancy3D", () => {
     const mesh = new Mesh(new BoxGeometry(2, 2, 2));
     mesh.position.y = 1.5;
     const body = new RigidBody3D({
-      mass: 492,
+      // The two hull points displace 500 kg at the analytic half-submerged waterline, so this
+      // explicit mass is the body's total mass. It used to be added to the collider's 8 kg.
+      mass: 500,
       object: mesh,
       physics: ctx.physics,
       shape: CollisionShape3D.box(2, 2, 2),

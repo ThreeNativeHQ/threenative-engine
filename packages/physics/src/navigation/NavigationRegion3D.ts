@@ -164,10 +164,13 @@ export class NavigationRegion3D {
   dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    for (const obstacle of [...this.navigation.obstacles]) obstacle.dispose();
-    for (const agent of [...this.navigation.agents]) agent.dispose();
     this.navigation.regions.delete(this);
     if (this.navigation.navMesh === this.navigationMesh) {
+      // Agents and obstacles are context-wide and belong to the active mesh. A superseded
+      // region being disposed must release only its own bake, or it destroys the agents walking
+      // on the region that replaced it.
+      for (const obstacle of [...this.navigation.obstacles]) obstacle.dispose();
+      for (const agent of [...this.navigation.agents]) agent.dispose();
       this.navigation.crowd?.destroy();
       this.navigation.crowd = undefined;
       this.navigation.query.destroy();

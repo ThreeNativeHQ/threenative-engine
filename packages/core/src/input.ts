@@ -559,6 +559,17 @@ export class InputMap {
   }
 
   #wheelEvent(event: Event): void {
+    // The game's wheel listener lives on the window so a game with no HUD still zooms anywhere.
+    // A wheel that landed on a DOM overlay (a scrollable settings list, say) belongs to that
+    // overlay: bubbling it into the game would zoom the camera while the player scrolls the HUD.
+    const eventTarget = event.target;
+    if (
+      eventTarget !== null &&
+      eventTarget !== undefined &&
+      eventTarget !== this.#target &&
+      eventTarget !== this.#pointerTarget
+    )
+      return;
     const wheel = event as Event & { deltaMode?: number; deltaY?: number };
     const deltaY = wheel.deltaY;
     if (deltaY === undefined || !Number.isFinite(deltaY)) return;
