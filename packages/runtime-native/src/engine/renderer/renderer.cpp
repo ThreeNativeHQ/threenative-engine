@@ -624,8 +624,7 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
 
 void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
     // Unreal's texel rule on this view: a size change rebuilds that light's atlas.
-    WGPULimits limits = {};
-    if (tanHalfFov > 0 && width_ > 0) wgpuDeviceGetLimits(device_, &limits);
+    const WGPULimits limits = tanHalfFov > 0 && width_ > 0 ? deviceLimits() : WGPULimits{};
     const auto measured = [&](const shadows::AtlasOptions& options) {
         auto resolved = options;
         if (options.autoMapSize && tanHalfFov > 0 && width_ > 0)
@@ -2650,7 +2649,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         Matrix4 viewProjection; viewProjection.elements = camera.projectionMatrix; viewProjection.multiply(view);
         const auto& p = camera.projectionMatrix;
         const double screenRadius = std::min(1 / (width_ * std::abs(p[0])), 1 / (height_ * std::abs(p[5])));
-        WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
+        const WGPULimits& limits = deviceLimits();
         for (std::size_t i = 0; i < lights.direct.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
@@ -2741,7 +2740,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             WGPUTextureDescriptor desc = {};
             desc.dimension = WGPUTextureDimension_2D;
             desc.size = {uint32_t(shadow.atlas.edge()), uint32_t(shadow.atlas.edge()), 1};
-            WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
+            const WGPULimits& limits = deviceLimits();
             if (desc.size.width > limits.maxTextureDimension2D)
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: atlas exceeds device texture limit");
             desc.format = WGPUTextureFormat_Depth24Plus;

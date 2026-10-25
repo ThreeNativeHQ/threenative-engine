@@ -438,6 +438,7 @@ void compileBeforeRender() {
     const auto groupsBeforeAtlas = bindGroupsCreated();
     database.render(renderer, scene, camera);
     CHECK(bindGroupsCreated() > groupsBeforeAtlas);
+    CHECK(renderer.deviceLimitReads() == 1);  // seven renders and an atlas, one read of the device limits
 }
 
 #ifdef TN_TEST_PIPELINE_WORKERS
