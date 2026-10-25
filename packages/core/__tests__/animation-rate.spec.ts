@@ -854,3 +854,31 @@ describe("AnimationPlayer update rate", () => {
     for (const rig of rigs) rig.dispose();
   });
 });
+
+describe("camera-rate walk cost", () => {
+  // Lantern Vale on the web engine: the camera-rate pass walked every visible object to find the few
+  // rigs, and each object's userData, geometry and parent read crossed into the engine. It was 41% of
+  // the main thread. Scenery that no rig owns and no stand-in observes is not read at all.
+  it("reads nothing from scenery that carries no animation rate", () => {
+    const rig = player(1);
+    const view = rendered(rig, -20);
+    let reads = 0;
+    for (let index = 0; index < 50; index += 1) {
+      const prop = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
+      prop.position.set(index, 0, -30);
+      const { geometry, userData } = prop;
+      Object.defineProperty(prop, "geometry", { get: () => (reads += 1) && geometry });
+      Object.defineProperty(prop, "userData", { get: () => (reads += 1) && userData });
+      view.scene.add(prop);
+    }
+    view.scene.updateMatrixWorld(true);
+    reads = 0;
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(reads).toBe(0);
+    // The rig is still observed on the frame the walk published.
+    const state = animationRateStates.get(rig.root);
+    expect(state?.source).toBe(view.cull);
+    expect(state?.frame).toBe(view.cull.animationFrame);
+    rig.dispose();
+  });
+});

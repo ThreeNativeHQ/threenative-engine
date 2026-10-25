@@ -22,7 +22,11 @@ import {
   animationPacketTimeReaders,
 } from "./animation-packet-state.js";
 import { clipTrackBindings } from "./clip-audit.js";
-import { type IAnimationRateState, animationRateStates } from "./render-camera-cull.js";
+import {
+  type IAnimationRateState,
+  animationRateStates,
+  trackAnimationRate,
+} from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
 export interface IAnimationPlayerOptions {
@@ -521,7 +525,7 @@ export class AnimationPlayer {
     }
     animationPacketReaders.set(this.root, this.#packetReader);
     animationPacketTimeReaders.set(this.root, this.#packetTimeReader);
-    animationRateStates.set(this.root, this.#rateState);
+    trackAnimationRate(this.root, this.#rateState);
     this.root.userData[ANIMATION_RATE_STATE_KEY] = this.#rateState;
   }
 

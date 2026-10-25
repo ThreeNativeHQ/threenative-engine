@@ -73,8 +73,12 @@ interface IPositionVersion {
 /** A sphere nearer than this to the camera would divide by zero; treat it as this far away. */
 const MIN_DISTANCE = 1e-4;
 
-/** Internal mirror metadata: a skinned batch carries its authored source rigs to the camera gate. */
-const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
+/**
+ * Internal mirror metadata: a projection stand-in or a skinned batch observes the authored rigs it
+ * draws. A JS map, not `userData`: on the web engine every `userData` read crosses into Wasm, and the
+ * camera pass asked every object in the scene for it.
+ */
+export const animationRateSources = new WeakMap<Object3D, ReadonlyMap<Object3D, unknown>>();
 
 /** Internal observations shared with AnimationPlayer, owned by the root rather than the game. */
 export interface IAnimationRateState {
@@ -93,6 +97,14 @@ export interface IAnimationRateState {
   syncBones?: () => void;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
+/** The roots that may hold a rate state, so the camera pass walks the rigs instead of the scene. */
+const animationRateRoots = new Set<WeakRef<Object3D>>();
+
+/** AnimationPlayer's registration: the state the camera pass writes, and the root it is found on. */
+export function trackAnimationRate(root: Object3D, state: IAnimationRateState): void {
+  animationRateStates.set(root, state);
+  animationRateRoots.add(new WeakRef(root));
+}
 
 export interface IRenderCameraCullOptions {
   /**
@@ -205,6 +217,9 @@ export class RenderCameraCull {
   readonly #hidden: Object3D[] = [];
   readonly #animationVisitor: (object: Object3D) => void;
   readonly #visitor: (object: Object3D) => void;
+  /** Every object under a live rate root this frame: only these can change a rate. */
+  readonly #animated = new Set<Object3D>();
+  readonly #collectAnimated: (object: Object3D) => void;
   /** Last position-buffer version seen per geometry, so a rewritten dynamic bound is recomputed. */
   readonly #positionVersions = new WeakMap<object, IPositionVersion>();
   #hiddenCount = 0;
@@ -237,6 +252,21 @@ export class RenderCameraCull {
     this.#minimumPixels = requested === false ? DEFAULT_MINIMUM_PROJECTED_PIXELS : requested;
     this.#animationVisitor = (object) => this.#visitAnimation(object);
     this.#visitor = (object) => this.#visit(object);
+    this.#collectAnimated = (object) => this.#animated.add(object);
+  }
+
+  /** Rebuilds {@link #animated} from the live rate roots; false when no rig can take a rate. */
+  #prepareAnimated(): boolean {
+    this.#animated.clear();
+    for (const ref of animationRateRoots) {
+      const root = ref.deref();
+      if (root === undefined || !animationRateStates.has(root)) {
+        animationRateRoots.delete(ref);
+        continue;
+      }
+      if (!this.#animated.has(root)) root.traverse(this.#collectAnimated);
+    }
+    return this.#animated.size > 0;
   }
 
   get report(): IRenderCameraCullReport {
@@ -275,7 +305,7 @@ export class RenderCameraCull {
     this.#animationFrame += 1;
     this.#animationPrepared = true;
     this.#prepareCamera(camera, viewportHeight);
-    root.traverseVisible(this.#animationVisitor);
+    if (this.#prepareAnimated()) root.traverseVisible(this.#animationVisitor);
   }
 
   /**
@@ -292,7 +322,10 @@ export class RenderCameraCull {
     viewportHeight: number,
   ): void {
     this.restore();
-    if (!this.#animationPrepared) this.#animationFrame += 1;
+    if (!this.#animationPrepared) {
+      this.#animationFrame += 1;
+      this.#prepareAnimated();
+    }
     this.#animationPrepared = false;
     this.#considered = 0;
     this.#culled = 0;
@@ -386,8 +419,13 @@ export class RenderCameraCull {
   }
 
   #visitAnimation(object: Object3D): void {
+    // Only a rig's own parts and the stand-ins that observe rigs can change a rate; everything else
+    // is left unread (each read is an engine crossing on the web engine).
+    const animated = this.#animated.has(object);
+    if (!animated && !animationRateSources.has(object)) return;
     if (!isRenderable(object)) return;
     this.#observeAnimationSources(object);
+    if (!animated) return;
     if (this.#isCameraAttached(object)) {
       this.#observeAnimation(object, undefined);
       return;
@@ -473,6 +511,8 @@ export class RenderCameraCull {
     sphere: IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined,
     notRendered = false,
   ): void {
+    // An object under no live rate root has no state above it: skip the walk up its parents.
+    if (!this.#animated.has(object)) return;
     for (let root: Object3D | null = object; root !== null; root = root.parent) {
       const state = animationRateStates.get(root);
       if (state === undefined) continue;
@@ -519,9 +559,10 @@ export class RenderCameraCull {
   }
 
   #observeAnimationSources(object: Object3D): void {
-    const sources = object.userData[ANIMATION_RATE_SOURCES_KEY];
-    if (!(sources instanceof Map)) return;
+    const sources = animationRateSources.get(object);
+    if (sources === undefined) return;
     for (const source of sources.keys()) {
+      if (!this.#animated.has(source)) continue;
       const visible = this.#isVisibleInWorld(source);
       if (this.#isCameraAttached(source)) {
         this.#observeAnimation(source, undefined);
