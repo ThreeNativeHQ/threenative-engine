@@ -594,3 +594,10 @@ Unreal default look, and no frame is blank or white.
   nose clear of the whites, mouth, eyes, nose size and no moustache PASS, not read as Mario or
   Luigi (high confidence). Open note: the mouth sits low, near the collar, so the face crowds into
   its lower third. Shots: `~/Downloads/hop-garden/face-mouth/`.
+  Mouth colour (D4, originality): the smile is a warm rose (`C.mouth`), lighter than the hair,
+  flatter and a little higher, clear of the collar, and the nose protrudes less. Judge (fresh
+  Opus, same rig and pair, 2 runs per arm against facc0597b, full frames and 1:1 gameplay crops):
+  does the mouth read as a moustache at gameplay distance, BEFORE possibly (about 55%), AFTER no
+  (high confidence); IMPROVEMENT overall, the owner's three fixes PASS, not Mario or Luigi. Open
+  note: at 1:1 the rose mouth is faint, so the face reads nearly mouthless at gameplay distance.
+  Shots: `~/Downloads/hop-garden/face-mouth2/`.

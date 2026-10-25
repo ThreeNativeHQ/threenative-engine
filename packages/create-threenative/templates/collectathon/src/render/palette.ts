@@ -42,6 +42,8 @@ export const C = {
   nose: 0xf0a088,
   hair: 0x4a2c18,
   ink: 0x20140c,
+  // A warm rose, lighter than the hair: a dark smile under the nose reads as a moustache from afar.
+  mouth: 0xa8434b,
 
   gold: 0xffbf1f,
   goldDark: 0xc98d14,

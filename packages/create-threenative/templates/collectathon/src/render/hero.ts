@@ -253,11 +253,13 @@ export function createHero(): IHero {
     );
   }
   // The nose sits below the eye whites, clear of them, and a small smile under it gives the face an
-  // expression: a half ring laid on the head's surface (tilted 0.56 rad, the face's slope there).
-  part(ball(0.072), C.nose, pivot, [0, HEAD_Y - 0.13, FACE + 0.005], [1, 0.88, 0.95], false);
-  const smile = new Mesh(new TorusGeometry(0.07, 0.016, 6, 16, Math.PI), lit(C.ink));
-  smile.position.set(0, HEAD_Y - 0.195, -0.338);
-  smile.rotation.set(-0.56, 0, Math.PI);
+  // expression: a flattened half ring laid on the head's surface (tilted 0.55 rad, the face's slope
+  // there), high enough to stay clear of the collar.
+  part(ball(0.072), C.nose, pivot, [0, HEAD_Y - 0.13, FACE + 0.015], [1, 0.88, 0.85], false);
+  const smile = new Mesh(new TorusGeometry(0.075, 0.019, 6, 16, Math.PI), lit(C.mouth));
+  smile.position.set(0, HEAD_Y - 0.19, -0.338);
+  smile.rotation.set(-0.55, 0, Math.PI);
+  smile.scale.y = 0.57;
   pivot.add(smile);
   // Hair below the back of the beanie's cuff: wide and tucked under it, so from behind it reads
   // as hair and never as a second face.
