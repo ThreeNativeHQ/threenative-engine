@@ -1410,9 +1410,14 @@ export class WorldEnvironment {
           );
           reflections.maxDistance.value = options.ssrMaxDistance;
           reflections.resolutionScale = options.ssrResolutionScale;
-          // `maxSteps` is the core three patch's step cap; `@types/three` does not declare it.
-          (reflections as unknown as { maxSteps: { value: number } }).maxSteps.value =
-            options.ssrMaxSteps;
+          // `maxSteps` is the core three patch's step cap; `@types/three` does not declare it. An
+          // engine whose SSR has no cap keeps the reflections, runs the march uncapped and says so.
+          const stepCap = (reflections as unknown as { maxSteps?: { value: number } }).maxSteps;
+          if (stepCap) stepCap.value = options.ssrMaxSteps;
+          else
+            console.warn(
+              `TN_SSR_STEP_CAP_UNSUPPORTED: this engine's SSR has no maxSteps; ssrMaxSteps ${options.ssrMaxSteps} is not applied`,
+            );
           // Unreal traces reflections only for surfaces smoother than a roughness cut-off and fades
           // the trace out over the last stretch: cut-off 0.4 (Engine/Source/Runtime/Engine/Private/
           // Scene.cpp:658), fade 0.1 (Renderer/Private/Lumen/LumenReflections.cpp:129). Above it the
