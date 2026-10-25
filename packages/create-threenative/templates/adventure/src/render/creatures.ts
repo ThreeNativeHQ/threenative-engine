@@ -84,7 +84,7 @@ export function createWarden(): ICreatureRig {
   const root = new Group();
   const body = new Group();
   root.add(body, blob(1));
-  const stone = surfaced(C.wardenStone, "rock", { flat: true });
+  const stone = surfaced(C.wardenStone, "rock", { flat: true, local: true });
   const moss = lit(C.moss, { flat: true });
   const rune = glow(C.wardenRune, 1.2);
   const torso = part(new DodecahedronGeometry(0.85, 0), stone, 0, 1.25);

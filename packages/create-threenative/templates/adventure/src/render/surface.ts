@@ -37,7 +37,9 @@ import {
   max,
   min,
   mix,
+  normalLocal,
   normalWorldGeometry,
+  positionLocal,
   positionWorld,
   sin,
   smoothstep,
@@ -113,14 +115,20 @@ function stochastic(map: Texture, at: Node<"vec2">, size: number) {
 }
 
 /**
- * `map` projected from the three world axes, `tile` metres per repeat, blended by the normal. A
+ * `map` projected from three axes (world, or the object's own when `local`), `tile` metres per
+ * repeat, blended by the normal. A
  * flat-shaded surface takes its face's own normal from the position's derivatives: the owned engine
  * gives a flat-shaded material no vertex normal, so `normalWorldGeometry` would stop the renderer.
  */
-function triplanar(map: Texture, tile: number, flat: boolean) {
-  const p = positionWorld.div(tile);
+function triplanar(map: Texture, tile: number, flat: boolean, local: boolean) {
+  const position = local ? positionLocal : positionWorld;
+  const p = position.div(tile);
   const n = abs(
-    flat ? cross(dFdx(positionWorld), dFdy(positionWorld)).normalize() : normalWorldGeometry,
+    flat
+      ? cross(dFdx(position), dFdy(position)).normalize()
+      : local
+        ? normalLocal
+        : normalWorldGeometry,
   );
   const w = n.mul(n).mul(n).mul(n);
   const sum = w.x.add(w.y).add(w.z);
@@ -152,9 +160,11 @@ export function surfaced(
     doubleSided?: boolean;
     /** How much of the photo's light and dark shows, 0 to 1. */
     strength?: number;
+    /** Object-space UVs, so a surface that moves carries its texture with it. */
+    local?: boolean;
   } = {},
 ): Material {
-  const { strength = 0.9, ...shape } = options;
+  const { strength = 0.9, local = false, ...shape } = options;
   surfaceColors.add(new Color(color).getHex());
   if (maps === undefined) return lit(color, { ...shape, detail: true });
   const key = `${String(color)}|${surface}|${JSON.stringify(options)}`;
@@ -169,7 +179,7 @@ export function surfaced(
   });
   material.colorNode = structure(
     map,
-    triplanar(map, TILE[surface], options.flat ?? false),
+    triplanar(map, TILE[surface], options.flat ?? false, local),
     strength,
   ).mul(colorNode(new Color(color)));
   cache.set(key, material);
@@ -211,7 +221,7 @@ export function groundSurface(): Material {
     stochastic(maps.grass, positionWorld.xz.div(TILE.grass), 512),
     smoothstep(-0.02, 0.06, paint.y.sub(paint.x)).mul(0.6).add(0.3),
   );
-  const rock = structure(maps.rock, triplanar(maps.rock, TILE.rock, false), 0.9);
+  const rock = structure(maps.rock, triplanar(maps.rock, TILE.rock, false, false), 0.9);
   material.colorNode = mix(grass, rock, smoothstep(0.8, 0.68, normalWorldGeometry.y));
   return material;
 }
