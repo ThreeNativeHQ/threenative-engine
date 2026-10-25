@@ -581,3 +581,10 @@ Unreal default look, and no frame is blank or white.
   criterion. All 13 scenarios and `performance` exit 0 on `gen-12lp` at daf027a6c, and
   `survives` and `performance` exit 0 again at db84839d5. Stills and the run video are in
   `docs/PRDs/starter-kits/screenshots/hop-garden/` and `~/Downloads/hop-garden/look1/`.
+  Final pass (2026-10-24, 3c51ec625, RTX 2080 headed WebGPU, high tier): all 21 scenarios exit 0
+  (19 on the game copy's runner with `assert.startup` left out, which that runner predates;
+  `explore` and `stride` on the repo runner). `performance`: frame p95 10.7 ms, 63.5 fps, 278 to
+  290 draws, 286k to 292k triangles. Face judge against the owner's report (fresh Opus, 2 runs):
+  IMPROVEMENT; eyes, nose and moustache PASS, the hero does not read as Mario or Luigi (high
+  confidence). Its open note: the face has no mouth and the nose touches the eye whites, so it
+  reads blank. Shots: `~/Downloads/hop-garden/face-final/`.
