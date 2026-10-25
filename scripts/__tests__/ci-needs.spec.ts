@@ -28,6 +28,17 @@ const BUILD = `  build:
 `;
 
 describe("ci needs graph", () => {
+  it("passes the classified base to every downstream candidate consumer", async () => {
+    const jobs = new Map(jobSections(await ci()));
+    const scope = jobs.get("scope") ?? "";
+    expect(scope).toContain("base_sha: ${{ steps.classify.outputs.base_sha }}");
+    expect(scope).toContain("TN_CI_BASE_SHA: ${{ steps.classify.outputs.base_sha }}");
+    expect(jobs.get("integration")).toContain("base_sha: ${{ needs.scope.outputs.base_sha }}");
+    expect(jobs.get("ci-required")).toContain(
+      "TN_CI_BASE_SHA: ${{ needs.scope.outputs.base_sha }}",
+    );
+  });
+
   it("should read every job in this repository's own ci.yml", async () => {
     const jobs = ciJobGraph(await ci());
     expect(jobs.map((job) => job.name)).toContain("golden-path");

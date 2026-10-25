@@ -437,21 +437,35 @@ async function probeEngineServer(target: string): Promise<void> {
   };
   const server = config.mcpServers["threenative-engine"];
   if (server === undefined) throw new Error("scaffold has no threenative-engine server");
-  const child = spawn(server.command, server.args, { cwd: target, stdio: "pipe" });
+  const child = spawn(server.command, server.args, {
+    cwd: target,
+    env: {
+      ...process.env,
+      THREENATIVE_REFERENCES_URL: "http://127.0.0.1:1/",
+      THREENATIVE_REFERENCES_CACHE: path.join(target, ".threenative", "test-reference-cache"),
+    },
+    stdio: "pipe",
+  });
   const lines = createInterface({ input: child.stdout });
   const nextId = { value: 1 };
   try {
-    await request(child, nextId, lines, "initialize", {
+    const initialized = await request(child, nextId, lines, "initialize", {
       capabilities: {},
       clientInfo: { name: "scaffold-mcp-test", version: "0" },
       protocolVersion: "2025-06-18",
     });
+    expect(initialized.instructions).toContain("New games: steps 1-8");
+    expect(initialized.instructions).toContain("Existing games: steps 5-7 only");
+    expect(initialized.instructions).toContain("subagents focused on specific areas");
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, nextId, lines, "tools/list");
     const tools = listed.tools as Array<{ name: string }>;
     expect(tools.map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",
       "engine_capability_detail",
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_save_reference",
     ]);
     const called = await request(child, nextId, lines, "tools/call", {
       arguments: { situation: "enemy walks around a wall" },
@@ -549,6 +563,14 @@ describe("scaffolded engine MCP", () => {
       const root = await makeTempDir(`threenative-scaffold-mcp-${template}-`);
       temporaryRoots.push(root);
       const { target } = await createProject({ install: false, target: "game", template }, root);
+      const authoring = await readFile(
+        path.join(target, ".agents/skills/threenative-capabilities/SKILL.md"),
+        "utf8",
+      );
+      expect(authoring).toContain("## New game");
+      expect(authoring).toContain("## Existing game");
+      expect(authoring).toContain("Use steps 5-7 only");
+      expect(authoring).toContain("subagents focused on specific areas");
       await linkEngineMcp(target);
       await linkCore(target);
       await linkPhysics(target);
