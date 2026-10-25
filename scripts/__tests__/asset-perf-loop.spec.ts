@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 const { appendIteration, decideIteration, kindOf, renderHtml, summarize } = await import(
   new URL("../asset-perf-loop.mjs", import.meta.url).href
 );
@@ -99,7 +99,7 @@ describe("asset perf loop", () => {
   });
 
   it("does not serve a file outside its root through traversal or symlinks", async () => {
-    const base = await mkdtemp(join(tmpdir(), "asset-static-root-"));
+    const base = await makeTempDir("asset-static-root-");
     const root = join(base, "public");
     await mkdir(root);
     await writeFile(join(base, "secret.txt"), "secret");
