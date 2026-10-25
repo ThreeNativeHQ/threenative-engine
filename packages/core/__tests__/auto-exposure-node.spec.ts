@@ -267,17 +267,23 @@ describe("GPU exposure lifecycle", () => {
     });
     const { node, frame, info } = harness();
     node.updateBefore(frame);
-    info.engine.frameGateSkips = 3;
+    info.engine.frameGateSkips = 4;
     frame.deltaTime = 0.5;
     frame.time += 0.5;
     node.updateBefore(frame);
     frame.deltaTime = 2;
     frame.time += 2;
     node.updateBefore(frame);
+    // One declined call stands for one frame, not for a suspended page's whole gap.
+    info.engine.frameGateSkips = 5;
+    frame.deltaTime = 5;
+    frame.time += 5;
+    node.updateBefore(frame);
     // The adaptation draw is the fifth of each frame; its last scalar is the delta.
     expect(draws[4]?.scalars.at(-1)).toBeCloseTo(1 / 60);
     expect(draws[9]?.scalars.at(-1)).toBeCloseTo(0.5);
     expect(draws[14]?.scalars.at(-1)).toBeCloseTo(0.1);
+    expect(draws[19]?.scalars.at(-1)).toBeCloseTo(0.2);
     node.dispose();
   });
 

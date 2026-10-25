@@ -172,15 +172,15 @@ export class AutoExposureNode extends TempNode<"float"> {
     this.#sourceSize.value.copy(this.#size);
     // The frame gate declines a draw while two frames are still on the GPU. The drawn frame's
     // deltaTime already spans those declined calls (they never reach this node), so the decline is
-    // engine pacing, not a suspension: spend that time. maxDelta still limits a frozen page, which
-    // banks no declined render.
+    // engine pacing, not a suspension: spend that time, up to maxDelta for each frame the call
+    // stands for. A frozen page banks no declined render and stays at one maxDelta.
     const skips = rendererFrameGateSkips(renderer);
     const declined =
-      skips !== undefined && this.#gateSkips !== undefined && skips > this.#gateSkips;
+      skips !== undefined && this.#gateSkips !== undefined
+        ? Math.max(0, skips - this.#gateSkips)
+        : 0;
     if (skips !== undefined) this.#gateSkips = skips;
-    this.#delta.value = declined
-      ? frame.deltaTime
-      : Math.min(frame.deltaTime, this.settings.maxDelta);
+    this.#delta.value = Math.min(frame.deltaTime, this.settings.maxDelta * (1 + declined));
     while (this.#levels.length > sizes.length) this.#levels.pop()?.dispose();
     for (const [i, [width, height]] of sizes.entries()) {
       const level = this.#levels[i] ?? exposureTarget();
