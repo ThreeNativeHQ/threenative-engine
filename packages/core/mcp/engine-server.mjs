@@ -343,18 +343,21 @@ ${entry.situations.join("\n")}`;
 function matchedStarterKits(situation, kits) {
   const words = (text) => ` ${text.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim()} `;
   const request = words(situation);
-  const spans = kits.map(
-    (kit) => kit.words.flatMap((word) => {
+  const claims = kits.map((kit) => ({
+    kit,
+    spans: kit.words.flatMap((word) => {
       const at = request.indexOf(words(word));
       return at < 0 ? [] : [{ at, end: at + words(word).length }];
     })
+  }));
+  const inside = (span, own) => claims.some(
+    (other) => other !== own && other.spans.some(
+      (o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at
+    )
   );
-  const inside = (span, own) => spans.some(
-    (other, index) => index !== own && other.some((o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at)
-  );
-  return kits.map((kit, own) => ({
-    at: Math.min(...spans[own].filter((span) => !inside(span, own)).map((span) => span.at)),
-    kit
+  return claims.map((claim) => ({
+    at: Math.min(...claim.spans.filter((span) => !inside(span, claim)).map((span) => span.at)),
+    kit: claim.kit
   })).filter(({ at }) => Number.isFinite(at)).sort((left, right) => left.at - right.at).map(({ kit: { blurb, name, title } }) => ({
     blurb,
     command: `npx create-threenative <dir> --template ${name}`,

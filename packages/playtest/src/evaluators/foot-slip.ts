@@ -88,7 +88,7 @@ export function emitFootSlip(ctx: IEvaluationContext): void {
       ctx.diagnostics.push({
         code: "TN_PLAYTEST_FOOT_SLIP_UNOBSERVED",
         message: `footSlip at '${assertion.atStep}' was not measured: ${reason}.`,
-        observedRuntimePath: `observations.json/footSlip`,
+        observedRuntimePath: "observations.json/footSlip",
         severity: "error",
         suggestion: "Run on the browser target, name each sole node (Object3D.name, for example footL and footR), and make the step move the subject at a run.",
       });
@@ -129,7 +129,7 @@ export function emitFootSlip(ctx: IEvaluationContext): void {
       ctx.diagnostics.push({
         code: "TN_PLAYTEST_FOOT_SLIP",
         message: `A planted foot travelled ${worst.toFixed(2)} m per metre of body travel at '${assertion.atStep}', ceiling ${assertion.maxSlip}.`,
-        observedRuntimePath: `observations.json/footSlip`,
+        observedRuntimePath: "observations.json/footSlip",
         severity: "error",
         suggestion: "Drive the stride from distance travelled, not from time: the cycle phase should advance by ground speed over stride length, so a planted foot stays put.",
       });
@@ -137,7 +137,7 @@ export function emitFootSlip(ctx: IEvaluationContext): void {
       ctx.diagnostics.push({
         code: "TN_PLAYTEST_FOOT_SLIP",
         message: `A planted foot slid at ${worstSpeed.toFixed(2)} m/s at '${assertion.atStep}', ceiling ${assertion.maxSlideSpeed} m/s.`,
-        observedRuntimePath: `observations.json/footSlip`,
+        observedRuntimePath: "observations.json/footSlip",
         severity: "error",
         suggestion: "Drive the stride from distance travelled, not from time: the cycle phase should advance by ground speed over stride length, so a planted foot stays put.",
       });

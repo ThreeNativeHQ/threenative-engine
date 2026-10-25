@@ -337,7 +337,8 @@ export function setupCamera(
         // The cone opens only on the orbit's side: a yaw that drifted across the line would bring
         // the picture back onto it, and Wren would hide the target.
         const off = MathUtils.euclideanModulo(yaw - line + Math.PI, Math.PI * 2) - Math.PI;
-        home = line + MathUtils.clamp(off, Math.min(0, side * LOCK.cone), Math.max(0, side * LOCK.cone));
+        home =
+          line + MathUtils.clamp(off, Math.min(0, side * LOCK.cone), Math.max(0, side * LOCK.cone));
         const apart = Math.hypot(focus.x - middle.x, focus.z - middle.z);
         const tall = Math.max(lock.bounds.max.y, lock.markerTop) - (focus.y + AIM_HEIGHT + 1);
         const goal =

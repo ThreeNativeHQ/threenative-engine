@@ -1759,7 +1759,10 @@ function validatePerformanceBudget(raw: unknown, label: string): PerformanceBudg
   const frameReason = budget.maxFrameMsReason;
   if (frameReason !== undefined) {
     if (typeof frameReason !== "string" || frameReason.trim() === "") {
-      fail("TN_CONFIG_PROFILE_INVALID", `${label}.performanceBudget.maxFrameMsReason must be a non-empty string.`);
+      fail(
+        "TN_CONFIG_PROFILE_INVALID",
+        `${label}.performanceBudget.maxFrameMsReason must be a non-empty string.`,
+      );
     }
     out.maxFrameMsReason = frameReason;
   }

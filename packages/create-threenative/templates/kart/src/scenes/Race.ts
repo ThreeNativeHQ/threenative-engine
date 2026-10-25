@@ -15,7 +15,7 @@ import { emitPlaytestEvent } from "../playtest-events.js";
 import { createChaseCamera } from "../render/camera.js";
 import { buildCourseView, makeRng } from "../render/course.js";
 import { BURSTS, EFFECTS } from "../render/effects.js";
-import { ItemBoxes, burrMesh, acornMesh } from "../render/items.js";
+import { ItemBoxes, acornMesh, burrMesh } from "../render/items.js";
 import { KartModel, LIVERIES } from "../render/kart.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";

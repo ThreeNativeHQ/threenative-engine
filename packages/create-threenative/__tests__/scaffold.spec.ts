@@ -299,7 +299,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
   collectathon: "bd2be63354d70a8f64a18d28f523c964526bf0ca842cc2569f7ea355a6084129",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "53ef9e30aa90b559ed2c558f9eab23b98b1adcbd21ec2487d998c08aab5f60c6",
+  adventure: "b6c99d654c4ec95f2ddd5d823f9fe0846f1a1a7e7630450ab983f180cf651bcb",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "7fcca6c9a0b928bb8cb0d01289b3df50225cbee8e1850652ac1567fe2045dcbd",
   minimal: "10d0987573f9ac54b42b6cba5f743a50f27a9178aac5043d61fa69026be8e772",
