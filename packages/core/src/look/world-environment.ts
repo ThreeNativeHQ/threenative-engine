@@ -1492,7 +1492,7 @@ export class WorldEnvironment {
           reflections.resolutionScale = options.ssrResolutionScale;
           // `maxSteps` is the core three patch's step cap; `@types/three` does not declare it. An
           // engine whose SSR has no cap keeps the reflections, runs the march uncapped and says so.
-          const stepCap = (reflections as unknown as { maxSteps?: { value: number } }).maxSteps;
+          const stepCap = (reflections as { maxSteps?: { value: number } }).maxSteps;
           if (stepCap) stepCap.value = options.ssrMaxSteps;
           else
             console.warn(
@@ -1500,8 +1500,7 @@ export class WorldEnvironment {
             );
           // Unreal traces no ray for a surface at or above the roughness cut-off below. An SSR that can skip those pixels
           // (`maxRoughness`) does; the weight below is 0 there either way, so the frame does not change.
-          const roughnessGate = (reflections as unknown as { maxRoughness?: { value: number } })
-            .maxRoughness;
+          const roughnessGate = (reflections as { maxRoughness?: { value: number } }).maxRoughness;
           if (roughnessGate) roughnessGate.value = REFLECTION_CUTOFF;
           // Unreal traces reflections only for surfaces smoother than a roughness cut-off and fades
           // the trace out over the last stretch: cut-off 0.4 (Engine/Source/Runtime/Engine/Private/

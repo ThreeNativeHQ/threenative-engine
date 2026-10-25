@@ -506,10 +506,13 @@ export function defineBrowserClasses(
   };
   // three's private storage names, and the classes whose lanes are not plain fields.
   const valuePlans: Record<string, IValuePlan> = {
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Color: defaultPlan(["r", "g", "b"]),
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Vector4: defaultPlan(["x", "y", "z", "w"]),
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Quaternion: {
       lanes: ["x", "y", "z", "w"],
@@ -522,6 +525,7 @@ export function defineBrowserClasses(
         value._w = values[3];
       },
     },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Euler: {
       lanes: ["x", "y", "z"],
@@ -546,6 +550,7 @@ export function defineBrowserClasses(
         eulerOrders[values[3] as number] ?? "XYZ",
       ],
     },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Matrix3: {
       promote: true,
@@ -558,6 +563,7 @@ export function defineBrowserClasses(
       // `elements` is column-major; the engine constructor takes three's row-major set order.
       args: (values) => [0, 3, 6, 1, 4, 7, 2, 5, 8].map((index) => values[index] as number),
     },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Matrix4: {
       promote: true,
@@ -573,6 +579,7 @@ export function defineBrowserClasses(
           (index) => values[index] as number,
         ),
     },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Box3: {
       promote: true,
@@ -592,6 +599,7 @@ export function defineBrowserClasses(
         make("Vector3", values.slice(3, 6).map(Number)),
       ],
     },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Sphere: {
       promote: true,

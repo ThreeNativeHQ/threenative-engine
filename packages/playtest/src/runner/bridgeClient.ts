@@ -392,8 +392,8 @@ async function bridgeCall<T = void>(
           const result: unknown = operation.call(bridge, argument, options);
           if (result === null || (typeof result !== "object" && typeof result !== "function")) return result;
           if (typeof (result as { then?: unknown }).then !== "function") return result;
-          const host = globalThis as unknown as Record<string, Set<unknown> | undefined>;
-          const pending = host[pendingOperationsGlobal] ?? new Set<unknown>();
+          const host = globalThis as Record<string, unknown>;
+          const pending = (host[pendingOperationsGlobal] as Set<unknown> | undefined) ?? new Set<unknown>();
           host[pendingOperationsGlobal] = pending;
           pending.add(result);
           const forget = (): boolean => pending.delete(result);
