@@ -62,7 +62,13 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import {
+  BlendMode,
+  type Node,
+  type NodeBuilder,
+  NodeUpdateType,
+  type TextureNode,
+} from "three/webgpu";
 import { RENDER_CHAIN_TIERS } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
@@ -1234,7 +1240,20 @@ export class WorldEnvironment {
           };
           resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
           sample(contact.getTextureNode());
+          let filterTexture:
+            | (ReturnType<typeof convertToTexture> & {
+                setResolutionScale(scale: number): void;
+                renderTarget: RenderTarget;
+                _quadMesh: { material: { dispose(): void } };
+              })
+            | undefined;
           releaseAo = () => {
+            if (filterTexture) {
+              resolutionSubrect?.release(filterTexture);
+              filterTexture.renderTarget.dispose();
+              filterTexture._quadMesh.material.dispose();
+              filterTexture = undefined;
+            }
             contactOcclusion = undefined;
             resolutionSubrect?.release(retained);
             contact.dispose();
@@ -1270,7 +1289,14 @@ export class WorldEnvironment {
               if (fraction) this._resolution.value.multiply(fraction);
             };
           }
-          const occlusion = filter ? denoised(filter) : contact;
+          if (filter && !ownedEngine && options.gtaoResolutionScale < 1) {
+            // Upstream Denoise is inline: materialise it at the authored AO extent before the composite.
+            filterTexture = convertToTexture(denoised(filter)) as NonNullable<typeof filterTexture>;
+            filterTexture.setResolutionScale(options.gtaoResolutionScale);
+            filterTexture.updateBeforeType = NodeUpdateType.FRAME;
+            sample(filterTexture);
+          }
+          const occlusion = filterTexture ?? (filter ? denoised(filter) : contact);
           // The factor the indirect diffuse light keeps: the occlusion through multi-bounce for the pixel's own albedo
           // (the diffuse colour target already has the metal's share removed), per channel. The fit is a cubic of the
           // occlusion with linear coefficients of the capped albedo (Jimenez et al. 2016, as Unreal's composite).

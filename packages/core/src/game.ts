@@ -1143,11 +1143,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     threeScene.matrixWorldAutoUpdate = false;
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
+    // The owned renderer retains its own velocity history; JS snapshots serve Three's accessors.
+    const engineInfo = (renderer.raw as { info?: object }).info;
+    const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
     const projection = new SceneRenderProjection(threeScene, {
       // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
       // names the material check beside accepting it, and the projection owns both readings.
       projection: this.#config.render?.projection,
-      velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
+      velocity: () => !ownedEngine && (renderer.renderChainUsesPerObjectVelocity?.() ?? false),
       matrixWorld: matrixWorldPass,
     });
     this.#projection = projection;
