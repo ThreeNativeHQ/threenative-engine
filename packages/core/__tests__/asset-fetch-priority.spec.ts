@@ -47,10 +47,10 @@ describe("asset fetch priority", () => {
     const soon = cache.fetchBytes("soon", "soon");
     const now = cache.fetchBytes("now", "now");
 
-    // The idle request is already in flight; the two behind it are ordered by priority.
-    expect(gated.order).toEqual(["idle"]);
+    // The idle request is in flight, and the awaited one starts beside it at once. The soon
+    // request waits for both to clear.
+    expect(gated.order).toEqual(["idle", "now"]);
     gated.gates.get("idle")?.release();
-    await vi.waitFor(() => expect(gated.order).toEqual(["idle", "now"]));
     gated.gates.get("now")?.release();
     await vi.waitFor(() => expect(gated.order).toEqual(["idle", "now", "soon"]));
     gated.gates.get("soon")?.release();
@@ -58,7 +58,7 @@ describe("asset fetch priority", () => {
     await Promise.all([idle, soon, now]);
   });
 
-  it("should hold new idle starts while a now request is in flight", async () => {
+  it("should start a now request at once and hold new idle starts until it settles", async () => {
     stub();
     const gated = gatedFetch();
     vi.stubGlobal("fetch", gated.fetch);
@@ -69,12 +69,14 @@ describe("asset fetch priority", () => {
     const second = cache.fetchBytes("idle-b", "idle");
     const urgent = cache.fetchBytes("urgent", "now");
 
-    gated.gates.get("idle-a")?.release();
+    // The fill's lane is busy with a large idle file; the awaited file starts beside it rather
+    // than waiting for that download, which is what bounds its latency.
     await vi.waitFor(() => expect(gated.order).toEqual(["idle-a", "urgent"]));
-    // While `urgent` runs, the second idle is still waiting even though the lane is free.
+    // While `urgent` runs, the second idle still may not start.
     expect(gated.order).not.toContain("idle-b");
     gated.gates.get("urgent")?.release();
-    await vi.waitFor(() => expect(gated.order).toEqual(["idle-a", "urgent", "idle-b"]));
+    gated.gates.get("idle-a")?.release();
+    await vi.waitFor(() => expect(gated.order).toContain("idle-b"));
     gated.gates.get("idle-b")?.release();
 
     await Promise.all([first, second, urgent]);

@@ -809,6 +809,7 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // Where every asset was actually served from, on every target and not only in a browser
         // console log: a game whose manifest never loaded runs on the uncompiled source directory
         // and looks healthy, and without this nothing observable says so.
+        ["assetCache", { ...ctx.assets.cache }],
         ["assets", assetResolutions(ctx.assets)],
         ...(runtime?.frameCounts === undefined
           ? []

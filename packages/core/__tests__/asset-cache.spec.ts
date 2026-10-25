@@ -161,6 +161,23 @@ describe("asset cache", () => {
     });
   });
 
+  it("should serve any GET from disk, including a loader the framework does not wrap", async () => {
+    stubStorage();
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array(4)));
+    vi.stubGlobal("fetch", fetchMock);
+    const entries = [{ bytes: 4, url: "shared.aaaa.ktx2" }];
+    const cache = createAssetCache({ retryDelaysMs: [0] });
+    cache.setManifest(manifestFingerprint(entries), entries);
+    await cache.fetchBytes("shared.aaaa.ktx2", "now", 4);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const viaLoader = await fetch("shared.aaaa.ktx2");
+
+    expect(new Uint8Array(await viaLoader.arrayBuffer())).toHaveLength(4);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    cache.dispose();
+  });
+
   it("should honour assets.cache: false", () => {
     stubStorage();
     const cache = createAssetCache({ enabled: false });

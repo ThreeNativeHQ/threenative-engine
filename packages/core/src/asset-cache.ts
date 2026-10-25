@@ -33,7 +33,7 @@ export interface IAssetCacheOptions {
   readonly enabled?: boolean;
   /** `assets.backgroundFill: false` — the named override. */
   readonly backgroundFill?: boolean;
-  /** Requests in flight at once. Defaults to six, the same as the streaming loader. */
+  /** Requests running at once. Defaults to six, the same as the streaming loader. */
   readonly concurrency?: number;
   /** Retry delays in milliseconds. Defaults to 500, 1000 and 2000. */
   readonly retryDelaysMs?: readonly number[];
@@ -52,6 +52,8 @@ export interface IAssetCache {
   startFill(): void;
   /** Delete the whole cache. */
   clear(): Promise<void>;
+  /** Remove the disk-first fetch bridge. Idempotent. */
+  dispose(): void;
 }
 
 const CACHE_PREFIX = "threenative-assets-";
@@ -171,14 +173,15 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   let bytesTotal = 0;
   let filling = false;
   let fillStarted = false;
+  let restoreFetch: (() => void) | undefined;
 
   /** Every url this session read or wrote. Those are the entries a quota error must not evict. */
   const touched = new Set<string>();
   /** The whole lookup, cache read included, keyed by url so two callers share one download. */
   const requests = new Map<string, { priority: AssetPriority; promise: Promise<ArrayBuffer> }>();
   const queues: Record<AssetPriority, IJob[]> = { now: [], soon: [], idle: [] };
-  let inFlight = 0;
-  let nowInFlight = 0;
+  let active = 0;
+  let activeNow = 0;
 
   const openCache = async (): Promise<CacheLike | undefined> => {
     if (!enabled || cacheName === undefined || storage === undefined) return undefined;
@@ -319,17 +322,20 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   const take = (): IJob | undefined => {
     if (queues.now.length > 0) return queues.now.shift();
     // A `now` starts at once and holds every new `soon` and `idle` start until it settles.
-    if (nowInFlight > 0) return undefined;
+    if (activeNow > 0) return undefined;
     if (queues.soon.length > 0) return queues.soon.shift();
     return queues.idle.shift();
   };
 
   const pump = (): void => {
-    while (inFlight < concurrency) {
+    // A `now` file starts at once even when every lane is busy with the fill. Only `soon` and
+    // `idle` respect the concurrency cap, so a large idle download can never sit in front of the
+    // file the frame is waiting on.
+    while (queues.now.length > 0 || active < concurrency) {
       const job = take();
       if (job === undefined) return;
-      inFlight += 1;
-      if (job.priority === "now") nowInFlight += 1;
+      active += 1;
+      if (job.priority === "now") activeNow += 1;
       void download(job.url, job.priority, job.expectedBytes)
         .then(
           (buffer) => {
@@ -340,8 +346,8 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
           },
         )
         .then(() => {
-          inFlight -= 1;
-          if (job.priority === "now") nowInFlight -= 1;
+          active -= 1;
+          if (job.priority === "now") activeNow -= 1;
           pump();
         });
     }
@@ -395,6 +401,40 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     await Promise.allSettled(targets.map((entry) => fetchBytes(entry.url, priority, entry.bytes)));
   };
 
+  /**
+   * Serve a cache hit for any GET the page makes, so a loader core does not wrap — three's
+   * `KTX2Loader`, `RGBELoader`, `AudioLoader` — also reads the bytes the fill already stored.
+   * A miss delegates to the original fetch untouched; the bridge never writes and never changes a
+   * response, so an uncached request behaves exactly as before. Web-only, like the cache itself.
+   */
+  const installFetchBridge = (name: string): void => {
+    if (typeof globalThis.fetch !== "function" || storage === undefined) return;
+    const original = globalThis.fetch;
+    const wrapped = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      if (method.toUpperCase() === "GET") {
+        try {
+          const url =
+            typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+          const cache = await storage.open(name);
+          const hit = await cache.match(url);
+          if (hit !== undefined) {
+            touched.add(url);
+            hits += 1;
+            return hit;
+          }
+        } catch {
+          // A storage failure falls through to the network; the game still loads.
+        }
+      }
+      return original(input, init);
+    };
+    globalThis.fetch = wrapped as typeof fetch;
+    restoreFetch = () => {
+      if (globalThis.fetch === wrapped) globalThis.fetch = original;
+    };
+  };
+
   const runFill = async (): Promise<void> => {
     await manifestReady;
     if (!enabled || !backgroundFill || saveDataEnabled() || entries.length === 0) return;
@@ -439,6 +479,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       }
       const name = `${CACHE_PREFIX}${fingerprint}`;
       cacheName = name;
+      installFetchBridge(name);
       // A release cleans up after the last one: without this every build adds its full size to
       // the player's disk and nothing ever removes the old bytes.
       const current = name;
@@ -468,6 +509,10 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       await storage.delete(cacheName);
       bytesOnDisk = 0;
       touched.clear();
+    },
+    dispose: () => {
+      restoreFetch?.();
+      restoreFetch = undefined;
     },
   };
 }

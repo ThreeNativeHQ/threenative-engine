@@ -845,17 +845,35 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     backgroundFill: options.backgroundFill,
   });
   /** The urls the background fill warms, in manifest order, with the sizes the manifest records. */
-  const fillEntries = (manifest: IAssetManifest): readonly { bytes?: number; url: string }[] =>
-    Object.values(manifest.entries).flatMap((entry) => {
-      if (!isRecord(entry) || typeof entry.output !== "string") return [];
-      const bytes = typeof entry.bytes === "number" ? entry.bytes : undefined;
-      return [
-        {
-          url: resolvePath(basePath, entry.output),
-          ...(bytes === undefined ? {} : { bytes }),
-        },
-      ];
-    });
+  const fillEntries = (manifest: IAssetManifest): readonly { bytes?: number; url: string }[] => {
+    const byUrl = new Map<string, { bytes?: number; url: string }>();
+    const add = (output: unknown, bytes: unknown): void => {
+      if (typeof output !== "string") return;
+      const url = resolvePath(basePath, output);
+      if (byUrl.has(url)) return;
+      byUrl.set(url, {
+        url,
+        ...(typeof bytes === "number" ? { bytes } : {}),
+      });
+    };
+    for (const entry of Object.values(manifest.entries)) {
+      if (!isRecord(entry)) continue;
+      add(entry.output, entry.bytes);
+      // A model's external textures and a lightmap are separate files in the same release, so the
+      // fill warms them too: otherwise a second visit still re-downloads every texture.
+      if (Array.isArray(entry.lightmaps)) {
+        for (const lightmap of entry.lightmaps) {
+          if (isRecord(lightmap)) add(lightmap.output, lightmap.bytes);
+        }
+      }
+      if (Array.isArray(entry.sharedImages)) {
+        for (const image of entry.sharedImages) {
+          if (isRecord(image)) add(image.output, image.bytes);
+        }
+      }
+    }
+    return [...byUrl.values()];
+  };
   let manifestRequest: Promise<IAssetManifest | undefined> | undefined;
   const manifestOnce = (): Promise<IAssetManifest | undefined> => {
     if (manifestRequest === undefined) {
@@ -1185,6 +1203,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     dispose: () => {
       if (loaderDisposed) return;
       loaderDisposed = true;
+      assetCache.dispose();
       // Three's KTX2Loader owns the decoder worker pool. Resolving the shared promise can fail
       // when no loader was built; that is not a teardown failure.
       void compressedTextures?.loader

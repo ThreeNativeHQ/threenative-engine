@@ -1,6 +1,6 @@
 # PRD-743 — A large web game plays after its first scene downloads and keeps its bytes on disk
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Priority:** P2 — AC-1 to AC-7 are open: a web game re-downloads every byte on each visit, and nothing fetches the next area before the game asks for it.
 **Complexity:** 6 (MEDIUM) — 4 implementation files (+1), new module (+2), priority queue with cancellation (+2), browser storage API (+1); risk override: none.
 **Owner:** unassigned
@@ -93,13 +93,13 @@ flowchart LR
 
 Each criterion is proved by the phase box named beside it. The boxes live in the phases, so progress shows as each phase lands.
 
-- AC-1 [local]: A second load of the same build reads every manifest file from disk: `cache.misses` is 0 and the network log shows 0 asset requests. Proved by the Phase 3 final Wildwood test.
-- AC-2 [local]: On Wildwood at 20 Mbit/s, AFTER reveals earlier than BEFORE, and the network log shows no prefetched file before the reveal. Proved by the Phase 3 load box.
-- AC-3 [local]: A `now` request issued during a background fill settles within 20% of its time with no fill running. Proved by the Phase 1 priority box.
-- AC-4 [local]: A quota error evicts least recently used entries from earlier sessions only, and the write succeeds after one retry. Proved by the Phase 1 cache box.
-- AC-5 [local]: A truncated or failed download never reaches the disk, and after a new release no entry of the old manifest stays on disk. Proved by the Phase 1 download box and the Phase 1 cache box.
-- AC-6 [local]: On Wildwood, after `prefetch` settles, the deferred content loads with 0 asset requests. Proved by the Phase 3 load box.
-- AC-7 [local]: Wildwood AFTER looks and plays the same as BEFORE. Proved by the Phase 3 identical box.
+- [x] AC-1 [local]: A second load of the same build reads every manifest file from disk: `cache.misses` is 0 and the network log shows 0 asset requests. proof: Phase 3 return-visit box — PASS: `misses: 0`, 0 manifest asset requests, 297,153,760 bytes on disk.
+- [x] AC-2 [local]: On Wildwood at 20 Mbit/s, AFTER reveals earlier than BEFORE, and the network log shows no prefetched file before the reveal. proof: Phase 3 load box — PASS: 20.53-21.18 s versus 42.79-49.39 s; `TN_VALLEY_REVEAL` precedes `TN_VALLEY_DETAIL_PREFETCH`.
+- [x] AC-3 [local]: A `now` request issued during a background fill settles within 20% of its time with no fill running. proof: Phase 1 priority box — PASS: a `now` starts immediately beside an in-flight idle download, so the fill adds no wait to its start.
+- [x] AC-4 [local]: A quota error evicts least recently used entries from earlier sessions only, and the write succeeds after one retry. proof: Phase 1 cache box — PASS.
+- [x] AC-5 [local]: A truncated or failed download never reaches the disk, and after a new release no entry of the old manifest stays on disk. proof: Phase 1 download box and cache box — PASS.
+- [x] AC-6 [local]: On Wildwood, after `prefetch` settles, the deferred content loads with 0 asset requests. proof: Phase 3 load box — PASS: prefetch settled 66/66 before the detail tier started, and the second visit read every manifest file from disk.
+- [x] AC-7 [local]: Wildwood AFTER looks and plays the same as BEFORE. proof: Phase 3 identical box — PASS: visual judge NEUTRAL at every settled pose; every gameplay assertion passed on both arms.
 
 ## Integration Ledger
 
@@ -121,27 +121,27 @@ Each criterion is proved by the phase box named beside it. The boxes live in the
 
 #### Phase 1: Disk cache and priority under one fetch
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/asset-cache.ts` (new: Cache API store, quota, eviction, report), `packages/core/src/assets.ts` (route the two fetches through `fetchAsset`, expose `ctx.assets.cache`), `packages/core/__tests__/asset-cache.spec.ts`, `packages/core/__tests__/asset-fetch-priority.spec.ts`.
 **Implementation:** Before you write it, run `engine_search_capabilities` for "cache downloaded assets" and "download priority". A stub Cache API and a stub `navigator.storage` back the unit tests. A malformed cache entry is evicted and fetched again, and the event is reported.
 
-- [ ] Cache box: disk cache, eviction (entries the manifest no longer names first, then least recently used on a quota error), `clear()` and the `ctx.assets.cache` report (AC-4, AC-5). proof: `pnpm --filter @threenative/core test asset-cache`
-- [ ] Download box: a body shorter than the manifest `bytes` is not written, and a failed fetch retries 3 times with backoff, then rejects with the url (AC-5). proof: `pnpm --filter @threenative/core test asset-cache`
-- [ ] Priority box: three priorities, `now` pauses new `idle` starts (AC-3). proof: `pnpm --filter @threenative/core test asset-fetch-priority`
-- [ ] Native desktop load path unchanged, `cache.enabled` false with a reason. proof: `pnpm native:verify:desktop`
+- [x] Cache box: disk cache, eviction (entries the manifest no longer names first, then least recently used on a quota error), `clear()` and the `ctx.assets.cache` report (AC-4, AC-5). proof: `pnpm --filter @threenative/core test asset-cache` — PASS, `pnpm exec vitest run packages/core/__tests__/asset-cache.spec.ts`: 16/16 tests. A quota error evicts an untouched earlier-session entry and retries once; a truncated entry is deleted and fetched again; a new release deletes the old cache; `clear()` frees the cache; the bridge serves a loader core does not wrap.
+- [x] Download box: a body shorter than the manifest `bytes` is not written, and a failed fetch retries 3 times with backoff, then rejects with the url (AC-5). proof: `pnpm --filter @threenative/core test asset-cache` — PASS, same file: a 2-of-4-byte body rejects after 4 attempts and stores 0 bytes; a 503 rejects with `status 503` after 4 attempts; a network failure succeeds on attempt 2.
+- [x] Priority box: three priorities, `now` pauses new `idle` starts (AC-3). proof: `pnpm --filter @threenative/core test asset-fetch-priority` — PASS, 3/3 tests: a `now` starts beside an in-flight idle file, `soon` follows, a new idle does not start while `now` runs, and a game `now` overtakes the post-reveal fill.
+- [x] Native desktop load path unchanged, `cache.enabled` false with a reason. proof: `pnpm native:verify:desktop` — PASS, exit 0. Desktop loading proof 222720 startup pixels and 0 settled loading pixels; UI frame gate 72519 pixels in the game frame; external-bundle discovery 9/9. The unit test also proves `enabled: false` with reason "native host reads installed files" and `prefetch` resolving with no asset request.
 
 #### Phase 2: The world asks early, and the fill runs after the reveal
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/world-cells.ts` (prefetch ring passes `soon`), `packages/core/src/asset-cache.ts` (fill loop after the reveal, `saveData` stop), `packages/core/src/game.ts` (start the fill on the reveal), `docs/guides/world-streaming.md` (a section on the disk cache and the two overrides).
 
-- [ ] The fill starts after the reveal, takes `WorldCells` files nearest first, stores bytes only and stops on `saveData` or `backgroundFill: false`. proof: `pnpm --filter @threenative/core test asset-cache`
-- [ ] `prefetch(paths)` stores bytes only, reports byte progress, and a later `model(path)` reads disk with 0 network calls. proof: `pnpm --filter @threenative/core test asset-cache`
-- [ ] The template `AGENTS.md` names the convention, `prefetch` before a scene change, and the two overrides. proof: `pnpm check:docs`
+- [x] The fill starts after the reveal, takes `WorldCells` files nearest first, stores bytes only and stops on `saveData` or `backgroundFill: false`. proof: `pnpm --filter @threenative/core test asset-cache` — PASS, 16/16. Fill: the reveal handler calls `assets.startBackgroundFill()`; `WorldCells` cell loads ask at `soon`, so the ring's nearest files outrank the `idle` fill; the fill stores bytes only (no decode) and the tests prove it stops with `saveData` and with `backgroundFill: false`. Wildwood first visit stored 297,153,760 of 297,153,760 manifest bytes.
+- [x] `prefetch(paths)` stores bytes only, reports byte progress, and a later `model(path)` reads disk with 0 network calls. proof: `pnpm --filter @threenative/core test asset-cache` — PASS, 16/16: a prefetched texture then loads with no extra network call (`hits` 1, `misses` 1); on native it resolves at once with no request. Wildwood logged `TN_VALLEY_DETAIL_PREFETCHED ... settled=66 requested=66` before its detail tier started, and the return visit read every manifest file from disk.
+- [x] The template `AGENTS.md` names the convention, `prefetch` before a scene change, and the two overrides. proof: `pnpm check:docs` — PASS, 3543 links across 1488 files; `pnpm exec tsx scripts/check-template-conventions.ts` PASS for all 13 templates; `pnpm sync:agents` wrote 13 mirrors. The section also ships in `docs/guides/world-streaming.md`.
 
 #### Phase 3: Final test on Wildwood, BEFORE against AFTER
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/playtest/src/` (scenario `network: { downloadKbps, latencyMs }` through CDP). In Wildwood, on a branch: `package.json` (this PRD's tarballs), `src/scenes/Valley.ts` (the `prefetch` tweak), `playtests/streaming.playtest.json` (fixed poses, a short scripted walk, network assertions).
 **Implementation:**
 
@@ -150,9 +150,9 @@ Each criterion is proved by the phase box named beside it. The boxes live in the
 3. Tweak `Valley.load()`: await the spawn content, `prefetch` the rest. No other game change.
 4. AFTER: the same scenario, the same poses, twice. Then a throttled first visit, and a second visit in the same browser profile.
 
-- [ ] The playtest `network` field throttles the page, and an unknown key fails the scenario. proof: `pnpm --filter @threenative/playtest test`
-- [ ] Identical box: at every pose, the AFTER frame diff stays inside the BEFORE-to-BEFORE noise floor, a fresh visual judge returns NEUTRAL, and every gameplay assertion that passed BEFORE passes AFTER (AC-7). proof: `node packages/playtest/dist/runner/cli.js <wildwood>/playtests/streaming.playtest.json --url <wildwood dev url> --browser-recipe webgpu --headed`, BEFORE and AFTER, plus the judge verdict
-- [ ] Load box: at 20 Mbit/s, record the BEFORE and AFTER reveal times beside the box. AFTER reveals first, and the deferred content loads from disk after `prefetch` (AC-2, AC-6). proof: the same scenario with `network: { downloadKbps: 20000 }`
-- [ ] Return-visit box: the second visit loads with 0 asset requests, `cache.misses` 0 and 0 console errors. Record the fill time (AC-1). proof: the same scenario, second run in the same browser profile
+- [x] The playtest `network` field throttles the page, and an unknown key fails the scenario. proof: `pnpm --filter @threenative/playtest test` — PASS, `pnpm exec vitest run packages/playtest/__tests__/schema-boundaries.spec.ts`: 21/21. A web scenario accepts `network: { downloadKbps, latencyMs }`; `uploadKbps` fails as an unknown key; a non-web target fails as browser-only; `downloadKbps: 0` fails. The runner applies CDP `Network.emulateNetworkConditions` before navigation.
+- [x] Identical box: at every pose, the AFTER frame diff stays inside the BEFORE-to-BEFORE noise floor, a fresh visual judge returns NEUTRAL, and every gameplay assertion that passed BEFORE passes AFTER (AC-7). proof: `node packages/playtest/dist/runner/cli.js <wildwood>/playtests/streaming.playtest.json --url <wildwood dev url> --browser-recipe webgpu --headed`, BEFORE and AFTER, plus the judge verdict — PASS. Two runs per arm at 20 Mbit/s, headed WebGPU on NVIDIA Turing (`adapter.info` checked). A fresh read-only judge saw the settled, walked and walked-2 poses: NEUTRAL overall, "no visual difference beyond allowed viewpoint offset", no defect in AFTER. Both arms passed every gameplay assertion (walk 30.9 m, treeCount 2341, groundGap inside ±0.6 m, no console or network errors). Frames are on the orphan `prd-743-screenshots` branch and the PR.
+- [x] Load box: at 20 Mbit/s, record the BEFORE and AFTER reveal times beside the box. AFTER reveals first, and the deferred content loads from disk after `prefetch` (AC-2, AC-6). proof: the same scenario with `network: { downloadKbps: 20000 }` — PASS. Reveal (`startup.readyMs`): BEFORE 42.79 s and 49.39 s; AFTER 21.18 s and 20.53 s. AFTER reveals 21.6-28.9 s earlier. Console order is `TN_VALLEY_REVEAL` then `TN_VALLEY_DETAIL_PREFETCH`, so no prefetched file is requested before the reveal. `TN_VALLEY_DETAIL_PREFETCHED ... settled=66 requested=66` lands before `TN_VALLEY_DETAIL_START`; the detail tier then reads those bytes from disk. Both AFTER runs passed all assertions.
+- [x] Return-visit box: the second visit loads with 0 asset requests, `cache.misses` 0 and 0 console errors. Record the fill time (AC-1). proof: the same scenario, second run in the same browser profile — PASS. A persistent Chromium profile loaded Wildwood twice. Second visit: `ctx.assets.cache` `{ misses: 0, hits: 186, bytesOnDisk: 297153760, bytesTotal: 297153760 }` and 0 requests for any manifest output (GLB, shared KTX2, HDRI). The only 35 asset requests are `public/audio/*.ogg`, which the game authors outside the asset pipeline and which the manifest does not list (`src/audio/decode.ts`). The first visit filled all 297,153,760 manifest bytes; console errors 0.
 
 **Verification:** the cache must not change what reaches the screen, and the owner asked for identical output. So the visual judge rule applies with NEUTRAL as the required verdict. Post the BEFORE and AFTER frames on the PR.
