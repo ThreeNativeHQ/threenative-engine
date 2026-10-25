@@ -57,7 +57,6 @@ const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
   "action-rpg": "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   puzzle: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  rts: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   shooter: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
@@ -155,6 +154,27 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       expect(() => qualityPreset("ultra"), `${kit} rejects an unknown tier`).toThrow();
     },
   );
+
+  it("rts explicitly pins full resolution for thin gameplay cues", async () => {
+    const { default: config } = await import("../templates/rts/threenative.config.js");
+    expect(config.renderer?.resolutionScale).toBe(1);
+    expect(config.display?.maxFps).toBe(60);
+  });
+
+  it.each(TIERS)("rts/%s retains authored costs with its enabled meter policy", async (tier) => {
+    const { qualityPreset } = await import("../templates/rts/src/render/quality.js");
+    const { exposureSettings } = await import("../templates/rts/src/render/exposure.js");
+    const previous = LEGACY_PRESETS.rts?.[tier];
+    if (previous === undefined) throw new Error(`Missing legacy preset rts/${tier}`);
+    const expected = { ...LEGACY_DEFAULTS, ...previous, samples: previous.samples ?? 4 };
+    const { tonemapMode: _curve, autoExposureEnabled: _meter, ...costs } = expected;
+    const preset = qualityPreset(tier);
+    expect(
+      Object.fromEntries(Object.keys(costs).map((key) => [key, Reflect.get(preset, key)])),
+    ).toEqual(costs);
+    expect(preset.exposurePolicy).toBe(exposureSettings);
+    expect(exposureSettings.enabled).toBe(true);
+  });
 
   it.each(TIERS)(
     "minimal/%s follows the core preset with the authored core exposure policy",

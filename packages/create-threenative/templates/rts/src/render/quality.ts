@@ -44,9 +44,8 @@ import type { QualityTier } from "@threenative/core";
 export const resolveQualityTier = qualityTiers.resolve;
 
 const legacyDefaults: IWorldEnvironmentOptions = {
-  // PRD-723: preserve the vendored look until this kit earns IMPROVEMENT. Cost: unmeasured.
-  autoExposureEnabled: false,
-  // Bloom cost: unmeasured; preserve the vendored stage until this kit is judged.
+  // PRD-723: retain authored costs under the approved core filmic curve and meter.
+  // Bloom cost: unmeasured; retain the authored stage and quality choices.
   bloomEnabled: true,
   bloomRadius: 0.5,
   bloomStrength: 0.7,
@@ -67,7 +66,6 @@ const legacyDefaults: IWorldEnvironmentOptions = {
   ssrEnabled: false,
   ssrResolutionScale: 0.5,
   temporalAA: false,
-  tonemapMode: "aces",
   unrealBloomEnabled: false,
   vignetteAmount: 0,
 };
@@ -75,9 +73,7 @@ const legacyDefaults: IWorldEnvironmentOptions = {
 const shared: IWorldEnvironmentOptions = {
   // Bloom cost: unmeasured here; PRD-636 records it in ms.
   bloomEnabled: true,
-  autoExposureEnabled: false,
   exposure: 0.62,
-  tonemapMode: "aces",
   // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
   unrealBloomEnabled: true,
   vignetteAmount: 0.4,

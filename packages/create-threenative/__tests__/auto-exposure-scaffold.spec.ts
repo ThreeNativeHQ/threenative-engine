@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { allTemplates } from "../../../test-support/templates.js";
 
@@ -19,7 +20,10 @@ describe("generated eye adaptation", () => {
       expect(policy).toContain("exposureSettings as coreExposureSettings");
       expect(policy).toContain("{ ...coreExposureSettings }");
     } else {
-      expect(policy).toContain("enabled: false");
+      const { exposureSettings } = await import(
+        pathToFileURL(path.join(directory, "src/render/exposure.ts")).href
+      );
+      expect(exposureSettings.enabled).toBe(name === "rts");
       expect(policy).toContain("exposureMeter");
       expect(policy).toContain("rateUp");
       expect(policy).toContain("rateDown");

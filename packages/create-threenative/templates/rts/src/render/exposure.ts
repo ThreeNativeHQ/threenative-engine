@@ -31,7 +31,7 @@ export interface IExposureSettings {
 }
 
 export const exposureSettings: Readonly<IExposureSettings> = {
-  enabled: false, // Opt in after qualifying this game's bright and dark captures.
+  enabled: true, // Authored meter policy under the core filmic curve.
   key: 0.18,
   minStops: -12,
   maxStops: 12,

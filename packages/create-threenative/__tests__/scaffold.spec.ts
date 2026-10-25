@@ -209,7 +209,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // PRD-723: measured core imports, vendor removal and current kit guidance; no pixel baseline changed.
+  // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
+  // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
   // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
   // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
@@ -293,7 +294,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "20dce7f3bbca3c02cd183644faf5efdfc813d1d1d3800ff6e63d35f68e8b06d3",
   racing: "3d9510c878663278c2486b497860c21bee0adaac19d9e20b0dce8c47306dca91",
   rain: "067261c50b3e083d8679a1d63a27f5d02dcd5aa142958c0324608d4078bf99f9",
-  rts: "e2b7213272bd670f9c937a1209c7275fe4347f02a6263809de8e3c00301a1d48",
+  rts: "49ca704530a3d6c624d38d612fd71b05dd550600f3c484e0a445b1d7394739e8",
   runner: "cabff811de17967ff73ef72bd446ea71e6d526a242621434f72ed6d7ae500d7b",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "86cb9b9056c9fcc0ff2310b1d19c6389cc2698da56c8a3cece1e1869868be957",

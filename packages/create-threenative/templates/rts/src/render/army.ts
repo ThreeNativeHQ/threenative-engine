@@ -66,7 +66,7 @@ const _hurt = new Color(0xddad71);
 const _hostile = new Color(0xff8756);
 const _work = new Color(0x77eddf);
 const _queue = new Color(0x77cddd);
-const _backing = new Color(palette.gridLine);
+const _backing = new Color(palette.unseen);
 
 export function createArmy(
   models: IUnitModels,
@@ -101,6 +101,26 @@ export function createArmy(
   // Read back per frame instead of destructuring `rings.entries()`, which hands back a two-element
   // array for every ring, every frame.
   const ringTeams = STARTS.map((start, index) => start.team ?? index);
+
+  // Dark borders keep the authored faction colours readable on bright ground. Both underlays
+  // share one owned material and follow the foreground transforms without another per-frame walk.
+  const backingMaterial = new MeshBasicMaterial({ color: palette.unseen, depthWrite: false });
+  const ringBackings = new InstancedMesh(
+    new RingGeometry(0.97, 1.105, 40).rotateX(-Math.PI / 2),
+    backingMaterial,
+    CAPACITY * STARTS.length,
+  );
+  const markerBackings = new InstancedMesh(
+    new RingGeometry(0.47, 0.69, 24).rotateX(-Math.PI / 2),
+    backingMaterial,
+    MARKERS,
+  );
+  for (const backing of [ringBackings, markerBackings]) {
+    backing.instanceMatrix.setUsage(DynamicDrawUsage);
+    backing.frustumCulled = false;
+    backing.renderOrder = 1;
+    root.add(backing);
+  }
 
   // Two quads per readout — a coloured fill over the dark backdrop ring that frames it — so a bar
   // reads against any ground. `toneMapped: false` keeps them at the colour they were authored.
@@ -228,6 +248,7 @@ export function createArmy(
         }
       }
 
+      let backingCount = 0;
       for (let teamIndex = 0; teamIndex < rings.length; teamIndex++) {
         const ring = rings[teamIndex];
         const team = ringTeams[teamIndex] ?? 0;
@@ -243,11 +264,14 @@ export function createArmy(
           _dummy.scale.set(radius, 1, radius);
           _dummy.updateMatrix();
           ring.setMatrixAt(count, _dummy.matrix);
+          ringBackings.setMatrixAt(backingCount++, _dummy.matrix);
           count += 1;
         }
         ring.count = count;
         upload(ring.instanceMatrix, count);
       }
+      ringBackings.count = backingCount;
+      upload(ringBackings.instanceMatrix, backingCount);
 
       barCount = 0;
       for (const entity of game.entities) {
@@ -286,10 +310,13 @@ export function createArmy(
         _dummy.scale.setScalar(1 + (1 - slot.life / MARKER_LIFE) * 3);
         _dummy.updateMatrix();
         markerRings.setMatrixAt(live, _dummy.matrix);
+        markerBackings.setMatrixAt(live, _dummy.matrix);
         live += 1;
       }
       markerRings.count = live;
+      markerBackings.count = live;
       upload(markerRings.instanceMatrix, live);
+      upload(markerBackings.instanceMatrix, live);
     },
     dispose: () => {
       // The model geometries belong to `models`, which frees them; the materials are shared by
@@ -308,6 +335,10 @@ export function createArmy(
       (bars.material as MeshBasicMaterial).dispose();
       markerRings.geometry.dispose();
       (markerRings.material as MeshBasicMaterial).dispose();
+      ringBackings.geometry.dispose();
+      markerBackings.geometry.dispose();
+      backingMaterial.dispose();
+      root.remove(ringBackings, markerBackings);
     },
   };
 }
