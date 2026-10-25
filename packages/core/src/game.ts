@@ -95,6 +95,11 @@ import type {
 } from "./scene.js";
 import { Scheduler } from "./schedule.js";
 import {
+  type IStartupOffscreenBytes,
+  STARTUP_OFFSCREEN_BYTES_MARKER,
+  measureStartupOffscreenBytes,
+} from "./startup-offscreen-bytes.js";
+import {
   STARTUP_COMPILE_BUDGET_MS,
   STARTUP_STALL_MS,
   type StartupCompile,
@@ -217,6 +222,8 @@ export interface IGamePluginRuntime {
   readonly startupCompileSettled?: () => boolean;
   /** When the startup milestones happened, for the playtest bridge's startup observation. */
   readonly startupTimeline?: () => IStartupTimeline;
+  /** What the reveal waited for that the spawn camera does not show; absent until the reveal. */
+  readonly startupOffscreenBytes?: () => IStartupOffscreenBytes | undefined;
   /** The renderer-owned bounded pipeline capture, when the renderer has not been opted out. */
   readonly pipelineCensus?: () => IPipelineCensus;
   /**
@@ -1153,6 +1160,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     });
     this.#cameraCull = cameraCull;
     let projectionSettled = false;
+    let offscreenBytes: IStartupOffscreenBytes | undefined;
     /**
      * Progress is a high-water mark over the measured load state, never a value that can fall.
      *
@@ -1270,6 +1278,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown
       // and captures the loading state. The native screenshot path waits on this flag.
       (globalThis as Record<string, unknown>)[STARTUP_READY_GLOBAL] = true;
+      // Measurement only: what the reveal waited for that the spawn camera does not show. A throw
+      // here must cost the report, never the game that is already ready.
+      try {
+        offscreenBytes = measureStartupOffscreenBytes(assets.resolved, threeScene, camera);
+        if (offscreenBytes.offscreenBytes > 0)
+          (offscreenBytes.warn ? console.warn : console.log)(
+            `${STARTUP_OFFSCREEN_BYTES_MARKER}:${JSON.stringify(offscreenBytes)}`,
+          );
+      } catch (error) {
+        console.warn(
+          `${STARTUP_OFFSCREEN_BYTES_MARKER}_FAILED: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       // Again at ready: a world that streams its foliage in under `startup.hold` has none at entry.
       const unlit = unlitFoliageWarning(threeScene);
       if (unlit !== undefined)
@@ -2134,6 +2155,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       seed: this.#config.seed ?? null,
       startupCompileSettled: () => startupReadiness.compileSettled,
       startupTimeline: () => ({ ...timeline }),
+      startupOffscreenBytes: () => offscreenBytes,
       step: gameLoop.step,
       runtimeDiagnosticsSeries: () => gameLoop.runtimeDiagnosticsSeries(),
     };

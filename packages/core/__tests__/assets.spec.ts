@@ -510,7 +510,8 @@ describe("IAssetLoader through the asset manifest", () => {
 
     await assets.texture("rock.png");
 
-    expect(assets.resolved.get("rock.png")).toEqual({
+    expect(assets.resolved.get("rock.png")).toMatchObject({
+      kind: "texture",
       url: "/assets/rock.a1b2c3.png",
       via: "manifest",
     });
@@ -666,7 +667,11 @@ describe("IAssetLoader through the asset manifest", () => {
 
     await assets.model("rock.png");
 
-    expect(assets.resolved.get("rock.png")).toEqual({ url: "/assets/rock.png", via: "source" });
+    expect(assets.resolved.get("rock.png")).toEqual({
+      kind: "model",
+      url: "/assets/rock.png",
+      via: "source",
+    });
   });
 
   it("should not reach for the source directory when the verbatim path works", async () => {
