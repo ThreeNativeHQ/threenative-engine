@@ -48,11 +48,30 @@ const SKELETON_UTILS_ID = "\0threenative:web-engine-skeleton-utils";
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
 export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 
+/**
+ * three's math modules the engine's own JS value classes borrow (PRD-742). They carry no renderer,
+ * so the runtime may bundle them; a game still may not (the deep-import refusal below).
+ */
+const ENGINE_MATH_MODULES = new Set([
+  "three/src/math/Box3.js",
+  "three/src/math/Color.js",
+  "three/src/math/Euler.js",
+  "three/src/math/Matrix3.js",
+  "three/src/math/Matrix4.js",
+  "three/src/math/Quaternion.js",
+  "three/src/math/Sphere.js",
+  "three/src/math/Vector2.js",
+  "three/src/math/Vector3.js",
+  "three/src/math/Vector4.js",
+]);
+/** Where the browser back end's value classes live: only these may import three's math modules. */
+const ENGINE_MATH_IMPORTER = /[\\/](?:browser-math\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
+
 export interface IWebEnginePlugin {
   readonly name: string;
   readonly enforce: "pre";
   configResolved(config: { readonly root: string }): void;
-  resolveId(source: string): string | null;
+  resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
 }
 
@@ -138,7 +157,7 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     configResolved(config) {
       root ??= config.root;
     },
-    resolveId(specifier) {
+    resolveId(specifier, importer = "") {
       if (!native) return null;
       // three ships each addon under `addons/` and under its older `examples/jsm/` path.
       const source = specifier.replace(/^three\/examples\/jsm\//u, "three/addons/");
@@ -174,7 +193,10 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         return browserModule("web-engine-lut-cube-loader.js", "addons/lut-cube-loader-web.ts");
       if (POST_EFFECT_ADDONS.includes(source))
         return browserModule("web-engine-post-effects.js", "addons/post-effects-web.ts");
-      if (/^three\/(?:src|build)\//u.test(source))
+      if (
+        /^three\/(?:src|build)\//u.test(source) &&
+        !(ENGINE_MATH_MODULES.has(source) && ENGINE_MATH_IMPORTER.test(importer))
+      )
         throw new Error(
           `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "threenative"; import from three, three/webgpu or three/tsl.`,
         );
