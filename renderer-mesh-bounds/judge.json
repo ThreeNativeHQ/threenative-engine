@@ -1,0 +1,25 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 7,
+  "openedImages": 7,
+  "overall": "NEUTRAL",
+  "frames": [
+    {
+      "name": "breakable-time-matched.playtest.json",
+      "verdict": "NEUTRAL",
+      "regions": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reason": "All four raw 1280x720 frames (BEFORE run1/run2, AFTER run1/run2) and the sheet's full-frame and seven-cue crop panels show no visible difference; regions 1-4 were all inspected. Camera, truck, floor grid, blue boxes, red sign, gun/glove, HUD (1:39, 0:5, 27|90), minimap dots and the dark-outlined crosshair at (633,353) are at the same positions and the same sharpness. All seven cues, (693,393), (599,402), (735,350), (663,333), (603,380), (555,343) and (642,361), plus the pot shard, are present in both AFTER frames at the same position, size, hue and contrast as BEFORE. The decal beside the crosshair is not fainter. Wheel/bumper/fender/blue-box/pot contact shadows, floor and fender highlight headroom, sky/haze and the distant enemy are unchanged. I saw no new halo, grain, blur, cast, clipping or material detail loss. Run1 and run2 agree within each arm. No improvement is claimed, and the style references earn none."
+    }
+  ],
+  "limitations": "Visual inspection only (no commands or pixel diffs were permitted). I can attest to no visible difference, not bit-exactness; a shift of a few code values would not be detectable by eye, and the sheet crops are roughly 1.5x interpolated upscales of the raw frames. This is a static one-pose proof with two repeats per arm. It says nothing about motion, fading, exposure stability, other poses or other debris/decal ages. The timing match is inferred from identical HUD state (timer 1:39, score 0:5, ammo 27|90, minimap dots) and an identical settled debris/decal/pot-shard layout. The frames carry no timestamps and the HUD clock has 1 s granularity, so sub-second effect-age equality is not proven. The arms are visually indistinguishable, so the images cannot independently show that the AFTER bounds path was exercised; BEFORE/AFTER identity is taken from the sheet labels and the brief. All cues and the pot shard being present shows no visible false rejection in this pose only. It cannot establish full hit-equivalence, AI LOS correctness or fullkit acceptance. Both style references (the L9 sphere crops and the full sun60 exterior/spheres/interior/backlit board) have different geometry, so they earn no improvement credit and were used only for look sanity. This verdict is appearance-only: canonical 1920 perf is still FAIL (34.4 ms > 33), and unpaired 1280 CPU diagnostics are not FPS acceptance.",
+  "timingConfoundResolved": true
+}
