@@ -59,8 +59,6 @@ const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
   rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  "tower-defense":
-    "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
 };
 
 /** Runtime names imported from `@threenative/core` in one file. */
@@ -219,6 +217,35 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       });
       expect(preset.tonemapMode, `shooter/${tier} tonemapMode`).toBe("filmic");
       expect(preset.autoExposureEnabled, `shooter/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "tower-defense/%s follows the core preset with its two named exposure overrides",
+    async (tier) => {
+      const quality = (await import(
+        pathToFileURL(renderFile("tower-defense", "quality.ts")).href
+      )) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(
+        pathToFileURL(renderFile("tower-defense", "exposure.ts")).href
+      )) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.3,
+        minStops: -1,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+      });
+      expect(preset.tonemapMode, `tower-defense/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `tower-defense/${tier} metered exposure`).toBe(true);
     },
   );
 });

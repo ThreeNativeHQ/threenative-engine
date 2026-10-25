@@ -329,7 +329,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   starter: "6e7c0eba446394f834d344fb5e4885ed48e53ffbb93154d585ce29dbf0487029",
-  "tower-defense": "afbd7c71d9420c2fdd31138ff9cca3f778082b68a8e81732b41cb33a0de46bc7",
+  "tower-defense": "87d031feee1168aaec8191574e7e9422d48c8886e10124305e47db5d98ba1884",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
