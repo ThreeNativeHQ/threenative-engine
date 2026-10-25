@@ -292,6 +292,54 @@ describe("RenderChain", () => {
     expect(current.velocityEnabled.value).toBe(false);
   });
 
+  it("reports measured temporal input/output sizes after a frame and updates them on resize", () => {
+    const current = renderer("webgpu");
+    const temporal = {
+      active: false,
+      inputWidth: 0,
+      inputHeight: 0,
+      outputWidth: 0,
+      outputHeight: 0,
+    };
+    Object.assign(current, { raw: { mrt: new Set(["velocity"]), info: { engine: { temporal } } } });
+    const report: string[] = [];
+    const chain = new RenderChain(current, {
+      report: (line) => report.push(line),
+      stages: [stage("traa", [])],
+      request: { stages: ["traa"], tier: "medium", velocity: { source: "mrt" } },
+    });
+    chain.observeFrame();
+    expect(chain.applied).not.toHaveProperty("stageSizes");
+    Object.assign(temporal, {
+      active: true,
+      inputWidth: 1280,
+      inputHeight: 720,
+      outputWidth: 1920,
+      outputHeight: 1080,
+    });
+    chain.observeFrame();
+    expect(readRenderChainObservation(current)).toMatchObject({
+      stageSizes: { traa: { input: [1280, 720], output: [1920, 1080] } },
+    });
+    expect(
+      JSON.parse(report.at(-1)?.slice("TN_RENDER_CHAIN:".length) ?? "{}").applied,
+    ).toMatchObject({
+      stageSizes: { traa: { input: [1280, 720], output: [1920, 1080] } },
+    });
+    const count = report.length;
+    chain.observeFrame();
+    expect(report).toHaveLength(count);
+    temporal.inputWidth = 1382;
+    temporal.inputHeight = 778;
+    chain.observeFrame();
+    expect(chain.applied).toMatchObject({
+      stageSizes: { traa: { input: [1382, 778], output: [1920, 1080] } },
+    });
+    temporal.active = false;
+    chain.observeFrame();
+    expect(chain.applied).not.toHaveProperty("stageSizes");
+  });
+
   it("samples temporal rejection only after a completed frame", () => {
     const current = renderer("webgpu");
     Object.assign(current, { raw: { mrt: new Set(["velocity"]) } });

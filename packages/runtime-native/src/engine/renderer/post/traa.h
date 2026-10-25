@@ -26,6 +26,7 @@ public:
     TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options);
     ~TraaPass();
     void resize(uint32_t width, uint32_t height);
+    void resize(uint32_t inputWidth, uint32_t inputHeight, uint32_t outputWidth, uint32_t outputHeight);
     void setOptions(const TraaOptions& options) { options_ = options; }
     void cameraCut() { history_.cameraCut(0); }
     Matrix begin(const Matrix& projection, const Matrix& world, const Matrix& view,
@@ -52,8 +53,18 @@ public:
         uint64_t frame = 0;
         double jitterX = 0, jitterY = 0;
         bool historyValid = false;
+        uint32_t inputWidth = 0, inputHeight = 0, outputWidth = 0, outputHeight = 0;
+        uint32_t depthHistoryWidth = 0, depthHistoryHeight = 0, historyWidth = 0, historyHeight = 0;
+        uint32_t jitterLength = 31;
     };
-    Status status() const { return {history_.frame(), jitter_[0], jitter_[1], history_.historyValid(0)}; }
+    Status status() const {
+        return {history_.frame(), jitter_[0], jitter_[1], history_.historyValid(0),
+                velocity_ ? wgpuTextureGetWidth(velocity_) : 0, velocity_ ? wgpuTextureGetHeight(velocity_) : 0,
+                resolve_ ? wgpuTextureGetWidth(resolve_) : 0, resolve_ ? wgpuTextureGetHeight(resolve_) : 0,
+                historyDepth_ ? wgpuTextureGetWidth(historyDepth_) : 0, historyDepth_ ? wgpuTextureGetHeight(historyDepth_) : 0,
+                historyColor_ ? wgpuTextureGetWidth(historyColor_) : 0, historyColor_ ? wgpuTextureGetHeight(historyColor_) : 0,
+                jitterLength_};
+    }
     // One resolve in `kMeasureEvery` counts the pixels whose history it discarded (stats[0]) and pulled into the colour
     // neighbourhood (stats[1]). The owner gives the buffer (8 bytes, storage, copy source and destination) and reads it back
     // after the frame is submitted; `takeMeasure` says whether the last resolve counted, once.
@@ -66,7 +77,7 @@ public:
     std::optional<Measure> takeMeasure() {
         if (!measured_) return std::nullopt;
         measured_ = false;
-        return Measure{measuredFrame_, width_ * height_};
+        return Measure{measuredFrame_, outputWidth_ * outputHeight_};
     }
     const graph::RenderGraph& renderGraph() const { return graph_; }
     // Fixture diagnostics only. No allocation/readback unless explicitly enabled by the driver.
@@ -77,6 +88,7 @@ public:
             std::string name;
             uint32_t pitch;
             uint64_t size;
+            uint32_t width, height;
         };
         std::vector<Texture> pending;
         std::string metadata;
@@ -94,10 +106,12 @@ private:
     graph::HistoryTracker history_;
     graph::RenderGraph graph_;
     uint32_t width_ = 0, height_ = 0;
+    uint32_t outputWidth_ = 0, outputHeight_ = 0, jitterLength_ = 31;
     Matrix projection_{}, previousProjection_{}, world_{}, previousWorld_{}, view_{}, previousView_{};
     Matrix inverseProjection_{}, previousInverseProjection_{};
     bool started_ = false;
     std::array<double, 2> jitter_{};
+    std::array<double, 2> previousJitter_{};
     uint32_t depthGeneration_ = 0;
     WGPUTexture historyColor_ = nullptr, historyDepth_ = nullptr, resolve_ = nullptr, velocity_ = nullptr;
     WGPUTextureView historyView_ = nullptr, historyDepthView_ = nullptr, resolveView_ = nullptr, velocityView_ = nullptr;

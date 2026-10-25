@@ -25,6 +25,7 @@
 #include <libplatform/libplatform.h>
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/post/traa.h"
 
 #include <algorithm>
 #include <array>
@@ -229,6 +230,7 @@ class V8Game {
     bool hasGpu_;
     // three's renderer settings the game last set (WebGPURenderer's defaults until it does).
     OutputState output_{std::nullopt, 1, true};
+    float renderScale_ = 1;
     // The GPU adapter's `info` fields, read before the bundle boots; empty without a GPU (a check).
     std::vector<std::pair<std::string, std::string>> adapterInfo_;
     // The last frame the player drew: three's `renderer.info.render` draw calls and triangles.
@@ -284,6 +286,7 @@ class V8Game {
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
         renderer.setSampleCount(samples_);
+        renderer.setRenderScale(renderScale_);
         renderer.setGpuTimerSourceFrame(sourceFrame_);
         database.shadowMapEnabled = shadowMap_;
         database.shadowMapType = shadowMapType_;
@@ -524,6 +527,13 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
     };
     if (info.Length() != 1 || !info[0]->IsObject()) return refuse("expected one settings object");
     const auto settings = info[0].As<v8::Object>();
+    v8::Local<v8::Value> renderScale;
+    if (settings->Get(ctx, v8str(isolate, "renderScale")).ToLocal(&renderScale) && !renderScale->IsUndefined()) {
+        if (!renderScale->IsNumber() || !std::isfinite(renderScale.As<v8::Number>()->Value()) ||
+            renderScale.As<v8::Number>()->Value() < .25 || renderScale.As<v8::Number>()->Value() > 1)
+            return refuse("renderScale must be between 0.25 and 1");
+        game.renderScale_ = static_cast<float>(renderScale.As<v8::Number>()->Value());
+    }
     v8::Local<v8::Value> mapping, exposure, colorSpace, shadowMap, enabled, type;
     if (!settings->Get(ctx, v8str(isolate, "toneMapping")).ToLocal(&mapping) ||
         !settings->Get(ctx, v8str(isolate, "toneMappingExposure")).ToLocal(&exposure) ||
@@ -622,7 +632,15 @@ void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     status->Set(ctx, v8str(isolate, "countedFrame"), v8::Number::New(isolate, static_cast<double>(temporal.countedFrame))).Check();
     v8::Local<v8::Value> jitter[] = {v8::Number::New(isolate, temporal.jitterX), v8::Number::New(isolate, temporal.jitterY)};
     status->Set(ctx, v8str(isolate, "jitter"), v8::Array::New(isolate, jitter, 2)).Check();
+    status->Set(ctx, v8str(isolate, "inputWidth"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputWidth() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "inputHeight"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputHeight() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "outputWidth"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->width() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "outputHeight"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->height() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "jitterLength"), v8::Number::New(isolate, game.renderer_ && game.renderer_->traaDebugPass() ? game.renderer_->traaDebugPass()->status().jitterLength : 0)).Check();
     record->Set(ctx, v8str(isolate, "temporal"), status).Check();
+    record->Set(ctx, v8str(isolate, "temporalUpscale"), v8::Boolean::New(isolate, game.renderer_ && game.renderer_->temporalUpscale())).Check();
+    record->Set(ctx, v8str(isolate, "inputWidth"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputWidth() : 0)).Check();
+    record->Set(ctx, v8str(isolate, "inputHeight"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputHeight() : 0)).Check();
     auto timing = v8::Object::New(isolate);
     timing->Set(ctx, v8str(isolate, "enabled"), v8::Boolean::New(isolate, game.gpuTimerRuns_)).Check();
     timing->Set(ctx, v8str(isolate, "samples"), v8::Number::New(isolate, static_cast<double>(game.gpuSamples_))).Check();

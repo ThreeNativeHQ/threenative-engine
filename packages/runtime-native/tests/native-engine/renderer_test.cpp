@@ -7,6 +7,7 @@
 #include "engine/scene/texture.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/post/traa.h"
+#include "engine/renderer/post/effects.h"
 #include "engine/shader/graph/post_effects.h"
 #include "mystral/webgpu/context.h"
 
@@ -136,7 +137,18 @@ void traaValidation() {
         Renderer renderer(instance, device, queue, events);
         renderer.setSize(32, 24);
         renderer.setOutput(OutputState{});
+        renderer.setRenderScale(0.5f);
+        CHECK(!renderer.temporalUpscale());
+        CHECK(renderer.inputWidth() == 32 && renderer.inputHeight() == 24);
+        for (const float scale : {0.24f, 1.01f, std::nanf("")}) {
+            bool invalidScale = false;
+            try { renderer.setRenderScale(scale); } catch (const std::runtime_error&) { invalidScale = true; }
+            CHECK(invalidScale);
+        }
         renderer.setTraa(TraaOptions{});
+        CHECK(renderer.temporalUpscale());
+        CHECK(renderer.width() == 32 && renderer.height() == 24);
+        CHECK(renderer.inputWidth() == 16 && renderer.inputHeight() == 12);
         CameraState camera;
         camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
             {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -154,6 +166,7 @@ void traaValidation() {
         renderer.cutHistory();
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         renderer.setSize(16, 12);
+        CHECK(renderer.inputWidth() == 8 && renderer.inputHeight() == 6);
         renderer.render(items, camera, LightState{}, {0.1, 0.2, 0.3, 0.5});
         bool readDone = false;
         renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> pixels) {
@@ -162,6 +175,121 @@ void traaValidation() {
         });
         for (int i = 0; i < 1000 && !readDone; ++i) { renderer.poll(); events.drain(); }
         CHECK(readDone);
+        namespace g = shader::graph;
+        auto temporal = std::make_shared<g::PostEffect>();
+        temporal->kind = "TRAANode";
+        temporal->output = "scene";
+        temporal->inputs = {g::texture("scene", g::uv()), g::texture("depth", g::uv()), g::texture("velocity", g::uv())};
+        renderer.setPostGraph(g::effectNode(temporal));
+        CHECK(renderer.inputWidth() == 8 && renderer.inputHeight() == 6);
+        renderer.setSize(19, 13);
+        renderer.setRenderScale(0.25f);
+        CHECK(renderer.inputWidth() == 5 && renderer.inputHeight() == 4);
+        renderer.setSize(16, 12);
+        renderer.setPostGraph(nullptr);
+        CHECK(!renderer.temporalUpscale());
+        CHECK(renderer.inputWidth() == 16 && renderer.inputHeight() == 12);
+    }
+    // PRD-741: an upsampling resolve keeps velocity and depth at the input size and the colour
+    // history and resolve at the output size. Dawn exposes no view-to-texture getter, so real
+    // input/output targets make a wrong internal size a copy-extent or attachment validation error.
+    {
+        const auto texture = [&](uint32_t width, uint32_t height, WGPUTextureFormat format,
+                                 WGPUTextureUsage usage) {
+            WGPUTextureDescriptor desc{};
+            desc.dimension = WGPUTextureDimension_2D; desc.size = {width, height, 1};
+            desc.mipLevelCount = desc.sampleCount = 1; desc.format = format; desc.usage = usage;
+            return wgpuDeviceCreateTexture(device, &desc);
+        };
+        const auto identity = TraaPass::Matrix{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+        const auto resolveAt = [&](uint32_t inputWidth, uint32_t inputHeight,
+                                   uint32_t outputWidth, uint32_t outputHeight) {
+            TraaPass upscale(device, queue, TraaOptions{});
+            upscale.resize(inputWidth, inputHeight, outputWidth, outputHeight);
+            const auto status = upscale.status();
+            CHECK(status.inputWidth == inputWidth && status.inputHeight == inputHeight);
+            CHECK(status.depthHistoryWidth == inputWidth && status.depthHistoryHeight == inputHeight);
+            CHECK(status.outputWidth == outputWidth && status.outputHeight == outputHeight);
+            CHECK(status.historyWidth == outputWidth && status.historyHeight == outputHeight);
+            const auto ratio = std::max(double(outputWidth) / inputWidth, double(outputHeight) / inputHeight);
+            CHECK(status.jitterLength >= 8.0 * ratio * ratio);
+            CHECK(traaJitter(0, status.jitterLength) == traaJitter(status.jitterLength, status.jitterLength));
+            const auto colour = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc |
+                                WGPUTextureUsage_CopyDst | WGPUTextureUsage_RenderAttachment;
+            const auto beauty = texture(inputWidth, inputHeight, WGPUTextureFormat_RGBA16Float, colour);
+            const auto depth = texture(inputWidth, inputHeight, WGPUTextureFormat_Depth32Float,
+                                       WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc |
+                                           WGPUTextureUsage_CopyDst);
+            const auto output = texture(outputWidth, outputHeight, WGPUTextureFormat_RGBA16Float, colour);
+            const auto beautyView = wgpuTextureCreateView(beauty, nullptr);
+            const auto depthView = wgpuTextureCreateView(depth, nullptr);
+            const auto outputView = wgpuTextureCreateView(output, nullptr);
+            const bool dump = inputWidth == 13;
+            if (dump) upscale.enableDebugDump();
+            for (int frame = 0; frame < (dump ? 20 : 3); ++frame) {
+                const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+                upscale.begin(identity, identity, identity);
+                upscale.seedHistory(encoder, beauty);
+                upscale.fillVelocity(encoder, depthView);
+                upscale.resolve(encoder, beauty, beautyView, depth, depthView, output, outputView);
+                const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
+                wgpuQueueSubmit(queue, 1, &commands);
+                wgpuCommandBufferRelease(commands); wgpuCommandEncoderRelease(encoder);
+            }
+            if (dump) {
+                CHECK(!upscale.debugDump()->pending.empty());
+                for (const auto& staged : upscale.debugDump()->pending) {
+                    const bool input = staged.name == "beauty" || staged.name == "velocity";
+                    CHECK(staged.width == (input ? inputWidth : outputWidth));
+                    CHECK(staged.height == (input ? inputHeight : outputHeight));
+                    CHECK(staged.size == uint64_t(staged.pitch) * staged.height);
+                }
+            }
+            CHECK(!upscale.needsSeed());
+            upscale.resize(inputWidth, inputHeight, outputWidth, outputHeight + 1);
+            CHECK(upscale.needsSeed() && upscale.status().historyHeight == outputHeight + 1);
+            wgpuTextureViewRelease(outputView); wgpuTextureRelease(output);
+            wgpuTextureViewRelease(depthView); wgpuTextureRelease(depth);
+            wgpuTextureViewRelease(beautyView); wgpuTextureRelease(beauty);
+        };
+        resolveAt(1280, 720, 1920, 1080);
+        resolveAt(13, 9, 19, 13);
+        resolveAt(27, 27, 100, 100);
+        resolveAt(27, 32, 100, 100);
+        const auto rejects = [&](uint32_t inputWidth, uint32_t inputHeight,
+                                 uint32_t outputWidth, uint32_t outputHeight) {
+            TraaPass invalid(device, queue, TraaOptions{});
+            try { invalid.resize(inputWidth, inputHeight, outputWidth, outputHeight); }
+            catch (const std::exception&) { return true; }
+            return false;
+        };
+        CHECK(rejects(0, 9, 19, 13));
+        CHECK(rejects(13, 9, 0, 13));
+        CHECK(rejects(13, 9, 1920, 1080)); // input/output far below the documented 0.25 floor
+    }
+    {
+        shader::graph::PostPass before, resolve, after, fixed;
+        before.host = after.host = fixed.host = "fixture";
+        before.output = "before"; before.reads = {{"beauty", "scene"}};
+        resolve.host = "traa"; resolve.output = "resolve";
+        resolve.reads = {{"beauty", "before"}, {"depth", "depth"}};
+        after.output = "after"; after.reads = {{"beauty", "resolve"}};
+        fixed.output = "fixed"; fixed.reads = {{"beauty", "after"}}; fixed.width = 7; fixed.height = 5;
+        PostEffects effects(device, queue, {before, resolve, after, fixed});
+        effects.resize(1280, 720, 1920, 1080);
+        CHECK((effects.targetSize("before") == std::array<uint32_t, 2>{1280, 720}));
+        CHECK((effects.targetSize("resolve") == std::array<uint32_t, 2>{1920, 1080}));
+        CHECK((effects.targetSize("after") == std::array<uint32_t, 2>{1920, 1080}));
+        CHECK((effects.targetSize("fixed") == std::array<uint32_t, 2>{7, 5}));
+        bool missing = false;
+        try { effects.targetSize("missing"); } catch (const std::out_of_range&) { missing = true; }
+        CHECK(missing);
+        PostEffects early(device, queue, {before});
+        early.resize(1280, 720, 1920, 1080, true);
+        CHECK((early.targetSize("before") == std::array<uint32_t, 2>{1920, 1080}));
+        PostEffects shuffled(device, queue, {after, resolve, before});
+        shuffled.resize(1280, 720, 1920, 1080);
+        CHECK((shuffled.targetSize("after") == std::array<uint32_t, 2>{1920, 1080}));
     }
     {
         EventQueue events;

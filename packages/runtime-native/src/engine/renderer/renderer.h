@@ -443,6 +443,11 @@ public:
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
     void setSize(uint32_t width, uint32_t height);
+    /** Scene fraction; applies only while the temporal resolve reconstructs the display frame. */
+    void setRenderScale(float scale);
+    bool temporalUpscale() const { return traa_ != nullptr; }
+    uint32_t inputWidth() const { return inputWidth_; }
+    uint32_t inputHeight() const { return inputHeight_; }
     /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
     void setSampleCount(uint32_t samples);
     /** The samples the scene draws with: 1 while a traa() effect is in the post graph, otherwise the requested count. */
@@ -1027,6 +1032,8 @@ private:
     WGPUTextureFormat presentFormat_ = WGPUTextureFormat_Undefined;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
+    uint32_t inputWidth_ = 0, inputHeight_ = 0;
+    float renderScale_ = 1;
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;

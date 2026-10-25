@@ -75,6 +75,23 @@
   ],
   "tests": [
     {
+      "id": "temporal-aa-upsampled",
+      "title": "owned TRAA reconstructs a display frame from a 0.72-scale scene",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-upsampled.js",
+      "captureFrames": 300,
+      "completionMarker": "TN_CONFORMANCE_UPSAMPLE_300_FRAMES",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "temporal-aa",
       "title": "full-resolution temporal AA with object motion history",
       "category": "rendering",
@@ -578,6 +595,19 @@
         "perceptualDeltaE": 3.0
       },
       "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "27-tsl-attribute-color",
+      "title": "TSL attribute(\"color\") in a colorNode without vertexColors",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-attribute-color.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
       "required": true
     },
     {

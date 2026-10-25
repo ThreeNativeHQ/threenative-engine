@@ -298,9 +298,11 @@ ExprId Lowerer::emit(Node node) {
             return program_.uniform(d.name, d.type);
         }
         case Kind::Attribute:
-            // The fragment's `position` would collide with the clip-position output's name.
+            // The fragment's `position` and `color` would collide with the stage outputs' names.
             if (d.name == "position" && program_.stage() == Stage::Fragment)
                 return program_.varying("positionGeometry", d.type);
+            if (d.name == "color" && program_.stage() == Stage::Fragment)
+                return program_.varying("vertexColor", d.type);
             return tsl::attribute(d.name, d.type).id;
         case Kind::Varying:
             // varying(node): a vertex stage computes what it carries; a fragment stage reads it.

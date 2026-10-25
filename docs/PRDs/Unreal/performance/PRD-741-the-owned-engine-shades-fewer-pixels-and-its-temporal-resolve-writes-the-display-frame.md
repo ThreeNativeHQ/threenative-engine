@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-741 — The owned engine shades fewer pixels and its temporal resolve writes the display frame
 
-**Status:** NOT STARTED — planning filed 2026-10-24.
+**Status:** PARTIAL — implementation started 2026-10-24; acceptance remains open.
 **Priority:** P1 — Phase 2 is the only measured path from about 21 ms to the 15 ms GPU frame that the starter kits need for 60 fps on Iris Xe.
 **Complexity:** 8 (HIGH) — two raster sizes in one C++ frame (+3), post-stage routing across the TS/C++ seam (+2), history lifetime on scale steps (+2), hardware-only gates (+1).
 **Depends on:** [PRD-539](PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) for the motion-quality corpus (`scripts/verify-temporal-motion.ts`). This PRD does not wait for PRD-539 to close (see Decisions).
@@ -63,14 +63,22 @@ Our chain order (`packages/core/src/render/chain.ts:18-35`) already matches. `am
 
 ### Phase 1 — Measurement and a red test
 
+2026-10-24 baseline: the focused C++ renderer target built successfully with Dawn and
+`TN_ENGINE_ONLY=ON` in `build/prd741`. `ctest --test-dir packages/runtime-native/build/prd741
+-R '^native_engine_traa_validation$' --output-on-failure` failed three existing draw-count
+assertions (lines 210, 214, 224) before the upsampling implementation; GPU validation otherwise
+reported no error. These failures need diagnosis before claiming the native gate.
+The final binary passes the unchanged draw-count assertions; three additional focused repeats
+also passed. The initial count failure did not recur; its cause remains unproven.
+
 - [ ] Per-pass GPU ms for Hop Garden medium on Iris Xe at pinned scale 1.0 and 0.72 (stretch path), each pass sorted into input-bound, output-bound or fixed. This gives R (input-bound ms) and F (the rest) for the projection below. proof: `node packages/playtest/dist/runner/cli.js perf` on the kit scenario with `?tnFrameSpans=1`, 2 runs per arm, table in this box.
-- [ ] Red: an engine test asserts that `TraaPass` at input 1280x720 and output 1920x1080 has input-size velocity and depth history, output-size color history and resolve, and a jitter length of at least 8/f². It fails on develop. proof: `pnpm native:build` then the `tn-native-engine-tests` `traa_validation` case (`renderer_test.cpp:32`), exit 1 before and 0 after.
+- [x] Red: an engine test asserts that `TraaPass` at input 1280x720 and output 1920x1080 has input-size velocity and depth history, output-size color history and resolve, and a jitter length of at least 8/f². proof: the focused native renderer test object build exited 1 before implementation (missing four-argument `resize`); the CMake renderer/player build then passed, and `ctest --test-dir packages/runtime-native/build/prd741 -R '^native_engine_traa_validation$' --output-on-failure` passed 1/1 after implementation. Status reads actual GPU allocation sizes; tests also encode three resolves, check output-only resize invalidation, odd dimensions, and the 0.27 fraction.
 
 ### Phase 2 — Engine resolve, routing and tier defaults
 
-- [ ] `TraaPass` resolves an input raster into a display-size history with the TAAU kernel, and the red test turns green. proof: `traa_validation` exit 0. The new conformance row `temporal-aa-upsampled` passes on web (`pnpm parity`) and desktop native (`pnpm native:verify:desktop`).
-- [ ] The scene and the stages before `traa` draw at input size, and the stages after `traa` draw at display size. The scaler takes rungs below 0.61 only while an upsampling `traa` runs. proof: a `packages/core/__tests__/resolution-scaler-desktop-floor.spec.ts` case, plus a stage-size field on the `TN_RENDER_CHAIN` line, read in a kit playtest.
-- [ ] Per-tier start scale from Unreal's `PerfIndexValues_ResolutionQuality`, snapped to our rungs: medium 0.72 (Unreal 71, and 72.9 at a 1080p display), high 0.85 (87). Low stays 1.0 because it runs SMAA and has nothing to reconstruct. The scaler then moves from that start. proof: `pnpm exec vitest run packages/core/__tests__/` quality and scaler specs.
+- [x] `TraaPass` resolves an input raster into a display-size history with the TAAU kernel, and the red test turns green. proof: frozen native `traa_validation`, `traa_history` and `history_cut` pass 3/3. `pnpm parity --target web --engine threenative --only-tests temporal-aa-upsampled --reference artifacts/conformance/prd741-color-final-reference --out artifacts/conformance/prd741-color-final-web` and the equivalent `--target desktop` using this branch's `tn-native-engine-player-v8` both report the selected row PASS after 300 actual temporal frames. Web mismatch 0.05806966 / deltaE 0.3717278; desktop 0.05811415 / 0.3716437; unchanged limits 0.06 / 9; no page, frame or GPU errors. Actual input 922x518, output 1280x720, jitter length 31. Aggregate exit 2 reports 129 intentionally unselected rows blocked, not failures. The desktop proof uses the owned player and a required frame-counter marker rather than the legacy-default `native:verify:desktop`; its frame-300 marker and nonuniform screenshot prove the requested owned native 300-frame run. A discovered runner false positive (accepting readiness despite `TN_V8_FRAME_FAILED`) now has red-to-green fail-closed tests; all 90 runner tests pass.
+- [x] The scene and the stages before `traa` draw at input size, and the stages after `traa` draw at display size. The scaler takes rungs below 0.61 only while an upsampling `traa` runs. proof: native `traa_validation` passes actual pre/resolve/post GPU allocation checks, including shuffled pass order, fixed-size overrides and removing TRAA. The scaler floor test failed at 0.23 before the fix and passes at 0.27; a second red-to-green check restores 0.61 when reconstruction disappears, including during cooldown. All 87 scaler tests pass. A headed, real-display NVIDIA Turing Hop Garden smoke at medium/1080p/0.72 passed and emitted `TN_RENDER_CHAIN` with `stageSizes.traa.input=[1382,778]`, `output=[1920,1080]` (253 draws, 251575 triangles; no diagnostics). The test used exported kit authoring from PR #563, not its engine changes, and current core plus Wasm SHA `655be40f3b95a12fee407579e4abbb15dfabfa80b8e5491c4f3eca1c6871c3c3`.
+- [x] Per-tier start scale from Unreal's `PerfIndexValues_ResolutionQuality`, snapped to our rungs: medium 0.72 (Unreal 71, and 72.9 at a 1080p display), high 0.85 (87). Low stays 1.0 because it runs SMAA and has nothing to reconstruct. The scaler then moves from that start. proof: focused resolution-scaler, renderer-surface, render-chain and browser-renderer specs passed 180/180; world-environment-defaults, game-gpu-class-start, game-auto-scale and renderer-config specs passed 40/40. Tier-table and display-buffer behavior have red-to-green coverage; `game.ts` chooses the installed chain tier before its first draw and keeps explicitly pinned scales.
 
 ### Phase 3 — Gates
 
@@ -84,12 +92,21 @@ Frame after the GTAO work: ~21 ms. Not scaled by the input size: local exposure 
 - At 0.72 (0.518 of the pixels): 6.3 + 14.7 x 0.518 = 6.3 + 7.6 = **13.9 ms**. Add ~0.3 ms for 9 taps instead of 1 in the resolve: **~14.2 ms**. That meets the ~15 ms target.
 - If X = 6 ms (F = 9.3, R = 11.7): 9.3 + 6.1 = 15.4 ms at 0.72. That misses, and the scaler needs 0.61 (0.372): 9.3 + 4.4 = 13.7 ms.
 
+## Current verification (2026-10-24)
+
+- The owner-reported white Adventure ground was an engine shader linkage bug: a fragment `attribute("color")` collided with the fragment output named `color`. Reused PR #563's existing `vertexColor` varying fix and retained geometry colors for explicit TSL reads with `vertexColors: false`; no game workaround. The existing material-build test failed before the port and passes afterward. The rebuilt native material, TRAA validation, TRAA history and history-cut tests pass 4/4. Final Wasm SHA: `ddee0306ac28c54ff78720077e52584e470843c7c114f51f384bb37365353546`.
+- Reinstalled Adventure passed its runtime scenario with zero diagnostics and console errors. A real headed screenshot confirms textured green ground is restored; a second initial-view capture shows the character, path, both training dummies and hut. The required independent visual judgment remains in progress.
+- The final color-attribute and temporal-upsample conformance rows pass 2/2 on upstream, owned web and owned desktop. Color mismatch/deltaE is 0.000564236111 / 0.000250461924 on both owned targets; final native SHA `4462d82b6c49842b65aa991d93ccb50119952aa92b02f23a72698a2e78328308`. This is selected-row coverage, not the full conformance board.
+- Workspace typecheck passed; lint passed with 1831 warnings. Related TypeScript tests pass 220/220; conformance-runner tests pass 90/90. These are focused checks, not a claim that the complete product board ran.
+- First qualified normal-vsync Iris baseline: real Intel gen12lp, 12 steady five-second windows, 3565 presented frames and 566 fresh GPU readings. Median window GPU p50 43.035 ms; presented p95 16.8 ms in every window. The panel measures 59.88 Hz, and an empty control also has p95 16.8 ms. The strict 16.7 ms target remains unchanged and unmet; paired 0.72 measurements are still running.
+
 ## Decisions
 
 - 2026-10-24 (filing agent): the brief asked for 5 phases. `docs/PRDs/AGENTS.md` R5 allows at most 3, so measurement + red test, engine + routing + tier defaults, and gates are the 3 phases. Every requested item keeps its own box.
 - 2026-10-24: the port is Gen4 TAAU (one resolve pass, kernel above) inside the existing `TraaPass`. TSR's 200% history, rejection and flicker levers stay in PRD-539. Run the PRD-539 motion script on the AFTER arm and record its result. It does not gate this PRD, because its thresholds have not passed on any reconstructor (PRD-539 Problem).
 - 2026-10-24: local exposure stays at display size after the resolve, in Unreal's order (`PostProcessing.cpp:1369` after `:1154`). Its 3.2 ms is counted in F.
 - Deferred, not declined: the automatic mip bias (`SceneVisibility.cpp:5338`). WebGPU samplers have no LOD bias, so it needs `textureSampleBias` in the material shaders. Revisit when the judge reads texture blur at 0.72.
+- 2026-10-24: preliminary kit runtime checks export the authored kits from PR #563 (`8030b2b774331a03579aa440fdcb302468abafe8`) into clean external projects and install this branch's packages. This permits implementation checks without importing another PRD's engine changes. It does not establish the Iris Xe frame-time gates or remove the integration prerequisite below.
 
 ## Blocked on
 

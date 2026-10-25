@@ -932,7 +932,7 @@ void Renderer::setOutput(const OutputState& output) {
     if (postGraph_) {
         post_ = std::make_shared<shader::PostNode>(shader::graph::serializedPost(postGraph_, output.toneMapping, output.srgb, output.customToneMapping));
         postEffects_ = post_->passes.empty() ? nullptr : std::make_unique<PostEffects>(device_, queue_, post_->passes);
-        if (postEffects_ && width_ && height_) postEffects_->resize(width_, height_);
+        if (postEffects_ && width_ && height_) postEffects_->resize(inputWidth_, inputHeight_, width_, height_, traa_ && !lateTraa_);
     }
     const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb, post_.get(), true, output.customToneMapping);
     outputVertex_ = shader::buildStage(programs.vertex, 0);
@@ -990,7 +990,7 @@ void Renderer::setPostNode(std::shared_ptr<const shader::PostNode> post) {
     const OutputState output = output_;
     setOutput(output);
     postEffects_ = std::move(effects);
-    if (postEffects_ && width_ && height_) postEffects_->resize(width_,height_);
+    if (postEffects_ && width_ && height_) postEffects_->resize(inputWidth_, inputHeight_, width_, height_, traa_ && !lateTraa_);
 }
 
 void Renderer::setPostGraph(shader::graph::Node root) {
@@ -1001,6 +1001,8 @@ void Renderer::setPostGraph(shader::graph::Node root) {
     if (!temporal && liveTraa_) { traa_.reset(); releaseOutputGroup(); applySampleCount(); }
     liveTraa_ = temporal;
     lateTraa_ = temporal && shader::graph::traaResolvesLate(*temporal);
+    setSize(width_, height_);
+    if (postEffects_) postEffects_->resize(inputWidth_, inputHeight_, width_, height_, traa_ && !lateTraa_);
     collectPostSources();
 }
 
@@ -1039,9 +1041,10 @@ void Renderer::setTraa(const TraaOptions& options) {
     if (!traaStats_.type)
         traaStats_ = gpu_.createBuffer(8, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     traa_->setStatsBuffer(gpu_.buffer(traaStats_));
-    if (width_ && height_) traa_->resize(width_, height_);
     releaseOutputGroup();
     applySampleCount();
+    setSize(width_, height_);
+    traa_->resize(inputWidth_, inputHeight_, width_, height_);
 }
 
 void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
@@ -1170,14 +1173,27 @@ void Renderer::resolveDepth(WGPUCommandEncoder encoder) {
     wgpuBindGroupLayoutRelease(layout);
 }
 
+void Renderer::setRenderScale(float scale) {
+    if (!std::isfinite(scale) || scale < 0.25f || scale > 1.f)
+        throw std::runtime_error("TN_RENDER_SCALE_INVALID: expected a finite fraction in [0.25, 1]");
+    if (scale == renderScale_) return;
+    renderScale_ = scale;
+    setSize(width_, height_);
+}
+
 void Renderer::setSize(uint32_t width, uint32_t height) {
     width = std::max(width, 1u);
     height = std::max(height, 1u);
-    if (width == width_ && height == height_) return;
+    const float scale = traa_ ? renderScale_ : 1.f;
+    const auto inputWidth = std::max(uint32_t(std::ceil(double(width) * 0.25)), uint32_t(std::round(double(width) * scale)));
+    const auto inputHeight = std::max(uint32_t(std::ceil(double(height) * 0.25)), uint32_t(std::round(double(height) * scale)));
+    if (width == width_ && height == height_ && inputWidth == inputWidth_ && inputHeight == inputHeight_) return;
     gpu_.sync();  // a posted blit still reads the targets released here
     releaseTargets();
     width_ = width;
     height_ = height;
+    inputWidth_ = inputWidth;
+    inputHeight_ = inputHeight;
     color_ = gpu_.createTexture(width, height, WGPUTextureFormat_RGBA8Unorm,
                                 // TextureBinding too: a windowed player samples this finished frame to
                                 // put it on the screen (Renderer::blitTo).
@@ -1185,7 +1201,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
                                     WGPUTextureUsage_TextureBinding);
     WGPUTextureDescriptor depthDesc = {};
     depthDesc.dimension = WGPUTextureDimension_2D;
-    depthDesc.size = {width, height, 1};
+    depthDesc.size = {inputWidth, inputHeight, 1};
     depthDesc.format = WGPUTextureFormat_Depth32Float;
     depthDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
     depthDesc.mipLevelCount = 1;
@@ -1217,8 +1233,8 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     viewportDesc.format = WGPUTextureFormat_Depth32Float;
     viewportDepth_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
     viewportDepthView_ = view2d(viewportDepth_, WGPUTextureFormat_Depth32Float);
-    if (traa_) traa_->resize(width, height);
-    if (postEffects_) postEffects_->resize(width, height);
+    if (traa_) traa_->resize(inputWidth, inputHeight, width, height);
+    if (postEffects_) postEffects_->resize(inputWidth, inputHeight, width, height, traa_ && !lateTraa_);
 }
 
 // One stage's bind group, from the bindings its package declares: the uniform block, and for a
@@ -1355,7 +1371,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
 }
 
 void Renderer::copyDepthToTexture(const Texture& texture) {
-    if (!texture.depthTexture || texture.width != width_ || texture.height != height_)
+    if (!texture.depthTexture || texture.width != inputWidth_ || texture.height != inputHeight_)
         throw std::runtime_error("TN_NATIVE_DEPTH_EXTENT: attachment must match its render target");
     const auto* destination = materialTexture(texture);
     WGPUImageCopyTexture_Compat source{}, target{};
@@ -2629,7 +2645,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         Matrix4 view; view.elements = camera.matrixWorldInverse;
         Matrix4 viewProjection; viewProjection.elements = camera.projectionMatrix; viewProjection.multiply(view);
         const auto& p = camera.projectionMatrix;
-        const double screenRadius = std::min(1 / (width_ * std::abs(p[0])), 1 / (height_ * std::abs(p[5])));
+        const double screenRadius = std::min(1 / (inputWidth_ * std::abs(p[0])), 1 / (inputHeight_ * std::abs(p[5])));
         WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
         for (std::size_t i = 0; i < lights.direct.size(); ++i) {
             const DirectLight& l = lights.direct[i];
@@ -3060,7 +3076,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, base, slots[kCameraWorldMatrix], camera.matrixWorld);
             put(frameUniforms_, base, slots[kCameraNear], std::array<double, 1>{camera.near});
             put(frameUniforms_, base, slots[kCameraFar], std::array<double, 1>{camera.far});
-            put(frameUniforms_, base, slots[kScreenSize], std::array<double, 2>{double(width_), double(height_)});  // a vertex stage projects by hand
+            put(frameUniforms_, base, slots[kScreenSize], std::array<double, 2>{double(inputWidth_), double(inputHeight_)});  // a vertex stage projects by hand
         }
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
         // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.
@@ -3425,7 +3441,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (!compilation) {
             if (!materialTexture_) {
                 WGPUTextureDescriptor desc = {};
-                desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+                desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
                 desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
                 desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
                 materialTexture_ = wgpuDeviceCreateTexture(device_, &desc);
@@ -3523,7 +3539,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             if (!compilation && !normalTexture_) {
                 WGPUTextureDescriptor desc = {};
-                desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+                desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
                 desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
                 desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
                 normalTexture_ = wgpuDeviceCreateTexture(device_, &desc);
@@ -3572,7 +3588,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         if (!compilation && !albedoTexture_) {
             WGPUTextureDescriptor desc = {};
-            desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+            desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
             desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
             desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
             albedoTexture_ = wgpuDeviceCreateTexture(device_, &desc);
@@ -3617,7 +3633,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         if (!compilation && !emissiveTexture_) {
             WGPUTextureDescriptor desc = {};
-            desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+            desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
             desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
             desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
             emissiveTexture_ = wgpuDeviceCreateTexture(device_, &desc);
@@ -3983,7 +3999,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // resolving each result before reuse; allocated on first use, so a frame without them pays nothing.
     if (sampleCount_ == 4 && (normalPass || materialPass || traa_) && !msaaAuxColor_) {
         WGPUTextureDescriptor desc = {};
-        desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+        desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
         desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 4;
         desc.usage = WGPUTextureUsage_RenderAttachment;
         msaaAuxColor_ = wgpuDeviceCreateTexture(device_, &desc);
@@ -4214,7 +4230,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     if (sampleCount_ == 4) resolveDepth(encoder);
     if (viewportBundle_) {
         WGPUImageCopyTexture_Compat from = {}, to = {};
-        const WGPUExtent3D extent{width_, height_, 1};
+        const WGPUExtent3D extent{inputWidth_, inputHeight_, 1};
         from.texture = sceneColor_; to.texture = viewportColor_;
         wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
         from.texture = depth_; to.texture = viewportDepth_;
@@ -4473,7 +4489,8 @@ GpuStatus Renderer::readEmissivePixels(ReadbackCallback done) { return readRgba1
 GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes) {
     if (!done) return GpuStatus::OutOfRange;
     if (!texture) return GpuStatus::InvalidHandle;
-    const uint32_t width = width_, height = height_, row = width * texelBytes, pitch = (row + 255u) & ~255u;
+    const uint32_t width = wgpuTextureGetWidth(texture), height = wgpuTextureGetHeight(texture),
+                   row = width * texelBytes, pitch = (row + 255u) & ~255u;
     const Handle staging = gpu_.createBuffer(uint64_t(pitch) * height, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     WGPUCommandEncoderDescriptor descriptor{};
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, &descriptor);

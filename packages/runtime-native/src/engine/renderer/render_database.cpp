@@ -295,17 +295,18 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 // with normalized 8/16-bit attributes (GLTFExporter writes int8 normals, WEIGHTS_0 is unsigned byte
 // in most files): they reach the shader as a dequantized float32 copy, kept while the source is unchanged.
 // three's vertexColors: a material that asks for them reads the geometry's `color` attribute (3 or 4
-// components); without the attribute three draws the plain colour, and so does this.
+// components); without the attribute three draws the plain colour, and so does this. A TSL
+// attribute("color") reads the attribute whatever vertexColors says, so the store is kept either way.
 void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d) {
     d.colors = nullptr;
     d.colorSize = 0;
-    if (!material.vertexColors) return;
     const auto it = geometry.attributes.find("color");
     if (it == geometry.attributes.end() || !it->second) return;
+    d.colors = floatStore(geometry, "color");
+    if (!material.vertexColors) return;
     if (it->second->itemSize != 3 && it->second->itemSize != 4)
         throw std::runtime_error("TN_NATIVE_VERTEX_COLORS_UNSUPPORTED: a color attribute of " +
                                  std::to_string(it->second->itemSize) + " components");
-    d.colors = floatStore(geometry, "color");
     d.colorSize = static_cast<uint8_t>(it->second->itemSize);
 }
 

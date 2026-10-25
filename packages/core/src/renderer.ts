@@ -23,6 +23,7 @@ import {
   type IGpuFrameObservationOptions,
 } from "./gpu-frame-observation.js";
 import { type RendererToneMapping, applyRendererToneMapping } from "./look/default-tone-mapping.js";
+import { qualityTiers } from "./look/quality.js";
 import {
   type IPipelineCensus,
   type PipelineCensus,
@@ -391,6 +392,9 @@ export interface IRendererLike {
    * caller; a pinned game never reaches this, which is what makes "pinned" mean pinned.
    */
   setResolutionScale(scale: number, scaleSource: "auto" | "auto-pinned"): void;
+  /** True only while the owned temporal resolve reconstructs display pixels. */
+  temporalUpscale?(): boolean;
+  temporalUpscaleStartScale?(): number | undefined;
   /**
    * What this renderer is actually drawing at. Read once per frame-budget window so every fps
    * number is self-describing; a record and a tree once disagreed about the scale for a whole
@@ -460,6 +464,8 @@ export interface IRendererOptions {
 }
 
 type RendererInstance = IStorageBufferSource & {
+  readonly temporalUpscale?: boolean;
+  setRenderScale?(scale: number): void;
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
   info?: {
@@ -723,7 +729,13 @@ function wrapRenderer(
   };
 
   let renderingFrame = 0;
+  let temporalUpscaleActive = false;
   const renderFrame = (scene: Object3D, camera: Camera): void => {
+    const temporal = wrapped.temporalUpscale?.() === true;
+    if (temporal !== temporalUpscaleActive) {
+      temporalUpscaleActive = temporal;
+      reapply.resize?.();
+    }
     pipelineCensus?.beginWorldFrame(scene);
     const refreshPass = pendingWorldPassRefresh ? outputPass : undefined;
     const restoreWorldPass = refreshWorldPassOnce(refreshPass);
@@ -1413,6 +1425,24 @@ function wrapRenderer(
       state.resolutionSubrect = undefined;
       reapply.resize?.();
     },
+    temporalUpscale: () =>
+      typeof raw.setRenderScale === "function" &&
+      (renderChains.size === 0
+        ? raw.temporalUpscale === true
+        : outputPipeline !== undefined &&
+          [...renderChains].some(
+            (chain) => !chain.disposed && chain.applied.stages.includes("traa"),
+          )),
+    temporalUpscaleStartScale: () => {
+      if (!wrapped.temporalUpscale?.()) return undefined;
+      const chain = [...renderChains].find(
+        (candidate) => !candidate.disposed && candidate.applied.stages.includes("traa"),
+      );
+      const tier = chain?.applied.tier;
+      return tier === "high" || tier === "medium" || tier === "low"
+        ? qualityTiers.resolutionScale[tier]
+        : qualityTiers.resolutionScale[qualityTiers.resolve({ gpuClass: gpuClass?.class })];
+    },
     renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,
     setRenderChainVelocityEnabled: (enabled) => {
       renderChainUsesPerObjectVelocity = enabled;
@@ -1424,6 +1454,7 @@ function wrapRenderer(
       renderChains.clear();
       const chain = new RenderChain(wrapped, options);
       renderChains.add(chain);
+      reapply.resize?.();
       return chain;
     },
     observeRenderChainBudget: (window) => {
@@ -1551,7 +1582,13 @@ function addResizeHandling(
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
     const subrect = state.resolutionSubrect;
-    const scale = subrect?.active ? 1 : state.resolutionScale;
+    const temporal =
+      renderer.temporalUpscale?.() === true &&
+      state.resolutionScale >= 0.25 &&
+      state.resolutionScale <= 1;
+    const owned = renderer.raw as RendererInstance;
+    owned.setRenderScale?.(temporal ? state.resolutionScale : 1);
+    const scale = subrect?.active || temporal ? 1 : state.resolutionScale;
     const physicalWidth = Math.max(1, Math.round(width * pixelRatio * scale));
     const physicalHeight = Math.max(1, Math.round(height * pixelRatio * scale));
     applied = [physicalWidth, physicalHeight];

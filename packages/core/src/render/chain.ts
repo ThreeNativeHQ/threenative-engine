@@ -185,6 +185,13 @@ export interface IRenderChainVelocityReport {
 }
 
 export interface IRenderChainApplied {
+  /** Actual GPU allocation sizes, absent until the owned temporal pass has rendered. */
+  readonly stageSizes?: {
+    readonly traa: {
+      readonly input: readonly [number, number];
+      readonly output: readonly [number, number];
+    };
+  };
   readonly contributions: readonly {
     readonly graphOutputChanged: boolean;
     readonly name: RenderChainStageId;
@@ -567,6 +574,7 @@ export class RenderChain {
   observeFrame(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.observeFrame called after dispose().");
     if (this.#installation?.isCurrent() === false) return this.#applied;
+    this.#observeStageSizes();
     const requiresMeasurement = this.#applied.stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
@@ -641,6 +649,48 @@ export class RenderChain {
       this.#renderer.clearOutputNode?.(this.#installedNode);
     this.#installation = undefined;
     this.#installedNode = undefined;
+  }
+
+  #observeStageSizes(): void {
+    const raw = this.#renderer.raw;
+    const engine = isObject(raw) && isObject(raw.info) ? raw.info.engine : undefined;
+    const temporal = isObject(engine) ? engine.temporal : undefined;
+    const dimensions = isObject(temporal)
+      ? [temporal.inputWidth, temporal.inputHeight, temporal.outputWidth, temporal.outputHeight]
+      : [];
+    const sizes =
+      this.#applied.stages.includes("traa") &&
+      isObject(temporal) &&
+      temporal.active === true &&
+      dimensions.length === 4 &&
+      dimensions.every(
+        (value) => typeof value === "number" && Number.isSafeInteger(value) && value > 0,
+      )
+        ? (dimensions as [number, number, number, number])
+        : undefined;
+    const old = this.#applied.stageSizes?.traa;
+    if (sizes === undefined && old === undefined) return;
+    if (
+      sizes !== undefined &&
+      old !== undefined &&
+      old.input[0] === sizes[0] &&
+      old.input[1] === sizes[1] &&
+      old.output[0] === sizes[2] &&
+      old.output[1] === sizes[3]
+    )
+      return;
+    const { stageSizes: _previousSizes, ...applied } = this.#applied;
+    this.#applied = {
+      ...applied,
+      ...(sizes === undefined
+        ? {}
+        : {
+            stageSizes: {
+              traa: { input: [sizes[0], sizes[1]] as const, output: [sizes[2], sizes[3]] as const },
+            },
+          }),
+    };
+    this.#publish(true);
   }
 
   #setMeasurement(measurement: IRenderChainVelocityMeasurement | undefined, emit: boolean): void {

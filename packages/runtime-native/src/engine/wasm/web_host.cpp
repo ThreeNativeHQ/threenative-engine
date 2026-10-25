@@ -7,6 +7,7 @@
 #include "engine/renderer/render_database.h"
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/post/traa.h"
 #include "engine/renderer/probes/capture.h"
 #include "engine/renderer/compute.h"
 #include "engine/scene/geometry.h"
@@ -56,6 +57,7 @@ bool outputChanged = true;
 bool postChanged = false;
 bool shadowMap = false;
 int shadowMapType = 1;  // PCFShadowMap
+float renderScale = 1;
 uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
 // The submit serial each drawn frame ended at, oldest first, while its GPU work is unfinished. Chromium
 // queues submitted frames without bound, so a page whose rAF outruns the GPU blocks until the GPU drains
@@ -259,6 +261,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     try {
         if (!refused.empty()) throw std::runtime_error(refused);
         renderer->setSampleCount(sampleCount);
+        renderer->setRenderScale(renderScale);
         renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
         Renderer::PresentScope present(*renderer, view, surfaceFormat);
         database.render(*renderer, *scene, *camera, {r, g, b, a});
@@ -466,12 +469,13 @@ extern "C" int tnw_web_delete_storage(const tn_handle_t* attributeHandle) {
  * leaves the renderer running.
  */
 extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const char* colorSpace, int shadowEnabled,
-                                      double shadowType, double samples) {
+                                      double shadowType, double samples, double scale) {
     std::string refusal;
     const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal, customToneMapping);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (next && shadowType != 1 && shadowType != 2) refusal = "shadowMap.type must be PCFShadowMap or PCFSoftShadowMap";
     if (samples != 1 && samples != 4) refusal = "samples must be 1 or 4";
+    if (!std::isfinite(scale) || scale < 0.25 || scale > 1) refusal = "renderScale must be between 0.25 and 1";
     if (!refusal.empty()) {
         if (state != Failed) failure = "TN_NATIVE_RENDERER_STATE: " + refusal;
         return 1;
@@ -484,6 +488,7 @@ extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const
     shadowMap = shadowEnabled != 0;
     shadowMapType = static_cast<int>(shadowType);
     sampleCount = static_cast<uint32_t>(samples);
+    renderScale = static_cast<float>(scale);
     return 0;
 }
 
@@ -626,6 +631,12 @@ extern "C" double tnw_web_frame(int field) {
         case 31: return double(renderer->temporalStatus().clamped);
         case 32: return double(renderer->temporalStatus().pixels);
         case 33: return double(renderer->temporalStatus().countedFrame);
+        case 34: return renderer->temporalUpscale() ? 1 : 0;
+        case 35: return renderer->inputWidth();
+        case 36: return renderer->inputHeight();
+        case 37: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
+        case 38: return renderer->width();
+        case 39: return renderer->height();
         default: return 0;
     }
 }

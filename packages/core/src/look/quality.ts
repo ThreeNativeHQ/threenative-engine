@@ -300,6 +300,8 @@ export function shadowPreset(tier: string): IShadowTier {
 
 /** The tier tables as one object: `resolve` a start tier from a GPU class, `gi` and `shadow` settings of a tier. */
 export const qualityTiers = {
+  // UE 5.8.3 BaseScalability.ini:37, snapped to the resolution scaler's rungs; low has no temporal resolve.
+  resolutionScale: { low: 1, medium: 0.72, high: 0.85 },
   gi: giPreset,
   resolve: resolveQualityTier,
   shadow: shadowPreset,
