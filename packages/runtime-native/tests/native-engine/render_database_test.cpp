@@ -825,6 +825,48 @@ void presentDirect() {
     renderer.gpu().destroy(stale);
 }
 
+// The world's post graph still reaches the canvas after an overlay draw, in the web host's order: each world frame
+// takes the canvas view only when it draws (presentWhenDrawn), and the canvas-layer overlay draws over it.
+void postSurvivesOverlay() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    LitScene s;
+    RenderDatabase database, overlayDatabase;
+    const WGPUTextureFormat format = WGPUTextureFormat_BGRA8Unorm;
+    const Handle surface = renderer.gpu().createTexture(160, 120, format, WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    WGPUTextureView view = wgpuTextureCreateView(renderer.gpu().texture(surface), nullptr);
+    const auto world = [&] {
+        Renderer::PresentScope present(renderer, [&] { return view; }, format);
+        database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+        return readTexture(renderer, events, surface);
+    };
+    Scene layer;
+    OrthographicCamera ortho(-1, 1, 1, -1, 0.1, 10);
+    ortho.position.z = 5;
+    ortho.updateProjectionMatrix();
+    layer.updateMatrixWorld(true);
+    const auto overlay = [&] {
+        Renderer& target = renderer.overlayRenderer();
+        Renderer::PresentScope present(target, [&] { return view; }, format);
+        overlayDatabase.render(target, layer, ortho, {0, 0, 0, 0});
+    };
+    const std::vector<uint8_t> plain = world();
+    renderer.setPostGraph(g::mul(g::texture("scene", g::uv()), g::float_(0.25)));
+    const std::vector<uint8_t> posted = world();
+    CHECK(posted != plain);
+    for (int frame = 0; frame < 3; ++frame) {
+        overlay();
+        CHECK(world() == posted);
+    }
+    wgpuTextureViewRelease(view);
+    renderer.gpu().destroy(surface);
+}
+
 // The canvas-layer overlay (core's loading screen) draws over the presented world frame: an empty overlay leaves it
 // byte for byte, a plane over the left half replaces only that half. Drawn through the world renderer it cleared the
 // frame and ran the world's temporal step. The overlay is UI, so it draws with no tone curve (Unreal's Slate composites
@@ -5839,7 +5881,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

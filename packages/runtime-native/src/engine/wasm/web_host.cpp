@@ -31,6 +31,11 @@
 using namespace tn::engine;
 
 namespace {
+// The tnw_* contract with the facade (browser-renderer.ts `WEB_HOST_ABI`). Bump both on every tnw_*
+// signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
+// 2 = tnw_web_render's overlay argument (39295d1f3).
+constexpr uint32_t kWebHostAbi = 2;
+
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
 WebState state = Pending;
@@ -183,8 +188,19 @@ Camera* cameraOf(const tn_handle_t* handle) {
 }
 } // namespace
 
-/** Starts adapter and device requests on the canvas `selector` names; poll until Ready or Failed. */
-extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h) {
+/** The web host ABI this module speaks; the facade refuses a module whose number differs. */
+extern "C" uint32_t tnw_web_host_abi() { return kWebHostAbi; }
+
+/**
+ * Starts adapter and device requests on the canvas `selector` names; poll until Ready or Failed.
+ * `facadeAbi` is the facade's WEB_HOST_ABI: a facade older than the number passes none (0), and
+ * would otherwise call every later export with the arguments of another ABI.
+ */
+extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h, uint32_t facadeAbi) {
+    if (facadeAbi != kWebHostAbi)
+        return fail("TN_WASM_ABI_MISMATCH: the facade speaks web host ABI " + std::to_string(facadeAbi) +
+                    ", this engine " + std::to_string(kWebHostAbi) +
+                    ": install create-threenative and @threenative/runtime-native from one build");
     if (started) return fail("TN_WASM_INIT: already initialized");
     started = true;
     if (selector == nullptr || !validSize(w, h)) return fail("TN_WASM_INIT: canvas selector or size invalid");

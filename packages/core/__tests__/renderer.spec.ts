@@ -948,6 +948,29 @@ describe("createRenderer", () => {
     }
   });
 
+  it("reports a facade and Wasm engine of two web host ABIs as that, not as a device without WebGPU", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const mismatch = "TN_WASM_ABI_MISMATCH: this facade speaks web host ABI 2, the engine 1";
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: () => {
+            throw new Error("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER");
+          },
+          webgpuFactory: () => ({
+            init: () => Promise.reject(new Error(mismatch)),
+          }),
+        }),
+      ).rejects.toThrow(mismatch);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
     const canvas = testCanvas();
     const sizes: Array<[number, number]> = [];

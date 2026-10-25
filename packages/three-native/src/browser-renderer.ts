@@ -19,6 +19,7 @@ import { defineToneMappingLibrary } from "./tone-mapping.js";
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
   | "_tnw_web_init"
+  | "_tnw_web_host_abi"
   | "_tnw_web_poll"
   | "_tnw_web_error"
   | "_tnw_web_adapter"
@@ -40,6 +41,12 @@ export type WebEngineModule = TnAbiModule & WebHostModule;
 export function isWebHostModule(module: TnAbiModule): module is WebEngineModule {
   return typeof (module as Partial<WebHostModule>)._tnw_web_init === "function";
 }
+
+/**
+ * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
+ * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
+ */
+export const WEB_HOST_ABI = 2;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -269,12 +276,21 @@ export function defineWebRenderer(
     init(): Promise<this> {
       this.#initialized ??= (async () => {
         if (started === undefined) {
+          // A module of another ABI reads every later call's arguments as something else: the
+          // overlay flag as the frame number drew the world without post (39295d1f3).
+          const engine = (module as Partial<WebHostModule>)._tnw_web_host_abi?.();
+          if (engine !== WEB_HOST_ABI)
+            throw new Error(
+              `TN_WASM_ABI_MISMATCH: this facade speaks web host ABI ${WEB_HOST_ABI}, the engine ${engine ?? "none (older than ABI 2)"}: install create-threenative and @threenative/runtime-native from one build`,
+            );
           started = this.domElement;
           module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
           handles = module._malloc(36) >>> 0;
           const selector = string(CANVAS_TARGET);
           try {
-            check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
+            check(
+              module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight(), WEB_HOST_ABI),
+            );
           } finally {
             module._free(selector);
           }

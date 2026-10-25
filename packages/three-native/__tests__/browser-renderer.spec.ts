@@ -14,7 +14,7 @@ import {
   TSL_NODE,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
-import { type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
+import { WEB_HOST_ABI, type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
 import { defineQuadMesh } from "../src/quad-mesh.js";
@@ -60,6 +60,7 @@ function host(
     },
     _free: () => undefined,
     _tnw_web_init: initCalls,
+    _tnw_web_host_abi: () => WEB_HOST_ABI,
     _tnw_web_poll: poll,
     _tnw_web_adapter: () => 0,
     _tnw_web_error: () => 0,
@@ -73,7 +74,7 @@ function host(
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
-  return { Renderer, canvas, scene, camera, state, classes, initCalls };
+  return { Renderer, canvas, scene, camera, state, classes, initCalls, module };
 }
 
 async function drawn(parameters: Record<string, unknown>) {
@@ -87,6 +88,31 @@ async function drawn(parameters: Record<string, unknown>) {
   renderer.render(scene, camera);
   return { samples: renderer.samples, handed: state.mock.calls.at(-1)?.[5] };
 }
+
+describe("the Wasm engine's web host ABI", () => {
+  async function init(engine: (() => number) | undefined) {
+    const { Renderer, canvas, initCalls, module } = host();
+    Reflect.set(module, "_tnw_web_host_abi", engine);
+    const renderer = new Renderer({ canvas }) as { init(): Promise<unknown> };
+    return { done: renderer.init(), initCalls };
+  }
+
+  it("hands its ABI to the matching engine's init", async () => {
+    const { done, initCalls } = await init(() => WEB_HOST_ABI);
+    await done;
+    expect(initCalls.mock.calls[0]?.[3]).toBe(WEB_HOST_ABI);
+  });
+
+  it("refuses an engine of another ABI, or one older than the number, before init", async () => {
+    const older = await init(() => WEB_HOST_ABI - 1);
+    await expect(older.done).rejects.toThrow(
+      `TN_WASM_ABI_MISMATCH: this facade speaks web host ABI ${WEB_HOST_ABI}, the engine ${WEB_HOST_ABI - 1}`,
+    );
+    expect(older.initCalls).not.toHaveBeenCalled();
+    const unnumbered = await init(undefined);
+    await expect(unnumbered.done).rejects.toThrow("the engine none (older than ABI 2)");
+  });
+});
 
 describe("the Wasm engine's temporal pass readout", () => {
   async function readout(fields: Record<number, number>) {

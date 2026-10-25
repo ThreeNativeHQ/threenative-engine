@@ -1834,7 +1834,10 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       );
       if (adapter.gpuClass !== undefined)
         report(`${GPU_CLASS_MARKER}:${JSON.stringify(adapter.gpuClass)}`);
-    } catch {
+    } catch (error) {
+      // A facade and Wasm engine from two builds is an install fault, not a device without
+      // WebGPU: falling back would report TN_NO_RENDERER and hide the fix.
+      if (error instanceof Error && error.message.startsWith("TN_WASM_ABI_MISMATCH")) throw error;
       renderer = undefined;
     }
   }
