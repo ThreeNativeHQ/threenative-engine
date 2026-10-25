@@ -119,6 +119,8 @@ export interface IThreeNativeModelPassesConfig {
   readonly prune?: boolean;
   readonly quantize?: boolean;
   readonly reorder?: boolean;
+  /** Drop animation tracks that only hold the pose their node already has. */
+  readonly restTracks?: boolean;
 }
 
 export interface IThreeNativeModelsConfig {
@@ -1218,6 +1220,7 @@ export const MODEL_PASS_KEYS: readonly string[] = [
   "prune",
   "quantize",
   "reorder",
+  "restTracks",
 ];
 export const MODEL_QUANTIZE_KEYS: readonly string[] = ["normalBits", "positionBits", "uvBits"];
 export const MODEL_VIRTUAL_KEYS: readonly string[] = [
