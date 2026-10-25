@@ -283,12 +283,15 @@ describe("primary documentation agrees with the shipped surfaces", () => {
       // A kit on the core look (`WorldEnvironment` from `@threenative/core`) ships no material
       // backlighting, as a stock Unreal scene has none, and says so.
       const post = path.join(root, entry.name, "src/render/postprocessing.ts");
-      if (
+      const onCoreLook =
         existsSync(post) &&
         /import\s*\{[^}]*\bWorldEnvironment\b[^}]*\}\s*from\s*"@threenative\/core"/u.test(
           await readFile(post, "utf8"),
-        )
-      ) {
+        );
+      // A kit on the core look ships no material backlighting unless its instructions name the
+      // controls that override the convention, as action-rpg's high-desktop environment fill does.
+      const namesMaterialControls = /rimGain|fillGain/u.test(instructions);
+      if (onCoreLook && !namesMaterialControls) {
         expect(instructions, entry.name).toContain("No material backlighting ships");
         continue;
       }
