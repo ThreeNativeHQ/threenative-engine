@@ -1,4 +1,5 @@
 {
+  "clock": "wall-clock",
   "name": "play",
   "target": "web",
   "schemaVersion": 1,

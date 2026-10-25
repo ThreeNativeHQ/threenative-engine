@@ -20,6 +20,7 @@
       }
     }
   },
+  "clock": "wall-clock",
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [

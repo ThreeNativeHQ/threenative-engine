@@ -19,6 +19,7 @@
       "stages": { "includes": ["stormPost"] }
     }
   },
+  "clock": "wall-clock",
   "name": "rain-production-performance",
   "schemaVersion": 1,
   "steps": [

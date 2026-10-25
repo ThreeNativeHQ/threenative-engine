@@ -1,4 +1,5 @@
 {
+  "clock": "wall-clock",
   "name": "performance",
   "target": "web",
   "schemaVersion": 1,
