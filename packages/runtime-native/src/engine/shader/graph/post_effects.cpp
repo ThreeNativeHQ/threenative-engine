@@ -127,7 +127,7 @@ fn rayZ(s: f32, start: f32, end: f32, perspective: bool) -> f32 {
         end=position+direction*((-u.cameraNear-position.z)/direction.z);
     }
     let span = (screenPosition(end)-coord)*u.resolution;
-    let steps = max(1,i32(trunc(max(abs(span.x),abs(span.y))*clamp(u.quality,0.0,1.0))));
+    let steps = max(1,i32(min(trunc(max(abs(span.x),abs(span.y))*clamp(u.quality,0.0,1.0)),u.maxSteps)));
     let ray = end-position;
     let rayLength = length(ray);
     if (rayLength==0.0) { return vec4<f32>(0.0); }
@@ -900,7 +900,7 @@ std::shared_ptr<PostEffect> ssrEffect(Node color, Node depth, Node normal, Node 
     effect->roughness = roughness != nullptr;
     effect->inputs = {color, depth, normal, metalness ? metalness : float_(0), roughness ? roughness : float_(0)};
     effect->parameters = {{"maxDistance", {1}}, {"thickness", {0.1f}}, {"opacity", {1}},
-        {"quality", {0.5f}}, {"blurQuality", {2}}, {"reflectNonMetals", {0}}, {"binaryRefine", {0}},
+        {"quality", {0.5f}}, {"maxSteps", {1e6f}}, {"blurQuality", {2}}, {"reflectNonMetals", {0}}, {"binaryRefine", {0}},
         {"intensity", {1}}, {"maxLuminance", {10}}, {"cameraNear", {0.1f}},
         {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
         {"_cameraWorldMatrix", identity16()}};

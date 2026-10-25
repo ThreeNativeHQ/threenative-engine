@@ -94,6 +94,7 @@ export function definePostEffects(tsl: IEffectTsl) {
           "thickness",
           "opacity",
           "quality",
+          "maxSteps",
           "intensity",
           "maxLuminance",
           "blurQuality",
