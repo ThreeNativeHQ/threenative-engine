@@ -63,13 +63,33 @@ shader::OutputPrograms traaVelocityPrograms() {
     return out;
 }
 
-// Direct operation-for-operation translation of TRAANode.setup(), default WebGPU depth (0..1).
+std::array<float, 8> TraaPass::historyDepthRows(const Matrix& projection, const Matrix& view,
+                                                const Matrix& previousWorld,
+                                                const Matrix& previousInverseProjection) {
+    Matrix4 composed;
+    composed.elements = view;
+    Matrix4 world, inverseProjection;
+    world.elements = previousWorld;
+    inverseProjection.elements = previousInverseProjection;
+    composed.multiply(world).multiply(inverseProjection);
+    std::array<float, 8> rows{};
+    for (size_t column = 0; column < 4; ++column) {
+        const double z = composed.elements[column * 4 + 2];
+        const double w = previousInverseProjection[column * 4 + 3];
+        rows[column] = float(projection[10] * z + projection[14] * w);
+        rows[4 + column] = float(projection[11] * z + projection[15] * w);
+    }
+    return rows;
+}
+
+// TRAANode.setup() with the previous-depth camera transform composed on the host, WebGPU depth (0..1).
+// The host composes previousWorld, view and previousInverseProjection into the two rows above, so the
+// shader's previous depth is two dot products against the same clip position, not a camera chain.
 // Out-of-image loads: depth reads zero, as upstream; a beauty neighbour reads (0, 0, 0, 1), which
 // is what the browser returns there (WGSL leaves it implementation-defined; measured with TN_TRAA_DUMP).
 const char* traaResolveWgsl() { return R"WGSL(
 struct Params {
-    inverseProjection: mat4x4<f32>, previousInverseProjection: mat4x4<f32>,
-    previousWorld: mat4x4<f32>, view: mat4x4<f32>, projection: mat4x4<f32>,
+    depthNumerator: vec4<f32>, depthDenominator: vec4<f32>,
     size: vec2<f32>, depthThreshold: f32, edgeDepthDiff: f32,
     maxVelocityLength: f32, subpixel: f32, count: f32, historyValid: f32,
     jitter: vec2<f32>, previousJitter: vec2<f32>,
@@ -124,12 +144,8 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     let previousTexel = clamp(vec2<i32>(floor(previousDepthUV * u.size)), vec2<i32>(0), vec2<i32>(u.size) - 1);
     let d = textureLoad(previousDepth, previousTexel, 0);
     let previousClip = vec4(previousDepthUV * vec2(2, -2) + vec2(-1, 1), d, 1);
-    let previousPosition = u.previousInverseProjection * previousClip;
-    let positionWorld = u.previousWorld * vec4(previousPosition.xyz / previousPosition.w, 1);
-    let positionView = u.view * positionWorld;
-    // Equivalent to viewZToPerspectiveDepth / viewZToOrthographicDepth for this projection.
-    let projected = u.projection * vec4(0, 0, positionView.z, 1);
-    let oldDepth = projected.z / projected.w;
+    // Equivalent to the old inverse projection, divide, world, view and projection chain in two rows.
+    let oldDepth = dot(u.depthNumerator, previousClip) / dot(u.depthDenominator, previousClip);
     let validUV = all(historyUV >= vec2(0)) && all(historyUV <= vec2(1));
     let edge = farthest - closest > u.edgeDepthDiff;
     let disocclusion = closest - oldDepth > u.depthThreshold;
@@ -239,7 +255,7 @@ TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
         !std::isfinite(options.depthThreshold) || !std::isfinite(options.edgeDepthDiff))
         throw std::runtime_error("TN_TRAA_OPTIONS_INVALID");
     WGPUBufferDescriptor buffer{};
-    buffer.size = 368; buffer.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    buffer.size = 80; buffer.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     uniforms_ = wgpuDeviceCreateBuffer(device_, &buffer);
     // The counts of a counted frame. A pass whose owner reads them takes `setStatsBuffer`; the rest keep this one.
     buffer.size = 8; buffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc;
@@ -427,17 +443,17 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
         stageDebugTexture(encoder, velocity_, "velocity");
         stageDebugTexture(encoder, historyColor_, "history");
     }
-    std::array<float, 92> data{};
-    const Matrix* matrices[] = {&inverseProjection_, &previousInverseProjection_, &previousWorld_, &view_, &projection_};
-    for (size_t i = 0; i < 5; ++i) for (size_t j = 0; j < 16; ++j) data[i * 16 + j] = float((*matrices[i])[j]);
-    data[80] = float(width_); data[81] = float(height_); data[82] = options_.depthThreshold;
-    data[83] = options_.edgeDepthDiff; data[84] = options_.maxVelocityLength; data[85] = options_.useSubpixelCorrection;
+    std::array<float, 20> data{};
+    const auto rows = historyDepthRows(projection_, view_, previousWorld_, previousInverseProjection_);
+    for (size_t i = 0; i < rows.size(); ++i) data[i] = rows[i];
+    data[8] = float(width_); data[9] = float(height_); data[10] = options_.depthThreshold;
+    data[11] = options_.edgeDepthDiff; data[12] = options_.maxVelocityLength; data[13] = options_.useSubpixelCorrection;
     // One frame in kMeasureEvery counts. The first frame has no history to judge, so it never counts.
     measured_ = history_.historyValid(0) && history_.frame() % kMeasureEvery == 0;
-    data[86] = measured_ ? 1.f : 0.f;
-    data[87] = (width_ == outputWidth_ && height_ == outputHeight_) || history_.historyValid(0) ? 1.f : 0.f;
-    data[88] = float(jitter_[0]); data[89] = float(jitter_[1]);
-    data[90] = float(previousJitter_[0]); data[91] = float(previousJitter_[1]);
+    data[14] = measured_ ? 1.f : 0.f;
+    data[15] = (width_ == outputWidth_ && height_ == outputHeight_) || history_.historyValid(0) ? 1.f : 0.f;
+    data[16] = float(jitter_[0]); data[17] = float(jitter_[1]);
+    data[18] = float(previousJitter_[0]); data[19] = float(previousJitter_[1]);
     if (measured_) {
         const uint32_t zero[2] = {0, 0};
         wgpuQueueWriteBuffer(queue_, stats_, 0, zero, sizeof zero);

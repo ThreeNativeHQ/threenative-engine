@@ -1,5 +1,6 @@
 #include "check.h"
 #include "fixture/traa_dump.h"
+#include "engine/foundation/math/Matrix.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/lights.h"
@@ -27,6 +28,61 @@
 using namespace tn::engine;
 
 namespace {
+
+// The resolve pass composes the previous-frame depth transform on the CPU into two rows. Check the rows against the
+// shader's original operation-for-operation math: inverse projection, perspective divide, world, view, projection, z / w.
+void historyDepthRows() {
+    using Matrix = TraaPass::Matrix;
+    const auto transform = [](const Matrix& matrix, std::array<double, 4> v) {
+        return std::array<double, 4>{
+            matrix[0] * v[0] + matrix[4] * v[1] + matrix[8] * v[2] + matrix[12] * v[3],
+            matrix[1] * v[0] + matrix[5] * v[1] + matrix[9] * v[2] + matrix[13] * v[3],
+            matrix[2] * v[0] + matrix[6] * v[1] + matrix[10] * v[2] + matrix[14] * v[3],
+            matrix[3] * v[0] + matrix[7] * v[1] + matrix[11] * v[2] + matrix[15] * v[3]};
+    };
+    const auto inverse = [](const Matrix& matrix) {
+        Matrix4 result;
+        result.elements = matrix;
+        result.invert();
+        return result.elements;
+    };
+    const auto reference = [&](const Matrix& projection, const Matrix& view, const Matrix& world,
+                               const Matrix& inverseProjection, std::array<double, 4> clip) {
+        const auto previous = transform(inverseProjection, clip);
+        const auto positionWorld = transform(world, {previous[0] / previous[3], previous[1] / previous[3],
+                                                     previous[2] / previous[3], 1});
+        const auto positionView = transform(view, positionWorld);
+        const auto projected = transform(projection, {0, 0, positionView[2], 1});
+        return projected[2] / projected[3];
+    };
+    const Matrix perspective{.75, 0, 0, 0, 0, 1, 0, 0, 0, 0, -10.0 / 9, -1, 0, 0, -10.0 / 9, 0};
+    const Matrix orthographic{0.2, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, -0.001, 0, 0.1, -0.2, 0.5, 1};
+    const double yaw = 0.5, c = std::cos(yaw), s = std::sin(yaw);
+    const double twist = 0.3, cw = std::cos(twist), sw = std::sin(twist);
+    const Matrix movedWorld{cw, -sw, 0, 0, sw, cw, 0, 0, 0, 0, 1, 0, 0.5, -1.25, 2, 1};
+    struct Case { const char* name; Matrix projection, view, world; };
+    // The second view's bottom row is non-affine: using M.w instead of previousInverseProjection.w would fail it.
+    const Case cases[] = {
+        {"perspective", perspective, {c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 1.5, -0.5, -6, 1}, movedWorld},
+        {"orthographic", orthographic, {c, 0, -s, 0.2, 0, 1, 0, -0.1, s, 0, c, 0.05, 2, -1, -8, 1}, movedWorld}};
+    const std::array<double, 4> clips[] = {{0.5, -0.25, 0.8, 1}, {-0.75, 0.5, 0.35, 1}, {0.1, 0.2, 0.95, 1}};
+    for (const auto& item : cases) {
+        const auto inverseProjection = inverse(item.projection);
+        const auto rows = TraaPass::historyDepthRows(item.projection, item.view, item.world, inverseProjection);
+        for (const auto& clip : clips) {
+            double numerator = 0, denominator = 0;
+            for (size_t i = 0; i < 4; ++i) {
+                numerator += rows[i] * clip[i];
+                denominator += rows[4 + i] * clip[i];
+            }
+            const auto got = numerator / denominator;
+            const auto want = reference(item.projection, item.view, item.world, inverseProjection, clip);
+            if (std::abs(got - want) > 1e-5)
+                std::printf("  %s got %.9g, want %.9g\n", item.name, got, want);
+            CHECK(std::abs(got - want) <= 1e-5);
+        }
+    }
+}
 
 void rawTargetOmitsUnusedOutput() {
     mystral::webgpu::Context context;
@@ -1962,7 +2018,7 @@ void auxTargetsOnePass() {
 
 }  // namespace
 
-TN_TEST_MAIN({"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

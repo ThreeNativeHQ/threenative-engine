@@ -4,6 +4,7 @@
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/shader/output.h"
 #include <webgpu/webgpu.h>
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,6 +33,11 @@ public:
     Matrix begin(const Matrix& projection, const Matrix& world, const Matrix& view,
                  const Matrix* viewProjection = nullptr);
     Matrix previousModel(uint64_t object, const Matrix& world);
+    // Two dot-product rows that replace the resolve shader's previous-frame matrix chain. Rows 0..3 multiply the
+    // previous clip position for the depth numerator, rows 4..7 for the denominator.
+    static std::array<float, 8> historyDepthRows(const Matrix& projection, const Matrix& view,
+                                                 const Matrix& previousWorld,
+                                                 const Matrix& previousInverseProjection);
     const Matrix& previousProjection() const { return previousProjection_; }
     const Matrix& previousView() const { return previousView_; }
     WGPUTextureView velocityView() const { return velocityView_; }

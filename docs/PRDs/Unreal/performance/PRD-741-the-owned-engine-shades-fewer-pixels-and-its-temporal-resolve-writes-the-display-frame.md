@@ -239,6 +239,9 @@ Frame after the GTAO work: ~21 ms. Not scaled by the input size: local exposure 
 
 - Raw-target Iris minis confirm another gain but do not qualify: B1 GPU-window-p50 median 15.055 ms [14.98,15.23], B2 15.045 ms [14.76,15.54], versus recovered fused control 15.940 ms. Only 2/12 and 3/12 complete windows respectively satisfy <=15 ms, and worst presented p95 remains 16.8 ms. Both runs exit 0 without diagnostics/errors, normal vsync and no optional profiling markers. Start/end B1 83->81 C, load 0.77->2.00; B2 80->81 C, load 2.16->2.47. These are two mini-runs, not three qualifying pairs. Raw-target source also passes regenerated native coverage and documentation checks. The remaining perf/visual boxes stay open; a separate trace is pending only for attribution.
 
+- Raw-target diagnostic trace validates all 29 unused offscreen output/segment-2 draws are absent, with the final presentation output retained: 2007 valid trace records, 1179 steady samples, GPU segment sums agree. Current diagnostic scene 3.501 ms, TRAA resolve 2.132 ms, final output 1.147 ms, total 14.942 ms; tracing is diagnostic and does not qualify the strict gate.
+- Previous-depth reprojection now composes its camera transform once per frame into two dot-product rows, reducing resolve uniforms from 368 to 80 bytes. An independent sequential old-shader reference covers perspective/orthographic cameras, translated/rotated frames and a non-affine bottom row. Test first failed to compile against the missing helper, then all five focused native tests passed (depth rows, raw target, TRAA validation/history, camera cut). Floating-point association changes; GPU conformance, Iris timing and final visual acceptance remain pending. The extra legacy full-resolution `temporal-aa` fixture fails before rendering on owned WebGPU because `Uint16BufferAttribute` is unsupported; its reference arm passes. This is disclosed, not counted as a passed full-resolution observation.
+
 ## Decisions
 
 - 2026-10-24 (filing agent): the brief asked for 5 phases. `docs/PRDs/AGENTS.md` R5 allows at most 3, so measurement + red test, engine + routing + tier defaults, and gates are the 3 phases. Every requested item keeps its own box.
@@ -250,4 +253,4 @@ Frame after the GTAO work: ~21 ms. Not scaled by the input size: local exposure 
 ## Blocked on
 
 - PR #563 is integrated locally but not merged into `develop`; dependency delivery must be resolved before queueing this PR independently.
-- Phase 1 box 1 lacks per-pass GPU publication; Phase 3 still misses its strict budgets and lacks the final independent visual judgment.
+- Phase 3 still misses its strict budgets and lacks the final independent visual judgment. Phase 1 per-pass publication is complete. The existing empty-page control also has presented p95 16.8 ms before meter rounding; the unchanged 16.7 ms limit is not proved.
