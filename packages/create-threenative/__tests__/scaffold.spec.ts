@@ -307,7 +307,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
-  adventure: "5d20d342f868436181cbe560e829ac689ed9dbbe2c3e7a0fe8b7f5c3c7edb224",
+  adventure: "45ce0c805d9f9f4b52ff8093d8af2a616edfb69d1f373dafb7d7e26c0e5834af",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "f5253c53b519a6124a6aff0f10898d6c05370adc39cb505c55f840bdb85e2cc7",
   minimal: "feb73967c52019009fe034bd20756e25e0906e37caf1bb05d984e271160cfe59",
