@@ -3417,8 +3417,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // GBuffer (PRD-740), one pass over the opaque lit draws writes every target the post graph reads, each at its own
     // colour attachment: each draw's own vertex stage (skinning, morphs, instancing and position nodes included, so
     // the depth matches the colour pass exactly) with a fragment of one output per target, depth-tested Equal against
-    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite, alpha-tested) leaves every
-    // target cleared there: the effects read a depth-derived normal, no surface, no albedo and no emission.
+    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite) leaves every target cleared
+    // there: the effects read a depth-derived normal, no surface, no albedo and no emission. An alpha-tested draw writes
+    // its targets where its fragment survives, as three's MRT and Unreal's masked base pass do: its own fragment
+    // discards, so the cut holds at 4x too, where the depth test alone would let it through.
     const bool normalPass = postEffects_ && postEffects_->reads("normal");
     const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
     const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
@@ -3455,16 +3457,18 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.background || item.kind == MaterialKind::Basic) continue;
             // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
             // frame, not thrown: a transparent particle must not cost the frame.
-            if (item.transparent || item.sprite || item.material->alphaTest > 0) {
+            if (item.transparent || item.sprite) {
                 if (!normalPass) continue;
-                const std::string reason = item.transparent ? "transparent" : item.sprite ? "sprite" : "alpha-tested";
+                const std::string reason = item.transparent ? "transparent" : "sprite";
                 const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
             if (normalPass && item.nodes.normalNode)
                 throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
-            const shader::StageModule* fragment = auxMask == kAuxNormal ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+            const bool cut = item.material->alphaTest > 0;
+            const shader::StageModule* fragment =
+                auxMask == kAuxNormal && !cut ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
             if (!fragment) {
                 const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);

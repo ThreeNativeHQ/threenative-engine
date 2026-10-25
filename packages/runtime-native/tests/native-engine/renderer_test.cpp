@@ -1749,8 +1749,10 @@ void emissiveValidation() { emissivePass(false); }
 
 // PRD-740: a post graph that reads every post target (normal, metalness and roughness, albedo, emissive) costs one
 // scene pass, which writes all four as MRT, and a steady frame replays that pass from its cached bundle, recording
-// no draw. Each target still holds its own value at the lit plane's centre.
-void auxTargetsOnePass() {
+// no draw. Each target still holds its own value at the lit plane's centre. An alpha-tested plane writes its targets
+// where its fragment survives the test and leaves them clear where it is cut, as three's MRT and Unreal's base pass do,
+// whether the graph reads every target or the normal alone.
+void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1) {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
     CHECK(initialized);
@@ -1759,10 +1761,12 @@ void auxTargetsOnePass() {
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
     renderer.setSize(16, 16);
     renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    renderer.setSampleCount(samples);
     namespace g = shader::graph;
     const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
     // The bloom makes it a pass graph, which is what reads the scene targets (as emissive_target does).
-    renderer.setPostGraph(g::bloom(g::vec4({lane("normal"), lane("metalness"), lane("albedo"), lane("emissive")}), 0, 0, 0));
+    renderer.setPostGraph(normalOnly ? g::bloom(g::vec4({lane("normal"), g::float_(0), g::float_(0), g::float_(0)}), 0, 0, 0)
+                                     : g::bloom(g::vec4({lane("normal"), lane("metalness"), lane("albedo"), lane("emissive")}), 0, 0, 0));
     const auto geometry = plane(4, 4);
     const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};  // plane() carries no normals
     geometry->normals.resize(12);
@@ -1771,6 +1775,8 @@ void auxTargetsOnePass() {
     material.color = {0.25f, 0.5f, 1};
     material.metalness = 1; material.roughness = 0.5f;
     material.emissive = {1, 0.5f, 0}; material.emissiveIntensity = 4;
+    material.alphaTest = alphaTest; material.opacity = opacity;
+    const bool cut = alphaTest > 0 && opacity <= alphaTest;
     DrawItem item;
     item.key = item.id = 1;
     item.kind = MaterialKind::Standard;
@@ -1812,14 +1818,25 @@ void auxTargetsOnePass() {
         return same;
     };
     // The plane faces the camera; its alpha packs metalness level 7 and roughness 0.5: 2 * 7 + 0.25 + 0.25.
-    CHECK(near(centre(&Renderer::readNormalPixels), {0, 0, 1, 14.5f}));
-    CHECK(near(centre(&Renderer::readAlbedoPixels), {0.25f, 0.5f, 1, 1}));
-    CHECK(near(centre(&Renderer::readEmissivePixels), {4, 2, 0, 1}));
+    CHECK(near(centre(&Renderer::readNormalPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0, 0, 1, 14.5f}));
+    if (normalOnly) return;
+    CHECK(near(centre(&Renderer::readAlbedoPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0.25f, 0.5f, 1, 1}));
+    CHECK(near(centre(&Renderer::readEmissivePixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{4, 2, 0, 1}));
+}
+void auxTargetsOnePass() { auxTargets(false, 0, 1); }
+void auxTargetsAlphaTested() {
+    auxTargets(false, 0.5f, 1);
+    auxTargets(false, 0.5f, 0.4f);
+    auxTargets(true, 0.5f, 1);
+    auxTargets(true, 0.5f, 0.4f);
+    // At 4x the pass tests LessEqual with a bias, so only the fragment's own discard keeps the cut clear.
+    auxTargets(true, 0.5f, 0.4f, 4);
+    auxTargets(false, 0.5f, 0.4f, 4);
 }
 
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
