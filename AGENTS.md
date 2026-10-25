@@ -10,6 +10,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 ## How you work
 
 1. **Search the manifest before you write — by rule, not judgement.** Run `engine_search_capabilities`, then `engine_capability_detail` on every hit, before any new file under `src/` or `packages/`, any helper longer than a screen, and any render stage you toggle. Skipping it has shipped 446 hand-written lines of an installed system at 9 FPS. The manifest (`packages/create-threenative/capabilities.json`, rebuilt by `pnpm build`) is the only complete public surface, including subpath exports like `@threenative/physics/navigation`. Both tools ship in `threenative-engine-mcp`, wired by the `.mcp.json` that installing `@threenative/core` writes; launch from the game-project root or the server is missing.
+   For game behavior references, use `engine_search_references`, then `engine_reference_detail` for pinned source; `engine_save_reference` saves a local reference and returns a contribution command.
    Then be lazy (the `ponytail` skill, re-injected by the project hooks; `PONYTAIL=off` opts out): YAGNI, installed system, stdlib/platform, one line. Never simplify away validation, error handling, security, accessibility or requested behaviour.
 2. **Name the layer before fixing a bug**: engine (`packages/`) or game (example/template), and why. An engine bug fixed in game code leaves every other game broken.
 3. **Red-green for behaviour changes and bugfixes**: reproduce, fix, rerun. No manufactured failures for planning or prose.
