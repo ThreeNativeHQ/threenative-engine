@@ -195,6 +195,25 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   renderer's shadow map was off). Turned on, the course-wide `VirtualShadowNode` cost a 30-50 ms
   render phase on the Wasm engine and slowed the fixed-step race below real time (the race
   playtest timed out at lap 1).
+- 2026-10-24 (lead): Deferred engine bug, not worked around further. A `VirtualShadowNode` sun
+  with `shadow.radius = 2` on the Wasm engine throws `TN_VIRTUAL_SHADOW_UNSUPPORTED`, then
+  `TN_WASM_RENDERER_LOST`; at radius 1 it costs a 30-50 ms render phase. Repro: in
+  `src/render/lighting.ts`, swap the follow map for a course-wide `VirtualShadowNode` with radius 2
+  and run `playtests/race.playtest.json` (`--browser-recipe webgpu`, RTX 2080). Revisit when the
+  Wasm engine supports a filtered virtual shadow and a course-wide one costs under 2 ms on `high`.
+- 2026-10-24 (lead): Deferred engine bug, not worked around further. With `engine: "threejs"` in
+  `threenative.config.ts` the kit draws a blank frame on the RTX 2080: WebGPU rejects the scene
+  pass with "Total color attachment bytes per sample (56) exceeds maximum (32)" (the MRT targets).
+  Repro: set `engine: "threejs"` and run `playtests/survives.playtest.json`. Revisit when core packs
+  the scene-pass MRT under 32 bytes per sample on upstream three, or caps its targets per adapter
+  limit.
+- 2026-10-24 (agent): the item boxes are two instanced meshes again (the cubes and the cores),
+  now that the Wasm engine accepts core's `instanceMatrix` assignment (d4a73566c); the skid trails
+  stay one instanced mesh. On a clean pack of a2f5ccb24 (web engine built 16:50) every kart
+  scenario exits 0. `performance` (high, RTX 2080, private Xvfb) reads cost p95 9.95 ms (CPU 1.0,
+  GPU 9.95), draw calls p95 107 and 91 projection renderables, against 114 and 107 at 14:22
+  (before this and ec05e52ab, so not a paired A/B). The race film shows the boxes spinning, each at
+  its own phase, and the taken box gone.
 - 2026-10-24 (agent): skid dashes laid after the first frame do not draw on the Wasm engine, even
   in magenta at full opacity (92 laid in the drift run, none on screen; the initial matrices draw).
   The ring keeps a fixed count with hidden dashes, which removed a stray dark quad; the missing
