@@ -343,8 +343,17 @@ ${entry.situations.join("\n")}`;
 function matchedStarterKits(situation, kits) {
   const words = (text) => ` ${text.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim()} `;
   const request = words(situation);
-  return kits.map((kit) => ({
-    at: Math.min(...kit.words.map((word) => request.indexOf(words(word))).filter((i) => i >= 0)),
+  const spans = kits.map(
+    (kit) => kit.words.flatMap((word) => {
+      const at = request.indexOf(words(word));
+      return at < 0 ? [] : [{ at, end: at + words(word).length }];
+    })
+  );
+  const inside = (span, own) => spans.some(
+    (other, index) => index !== own && other.some((o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at)
+  );
+  return kits.map((kit, own) => ({
+    at: Math.min(...spans[own].filter((span) => !inside(span, own)).map((span) => span.at)),
     kit
   })).filter(({ at }) => Number.isFinite(at)).sort((left, right) => left.at - right.at).map(({ kit: { blurb, name, title } }) => ({
     blurb,
