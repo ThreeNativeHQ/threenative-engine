@@ -28,6 +28,21 @@ using namespace tn::engine;
 
 namespace {
 
+void rawTargetOmitsUnusedOutput() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer main(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    const auto raw = main.sibling(true);
+    raw->setSize(8, 8);
+    raw->render({}, CameraState{}, LightState{}, {0.25, 0.5, 0.75, 1});
+    CHECK(raw->lastFrame().draws == 0);
+    const auto output = main.sibling();
+    output->setSize(8, 8);
+    output->render({}, CameraState{}, LightState{}, {0.25, 0.5, 0.75, 1});
+    CHECK(output->lastFrame().draws == 1);
+}
+
 #if defined(MYSTRAL_WEBGPU_DAWN)
 // Dawn's Null backend validates the complete command stream without a GPU.
 void traaValidation() {
@@ -1947,7 +1962,7 @@ void auxTargetsOnePass() {
 
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

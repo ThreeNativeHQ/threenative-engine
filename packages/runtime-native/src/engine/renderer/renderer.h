@@ -370,8 +370,9 @@ public:
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
-    std::unique_ptr<Renderer> sibling() {
+    std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
         auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+        child->sceneOnly_ = sceneOnly;
         child->textures_ = textures_;
         child->passTimer_ = passTimer_;
         child->ownsPassTimer_ = false;
@@ -967,6 +968,7 @@ private:
     uint32_t presentedWidth_ = 0, presentedHeight_ = 0;
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;
+    bool sceneOnly_ = false;  // raw render targets expose sceneColorView(), not the RGBA8 output frame
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;

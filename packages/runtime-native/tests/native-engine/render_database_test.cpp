@@ -3172,8 +3172,8 @@ void gpuTimerCoversOffscreen() {
         }
         CHECK(renderer.gpuSamples() == before + 1);
         CHECK(renderer.gpuSourceFrame() == (deferred ? 42 : 41));
-        // Each renderer encodes a scene and an output pass, including the offscreen sibling.
-        CHECK(renderer.gpuTimestampPasses() == 4);
+        // Raw targets expose the scene directly; only the main renderer encodes an output pass.
+        CHECK(renderer.gpuTimestampPasses() == 3);
         CHECK(renderer.lastGpuMs() > 0);
         const auto segments = renderer.lastGpuSegments();
         CHECK(segments[1] > 0 && segments[2] > 0 && segments[3] > 0);

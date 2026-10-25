@@ -119,6 +119,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_reflection_capture=validation)
     target_link_libraries(tn-native-engine-reflection-capture-test PRIVATE tn_engine_renderer)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
+        native_engine_raw_target_scene_only=raw_target_scene_only
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_emissive_target=emissive_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass

@@ -4248,7 +4248,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.triangles += effectPasses;
     }
     encoder = recordSampledTargets(encoder);
-    outputPass(encoder, presentTarget, presentFormat);
+    if (!sceneOnly_) outputPass(encoder, presentTarget, presentFormat);
     const auto segments = passTimer_->segments;
     const auto passInfo = passTimer_->passes;
     const std::array<uint32_t, 4> extent{inputWidth_, inputHeight_, width_, height_};
