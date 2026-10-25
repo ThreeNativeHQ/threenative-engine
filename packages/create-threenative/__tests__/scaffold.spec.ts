@@ -307,14 +307,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
   // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
-  collectathon: "addf70c1594e7f436e3ad79fc0bd58691bdf31083b037b9b2d1b806817c1135a",
+  collectathon: "54ef0c1ff17f96f7f00be1abecc38b8ca8b26c5cab5c48de2f932b9806e3e45f",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
   // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
-  adventure: "c41d3c13ba54e01ef9e79a4311a8fb3bdd60feffc9442827ae2c37b85172cc75",
+  adventure: "d9435dcb7f4447ea7d5d84a01e1924b9beb94a6eb8a5f10cc69afccaa5636a33",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "204d89e2c79e7ea7330b82342ffa29f68f2f77324638b7902f18708510adae87",
+  kart: "c382387f811363fcd9a7d82a7966220ee3657b3cfe87b04d0efed053c88f8010",
   minimal: "feb73967c52019009fe034bd20756e25e0906e37caf1bb05d984e271160cfe59",
   platformer: "d01108608d138acbbdf31e0df8dfca3f3bd9befc46513d89f5a1ebdecd3d68ed",
   puzzle: "e7f9370513c60a8c50ab5a8392b857e35c658e745c493bbc5e6b6b27e8611013",
@@ -331,7 +331,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "e039d4da28b5d73e7954cef4028475234a9348c9b6b8f025f06f56968d6b75d0",
+  starter: "4a2ecabc902d515ff150bace2183e68c914f76713467f7fcadc76fe3bde991ce",
   "tower-defense": "afbd7c71d9420c2fdd31138ff9cca3f778082b68a8e81732b41cb33a0de46bc7",
 };
 

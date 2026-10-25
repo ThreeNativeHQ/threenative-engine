@@ -22,7 +22,7 @@ import {
 import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
-import { temporalDetailRequested, temporalDetailStage } from "./temporalDetailStage.js";
+import { temporalDetailRequested, temporalDetailStages } from "./temporalDetailStage.js";
 import type { FogMedium } from "./volumetricFog.js";
 
 interface IPostController {
@@ -97,6 +97,7 @@ export function setupPost(
     medium = environment.fog?.();
     const composed = medium;
     const settings = qualityPreset(policy.tier);
+    const detail = temporalDetailRequested(renderer, settings) ? temporalDetailStages() : [];
     const world = new WorldEnvironment({
       ...settings,
       // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
@@ -107,11 +108,11 @@ export function setupPost(
         "grade",
         "grain",
         ...(settings.authoredStageNames ?? []),
-        ...(temporalDetailRequested(renderer, settings) ? ["sharpen" as const] : []),
+        ...detail.map(({ name }) => name),
       ],
       authoredStages: (stage) => [
         ...gradeStages(gradePreset(policy.tier), table),
-        temporalDetailStage(),
+        ...detail,
         ...temporalAAStages(stage, {
           onProvider: (provider) => {
             temporal = provider;

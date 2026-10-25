@@ -19,7 +19,7 @@ import {
 import {
   temporalDetail,
   temporalDetailRequested,
-  temporalDetailStage,
+  temporalDetailStages,
 } from "../templates/starter/src/render/temporalDetailStage.js";
 import { createTemporalDepthRejection } from "../templates/starter/src/render/temporalResolveDepth.js";
 
@@ -1172,8 +1172,15 @@ describe("generated temporal detail controls", () => {
     temporalDetail.strength = 1;
   });
   function stage() {
-    return temporalDetailStage();
+    return temporalDetailStages()[1]!;
   }
+  it("uses valid authored anchors in the render chain", () => {
+    const chain = new RenderChain(
+      { kind: "webgpu", raw: {}, setOutputNode: vi.fn() },
+      { stages: temporalDetailStages(), request: { stages: [], tier: "high" } },
+    );
+    chain.dispose();
+  });
   it("refuses missing temporal motion and reports an explicit zero override", () => {
     expect(stage().available?.({} as never)).toBe("temporal-detail:velocity-missing");
     temporalDetail.strength = 0;
@@ -1183,19 +1190,42 @@ describe("generated temporal detail controls", () => {
   });
   it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid strength %s", (strength) => {
     temporalDetail.strength = strength;
-    expect(() => temporalDetailStage()).toThrow(/temporalDetail.strength/);
+    expect(() => temporalDetailStages()).toThrow(/temporalDetail.strength/);
   });
   it("retains the automatic output transform and requires measured motion texture", () => {
-    const sharpen = stage();
+    const [source, sharpen] = temporalDetailStages();
+    if (!source || !sharpen) throw new Error("Temporal detail needs a source and output stage.");
     expect(sharpen.afterOutputTransform).not.toBe(true);
-    const result = sharpen.build(rtt(output), {
+    source.build(rtt(output), { velocityNode: rtt(output) } as never);
+    const frame = rtt(output);
+    const result = sharpen.build(frame, {
       velocityNode: rtt(output),
     } as never) as unknown as {
-      node: { nodes: { components?: string }[] };
+      node: { nodes: { components?: string; node?: unknown }[] };
     };
-    // Alpha comes directly from the centre sample, outside the RGB-only sharpening selection.
+    // Keep the composited frame's alpha outside the RGB-only detail selection.
     expect(result.node.nodes[1]?.components).toBe("w");
+    expect(result.node.nodes[1]?.node).toBe(frame);
     expect(sharpen.available?.({ velocityNode: rtt(output) } as never)).toBe(true);
     expect(() => sharpen.build(output, {} as never)).toThrow(/velocity/);
+  });
+  it("retains the temporal source and fuses its detail after bloom without another texture", () => {
+    const [source, sharpen] = temporalDetailStages();
+    if (!source || !sharpen) throw new Error("Temporal detail needs a source and output stage.");
+    expect(source.before).toBe("bloom");
+    expect(sharpen.after).toBe("bloom");
+    const temporal = rtt(output);
+    const chain = { velocityNode: temporal } as never;
+    expect(() => sharpen.build(temporal, chain)).toThrow(/source/);
+    expect(source.build(temporal, chain)).toBe(temporal);
+    const composite = temporal.add(0.1);
+    const result = sharpen.build(composite, chain) as Node;
+    const textures = new Set<Node>();
+    result.traverse((node) => {
+      if ("isRTTNode" in node && node.isRTTNode === true) textures.add(node);
+    });
+    expect(textures).toEqual(new Set([temporal]));
+    source.dispose?.();
+    expect(() => sharpen.build(composite, chain)).toThrow(/source/);
   });
 });

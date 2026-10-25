@@ -12,7 +12,7 @@ import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 import type { Camera, DirectionalLight, Scene } from "three";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
 
-import { temporalDetailRequested, temporalDetailStage } from "./temporalDetailStage.js";
+import { temporalDetailRequested, temporalDetailStages } from "./temporalDetailStage.js";
 
 type ProfileGlobals = typeof globalThis & {
   __THREENATIVE_PROFILE__?: { hostedSoftware?: unknown };
@@ -60,13 +60,11 @@ export function setupPost(
     } source=${source}`,
   );
   const settings = qualityPreset(tier);
+  const detail = temporalDetailRequested(renderer, settings) ? temporalDetailStages() : [];
   const world = new WorldEnvironment({
     ...settings,
-    authoredStageNames: [
-      ...(settings.authoredStageNames ?? []),
-      ...(temporalDetailRequested(renderer, settings) ? ["sharpen" as const] : []),
-    ],
-    authoredStages: () => [temporalDetailStage()],
+    authoredStageNames: [...(settings.authoredStageNames ?? []), ...detail.map(({ name }) => name)],
+    authoredStages: () => detail,
   });
   const applied = world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
   let disposed = false;
