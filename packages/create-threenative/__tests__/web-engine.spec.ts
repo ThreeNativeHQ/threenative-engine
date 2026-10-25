@@ -241,9 +241,9 @@ describe("createWebEnginePlugin", () => {
         "/game/node_modules/create-threenative/dist/web-engine-runtime.js",
       ),
     ).toBeNull();
-    expect(() =>
-      plugin.resolveId("three/src/math/Color.js", "/game/src/main.ts"),
-    ).toThrow("TN_NATIVE_UPSTREAM_IMPORT");
+    expect(() => plugin.resolveId("three/src/math/Color.js", "/game/src/main.ts")).toThrow(
+      "TN_NATIVE_UPSTREAM_IMPORT",
+    );
   });
 
   it("resolves three-mesh-bvh to the engine's own MeshBVH, never the upstream package", () => {

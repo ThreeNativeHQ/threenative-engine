@@ -64,8 +64,7 @@ const ENGINE_MATH_MODULES = new Set([
   "three/src/math/Vector4.js",
 ]);
 /** Where the browser back end's value classes live: only these may import three's math modules. */
-const ENGINE_MATH_IMPORTER =
-  /[\\/](?:browser-math\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
+const ENGINE_MATH_IMPORTER = /[\\/](?:browser-math\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
 
 export interface IWebEnginePlugin {
   readonly name: string;
