@@ -301,9 +301,11 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     // sampleNormal's depth-derived fallback (nine depth loads) cost the filter about half its time by register
     // pressure alone, taken or not. A pixel whose draw wrote no normal takes its face's from the derivatives of its
     // position instead (no read), and a tap that read none takes the centre's: the depth term still parts surfaces.
+    // A denoise given no normal input keeps the depth-derived normal on every tap.
     let depth = sampleDepth(coord);
     let position = viewPosition(coord,depth);
-    let face = cross(dpdx(position),dpdy(position));
+    // WGSL's dpdy grows down the framebuffer, view y up: the face faces the camera as -dpdy (three's dFdy).
+    let face = cross(dpdx(position),-dpdy(position));
     let own = sampleNormalRaw(coord);
     let n = select(face,own,dot(own,own)>0.0);
     let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
@@ -497,7 +499,7 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
                                 "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return "
                                 "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; }\n"
                               : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n"
-                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }\n";
+                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n";
     }
     if (effect.kind == "DenoiseNode") {
         const auto& samples = effect.parameters.at("sampleVectors");

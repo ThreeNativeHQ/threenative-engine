@@ -13,6 +13,7 @@
 #endif
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <webgpu/webgpu.h>
@@ -85,6 +86,16 @@ class RecentBindGroups {
 public:
     RecentBindGroups() = default;
     explicit RecentBindGroups(size_t capacity) : capacity_(capacity) {}
+    ~RecentBindGroups() { clear(); }
+    // The slots own references: a copy would release them twice, a move leaves the source empty.
+    RecentBindGroups(const RecentBindGroups&) = delete;
+    RecentBindGroups& operator=(const RecentBindGroups&) = delete;
+    RecentBindGroups(RecentBindGroups&& other) noexcept
+        : capacity_(other.capacity_), slots_(std::exchange(other.slots_, {})) {}
+    RecentBindGroups& operator=(RecentBindGroups&& other) noexcept {
+        if (this != &other) { clear(); capacity_ = other.capacity_; slots_ = std::exchange(other.slots_, {}); }
+        return *this;
+    }
     /** A group the cache keeps: the caller binds it and never releases it. */
     WGPUBindGroup get(WGPUDevice device, WGPUBindGroupLayout layout, const std::vector<WGPUBindGroupEntry>& entries);
     void clear();

@@ -3466,7 +3466,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             if (normalPass && item.nodes.normalNode)
                 throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
-            const bool cut = item.material->alphaTest > 0;
+            const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
             const shader::StageModule* fragment =
                 auxMask == kAuxNormal && !cut ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
             if (!fragment) {
