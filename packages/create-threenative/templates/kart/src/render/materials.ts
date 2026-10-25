@@ -18,6 +18,7 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { C } from "./palette.js";
 
 const cache = new Map<string, Material>();
 
@@ -39,7 +40,7 @@ export function lit(
   const hit = cache.get(key);
   if (hit !== undefined) return hit as MeshStandardMaterial;
   const material = new MeshStandardMaterial({
-    color: options.color ?? 0xffffff,
+    color: options.color ?? C.white,
     depthWrite: options.transparent !== true,
     emissive: options.emissive ?? 0x000000,
     emissiveIntensity: options.emissiveIntensity ?? 0,
