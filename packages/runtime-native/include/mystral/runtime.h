@@ -33,6 +33,9 @@ struct RuntimeConfig {
     // before device creation. Empty means unqualified (memory-only), never guess from a shim eval.
     std::string pipelineCacheAppIdentity;
     std::string pipelineCacheSourceIdentity;
+    // The game entry path (or another stable game identity). Namespaces saved progress so two
+    // games whose directories share a basename never read or overwrite each other's saves.
+    std::string storageIdentity;
     // `display.backgroundMode`. Default pauses the loop off-screen; "continue" is the named
     // override, and it turns pausing off without turning the lifecycle markers off.
     platform::BackgroundMode backgroundMode = platform::BackgroundMode::Pause;

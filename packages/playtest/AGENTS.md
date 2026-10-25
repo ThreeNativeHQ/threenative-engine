@@ -109,7 +109,9 @@ bridge advertising `runtime.startup` to report `phase: "ready"`; bounded by
 `PLAYTEST_STARTUP_READY_TIMEOUT_MS`, and a game that never gets there fails
 `TN_PLAYTEST_STARTUP_NOT_READY` rather than being observed mid-load. A host that has *exited* is
 `TN_PLAYTEST_STARTUP_HOST_EXITED`, not a slow launch. **Never fix a boot race by lengthening a
-wait** — padding changes which runs get lucky. One measurement opt-in sits outside all of it:
+wait** — padding changes which runs get lucky. Browser frame-time and FPS assertions select the live host clock by default; an explicit
+`liveClock: false` run config retains counted ticks. Other scenarios keep counted ticks.
+One measurement opt-in sits outside all of it:
 `--live-clock` (browser and desktop targets) makes the host's own frame pump move the simulation,
 so a standing scene is measurable at all. The browser injects `__THREENATIVE_PLAYTEST_CLOCK__ =
 "wall-clock"` ahead of every page script. The desktop runner sets `TN_PLAYTEST_CLOCK=wall-clock` for

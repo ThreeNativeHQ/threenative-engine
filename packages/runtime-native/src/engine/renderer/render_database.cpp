@@ -259,6 +259,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.color = {float(m.color.r), float(m.color.g), float(m.color.b)};
     p.opacity = float(m.opacity);
     p.alphaTest = float(m.alphaTest);
+    p.alphaHash = m.alphaHash;
     p.roughness = float(m.roughness);
     p.metalness = float(m.metalness);
     p.envMapIntensity = float(m.envMapIntensity);

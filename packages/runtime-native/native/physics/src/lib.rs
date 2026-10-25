@@ -529,13 +529,15 @@ impl Simulation {
         if options.body_type == 0 {
             body = body.ccd_enabled(options.continuous_collision);
         }
-        if options.mass > 0.0 {
-            body = body.additional_mass(options.mass);
-        }
         let body = self.bodies.insert(body);
+        // Explicit mass is the body's total mass, not a bonus on top of the collider's
+        // density-derived mass. Zero keeps the automatic collider mass.
         let mut collider = collider
             .collision_groups(InteractionGroups::new(layer, mask))
             .sensor(options.sensor);
+        if options.mass > 0.0 {
+            collider = collider.mass(options.mass);
+        }
         collider = collider.active_events(ActiveEvents::COLLISION_EVENTS);
         let shape = collider.shape.clone();
         let collider = self
@@ -2241,6 +2243,41 @@ mod tests {
             sensor: false,
             continuous_collision: true,
         }
+    }
+
+    #[test]
+    fn explicit_mass_is_the_total_body_mass_not_added_to_the_collider() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let mut explicit = fixed_box(1, 0.0, 0.0, 1);
+        explicit.body_type = 0;
+        explicit.shape_x = 1.0;
+        explicit.shape_y = 1.0;
+        explicit.shape_z = 1.0;
+        explicit.mass = 2.0;
+        assert!(simulation.add_body(explicit));
+        let mut automatic = fixed_box(2, 10.0, 0.0, 1);
+        automatic.body_type = 0;
+        automatic.shape_x = 1.0;
+        automatic.shape_y = 1.0;
+        automatic.shape_z = 1.0;
+        automatic.mass = 0.0;
+        assert!(simulation.add_body(automatic));
+
+        let explicit_mass = simulation.bodies[simulation.entries[&1].body].mass();
+        assert!(
+            (explicit_mass - 2.0).abs() < 1e-4,
+            "explicit mass was {explicit_mass} instead of 2"
+        );
+        let automatic_mass = simulation.bodies[simulation.entries[&2].body].mass();
+        assert!(
+            (automatic_mass - 8.0).abs() < 1e-3,
+            "automatic collider mass was {automatic_mass} instead of 8"
+        );
     }
 
     #[test]

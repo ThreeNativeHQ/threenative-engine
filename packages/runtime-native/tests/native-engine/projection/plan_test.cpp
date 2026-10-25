@@ -147,6 +147,13 @@ int memberWhoseGeometryMovesLeaves() {
 } // namespace
 
 int main() {
+    Material opaque(MaterialType::Standard), hashed(MaterialType::Standard);
+    hashed.alphaHash = true;
+    if (projection::detail::sameUniforms(opaque, hashed) ||
+        projection::detail::uniformHash(opaque) == projection::detail::uniformHash(hashed)) {
+        std::printf("FAIL: alphaHash materials share a uniform batch\n");
+        return 1;
+    }
     Value reference;
     json::Error error;
     if (!json::parse(readFile(TN_PROJECTION_REFERENCE), reference, error)) {

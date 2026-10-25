@@ -697,7 +697,11 @@ export class AudioBus {
   #retire(entry: PooledVoice): void {
     const voice = entry.voice;
     try {
-      if (voice.isPlaying) voice.stop();
+      // Always stop, not only while playing: a paused voice was stopped at the node level but
+      // three still holds its playback progress, and the next cue on this pooled voice would
+      // otherwise start at that offset. `stop()` resets progress before it touches the source,
+      // so a source that is already stopped is harmless here.
+      voice.stop();
     } catch {}
     this.#voices.delete(voice);
     // Out of whatever scene graph it was parented into. Skipping this is the whole bug: the

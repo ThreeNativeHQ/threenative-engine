@@ -2284,9 +2284,12 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
-    // ...nor a diffuse map, unless the caster is alpha-tested: three's shadow pass copies alphaTest and
-    // the map, so a leaf card casts its cut (PRD-651). An opaque caster keeps no fragment stage.
-    kind.map = masked && variant.map;
+    // ...nor a diffuse map, unless the caster is alpha-tested (three's shadow pass copies alphaTest and
+    // the map, so a leaf card casts its cut, PRD-651) or hashed (alphaHash reads the map's alpha too).
+    // An opaque caster keeps no fragment stage.
+    kind.map = (kind.alphaHash || masked) && variant.map;
+    kind.normalMap = false;
+    kind.pbrMaps = 0;
     const std::string key = (masked ? "depth-masked|" : "depth|") + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
     if (masked) {
@@ -2299,10 +2302,15 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
         return add(key, std::move(vertex), std::move(fragment));
     }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
-    shader::StageModule vertex = shader::buildStage(shader::buildBasic(kind).vertex, 0);
+    const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
+    shader::StageModule vertex = shader::buildStage(source.vertex, 0);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
+    if (kind.alphaHash) {
+        fragment = shader::buildStage(source.fragment, 1);
+        if (!fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow alpha coverage");
+    }
     return add(key, std::move(vertex), std::move(fragment));
 }
 
@@ -2908,6 +2916,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
+        v.alphaHash = item.material && item.material->alphaHash;
         v.background = item.background;
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;
@@ -3244,6 +3253,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (page && !page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
                 !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
+            // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
+            if (variant.alphaHash && (item.nodes.colorNode || item.nodes.opacityNode || variant.vertexColors == 4))
+                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
             const bool masked = item.material->alphaTest > 0;
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
@@ -3257,7 +3269,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     cache->depthMasked = masked;
                 }
             }
-            const shader::StageModule* depthFragment = masked ? &cachedDepth->fragment : nullptr;
+            const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &cachedDepth->fragment : nullptr;
             Program& program = *cachedDepth;
             // material.shadowSide names the faces drawn; when null, three's _shadowSide: a front-sided
             // caster draws its back faces, a back-sided one its front faces, a double-sided one both.
@@ -3291,7 +3303,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const uint64_t v = frameUniforms_.size();
             const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
             frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
-            if (masked) {
+            if (masked || variant.alphaHash) {
                 const shader::StandardMaterial& m = *item.material;
                 const auto* fs = program.fragmentSlots;
                 put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
@@ -3314,7 +3326,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
             putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
-            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(masked ? f : 0)});
+            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>((masked || variant.alphaHash) ? f : 0)});
         }
         }
         // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
@@ -3788,8 +3800,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         postTextures_[i].second = source;
     }
     for (const auto& texture : postTextures_) materialTexture(*texture.second);
+    for (const ShadowPass& pass : shadowPasses)
+        for (const Planned& draw : pass.draws)
+            if (draw.item->material->alphaHash && draw.item->map) materialTexture(*draw.item->map);
     for (ShadowPass& pass : shadowPasses)
-        for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+        for (Planned& draw : pass.draws) {
+            draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+            if (!draw.item->material->alphaHash || !draw.item->map) continue;
+            const MaterialTexture* map = materialTexture(*draw.item->map);
+            const std::string key = "shadow|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
+                std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" + std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+            const auto found = mapGroups_.find(key);
+            draw.mapGroup = found != mapGroups_.end() ? found->second :
+                mapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
+                    lutView_, lutSampler_, map->view, map->sampler)).first->second;
+        }
 
     postStamp = postViewsStamp();
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
@@ -4060,7 +4085,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (vertexGroup == nullptr && !p.program->vertex.bindings.empty())
             throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no vertex bind group");
         TN_ENCODE(SetBindGroup, 0, vertexGroup, 1, &p.vertexOffset);
-        // The depth program's fragment group is empty: no uniform block, no dynamic offset.
+        // Plain depth draws have no fragment block; alpha coverage uses its own uniform slice.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
         const WGPUBindGroup fragmentGroup = p.mapGroup ? p.mapGroup : p.program->groups[1];
         if (fragmentGroup == nullptr && !p.program->fragment.bindings.empty())

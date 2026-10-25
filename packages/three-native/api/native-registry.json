@@ -162,11 +162,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "AnimationAction": {
       "constructor": false,
@@ -259,9 +255,7 @@
       "callbacks": [],
       "events": ["finished", "loop"],
       "fixedMembers": [],
-      "fields": {
-        "time": [0, 1]
-      }
+      "fields": { "time": [0, 1] }
     },
     "BatchedMesh": {
       "constructor": true,
@@ -564,11 +558,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Bone": {
       "constructor": true,
@@ -721,11 +711,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Box3": {
       "constructor": true,
@@ -1145,11 +1131,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "CanvasTexture": {
       "constructor": true,
@@ -1434,11 +1416,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "b": [16, 1],
-        "g": [8, 1],
-        "r": [0, 1]
-      }
+      "fields": { "b": [16, 1], "g": [8, 1], "r": [0, 1] }
     },
     "ConeGeometry": {
       "constructor": true,
@@ -1967,11 +1945,7 @@
         "shadow",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "DirectionalLightShadow": {
       "constructor": false,
@@ -2085,12 +2059,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "__order": [24, 0],
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "__order": [24, 0], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "ExtrudeGeometry": {
       "constructor": true,
@@ -2449,11 +2418,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "HemisphereLight": {
       "constructor": true,
@@ -2626,11 +2591,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "IcosahedronGeometry": {
       "constructor": true,
@@ -3151,11 +3112,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LOD": {
       "constructor": true,
@@ -3316,11 +3273,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LatheGeometry": {
       "constructor": true,
@@ -3421,9 +3374,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "mask": [0, 1]
-      }
+      "fields": { "mask": [0, 1] }
     },
     "Line": {
       "constructor": true,
@@ -3710,16 +3661,13 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LineBasicMaterial": {
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -3746,6 +3694,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -4062,11 +4011,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "MathUtils": {
       "constructor": true,
@@ -4113,9 +4058,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "elements": [0, 9]
-      }
+      "fields": { "elements": [0, 9] }
     },
     "Matrix4": {
       "constructor": true,
@@ -4164,9 +4107,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "elements": [0, 16]
-      }
+      "fields": { "elements": [0, 16] }
     },
     "Mesh": {
       "constructor": true,
@@ -4454,16 +4395,13 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "MeshBasicMaterial": {
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -4490,6 +4428,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -4525,6 +4464,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "aoNode",
         "blending",
@@ -4563,6 +4503,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "aoNode",
         "blending",
@@ -4610,6 +4551,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -4642,6 +4584,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -4687,6 +4630,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -4723,6 +4667,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -4781,6 +4726,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "anisotropy",
         "aoMapIntensity",
@@ -4831,6 +4777,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "anisotropy",
         "aoMap",
@@ -4927,6 +4874,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "aoMapIntensity",
         "blending",
@@ -4965,6 +4913,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "aoMap",
         "aoMapIntensity",
@@ -5035,6 +4984,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "aoMapIntensity",
         "aoNode",
@@ -5085,6 +5035,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "aoMap",
         "aoMapIntensity",
@@ -5167,6 +5118,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "aoNode",
         "blending",
@@ -5199,6 +5151,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "aoNode",
         "blending",
@@ -5396,11 +5349,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "OctahedronGeometry": {
       "constructor": true,
@@ -5663,11 +5612,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Path": {
       "constructor": true,
@@ -5882,11 +5827,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Plane": {
       "constructor": true,
@@ -6189,11 +6130,7 @@
         "shadow",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "PointLightShadow": {
       "constructor": false,
@@ -6251,12 +6188,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "w": [24, 1],
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "w": [24, 1], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "QuaternionKeyframeTrack": {
       "constructor": true,
@@ -6668,11 +6600,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Shape": {
       "constructor": true,
@@ -7105,11 +7033,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Source": {
       "constructor": false,
@@ -7149,9 +7073,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": ["center"],
-      "fields": {
-        "radius": [24, 1]
-      }
+      "fields": { "radius": [24, 1] }
     },
     "SphereGeometry": {
       "constructor": true,
@@ -7432,11 +7354,7 @@
         "shadow",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "SpotLightShadow": {
       "constructor": false,
@@ -7740,16 +7658,13 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "SpriteMaterial": {
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -7778,6 +7693,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -7815,6 +7731,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "aoNode",
         "blending",
@@ -7857,6 +7774,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "aoNode",
         "blending",
@@ -8319,10 +8237,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "x": [0, 1],
-        "y": [8, 1]
-      }
+      "fields": { "x": [0, 1], "y": [8, 1] }
     },
     "Vector3": {
       "constructor": true,
@@ -8403,11 +8318,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "Vector4": {
       "constructor": true,
@@ -8466,12 +8377,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "w": [24, 1],
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "w": [24, 1], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "VectorKeyframeTrack": {
       "constructor": true,

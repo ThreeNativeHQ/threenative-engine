@@ -67,13 +67,13 @@ Relative look capture: a binding with `pointerRelative: true` captures the canva
 `game.goto("<scene-name>")` also rebuilds the scene, but resets the game's state. Seeded randomness
 is deterministic only when `defineGame({ seed })` is configured.
 
-`AnimationPlayer` re-times a looping clip to the ground the body covers so feet do not skate — in-place clips too, off a planted foot; a speed past what the clip carries is **clamped at 3x**, so set it near `player.stride.clipGroundSpeed`. `strideSync: false` opts out, `maxFootSlide` bounds it. `clipPoseError` scores a retarget against its source
-per bone in degrees — whole quaternions relative to each rig's bind pose, so bind conventions
+`AnimationPlayer` re-times a looping clip to the ground the body covers so feet do not skate — in-place clips too, off a planted foot; a speed past what the clip carries is **clamped at 3x**, so set it near `player.stride.clipGroundSpeed`. `strideSync: false` opts out, `maxFootSlide` bounds it. `clipPoseError` scores a retarget against its source per bone in degrees — whole quaternions relative to each rig's bind pose, so bind conventions
 cancel and an axis-rolled limb is caught where a bone-direction check reads zero.
 `clipTrackBindings` names tracks that bind nothing (`<bone>.undefined`, which plays the bind pose),
 `clipBoneCoverage` names bones the clip does not drive, which keep the previous clip's pose, and
 `boneContact` reports in metres whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches in 8 ms slices so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement. Gate the loading curtain on a measured readiness with `ctx.startup.hold(label, () => ready)`: core polls it every rendered frame, so it settles without a physics step.
 
+`updateRate: "auto"` is the default and follows measured camera policy; `updateRate: 1` is full evaluation, another positive safe integer names a frame interval, and `updateRateReport` shows the effective rate, override status and latest evaluation; one-shots/fades, public mixer listeners/speed overrides, root-motion `AnimationComposer`, automatic camera-ray targets and camera-parented rigs stay full-rate.
 ## Budget real time for the look — see `node_modules/create-threenative/agent-docs/references/dream-loop.md`
 
 WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/` is yours to edit and is where the base look lives: the prototype test scene, a metre

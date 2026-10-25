@@ -1,7 +1,8 @@
 import type { ICtx } from "@threenative/core";
-import { BoxGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import { BoxGeometry, Mesh, MeshBasicMaterial, Object3D, Vector3 } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import "../src/index.js";
+import { NavigationAgent3D } from "../src/navigation/NavigationAgent3D.js";
 import { NavigationRegion3D, recast } from "../src/navigation/index.js";
 import type { IPhysicsContext } from "../src/plugin.js";
 import { rapier } from "../src/plugin.js";
@@ -108,6 +109,25 @@ describe("NavigationRegion3D", () => {
       one.dispose();
       two.dispose();
     }).not.toThrow();
+  });
+
+  it("should keep the active region's agents when a superseded region is disposed", async () => {
+    const { ctx } = await setup();
+    const first = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const second = new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const agent = new NavigationAgent3D({
+      avoidanceEnabled: false,
+      navigation: navigation(ctx),
+      object: new Object3D(),
+    });
+    expect(navigation(ctx).agents.size).toBe(1);
+
+    first.dispose();
+    expect(navigation(ctx).agents.size).toBe(1);
+    expect(() => agent.setTargetPosition(new Vector3(-6, 0.75, 0))).not.toThrow();
+
+    second.dispose();
+    expect(navigation(ctx).agents.size).toBe(0);
   });
 
   it("should throw when the bake fails", async () => {

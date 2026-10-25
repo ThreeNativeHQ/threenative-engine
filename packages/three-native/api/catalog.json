@@ -8268,6 +8268,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -10993,8 +11002,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11936,6 +11944,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -12098,8 +12115,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -13353,6 +13369,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13942,6 +13967,15 @@
         {
           "name": "irradianceNode",
           "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -20467,6 +20501,15 @@
         },
         {
           "name": "colorWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -27275,6 +27318,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -27599,6 +27651,15 @@
         {
           "name": "subsurfaceColor",
           "type": "Color | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -29427,13 +29488,19 @@
           "name": "isStorageTexture",
           "type": "true",
           "mutable": false,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "mipmapsAutoUpdate",
           "type": "boolean",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -29456,7 +29523,10 @@
               "returns": "void"
             }
           ],
-          "async": false
+          "async": false,
+          "status": {
+            "kind": "supported"
+          }
         }
       ]
     },

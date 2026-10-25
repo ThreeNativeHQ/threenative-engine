@@ -686,7 +686,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
     bool hasNodes = false;
     for (const auto& node : variant.nodes.graphs()) hasNodes |= bool(node);
     // Every builder ends here: the fragment's read order, not declaration order, fixes the locations.
-    if (!hasNodes) return out.vertex.linkVaryings(out.fragment);
+    if (!hasNodes && !variant.alphaHash) return out.vertex.linkVaryings(out.fragment);
     Program& v = out.vertex;
     // varying(node): the vertex stage computes each node the fragment reads by its varying name.
     std::unordered_map<std::string, graph::Node> carried;
@@ -1604,7 +1604,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId outgoing = f.add(outgoingLight, emissive);
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha), diffuseColor, emissive));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash), diffuseColor, emissive));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
@@ -1736,7 +1736,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId outgoing = f.add(lighting, emissive);
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha), diffuseColor, emissive));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash), diffuseColor, emissive));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
@@ -1827,8 +1827,24 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha)));
+    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash)));
     outputDepthNode(f, slots, variant);
+    linkNodeVaryings(out, variant, local.position, local.normal);
+    return out;
+}
+
+StandardPrograms buildDepth(const VertexVariant& variant) {
+    StandardPrograms out;
+    Program& v = out.vertex;
+    const LocalVertex local = localVertex(v, variant, false);
+    const ExprId view = v.mul(v.uniform("viewMatrix", Type::mat(4, 4)), v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position));
+    v.output("position", clipPosition(v, variant, local, v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), view)));
+    outputMapUv(v, local);
+    Program& f = out.fragment;
+    const ExprId texel = mapTexel(f, variant);
+    const ExprId opacity = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
+    materialAlpha(f, texel == kInvalid ? opacity : f.mul(opacity, f.swizzle(texel, "w")), variant.alphaHash);
+    f.output("fragDepth", f.swizzle(f.builtin("position"), "z"));
     linkNodeVaryings(out, variant, local.position, local.normal);
     return out;
 }
@@ -1841,7 +1857,7 @@ StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
     if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
     // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
-    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha)}));
+    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha, variant.alphaHash)}));
     out.vertex.linkVaryings(out.fragment);
     return out;
 }
@@ -1881,12 +1897,44 @@ ExprId fogFactor(Program& f, uint8_t kind, ExprId viewZ, ExprId nearOrDensity, E
     return f.constant(0.0f);
 }
 
-ExprId materialAlpha(Program& f, ExprId alpha) {
+// three@0.185.1 getAlphaHashThreshold: geometry-anchored noise at adjacent pixel scales.
+static ExprId alphaHashThreshold(Program& f) {
+    Tsl t{f};
+    const ExprId position = f.varying("positionLocal", Type::vec(3));
+    const auto hash2 = [&](ExprId x, ExprId y) {
+        return f.call("fract", {f.mul(f.mul(t.f(1e4f), f.call("sin", {f.add(f.mul(t.f(17), x), f.mul(t.f(0.1f), y))})),
+            f.add(t.f(0.1f), f.call("abs", {f.call("sin", {f.add(f.mul(t.f(13), y), x)})})))});
+    };
+    const auto hash3 = [&](ExprId scale) {
+        const ExprId p = f.call("floor", {f.mul(scale, position)});
+        return hash2(hash2(f.swizzle(p, "x"), f.swizzle(p, "y")), f.swizzle(p, "z"));
+    };
+    const ExprId derivative = f.call("max", {f.call("length", {f.call("dFdx", {position})}),
+        f.call("length", {f.call("dFdy", {position})})});
+    const ExprId logScale = f.call("log2", {f.div(t.f(1), f.mul(t.f(0.05f), f.call("max", {derivative, t.f(kEpsilon)})))});
+    const ExprId low = hash3(f.call("exp2", {f.call("floor", {logScale})}));
+    const ExprId high = hash3(f.call("exp2", {f.neg(f.call("floor", {f.neg(logScale)}))}));
+    const ExprId factor = f.call("fract", {logScale});
+    const ExprId x = f.add(f.mul(t.oneMinus(factor), low), f.mul(factor, high));
+    const ExprId a = f.call("min", {factor, t.oneMinus(factor)});
+    // Both select arms evaluate in WGSL; guard the unused CDF tail at an integer noise scale.
+    const ExprId divisor = f.call("max", {f.mul(f.mul(t.f(2), a), t.oneMinus(a)), t.f(kEpsilon)});
+    const ExprId c0 = f.div(t.pow2(x), divisor);
+    const ExprId c1 = f.div(f.sub(x, f.mul(t.f(0.5f), a)), t.oneMinus(a));
+    const ExprId c2 = t.oneMinus(f.div(t.pow2(t.oneMinus(x)), divisor));
+    return f.call("clamp", {f.select(f.less(x, t.oneMinus(a)), f.select(f.less(x, a), c0, c1), c2), t.f(kEpsilon), t.f(1)});
+}
+
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash) {
     const ExprId alphaTest = f.uniform("alphaTest", Type::f32());
     const ExprId no = f.constant(false);
     // alpha <= alphaTest is !(alphaTest < alpha); the test applies only when alphaTest > 0.
     const ExprId atOrBelow = f.select(f.less(alphaTest, alpha), no, f.constant(true));
     f.If(f.select(f.less(f.constant(0.0f), alphaTest), atOrBelow, no), [&] { f.discard(); });
+    if (alphaHash) {
+        const ExprId threshold = alphaHashThreshold(f);
+        f.If(f.less(alpha, threshold), [&] { f.discard(); });
+    }
     return f.call("mix", {alpha, f.constant(1.0f), f.uniform("opaque", Type::f32())});
 }
 

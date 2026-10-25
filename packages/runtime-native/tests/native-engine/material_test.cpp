@@ -46,6 +46,31 @@ void stagesAgree(const Program& fragment, const std::string& vertex, const std::
     }
 }
 
+void alphaHash() {
+    VertexVariant variant;
+    variant.alphaHash = true;
+    variant.map = true;
+    for (int material = 0; material < 5; ++material) {
+        const auto p = material == 0 ? buildBasic(variant) : material == 1 ? buildLambert(variant) :
+            material == 2 ? buildPhong(variant) : material == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        const auto vs = buildStage(p.vertex, 0), fs = buildStage(p.fragment, 1);
+        for (const auto& e : fs.wgsl.errors) std::fprintf(stderr, "%s\n", e.c_str());
+        CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+        if (!vs.wgsl.ok() || !fs.wgsl.ok()) continue;
+        CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
+        CHECK(fs.wgsl.code.find("i_positionLocal") != std::string::npos);
+        stagesAgree(p.fragment, vs.wgsl.code, fs.wgsl.code);
+    }
+    const auto depth = buildDepth(variant);
+    const auto vs = buildStage(depth.vertex, 0), fs = buildStage(depth.fragment, 1);
+    CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+    CHECK(fs.wgsl.code.find("@builtin(frag_depth)") != std::string::npos);
+    CHECK(fs.wgsl.code.find("textureSample(") != std::string::npos);
+    CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
+    stagesAgree(depth.fragment, vs.wgsl.code, fs.wgsl.code);
+    CHECK(variant.key() != VertexVariant{}.key());
+}
+
 void fog() {
     for (float z : {0.0f, 2.0f, 6.0f, 10.0f, 25.0f}) {
         Program p(Stage::Fragment);
@@ -674,4 +699,4 @@ void depthTextureLowering() {
 
 }  // namespace
 
-TN_TEST_MAIN({"ssr_passes", ssrPasses}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

@@ -73,7 +73,12 @@ path samples in groups of ten ticks. A counted group presents no extra observati
 standing still while a scenario watches it reports one boot window and nothing after it, because
 there was no second frame to close a window on.
 
-`--live-clock` (browser and desktop targets) is the opt-in, and it is the harness half of what the
+Browser assertions containing `maxFrameMsP95` or `minFps` select this live clock automatically:
+forced simulation batches do not measure normal frame pacing. An explicit `liveClock: false`
+run configuration retains counted ticks; draw-count-only assertions and other targets keep their
+existing default.
+
+`--live-clock` (browser and desktop targets) also opts in, and it is the harness half of what the
 native production profile's own `--live-clock` already does there. On the browser the runner puts
 `globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` in an `addInitScript` — ahead of every
 page script, so a request that lands after the game's module evaluated cannot happen — and on the
@@ -101,7 +106,7 @@ needs the second, and the frame bound fails closed with `TN_PLAYTEST_PERF_FEW_GP
 
 It is a measurement switch, not scenario semantics. `holdTicks` and `waitTicks` stay tick counts,
 the flag is refused on the device targets (their hosts take the request from the production
-profile's injected instrumentation, not from this runner), and a deterministic scenario that wants
-ticks asks for none. A value the host does not recognize is refused there too:
+profile's injected instrumentation, not from this runner). Ordinary deterministic scenarios retain
+counted ticks. A value the host does not recognize is refused there too:
 `TN_PLAYTEST_CLOCK_UNSUPPORTED` on stderr, and the launch fails rather than reporting a wall-clock
 run that never happened.

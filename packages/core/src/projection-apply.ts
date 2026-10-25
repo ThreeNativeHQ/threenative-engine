@@ -55,6 +55,7 @@ import type { ProjectionExactReason, ProjectionMaterialChecks } from "./renderPr
 
 /** A transform with no volume. Every triangle drawn through it is degenerate and discarded. */
 const ZERO_MATRIX = /* @__PURE__ */ new Matrix4().multiplyScalar(0);
+const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
 
 /**
  * The material a uniform batch draws with: the group's representative with its base colour removed.
@@ -1341,6 +1342,7 @@ export class ProjectionMirror {
       proxy.matrixAutoUpdate = false;
       this.#proxies.set(object, proxy);
       fresh = true;
+      proxy.userData[ANIMATION_RATE_SOURCES_KEY] = new Map([[object, 0]]);
       // An `LOD` picks one of its levels by distance every frame, and it does that on itself. Its
       // levels therefore have to hang off the stand-in, or nothing selects one and the mirror
       // draws whichever rung happened to be visible when it was built.
