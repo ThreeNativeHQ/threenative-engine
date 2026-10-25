@@ -1032,8 +1032,13 @@ export class WorldEnvironment {
         const filter = denoise(result, depth(), normal(), view) as {
           gpuStage?: string;
           index: { value: number };
+          resolutionScale?: number;
         };
         filter.index.value = pass;
+        // Filtered at the gather's resolution, as the AO filter runs at the AO's: at full resolution the owned
+        // engine filtered four times the gather's pixels (3.7 ms of a 15 ms frame at 2560x1440). Upstream three
+        // filters inline and ignores it.
+        filter.resolutionScale = options.ssgiResolutionScale;
         // The owned engine times the gather's denoise with the gather (`GI_STAGES`); three ignores the property.
         if (options.ssgiTimedPass === undefined || options.ssgiTimedPass === "denoise")
           filter.gpuStage = "SSGI";
