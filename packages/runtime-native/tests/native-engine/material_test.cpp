@@ -604,6 +604,7 @@ void ssrPasses() {
     CHECK(effect->kind == "SSRNode" && effect->normal && effect->roughness);
     CHECK(effect->inputs == std::vector<g::Node>({color, depth, normal, metal, rough}));
     CHECK(effect->parameters.at("quality")[0] == 0.5);
+    CHECK(effect->parameters.count("maxSteps") && effect->parameters.at("maxSteps")[0] == 1e6);
     const auto passes = g::postPasses(g::effectNode(effect));
     CHECK(passes.size() == 6);
     if (passes.size() != 6) return;
@@ -625,6 +626,8 @@ void ssrPasses() {
         for (const auto& stage : pass.package.variants.at(0).stages) CHECK(stage.wgsl.ok());
     }
     CHECK(passes[0].package.variants[0].stages.back().wgsl.code.find("t_metalness,smp_metalness,coord,0.0).x") != std::string::npos);
+    const auto& ray = passes[0].package.variants[0].stages.back().wgsl.code;
+    CHECK(ray.find("maxSteps: f32") != std::string::npos && ray.find(",u.maxSteps)") != std::string::npos);
     CHECK(passes.back().package.variants[0].stages.back().wgsl.code.find("t_roughness,smp_roughness,coord,0.0).y") != std::string::npos);
 
     // Scalar expressions get their own render pass rather than losing their uniforms or UVs.

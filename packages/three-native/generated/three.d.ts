@@ -3292,7 +3292,7 @@ export declare function lightShadowMatrix(light: Light): Node;
 export declare function rtt(node: Node, width?: number | null, height?: number | null, options?: Record<string, unknown>): Node;
 
 /** Catalog partial (stochastic-ggx-not-implemented, environment-mis-not-implemented, history-feedback-not-implemented): three/addons/tsl/display/SSRNode.js/ssr. */
-export declare function ssr(colorNode: unknown, depthNode: unknown, normalNode: unknown, options?: { camera?: Camera; metalnessNode?: unknown; roughnessNode?: unknown; reflectNonMetals?: boolean; binaryRefine?: boolean }): Node & { maxDistance: { value: number }; thickness: { value: number }; opacity: { value: number }; quality: { value: number }; intensity: { value: number }; maxLuminance: { value: number }; blurQuality: { value: number }; resolutionScale: number; reflectNonMetals: boolean; binaryRefine: boolean; getTextureNode(): Node };
+export declare function ssr(colorNode: unknown, depthNode: unknown, normalNode: unknown, options?: { camera?: Camera; metalnessNode?: unknown; roughnessNode?: unknown; reflectNonMetals?: boolean; binaryRefine?: boolean }): Node & { maxDistance: { value: number }; thickness: { value: number }; opacity: { value: number }; quality: { value: number }; maxSteps: { value: number }; intensity: { value: number }; maxLuminance: { value: number }; blurQuality: { value: number }; resolutionScale: number; reflectNonMetals: boolean; binaryRefine: boolean; getTextureNode(): Node };
 
 /** Catalog partial (resource-parameters, includes, more-than-four-arguments): three/tsl/wgslFn. */
 export declare function wgslFn(code: string, includes?: unknown[]): Function;
