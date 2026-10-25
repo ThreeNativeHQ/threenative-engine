@@ -14,6 +14,7 @@
 #include "engine/shader/graph/graph.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <vector>
@@ -121,6 +122,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     if (status != WGPURequestDeviceStatus_Success) return static_cast<void>(fail("TN_WASM_DEVICE: " + text(message)));
     device = result;
     queue = wgpuDeviceGetQueue(device);
+    setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
     renderer->setGpuTimer(true);
     configureWebSurface();

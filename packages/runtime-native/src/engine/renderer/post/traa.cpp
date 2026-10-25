@@ -373,7 +373,7 @@ void TraaPass::fillVelocity(WGPUCommandEncoder encoder, WGPUTextureView depthVie
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
     WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 1; desc.colorAttachments = &color;
-    auto pass = beginTimedRenderPass(encoder, &desc);
+    auto pass = beginTimedRenderPass(encoder, &desc, 2, {"traaVelocity", width_, height_});
     wgpuRenderPassEncoderSetPipeline(pass, fillPipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
     wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);
@@ -443,7 +443,7 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
     WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 1; desc.colorAttachments = &color;
-    auto pass = beginTimedRenderPass(encoder, &desc);
+    auto pass = beginTimedRenderPass(encoder, &desc, 2, {"traaResolve", outputWidth_, outputHeight_});
     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
     wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);

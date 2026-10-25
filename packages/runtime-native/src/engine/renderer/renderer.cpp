@@ -8,6 +8,9 @@
 #include <span>
 #include <deque>
 #include <numeric>
+#include <sstream>
+#include <iomanip>
+#include <cstdio>
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
@@ -4037,7 +4040,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor shadowDesc = {};
         shadowDesc.depthStencilAttachment = &shadowDepth;
         const size_t query = passTimer_->segments.size();
-        WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, !ownsPassTimer_ ? 2 : shadowPlan.lamp ? kGpuLampShadowSegment : 0);
+        WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, !ownsPassTimer_ ? 2 : shadowPlan.lamp ? kGpuLampShadowSegment : 0, {"shadow", 0, 0});
         if (shadowPlan.lamp) {
             // A lamp's map is redrawn when its first face is: a cube's six passes are one redraw.
             lastFrame_.lampRedraws += &shadowPlan == shadowPasses.data() || (&shadowPlan - 1)->virtualLight != shadowPlan.virtualLight || !(&shadowPlan - 1)->lamp;
@@ -4064,7 +4067,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
     // A resolve over a frame the graph draws seeds from that frame, in its own pass.
     if (traa_ && !lateTraa_) traa_->seedHistory(encoder, sceneColor_);
-    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2);
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2, {"scene", inputWidth_, inputHeight_});
     bound = nullptr;
     boundIndex = nullptr;
     // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
@@ -4131,7 +4134,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         viewportDesc.colorAttachmentCount = 1;
         viewportDesc.colorAttachments = &loadColor;
         viewportDesc.depthStencilAttachment = &loadDepth;
-        WGPURenderPassEncoder rest = beginTimedRenderPass(encoder, &viewportDesc);
+        WGPURenderPassEncoder rest = beginTimedRenderPass(encoder, &viewportDesc, 2, {"viewport", inputWidth_, inputHeight_});
         wgpuRenderPassEncoderExecuteBundles(rest, 1, &viewportBundle_);
         wgpuRenderPassEncoderEnd(rest);
         wgpuRenderPassEncoderRelease(rest);
@@ -4186,7 +4189,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor auxDesc{};
         auxDesc.colorAttachmentCount = count; auxDesc.colorAttachments = targets.data();
         auxDesc.depthStencilAttachment = &auxDepth;
-        auto auxPass = beginTimedRenderPass(encoder, &auxDesc);
+        auto auxPass = beginTimedRenderPass(encoder, &auxDesc, 2, {"aux", inputWidth_, inputHeight_});
         replay(auxPass, auxBundle_, auxBundleKey_, job.auxKey, job.auxPlan, formats.data(), count, 1);
         wgpuRenderPassEncoderEnd(auxPass); wgpuRenderPassEncoderRelease(auxPass);
         lastFrame_.auxPasses = 1;
@@ -4208,7 +4211,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor motionDesc{};
         motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
         motionDesc.depthStencilAttachment = &motionDepth;
-        auto velocityPass = beginTimedRenderPass(encoder, &motionDesc);
+        auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
         const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
         replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
@@ -4247,6 +4250,8 @@ void Renderer::encodeFrame(FrameJob& job) {
     encoder = recordSampledTargets(encoder);
     outputPass(encoder, presentTarget, presentFormat);
     const auto segments = passTimer_->segments;
+    const auto passInfo = passTimer_->passes;
+    const std::array<uint32_t, 4> extent{inputWidth_, inputHeight_, width_, height_};
     const bool resolveTiming = timed && !passTimer_->failed && !segments.empty();
     if (resolveTiming) {
         if (!timestampResolve_.type)
@@ -4260,11 +4265,16 @@ void Renderer::encodeFrame(FrameJob& job) {
         passTimer_->pending = true;
         std::weak_ptr<Timing> timing = timing_;
         const auto timer = passTimer_;
-        gpu_.readBuffer(timestampResolve_, 0, segments.size() * 16, [timing, timer, segments, source, shadowQueries](GpuStatus status, std::vector<uint8_t> bytes) {
+        gpu_.readBuffer(timestampResolve_, 0, segments.size() * 16, [timing, timer, segments, passInfo, extent, source, shadowQueries](GpuStatus status, std::vector<uint8_t> bytes) {
             timer->pending = false;
             const auto t = timing.lock();
             if (!t || status != GpuStatus::Ok || bytes.size() != segments.size() * 16) return;
             std::array<double, kGpuSegments> sums{};
+            const bool trace = !passInfo.empty() && passInfo.size() == segments.size();
+            std::ostringstream profile;
+            if (trace) profile << std::setprecision(12) << "TN_GPU_PASSES:{\"source\":" << source
+                << ",\"input\":[" << extent[0] << ',' << extent[1] << "],\"output\":["
+                << extent[2] << ',' << extent[3] << "],\"passes\":[";
             std::map<std::pair<std::shared_ptr<VirtualShadowCosts>, int>, double> levelCosts;
             for (size_t i = 0; i < segments.size(); ++i) {
                 uint64_t ns[2];
@@ -4272,11 +4282,21 @@ void Renderer::encodeFrame(FrameJob& job) {
                 if (!ns[0] || ns[1] < ns[0]) return;  // Missing/reset timestamps invalidate the whole frame.
                 const double ms = double(ns[1] - ns[0]) / 1e6;
                 sums[segments[i]] += ms;
+                if (trace) profile << (i ? "," : "") << "{\"index\":" << i
+                    << ",\"name\":" << std::quoted(passInfo[i].name)
+                    << ",\"segment\":" << unsigned(segments[i])
+                    << ",\"width\":" << passInfo[i].width << ",\"height\":" << passInfo[i].height
+                    << ",\"ms\":" << ms << '}';
                 if (const auto query = shadowQueries.find(i); query != shadowQueries.end())
                     if (const auto costs = query->second.first.lock()) levelCosts[{costs, query->second.second}] += ms;
             }
             const double total = std::accumulate(sums.begin(), sums.end(), 0.0);
             if (total <= 0) return;
+            if (trace) {
+                profile << "],\"ms\":" << total << "}\n";
+                const auto line = profile.str();
+                std::fwrite(line.data(), 1, line.size(), stdout);
+            }
             for (const auto& [key, ms] : levelCosts) {
                 std::lock_guard lock(key.first->mutex);
                 auto& reading = key.first->levels[key.second]; reading.first = ms; ++reading.second;
@@ -4290,6 +4310,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     if (ownsPassTimer_) {
         passTimer_->segments.clear();
+        passTimer_->passes.clear();
         passTimer_->failed = false;
     }
     {
@@ -4336,7 +4357,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     WGPURenderPassDescriptor passDesc = {};
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
-    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 3 : 2);
+    WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 3 : 2, {"output", width_, height_});
     wgpuRenderPassEncoderSetPipeline(pass, pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderSetVertexBuffer(pass, outputVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
