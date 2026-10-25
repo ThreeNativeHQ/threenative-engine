@@ -189,23 +189,31 @@ function contactBox(object: Object3D): Box3 | undefined {
  */
 function contactPoint(matrix: Matrix4, box: Box3 | undefined, target: Vector3): Vector3 {
   if (box === undefined) return target.setFromMatrixPosition(matrix);
+  // Plain arithmetic over one read of the matrix and the box, Vector3.applyMatrix4's own formula:
+  // on the owned engine each vector call crosses into the engine, and 8 corners per mesh per sample
+  // held Lantern Vale's first walk and first run for 43 ms each.
+  const [e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15] = matrix.elements;
+  const { x: minX, y: minY, z: minZ } = box.min;
+  const { x: maxX, y: maxY, z: maxZ } = box.max;
   for (let index = 0; index < 8; index += 1) {
-    (scratchCorners[index] as Vector3)
-      .set(
-        index & 1 ? box.max.x : box.min.x,
-        index & 2 ? box.max.y : box.min.y,
-        index & 4 ? box.max.z : box.min.z,
-      )
-      .applyMatrix4(matrix);
+    const x = index & 1 ? maxX : minX;
+    const y = index & 2 ? maxY : minY;
+    const z = index & 4 ? maxZ : minZ;
+    const w = 1 / (e3 * x + e7 * y + e11 * z + e15);
+    cornerX[index] = (e0 * x + e4 * y + e8 * z + e12) * w;
+    cornerY[index] = (e1 * x + e5 * y + e9 * z + e13) * w;
+    cornerZ[index] = (e2 * x + e6 * y + e10 * z + e14) * w;
+    cornerOrder[index] = index;
   }
-  scratchCorners.sort((first, second) => first.y - second.y);
+  cornerOrder.sort((first, second) => (cornerY[first] as number) - (cornerY[second] as number));
   let x = 0;
   let z = 0;
   for (let index = 0; index < 4; index += 1) {
-    x += (scratchCorners[index] as Vector3).x;
-    z += (scratchCorners[index] as Vector3).z;
+    const corner = cornerOrder[index] as number;
+    x += cornerX[corner] as number;
+    z += cornerZ[corner] as number;
   }
-  return target.set(x / 4, (scratchCorners[0] as Vector3).y, z / 4);
+  return target.set(x / 4, cornerY[cornerOrder[0] as number] as number, z / 4);
 }
 
 /**
@@ -1375,7 +1383,10 @@ export class AnimationPlayer {
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
 const scratchMatrixWorld = new Matrix4();
-const scratchCorners = Array.from({ length: 8 }, () => new Vector3());
+const cornerX = new Float64Array(8);
+const cornerY = new Float64Array(8);
+const cornerZ = new Float64Array(8);
+const cornerOrder = [0, 1, 2, 3, 4, 5, 6, 7];
 
 /**
  * Validate one weighted request into normalized, non-zero target weights.
