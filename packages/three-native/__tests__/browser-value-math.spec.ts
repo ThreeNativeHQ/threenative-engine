@@ -58,7 +58,11 @@ const classesOf = () => defineBrowserClasses(registry, silentRuntime()).classes;
 
 describe("PRD-742 value math stays in JS on the web engine", () => {
   it("computes 10k Color lerp/copy/setHex calls with no engine call", () => {
-    const Color = classesOf().Color as typeof ThreeColor;
+    const Color = classesOf().Color as unknown as new (
+      r?: number,
+      g?: number,
+      b?: number,
+    ) => ThreeColor;
     const color = new Color(0.1, 0.2, 0.3);
     const other = new Color(0.9, 0.8, 0.7);
     for (let i = 0; i < 10_000; i++) {
@@ -160,7 +164,11 @@ describe("PRD-742 value math stays in JS on the web engine", () => {
       },
     });
     const AmbientLight = classes.AmbientLight as typeof ThreeAmbientLight;
-    const Color = classes.Color as typeof ThreeColor;
+    const Color = classes.Color as unknown as new (
+      r?: number,
+      g?: number,
+      b?: number,
+    ) => ThreeColor;
     const light = new AmbientLight();
     const color = light.color;
     expect(color).toBeInstanceOf(Color);
