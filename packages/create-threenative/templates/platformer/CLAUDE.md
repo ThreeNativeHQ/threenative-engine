@@ -33,7 +33,8 @@ When an `@threenative/*` API is broken, missing, or does not do what you need, r
 A web game downloads its compiled assets on demand and keeps them on disk between visits. Await
 `ctx.assets.prefetch(["next-level.glb", "boss.png"])` before `ctx.goto("next-level")`, so the next
 scene reads from disk instead of a cold fetch. The idle fill downloads the rest of the release
-after the reveal. Two named overrides on `defineGame`'s `assets`: `cache: false` turns the disk
+after the reveal. Await everything the spawn camera sees before the reveal, and `prefetch` only
+what is out of view: a reveal before the visible content loads shows a half-built world. Two named overrides on `defineGame`'s `assets`: `cache: false` turns the disk
 cache off and `backgroundFill: false` turns the fill off; `ctx.assets.cache` reports both plus
 `hits`, `misses`, `bytesOnDisk` and `bytesTotal`. Native hosts read installed files and resolve
 `prefetch` at once.

@@ -138,11 +138,14 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * @situation keep downloaded web assets on disk between visits
  * @situation download the next scene before the player gets there
  * @situation free the disk cache from a settings menu
+ * @situation prefetch assets into the Cache Storage disk cache of a large web game
  * @situation load assets from a nonstandard base path or a compiled asset manifest
  * @alias different area props
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
- * @constraint `assets.cache: false` and `assets.backgroundFill: false` are the named overrides, reported on `ctx.assets.cache`
+ * @constraint await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world
+ * @constraint web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
+ * @override `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */

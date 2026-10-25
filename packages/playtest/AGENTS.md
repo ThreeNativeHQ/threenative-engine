@@ -35,6 +35,8 @@ explicitly **not** test failures (external decoder absent; capture lock queue ti
 - A scaffolded project runs the same CLI as `npx @threenative/playtest`. The framework template
   installs the bridge with `playtest()` in `defineGame`; a plain Three.js project uses
   `installThreePlaytestBridge` from `@threenative/playtest/three`.
+- A scenario's `network: { downloadKbps, latencyMs }` throttles the browser link through CDP, so a
+  load-time claim runs at a stated link speed (for example 20000 kbps and 40 ms).
 - `diagnostics`, console, network, screenshot and trace assertions work against any URL. Semantic
   assertions (`movement`, `camera`, `visibility`) against a project with neither bridge fail
   `TN_PLAYTEST_BRIDGE_MISSING` — that is the harness being right. Install the bridge or narrow the

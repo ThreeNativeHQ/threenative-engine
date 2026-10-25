@@ -4163,6 +4163,7 @@ class AdmissionBudget implements IAdmissionBudget {
  * @situation keep scattered props and hand-placed chunks resident around a moving player
  * @situation honour per-asset draw distances and hard streaming budgets without a mid-frame throw
  * @constraint surface is the game's; this class creates no material, colour or geometry
+ * @constraint a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first
  * @constraint budgets are hard caps that report pressure instead of over-committing
  * @constraint model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first

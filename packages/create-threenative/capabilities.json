@@ -1286,12 +1286,15 @@
       "aliases": ["different area props", "first playable screen external assets"],
       "constraints": [
         "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches",
-        "`assets.cache: false` and `assets.backgroundFill: false` are the named overrides, reported on `ctx.assets.cache`"
+        "await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world",
+        "web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once"
       ],
       "example": "const assets = createAssetLoader({ basePath: \"/assets\" });\nconst rock = await assets.texture(\"rock.png\");",
       "importPath": "@threenative/core",
       "kind": "function",
-      "overrides": [],
+      "overrides": [
+        "`assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`"
+      ],
       "package": "@threenative/core",
       "signature": "export function createAssetLoader(options: IAssetLoaderOptions = { … }",
       "situations": [
@@ -1299,6 +1302,7 @@
         "keep downloaded web assets on disk between visits",
         "download the next scene before the player gets there",
         "free the disk cache from a settings menu",
+        "prefetch assets into the Cache Storage disk cache of a large web game",
         "load assets from a nonstandard base path or a compiled asset manifest"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",
@@ -4588,6 +4592,7 @@
       "aliases": [],
       "constraints": [
         "surface is the game's; this class creates no material, colour or geometry",
+        "a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first",
         "budgets are hard caps that report pressure instead of over-committing",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
