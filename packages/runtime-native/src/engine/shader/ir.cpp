@@ -684,7 +684,7 @@ uint32_t Program::textureDepthCubeValues(std::string_view name) {
 bool Program::textureNeedsSampler(uint32_t texture) const {
     if (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube) return true;
     for (const auto& e : exprs_) {
-        if (e.op != Op::Sample && e.op != Op::SampleLevel) continue;
+        if (e.op != Op::Sample && e.op != Op::SampleLevel && e.op != Op::SampleBias) continue;
         const auto sampled = e.op == Op::Sample && e.argc == 2 && e.type == Type::vec(4)
             ? gatherTexture(e.immediate) : uint32_t(e.immediate);
         if (sampled == texture) return true;
@@ -723,6 +723,21 @@ ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
         return fail("sample", "no such texture", where);
     if (exprs_[uv].type != ((textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube) ? Type::vec(3) : Type::vec(2))) return fail("sample " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
     return pure(Expr{Op::Sample, Type::vec(4), {uv}, 1, texture});
+}
+
+ExprId Program::sampleBias(uint32_t texture, ExprId uv, ExprId bias, Where where) {
+    if (uv == kInvalid || bias == kInvalid) return kInvalid;
+    if (stage_ != Stage::Fragment)
+        return fail("sampleBias", "requires the fragment stage", where);
+    if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d &&
+        textureKinds_[texture] != TextureKind::Float3d && textureKinds_[texture] != TextureKind::FloatCube))
+        return fail("sampleBias", "no such float texture", where);
+    const auto coordinate = textureKinds_[texture] == TextureKind::Float2d ? Type::vec(2) : Type::vec(3);
+    if (exprs_[uv].type != coordinate)
+        return fail("sampleBias " + textures_[texture], "uv is " + exprs_[uv].type.name(), where);
+    if (exprs_[bias].type != Type::f32())
+        return fail("sampleBias " + textures_[texture], "bias is " + exprs_[bias].type.name(), where);
+    return pure(Expr{Op::SampleBias, Type::vec(4), {uv, bias}, 2, texture});
 }
 
 ExprId Program::sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where) {
@@ -895,6 +910,9 @@ std::string Program::describeUntyped(ExprId id, std::vector<int>& numbering) con
                 return "sampleCompare:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ", " +
                        describe(e.args[1], numbering) + ")";
             return "sample:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ")";
+        case Op::SampleBias:
+            return "sampleBias:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ", " +
+                   describe(e.args[1], numbering) + ")";
         case Op::SampleLevel:
             return "sampleLevel:" + textures_[e.immediate] + "(" + describe(e.args[0], numbering) + ", " +
                    describe(e.args[1], numbering) + ")";

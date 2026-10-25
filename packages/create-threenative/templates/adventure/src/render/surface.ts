@@ -44,12 +44,42 @@ import {
   sin,
   smoothstep,
   texture,
+  uniform,
   vec2,
   vec3,
   vec4,
 } from "three/tsl";
 import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { detailTexture, lit } from "./materials.js";
+
+/** Game-owned texture detail: an explicit mipBias overrides the temporal sampling convention. */
+export const surfaceSampling: { mipBias: "auto" | number } = { mipBias: "auto" };
+const surfaceMipBias = uniform(0);
+const reportedMipBias = new Set<number>();
+
+export function updateSurfaceSampling(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 1)
+    throw new Error("Surface sampling scale must be finite and in (0, 1].");
+  const requested = surfaceSampling.mipBias;
+  if (requested !== "auto" && !Number.isFinite(requested))
+    throw new Error("Surface sampling mipBias must be auto or a finite number.");
+  // UE 5.8.3: SceneVisibility.cpp:5338–5352, defaults :180–193; preserve full-resolution sampling.
+  const bias = Math.max(
+    -4,
+    Math.min(
+      4,
+      requested === "auto" ? (scale === 1 ? 0 : Math.max(-2, Math.log2(scale) - 0.3)) : requested,
+    ),
+  );
+  surfaceMipBias.value = bias;
+  if (requested !== "auto" && !reportedMipBias.has(requested)) {
+    console.info(
+      `TN_SURFACE_SAMPLING:${JSON.stringify({ mipBias: requested, appliedMipBias: bias })}`,
+    );
+    reportedMipBias.add(requested);
+  }
+  return bias;
+}
 
 type TextureLoader = {
   texture(path: string, options?: { wrap?: number; anisotropy?: number }): Promise<Texture>;
@@ -100,6 +130,7 @@ function stochastic(map: Texture, at: Node<"vec2">, size: number) {
   const short = min(dot(dx, dx), dot(dy, dy));
   const level = max(log2(long).mul(0.5).sub(2), log2(long).add(log2(short)).mul(0.25))
     .add(Math.log2(size))
+    .add(surfaceMipBias)
     .max(0);
   // The grain map spans 0.62 to 1: stretched to eight offsets per unit, one noise texel a tile.
   const index = texture(detailTexture(), at.mul(1 / 48))
@@ -133,9 +164,10 @@ function triplanar(map: Texture, tile: number, flat: boolean, local: boolean) {
   const w = n.mul(n).mul(n).mul(n);
   const sum = w.x.add(w.y).add(w.z);
   return texture(map, p.zy)
+    .bias(surfaceMipBias)
     .xyz.mul(w.x)
-    .add(texture(map, p.xz).xyz.mul(w.y))
-    .add(texture(map, p.xy).xyz.mul(w.z))
+    .add(texture(map, p.xz).bias(surfaceMipBias).xyz.mul(w.y))
+    .add(texture(map, p.xy).bias(surfaceMipBias).xyz.mul(w.z))
     .div(sum);
 }
 

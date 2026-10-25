@@ -327,6 +327,7 @@ export function buildCastle(s: ISurfaces, footY: number): { group: Group; stone:
     cloth.push(planarUv(box(0.14, 1.5, 0.5, 1.6, MILL.sail - 0.3, 0.56), 2).rotateZ(a));
   }
   const sparMaterial = new MeshStandardNodeMaterial({ map: wood.map, roughness: 0.85 });
+  sparMaterial.colorNode = wood.colorNode;
   sparMaterial.positionNode = turned;
   const clothMaterial = new MeshStandardNodeMaterial({
     color: C.button,

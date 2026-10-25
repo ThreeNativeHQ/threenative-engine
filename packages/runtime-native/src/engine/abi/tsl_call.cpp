@@ -683,6 +683,21 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::uv();
     }
+    // TextureNode.bias(n): the same texture with a derivative-relative mip bias.
+    if (method && name == "bias") {
+        arity(1);
+        const auto source = lhs();
+        const bool rendered = source->kind == g::Kind::RenderTexture && source->args.size() == 2;
+        if (!rendered && (source->kind != g::Kind::Texture || source->args.size() != 1 ||
+            source->bits == 1 || (source->name == "depth" && !source->textureBinding)))
+            throw std::runtime_error("bias needs a nondepth texture node");
+        const auto bias = arg(0);
+        if (bias->type != Type::f32()) throw std::runtime_error("bias needs an f32 scalar");
+        auto node = std::make_shared<g::NodeData>(*source);
+        node->sampleBias = true;
+        node->args.push_back(bias);
+        return node;
+    }
     // TextureNode.level(n): the same texture read at an explicit mip level.
     if (method && name == "level") {
         arity(1);

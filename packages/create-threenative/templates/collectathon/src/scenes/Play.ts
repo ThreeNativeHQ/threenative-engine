@@ -26,7 +26,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { postTier, setupPost } from "../render/postprocessing.js";
 import { GRASS_SHARE } from "../render/quality.js";
 import { setupSky, skyTexture } from "../render/sky.js";
-import { loadSurfaces } from "../render/surface.js";
+import { loadSurfaces, updateSurfaceSampling } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, HUD_PILL } from "../state.js";
 
@@ -153,6 +153,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       loading === undefined
     )
       throw new Error("Play.enter ran before load() built the course.");
+    ctx.beforeRender(() => {
+      updateSurfaceSampling(
+        ctx.renderer.temporalUpscale?.() === true ? ctx.renderer.surface().resolutionScale : 1,
+      );
+    });
     // `userData.solid` marks exactly the walkable meshes in `level/Course.ts`. The shaft's walls
     // reach 16 m, so the default 4.5 m reachable ceiling is raised to keep their tops solid.
     buildStaticColliders(ctx, course.group, {

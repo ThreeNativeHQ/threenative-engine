@@ -1043,6 +1043,42 @@ void tsl_call() {
         // Dimensions must query the bound texture, retaining its owner and deferred producer.
         using tn::abi::TslArg;
         using namespace tn::engine::shader;
+        const auto biased = tn::abi::tslCall("bias", &holderReceiver, {TslArg::of(-0.5)}, serial);
+        CHECK(biased);
+        if (!biased) { tn_context_destroy(ctx, &d.value); return; }
+        CHECK(biased->textureObject() == holder->textureObject());
+        CHECK(biased->textureBinding == holder->textureBinding);
+        const auto biasedWgsl = [&](g::Node root) {
+            Program fragment(Stage::Fragment);
+            tn::engine::shader::tsl::Build scope(fragment);
+            fragment.output("color", g::lower(root, fragment));
+            const auto stage = buildStage(fragment);
+            CHECK(stage.wgsl.ok());
+            return stage.wgsl.code;
+        };
+        const auto biasedCode = biasedWgsl(biased);
+        CHECK(biasedCode.find("textureSampleBias(") != std::string::npos &&
+              biasedCode.find("-0.5") != std::string::npos);
+        CHECK(biasedWgsl(holder).find("textureSampleBias(") == std::string::npos);
+        const auto sameLevel = tn::abi::tslCall("level", &holderReceiver, {TslArg::of(-0.5)}, serial);
+        CHECK(g::key(biased) != g::key(sameLevel));
+        CHECK(biasedWgsl(sameLevel).find("textureSampleLevel(") != std::string::npos);
+        auto depth = std::make_shared<g::NodeData>(*holder);
+        depth->bits = 1;
+        for (const auto& wrongSource : {g::float_(1), g::Node(depth)}) {
+            const auto self = TslArg::of(wrongSource);
+            bool refused = false;
+            try { tn::abi::tslCall("bias", &self, {TslArg::of(-0.5)}, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
+        for (const auto& invalid : std::vector<std::vector<TslArg>>{{}, {TslArg::of(-0.5), TslArg::of(0.0)},
+                {TslArg::of(g::int_(0))}, {TslArg::of(g::vec2({g::float_(0)}))}}) {
+            bool refused = false;
+            try { tn::abi::tslCall("bias", &holderReceiver, invalid, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
         const auto dimensions = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(holder)}, serial);
         CHECK(dimensions);
         if (!dimensions) { tn_context_destroy(ctx, &d.value); return; }
@@ -1051,6 +1087,14 @@ void tsl_call() {
         const auto producer = tn::abi::tslCall("convertToTexture", nullptr, {TslArg::of(g::vec4({g::float_(1)}))}, serial);
         const auto producedSize = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(producer), TslArg::of(0.0)}, serial);
         CHECK(producedSize->otherwise.size() == 1 && producedSize->otherwise[0] == producer);
+        const auto producerSelf = TslArg::of(producer);
+        const auto biasedProducer = tn::abi::tslCall("bias", &producerSelf, {TslArg::of(-0.5)}, serial);
+        CHECK(biasedProducer && biasedProducer->args[0] == producer->args[0] &&
+              biasedProducer->rtt == producer->rtt && biasedProducer->name == producer->name);
+        CHECK(biasedWgsl(biasedProducer).find("textureSampleBias(") != std::string::npos);
+        const auto passes = g::postPasses(biasedProducer);
+        CHECK(passes.size() == 1 && passes[0].output == producer->name);
+
         Program query(Stage::Fragment);
         tn::engine::shader::tsl::Build queryScope(query);
         query.output("color", g::lower(g::vec4({g::vec2({dimensions}), g::float_(0), g::float_(1)}), query));

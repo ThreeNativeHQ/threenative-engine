@@ -74,6 +74,7 @@ struct NodeData {
     std::string name;
     std::string lanes;
     uint64_t bits = 0;
+    bool sampleBias = false; // Texture/RenderTexture: the optional final argument is a bias, not an explicit mip.
     // A uniform's value: data, not part of the program key. A field that changes after a node
     // is built (three's `uniform.value = x`, through setUniformValues); every draw reads it afresh.
     // Keep i32/u32 exact; f32 lanes are rounded by setUniformValues before storage.

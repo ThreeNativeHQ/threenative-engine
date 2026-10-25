@@ -600,7 +600,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "mod",
                              "fwidth",
                              "transformDirection",
-                             "level",
+                             "level", "bias",
                              "lengthSq",
                              "setGroup", "textureValue",
                              "invoke",

@@ -709,6 +709,22 @@
       "required": true
     },
     {
+      "id": "texture-sample-bias",
+      "title": "authored texture bias selects derivative-relative mip levels",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/texture-sample-bias.js",
+      "captureFrames": 30,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "28-shape-geometry",
       "title": "shape geometry",
       "category": "geometry",
