@@ -1500,8 +1500,14 @@ if (runtime.tsl !== undefined) {
     );
     camera.position.set(4, 5, 6);
     camera.updateMatrixWorld();
+    const before = t.uniforms.length;
     t.sync();
-    check(lastColumns()[3] === "4,5,6,1", "a mat4 of four vec4 columns follows the camera's pose");
+    // Only the translation column changed, and an unchanged column is not written again.
+    const moved = t.uniforms.slice(before).map((entry) => entry.split("=")[1]);
+    check(
+      isDeepStrictEqual(moved, ["4,5,6,1"]),
+      `a mat4 of four vec4 columns follows the camera's pose: ${moved.join(" ")}`,
+    );
   }
   // toArray(array, offset) fills the array it is given from offset on and answers that array, as three's does.
   for (const [name, lanes] of [
