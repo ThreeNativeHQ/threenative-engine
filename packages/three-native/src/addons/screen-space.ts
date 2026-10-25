@@ -157,6 +157,9 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
     const intensity = uniform(1);
     const screenEdgeFade = uniform(0.2);
     const maxSteps = uniform(STEPS);
+    // Unreal traces no ray above its roughness cut-off (UE 5.8.3: Engine/Source/Runtime/Engine/Private/Scene.cpp:658,
+    // MaxRoughness 0.4). A caller whose composite weights SSR to 0 there sets this to that cut-off and skips the march.
+    const maxRoughness = uniform(1);
     const roughness = options.roughnessNode ?? float(0);
     const metalness = options.metalnessNode ?? float(0);
 
@@ -170,7 +173,7 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
       const coordinate = uv();
       const result = vec4(0, 0, 0, 0).toVar();
       const centreDepth = depthNode.sample(coordinate).r;
-      If(centreDepth.lessThan(1), () => {
+      If(centreDepth.lessThan(1).and(roughness.lessThan(maxRoughness)), () => {
         const position = viewPosition(coordinate, centreDepth);
         const normal = normalize(normalNode.sample(coordinate).xyz);
         const incident = normalize(position);
@@ -291,6 +294,7 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
       intensity: { value: intensity },
       screenEdgeFade: { value: screenEdgeFade },
       maxSteps: { value: maxSteps },
+      maxRoughness: { value: maxRoughness },
       resolutionScale: {
         get: () => node.getResolutionScale(),
         set: (value: number) => node.setResolutionScale(value),
