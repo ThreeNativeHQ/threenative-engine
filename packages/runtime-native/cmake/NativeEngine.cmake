@@ -114,25 +114,44 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_frame_gpu_timer_full_stream=full_stream
         native_engine_frame_gpu_timer_owner_frame_restores=owner_frame_restores)
     target_link_libraries(tn-native-engine-frame-gpu-timer-test PRIVATE tn_engine_renderer)
+    tn_native_engine_test(tn-native-engine-reflection-capture-test tests/native-engine/reflection_capture_test.cpp
+        native_engine_reflection_capture=validation)
+    target_link_libraries(tn-native-engine-reflection-capture-test PRIVATE tn_engine_renderer)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_renderer_resize_readback=resize_readback
+        native_engine_renderer_emissive_target=emissive_target
+        native_engine_renderer_emissive_validation=emissive_validation
         native_engine_renderer_output_ramp=output_ramp
         native_engine_renderer_lit_reference=lit_reference
         native_engine_renderer_lambert_reference=lambert_reference
         native_engine_renderer_phong_reference=phong_reference
         native_engine_renderer_physical_reference=physical_reference
         native_engine_renderer_alpha_transparency=alpha_transparency
+        native_engine_renderer_alpha_hash_coverage=alpha_hash_coverage
+        native_engine_renderer_alpha_hash_shadow_coverage=alpha_hash_shadow_coverage
         native_engine_renderer_alpha_test=alpha_test
         native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
         native_engine_traa_alpha=traa_alpha
-        native_engine_traa_reset_seed=traa_reset_seed)
+        native_engine_traa_reset_seed=traa_reset_seed
+        native_engine_traa_camera_velocity=traa_camera_velocity
+        native_engine_traa_feeds_the_chain=traa_feeds_the_chain
+        native_engine_velocity_needs_traa=velocity_needs_traa
+        native_engine_traa_replaces_multisampling=traa_replaces_multisampling
+        native_engine_traa_converges_edges=traa_converges_edges
+        native_engine_traa_late_resolve=traa_late_resolve
+        native_engine_traa_ghosting=traa_ghosting
+        native_engine_traa_camera_pan=traa_camera_pan
+        native_engine_traa_rejection=traa_rejection
+        native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
+        native_engine_renderer_output_screen_size=output_screen_size)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
 
     # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
     # scene environment's frame-pumped PMREM before it reads a face.
     tn_native_engine_test(tn-native-engine-renderer-lifetime-test tests/native-engine/renderer_lifetime_test.cpp
         native_engine_renderer_shared_retired_sweep=shared_retired_sweep
-        native_engine_probe_capture_environment=probe_capture_environment)
+        native_engine_probe_capture_environment=probe_capture_environment
+        native_engine_probe_capture_callback_camera=probe_capture_callback_camera)
     target_link_libraries(tn-native-engine-renderer-lifetime-test PRIVATE tn_engine_renderer tn_host_services)
     if(TN_ENGINE_SANITIZE)
         # Like Gate E, exercise ASan/UBSan without judging the GPU driver's exit allocations.
@@ -247,9 +266,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_time_uniform=time_uniform
         native_engine_renderer_steady_state=steady_state
         native_engine_renderer_normal_pass_is_not_tallied=normal_pass_is_not_tallied
+        native_engine_renderer_gtao_screen_reach=gtao_screen_reach
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
+        native_engine_float_render_target=float_render_target_keeps_float32
+        native_engine_float_render_target_half=float_render_target_falls_back_to_half
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback
@@ -262,9 +284,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_gpu_mipmaps=gpu_mipmaps
         native_engine_renderer_msaa_edges=msaa_edges
         native_engine_unsupported_map_slot=unsupported_map_slot
+        native_engine_env_map_slot_is_read=env_map_slot_is_read
         native_engine_converted_copies_swept=converted_copies_swept
         native_engine_gpu_timer_covers_shadows=gpu_timer_covers_shadows
         native_engine_gpu_timer_covers_offscreen=gpu_timer_covers_offscreen
+        native_engine_gpu_timer_splits_the_gather=gpu_timer_splits_the_gather
         native_engine_renderer_overlay_over_frame=overlay_over_frame
         native_engine_gpu_timer_is_opt_in=gpu_timer_is_opt_in
         native_engine_shadow_camera_layers=shadow_camera_layers
@@ -273,6 +297,24 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
+        native_engine_masked_shadow=masked_shadow
+        native_engine_leaf_receiver=leaf_receiver
+        native_engine_foliage_transmission=foliage_transmission
+        native_engine_rough_diffuse=rough_diffuse
+        native_engine_point_shadow_cube_faces=point_shadow_cube_faces
+        native_engine_lamp_source_radius=lamp_source_radius
+        native_engine_lamp_source_radius_wall=lamp_source_radius_wall
+        native_engine_lamp_source_radius_crate=lamp_source_radius_crate
+        native_engine_contact_shadow_foot=contact_shadow_foot
+        native_engine_virtual_sun_contact_foot=virtual_sun_contact_foot
+        native_engine_virtual_sun_room_seam=virtual_sun_room_seam
+        native_engine_virtual_sun_pixel_floor=virtual_sun_pixel_floor
+        native_engine_virtual_sun_lod_rung=virtual_sun_lod_rung
+        native_engine_virtual_sun_level_sizes=virtual_sun_level_sizes
+        native_engine_virtual_sun_auto_map_size=virtual_sun_auto_map_size
+        native_engine_lamp_cache=lamp_cache
+        native_engine_lamp_atlas=lamp_atlas
+        native_engine_gpu_timer_splits_lamp_shadows=gpu_timer_splits_lamp_shadows
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
         native_engine_renderer_records_survive_siblings=records_survive_siblings
         native_engine_renderer_steady_frame_hashes_no_record=steady_frame_hashes_no_record
@@ -287,6 +329,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
+    # PRD-634: the sun filter's edge widens with the caster gap as the browser's penumbraUv model says.
+    tn_native_engine_test(tn-native-engine-vsm-source-angle-test tests/native-engine/vsm/vsm_source_angle_gpu_test.cpp
+        native_engine_vsm_source_angle_gap=gap_widening
+        native_engine_vsm_source_angle_ray_test=ray_test_gap)
+    target_link_libraries(tn-native-engine-vsm-source-angle-test PRIVATE tn_engine_renderer tn_host_services)
 
     # PRD-520 phase 2 and PRD-528 phase 1: cooked-package loads for a world (failure codes, cancel
     # against in-flight GPU use, teardown) and render ids within one tick.
@@ -387,7 +434,7 @@ if(TN_NODE_EXECUTABLE AND TN_TEMPLATE_TINT)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(native_engine_template_post_starter PROPERTIES LABELS "native-engine" TIMEOUT 180
         ENVIRONMENT "TN_POST_ONLY=starter")
-    foreach(effect GTAONode DenoiseNode SMAANode FnNode RTTNode BloomNode SharpenNode Lut3DNode)
+    foreach(effect GTAONode DenoiseNode SMAANode FnNode TextureLevel RTTNode BloomNode SharpenNode Lut3DNode)
         add_test(NAME native_engine_post_${effect}
             COMMAND ${CMAKE_COMMAND} -E env TN_POST_LOWERING=${effect}
                 ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts

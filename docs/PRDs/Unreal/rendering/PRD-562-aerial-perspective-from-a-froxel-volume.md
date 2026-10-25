@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 to AC-3 are open: `Atmosphere.aerialPerspective` mixes every pixel toward one zenith colour, and no template uses the atmosphere at all.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (1), a new GPU resource with per-frame view-space state (+2), template adoption (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Builds on the LUT stack that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](../../done/PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
+**Depends on:** [PRD-633](../look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) puts the atmosphere in the templates; the match proof is the L3 row of [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Builds on the LUT stack that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](../../done/PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
 
 ## Context
 
@@ -108,6 +108,7 @@ Risks:
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/templates/racing/src/render/sky.ts`, `packages/create-threenative/templates/racing/src/render/postprocessing.ts`, `packages/create-threenative/templates/racing/src/render/quality.ts`, `packages/create-threenative/templates/racing/AGENTS.md` (and mirror)
 - [ ] The racing template renders volume aerial perspective over its photographed sky, and the template gate passes. proof: `pnpm test:templates` (racing).
+- [ ] The starter L3 cells (height fog plus aerial perspective) match the Unreal L3 cells within the PRD-631 thresholds. proof: `pnpm unreal-look:compare --layer L3`.
 
 #### Phase 3: Native
 **Status:** NOT STARTED
@@ -119,3 +120,4 @@ Risks:
 - 2026-10-12 (Unreal source review): The Context claim "no example constructs `Atmosphere`" was wrong. `examples/strata-terrain-preview` builds one and hand-writes its own haze, so the method has a second, unserved caller. The plan stays the same. The strata composite is a follow-up candidate, not a box here.
 - 2026-10-12 (Unreal source review): Unreal fixes the volume range at 96 km and reuses the last slice beyond it. This PRD keeps the range at `camera.far` because a game sets no constant. The racing frame must still show haze past `far`, so the apply step clamps the slice coordinate to 1 and does not fade to clear.
 - 2026-10-12 (Unreal source review): Template paths in this PRD now name the real folder, `packages/create-threenative/templates/`.
+- 2026-10-19 (PRD-631 reference plan): Layer L3 of the Unreal reference ladder is height fog plus aerial perspective, so this PRD owns that row. Unreal's default height fog is density 0.02 and falloff 0.2, each divided by 1000 in the renderer per centimetre (`Engine/Source/Runtime/Engine/Private/Components/ExponentialHeightFogComponent.cpp:92`; `Engine/Source/Runtime/Renderer/Private/SceneCore.cpp:404`). That is 0.002 per metre and a 0.02 per metre falloff. The starter uses 0.0021 and 0.08 per metre (`templates/starter/src/render/heightFog.ts:27`), so the density already matches and the falloff is four times steeper. Unreal's volumetric fog is off by default (`ExponentialHeightFogComponent.h:136`), so the starter mist staying off matches, and L3 does not include it. Added one Phase 2 box.

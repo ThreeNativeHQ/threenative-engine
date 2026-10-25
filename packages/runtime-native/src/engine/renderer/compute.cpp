@@ -363,8 +363,9 @@ void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dis
     seen.clear();
     const auto collect = [&](const auto& self, const graph::Node& node) -> void {
         if (!node || !seen.insert(node.get()).second) return;
-        if (node->object && (node->kind == graph::Kind::Texture || node->kind == graph::Kind::StorageTexture || node->kind == graph::Kind::TextureStore))
-            sources.emplace(node->name, std::static_pointer_cast<const Texture>(node->object));
+        // A texture node keeps its object in the binding that `.value` replaces (graph.h textureObject()).
+        if (node->textureObject() && (node->kind == graph::Kind::Texture || node->kind == graph::Kind::StorageTexture || node->kind == graph::Kind::TextureStore))
+            sources.emplace(node->name, std::static_pointer_cast<const Texture>(node->textureObject()));
         for (const auto* list : {&node->args, &node->body, &node->otherwise})
             for (const auto& child : *list) self(self, child);
     };

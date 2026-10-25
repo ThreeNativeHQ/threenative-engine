@@ -29,6 +29,8 @@ import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
+import { defineRendererUtils } from "./renderer-utils.js";
+import { ShadowBaseNode } from "./shadow-node.js";
 import { ReadbackBuffer } from "./storage.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -156,7 +158,9 @@ export async function bindWebEngine(
     ...withTextureSources(classes, runtime),
     ...tsl?.exports,
   };
+  bound.RendererUtils = defineRendererUtils(classes.Color as never);
   bound.Material = Material;
+  bound.ShadowBaseNode = ShadowBaseNode;
   bound.ReadbackBuffer = ReadbackBuffer;
   // three's PropertyBinding statics and console function over the engine class (shared with V8).
   if (classes.PropertyBinding !== undefined)
@@ -196,6 +200,7 @@ export async function bindWebEngine(
       },
       runtime.tsl,
       (surface, draw) => drawSecondaryPasses(surface, draw),
+      bound.DataTexture as never,
     );
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;

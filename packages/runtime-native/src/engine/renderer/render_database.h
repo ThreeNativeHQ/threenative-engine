@@ -111,10 +111,11 @@ class RenderDatabase {
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
-        std::array<const void*, 12> roots{};  // one per MaterialNodes::pointers()
+        std::array<const void*, 14> roots{};  // one per MaterialNodes::pointers()
         const Texture* texture = nullptr;
         std::shared_ptr<const void> reflector;  // an engine::Reflector
         std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples
+        std::vector<shader::graph::Node> textureNodes;
         std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads
     };
     std::unordered_map<const Material*, GraphSources> graphSources_;
@@ -143,6 +144,7 @@ class RenderDatabase {
                            std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
     shader::StandardMaterial backgroundParams_;
+    Material backgroundNodeMaterial_{MaterialType::Basic, true};
     using GeometryKey = std::array<BufferStore*, 4>;
     struct alignas(64) Record {
         uint64_t geometryRevision = 0;

@@ -193,9 +193,24 @@ const BUG_REPORT_SKILL_PATHS = [
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 // Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
 // Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
+// Recomputed 2026-10-22 merging develop 9c34f695c into the epic: the 0.3.6 cohort pins, the PRD-626 lint files and the epic's tone curve
+// land in every kit. Measured by this test.
+// Recomputed 2026-10-22 for the Unreal tone curve in every kit (PRD-632): template-assets/tonemap.ts gains the gamut expansion, blue
+// correction, glow, red modifier and output dither of the harness curve; `tonemapMode` stays "aces". Measured by this test.
+// Recomputed 2026-10-21 for the finishing-stage templates (PRD-636, lane/emissive): every kit gains localExposure.ts,
+// motionBlur.ts, unrealBloom.ts and vignette.ts and a changed worldEnvironment.ts and quality.ts. Measured by this test
+// on the merge of lane/emissive into the epic.
+// Recomputed 2026-10-22: worldEnvironment.ts drops the unused smoothstep and vec2 imports (19eb1b38f); measured by this test.
+// Recomputed 2026-10-22 on the merge of lane/tonemap (PRD-632 GAP-1..5: grade, white balance, tone curve amount) with the unused-import removal; measured by this test.
+// Recomputed 2026-10-22 again: only snow moves, its snowSurface.ts uploads the moved windows (lane/snow e764013de); measured by this test.
+// Recomputed 2026-10-20 for the Unreal look epic (PR #541): every template gains the opt-in `filmic` tone mode (tonemap.ts,
+// worldEnvironment.ts), the exposure cold-read retry and the histogram-walk fix, and one AGENTS.md/CLAUDE.md line on the engine
+// default. Measured from the committed branch head.
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
+  // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
   // PRD-637: every tree gains the npm `@vitejs/devtools` override, and `starter` also moves (grade
   // table reused across a restart, two more restarts in production-readiness). Measured by this test.
@@ -271,23 +286,25 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "c4c575e4fe3b64e97c8917a6464045e4830d46ebfb5e4aba394fa5900e7fe2dc",
-  minimal: "0b5e079ecabccff2e8ff83cd9c09263d78efd654d93108517e601e7fbc508260",
-  platformer: "cfda80a7341cbb2b9af0135cbdefbdcf44ae2de47a99299f338bda1952736da6",
-  puzzle: "a9bbb0ce09f394efc284b925054d32cf82cd273012183f387defe1e5b18ac686",
-  racing: "9a4ff07adfd15718791e7435112ed072b11b05b65135fb02454479821cf0b930",
-  rain: "a6e15f800507129456ebc7cb7edbb71934d556d8118bc8d8f30f9633c16c6966",
-  rts: "4f63d47422bebf7f541efb5be294ac4bc82d0c96ac75da2527336febb5087558",
-  runner: "b4b7dba6506b77182cee6d87ad5e4d8d22fde3647f4fd80913b4fa84051c720b",
+  "action-rpg": "d99d75895b443ee4cf4b9639d2b99128893cc5e16ba74cc89958011d49e22a9a",
+  minimal: "ac1aa9e43470619f498e092cf10e3b70739ce407bd183120ddfa4f7b2cb10565",
+  platformer: "4432badd586ee3d2cb5bd5234cd750333578f8d983c0f54cf1921d7b3262b5c1",
+  puzzle: "5d81e45e3b773ff3f76f8ef3ca8bcdbd40e7d2d104613c953623e7c90472d4f2",
+  racing: "40de4be415e2a0f8fe32982f596b76aaadba58295c4552f2251af6e6b3d8e448",
+  rain: "b6dfb5f3e8203fa642bab83e1bf8b24544fc166a46005d4f6e8da88adadeb6db",
+  rts: "f57c008dea52fd509aad0674523f1a3bc281a603ba2763d22740d971b9eec568",
+  runner: "e678a74e5719b575d6701b97566959659145429fb488f79f680df512caa5b964",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "9d23a60dd3ae1e157f1f1f3c4f81a8388542010838814950c3ac90041790abd1",
-  shooter: "396efe81c8223a9366faec4dee27816b976563b10a496f1de7188018c52267c4",
-  snow: "9ce53cbc8c15f9863338f1ff1dfb5b62a46533a2c33152e5ffe7d44d9811b1c7",
+  sailing: "432dd4b18d1edaf2f408a1af0be18f6dd18697dfa3ad0a27c94bb726fd84f7df",
+  shooter: "8624a2da3b5ee6e4c55bbfd5fee11835f6b039ea2cf727e5b246b4c94391290b",
+  snow: "02597ae40bd36dbdc3cf732c16a1ab196255dca58f15ec1510f4755968afaea3",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "744985a8fea4eb6c3705872cee3f502b49041b7403744dd7a4e2cac1ddee47e5",
-  "tower-defense": "001bbe3d04ed6932243de0330f16443c49d7a7d88b962cfa5c9c878772458fcc",
+  // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
+  // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
+  starter: "3a70d12b9309f023d722d4bf3d315f30a390958b02484aa7b643549cd13b1011",
+  "tower-defense": "5ae4dd70d1775497134afe4b3b4fcbb0975e5d7037881d3e227f5835139f6407",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -390,6 +407,7 @@ const STARTER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/tonemap.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
   "src/render/temporalAAResolve.ts",

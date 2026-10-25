@@ -16,6 +16,13 @@ runs:
       with:
         path: ~/.cache/ms-playwright
         key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.value }}
+    - name: Use the Ubuntu archive mirror for apt packages
+      shell: bash
+      run: |
+        # The hosted Azure mirror has delivered 25.5 MB in 326-350 s (runs 39992565239); same signed suites.
+        for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+          [ ! -f "$source" ] || sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+        done
     # The browser binary caches; its shared libraries are apt packages that do not, so
     # `--with-deps` still runs. On a cache hit that is the only work left.
     - name: Install Chromium and its system dependencies

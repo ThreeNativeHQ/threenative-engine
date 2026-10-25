@@ -664,6 +664,7 @@ it; it is a signal to run the kill switch over what was added.
    every repetition in one game (§3).
 3. **Never own the look.** §5b. The framework may own mechanism; every appearance parameter comes
    from the game. Visual defaults ship as generated source, never as package config.
+   **One exception (owner, 2026-10-22):** "actually ANY default new scene should inherit these defaults, so it looks like unreal." and "fuck the charter, we should have the most beautiful look possible by default ... Unreal-defaults should be our default look". A scene with no look options gets the stock Unreal 5.8.3 look (filmic tone curve, metered auto exposure). Each default has a named override on the same object and the override is reported.
 4. **Vocabulary is borrowed, never invented.** Godot for nodes, Three.js for rendering, Rapier for
    physics, Tailwind for UI. Where none has a name, borrowing is exhausted before inventing, and
    the invention is recorded as the discovery cost it is.

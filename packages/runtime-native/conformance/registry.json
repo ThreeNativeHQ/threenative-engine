@@ -198,6 +198,90 @@
       "reason": "A known 17^3 .cube uploaded as a Data3DTexture and sampled by lut3D, with the film grain node at zero intensity, on the host as well as the browser. The grade and grain stages are generated template source, so a host that cannot carry a 3D texture upload and a trilinear filter leaves a game broken where it ships. The table is deliberately not the identity, so a host that ignored the upload or substituted a constant fails it; the parsed texture is read back in JS against the table's own formula, and the frame is compared to the browser reference within the row's tolerance. Tolerance 0.04, measured on PR 473 (hosted llvmpipe vs Chrome): 2.4% of pixels differ, 0.04% by more than 2 levels, mean deltaE 0.047; the rest is 1-2 level rounding in the 3D table filter."
     },
     {
+      "id": "local-exposure",
+      "title": "local exposure and Unreal bloom",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/local-exposure.js",
+      "owner": "PRD-636",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "The template's LocalExposureNode (a bilateral grid of log luminance, read as a per pixel gain) and UnrealBloomNode (a downsample chain and six Gaussians) on one frame, on the host as well as the browser. Both are generated template source, so a host that drops a pass, a float render target or a wide loop leaves a game broken where it ships. The frame has a near black half, a bright half, the same mid grey card in each (local exposure moves the two cards by different amounts) and a small bright lamp (the bloom halo), so a stage that silently does nothing on the host cannot match the browser reference. Phones are not registered: local exposure is off on the low tier, as in Unreal's mobile profile. Measured 2026-10-21 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter): 0 pixels differ and the mean deltaE is 0. The tolerance stays at 0.06 and 9.0 because no software adapter was measured."
+    },
+    {
+      "id": "filmic-tonemap",
+      "title": "filmic tone curve",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/filmic-tonemap.js",
+      "owner": "PRD-632",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "The starter's filmic tone curve (generated template source: a log-domain line with two sigmoids in AP1, two 3x3 matrices, a desaturation) installed as three's CustomToneMapping through the renderer's node library, on the host as well as the browser. The frame is a nine step grey ramp from 0.002 to 16 (toe, line, shoulder) and six saturated primaries (the gamut and blue steps), so a host that drops the custom mapping and falls back to a linear clamp, or runs a matrix with the wrong layout, cannot match the browser reference. Measured 2026-10-22 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter; host binary from the unreal-brdf lane, built 2026-10-21 19:12, which carries the custom tone mapping): 0 pixels differ and the mean deltaE is 0, and both frames show the nine greys and six primaries, not a blank. The tolerance stays at 0.02 and 3.0 because no software adapter was measured."
+    },
+    {
+      "id": "filmic-grade",
+      "title": "filmic tone curve with colour grade",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/filmic-grade.js",
+      "owner": "PRD-632",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "The starter's filmic curve with Unreal's colour grade (white balance matrix, global and per-range saturation, contrast, gamma, gain and offset split by luma, tone curve amount) folded into the TSL graph as constants, on the host as well as the browser. The chart is the filmic-tonemap one, nine greys and six saturated primaries, so each range of the grade and each channel is read. A host that drops a vector pow, a clamp or a matrix constant cannot match the browser reference. Not yet measured: the first run is recorded in PRD-632 Phase 4."
+    },
+    {
       "id": "01-basic-cube",
       "title": "basic cube",
       "category": "core",
@@ -585,6 +669,136 @@
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "masked-shadow-caster",
+      "title": "alpha-tested caster casts its cut",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/masked-shadow-caster.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "foliage-back-light",
+      "title": "twoSidedFoliage leaf adds subsurfaceColor x the back-face irradiance",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/foliage-back-light.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 4.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "foliage-transmission",
+      "title": "twoSidedFoliage leaf lets the sun through from behind: subsurfaceColor x wrap x GGX lobe",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/foliage-transmission.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 4.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "leaf-receiver",
+      "title": "twoSidedFoliage receiver skips the normal bias",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/leaf-receiver.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "rough-diffuse",
+      "title": "roughDiffuse shades direct light with EON, as Unreal's Substrate does",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/rough-diffuse.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 6.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "soft-shadow-source-radius",
+      "title": "lamp source-radius soft shadow",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/soft-shadow-source-radius.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "soft-shadow-source-angle",
+      "title": "sun source-angle soft shadow and pixel floor",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/soft-shadow-source-angle.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "surface-cache-albedo",
+      "title": "surface cache albedo and emission at a hit",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/surface-cache-albedo.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 5.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "virtual-sun-seam",
+      "title": "virtual sun draws front-face casters",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/virtual-sun-seam.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "shadow-filter-step",
+      "title": "shadow filter steps down a tier under frame pressure",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/shadow-filter-step.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
       "required": true
     },
     {
@@ -1092,6 +1306,68 @@
       "required": true
     },
     {
+      "id": "translucency-gi",
+      "title": "translucent surface reads the probe volume without a facing",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/translucency-gi.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "gi-tier-medium",
+      "title": "medium GI tier: irradiance field and budget watcher",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gi-tier-medium.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "gi-visualize-indirect",
+      "title": "GIVisualize shows the indirect diffuse term alone",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gi-visualize-indirect.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.05,
+        "perceptualDeltaE": 6.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "traced-reflections",
+      "title": "traced reflections: a mirror shows walls behind the camera",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/traced-reflections.js",
+      "owner": "PRD-642",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "TracedReflections packs the scene's triangles into float textures and walks them in a TSL loop; a host that drops the textureLoad, the loop over a leaf's triangles or the float textures leaves the mirror flat. The red, green and yellow walls sit outside the frustum, so only a ray that leaves the screen can paint them on the sphere."
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",
@@ -1386,6 +1662,19 @@
       "status": "implemented",
       "availability": "unavailable-until-readback",
       "scene": "conformance/scenes/shared/raytracing-refusal.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "raytracing-probe-trace",
+      "title": "hardware probe trace matches the BVH trace",
+      "category": "raytracing",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/raytracing-probe-trace.js",
       "tolerance": {
         "pixelMismatchRatio": 0.01,
         "perceptualDeltaE": 3.0

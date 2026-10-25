@@ -93,6 +93,9 @@ export function resolveQualityTier(
 const high: IWorldEnvironmentOptions = {
   bloomEnabled: false,
   denoiseEnabled: false,
+  // Unreal's default anti-aliasing is temporal, and the engine offers it as `temporalAA: true`. It is off here: this study
+  // draws its own single post pass and keeps 4x multisampling. A temporal pass would add a second chain around it.
+  temporalAA: false,
   // The post pass applies the weather's exposure itself, after its own bloom add.
   autoExposureEnabled: false,
   exposure: 1,

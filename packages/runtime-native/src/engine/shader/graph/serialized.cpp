@@ -155,9 +155,16 @@ public:
             else if (operation == "!=") result = equal(equal(args[0], args[1]), boolNode(false));
             else if (operation == "&&") result = select(args[0], args[1], boolNode(false));
             else if (operation == "||") result = select(args[0], boolNode(true), args[1]);
+            else if (operation == "&" || operation == "|" || operation == "^" || operation == "<<" || operation == ">>" || operation == "^^") {
+                auto n = std::make_shared<NodeData>(); n->kind = Kind::Math; n->args = args;
+                n->name = operation == "&" ? "bitAnd" : operation == "|" ? "bitOr" : operation == "^" ? "bitXor" : operation == "<<" ? "shiftLeft" : operation == ">>" ? "shiftRight" : "xor";
+                result = n;
+            }
             else if (operation == ">=" || operation == "<=") {
                 auto n = std::make_shared<NodeData>(); n->kind = Kind::Math; n->name = operation == ">=" ? "greaterEqual" : "lessEqual"; n->args = args; result = n;
             }
+        } else if (kind == "OperatorNode" && arity(1) && operation == "~") {
+            auto n = std::make_shared<NodeData>(); n->kind = Kind::Math; n->name = "bitNot"; n->args = args; result = n;
         } else if (kind == "OperatorNode" && arity(1) && operation == "!") result = equal(args[0], boolNode(false));
         else if (kind == "MathNode" && !args.empty()) {
             if ((operation == "mix" || operation == "clamp" || operation == "smoothstep") && !arity(3))
@@ -180,7 +187,7 @@ public:
             const Value& tone = field(record, "value");
             if (tone.isNumber()) {
                 const double t = tone.number();
-                if (t != 0 && t != 1 && t != 2 && t != 3 && t != 4 && t != 6 && t != 7)
+                if (t != 0 && t != 1 && t != 2 && t != 3 && t != 4 && t != 5 && t != 6 && t != 7)
                     return fail("TN_TSL_UNSUPPORTED: RenderOutputNode toneMapping " + std::to_string(t));
                 n->bits = static_cast<uint64_t>(t) + 1;
             }
@@ -197,7 +204,9 @@ public:
         }
         else if (kind == "UVNode" && field(record, "name").string() == "0") result = uv();
         else if (kind == "ScreenNode" && operation == "uv") result = uv();
-        else if ((kind == "TextureNode" || kind == "PassTextureNode" || kind == "PassMultipleTextureNode") && ((args.size() <= 1 && operation.empty()) || (args.size() <= 2 && operation == "load"))) {
+        // The drawing buffer, as `screenSize` is in a graph the facade builds (abi/tsl_call.cpp): the renderer fills it.
+        else if (kind == "ScreenNode" && operation == "size") result = uniform("screenSize", Type::vec(2));
+        else if ((kind == "TextureNode" || kind == "PassTextureNode" || kind == "PassMultipleTextureNode") && ((args.size() <= 1 && operation.empty()) || (args.size() <= 2 && (operation == "load" || operation == "level")))) {
             const std::string name = field(record, "name").string();
             if (name.empty()) return fail("TN_TSL_EXPORT_INVALID: texture name");
             std::string resource = name == "output" ? "scene" : name;
@@ -206,6 +215,11 @@ public:
                 if (index(dependency, records_.size(), child) && nodes_[child] && (nodes_[child]->kind == Kind::PostEffect || nodes_[child]->kind == Kind::RenderTexture)) resource = nodes_[child]->name;
             }
             auto sample = std::const_pointer_cast<NodeData>(texture(resource, args.empty() ? uv() : args[0]));
+            // An explicit mip is a second argument; the exporter writes `level` only with the uv it reads at.
+            if (operation == "level") {
+                if (args.size() != 2) return fail("TN_TSL_EXPORT_INVALID: texture level");
+                sample->args.push_back(args[1]);
+            }
             if (operation == "load") {
                 sample->kind = Kind::TextureLoad;
                 if (args.empty()) {
@@ -216,7 +230,11 @@ public:
             }
             for (const auto& dependency : dependencies.items()) {
                 size_t child = 0;
-                if (index(dependency, records_.size(), child) && nodes_[child] && nodes_[child]->kind == Kind::PostEffect) sample->args.push_back(nodes_[child]);
+                if (index(dependency, records_.size(), child) && nodes_[child] && nodes_[child]->kind == Kind::PostEffect) {
+                    // The effect rides as the second argument, where the lowering reads an explicit mip.
+                    if (operation == "level") return fail("TN_TSL_UNSUPPORTED: TextureNode/level of a post effect");
+                    sample->args.push_back(nodes_[child]);
+                }
             }
             for (const auto& dependency : dependencies.items()) {
                 size_t child = 0;
@@ -255,10 +273,10 @@ private:
 };
 } // namespace
 
-PostNode serializedPost(Node root, std::optional<ToneMapping> toneMapping, bool srgb) {
-    return {key(root), [root, toneMapping, srgb](Program& p, uint32_t, ExprId coordinate) {
-        tsl::Build scope(p); return lower(root, p, {{"uv", coordinate}}, toneMapping, srgb);
-    }, postPasses(root, toneMapping, srgb), uniforms(root), uniformNodes(root), !root || root->kind != Kind::PipelineOutput || root->bits != 0};
+PostNode serializedPost(Node root, std::optional<ToneMapping> toneMapping, bool srgb, Node custom) {
+    return {key(root), [root, toneMapping, srgb, custom](Program& p, uint32_t, ExprId coordinate) {
+        tsl::Build scope(p); return lower(root, p, {{"uv", coordinate}}, toneMapping, srgb, custom);
+    }, postPasses(root, toneMapping, srgb, custom), uniforms(root), uniformNodes(root), !root || root->kind != Kind::PipelineOutput || root->bits != 0};
 }
 
 Graph importSerialized(std::string_view source, std::vector<std::string>& errors) {

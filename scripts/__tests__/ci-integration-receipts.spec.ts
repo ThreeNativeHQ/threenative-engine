@@ -82,6 +82,74 @@ describe("required current-attempt integration receipts", () => {
         /CI_INTEGRATION_(?:API_INCOMPLETE|JOB_IDENTITY|LEG_NOT_SUCCESS)/u,
       );
   });
+  describe("after gh run rerun --failed", () => {
+    const receipt = (i: number, runAttempt: string, conclusion = "success") => ({
+      ...receipts[i],
+      runAttempt,
+      conclusion,
+    });
+    const job = (i: number, run_attempt: number, id: number, conclusion = "success") => ({
+      ...jobs[i],
+      id,
+      run_attempt,
+      conclusion,
+    });
+    const check = (rs: unknown[], js: unknown[]) =>
+      validate(expected, rs, { totalCount: js.length, jobs: js });
+    it("accepts a leg green in attempt 1 and not re-run in attempt 2", () => {
+      expect(
+        check([receipt(0, "1"), receipt(1, "2")], [job(0, 1, 10), job(1, 2, 11)]),
+      ).toBeUndefined();
+    });
+    it("accepts a leg red in attempt 1 and green in attempt 2", () => {
+      expect(
+        check(
+          [receipt(0, "1"), receipt(1, "1", "failure"), receipt(1, "2")],
+          [job(0, 1, 10), job(1, 1, 6, "failure"), job(1, 2, 11)],
+        ),
+      ).toBeUndefined();
+    });
+    it("rejects a leg green in attempt 1 and red in attempt 2 (latest attempt wins)", () => {
+      expect(() =>
+        check(
+          [receipt(0, "2"), receipt(1, "1"), receipt(1, "2", "failure")],
+          [job(0, 2, 10), job(1, 1, 6), job(1, 2, 11, "failure")],
+        ),
+      ).toThrow("CI_INTEGRATION_LEG_NOT_SUCCESS");
+      expect(() =>
+        check(
+          [receipt(0, "2"), receipt(1, "1")],
+          [job(0, 2, 10), job(1, 1, 6), job(1, 2, 11, "failure")],
+        ),
+      ).toThrow("CI_INTEGRATION_RECEIPT_IDENTITY");
+    });
+    it("rejects an earlier-attempt receipt from another run or another candidate", () => {
+      for (const change of [{ runId: "124" }, { candidateSha: "b".repeat(40) }])
+        expect(() =>
+          check(
+            [receipt(0, "1"), { ...receipt(1, "2"), ...change }],
+            [job(0, 1, 10), job(1, 2, 11)],
+          ),
+        ).toThrow("CI_INTEGRATION_RECEIPT_IDENTITY");
+      expect(() =>
+        check(
+          [{ ...receipt(0, "1"), runId: "124" }, receipt(1, "2")],
+          [job(0, 1, 10), job(1, 2, 11)],
+        ),
+      ).toThrow("CI_INTEGRATION_RECEIPT_IDENTITY");
+      expect(() =>
+        check(
+          [receipt(0, "1"), receipt(1, "2")],
+          [{ ...job(0, 1, 10), run_id: 124 }, job(1, 2, 11)],
+        ),
+      ).toThrow("CI_INTEGRATION_JOB_IDENTITY");
+    });
+    it("rejects a receipt from an attempt later than this run's", () => {
+      expect(() =>
+        check([receipt(0, "3"), receipt(1, "2")], [job(0, 3, 10), job(1, 2, 11)]),
+      ).toThrow("CI_INTEGRATION_RECEIPT_IDENTITY");
+    });
+  });
   it("allows an explicitly empty review inventory but refuses an empty qualification", () => {
     expect(
       validate({ ...current, jobs: [], jobNames: {}, qualification: false }, [], {

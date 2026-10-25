@@ -5,6 +5,10 @@ import path from "node:path";
 export const ENTITY_LINE_LIMIT = 80;
 
 const BANNED_ENTITY_TOKENS = /\b(?:archetype|createQuery|defineComponent|System|Component)\b/gu;
+// The Academy's licence text, which the ACES curve in this file must keep, uses the English words "System" and "Components".
+const ENTITY_TOKEN_EXEMPT_FILES: ReadonlySet<string> = new Set([
+  "packages/core/src/look/filmic-tone-mapping.ts",
+]);
 const CORE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
 const RENDER_EXTENSIONS = new Set([".css", ".js", ".jsx", ".ts", ".tsx"]);
 
@@ -98,6 +102,7 @@ async function checkEntityRegistry(root: string): Promise<string[]> {
   }
   for (const sourceFile of await filesUnder(path.join(root, "packages/core/src"))) {
     if (!CORE_SOURCE_EXTENSIONS.has(path.extname(sourceFile))) continue;
+    if (ENTITY_TOKEN_EXEMPT_FILES.has(relative(root, sourceFile))) continue;
     const source = await readFile(sourceFile, "utf8");
     for (const [lineIndex, sourceLine] of source.split(/\r?\n/u).entries()) {
       for (const match of sourceLine.matchAll(BANNED_ENTITY_TOKENS)) {

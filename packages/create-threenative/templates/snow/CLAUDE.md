@@ -53,7 +53,7 @@ pnpm test:native
 The snow is one `SnowField` (`@threenative/core/world`) over one `Heightfield` built in `src/terrain.ts`: indentation, bank, compaction and disturbance composed into the canonical surface that queries, the drawn mesh and the collider all read. Never keep a second height grid.
 `attachSnowPhysics` (`@threenative/physics`) owns the snow collider: each fixed step it reads the solver's contacts for the ball, crate and log, presses each body's own shape with its solved load, and installs the changed surface before the next step. Call `step` from `afterPhysics`, once; `observe()` reports `colliderError` and `loadProvenance` (load is a solver estimate). A kinematic `CharacterBody3D` makes no contact load, so `src/entities/Explorer.ts` plants `src/render/bootPrint.ts` itself with `snow.stamp`, only while `grounded`. Its capsule stands on a coarse walk surface (`walkSurface` in `src/terrain.ts`), not the 6 cm snow collider: Rapier sweeps a character against every triangle under it, which cost ~0.9 ms a step there.
 
-Look lives in `src/render/`: `snowSurface.ts` (TSL material, compaction view, redraws `takeDirtyRegion`), `weather.ts` (`GPUParticles3D` snowfall and powder), `explorer.ts`, `scenery.ts`, `props.ts`. Tune response with `depth`/`hardness` and the refill in `src/scenes/Snow.ts`. The React HUD reads `GameState` and sends intents; `src/commands.ts` routes panel verbs into the same functions as the keys. Keep `playtests/survives.playtest.json` as smoke proof and `playtests/snow-physics.playtest.json` honest: it proves drop, settle and rolling track.
+Look lives in `src/render/`: `snowSurface.ts` (TSL material, compaction view, redraws each `takeDirtyRegions` window, one upload range per row), `weather.ts` (`GPUParticles3D` snowfall and powder), `explorer.ts`, `scenery.ts`, `props.ts`. Tune response with `depth`/`hardness` and the refill in `src/scenes/Snow.ts`. The React HUD reads `GameState` and sends intents; `src/commands.ts` routes panel verbs into the same functions as the keys. Keep `playtests/survives.playtest.json` as smoke proof and `playtests/snow-physics.playtest.json` honest: it proves drop, settle and rolling track.
 On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), `src/render/touch-controls.ts` adds a left movement stick; keyboard is the desktop fallback.
 
 ## Portable authoring contracts
@@ -69,7 +69,7 @@ is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it 
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/quality.ts` owns `low`, `medium`, `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise `high` when the family is `unknown`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
-the source. The bridge flushes about 100 ms; keep readouts in state and frame feedback in Three.js.
+the source. Snow keeps 4x multisampling: `temporalAA` is off in `quality.ts`, because the engine draws no velocity for the sprite flakes, and tens of thousands of them could trail. The bridge flushes about 100 ms; keep readouts in state and frame feedback in Three.js.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
 retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
@@ -79,6 +79,8 @@ caught where a bone-direction check reads zero. `clipTrackBindings` names tracks
 `clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
 clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
 supposed to be touching. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches in 8 ms slices so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement. Gate the loading curtain on a measured readiness with `ctx.startup.hold(label, () => ready)`: core polls it every rendered frame, so it settles without a physics step.
+`updateRate: "auto"` is the default and follows measured camera policy; `updateRate: 1` is full evaluation, another positive safe integer names a frame interval, and `updateRateReport` shows the effective rate, override status and latest evaluation; one-shots/fades, public mixer listeners/speed overrides, root-motion `AnimationComposer`, automatic camera-ray targets and camera-parented rigs stay full-rate.
+
 ## Budget real time for the look
 
 Reference-driven authoring starts at `node_modules/create-threenative/agent-docs/references/dream-loop.md`.

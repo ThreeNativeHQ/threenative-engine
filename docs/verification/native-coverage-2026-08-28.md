@@ -2,32 +2,32 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-47 native contract targets; 3 configured
+48 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
 | --- | ---: | ---: | ---: |
 | `src/async/` | 73 | 60 | 82.19% |
-| `src/audio/` | 1471 | 1301 | 88.44% |
+| `src/audio/` | 1471 | 1296 | 88.10% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
-| `src/cli/` | 1690 | 1242 | 73.49% |
-| `src/engine/` | 36527 | 30185 | 82.64% |
+| `src/cli/` | 1691 | 1243 | 73.51% |
+| `src/engine/` | 38648 | 32178 | 83.26% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
 | `src/js/` | 2835 | 2227 | 78.55% |
 | `src/platform/` | 1507 | 1047 | 69.48% |
-| `src/raytracing/` | 461 | 399 | 86.55% |
-| `src/runtime.cpp` | 2408 | 1865 | 77.45% |
+| `src/raytracing/` | 643 | 543 | 84.45% |
+| `src/runtime.cpp` | 2410 | 1867 | 77.47% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
-| `src/storage/` | 327 | 286 | 87.46% |
+| `src/storage/` | 370 | 329 | 88.92% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 10047 | 7719 | 76.83% |
+| `src/webgpu/` | 10061 | 7728 | 76.81% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **61597** | **49831** | **80.90%** |
+| **TOTAL** | **63960** | **52018** | **81.33%** |
 
-Source digest: `sha256:c5b6ae3e2e5ac15f8c2b92ca0bfe918d922e777bf642785e8453814aa6eee201`
+Source digest: `sha256:aaa91d1eacbe4ec33b2171bfaf23d07883d21636d3427a2d5076f51ed5f898bf`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -38,7 +38,7 @@ change requires this opt-in command to refresh the record.
 | `src/async/` | 77.19% |
 | `src/audio/` | 83.44% |
 | `src/canvas/` | 78.21% |
-| `src/cli/` | 68.49% |
+| `src/cli/` | 68.51% |
 | `src/engine/` | 82.22% |
 | `src/fs/` | 75.43% |
 | `src/http/` | 86.95% |

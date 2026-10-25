@@ -1,4 +1,5 @@
 // TSL authoring calls the native lazy graph; no upstream shader implementation enters the player.
+import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { liveUniforms, withConstValues } from "../../../../three-native/src/tsl-uniforms.ts";
 import { defineReflector } from "../../../../three-native/src/reflector.ts";
 import { definePass, markNormalTarget } from "../../../../three-native/src/pass-node.ts";
@@ -24,10 +25,10 @@ export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
 export const Fn = withFnBuilder(globalThis.tsl.Fn);
 export const {
-  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, log, lightShadowMatrix, attribute, uv, texture, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
-  distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
+  distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld, positionWorldDirection,
   normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, uvec2, nodeObject, reflect, textureLoad,
   mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
@@ -52,7 +53,7 @@ export const { storage, instancedArray, attributeArray, StorageBufferAttribute, 
 // end); the player draws the scene and camera a pass is pointed at.
 // An offscreen `new PassNode(PassNode.COLOR, scene, camera)` owns a RenderTarget that the renderer draws before the
 // frame (updateSecondaryPasses, called from core-webgpu.mjs); only pass() publishes the frame's scene and camera.
-export const { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, metalness, roughness } = definePass(
+export const { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, metalness, roughness, diffuseColor, emissive } = definePass(
   globalThis.tsl,
   (scene, camera) => {
     globalThis.tn.scene = scene;
@@ -82,3 +83,36 @@ export const rtt = defineRtt(globalThis.tsl.rtt, { NodeMaterial: globalThis.Node
 
 import { defineWgslFn } from "../../../../three-native/src/wgsl-fn.ts";
 export const wgslFn = defineWgslFn(globalThis.tsl.wgslFunction);
+
+export function texture(value, ...args) {
+  const node = globalThis.tsl.texture(value, ...args);
+  let current = value;
+  return Object.defineProperty(node, "value", {
+    get: () => current,
+    set: (next) => {
+      if (next === current) return;
+      node.textureValue(next);
+      current = next;
+    },
+  });
+}
+
+export const {
+  EPSILON, INFINITY, PI, PI2, TWO_PI, HALF_PI, radians,
+  degrees, inverseSqrt, ceil, sinh, cosh, tan, tanh,
+  asin, asinh, acos, acosh, atanh, sign, round,
+  reciprocal, trunc, transpose, determinant, inverse, difference, pow2,
+  pow3, pow4, transformNormalByViewMatrix, transformNormalByInverseViewMatrix, cbrt, refract, faceForward,
+  rand, mixElement, smoothstepElement, stepElement, faceforward, inversesqrt, notEqual,
+  xor, bitAnd, bitNot, bitOr, bitXor, shiftLeft, shiftRight,
+  incrementBefore, decrementBefore, increment, decrement, mat3, mat4,
+} = globalThis.tsl;
+
+// Refused at use, as on Wasm: the engine draws a lamp's cube shadow taps (shadowFilterOptions) and the
+// virtual shadow map (virtualShadowOptions) in C++, so the three-only bodies of core's soft-shadow.ts
+// and VirtualShadowNode.setup name these and never call them here.
+export const cubeTexture = unsupportedExport("cubeTexture");
+export const Stack = unsupportedExport("Stack");
+export const getShadowMaterial = unsupportedExport("getShadowMaterial");
+export const shadow = unsupportedExport("shadow");
+export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");

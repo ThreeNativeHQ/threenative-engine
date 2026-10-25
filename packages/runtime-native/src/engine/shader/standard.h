@@ -29,6 +29,7 @@ struct StandardMaterial {
     std::array<float, 3> color{1, 1, 1};
     float opacity = 1;
     float alphaTest = 0;  // > 0: fragments with opacity <= alphaTest are discarded
+    bool alphaHash = false;
     float roughness = 1;
     float metalness = 0;
     std::array<float, 3> emissive{0, 0, 0};
@@ -42,6 +43,8 @@ struct StandardMaterial {
     float ior = 1.5f;
     float specularIntensity = 1;
     std::array<float, 3> specularColor{1, 1, 1};
+    /** material.subsurfaceColor on a Two Sided Foliage leaf (PRD-643); black when unset. */
+    std::array<float, 3> subsurfaceColor{0, 0, 0};
     /** MeshStandardMaterial.envMapIntensity: scales the environment's radiance and irradiance. */
     float envMapIntensity = 1;
     // MeshPhysicalMaterial's clearcoat layer (PhysicalLightingModel's clearcoat), read by buildPhysical
@@ -76,12 +79,29 @@ inline constexpr const char* kPbrMapNames[kPbrMapCount] = {"roughnessMap", "meta
 inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
 
 struct VertexVariant {
+    bool alphaHash = false;
     bool background = false;
     uint8_t fog = 0; // 0 none, 1 Fog (range), 2 FogExp2 (density)
     bool sprite = false;
     bool backSide = false;
     /** material.side is DoubleSide: lit fragments turn the normal toward the viewer on a back face. */
     bool doubleSide = false;
+    /**
+     * A receiver whose material is marked twoSidedFoliage (Unreal's shading model, PRD-651): its shadow lookup
+     * skips the normal bias and a source-angle filter widens to the 5 degree minimum, as Unreal's two-sided
+     * foliage receivers do. Two sides and a cut do not set it. Set on a lit draw only; it keys a lit program,
+     * so a marked material gets its own.
+     */
+    bool leafReceiver = false;
+    /** The material is marked twoSidedFoliage (PRD-643): the standard and physical programs add the sun that its
+     *  subsurfaceColor lets through from behind, shadowed or not. Set on a lit draw only. */
+    bool twoSidedFoliage = false;
+    /**
+     * material.roughDiffuse (Unreal's Substrate rough diffuse, PRD-653): every direct light shades the diffuse lobe
+     * with the EON model at 0.4 x roughness, weighted by the light's source size, where three shades Lambert.
+     * Indirect light stays Lambert. It keys a lit program, so a marked material gets its own.
+     */
+    bool roughDiffuse = false;
     /** material.flatShading: the lit fragment's normal is the face normal from the position's screen-space
      *  derivatives (three's setupNormal), and the vertex stage reads no `normal` attribute. */
     bool flatShading = false;
@@ -147,12 +167,20 @@ struct VertexVariant {
     bool clearcoat = false;
     /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage, or TRAA's velocity pass depth-Equal against it. */
     bool invariantPosition = false;
+    /**
+     * The fragment's colour output is the diffuse colour (map, tint and colorNode included), not the lit colour. Every
+     * uniform and texture is still created in the same order, so its layout equals the lit program's and a draw's bind
+     * groups serve both. Only Renderer::albedoFragment builds it; it is no program key.
+     */
+    bool albedoOutput = false;
+    /** Select the existing emitted radiance on the lit program layout. */
+    bool emissiveOutput = false;
     MaterialNodes nodes;
     /** Equal variants build the same program: a draw whose variant is unchanged reuses its Program*. */
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
@@ -238,6 +266,16 @@ StandardPrograms buildPhong(const VertexVariant& variant = {}, const LightLayout
  */
 StandardPrograms buildBasic(const VertexVariant& variant = {});
 
+/** Shadow depth with material alpha coverage; no colour attachment. */
+StandardPrograms buildDepth(const VertexVariant& variant);
+/**
+ * The shadow depth program of an alpha-tested caster (PRD-651): buildBasic's vertex, uv included, and a
+ * fragment that writes nothing and discards where materialAlpha would (map alpha x diffuse opacity at or
+ * below alphaTest), as three's shadow pass copies alphaTest and map. Fragment uniforms "diffuse",
+ * "alphaTest", "opaque", "uvTransform"; binding "map" when variant.map.
+ */
+StandardPrograms buildMaskedDepth(const VertexVariant& variant);
+
 /** Link authored and engine varyings from the local vertex, shared by mesh and sprite builders. */
 void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal = kInvalid);
 
@@ -247,7 +285,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
  * Uniform-driven (uniforms "alphaTest", "opaque" 0/1) rather than per-variant programs; the output is
  * the same. Returns the alpha to write.
  */
-ExprId materialAlpha(Program& f, ExprId alpha);
+ExprId materialAlpha(Program& f, ExprId alpha, bool alphaHash = false);
 /** Pinned nodes/fog/Fog.js rangeFogFactor / densityFogFactor, shared by all material tails. */
 /** CubeRenderTarget.fromEquirectangularTexture: camera rotation, level-0 equirectUV sample. */
 StandardPrograms buildEquirectangularCube();

@@ -108,7 +108,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
            a.polygonOffsetUnits == b.polygonOffsetUnits &&
            a.side == b.side && a.visible == b.visible &&
            a.toneMapped == b.toneMapped && a.fog == b.fog &&
-           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & eq(a.emissive, b.emissive) &
+           ((a.opacity == b.opacity) & (a.alphaTest == b.alphaTest) & (a.alphaHash == b.alphaHash) & eq(a.emissive, b.emissive) &
             (a.emissiveIntensity == b.emissiveIntensity) & (a.roughness == b.roughness) &
             (a.metalness == b.metalness) & eq(a.specular, b.specular) & (a.shininess == b.shininess) &
             (a.ior == b.ior) & (a.specularIntensity == b.specularIntensity) & eq(a.specularColor, b.specularColor) &
@@ -119,8 +119,8 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.envMapIntensity == b.envMapIntensity) & (a.normalScale.x == b.normalScale.x) &
             (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity) & (a.bumpScale == b.bumpScale)) &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
-           a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
-           a.maps == b.maps;
+           a.vertexColors == b.vertexColors && a.flatShading == b.flatShading && a.twoSidedFoliage == b.twoSidedFoliage &&
+           a.roughDiffuse == b.roughDiffuse && a.maps == b.maps;
 }
 
 // Bumped at the start of every prepare. No material changes while one runs, so a hash computed in it
@@ -145,6 +145,7 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.transparent),
                      m.opacity,
                      m.alphaTest,
+                     double(m.alphaHash),
                      double(m.depthTest),
                      double(m.depthWrite),
                      double(m.colorWrite),
@@ -183,6 +184,8 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.fog),
                      double(m.vertexColors),
                      double(m.flatShading),
+                     double(m.twoSidedFoliage),
+                     double(m.roughDiffuse),
                      m.normalScale.x,
                      m.normalScale.y,
                      m.aoMapIntensity,

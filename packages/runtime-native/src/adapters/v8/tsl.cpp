@@ -94,8 +94,15 @@ Tsl::Wrapper* Tsl::wrapper(v8::Local<v8::Value> value) const {
     if (!value->IsObject())
         return nullptr;
     const auto object = value.As<v8::Object>();
-    if (object->InternalFieldCount() != 2)
-        return nullptr;
+    if (object->InternalFieldCount() != 2) {
+        // three's TempNode (temp-node.ts) answers the engine node its setup() built under this symbol,
+        // so a game node is an operand and a receiver like the node it stands for.
+        v8::Local<v8::Value> node;
+        const auto key = v8::Symbol::For(isolate_, str(isolate_, "threenative.tslNode"));
+        if (!object->Get(isolate_->GetCurrentContext(), key).ToLocal(&node))
+            throw JsFailure{};
+        return node->IsObject() && node.As<v8::Object>()->InternalFieldCount() == 2 ? wrapper(node) : nullptr;
+    }
     const auto tag = object->GetInternalField(0);
     const auto handle = object->GetInternalField(1);
     if (!tag->IsValue() || !tag.As<v8::Value>()->IsExternal() || tag.As<v8::External>()->Value() != this ||
@@ -321,6 +328,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         if (name == "Return" && info.Length() > 0) throw std::runtime_error("Return(value) is not supported; Return() ends a compute kernel");
         arity(0); statement();
         return result(scoped(name.c_str(), nullptr, {}));
+    }
+    if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
+        arity(call.method ? 0 : 1); statement();
+        return result(scoped(name.c_str(), call.method ? &receiver : nullptr,
+            call.method ? std::vector<abi::TslArg>{} : std::vector<abi::TslArg>{abi::TslArg::of(arg(0))}));
     }
     if (name == "toVar") {
         arity(0);
@@ -583,11 +595,11 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "transformDirection",
                              "level",
                              "lengthSq",
-                             "setGroup",
+                             "setGroup", "textureValue",
                              "invoke",
                              "newStruct",
                              "get",
-                             "renderOutput"})
+                             "renderOutput", "radians", "degrees", "log", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "round", "reciprocal", "trunc", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "refract", "faceForward", "difference", "saturate", "transpose", "determinant", "inverse", "rand", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement"})
         node->Set(str(isolate_, name), function(context, name, true));
     // three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, read as xyzw lanes.
     const std::function<void(const char*, const std::string&, const std::string&)> swizzles =
@@ -613,9 +625,9 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "uvec2", "storageTexture", "textureStore", "textureLoad", "reflect", "convertToTexture", "rtt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
-                             "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
+                             "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property"})
+                             "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

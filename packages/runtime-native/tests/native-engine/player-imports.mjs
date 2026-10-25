@@ -22,7 +22,8 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage",
-  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap"];
+  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap",
+  "LessEqualCompare", "GreaterEqualCompare", "CustomToneMapping", "AlwaysDepth", "VSMShadowMap"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "CanvasTexture", "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "Euler", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
@@ -561,6 +562,75 @@ await mkdir(resolve(work, "node_modules/@acme/viz/dist/three"), { recursive: tru
 await writeFile(resolve(work, "node_modules/@acme/viz/dist/three/index.js"), "export const mark = () => {};");
 await writeFile(resolve(work, "viz.ts"), 'import { Scene } from "three"; import { mark } from "./node_modules/@acme/viz/dist/three/index.js"; globalThis.tn.scene = new Scene(); mark();');
 await bundleNativeEngine({ entry: resolve(work, "viz.ts"), outfile: resolve(work, "viz.js"), boot: false });
+// Core's shadow filters, virtual shadow map and rough diffuse bundle and run (PRD-650, PRD-634, PRD-653):
+// the engine draws them in C++, so their three-only TSL bodies may name what the engine refuses
+// (cubeTexture, Stack, AssignNode) and never call it, and a refused class's prototype reads, as on Wasm.
+const coreLookEntry = resolve(work, "core-look.ts");
+const coreLookOut = resolve(work, "core-look.js");
+await writeFile(coreLookEntry, `
+import { DirectionalLight, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, PointLight, Scene, SpotLight } from "three";
+import { sourceAngleShadowFilter, sourceRadiusShadowFilter } from ${JSON.stringify(resolve(native, "../core/src/render/soft-shadow.ts"))};
+import { useRoughDiffuse } from ${JSON.stringify(resolve(native, "../core/src/render/rough-diffuse.ts"))};
+import { VirtualShadowNode } from ${JSON.stringify(resolve(native, "../core/src/render/virtual-shadow.ts"))};
+const scene = new Scene();
+const sun = new DirectionalLight(0xffffff, 3); sun.castShadow = true;
+sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels: 3 });
+const virtual = new VirtualShadowNode(sun, { clipExtents: [8], mapSize: 1024, marker: false });
+sun.shadow.shadowNode = virtual;
+if (sun.shadow.shadowNode !== virtual) throw new Error("the sun lost its virtual shadow");
+scene.add(sun, sun.target);
+const filter = sourceRadiusShadowFilter({ sourceRadius: 0.25 });
+const spot = new SpotLight(0xffffff, 40); spot.castShadow = true; spot.shadow.filterNode = filter;
+const point = new PointLight(0xffffff, 40); point.castShadow = true; point.shadow.filterNode = filter;
+scene.add(new Mesh(new PlaneGeometry(), new MeshStandardMaterial()), spot, point);
+if (useRoughDiffuse(scene) !== 1) throw new Error("rough diffuse marked no material");
+if (point.shadow.filterNode !== filter) throw new Error("the lamp lost its filter");
+globalThis.tn.scene = scene; globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry: coreLookEntry, outfile: coreLookOut, boot: false });
+const coreLook = spawnSync(resolve(executable), ["--check-game", coreLookOut], { encoding: "utf8" });
+assert.equal(coreLook.status, 0, coreLook.stderr);
+// A game TempNode (PRD-636's LocalExposureNode) on the V8 player: setup() builds its engine node once and
+// it is an operand and a receiver. A check has no renderer, as a game's startup has none, so render()
+// runs no FRAME node's updateBefore (its draws would have nothing to draw with); the local-exposure
+// parity row proves the per-frame update on the GPU. RendererUtils is bound.
+const tempEntry = resolve(work, "temp-node.ts");
+const tempOut = resolve(work, "temp-node.js");
+await writeFile(tempEntry, `
+import { PerspectiveCamera, RenderTarget, Scene } from "three";
+import { float } from "three/tsl";
+import { NodeUpdateType, RendererUtils, TempNode, WebGPURenderer } from "three/webgpu";
+let setups = 0;
+let updates = 0;
+class Exposure extends TempNode {
+  constructor() { super("float"); this.updateBeforeType = NodeUpdateType.FRAME; }
+  setup(builder) { super.setup(builder); setups += 1; return float(2); }
+  updateBefore({ renderer }) {
+    updates += 1;
+    const state = RendererUtils.resetRendererState(renderer);
+    try { renderer.setRenderTarget(target); } finally { RendererUtils.restoreRendererState(renderer, state); }
+  }
+}
+const target = new RenderTarget(4, 4);
+const node = new Exposure();
+if (typeof float(node).mul(node).add(node.mul(3)).toVar !== "function") throw new Error("a TempNode is no operand");
+const renderer = new WebGPURenderer({ canvas: { width: 64, height: 64 } });
+const scene = new Scene(); const camera = new PerspectiveCamera();
+renderer.render(scene, camera); renderer.render(scene, camera);
+if (setups !== 1 || updates !== 0) throw new Error("setup " + setups + " update " + updates);
+const state = RendererUtils.resetRendererState(renderer);
+renderer.setRenderTarget(target);
+RendererUtils.restoreRendererState(renderer, state);
+if (renderer.getRenderTarget() !== null) throw new Error("RendererUtils left the target set");
+node.dispose();
+let disposed = false;
+try { float(node); } catch (error) { disposed = /TN_NATIVE_TEMPNODE_DISPOSED/.test(error.message); }
+if (!disposed) throw new Error("a disposed TempNode was consumed");
+globalThis.tn.scene = scene; globalThis.tn.camera = camera; globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry: tempEntry, outfile: tempOut, boot: false });
+const temp = spawnSync(resolve(executable), ["--check-game", tempOut], { encoding: "utf8" });
+assert.equal(temp.status, 0, temp.stderr);
 for (const antialias of [false, true]) {
 // The post frame reads both names from one packed geometry target, with scalar outputs splatted.
 for (const target of ["material", "normal"]) {
@@ -588,12 +658,14 @@ globalThis.tn.onUpdate(() => {
   globalThis.tn.scene = scene; globalThis.tn.camera = camera;
   const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 }, antialias: ${antialias} });
   const scenePass = pass(scene, camera);
-  scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+  // An MRT with the normal target reads metalness and roughness from its alpha (3-bit metalness, the
+  // Unreal-look surface packing); without it they come from the exact material target this case checks.
+  scenePass.setMRT(mrt(${target === "material" ? "{ output, metalness, roughness }" : "{ output, normal: normalView, metalness, roughness }"}));
   const metal = scenePass.getTextureNode("metalness"), rough = scenePass.getTextureNode("roughness");
   const pipeline = new RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
   // Read inside a post pass, as SSR does: an output-only graph has no pass to plan the targets for.
-  const normal = scenePass.getTextureNode("normal");
+  const normal = ${target === "material" ? "null" : 'scenePass.getTextureNode("normal")'};
   pipeline.outputNode = convertToTexture(${target === "material" ? "vec4(metal.r, rough.g, metal.b, rough.a)" : "vec4(normal.xyz, 1)"});
   pipeline.render();
   // Pipelines compile asynchronously: read until the post pass has drawn (alpha non-zero), at most 120 frames.
@@ -923,8 +995,11 @@ for (const name of ["metalness", "roughness"]) {
 }
 scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
 const sceneDepth = scenePass.getTextureNode("depth"), sceneNormal = scenePass.getTextureNode("normal");
-check(scenePass.getTextureNode("metalness") && scenePass.getTextureNode("roughness") && scenePass.isPassNode && scenePass.scene === scene,
-  "the native scene pass exposes the material MRT outputs");
+let refusedVelocity = false;
+try { scenePass.getTextureNode("velocity"); } catch (error) { refusedVelocity = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+const sceneSurface = scenePass.getTextureNode("metalness");
+check(refusedVelocity && scenePass.getTextureNode("roughness") && scenePass.isPassNode && scenePass.scene === scene && sceneSurface.r !== undefined && sceneSurface.g !== undefined,
+  "the native scene pass has colour, depth, normals and the surface (metalness r, roughness g); velocity refuses");
 const contact = ao(sceneDepth, sceneNormal, camera);
 contact.radius.value = 0.35; contact.resolutionScale = 0.5;
 check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");

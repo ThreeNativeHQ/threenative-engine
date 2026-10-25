@@ -574,7 +574,7 @@ export class Enemy {
   #leftKnee: Object3D | undefined;
   #rightKnee: Object3D | undefined;
   #colliders: readonly BoxCollider[];
-  #bodyMeshes: Object3D[] = [];
+  #bodyMeshes: Mesh[] = [];
   #poseBones: Object3D[] = [];
   #bodyProxy: Object3D | undefined;
   #body: CharacterBody3D | undefined;
@@ -673,11 +673,7 @@ export class Enemy {
     this.group.add(figure);
     this.#ground = new GroundSnap(figure, { enabled: false, meshes: this.#bodyMeshes });
     this.#equip(figure);
-    // Before the first draw, not on the first death. `#respawn` also calls this, but `#respawn`
-    // only ever runs off the death timer, so a soldier that has never died would otherwise reach
-    // his own death still carrying the blend state the asset shipped with — which is both a
-    // mid-fight pipeline compile and, once `#setOpacity` stopped flipping the flag, a fade that
-    // does not render at all because opacity is ignored on an opaque material.
+    // Precompile the dither fade before the first death.
     this.#fixBlendState();
     this.group.name = "enemy";
     this.group.position.copy(this.#route[0] ?? ROUTE_START);
@@ -911,25 +907,7 @@ export class Enemy {
     body.teleport(proxy.position);
   }
 
-  /**
-   * Fade a soldier in or out without changing his pipeline.
-   *
-   * `transparent` and `depthWrite` are blend and depth state, not shader uniforms, so flipping
-   * either one makes WebGPU compile a *new* render pipeline for every material it touches — and a
-   * soldier is a skinned mesh with several. This used to set `transparent = alpha < 0.999` and
-   * `depthWrite = alpha > 0.5`, which meant the first death in a round compiled a fresh pipeline
-   * per material on the frame the corpse started fading. Measured as a single ~180 ms frame,
-   * mid-round, entirely outside game logic: `outsideGame` peaked at 177-186 ms with a firefight in
-   * the scenario and 28.6 ms without one, on identical movement.
-   *
-   * So the state is fixed at construction and never moves. Only `opacity` changes, which is a
-   * uniform the existing pipeline already reads. `needsUpdate` is deliberately not set: it forces
-   * the material to be re-evaluated, and there is nothing left to re-evaluate.
-   *
-   * Keeping `depthWrite` on for a fading corpse is the deliberate half of this. It costs a little
-   * correctness on a half-faded body seen through another one, and it buys never compiling
-   * mid-fight — and a corpse fading on the ground is not what anyone is looking at.
-   */
+  /** Change only opacity: switching pipeline state mid-death previously cost ~180 ms. */
   #setOpacity(alpha: number): void {
     const objects = [
       ...this.#bodyMeshes,
@@ -949,12 +927,7 @@ export class Enemy {
     if (alpha < this.#opacityFloor) this.#opacityFloor = alpha;
   }
 
-  /**
-   * Put every material into its final blend state once, before the soldier is ever drawn.
-   *
-   * Called at construction so the transparent pipeline is compiled during loading, where a long
-   * frame is part of the loading screen, rather than on the frame someone dies.
-   */
+  /** Dither fades keep solid soldiers in the opaque depth/normal passes. */
   #fixBlendState(): void {
     const objects = [
       ...this.#bodyMeshes,
@@ -966,7 +939,8 @@ export class Enemy {
         if (mesh.isMesh !== true) return;
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const material of materials) {
-          material.transparent = true;
+          material.transparent = false;
+          material.alphaHash = true;
           material.depthWrite = true;
           material.needsUpdate = true;
         }
@@ -1601,8 +1575,7 @@ export class Enemy {
     this.#reattachWeapon();
     this.#bodyClearance = null;
     this.#footClearance = null;
-    // Blend state first, and only here: it is what costs a pipeline, so it is set once per
-    // soldier and never again. The fade below is a uniform on the pipeline this just built.
+    // Restore the precompiled fade state before changing its opacity uniform.
     this.#fixBlendState();
     this.#setOpacity(0);
     this.#reaction = 0;
@@ -1903,6 +1876,7 @@ export class Enemy {
      * all five at once.
      */
     materialOpacity: number;
+    bodyUsesOpaqueFade: boolean;
     /** Lowest `materialOpacity` this soldier has ever reported. See `#opacityFloor`. */
     materialOpacityFloor: number;
     reaction: number;
@@ -1982,6 +1956,11 @@ export class Enemy {
       deadFor: this.#deadFor,
       armed: this.#weapon !== undefined,
       materialOpacity: this.#fade,
+      bodyUsesOpaqueFade: this.#bodyMeshes.every((mesh) =>
+        (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).every(
+          (material) => !material.transparent && material.alphaHash && material.depthWrite,
+        ),
+      ),
       materialOpacityFloor: this.#opacityFloor,
       reaction: this.#reaction,
       bodyClearance: this.#bodyClearance,

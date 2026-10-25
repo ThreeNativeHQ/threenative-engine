@@ -21,6 +21,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace tn::binding {
@@ -155,12 +156,27 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "fog", &Material::fog);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
+    materialBool(b, "alphaHash", &Material::alphaHash);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
     b.setters["side"] = [](void* self, const Value& v) {
         const double side = number(v);  // FrontSide 0, BackSide 1, DoubleSide 2; anything else is refused
         if (side != 0 && side != 1 && side != 2) throw Unsupported{"side must be FrontSide, BackSide or DoubleSide"};
         as<Material>(self)->side = static_cast<Side>(static_cast<int>(side));
         as<Material>(self)->needsUpdate();
+    };
+    b.getters["shadowSide"] = [](void* self) {
+        const auto& side = as<Material>(self)->shadowSide;
+        return side ? Value::of(double(*side)) : Value{};
+    };
+    b.setters["shadowSide"] = [](void* self, const Value& v) {
+        auto& material = *as<Material>(self);
+        if (v.kind == Value::Kind::Null) material.shadowSide.reset();
+        else {
+            const double side = number(v);
+            if (side != 0 && side != 1 && side != 2) throw Unsupported{"shadowSide must be null, FrontSide, BackSide or DoubleSide"};
+            material.shadowSide = static_cast<Side>(static_cast<int>(side));
+        }
+        material.needsUpdate();
     };
     b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
     b.setters["blending"] = [](void* self, const Value& v) {
@@ -209,6 +225,19 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialMapSlot(b);
     if (type == MaterialType::Basic) return;
     materialBool(b, "flatShading", &Material::flatShading);
+    // An engine field three does not declare: the Two Sided Foliage marker (PRD-651), on every lit class.
+    materialBool(b, "twoSidedFoliage", &Material::twoSidedFoliage);
+    // Its Subsurface Color (PRD-643), another engine field: undefined until set, as three reads an unset one.
+    b.members["subsurfaceColor"] = [](void* self, const Args&, Store& store) -> Value {
+        Material& material = *as<Material>(self);
+        return material.hasSubsurfaceColor ? memberAlias(store, self, material.subsurfaceColor, "Color") : Value::undefined();
+    };
+    b.setters["subsurfaceColor"] = [](void* self, const Value& v, Store& store) {
+        Material& material = *as<Material>(self);
+        material.hasSubsurfaceColor = v.kind != Value::Kind::Null && v.kind != Value::Kind::Undefined;
+        material.subsurfaceColor = material.hasSubsurfaceColor ? store.ref<Color>(v, "Color") : Color{0, 0, 0};
+        material.needsUpdate();
+    };
     // A tangent-space normal map, which the lit programs perturb with three's perturbNormal2Arb, and
     // its scale: the member alias, written whole with a Vector2 (three's setValues assigns it).
     materialMapSlot(b, "normalMap");
@@ -229,6 +258,8 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "envMapIntensity", &Material::envMapIntensity);
     materialNumber(b, "roughness", &Material::roughness);
     materialNumber(b, "metalness", &Material::metalness);
+    // An engine field three does not declare: Unreal's rough diffuse (PRD-653), on the classes that have a roughness.
+    materialBool(b, "roughDiffuse", &Material::roughDiffuse);
     // The standard program's scalar and emissive maps (shader::kPbrMapNames) and the occlusion strength.
     for (int k = 0; k < shader::kStandardPbrMapCount; ++k) materialMapSlot(b, shader::kPbrMapNames[k]);
     materialNumber(b, "aoMapIntensity", &Material::aoMapIntensity);
@@ -277,6 +308,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"roughnessNode", &Nodes::roughnessNode},
              {"metalnessNode", &Nodes::metalnessNode},
              {"vertexNode", &Nodes::vertexNode},
+             {"aoNode", &Nodes::aoNode},
+             {"irradianceNode", &Nodes::irradianceNode},
              {"depthNode", &Nodes::depthNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))
@@ -353,6 +386,174 @@ void shadowBindings(ClassBinding& b, const char* shadowClass, std::vector<const 
 // its numbers, `mapSize`, and `camera`, which is the shadow camera itself (orthographic for a
 // directional light, perspective otherwise). Only a spot shadow has `focus`.
 void registerLightShadow(ClassBinding& b, bool spot) {
+    b.setters["shadowNode"] = [](void* self, const Value& value, Store& store) {
+        auto& shadow = *as<LightShadow>(self);
+        if (value.kind == Value::Kind::Null) { shadow.virtualShadow.reset(); return; }
+        if (value.kind != Value::Kind::Record || !dynamic_cast<OrthographicCamera*>(shadow.camera.get()))
+            throw Unsupported{"TN_NATIVE_SHADOW_NODE_UNSUPPORTED: directional VirtualShadowNode required"};
+        const auto command = std::find_if(value.fields.begin(), value.fields.end(), [](const auto& f) { return f.first == "command"; });
+        if (command != value.fields.end()) {
+            if (!shadow.virtualShadow) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command without node"};
+            auto& control = *shadow.virtualShadow->control;
+            if (command->second.kind != Value::Kind::String) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
+            const std::string& name = command->second.text;
+            if (name == "invalidateAll") { control.invalidateAll = true; return; }
+            if (name == "lod") {
+                const Value* idValue = nullptr; const Value* geometriesValue = nullptr; const Value* errorsValue = nullptr;
+                for (const auto& [key, v] : value.fields) {
+                    if (key == "id") idValue = &v;
+                    if (key == "geometries") geometriesValue = &v;
+                    if (key == "errors") errorsValue = &v;
+                }
+                if (!idValue || !geometriesValue || !errorsValue) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod command"};
+                const double id = number(*idValue);
+                if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+                shadows::ShadowLodChain chain;
+                chain.errors = numbersOf(*errorsValue);
+                for (const Value& ref : refsOf(*geometriesValue)) {
+                    auto* object = store.find(ref);
+                    if (!object || !acceptsClass(object->cls, "BufferGeometry")) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod geometry"};
+                    chain.rungs.push_back(std::static_pointer_cast<BufferGeometry>(object->ptr));
+                }
+                if (chain.rungs.empty() || chain.rungs.size() != chain.errors.size() ||
+                    std::any_of(chain.errors.begin(), chain.errors.end(), [](double e) { return !std::isfinite(e) || e < 0; }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod rungs and errors"};
+                control.lods[uint64_t(id)] = std::move(chain);
+                control.invalidateAll = true; return;
+            }
+            const auto arg = std::find_if(value.fields.begin(), value.fields.end(), [&](const auto& f) { return f.first == (name == "invalidateRegion" ? "bounds" : "id"); });
+            if (arg == value.fields.end()) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command argument"};
+            if (name == "invalidateRegion") {
+                const auto box = numbersOf(arg->second);
+                if (box.size() != 6 || std::any_of(box.begin(), box.end(), [](double n) { return !std::isfinite(n); }) || box[0] > box[3] || box[1] > box[4] || box[2] > box[5])
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: region"};
+                Box3 bounds; bounds.set(Vector3(box[0], box[1], box[2]), Vector3(box[3], box[4], box[5]));
+                control.regions.push_back(bounds); return;
+            }
+            const double id = number(arg->second);
+            if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+            if (name == "pin") control.pinned.insert(uint64_t(id));
+            else if (name == "track") control.tracked.insert(uint64_t(id));
+            else if (name == "untrack") control.tracked.erase(uint64_t(id));
+            else if (name == "unlod") { control.lods.erase(uint64_t(id)); control.invalidateAll = true; }
+            else throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
+            return;
+        }
+        shadows::AtlasOptions options;
+        options.autoDepth = true;
+        bool distanceGiven = false, rangeGiven = false, automaticGiven = false;
+        for (const auto& [key, v] : value.fields) {
+            distanceGiven |= key == "lightDistance";
+            rangeGiven |= key == "depthRange";
+            automaticGiven |= key == "autoDepth";
+            if (key == "pinnedStatic" || key == "trackedCasters") {
+                auto& ids = key == "pinnedStatic" ? options.control->pinned : options.control->tracked;
+                for (double id : numbersOf(v)) {
+                    if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                        throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+                    ids.insert(uint64_t(id));
+                }
+            }
+            else if (key == "clipExtents") options.clipExtents = numbersOf(v);
+            else if (key == "selectionGuard") options.selectionGuard = numbersOf(v);
+            else if (key == "refreshStep") options.refreshStep = numbersOf(v);
+            else if (key == "invalidationDelay") options.invalidationDelay = numbersOf(v);
+            else if (key == "mapSize") {
+                // One size for every level, or one per level (core resolves it per level).
+                const auto sizes = v.kind == Value::Kind::Number ? std::vector<double>{number(v)} : numbersOf(v);
+                if (sizes.empty() || std::any_of(sizes.begin(), sizes.end(), [](double n) {
+                        return !std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096; }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: mapSize"};
+                options.mapSize = int(sizes[0]);
+                options.levelMapSizes.clear();
+                if (sizes.size() > 1) for (double n : sizes) options.levelMapSizes.push_back(int(n));
+                options.pageTexels = std::min(128, int(*std::min_element(sizes.begin(), sizes.end())));
+            }
+            else if (key == "autoMapSize") options.autoMapSize = flag(v);
+            else if (key == "resolutionLodBiasDirectional") {
+                options.resolutionLodBias = number(v);
+                if (!std::isfinite(options.resolutionLodBias)) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: resolutionLodBiasDirectional"};
+            }
+            else if (key == "maxPhysicalPages") {
+                const double n = number(v);
+                if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: maxPhysicalPages"};
+                options.maxPhysicalPages = int(n);
+            }
+            else if (key == "lightDistance") options.lightDistance = number(v);
+            else if (key == "depthRange") options.depthRange = number(v);
+            else if (key == "autoDepth") options.autoDepth = flag(v);
+            else if (key == "adaptiveRefresh") options.adaptiveRefresh = flag(v);
+            else if (key == "adaptiveCasterGate") options.adaptiveCasterGate = flag(v);
+            else if (key == "followViewFocus") options.followViewFocus = flag(v);
+            else if (key == "shadowLodBias") options.shadowLodBias = flag(v);
+            else if (key == "shadowLodTexels") {
+                const double n = number(v);
+                if (!(n > 0)) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels"};
+                options.shadowLodTexels = n;
+            }
+            else if (key == "staticAfterFrames" || key == "moverMapSize") {
+                const double n = number(v);
+                if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: " + key};
+                (key == "staticAfterFrames" ? options.staticAfterFrames : options.moverMapSize) = int(n);
+            }
+            else if (key == "expensiveRefreshShare") options.expensiveRefreshShare = number(v);
+            else if (key == "minCasterTexels") options.minCasterTexels = number(v);
+            else if (key == "minWindowAspect") options.minWindowAspect = number(v);
+            else if (key == "partialRedraw") options.partialRedraw = flag(v);
+            else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
+        }
+        if (!automaticGiven) options.autoDepth = !distanceGiven || !rangeGiven;
+        // The page-border limit on the PCF radius is checked where the filter is known, at render:
+        // a source-angle filter replaces that footprint, and it may be installed after this node.
+        if (!std::isfinite(shadow.radius) || shadow.radius < 0)
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels"};
+        std::string error;
+        if (!shadows::PageAtlas::create(options, error)) throw Unsupported{error};
+        shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(options));
+    };
+    b.setters["filterNode"] = [](void* self, const Value& value) {
+        auto& shadow = *as<LightShadow>(self);
+        if (value.kind == Value::Kind::Null) {
+            shadow.sourceAngleFilter.reset();
+            shadow.sourceRadiusFilter.reset();
+            return;
+        }
+        // sourceAngleShadowFilter on a sun (orthographic map), sourceRadiusShadowFilter on a lamp.
+        const bool lamp = dynamic_cast<PerspectiveCamera*>(shadow.camera.get()) != nullptr;
+        const char* size = lamp ? "sourceRadius" : "sourceAngleRad";
+        if (value.kind != Value::Kind::Record || value.fields.size() < (lamp ? 4u : 3u) || value.fields.size() > (lamp ? 4u : 6u) ||
+            (!lamp && !dynamic_cast<OrthographicCamera*>(shadow.camera.get())))
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter on a directional "
+                              "light, or sourceRadiusShadowFilter on a spot or point light, required)"};
+        double extent = -1, blockers = 0, samples = 0, penumbraScale = lamp ? -1 : 1;  // a lamp must name its share
+        double minPixels = 0, samplesPerRay = 4, rayLengthScale = 1.5;  // core's defaults
+        std::size_t known = 0;
+        for (const auto& [key, v] : value.fields) {
+            if (key == size) extent = number(v);
+            else if (key == "blockerSamples") blockers = number(v);
+            else if (key == "filterSamples") samples = number(v);
+            else if (lamp && key == "penumbraScale") penumbraScale = number(v);
+            else if (!lamp && key == "minPenumbraPixels") minPixels = number(v);
+            else if (!lamp && key == "samplesPerRay") samplesPerRay = number(v);
+            else if (!lamp && key == "rayLengthScale") rayLengthScale = number(v);
+            else continue;
+            ++known;
+        }
+        if (!std::isfinite(extent) || extent < 0 || (!lamp && extent >= 1.5707963267948966) ||
+            !std::isfinite(blockers) || blockers < 1 || blockers > 64 || blockers != std::floor(blockers) ||
+            !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples) ||
+            !std::isfinite(penumbraScale) || penumbraScale <= 0 || penumbraScale > 4 ||
+            !std::isfinite(minPixels) || minPixels < 0 || minPixels > 16 ||
+            !std::isfinite(samplesPerRay) || samplesPerRay < 0 || samplesPerRay > 64 || samplesPerRay != std::floor(samplesPerRay) ||
+            !std::isfinite(rayLengthScale) || rayLengthScale <= 0 || known != value.fields.size())
+            throw Unsupported{lamp ? "TN_VIRTUAL_SHADOW_INVALID: source-radius filter" : "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
+        if (lamp) shadow.sourceRadiusFilter = std::array<double, 4>{extent, blockers, samples, penumbraScale};
+        else shadow.sourceAngleFilter = std::array<double, 6>{extent, blockers, samples, minPixels, samplesPerRay, rayLengthScale};
+    };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };
         b.setters["focus"] = [](void* self, const Value& v) { as<LightShadow>(self)->focus = number(v); };
@@ -367,9 +568,8 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         return memberAlias(store, self, as<LightShadow>(self)->mapSize, "Vector2");
     });
     fixedMember(b, "camera", [](void* self, const Args&, Store& store) {
-        Camera* camera = as<LightShadow>(self)->camera.get();
-        return store.adoptAlias(dynamic_cast<OrthographicCamera*>(camera) ? "OrthographicCamera" : "PerspectiveCamera",
-                                camera, self);
+        const std::shared_ptr<Object3D> camera = as<LightShadow>(self)->camera;
+        return store.share(std::string(camera->type()), camera);
     });
 }
 
@@ -413,6 +613,8 @@ void registerPointLight(ClassBinding& b) {
     registerLightBase(b);
     numberField<PointLight>(b, "distance", &PointLight::distance);
     numberField<PointLight>(b, "decay", &PointLight::decay);
+    // An engine field three does not declare: Unreal's Source Radius (PRD-653).
+    numberField<PointLight>(b, "sourceRadius", &PointLight::sourceRadius);
     shadowBindings<PointLight, PerspectiveCamera>(b, "PointLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 
@@ -430,12 +632,16 @@ void registerSpotLight(ClassBinding& b) {
     numberField<SpotLight>(b, "angle", &SpotLight::angle);
     numberField<SpotLight>(b, "penumbra", &SpotLight::penumbra);
     numberField<SpotLight>(b, "decay", &SpotLight::decay);
+    numberField<SpotLight>(b, "sourceRadius", &SpotLight::sourceRadius);
     b.members["target"] = [](void* self, const Args&, Store& store) -> Value {
         SpotLight* light = as<SpotLight>(self);
         if (light->target == nullptr) return Value{};
-        return store.adoptAlias("Object3D", light->target, self);
+        return store.share(std::string(light->target->type()), light->target);
     };
-    b.fixedMembers.insert("target"); // the light owns its target for its whole life
+    b.setters["target"] = [](void* self, const Value& value, Store& store) {
+        Object3D& target = objectArg(store, value);
+        as<SpotLight>(self)->target = std::shared_ptr<Object3D>(store.find(value)->ptr, &target);
+    };
     shadowBindings<SpotLight, PerspectiveCamera>(b, "SpotLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 
@@ -739,9 +945,16 @@ void registerTextureBindings(Registry& classes) {
         if (!(width >= 1) || !(height >= 1) || width > 16384 || height > 16384)
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
+        std::optional<uint16_t> minFilter, magFilter;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
-                if (key == "type") {
+                if (key == "minFilter" || key == "magFilter") {
+                    // A target has no mip chain: only the two single-level filters apply.
+                    const auto filter = static_cast<uint16_t>(number(value));
+                    if (filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear))
+                        throw Unsupported{"RenderTarget " + key + " must be NearestFilter or LinearFilter"};
+                    (key == "minFilter" ? minFilter : magFilter) = filter;
+                } else if (key == "type") {
                     type = static_cast<uint16_t>(number(value));
                     if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
@@ -751,7 +964,10 @@ void registerTextureBindings(Registry& classes) {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        return RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
+        if (minFilter) target->texture->minFilter = *minFilter;
+        if (magFilter) target->texture->magFilter = *magFilter;
+        return target;
     };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);

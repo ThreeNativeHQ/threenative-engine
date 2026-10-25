@@ -1,0 +1,16 @@
+{
+  "srgb8": {
+    "Floor": [128, 128, 128],
+    "Sphere_RoughDielectric": [255, 0, 0],
+    "Sphere_SmoothDielectric": [0, 255, 0],
+    "Sphere_RoughMetal": [0, 0, 255],
+    "Sphere_Chrome": [255, 255, 0],
+    "Sphere_Emissive": [255, 0, 255],
+    "Box_Red": [0, 255, 255],
+    "Box_Green": [255, 128, 0],
+    "Box_White": [128, 0, 255],
+    "Room": [0, 128, 64],
+    "BacklitWall": [128, 255, 128],
+    "Capsule": [64, 0, 128]
+  }
+}

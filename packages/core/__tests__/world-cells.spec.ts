@@ -579,6 +579,7 @@ function cacheLoader(load: (path: string) => Object3D | undefined = () => makeMo
     clear: () => {
       cleared.push(1);
     },
+    dispose: () => undefined,
     model: ((path: string) => {
       loaded.push(path);
       const model = load(path);

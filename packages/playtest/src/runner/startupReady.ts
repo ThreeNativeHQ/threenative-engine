@@ -34,7 +34,9 @@ export interface IWaitForStartupReadyOptions {
    * passes a short wait. This is not scenario semantics — no step is being counted here — it is
    * the boundary before the first observation is taken.
    */
-  readonly pump: () => Promise<void>;
+  readonly pump: (remainingMs?: number) => Promise<void>;
+  /** Authored browser warmup. It runs before the readiness deadline and bounds its own frames. */
+  readonly warmup?: () => Promise<void>;
   /**
    * True once the run is being torn down, so the wait stops instead of outliving it.
    *
@@ -84,53 +86,86 @@ export async function waitForStartupReady(
   options: IWaitForStartupReadyOptions,
 ): Promise<IStartupReadyOutcome | undefined> {
   const { bridge, pump } = options;
-  if (!bridge.description.capabilities.includes("runtime.startup")) return undefined;
+  if (!bridge.description.capabilities.includes("runtime.startup")) {
+    await options.warmup?.();
+    return undefined;
+  }
   const now = options.now ?? (() => Date.now());
   const timeoutMs = options.timeoutMs ?? PLAYTEST_STARTUP_READY_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
     throw new Error(`TN_PLAYTEST_STARTUP_TIMEOUT_INVALID: ${String(options.timeoutMs)}`);
+  // Authored warmup runs before the readiness deadline starts. Its frames are bounded one at a time
+  // by the runner, so a slow software lane is not capped by the readiness allowance.
+  await options.warmup?.();
   const deadline = now() + timeoutMs;
   const aborted = options.aborted ?? (() => false);
   if (aborted()) throw abortedDuringStartup();
   const hostAlive = options.hostAlive ?? (async () => undefined);
-  let observed = await pollStartup(bridge);
-  // Readiness, never bare compile settlement. A game whose launch holds build its world on
-  // `whenReady()` (the puzzle's crate pile is one), so observing at compile settlement catches it
-  // mid-load: the runs then assert against a half-built world and fail on state that never had a
-  // chance to arrive. The bounded frame window still expires on a CPU rasteriser, so this is at
-  // most `STARTUP_STABLE_WINDOW_MS` more per scenario, not a wait the lane can never meet.
-  while (observed === BUSY || observed.phase !== "ready") {
-    if (aborted()) throw abortedDuringStartup();
-    // Only an unreadable bridge asks the question: a host that answers is running by definition,
-    // and probing a live one every pump would charge each poll for a process lookup.
-    if (observed === BUSY && (await hostAlive()) === false) throw hostExitedDuringStartup();
-    if (now() >= deadline) {
-      throw new PlaytestBridgeError(playtestDiagnostic(
-        "TN_PLAYTEST_STARTUP_NOT_READY",
-        `Application startup stayed '${observed === BUSY ? "unreadable, the bridge kept timing out" : observed.phase}' for ${timeoutMs}ms; the run would have observed a game that has not finished loading.`,
-        "Let the application reach startup readiness — check that its loading gate can complete headlessly — or remove the runtime.startup capability if it has no startup phase.",
-      ));
-    }
-    try {
-      await pump();
-    } catch (error) {
-      if (
-        error instanceof PlaytestBridgeError &&
-        error.diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT"
-      ) {
-        observed = BUSY;
-        continue;
+  let observed: IPlaytestStartupObservation | typeof BUSY = BUSY;
+  const timeoutError = () => new PlaytestBridgeError(playtestDiagnostic(
+    "TN_PLAYTEST_STARTUP_NOT_READY",
+    `Application startup stayed '${observed === BUSY ? "unreadable, the bridge kept timing out" : observed.phase}' for ${timeoutMs}ms; the run would have observed a game that has not finished loading.`,
+    "Let the application reach startup readiness — check that its loading gate can complete headlessly — or remove the runtime.startup capability if it has no startup phase.",
+  ));
+  let settled = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      settled = true;
+      reject(timeoutError());
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([expired, (async (): Promise<IStartupReadyOutcome> => {
+      if (settled) throw timeoutError();
+      if (aborted()) throw abortedDuringStartup();
+      if (settled || now() >= deadline) throw timeoutError();
+      observed = await pollStartup(bridge);
+      // Readiness, never bare compile settlement. A game whose launch holds build its world on
+      // `whenReady()` (the puzzle's crate pile is one), so observing at compile settlement catches it
+      // mid-load: the runs then assert against a half-built world and fail on state that never had a
+      // chance to arrive. The bounded frame window still expires on a CPU rasteriser, so this is at
+      // most `STARTUP_STABLE_WINDOW_MS` more per scenario, not a wait the lane can never meet.
+      while (observed === BUSY || observed.phase !== "ready") {
+        if (settled) throw timeoutError();
+        if (aborted()) throw abortedDuringStartup();
+        // Only an unreadable bridge asks the question: a host that answers is running by definition,
+        // and probing a live one every pump would charge each poll for a process lookup.
+        if (observed === BUSY) {
+          const alive = await hostAlive();
+          if (settled) throw timeoutError();
+          if (alive === false) throw hostExitedDuringStartup();
+        }
+        if (settled || now() >= deadline) {
+          throw timeoutError();
+        }
+        try {
+          await pump(deadline - now());
+        } catch (error) {
+          if (
+            error instanceof PlaytestBridgeError &&
+            error.diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT"
+          ) {
+            observed = BUSY;
+            continue;
+          }
+          throw error;
+        }
+        if (settled || now() >= deadline) throw timeoutError();
+        observed = await pollStartup(bridge);
       }
-      throw error;
-    }
-    observed = await pollStartup(bridge);
+      if (settled || now() >= deadline) throw timeoutError();
+      return {
+        // A declared software lane reaches `ready` on the bounded window rather than on sustained
+        // in-budget frames, so it is labelled for what it is: not a smoothness measurement.
+        rule: options.declaredSoftware === true ? "compile-settled" : "sustained-frames",
+        startup: observed,
+      };
+    })()]);
+  } finally {
+    settled = true;
+    if (timeout !== undefined) clearTimeout(timeout);
   }
-  return {
-    // A declared software lane reaches `ready` on the bounded window rather than on sustained
-    // in-budget frames, so it is labelled for what it is: not a smoothness measurement.
-    rule: options.declaredSoftware === true ? "compile-settled" : "sustained-frames",
-    startup: observed,
-  };
 }
 
 /**

@@ -2,7 +2,16 @@
 import type { RenderTarget } from "three";
 import type { Renderer } from "three/webgpu";
 
+/**
+ * A cold start reads a target the adapt pass has not drawn yet: pipelines compile asynchronously,
+ * so the first draws are skipped and the 1x1 target is still all zero. A drawn but unusable
+ * measurement writes -1 into luminance, never 0. Zero is "not drawn yet": retry on the next
+ * frame, and fail only when it never arrives.
+ */
+const COLD_READS_BEFORE_FAILURE = 120;
+
 export class ExposureReadback {
+  #cold = 0;
   #pending = false;
   #generation = 0;
   #lastReport = Number.NEGATIVE_INFINITY;
@@ -44,6 +53,15 @@ export class ExposureReadback {
       .readRenderTargetPixelsAsync(result, 0, 0, 1, 1)
       .then((values) => {
         if (!current()) return;
+        if (
+          values instanceof Float32Array &&
+          values[1] === 0 &&
+          ++this.#cold < COLD_READS_BEFORE_FAILURE
+        ) {
+          this.#lastReport = Number.NEGATIVE_INFINITY;
+          return;
+        }
+        this.#cold = 0;
         if (
           !(values instanceof Float32Array) ||
           values.length < 4 ||

@@ -1087,7 +1087,7 @@ jobs:
       - uses: actions/download-artifact@v7
         if: needs.paths.outputs.required_jobs != '[]'
         with:
-          pattern: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-*
+          pattern: ci-integration-receipt-${{ github.run_id }}-*-${{ inputs.candidate_sha }}-*
           path: artifacts/integration-receipts
       - id: collect
         env:

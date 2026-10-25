@@ -774,6 +774,14 @@ describe("capability manifest generator", () => {
         ids: ["request.drive-a-racing-kart"],
         owners: ["VehicleBody3D"],
       },
+      "lumen reflections": {
+        ids: ["request.lumen-reflections"],
+        owners: ["TracedReflections"],
+      },
+      "dedicated reflection rays": {
+        ids: ["request.dedicated-reflection-rays"],
+        owners: ["TracedReflections"],
+      },
       "suspension wheel traction tyre grip": {
         ids: ["request.vehicle-suspension-grip"],
         owners: ["VehicleBody3D"],
@@ -785,6 +793,52 @@ describe("capability manifest generator", () => {
       "rescue respawn flip back on track": {
         ids: ["request.vehicle-rescue-respawn"],
         owners: ["VehicleBody3D"],
+      },
+      "PCSS soft shadows": {
+        ids: ["request.pcss-soft-shadows"],
+        owners: ["sourceRadiusShadowFilter"],
+      },
+      "Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.rough-diffuse-substrate-eon"],
+        owners: ["useRoughDiffuse"],
+      },
+      "lumen scalability": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
+      "sg.GlobalIlluminationQuality": {
+        ids: ["request.gi-quality-scalability"],
+        owners: ["GIBudget"],
+      },
+      "final gather method": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
+      "virtual shadow map scalability": {
+        ids: ["request.shadow-quality-scalability"],
+        owners: ["ShadowFilterBudget"],
+      },
+      "sg.ShadowQuality": {
+        ids: ["request.shadow-quality-scalability"],
+        owners: ["ShadowFilterBudget"],
+      },
+      "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
+      "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
+      "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
+      "lumen translucency volume": {
+        ids: ["request.lumen-translucency-volume"],
+        owners: ["ProbeVolume"],
+      },
+      "translucency gi": { ids: ["request.translucency-gi"], owners: ["ProbeVolume"] },
+      "lumen visualize": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-visualize"],
+        owners: ["GIVisualize"],
+      },
+      "indirect diffuse only": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-visualize"],
+        owners: ["GIVisualize"],
+      },
+      "r.Lumen.Visualize.IndirectDiffuse": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-visualize"],
+        owners: ["GIVisualize"],
       },
     } as const;
 

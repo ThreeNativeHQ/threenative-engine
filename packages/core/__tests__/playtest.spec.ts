@@ -8,6 +8,7 @@ import {
 import {
   AnimationClip,
   BoxGeometry,
+  Group,
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
@@ -38,6 +39,33 @@ function bridge(): IPlaytestBridgeV1 {
 }
 
 describe("playtest plugin", () => {
+  it("observes the group root of a registered entity", async () => {
+    const group = new Group();
+    group.position.set(1, 2, 3);
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: {
+        test: class extends Scene {
+          override enter(ctx: ICtx) {
+            ctx.entities.add("enemy", { group });
+          }
+        },
+      },
+      start: "test",
+    });
+    await game.start();
+    try {
+      const snapshot = await bridge().sample({ entities: ["enemy"] });
+      expect(snapshot.entities?.find(({ id }) => id === "enemy")?.transform?.position).toEqual([
+        1, 2, 3,
+      ]);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should not advertise runtime.physics without a contributing plugin", async () => {
     const game = defineGame({
       initialState: {},
@@ -411,6 +439,7 @@ describe("playtest plugin", () => {
   it("publishes registry tags and drained contacts through gameplay channels", async () => {
     const canvas = testCanvas();
     const body = {};
+    const storage = new Uint8Array(65_536);
     const area = {
       drainContacts: () => [{ body, entity: "coin.3", started: true }],
     };
@@ -420,7 +449,7 @@ describe("playtest plugin", () => {
         const coin = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(fox);
         ctx.add(coin);
-        ctx.entities.add("fox", { mesh: fox, physics: { rigidBody: body } });
+        ctx.entities.add("fox", { mesh: fox, physics: { rigidBody: body, storage } });
         ctx.entities.add("coin.3", { mesh: coin, physics: { area }, tags: ["coin"] });
       }
     }
@@ -443,11 +472,15 @@ describe("playtest plugin", () => {
     });
 
     await game.start();
+    const values = vi.spyOn(Object, "values");
     try {
       const gameplay = (await bridge().sample({})).gameplay;
+      const enumeratedStorage = values.mock.calls.some(([value]) => value === storage);
+      expect(enumeratedStorage).toBe(false);
       expect(gameplay?.contacts).toEqual([{ entity: "fox", kind: "trigger", with: "coin.3" }]);
       expect(gameplay?.tags).toEqual({ coin: { count: 1 } });
     } finally {
+      values.mockRestore();
       game.stop();
     }
   });

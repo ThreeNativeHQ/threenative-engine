@@ -46,6 +46,31 @@ void stagesAgree(const Program& fragment, const std::string& vertex, const std::
     }
 }
 
+void alphaHash() {
+    VertexVariant variant;
+    variant.alphaHash = true;
+    variant.map = true;
+    for (int material = 0; material < 5; ++material) {
+        const auto p = material == 0 ? buildBasic(variant) : material == 1 ? buildLambert(variant) :
+            material == 2 ? buildPhong(variant) : material == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        const auto vs = buildStage(p.vertex, 0), fs = buildStage(p.fragment, 1);
+        for (const auto& e : fs.wgsl.errors) std::fprintf(stderr, "%s\n", e.c_str());
+        CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+        if (!vs.wgsl.ok() || !fs.wgsl.ok()) continue;
+        CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
+        CHECK(fs.wgsl.code.find("i_positionLocal") != std::string::npos);
+        stagesAgree(p.fragment, vs.wgsl.code, fs.wgsl.code);
+    }
+    const auto depth = buildDepth(variant);
+    const auto vs = buildStage(depth.vertex, 0), fs = buildStage(depth.fragment, 1);
+    CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+    CHECK(fs.wgsl.code.find("@builtin(frag_depth)") != std::string::npos);
+    CHECK(fs.wgsl.code.find("textureSample(") != std::string::npos);
+    CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
+    stagesAgree(depth.fragment, vs.wgsl.code, fs.wgsl.code);
+    CHECK(variant.key() != VertexVariant{}.key());
+}
+
 void fog() {
     for (float z : {0.0f, 2.0f, 6.0f, 10.0f, 25.0f}) {
         Program p(Stage::Fragment);
@@ -193,6 +218,124 @@ void unsupported() {
     CHECK(coatedPrograms.fragment.exprCount() > buildPhysical(coated).fragment.exprCount());
 }
 
+// The post surface pass reads metalness and roughness at offsets 0 and 4 of every standard fragment block,
+// for any lighting layout and for physical materials; a node that replaces either removes the pair.
+void surfacePrefix() {
+    namespace g = tn::engine::shader::graph;
+    for (const bool physical : {false, true}) {
+        VertexVariant plain;
+        const auto programs = physical ? buildPhysical({}, plain) : buildStandard({}, plain);
+        const auto fragment = buildStage(programs.fragment, 1);
+        CHECK(fragment.wgsl.ok() && fragment.uniforms.size() > 2);
+        CHECK(fragment.uniforms[0].name == "metalness" && fragment.uniforms[0].offset == 0);
+        CHECK(fragment.uniforms[1].name == "roughness" && fragment.uniforms[1].offset == 4);
+    }
+    VertexVariant replaced;
+    replaced.nodes.roughnessNode = g::swizzle(g::uv(), "x");
+    const auto fragment = buildStage(buildStandard({}, replaced).fragment, 1);
+    CHECK(fragment.wgsl.ok());
+    CHECK(fragment.uniforms.empty() || fragment.uniforms[0].name != "metalness");
+}
+
+// NodeMaterial.aoNode darkens indirect light: the node's uniform enters the standard fragment, the slot is part of the
+// program key, and a material without it compiles to a program that never mentions it.
+void aoNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant occluded;
+    occluded.nodes.aoNode = g::uniform("nodeAo", Type::f32(), {0.25f});
+    CHECK(plain.key() != occluded.key());
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, occluded).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("f_nodeAo") == std::string::npos);
+    CHECK(with.code.find("f_nodeAo") != std::string::npos);
+}
+
+// PRD-653: material.roughDiffuse shades direct light with the EON model. The variant key changes, a lamp's Source
+// Radius enters the fragment only for the marked material (a sun has none), and the EON constants appear only there.
+void roughDiffuse() {
+    VertexVariant plain;
+    VertexVariant rough;
+    rough.roughDiffuse = true;
+    CHECK(plain.key() != rough.key());
+    const LightLayout layout{"dp"};  // a sun, then a point lamp
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain, layout).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, rough, layout).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("light1SourceRadius") == std::string::npos);
+    CHECK(with.code.find("f_light1SourceRadius") != std::string::npos);
+    CHECK(with.code.find("light0SourceRadius") == std::string::npos);
+    CHECK(with.code.find("0.189468") != std::string::npos);
+    CHECK(without.code.find("0.189468") == std::string::npos);
+}
+
+// NodeMaterial.irradianceNode replaces the environment's diffuse irradiance: its uniform enters the fragment of a
+// material that is lit by an environment, or is the whole indirect diffuse without one, and the slot is part of
+// the program key.
+void irradianceNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    plain.environment = true;
+    VertexVariant lit = plain;
+    lit.nodes.irradianceNode = g::uniform("nodeIrradiance", Type::vec(3), {0.5f, 0.25f, 0.125f});
+    CHECK(plain.key() != lit.key());
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, lit).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("f_nodeIrradiance") == std::string::npos);
+    CHECK(with.code.find("f_nodeIrradiance") != std::string::npos);
+    // With no environment (a closed room, no sky) the node is still the material's indirect diffuse: a baked GI
+    // cache must not vanish because scene.environment is null.
+    VertexVariant dark = lit;
+    dark.environment = false;
+    const auto unlitByEnvironment = WgslEmitter::emit(buildStandard(StandardMaterial{}, dark).fragment, 1);
+    CHECK(unlitByEnvironment.ok());
+    CHECK(unlitByEnvironment.code.find("f_nodeIrradiance") != std::string::npos);
+}
+
+// The albedo pass draws a lit draw's diffuse colour through the draw's own bind groups, so the albedo fragment must
+// keep the lit fragment's layout exactly (every uniform at the same offset, every texture at the same binding) and
+// differ only in what it writes: the diffuse colour, unfogged, alpha 1.
+void albedoOutput(bool emission = false) {
+    for (int kind = 1; kind < 5; ++kind) {
+        for (int shape = 0; shape < 5; ++shape) {
+            VertexVariant lit;
+            lit.map = shape >= 1;
+            lit.fog = shape == 2 ? 1 : 0;
+            lit.instanceColor = shape == 2;
+            lit.environment = kind >= 3;
+            if (shape == 3 && kind >= 3) lit.pbrMaps |= 1u << kEmissiveMap;
+            if (shape == 4) lit.nodes.emissiveNode = graph::vec3({graph::float_(4), graph::float_(2), graph::float_(0)});
+            VertexVariant albedo = lit;
+            albedo.albedoOutput = !emission;
+            albedo.emissiveOutput = emission;
+            const auto build = [&](const VertexVariant& v) {
+                return kind == 1 ? buildLambert(v) : kind == 2 ? buildPhong(v) : kind == 3 ? buildStandard({}, v) : buildPhysical({}, v);
+            };
+            const auto litFragment = buildStage(build(lit).fragment, 1), albedoFragment = buildStage(build(albedo).fragment, 1);
+            CHECK(litFragment.wgsl.ok() && albedoFragment.wgsl.ok());
+            CHECK(albedoFragment.uniforms.size() == litFragment.uniforms.size());
+            CHECK(albedoFragment.uniformBlockSize == litFragment.uniformBlockSize);
+            CHECK(albedoFragment.bindings.size() == litFragment.bindings.size());
+            for (std::size_t i = 0; i < litFragment.uniforms.size(); ++i) {
+                CHECK(albedoFragment.uniforms[i].name == litFragment.uniforms[i].name);
+                CHECK(albedoFragment.uniforms[i].offset == litFragment.uniforms[i].offset);
+            }
+            CHECK(albedoFragment.wgsl.code != litFragment.wgsl.code);
+            // Unfogged: the albedo output never mixes toward the fog colour.
+            if (shape == 2) {
+                CHECK(litFragment.wgsl.code.find("f_fogColor") != std::string::npos);
+                const auto output = albedoFragment.wgsl.code.rfind("out.color");
+                CHECK(output != std::string::npos);
+                CHECK(albedoFragment.wgsl.code.find("mix(", output) == std::string::npos);
+            }
+        }
+    }
+}
+
+void emissiveOutput() { albedoOutput(true); }
+
 void nodes() {
     namespace g = tn::engine::shader::graph;
     VertexVariant variant;
@@ -254,7 +397,26 @@ void nodes() {
 }
 
 void builds() {
+    // A procedural background reads a world direction and a live sun uniform, without a cube map.
+    VertexVariant background; background.background = true;
+    background.nodes.colorNode = graph::mul(graph::normalize(graph::varying("positionWorldDirection", Type::vec(3))),
+        graph::uniform("sun", Type::f32(), {0.5}));
+    const auto sky = buildBasic(background);
+    CHECK(sky.vertex.ok() && sky.fragment.ok());
+    const auto skyVs = buildStage(sky.vertex, 0), skyFs = buildStage(sky.fragment, 1);
+    CHECK(skyVs.wgsl.ok() && skyFs.wgsl.ok());
+    CHECK(skyFs.wgsl.code.find("texture_cube") == std::string::npos);
+    CHECK(skyFs.wgsl.code.find("f_sun") != std::string::npos);
+    CHECK(skyFs.wgsl.code.find("f_diffuse") != std::string::npos); // backgroundIntensity
+    for (const auto& attribute : skyVs.attributes)
+        CHECK(attribute.name == "position" || attribute.name == "normal");
+
     nodes();
+    surfacePrefix();
+    aoNode();
+    irradianceNode();
+    albedoOutput();
+    albedoOutput(true);
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {
@@ -528,4 +690,4 @@ void depthTextureLowering() {
 
 }  // namespace
 
-TN_TEST_MAIN({"ssr_passes", ssrPasses}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

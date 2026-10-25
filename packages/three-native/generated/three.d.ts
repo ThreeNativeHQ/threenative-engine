@@ -1095,6 +1095,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -1502,6 +1503,9 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 fragmentNode: Node | null;
 colorWrite: boolean;
+aoNode: Node | null;
+irradianceNode: Node | null;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -1586,6 +1590,9 @@ fog: boolean;
 alphaTest: number;
 readonly id: number;
 readonly type: string;
+twoSidedFoliage: boolean;
+roughDiffuse: boolean;
+subsurfaceColor: Color | undefined;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 
@@ -1649,6 +1656,12 @@ bumpMap: Texture | null;
 fragmentNode: Node | null;
 flatShading: boolean;
 colorWrite: boolean;
+aoNode: Node | null;
+irradianceNode: Node | null;
+twoSidedFoliage: boolean;
+roughDiffuse: boolean;
+subsurfaceColor: Color | undefined;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -1760,6 +1773,9 @@ vertexNode: Node | null;
 depthNode: Node | null;
 visible: boolean;
 colorWrite: boolean;
+aoNode: Node | null;
+irradianceNode: Node | null;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -2113,6 +2129,7 @@ distance: number;
 intensity: number;
 color: Color;
 readonly shadow: PointLightShadow;
+sourceRadius: number;
 }
 
 /** Catalog partial (members-not-catalogued, media-sources-unbound): three/PositionalAudio. */
@@ -2415,6 +2432,7 @@ backgroundIntensity: number;
 backgroundRotation: Euler;
 environmentIntensity: number;
 environmentRotation: Euler;
+backgroundNode: Node | null | undefined;
 
   copy(source: Scene, recursive?: boolean): this;
 }
@@ -2580,6 +2598,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -3307,6 +3326,9 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
+twoSidedFoliage: boolean;
+subsurfaceColor: Color | undefined;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -3346,6 +3368,9 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
+twoSidedFoliage: boolean;
+subsurfaceColor: Color | undefined;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -3437,8 +3462,9 @@ distance: number;
 intensity: number;
 penumbra: number;
 color: Color;
-readonly target: Object3D;
+target: Object3D;
 readonly shadow: SpotLightShadow;
+sourceRadius: number;
 }
 
 /** Catalog supported: three/AnimationAction. */
