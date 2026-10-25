@@ -175,6 +175,12 @@ async function applyShared(
 }
 
 describe("shared model images", () => {
+  it("keys per-image transcoder accounting into the shared-model cache", () => {
+    expect(modelPass({ sharedImages: createSharedImageStore() }).configuration).toMatchObject({
+      sharedTranscoderAccounting: 1,
+    });
+  });
+
   it("should publish concurrent shared images with independent staging files", async () => {
     const root = await makeTempDir("threenative-shared-publication-");
     await mkdir(path.join(root, "assets"));

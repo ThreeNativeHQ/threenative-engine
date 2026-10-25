@@ -173,7 +173,14 @@ describe("modelPass", () => {
     // above measures the pass rather than the fixture.
     const uncompressed = await modelPass({
       compact: false,
-      passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+      passes: {
+        dedup: false,
+        meshopt: false,
+        prune: false,
+        quantize: false,
+        reorder: false,
+        restTracks: false,
+      },
       textures: "none",
       virtual: "none",
     }).apply(Buffer.from(await buildFixtureGlb()), "character.glb");
@@ -186,7 +193,14 @@ describe("modelPass", () => {
     // and all default to on, so a complete opt-out names all four.
     const result = await modelPass({
       compact: false,
-      passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+      passes: {
+        dedup: false,
+        meshopt: false,
+        prune: false,
+        quantize: false,
+        reorder: false,
+        restTracks: false,
+      },
       textures: "none",
       virtual: "none",
     }).apply(input, "character.glb");
