@@ -2,6 +2,7 @@ import { ACESFilmicToneMapping, CustomToneMapping, PerspectiveCamera, Scene, Tex
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { texture } from "three/tsl";
 import { afterEach, expect, it, vi } from "vitest";
+import { qualityPreset } from "../src/look/quality.js";
 import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
 
 const host = vi.hoisted(() => ({ native: false }));
@@ -121,6 +122,11 @@ it("caps the reflection march at Unreal's steps per tier, reports it, and keeps 
     camera: new PerspectiveCamera(),
   }) as unknown as { maxSteps?: { value: number } };
   expect(node.maxSteps?.value).toBe(1e6);
+});
+
+it("gathers contact occlusion at half resolution on medium only, as Unreal's Medium cuts its AO budget", () => {
+  expect(qualityPreset("medium").gtaoResolutionScale).toBe(0.5);
+  expect(qualityPreset("high").gtaoResolutionScale).toBeUndefined();
 });
 
 it("does not let an undefined option cancel the preset", () => {
