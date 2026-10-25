@@ -95,6 +95,39 @@ describe("NavigationAgent3D", () => {
     expect(agent.isTargetReachable(new Vector3(0, 5, 0))).toBe(false);
   });
 
+  it("should reject an elevated target and not report arrival underneath it", async () => {
+    const { ctx } = await setup();
+    new NavigationRegion3D({ meshes: levelMeshes(), navigation: navigation(ctx) });
+    const object = new Object3D();
+    object.position.set(7.5, 0.75, 0);
+    const agent = new NavigationAgent3D({
+      avoidanceEnabled: false,
+      navigation: navigation(ctx),
+      object,
+    });
+
+    expect(agent.isTargetReachable(new Vector3(18, 3, 0))).toBe(false);
+
+    let reached = 0;
+    agent.on("targetReached", () => {
+      reached += 1;
+    });
+    agent.setTargetPosition(new Vector3(18, 3, 0));
+    const next = new Vector3();
+    // Follow the horizontal waypoints at the character's ground height, as crowd locomotion
+    // does, rather than riding the raw requested height.
+    for (let guard = 0; guard < 100; guard += 1) {
+      agent.getNextPathPosition(next);
+      object.position.set(next.x, 0.75, next.z);
+      agent.advance();
+      if (agent.isNavigationFinished()) break;
+    }
+    object.position.set(18, 0.75, 0);
+    agent.advance();
+    expect(reached).toBe(0);
+    expect(agent.isNavigationFinished()).toBe(false);
+  });
+
   it("should fail closed when the baked region is disabled or absent", async () => {
     const { ctx } = await setup();
     expect(

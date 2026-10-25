@@ -793,8 +793,9 @@ test('CLI build tools are separate units behind an unchanged dispatch surface', 
   // web-UI readiness/deadline wiring here; the direct split assertions below remain the contract.
   // The native-css renderer adds 17 lines of the same kind: choosing which overlay backend attaches.
   // PRD-614 adds 11 net lines: refusing the web UI when the environment asks SDL for Wayland, read from
-  // the same variables the desktop gate routes.
-  assert.ok(main.split('\n').length <= 1913, 'main.cpp still contains a build-time tool body');
+  // the same variables the desktop gate routes. The desktop save namespace (bug hunt F01) adds 1 line:
+  // passing the game's entry path to the runtime as its storage identity.
+  assert.ok(main.split('\n').length <= 1914, 'main.cpp still contains a build-time tool body');
   assert.doesNotMatch(main, /static int (compileBundle|bakeLightmaps)\(/u);
   assert.match(main, /dispatchBuildTool\(argc, argv\)/u);
   assert.match(dispatcher, /mystral::vfs::getExecutablePath\(\)[\s\S]*mystral-tools/u);

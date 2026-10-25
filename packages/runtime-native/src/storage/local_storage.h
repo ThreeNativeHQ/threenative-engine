@@ -121,6 +121,31 @@ public:
      */
     static std::string deriveStorageFilename(const std::string& identifier);
 
+    /**
+     * Derive a storage filename from a game's entry path.
+     *
+     * The directory basename alone collides for two games whose folders are both named `game`.
+     * The canonical entry path is hashed into the filename instead, so each game and each entry
+     * file in one directory owns separate saved progress, while the readable basename stays in
+     * front for a human looking at the storage directory.
+     */
+    static std::string deriveStorageFilenameForEntry(const std::string& entryPath);
+
+    /**
+     * Copy a save from the pre-namespacing filename to its identity-derived name, once.
+     * Returns true when a migration copy was made. Never overwrites an existing destination.
+     */
+    static bool migrateStorageFile(const std::string& legacyPath, const std::string& path);
+
+    /**
+     * Resolve the save file for a game in `storageDir` and migrate its pre-namespacing save.
+     * `entryIdentity` is the game's entry path; empty falls back to the working directory's name.
+     * The legacy save was named after the working directory's basename alone.
+     */
+    static std::string prepareStorageFile(const std::string& storageDir,
+                                          const std::string& entryIdentity,
+                                          const std::string& workingDirectory);
+
     /** Flush pending changes at a runtime boundary. Safe to call when storage is clean. */
     void flushIfDirty();
 

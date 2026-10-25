@@ -172,6 +172,12 @@ export interface IAssetLoader {
    */
   readonly resolved: ReadonlyMap<string, IResolvedAsset>;
   clear(): void;
+  /**
+   * Final release, called by the game's teardown. Frees the decoder worker pools this loader
+   * owns; `clear()` stays reusable because a live game may empty its cache between levels.
+   * Idempotent.
+   */
+  dispose(): void;
 }
 
 /**
@@ -796,6 +802,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     surfaces: new WeakSet(),
     textures: new WeakSet(),
   };
+  let loaderDisposed = false;
 
   const loadCompiledKtx2 = async (url: string): Promise<Texture> => {
     if (compressedTextures === undefined) {
@@ -1032,6 +1039,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       cache.clear();
       entries.forEach(releaseEntry);
     },
+    dispose: () => {
+      if (loaderDisposed) return;
+      loaderDisposed = true;
+      // Three's KTX2Loader owns the decoder worker pool. Resolving the shared promise can fail
+      // when no loader was built; that is not a teardown failure.
+      void compressedTextures?.loader
+        .then((shared) => {
+          (shared as (IKTX2LoaderLike & { dispose?: () => void }) | undefined)?.dispose?.();
+        })
+        .catch(() => undefined);
+    },
     ...(compressedTextures === undefined ? {} : { compressedTextures }),
     model: <T = unknown>(path: string) =>
       cached<T>("model", path, async (url) => {
@@ -1215,6 +1233,11 @@ function disposeModel(value: unknown, disposed: IResourceDisposalSets): void {
     root.traverse((object) => {
       const renderable = object as Object3D & { geometry?: unknown; [key: string]: unknown };
       disposeResource(renderable.geometry, disposed.geometries);
+      const skeleton = renderable.skeleton as { boneTexture?: unknown } | undefined;
+      // A SkinnedMesh's skeleton owns a bone texture allocated on renderer paths that lack
+      // float textures (the WebGL2 fallback). Dispose it with the model, and share ownership
+      // with every other material/texture reference through the same set.
+      disposeTexture(skeleton?.boneTexture, disposed);
       disposeSurface(renderable["ma" + "terial"], disposed);
     });
   }

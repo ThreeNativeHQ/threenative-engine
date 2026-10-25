@@ -2225,12 +2225,12 @@ private:
     bool setupStorage() {
         if (!jsEngine_) return false;
 
-        // Initialize localStorage backed by a JSON file
-        // Storage file is keyed by the current working directory name
-        std::string storageDir = storage::LocalStorage::getStorageDirectory();
-        std::string cwdStem = std::filesystem::current_path().filename().string();
-        std::string filename = storage::LocalStorage::deriveStorageFilename(cwdStem);
-        std::string storagePath = storageDir + "/" + filename;
+        // Initialize localStorage backed by a JSON file. The filename comes from the game's entry
+        // path, not just a directory basename: two games installed as `.../game` must not share
+        // or overwrite each other's saved progress.
+        std::string storagePath = storage::LocalStorage::prepareStorageFile(
+            storage::LocalStorage::getStorageDirectory(), config_.storageIdentity,
+            std::filesystem::current_path().string());
 
         localStorage_.init(storagePath);
         std::cout << "[Mystral] localStorage initialized: " << storagePath << std::endl;
