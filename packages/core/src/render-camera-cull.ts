@@ -99,6 +99,7 @@ export interface IAnimationRateState {
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 /** The roots that may hold a rate state, so the camera pass walks the rigs instead of the scene. */
 const animationRateRoots = new Set<WeakRef<Object3D>>();
+const animationRateRootRefs = new WeakMap<Object3D, WeakRef<Object3D>>();
 /** The stand-ins named in {@link animationRateSources}, so the pass can reach them without a scene walk. */
 const animationRateCarriers = new Set<WeakRef<Object3D>>();
 
@@ -114,7 +115,13 @@ export function observeAnimationRates(
 /** AnimationPlayer's registration: the state the camera pass writes, and the root it is found on. */
 export function trackAnimationRate(root: Object3D, state: IAnimationRateState): void {
   animationRateStates.set(root, state);
-  animationRateRoots.add(new WeakRef(root));
+  // One ref per root: a respawn's new player on the same root must not add a second walk of it.
+  let ref = animationRateRootRefs.get(root);
+  if (ref === undefined) {
+    ref = new WeakRef(root);
+    animationRateRootRefs.set(root, ref);
+  }
+  animationRateRoots.add(ref);
 }
 
 export interface IRenderCameraCullOptions {
