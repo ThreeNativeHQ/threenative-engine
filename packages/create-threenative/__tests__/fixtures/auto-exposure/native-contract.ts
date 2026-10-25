@@ -54,8 +54,17 @@ async function run() {
   const frame = new NodeFrame();
   frame.renderer = renderer;
   frame.deltaTime = 1 / 60;
+  // The first frame adopts its target (14635b5b9), so the exposure never moves again on this fixed
+  // input: a report is counted by the readback's own TN_AUTO_EXPOSURE line, not by a change in stops.
+  let reports = 0;
+  const info = console.info.bind(console);
+  console.info = (...args: unknown[]) => {
+    if (typeof args[0] === "string" && args[0].startsWith("TN_AUTO_EXPOSURE:")) reports++;
+    info(...args);
+  };
   for (let step = 1; step <= 120; step++) {
     frame.time = step / 60;
+    const before = reports;
     exposure.updateBefore(frame);
     // Each step waits for the real asynchronous GPU report before advancing its fixed clock.
     await new Promise<void>((resolve, reject) => {
@@ -63,11 +72,7 @@ async function run() {
       const poll = () => {
         const next = exposure.getObservation();
         if (next.reason !== undefined) return reject(new Error(String(next.reason)));
-        if (
-          next.measured === true &&
-          next !== observation &&
-          next.exposureStops !== observation.exposureStops
-        ) {
+        if (next.measured === true && reports > before) {
           observation = next;
           resolve();
         } else if (++attempts > 2000) reject(new Error("Exposure GPU report timed out"));
