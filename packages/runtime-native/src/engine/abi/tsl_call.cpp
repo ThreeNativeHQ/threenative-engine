@@ -552,8 +552,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         return g::add(g::mul(node, args.size() > 1 ? arg(1) : g::float_(1)), args.size() > 2 ? arg(2) : g::float_(0));
     }
-    if (name == "textureLoad") {
-        if (args.size() < 2 || args.size() > 3) throw std::runtime_error("expected texture, coordinates and optional level");
+    if (name == "textureLoad" || name == "textureSize") {
+        const bool dimensions = name == "textureSize";
+        if ((dimensions && method) || args.size() < (dimensions ? 1u : 2u) || args.size() > (dimensions ? 2u : 3u))
+            throw std::runtime_error(dimensions ? "expected texture and optional level" : "expected texture, coordinates and optional level");
         std::string label;
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
             const auto& texture = args[0].node;
@@ -565,13 +567,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         if (label.empty()) throw std::runtime_error("textureLoad needs a named texture");
         auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::TextureLoad; node->name = label; node->type = Type::vec(4);
+        node->kind = dimensions ? g::Kind::TextureSize : g::Kind::TextureLoad; node->name = label;
+        node->type = dimensions ? Type::vec(2, Type::Scalar::U32) : Type::vec(4);
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
             node->textureBinding = args[0].node->textureBinding; node->object = args[0].node->object; node->bits = args[0].node->bits;
             // Retain the target producer and the texture owner as graph dependencies.
             if (node->textureObject() || args[0].node->kind == g::Kind::RenderTexture) node->otherwise = {args[0].node};
         }
-        node->args = {arg(1)};
+        if (args.size() > 1) node->args = {dimensions ? tslCall("int", nullptr, {args[1]}, serial) : arg(1)};
         if (args.size() == 3) node->args.push_back(arg(2));
         return node;
     }

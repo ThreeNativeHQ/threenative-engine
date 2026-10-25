@@ -35,7 +35,8 @@ namespace {
 // The tnw_* contract with the facade (browser-renderer.ts `WEB_HOST_ABI`). Bump both on every tnw_*
 // signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
 // 2 = tnw_web_render's overlay argument (39295d1f3).
-constexpr uint32_t kWebHostAbi = 2;
+// 3 = tnw_web_renderer_state's temporal input scale.
+constexpr uint32_t kWebHostAbi = 3;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 

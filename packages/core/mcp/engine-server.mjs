@@ -547,7 +547,6 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
 var MAX_COMPLETE_REQUEST_RESULTS = 15;
 var MAX_SITUATION_RESULTS = 5;
 var RELEVANCE_FLOOR = 0.27;
-var AUTHORING_INSTRUCTIONS = `Before authoring, infer concrete gameplay mechanics. Preserve the request's distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.`;
 var AUTHORING_INSTRUCTIONS = "Invoke threenative-capabilities to route authoring. New games: steps 1-8 \u2014 prompt, matching starter kit (minimal fallback), mechanics references PLUS built-in capabilities, core-mechanics plan via prd-creator, required textures, execute, mechanics playtest, reference-image visual judge. Existing games: steps 5-7 only \u2014 required textures, execute and mechanics playtest using existing context; no kit selection, rediscovery, whole-game replanning or added step 8. In both routes, execute plan with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before step 7 mechanics playtests. Follow binding capability constraints. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
 var GENERIC_GUIDANCE = "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 function defaultManifestPath(cwd = process.cwd()) {
@@ -764,7 +763,7 @@ ${entry.summary}
 ${entry.situations.join("\n")}`;
 }
 function matchedStarterKits(situation, kits) {
-  const words = (text) => ` ${text.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim()} `;
+  const words = (text2) => ` ${text2.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim()} `;
   const request = words(situation);
   const claims = kits.map((kit) => ({
     kit,

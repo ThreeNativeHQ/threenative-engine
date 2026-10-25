@@ -133,7 +133,7 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     Wrapper* w = wrapper(value);
     // A texture names its map by the object's `name`; textureLoad also takes a texture node.
     const bool texture = index == 0 && (name == "texture" || name == "textureValue");
-    const bool textureLoad = index == 0 && name == "textureLoad";
+    const bool textureLoad = index == 0 && (name == "textureLoad" || name == "textureSize");
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself and texture3D samples it, and storage reads the attribute's buffer, not a map the material
     // names; reflector takes its target and virtual camera.
@@ -630,7 +630,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "exp",        "exp2",  "log2",    "normalize", "length", "atan",     "min",      "max",
                              "mod", "fwidth", "saturation", "mat2", "hash",
                              "pow",        "step",  "dot",     "distance",  "cross",  "mix",      "clamp",
-                             "smoothstep", "select", "nodeObject", "color", "ivec2", "uvec2", "storageTexture", "textureStore", "textureLoad", "reflect", "convertToTexture", "rtt",
+                             "smoothstep", "select", "nodeObject", "color", "ivec2", "uvec2", "storageTexture", "textureStore", "textureLoad", "textureSize", "reflect", "convertToTexture", "rtt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",

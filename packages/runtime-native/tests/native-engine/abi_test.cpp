@@ -1040,6 +1040,29 @@ void tsl_call() {
         const auto holderReceiver = tn::abi::TslArg::of(holder);
         CHECK(tn::abi::tslCall("textureValue", &holderReceiver, {tn::abi::TslArg::objectOf("Texture", target->texture)}, serial) == holder);
         CHECK(holder->textureObject() == target->texture);
+        // Dimensions must query the bound texture, retaining its owner and deferred producer.
+        using tn::abi::TslArg;
+        using namespace tn::engine::shader;
+        const auto dimensions = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(holder)}, serial);
+        CHECK(dimensions);
+        if (!dimensions) { tn_context_destroy(ctx, &d.value); return; }
+        CHECK(dimensions->kind == g::Kind::TextureSize && dimensions->textureObject() == target->texture);
+        CHECK(dimensions->otherwise.size() == 1 && dimensions->otherwise[0] == holder);
+        const auto producer = tn::abi::tslCall("convertToTexture", nullptr, {TslArg::of(g::vec4({g::float_(1)}))}, serial);
+        const auto producedSize = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(producer), TslArg::of(0.0)}, serial);
+        CHECK(producedSize->otherwise.size() == 1 && producedSize->otherwise[0] == producer);
+        Program query(Stage::Fragment);
+        tn::engine::shader::tsl::Build queryScope(query);
+        query.output("color", g::lower(g::vec4({g::vec2({dimensions}), g::float_(0), g::float_(1)}), query));
+        const auto built = buildStage(query);
+        CHECK(built.wgsl.ok() && built.wgsl.code.find("textureDimensions(") != std::string::npos);
+        for (const auto& invalid : std::vector<std::vector<TslArg>>{{}, {TslArg::of(2.0)}, {TslArg::of(g::float_(1))},
+                {TslArg::of(holder), TslArg::of(g::int_(0)), TslArg::of(g::int_(0))}}) {
+            bool refused = false;
+            try { tn::abi::tslCall("textureSize", nullptr, invalid, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
     }
     // A material is no texture, and a released handle is no object.
     const tn_tsl_arg_t wrong[3] = {handleArg(material), nodeArg(direction), number(0.5)};

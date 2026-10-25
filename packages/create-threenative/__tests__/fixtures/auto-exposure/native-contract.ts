@@ -45,6 +45,7 @@ async function run() {
     },
     1,
   );
+  exposure.reset(1);
   exposure.updateBeforeType = NodeUpdateType.NONE;
   const output = new RenderTarget(width, height, { type: FloatType, depthBuffer: false });
   const material = new NodeMaterial();
