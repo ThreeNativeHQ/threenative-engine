@@ -225,7 +225,7 @@ const MAX_SITUATION_RESULTS = 5;
 /** Chosen by the current-manifest threshold sweep: the highest recalled candidate at 0.27. */
 export const RELEVANCE_FLOOR = 0.27;
 const AUTHORING_INSTRUCTIONS =
-  "Before planning or writing game source, invoke threenative-capabilities, the one planning gate, then prd-creator. Follow the gate skill's discovery record and binding capability constraints. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
+  "Invoke threenative-capabilities to route authoring. New games: steps 1-8 — prompt, matching starter kit (minimal fallback), mechanics references PLUS built-in capabilities, core-mechanics plan via prd-creator, required textures, execute, mechanics playtest, reference-image visual judge. Existing games: steps 5-7 only — required textures, execute and mechanics playtest using existing context; no kit selection, rediscovery, whole-game replanning or added step 8. In both routes, execute plan with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before step 7 mechanics playtests. Follow binding capability constraints. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
 const GENERIC_GUIDANCE =
   "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 

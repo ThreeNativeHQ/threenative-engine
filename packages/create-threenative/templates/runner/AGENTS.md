@@ -9,8 +9,8 @@ look; `src/game.ts` is portable and React mounts only from `src/main.ts`. The re
 
 ## Start every change
 
-1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`; follow its discovery record and the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art.
-2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
+1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art.
+2. **New game only:** run discovery in `threenative-capabilities` before `prd-creator`. Draft the core-mechanics plan from the kit, both discovery passes and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. No navmesh is imported, so this kit runs on every
    target; `@threenative/physics/navigation` would make it web and desktop only. `GPUParticles3D`
