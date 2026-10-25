@@ -50,6 +50,7 @@ jobs:
       reason: ${{ steps.classify.outputs.reason }}
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
+      base_sha: ${{ steps.classify.outputs.base_sha }}
       # PRD-620: the one admitted slice of eligible HEAVY instances across all three workflows,
       # at most `TN_RUNNER_SLOTS`. Empty for a fork, a missing count or no advertised runner.
       runner_admission: ${{ steps.admission.outputs.runner_admission }}
@@ -100,7 +101,7 @@ jobs:
         env:
           TN_CI_PLAN: ${{ steps.classify.outputs.plan }}
           TN_CI_FORK: ${{ github.event.pull_request.head.repo.fork }}
-          TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+          TN_CI_BASE_SHA: ${{ steps.classify.outputs.base_sha }}
           TN_RUNNER: ${{ vars.TN_RUNNER }}
           TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}
         run: node scripts/ci-runner-admission.mjs --admit
@@ -1358,7 +1359,7 @@ jobs:
       selection_plan: ${{ needs.scope.outputs.plan }}
       candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
       runner_admission: ${{ needs.scope.outputs.runner_admission }}
-      base_sha: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+      base_sha: ${{ needs.scope.outputs.base_sha }}
 
   supply-chain:
     needs: scope
@@ -1480,7 +1481,7 @@ jobs:
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
           TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           TN_CI_HEAD_REF: ${{ github.head_ref }}
-          TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          TN_CI_BASE_SHA: ${{ needs.scope.outputs.base_sha }}
           TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           TN_CI_NATIVE_RECEIPT: ${{ needs.native-platforms.outputs.coverage_receipt }}
           TN_CI_INTEGRATION_RECEIPT: ${{ needs.integration.outputs.coverage_receipt }}

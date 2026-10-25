@@ -19,6 +19,10 @@ moved to a separate private repository (recorded in [`docs/README.md`](../README
 `scripts/studio-*` probes went with it. The owner's amendment stands either way: an agent edits
 plain TypeScript — a GUI that writes a scene is still closed.
 
+The engine server also ships `engine_search_references` and `engine_reference_detail` for
+game behavior references with pinned source citations. `engine_save_reference` saves a local
+reference and returns a contribution command; it does not submit the contribution.
+
 ## The workflow this replaces
 
 ```mermaid

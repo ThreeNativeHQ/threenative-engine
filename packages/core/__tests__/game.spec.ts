@@ -21,8 +21,8 @@ import {
   resetLaunchFailures,
 } from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
-import { VelocityTracker } from "../src/render/velocity.js";
 import { RenderCameraCull } from "../src/render-camera-cull.js";
+import { VelocityTracker } from "../src/render/velocity.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { SoftBody3D } from "../src/softbody.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";

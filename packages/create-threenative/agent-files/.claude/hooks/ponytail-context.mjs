@@ -13,7 +13,7 @@ const RULESET = [
   "",
   "Before writing code, stop at the first rung that holds (read the code the change touches first):",
   "1. Does this need to exist? No -> skip it (YAGNI).",
-  "2. Already installed in the engine? Search `engine_search_capabilities` and inspect with `engine_capability_detail` — reuse the returned system. This rung IS the critical capability gate; a shipped node, convention, helper or subpath is the answer, never hand-write what it already does.",
+  "2. Follow `threenative-capabilities`: New games: steps 1-8 (discovery before `prd-creator`). Existing games: steps 5-7 only, reusing existing context without whole-game replanning. Step 6 delegates bounded areas with file ownership to subagents; the coordinator integrates before step 7. References borrow mechanics only: no code, level layouts, character names or art.",
   "3. Already in this game? Reuse what is in `src/`.",
   "4. Stdlib or engine convention (loadAll, addInSlices, GroundSnap, an input vector, a physics query)? Use it.",
   "5. Already-installed dependency? Use it; add none for a few lines.",
