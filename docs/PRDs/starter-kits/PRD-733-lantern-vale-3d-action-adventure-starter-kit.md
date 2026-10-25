@@ -533,6 +533,20 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   Intel gen-12lp laptop: p95 17.7 ms, 58.1 fps, 329 draws, 187,593 triangles. Tier low not
   measured. No budget raised.
 
+- 2026-10-24 (owner perf round): the owner's 10-20 FPS tab is CPU-bound, not GPU-bound. The
+  Chrome trace (9.6 s, 352 frames, RTX 2080) spends 47% in the render submit, 25% in simulation and
+  14% in bloom; `valeHeight`'s 800 ms is load-time (`measureRelief`), not per frame, and React is
+  0.2%. Fixes: the fixed step catches up at most twice instead of five; the crowns, clusters and
+  grass tufts sway 4-5 cm at the tip instead of 15-20 cm; the Warden and push block project their
+  rock photo in object space, so it no longer slides as they move; the Thornback's weak-spot glow
+  reuses one material instead of allocating one per tick. Real display, production build, RTX 2080,
+  1920x1080, high tier: cost p95 13.3 ms (CPU), GPU p95 8.79 ms, 273-285 draws, 188,183 triangles,
+  4x MSAA, 176 GPU samples. The cost is inside 16.7 ms; the gated interval p95 is 17.5 ms, so the
+  `performance` scenario still fails and no 60 fps claim is made. The sway and object-space UVs need
+  a before/after visual judge. Open, not attributed to these coefficients: a private-Xvfb run failed
+  `boss` on `ringFacingLeast` 0.118 against 0.33 (also 0.118 on the host display) and `explore` on
+  three `TN_SCENE_WARNING`s (`objectsConsidered`); both need a rerun after the merge.
+
 ## Execution Phases
 
 #### Phase 1: Wren moves, targets and boots on the Unreal look

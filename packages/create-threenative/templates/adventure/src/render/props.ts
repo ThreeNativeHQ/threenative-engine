@@ -112,7 +112,7 @@ export function createBlock(rng: () => number): Group {
   group.add(
     part(
       mottle(new BoxGeometry(0.98, 0.98, 0.98, 2, 2, 2), 0.2, rng),
-      surfaced(C.stoneDark, "rock", { flat: true, vertexColors: true }),
+      surfaced(C.stoneDark, "rock", { flat: true, vertexColors: true, local: true }),
       0,
       0.49,
     ),

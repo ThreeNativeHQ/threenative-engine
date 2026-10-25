@@ -191,7 +191,7 @@ function canopyMaterial(): MeshStandardNodeMaterial {
     vertexColors: true,
   });
   const phase = hash(instanceIndex).mul(6.28);
-  const reach = positionLocal.length().mul(0.025);
+  const reach = positionLocal.length().mul(0.006);
   material.positionNode = positionLocal.add(
     vec3(
       sin(time.mul(0.45).add(phase)),
@@ -634,7 +634,7 @@ export function plantVale(site: IValeSite): {
       const spot = i < count * 0.45 ? verge(0.5) : anywhere(0.5);
       if (spot !== undefined) placements.push(P(spot[0], 0, spot[1], 1 + rng() * 0.6));
     }
-    group.add(instanced(cluster(head), swaying(0.5), placements, false));
+    group.add(instanced(cluster(head), swaying(0.25), placements, false));
   }
 
   // Grass tufts in the open spaces off the path, where the canopy lets light in.
@@ -649,7 +649,7 @@ export function plantVale(site: IValeSite): {
     if (Math.abs(x - site.pathX(z)) < 1.7 || site.stream.distance(x, z) < 1.4) continue;
     tufts.push(P(x, 0, z, 0.7 + rng() * 0.9, 0.6 + rng() * 0.9));
   }
-  group.add(instanced(fan(4, 0.04, 0.42, 0.4, C.grassTip), swaying(1.1), tufts, false));
+  group.add(instanced(fan(4, 0.04, 0.42, 0.4, C.grassTip), swaying(0.6), tufts, false));
 
   // Mushrooms in rings under the giants, fallen logs, and mossy boulders.
   const mushrooms: Placement[] = [];

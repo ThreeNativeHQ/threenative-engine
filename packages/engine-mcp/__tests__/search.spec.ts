@@ -40,10 +40,13 @@ describe("threenative-engine-mcp", () => {
     expect(symbols("r.Lumen.Visualize.IndirectDiffuse")).toContain("GIVisualize");
   });
 
-  it("exposes exactly the two read-only capability tools", () => {
+  it("exposes capability and reference tools", () => {
     expect(toolDefinitions().map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",
       "engine_capability_detail",
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_save_reference",
     ]);
   });
 

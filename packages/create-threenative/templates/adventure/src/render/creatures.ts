@@ -84,7 +84,7 @@ export function createWarden(): ICreatureRig {
   const root = new Group();
   const body = new Group();
   root.add(body, blob(1));
-  const stone = surfaced(C.wardenStone, "rock", { flat: true });
+  const stone = surfaced(C.wardenStone, "rock", { flat: true, local: true });
   const moss = lit(C.moss, { flat: true });
   const rune = glow(C.wardenRune, 1.2);
   const torso = part(new DodecahedronGeometry(0.85, 0), stone, 0, 1.25);
@@ -315,7 +315,10 @@ export function createThornback(): ICreatureRig {
     return eye;
   });
   // The weak spot on the rump: a soft sac that glows brighter while it recovers after a lunge.
-  const sac = part(new SphereGeometry(0.2, 12, 10), glow(C.thornWeak, 1.2), 0, 0.38, -0.78);
+  // One material, its intensity changed per tick: a fresh `glow` per tick grew the material cache
+  // and the wrapper collector's work every second of a fight.
+  const sacMaterial = glow(C.thornWeak, 1.2).clone();
+  const sac = part(new SphereGeometry(0.2, 12, 10), sacMaterial, 0, 0.38, -0.78);
   body.add(sac);
   const legs: Mesh[] = [];
   for (let i = 0; i < 6; i += 1) {
@@ -344,7 +347,7 @@ export function createThornback(): ICreatureRig {
       body.rotation.set(0, 0, 0);
       spikes.scale.setScalar(1);
       for (const eye of eyes) eye.material = phase === "telegraph" ? angry : calm;
-      sac.material = glow(C.thornWeak, phase === "recover" ? 4 + Math.sin(time * 10) * 1.5 : 1.2);
+      sacMaterial.emissiveIntensity = phase === "recover" ? 4 + Math.sin(time * 10) * 1.5 : 1.2;
       if (phase === "telegraph") {
         body.rotation.x = -0.4 * Math.min(1, t * 1.5);
         spikes.scale.setScalar(1 + 0.35 * t);

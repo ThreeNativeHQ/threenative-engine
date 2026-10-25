@@ -37,6 +37,9 @@ const game = defineGame<GameState, IPhysicsContext>({
     interact: { buttons: [3], keys: ["KeyE"] },
   },
   plugins: [rapier(), playtest()],
+  // A slow frame catches up at most twice, never five times: the five-step default spent a fifth
+  // of each 20 fps frame re-simulating, which made the next frame slower still.
+  maxSteps: 2,
   display: config.display,
   render: config.renderer,
   scenes: { play: Play },
