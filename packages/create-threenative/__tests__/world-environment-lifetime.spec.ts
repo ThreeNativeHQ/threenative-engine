@@ -4,8 +4,11 @@ import FXAANode from "three/addons/tsl/display/FXAANode.js";
 import { rtt, texture, vec4 } from "three/tsl";
 import type { Node, NodeBuilder } from "three/webgpu";
 import { expect, it, vi } from "vitest";
+import {
+  type OutputRenderer,
+  WorldEnvironment,
+} from "../../../test-support/isolated-world-environment.js";
 import { ResolutionSubrect } from "../../core/src/render/resolution-subrect.js";
-import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
 it.each([undefined, 0, 4])(
   "honours authored world-pass samples %s without removing post AA",
@@ -207,7 +210,7 @@ it("rejects authored auto-exposure on an unsupported renderer rather than silent
       new Scene(),
       new PerspectiveCamera(),
     ),
-  ).toThrow(/requires WebGPU/);
+  ).toThrow(/RenderChain is unavailable/);
 });
 
 it("requires actual consumer installation evidence, rejecting missing wiring", async () => {

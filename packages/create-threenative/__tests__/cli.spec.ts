@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -33,11 +35,32 @@ describe("create-threenative CLI", () => {
       expect(help).toContain(
         `${manifest.name.padEnd(width)}  ${manifest.title}: ${manifest.blurb}`,
       );
+      if (manifest.aliases.length > 0)
+        expect(help).toContain(`(also: ${manifest.aliases.join(", ")})`);
     }
+  });
+
+  it("resolves a word a kit lists in kit.json aliases, and rejects a word two kits claim", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "tn-kits-"));
+    const kit = (name: string, aliases: string[]) => {
+      mkdirSync(path.join(root, name));
+      const manifest = { aliases, blurb: "b", genre: name, kit: true, name, title: "T" };
+      writeFileSync(path.join(root, name, "kit.json"), JSON.stringify(manifest));
+    };
+    kit("collectathon", ["Mario", "sm64"]);
+    kit("adventure", ["zelda", "sm64"]);
+    expect(templateForGenre("MARIO", root)).toBe("collectathon");
+    expect(templateForGenre("zelda", root)).toBe("adventure");
+    expect(templateForGenre("pirate", root)).toBe("minimal");
+    expect(() => templateForGenre("sm64", root)).toThrow("TN_KIT_GENRE_AMBIGUOUS");
   });
 
   it("uses an exact genre kit and falls back to minimal for an unknown genre", () => {
     expect(templateForGenre("racing")).toBe("racing");
+    // PRD-734: the kart kit owns the Mario Kart words; collectathon's "mario" does not take them.
+    expect(templateForGenre("mario-kart")).toBe("kart");
+    expect(templateForGenre("mk64")).toBe("kart");
+    expect(templateForGenre("kart-racer")).toBe("kart");
     expect(templateForGenre("pirate")).toBe("minimal");
     expect(parseArgs(["game", "--genre", "pirate", "--no-install"])).toMatchObject({
       install: false,

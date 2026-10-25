@@ -115,7 +115,8 @@ const MATERIAL_CHECKS_PER_FRAME = 512;
 interface IBatch {
   readonly mesh: InstancedMesh;
   readonly group: IProjectionBatchGroup;
-  readonly geometry: BufferGeometry;
+  /** The group's geometry: one member's, drawn for every member whose geometry has equal bytes. */
+  geometry: BufferGeometry;
   readonly material: Material;
   /**
    * True when the members' materials differ only in base colour: `material` is then a clone this
@@ -1078,6 +1079,11 @@ export class ProjectionMirror {
    */
   #ensureBatch(group: IProjectionBatchGroup): IBatch | undefined {
     const existing = this.#batches.get(group);
+    // The member it drew from left the group or the scene; any member that stayed draws the same bytes.
+    if (existing !== undefined && existing.geometry !== group.geometry) {
+      existing.geometry = group.geometry;
+      existing.mesh.geometry = group.geometry;
+    }
     if (existing !== undefined && existing.capacity >= group.memberCount) return existing;
     const capacity = Math.max(BATCH_MIN_SLOTS, Math.ceil(group.memberCount * BATCH_GROWTH));
     const first = group.members[0] as Mesh;
@@ -1098,7 +1104,7 @@ export class ProjectionMirror {
       : (first.material as Material);
     let mesh: InstancedMesh;
     try {
-      mesh = new InstancedMesh(first.geometry, material, capacity);
+      mesh = new InstancedMesh(group.geometry, material, capacity);
     } catch {
       return undefined;
     }
@@ -1122,7 +1128,7 @@ export class ProjectionMirror {
     const batch: IBatch = {
       mesh,
       group,
-      geometry: first.geometry,
+      geometry: group.geometry,
       material,
       uniform,
       instances: new Map(),

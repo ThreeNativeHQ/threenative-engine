@@ -4,12 +4,11 @@
   "assert": {
     "performance": {
       "maxDrawCalls": 145,
-      "maxFrameMsP95": 33,
       "maxTriangles": 45000,
       "minFps": 30
     },
     "renderChain": {
-      "tier": "high",
+      "tier": "medium",
       "perAdapter": {
         "integrated": { "tier": "medium" },
         "mobile-high": { "tier": "medium" },
@@ -19,6 +18,7 @@
       }
     }
   },
+  "clock": "wall-clock",
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [

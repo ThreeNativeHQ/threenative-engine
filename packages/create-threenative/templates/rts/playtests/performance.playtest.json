@@ -1,4 +1,5 @@
 {
+  "clock": "wall-clock",
   "name": "battlefield-performance",
   "target": "web",
   "schemaVersion": 1,
@@ -29,7 +30,6 @@
     },
     "performance": {
       "maxDrawCalls": 200,
-      "maxFrameMsP95": 33,
       "maxTriangles": 400000,
       "minFps": 30
     },

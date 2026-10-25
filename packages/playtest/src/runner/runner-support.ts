@@ -231,6 +231,7 @@ export function buildReport(
   startup: IStandalonePlaytestReport["startup"] = undefined,
   deviceLifecycle: IPlaytestObservations["deviceLifecycle"] = undefined,
   tone: IPlaytestObservations["tone"] = undefined,
+  footSlip: IPlaytestObservations["footSlip"] = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -375,6 +376,7 @@ export function buildReport(
       ...(afterSnapshot?.sceneNodes === undefined && beforeSnapshot?.sceneNodes === undefined
         ? {}
         : { sceneNodes: afterSnapshot?.sceneNodes ?? beforeSnapshot?.sceneNodes }),
+      ...(footSlip === undefined ? {} : { footSlip }),
       ...(startup === undefined ? {} : { startup }),
       ...(beforeSnapshot?.gameplay === undefined
         && afterSnapshot?.gameplay === undefined

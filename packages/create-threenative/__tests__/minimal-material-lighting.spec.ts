@@ -15,7 +15,8 @@ import {
 import { createMaterialLighting } from "../templates/minimal/src/render/materialLighting.js";
 import { materialLightingEnabled, qualityPreset } from "../templates/minimal/src/render/quality.js";
 const apply = vi.hoisted(() => vi.fn());
-vi.mock("../templates/minimal/src/render/worldEnvironment.js", () => ({
+vi.mock("@threenative/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@threenative/core")>()),
   WorldEnvironment: class {
     apply = apply;
   },

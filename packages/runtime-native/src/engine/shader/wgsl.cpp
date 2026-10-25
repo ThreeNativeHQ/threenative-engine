@@ -418,7 +418,8 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     const bool hasOutputs = stage != Stage::Compute;
     if (hasOutputs) {
         out += "struct Out {\n";
-        uint32_t location = 0;
+        // A fragment's further colour targets (MRT) take the locations after `color`'s 0, in first-output order.
+        uint32_t location = stage == Stage::Fragment && program.hasOutput("color") ? 1 : 0;
         for (const auto& slot : program.outputs_) {
             const std::string& name = program.names_[slot.name];
             // @invariant only when asked (Program::setInvariantPosition): see there.

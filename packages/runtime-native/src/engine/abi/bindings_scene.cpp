@@ -290,6 +290,18 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
     const projection::Decision& d = host.decision;
     std::vector<std::pair<std::string, Value>> exact;
     for (const auto& [reason, count] : d.exact) exact.emplace_back(reason, Value::of(double(count)));
+    if (!d.cause.empty())
+        return Value::record({{"projecting", Value::of(d.projecting)},
+                              {"reasonCode", Value{Value::Kind::String, 0, d.reasonCode}},
+                              {"sourceRenderables", Value::of(double(d.sourceRenderables))},
+                              {"projectedObjects", Value::of(0.0)},
+                              {"instancedBatches", Value::of(0.0)},
+                              {"materialBatches", Value::of(0.0)},
+                              {"skinnedBatches", Value::of(0.0)},
+                              {"exactObjects", Value::of(0.0)},
+                              {"exact", Value::record({})},
+                              {"cause", Value{Value::Kind::String, 0, d.cause}},
+                              {"causeMeshes", Value::of(double(d.causeMeshes))}});
     return Value::record({{"projecting", Value::of(d.projecting)},
                           {"reasonCode", Value{Value::Kind::String, 0, d.reasonCode}},
                           {"sourceRenderables", Value::of(double(d.sourceRenderables))},
@@ -925,7 +937,7 @@ void registerFog(ClassBinding& b, bool exp2) {
         if (exp2) return std::make_shared<FogExp2>(color, optional(a, 1, 0.00025));
         return std::make_shared<Fog>(color, optional(a, 1, 1), optional(a, 2, 1000));
     };
-    b.members["color"] = memberAliasMethod(&Fog::color, "Color");
+    fixedMember(b, "color", memberAliasMethod(&Fog::color, "Color"));
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string("color.") + "rgb"[i];
         b.getters[path] = [i](void* self) { const auto& c = as<Fog>(self)->color; return Value::of(i == 0 ? c.r : i == 1 ? c.g : c.b); };
@@ -1718,6 +1730,13 @@ void registerInstancedMesh(ClassBinding& b) {
     };
     b.members["instanceMatrix"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("InstancedBufferAttribute", as<InstancedMesh>(self)->instanceMatrix);
+    };
+    // three's instanceMatrix is a plain property too: core's projection hands a stand-in the source's buffer, so the
+    // game's later setMatrixAt writes reach what draws.
+    b.setters["instanceMatrix"] = [](void* self, const Value& v, Store& store) {
+        std::shared_ptr<BufferAttribute> matrices = sharedAttributeArg(store, v);
+        if (matrices->itemSize != 16) throw Unsupported{"instanceMatrix needs 16 components per instance"};
+        as<InstancedMesh>(self)->instanceMatrix = std::move(matrices);
     };
     b.members["instanceColor"] = [](void* self, const Args&, Store& store) -> Value {
         const auto& colors = as<InstancedMesh>(self)->instanceColor;

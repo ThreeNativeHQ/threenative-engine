@@ -30,23 +30,23 @@
       "perAdapter": {
         "integrated": {
           "contributions": {
-            "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "stages": {
-            "includes": ["ambientOcclusion", "bloom", "vignette", "antialias"],
+            "includes": ["ambientOcclusion", "traa", "bloom", "vignette"],
             "excludes": ["motionBlur", "grade", "grain"],
-            "order": ["ambientOcclusion", "bloom", "vignette", "antialias"]
+            "order": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "tier": "medium"
         },
         "mobile-high": {
           "contributions": {
-            "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette", "antialias"]
+            "graphOutputChanged": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "stages": {
-            "includes": ["ambientOcclusion", "bloom", "vignette", "antialias"],
+            "includes": ["ambientOcclusion", "traa", "bloom", "vignette"],
             "excludes": ["motionBlur", "grade", "grain"],
-            "order": ["ambientOcclusion", "bloom", "vignette", "antialias"]
+            "order": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "tier": "medium"
         },
@@ -85,12 +85,12 @@
         }
       },
       "stages": {
-        "includes": ["ambientOcclusion", "motionBlur", "bloom", "vignette", "antialias"],
+        "includes": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"],
         "excludes": ["grade", "grain"],
-        "order": ["ambientOcclusion", "motionBlur", "bloom", "vignette", "antialias"]
+        "order": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"]
       },
       "contributions": {
-        "graphOutputChanged": ["ambientOcclusion", "motionBlur", "bloom", "vignette", "antialias"]
+        "graphOutputChanged": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"]
       }
     },
     "resources": [

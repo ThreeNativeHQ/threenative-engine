@@ -125,6 +125,16 @@ export interface IWarmUpOptions {
    */
   readonly renderPasses?: boolean;
   /**
+   * Runs right after every draw the warm-up makes outside the game's frame loop, so the loading
+   * cover can be painted over it.
+   *
+   * Such a draw runs in a timer task, and the browser presents it on its own: a Wasm engine that is
+   * still baking the environment presents black, and the cover flickers against it for the whole
+   * bake. Painting the cover in the same task makes the presented frame the cover again. Leave it
+   * unset when nothing covers the canvas.
+   */
+  readonly afterCoveredDraw?: () => void;
+  /**
    * Also render objects the scene has hidden for that one covered render. Default `false`.
    *
    * `renderPasses` already disables frustum culling, so every caster is submitted to the shadow
@@ -252,7 +262,12 @@ interface IPMREMNodeClass {
 
 /** The native engine's facade bakes the environment itself; warm-up draws the held scene until it is done. */
 interface INativeEnvironmentPreparer {
-  prepareEnvironmentAsync(scene: Object3D, camera: Camera, deadlineMs: number): Promise<boolean>;
+  prepareEnvironmentAsync(
+    scene: Object3D,
+    camera: Camera,
+    deadlineMs: number,
+    afterDraw?: () => void,
+  ): Promise<boolean>;
 }
 
 function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | undefined {
@@ -262,7 +277,10 @@ function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | u
     : undefined;
 }
 
-function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Object3D): boolean {
+export function sceneNeedsEnvironmentPreparation(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+): boolean {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return false;
 
@@ -273,11 +291,12 @@ function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Obje
   return backend?.isWebGPUBackend === true;
 }
 
-async function prepareSceneEnvironment(
+export async function prepareSceneEnvironment(
   renderer: IWarmUpRenderer,
   scene: Object3D,
   camera: Camera,
   deadlineMs: number,
+  afterDraw?: () => void,
 ): Promise<boolean> {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return true;
@@ -285,7 +304,8 @@ async function prepareSceneEnvironment(
   const raw = renderer.raw;
   if (typeof raw !== "object" || raw === null) return true;
   const native = nativeEnvironmentPreparer(raw);
-  if (native !== undefined) return native.prepareEnvironmentAsync(scene, camera, deadlineMs);
+  if (native !== undefined)
+    return native.prepareEnvironmentAsync(scene, camera, deadlineMs, afterDraw);
   const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
   if (backend?.isWebGPUBackend !== true) return true;
 
@@ -967,6 +987,7 @@ export async function warmUpScene(
         targetScene,
         camera,
         environmentDeadline,
+        options.afterCoveredDraw,
       ).then((prepared) => {
         environmentPrepared = prepared;
         if (!prepared) {

@@ -21,7 +21,7 @@ export function Hud() {
 
   return (
     <>
-      <div className="pointer-events-none absolute left-6 top-6 w-32">
+      <div className="pointer-events-none absolute left-6 top-6 -m-3 box-content w-32 rounded bg-panel p-3">
         <div className="text-[10px] uppercase tracking-[0.14em] text-dim">score</div>
         <div className="text-4xl leading-none tabular-nums text-lume">{state.score}</div>
         <div className="mt-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-dim">

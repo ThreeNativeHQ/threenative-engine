@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UnrealBloomNode } from "../../packages/create-threenative/template-assets/unrealBloom.js";
+import { UnrealBloomNode } from "../../packages/core/src/look/unreal-bloom.js";
 
 /** Scene.cpp Bloom1..6 Size, a percent of the stage's own image width, and BloomSizeScale. */
 const SIZES = [0.3, 1, 2, 10, 30, 64];

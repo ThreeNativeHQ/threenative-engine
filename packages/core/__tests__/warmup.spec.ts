@@ -170,6 +170,26 @@ describe("scene warm-up", () => {
     expect(raw.prepareEnvironmentAsync).toHaveBeenCalledTimes(1);
   });
 
+  test("should hand the native environment bake the cover repaint to run after each draw", async () => {
+    const scene = { children: [], environment: { isTexture: true } } as never;
+    const afterCoveredDraw = vi.fn();
+    const raw = {
+      prepareEnvironmentAsync: vi.fn(
+        async (_scene: unknown, _camera: unknown, _deadlineMs: number, afterDraw?: () => void) => {
+          afterDraw?.();
+          return true;
+        },
+      ),
+    };
+    await warmUpScene({ raw, compileAsync: vi.fn(async () => undefined) }, scene, {} as never, {
+      afterCoveredDraw,
+      granularity: "scene",
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(raw.prepareEnvironmentAsync.mock.calls[0]?.[3]).toBe(afterCoveredDraw);
+    expect(afterCoveredDraw).toHaveBeenCalledTimes(1);
+  });
+
   test("should prepare the target scene environment used by object compilation", async () => {
     const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
     const environment = { isTexture: true } as never;

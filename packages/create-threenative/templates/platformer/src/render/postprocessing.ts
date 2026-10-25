@@ -1,8 +1,10 @@
+import type { OutputRenderer } from "@threenative/core";
+import { WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
-// owns which stages run at which tier and records what each one measured. `WorldEnvironment`,
-// also in this folder, builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
+// owns which stages run at which tier and records what each one measured. `WorldEnvironment` from
+// the core package builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
 // applied or refused **with a reason**, so a stage that silently no-op'd is never mistaken for
 // one you turned off.
 //
@@ -12,8 +14,6 @@
 // `TN_QUALITY_TIER` names the tier that ran either way.
 import type { Camera, DirectionalLight, Scene } from "three";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
-import type { OutputRenderer } from "./worldEnvironment.js";
-import { WorldEnvironment } from "./worldEnvironment.js";
 
 type ProfileGlobals = typeof globalThis & {
   __THREENATIVE_PROFILE__?: { hostedSoftware?: unknown };

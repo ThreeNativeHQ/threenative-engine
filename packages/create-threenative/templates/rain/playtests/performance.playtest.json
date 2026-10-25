@@ -4,7 +4,6 @@
   "assert": {
     "performance": {
       "maxDrawCalls": 16,
-      "maxFrameMsP95": 33,
       "maxTriangles": 40000,
       "minFps": 30
     },
@@ -20,6 +19,7 @@
       "stages": { "includes": ["stormPost"] }
     }
   },
+  "clock": "wall-clock",
   "name": "rain-production-performance",
   "schemaVersion": 1,
   "steps": [

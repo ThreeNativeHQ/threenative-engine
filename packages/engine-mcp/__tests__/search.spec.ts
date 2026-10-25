@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as ts from "typescript";
@@ -428,6 +429,102 @@ describe("threenative-engine-mcp", () => {
     const response = searchCapabilities("make a pirate game", workspaceManifest);
     expect(response.verdict).toBe("none");
     expect(response.results).toEqual([]);
+  });
+
+  describe("starter kits", () => {
+    // Copies the real manifest and injects two kits, so the test does not depend on which
+    // kit.json files exist when it runs.
+    async function kitManifest(): Promise<{ file: string; root: string }> {
+      const root = await makeTempDir("threenative-engine-mcp-starter-kits-");
+      const manifest = JSON.parse(readFileSync(workspaceManifest, "utf8")) as object;
+      const kit = (name: string, title: string, words: string[]) => ({
+        blurb: `${title} blurb`,
+        name,
+        title,
+        words,
+      });
+      const file = path.join(root, "capabilities.json");
+      await writeFile(
+        file,
+        JSON.stringify({
+          ...manifest,
+          starterKits: [
+            kit("adventure", "Lantern Vale", ["action-adventure", "zelda"]),
+            kit("collectathon", "Hop Garden", ["collectathon", "3d-platformer", "mario"]),
+            kit("kart", "Clover Cup", ["kart-racer", "mario-kart", "mk64", "kart"]),
+          ],
+        }),
+      );
+      return { file, root };
+    }
+
+    it("leads with the kit a request names and still returns its mechanics", async () => {
+      const { file, root } = await kitManifest();
+      try {
+        const bare = searchCapabilities("make me a game similar to mario", file);
+        expect(bare.verdict).toBe("starterKit");
+        expect(bare.starterKits).toEqual([
+          {
+            blurb: "Hop Garden blurb",
+            command: "npx create-threenative <dir> --template collectathon",
+            name: "collectathon",
+            title: "Hop Garden",
+          },
+        ]);
+        expect(Object.keys(bare)[0]).toBe("starterKits");
+        expect(bare.guidance).toContain("starter kit first");
+
+        const mixed = searchCapabilities(
+          "a mario platformer where the player aims a flashlight and drags a crate by clicking",
+          file,
+          "request",
+        );
+        expect(mixed.starterKits?.map(({ name }) => name)).toEqual(["collectathon"]);
+        expect(mixed.verdict).toBe("matched");
+        expect(mixed.results.length).toBeGreaterThan(0);
+        expect(mixed.results).toEqual(
+          searchCapabilities(
+            "a mario platformer where the player aims a flashlight and drags a crate by clicking",
+            workspaceManifest,
+            "request",
+          ).results,
+        );
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    });
+
+    it("routes zelda words to adventure, orders several kits by the request, and ignores others", async () => {
+      const { file, root } = await kitManifest();
+      try {
+        const names = (text: string) =>
+          searchCapabilities(text, file).starterKits?.map(({ name }) => name);
+        expect(names("a zelda-like")).toEqual(["adventure"]);
+        expect(names("something like Super Mario or Zelda")).toEqual(["collectathon", "adventure"]);
+        expect(names("a 3D platformer, zelda style")).toEqual(["collectathon", "adventure"]);
+        expect(names("a 3d-platformer")).toEqual(["collectathon"]);
+        expect(names("make a pirate game")).toBeUndefined();
+        expect(names("marionette puppets")).toBeUndefined();
+        expect(searchCapabilities("make a pirate game", file).verdict).toBe("none");
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    });
+
+    it("gives a longer kit phrase to its kit, not to the kit owning a word inside it", async () => {
+      const { file, root } = await kitManifest();
+      try {
+        const names = (text: string) =>
+          searchCapabilities(text, file).starterKits?.map(({ name }) => name);
+        expect(names("a game like mario kart")).toEqual(["kart"]);
+        expect(names("create me a Mario-Kart clone")).toEqual(["kart"]);
+        expect(names("a kart racer like mk64")).toEqual(["kart"]);
+        expect(names("mario, then mario kart")).toEqual(["collectathon", "kart"]);
+        expect(names("a game similar to mario")).toEqual(["collectathon"]);
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    });
   });
 
   it("finds a cross-system set from a mechanically explicit complete request", () => {

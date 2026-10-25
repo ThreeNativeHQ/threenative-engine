@@ -3,6 +3,7 @@ import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertion-schema.js";
+import { perfWarnings } from "./perf-warnings.js";
 import {
   type IPlaytestAssertionResult,
   type IPlaytestDiagnostic,
@@ -431,6 +432,16 @@ export function evaluateDiagnosticsPolicy(
       message: "The native frame callback threw. A failed frame cannot pass a playtest.",
       severity: "error",
       suggestion: "Inspect console.json and fix the first TN_V8_FRAME_FAILED error.",
+    });
+  }
+  // Not behind a policy flag: a perf warning is the engine saying the frame is slower than it needs to be.
+  const warnings = perfWarnings((report.observations?.console ?? []).map(({ text }) => text));
+  if (warnings.length > 0) {
+    diagnostics.push({
+      code: "TN_PLAYTEST_PERF_WARNING",
+      message: `${warnings.length} engine performance warning(s): ${warnings.slice(0, 3).join(" | ")}`,
+      severity: "error",
+      suggestion: "Fix what the warning names (a unique geometry or material splitting a batch, a CPU-bound scene) or set renderer.projection: false when the game measured projection as a loss.",
     });
   }
   const capturedConsoleErrors = consoleErrors(report.observations?.console ?? []);

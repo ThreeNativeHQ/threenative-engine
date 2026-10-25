@@ -17,7 +17,8 @@ vi.mock("three/addons/loaders/LUTCubeLoader.js", () => ({
     }
   },
 }));
-vi.mock("../templates/starter/src/render/worldEnvironment.js", () => ({
+vi.mock("@threenative/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@threenative/core")>()),
   WorldEnvironment: class {
     apply() {
       applied.push(applied.length);

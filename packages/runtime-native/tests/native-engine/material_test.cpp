@@ -294,10 +294,11 @@ void irradianceNode() {
     CHECK(unlitByEnvironment.code.find("f_nodeIrradiance") != std::string::npos);
 }
 
-// The albedo pass draws a lit draw's diffuse colour through the draw's own bind groups, so the albedo fragment must
-// keep the lit fragment's layout exactly (every uniform at the same offset, every texture at the same binding) and
-// differ only in what it writes: the diffuse colour, unfogged, alpha 1.
-void albedoOutput(bool emission = false) {
+// The merged post-target pass (Renderer::auxFragment) draws a lit draw's diffuse colour and emitted radiance through
+// the draw's own bind groups, as further colour outputs (MRT) of the lit fragment: adding them must keep the lit
+// fragment's layout exactly (every uniform at the same offset, every texture at the same binding), put them at
+// @location(1) and (2) after `color`, and leave both unfogged.
+void albedoOutput() {
     for (int kind = 1; kind < 5; ++kind) {
         for (int shape = 0; shape < 5; ++shape) {
             VertexVariant lit;
@@ -307,34 +308,37 @@ void albedoOutput(bool emission = false) {
             lit.environment = kind >= 3;
             if (shape == 3 && kind >= 3) lit.pbrMaps |= 1u << kEmissiveMap;
             if (shape == 4) lit.nodes.emissiveNode = graph::vec3({graph::float_(4), graph::float_(2), graph::float_(0)});
-            VertexVariant albedo = lit;
-            albedo.albedoOutput = !emission;
-            albedo.emissiveOutput = emission;
             const auto build = [&](const VertexVariant& v) {
                 return kind == 1 ? buildLambert(v) : kind == 2 ? buildPhong(v) : kind == 3 ? buildStandard({}, v) : buildPhysical({}, v);
             };
-            const auto litFragment = buildStage(build(lit).fragment, 1), albedoFragment = buildStage(build(albedo).fragment, 1);
-            CHECK(litFragment.wgsl.ok() && albedoFragment.wgsl.ok());
-            CHECK(albedoFragment.uniforms.size() == litFragment.uniforms.size());
-            CHECK(albedoFragment.uniformBlockSize == litFragment.uniformBlockSize);
-            CHECK(albedoFragment.bindings.size() == litFragment.bindings.size());
+            auto targets = build(lit);
+            CHECK(targets.albedo != kInvalid && targets.emissive != kInvalid);
+            auto& f = targets.fragment;
+            f.output("aux1", f.construct(Type::vec(4), {targets.albedo, f.constant(1.f)}));
+            f.output("aux2", f.construct(Type::vec(4), {targets.emissive, f.constant(1.f)}));
+            const auto litFragment = buildStage(build(lit).fragment, 1), auxFragment = buildStage(f, 1);
+            CHECK(litFragment.wgsl.ok() && auxFragment.wgsl.ok());
+            CHECK(auxFragment.uniforms.size() == litFragment.uniforms.size());
+            CHECK(auxFragment.uniformBlockSize == litFragment.uniformBlockSize);
+            CHECK(auxFragment.bindings.size() == litFragment.bindings.size());
             for (std::size_t i = 0; i < litFragment.uniforms.size(); ++i) {
-                CHECK(albedoFragment.uniforms[i].name == litFragment.uniforms[i].name);
-                CHECK(albedoFragment.uniforms[i].offset == litFragment.uniforms[i].offset);
+                CHECK(auxFragment.uniforms[i].name == litFragment.uniforms[i].name);
+                CHECK(auxFragment.uniforms[i].offset == litFragment.uniforms[i].offset);
             }
-            CHECK(albedoFragment.wgsl.code != litFragment.wgsl.code);
-            // Unfogged: the albedo output never mixes toward the fog colour.
+            CHECK(auxFragment.wgsl.code.find("@location(1) o_aux1") != std::string::npos);
+            CHECK(auxFragment.wgsl.code.find("@location(2) o_aux2") != std::string::npos);
+            // Unfogged: neither target mixes toward the fog colour (the fogged colour is written before them).
             if (shape == 2) {
                 CHECK(litFragment.wgsl.code.find("f_fogColor") != std::string::npos);
-                const auto output = albedoFragment.wgsl.code.rfind("out.color");
+                const auto output = auxFragment.wgsl.code.rfind("out.o_aux1");
                 CHECK(output != std::string::npos);
-                CHECK(albedoFragment.wgsl.code.find("mix(", output) == std::string::npos);
+                CHECK(auxFragment.wgsl.code.find("mix(", output) == std::string::npos);
             }
         }
     }
 }
 
-void emissiveOutput() { albedoOutput(true); }
+void emissiveOutput() { albedoOutput(); }
 
 void nodes() {
     namespace g = tn::engine::shader::graph;
@@ -393,7 +397,16 @@ void nodes() {
     CHECK(!buildBasic(invalid).vertex.ok());
     variant.nodes.positionNode = g::vec4({g::positionLocal(), g::float_(1)});
     CHECK(buildBasic(variant).vertex.ok()); // setupPosition subBuild requests vec3
-
+    // attribute("color") read in a fragment rides a varying, which must not take the colour output's name.
+    VertexVariant painted;
+    painted.nodes.colorNode = g::vec4({g::attribute("color", Type::vec(3)), g::float_(1)});
+    for (const auto& built : {buildBasic(painted), buildStandard(StandardMaterial{}, painted)}) {
+        CHECK(built.vertex.ok() && built.fragment.ok());
+        const auto pv = WgslEmitter::emit(built.vertex, 0), pf = WgslEmitter::emit(built.fragment, 1);
+        CHECK(pv.ok() && pf.ok());
+        CHECK(pv.code.find("a_color") != std::string::npos);
+        stagesAgree(built.fragment, pv.code, pf.code);
+    }
 }
 
 void builds() {
@@ -416,7 +429,6 @@ void builds() {
     aoNode();
     irradianceNode();
     albedoOutput();
-    albedoOutput(true);
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {
@@ -595,6 +607,7 @@ void ssrPasses() {
     CHECK(effect->kind == "SSRNode" && effect->normal && effect->roughness);
     CHECK(effect->inputs == std::vector<g::Node>({color, depth, normal, metal, rough}));
     CHECK(effect->parameters.at("quality")[0] == 0.5);
+    CHECK(effect->parameters.count("maxSteps") && effect->parameters.at("maxSteps")[0] == 1e6);
     const auto passes = g::postPasses(g::effectNode(effect));
     CHECK(passes.size() == 6);
     if (passes.size() != 6) return;
@@ -616,6 +629,8 @@ void ssrPasses() {
         for (const auto& stage : pass.package.variants.at(0).stages) CHECK(stage.wgsl.ok());
     }
     CHECK(passes[0].package.variants[0].stages.back().wgsl.code.find("t_metalness,smp_metalness,coord,0.0).x") != std::string::npos);
+    const auto& ray = passes[0].package.variants[0].stages.back().wgsl.code;
+    CHECK(ray.find("maxSteps: f32") != std::string::npos && ray.find(",u.maxSteps)") != std::string::npos);
     CHECK(passes.back().package.variants[0].stages.back().wgsl.code.find("t_roughness,smp_roughness,coord,0.0).y") != std::string::npos);
 
     // Scalar expressions get their own render pass rather than losing their uniforms or UVs.

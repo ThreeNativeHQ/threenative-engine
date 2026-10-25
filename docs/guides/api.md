@@ -82,7 +82,9 @@ An agent works from this repository's MCP servers, which are wired into every ge
 | `engine_capability_detail` | `symbol` (required), `importPath` when two packages export that symbol | One capability's import, signature, example, constraints and overrides |
 
 Search the mechanically explicit request with `scope: "request"`, then search each implied mechanic
-with `scope: "mechanic"`. A genre label alone is not a query. Every result carries the
+with `scope: "mechanic"`. A request that names a game or genre a starter kit covers (`like mario`) leads with a `starterKits`
+entry and its `npx create-threenative <dir> --template <name>` command: scaffold it, then search the
+mechanics it does not cover. Every result carries the
 `matchedSituation` it matched and a `score`, so a weak match is visible rather than silent, and
 `engine_capability_detail` is authoritative on platform support: it never states a limitation it does
 not actually have.

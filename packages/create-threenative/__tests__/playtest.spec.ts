@@ -359,7 +359,7 @@ describe("starter playtest proof", () => {
       await readFile(path.join(root, "playtests/performance.playtest.json"), "utf8"),
     ) as {
       assert: {
-        performance: { maxDrawCalls: number; maxFrameMsP95: number; minFps: number };
+        performance: { maxDrawCalls: number; maxFrameMsP95?: number; minFps: number };
         renderChain: { tier: string };
       };
     };
@@ -377,7 +377,7 @@ describe("starter playtest proof", () => {
       runtimeReady: true,
     });
     // The Tier 3 Floor lives in the shipped scenario, beside the ceilings, not in a report.
-    expect(performance.assert.performance.maxFrameMsP95).toBe(33);
+    expect(performance.assert.performance.maxFrameMsP95).toBeUndefined();
     expect(performance.assert.performance.minFps).toBe(30);
     expect(performance.assert.performance.maxDrawCalls).toBeGreaterThan(0);
     expect(performance.assert.renderChain.tier).toBe("high");

@@ -14,7 +14,7 @@ import {
   TSL_NODE,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
-import { type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
+import { WEB_HOST_ABI, type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
 import { defineQuadMesh } from "../src/quad-mesh.js";
@@ -60,6 +60,7 @@ function host(
     },
     _free: () => undefined,
     _tnw_web_init: initCalls,
+    _tnw_web_host_abi: () => WEB_HOST_ABI,
     _tnw_web_poll: poll,
     _tnw_web_adapter: () => 0,
     _tnw_web_error: () => 0,
@@ -73,7 +74,7 @@ function host(
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
-  return { Renderer, canvas, scene, camera, state, classes, initCalls };
+  return { Renderer, canvas, scene, camera, state, classes, initCalls, module };
 }
 
 async function drawn(parameters: Record<string, unknown>) {
@@ -87,6 +88,31 @@ async function drawn(parameters: Record<string, unknown>) {
   renderer.render(scene, camera);
   return { samples: renderer.samples, handed: state.mock.calls.at(-1)?.[5] };
 }
+
+describe("the Wasm engine's web host ABI", () => {
+  async function init(engine: (() => number) | undefined) {
+    const { Renderer, canvas, initCalls, module } = host();
+    Reflect.set(module, "_tnw_web_host_abi", engine);
+    const renderer = new Renderer({ canvas }) as { init(): Promise<unknown> };
+    return { done: renderer.init(), initCalls };
+  }
+
+  it("hands its ABI to the matching engine's init", async () => {
+    const { done, initCalls } = await init(() => WEB_HOST_ABI);
+    await done;
+    expect(initCalls.mock.calls[0]?.[3]).toBe(WEB_HOST_ABI);
+  });
+
+  it("refuses an engine of another ABI, or one older than the number, before init", async () => {
+    const older = await init(() => WEB_HOST_ABI - 1);
+    await expect(older.done).rejects.toThrow(
+      `TN_WASM_ABI_MISMATCH: this facade speaks web host ABI ${WEB_HOST_ABI}, the engine ${WEB_HOST_ABI - 1}`,
+    );
+    expect(older.initCalls).not.toHaveBeenCalled();
+    const unnumbered = await init(undefined);
+    await expect(unnumbered.done).rejects.toThrow("the engine none (older than ABI 2)");
+  });
+});
 
 describe("the Wasm engine's temporal pass readout", () => {
   async function readout(fields: Record<number, number>) {
@@ -398,6 +424,24 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(secondary).toHaveBeenCalledTimes(1);
   });
 
+  it("draws renderOverlay as the host's overlay, so the canvas layer skips the world's post and temporal state", async () => {
+    // Through render(), core's loading screen ran the world renderer's post chain and temporal step: the world
+    // came back ghosted and blurred after the cover lifted (Lantern Vale, Hop Garden).
+    const render = vi.fn(() => 0);
+    const { Renderer, canvas, scene, camera } = host(undefined, render);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      renderOverlay(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    renderer.renderOverlay(scene, camera);
+    renderer.render(scene, camera);
+    const overlayArgument = (call: unknown[]) => call[6];
+    expect(render.mock.calls.map((call) => overlayArgument(call as unknown[]))).toEqual([0, 1, 0]);
+  });
+
   it("names the loss on the console, so a caller that swallows the one throw cannot hide a black page", async () => {
     // A warm-up or a frame hook may catch the single throw. Every later render() then returns without
     // drawing and nothing says why: auto exposure's refused shader killed the page that way.
@@ -496,6 +540,8 @@ describe("the Wasm engine's WebGPURenderer backpressure", () => {
     };
     await renderer.init();
     renderer.render(scene, camera);
+    // The next frame: a draw in the same task would land on the frame just drawn.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     behind = 1;
     renderer.render(scene, camera);
     renderer.render(scene, camera);
@@ -526,6 +572,8 @@ describe("the Wasm engine's frame gate", () => {
     await renderer.init();
     expect(renderer.info.engine.frameGateSkips).toBe(0);
     renderer.render(scene, camera);
+    // The next frame: a draw in the same task would land on the frame just drawn.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     onGpu = 1;
     renderer.render(scene, camera);
     renderer.render(scene, camera);
@@ -564,6 +612,112 @@ describe("the Wasm engine's environment preparation", () => {
     await renderer.init();
     expect(await renderer.prepareEnvironmentAsync(scene, camera)).toBe(true);
     expect(drawn).toBe(3);
+    expect(renderer.info.engine.frameGateSkips).toBe(1);
+  });
+});
+
+describe("the Wasm engine's environment preparation presents", () => {
+  it("lets the caller paint its cover straight after every draw, in the same task", async () => {
+    // Each draw is a timer task the browser presents alone, so an unbaked environment presents black:
+    // the cover has to follow every draw before the task ends.
+    const pending = [1, 1, 0];
+    const order: string[] = [];
+    let drawn = 0;
+    // The cover is a draw too, so the engine's "skipped for an unbaked environment" flag reads 0
+    // after it: the loop has to read the flag before the cover paints, or it stops at once.
+    let coverIsLastDraw = false;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 12 && !coverIsLastDraw ? (pending[drawn - 1] ?? 0) : 0),
+      () => {
+        drawn += 1;
+        coverIsLastDraw = false;
+        order.push("draw");
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+        afterDraw: () => void,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, () => {
+      coverIsLastDraw = true;
+      order.push("cover");
+    });
+    expect(order).toEqual(["draw", "cover", "draw", "cover", "draw", "cover"]);
+  });
+});
+
+describe("the Wasm engine's cover repaint under the frame gate", () => {
+  it("is not refused by the gate that refuses a second draw while frames are still on the GPU", async () => {
+    // The host counts a frame on the GPU for every draw, so the repaint straight after a draw meets the
+    // gate. A refused repaint presents the draw's black frame instead of the cover.
+    const pending = [1, 1, 0];
+    let worldDraws = 0;
+    let coverDraws = 0;
+    let inCover = false;
+    let onGpu = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) =>
+        field === 11 ? (onGpu >= 1 ? 1 : 0) : field === 12 ? (pending[worldDraws - 1] ?? 0) : 0,
+      () => {
+        if (inCover) coverDraws += 1;
+        else worldDraws += 1;
+        onGpu += 1;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+        afterDraw: () => void,
+      ): Promise<boolean>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, () => {
+      inCover = true;
+      renderer.render(scene, camera);
+      inCover = false;
+      onGpu = 0; // the GPU finishes before the next timer task
+    });
+    expect(worldDraws).toBe(3);
+    expect(coverDraws).toBe(3);
+  });
+
+  it("holds back a frame, not a draw: the overlay over a drawn world draws, the next frame waits", async () => {
+    // The frame loop draws the world and then its overlay in one callback. A refused overlay presents
+    // the world without its loading cover; the next frame is where the gate saves the GPU a frame.
+    let onGpu = 0;
+    let drawn = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 11 ? (onGpu >= 1 ? 1 : 0) : 0),
+      () => {
+        drawn += 1;
+        onGpu += 1;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { frameGateSkips: number } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    renderer.render(scene, camera);
+    expect(drawn).toBe(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.render(scene, camera);
+    expect(drawn).toBe(2);
     expect(renderer.info.engine.frameGateSkips).toBe(1);
   });
 });

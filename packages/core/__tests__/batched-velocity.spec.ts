@@ -46,7 +46,7 @@ describe("BatchedMesh velocity", () => {
       const sharedGeometry = new BoxGeometry(1, 1, 1);
       for (let index = 0; index < 8; index += 1) scene.add(new Mesh(sharedGeometry, material));
       for (let index = 0; index < 8; index += 1)
-        scene.add(new Mesh(new BoxGeometry(1, 1 + index, 1), material));
+        scene.add(new Mesh(new BoxGeometry(1, 2 + index, 1), material));
 
       const projection = new SceneRenderProjection(scene, { minMeshes: 2, velocity: true });
       projection.reconcile();

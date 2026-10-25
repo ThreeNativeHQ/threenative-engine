@@ -209,6 +209,49 @@ describe("the browser-JS back end", () => {
     expect(Object.hasOwn(geometry, "boundingBox")).toBe(false);
   });
 
+  it.each(["Fog", "FogExp2"])(
+    "caches %s color aliases while preserving live channels and read-only ownership",
+    (name) => {
+      let next = 0;
+      const values = new Map<string, number>();
+      const reads = new Map<string, number>();
+      const runtime: IBrowserRuntime = {
+        ...surfaceOnly(),
+        construct: (type) => ({ key: `${type}:${++next}`, type: runtime.typeId(type) }),
+        get: (self, property) => {
+          if (property === "color") {
+            reads.set(self.key, (reads.get(self.key) ?? 0) + 1);
+            return { key: `${self.key}:color`, type: runtime.typeId("Color") };
+          }
+          return values.get(`${self.key}:${property}`) ?? 0;
+        },
+        set: (self, property, value) => {
+          if (typeof value !== "number") throw new Error("expected numeric color channel");
+          values.set(`${self.key}:${property}`, value);
+        },
+      };
+      const { classes: bound } = defineBrowserClasses(registry, runtime);
+      const Fog = bound[name] as new () => { readonly color: { r: number; g: number; b: number } };
+      const first = new Fog();
+      const second = new Fog();
+      const color = first.color;
+      expect(first.color).toBe(color);
+      expect(first.color).toBe(color);
+      expect(second.color).not.toBe(color);
+      color.r = 0.25;
+      expect(first.color.r).toBe(0.25);
+      const firstRef = engineRef(first);
+      if (firstRef === undefined) throw new Error("missing native Fog reference");
+      values.set(`${firstRef.key}:color:g`, 0.75);
+      expect(first.color.g).toBe(0.75);
+      expect(second.color.g).toBe(0);
+      expect(Reflect.set(first, "color", second.color)).toBe(false);
+      expect(() => Object.assign(first, { color: second.color })).toThrow(TypeError);
+      expect(first.color).toBe(color);
+      expect(reads.get(firstRef.key)).toBe(1);
+    },
+  );
+
   it("keeps mixer stats and nested counts stable while reading live snapshots", () => {
     let total = 1;
     const runtime: IBrowserRuntime = {

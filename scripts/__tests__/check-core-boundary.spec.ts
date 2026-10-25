@@ -127,6 +127,27 @@ describe("core boundary gate", () => {
     ["a default import", 'import core from "@threenative/core";\n', "reject"],
     ["a side-effect import", 'import "@threenative/core";\n', "reject"],
     ["a re-export", 'export { SpectralOcean } from "@threenative/core";\n', "reject"],
+    [
+      "a look-owning symbol in the type re-export form",
+      'export type { Daylight } from "@threenative/core";\n',
+      "reject",
+    ],
+    [
+      "a type re-export mixing an allowed name and an unlisted one",
+      'export type { QualityTier, Daylight } from "@threenative/core";\n',
+      "reject",
+    ],
+    ["a wildcard type re-export", 'export type * from "@threenative/core";\n', "reject"],
+    [
+      "a type re-export from another package",
+      'export type { QualityTier } from "@threenative/physics";\n',
+      "reject",
+    ],
+    [
+      "a type re-export from a core subpath",
+      'export type { QualityTier } from "@threenative/core/look";\n',
+      "reject",
+    ],
     ["a dynamic import", 'const m = await import("@threenative/core");\n', "reject"],
     ["an empty brace clause", 'import {} from "@threenative/core";\n', "reject"],
     ["the package named in a string", 'export const which = "@threenative/core";\n', "reject"],
@@ -152,4 +173,27 @@ describe("core boundary gate", () => {
       ).toBe(expected === "reject");
     });
   }
+
+  it("allows PRD-723 shared default-look plumbing imports in generated render source", async () => {
+    const root = await fixtureRoot();
+    await writeFile(path.join(root, "packages/core/src/entities.ts"), "export const ok = true;\n");
+    await writeFile(
+      path.join(root, "packages/create-threenative/templates/starter/src/render/lighting.ts"),
+      [
+        "import type {",
+        "  IWorldEnvironmentOptions,",
+        "  IExposureSettings,",
+        "  QualityTier,",
+        "  OutputRenderer,",
+        "  ChainStage,",
+        "  IWorldEnvironmentStageContext,",
+        '} from "@threenative/core";',
+        'import { WorldEnvironment, qualityPreset as coreQualityPreset, qualityTiers, exposureSettings } from "@threenative/core";',
+        'export type { QualityTier, IExposureSettings } from "@threenative/core";',
+        "export const pipeline = [WorldEnvironment, coreQualityPreset, qualityTiers, exposureSettings];",
+      ].join("\n"),
+    );
+
+    await expect(checkCoreBoundary(root)).resolves.toEqual([]);
+  });
 });

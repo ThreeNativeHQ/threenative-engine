@@ -213,3 +213,25 @@ describe("the scenario schema fails closed on the new fields", () => {
     await expect(loadPlaytestScenario(project, file)).rejects.toThrow(/strideSynced/u);
   });
 });
+
+describe("an in-place clip with no foot plant fails closed", () => {
+  const stride = (extra: Record<string, unknown>) => ({
+    ...WALKING,
+    stride: { clipGroundSpeed: 0, groundSpeed: 2, inPlace: true, overridden: false, rate: 1, synced: false, ...extra },
+  });
+
+  test("a moving character on an in-place clip of zero ground speed fails stride and footSlide bounds", () => {
+    for (const bound of [{ strideSynced: true }, { maxFootSlide: 0.5 }]) {
+      const result = evaluate({ animation: [{ clip: "walk", entity: "player", ...bound }] }, withAnimation(stride({})));
+      expect(result.diagnostics.map(({ message }) => message).join()).toContain("no foot plant found: stride sync is off");
+      expect(result.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(false);
+    }
+  });
+
+  test("a standing character, or an in-place clip whose feet planted, is not that failure", () => {
+    const standing = evaluate({ animation: [{ clip: "walk", entity: "player", strideSynced: true }] }, withAnimation(stride({ groundSpeed: 0 })));
+    expect(standing.diagnostics.map(({ message }) => message).join()).not.toContain("no foot plant");
+    const planted = evaluate({ animation: [{ clip: "walk", entity: "player", strideSynced: true }] }, withAnimation(stride({ clipGroundSpeed: 1.5, synced: true })));
+    expect(planted.assertions.find(({ id }) => id === "animation.player")?.pass).toBe(true);
+  });
+});

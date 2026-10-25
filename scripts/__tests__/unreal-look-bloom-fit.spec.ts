@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { UnrealBloomNode } from "../../packages/create-threenative/template-assets/unrealBloom.js";
+import { UnrealBloomNode } from "../../packages/core/src/look/unreal-bloom.js";
 import { fitBloom, gaussianInner, stockSigmas, unrealStages } from "../unreal-look/bloom-fit.js";
 
 describe("bloom fit", () => {

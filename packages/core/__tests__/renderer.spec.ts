@@ -948,6 +948,29 @@ describe("createRenderer", () => {
     }
   });
 
+  it("reports a facade and Wasm engine of two web host ABIs as that, not as a device without WebGPU", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const mismatch = "TN_WASM_ABI_MISMATCH: this facade speaks web host ABI 2, the engine 1";
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: () => {
+            throw new Error("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER");
+          },
+          webgpuFactory: () => ({
+            init: () => Promise.reject(new Error(mismatch)),
+          }),
+        }),
+      ).rejects.toThrow(mismatch);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
     const canvas = testCanvas();
     const sizes: Array<[number, number]> = [];
@@ -1715,6 +1738,42 @@ describe("createRenderer", () => {
 
       expect(calls).toEqual([{ autoClear: false, camera, scene }]);
       expect(raw.autoClear).toBe(true);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("hands the overlay to a backend's own renderOverlay, so it skips the world's post and temporal state", async () => {
+    // The owned engine drew the canvas layer through render(): the loading screen ran the world's temporal step
+    // and exposure meter, and the world came back ghosted after the cover lifted.
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const calls: string[] = [];
+    try {
+      const raw = {
+        compute: () => undefined,
+        domElement: canvas,
+        init: async () => undefined,
+        render: () => calls.push("render"),
+        renderOverlay: () => calls.push("renderOverlay"),
+        setSize: () => undefined,
+      };
+      const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      renderer.renderOverlay({} as never, {} as never);
+      renderer.renderOverlay({} as never, {} as never);
+      expect(calls).toEqual(["renderOverlay", "renderOverlay"]);
+      // UI composites after the tone curve, and says so once
+      const reports = log.mock.calls.filter(([line]) =>
+        String(line).startsWith("TN_CANVAS_LAYER:"),
+      );
+      expect(reports).toEqual([
+        ['TN_CANVAS_LAYER:{"toneMapping":"none","composite":"after the tone curve"}'],
+      ]);
+      log.mockRestore();
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

@@ -45,6 +45,9 @@ class RenderDatabase {
     std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(Renderer& renderer, Object3D& root,
         Camera& camera, Object3D* targetScene = nullptr, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
 
+    /** Startup warm-up's PMREM step: advances the bake render() would gate on, draws nothing; true once every environment the scene samples is baked. */
+    bool prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera);
+
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
     const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene = nullptr, bool virtualShadows = false);
 
@@ -156,6 +159,8 @@ class RenderDatabase {
         // Held, so neither is released while the record's item points into it, and a new one can
         // never take its address and pass for it. The mesh is known by its id, never reused.
         std::shared_ptr<const BufferGeometry> geometry;
+        // What it draws from: `geometry`, or the member of its content class a batch draws for all.
+        std::shared_ptr<const BufferGeometry> canonical;
         std::shared_ptr<const Material> material;
         // The renderer's resolved program/pipeline/bind groups, reused while the variant is unchanged.
         // On the record, not its draw: a batched mesh's draw is rebuilt every frame but the record is not.
