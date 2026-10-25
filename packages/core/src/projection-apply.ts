@@ -32,6 +32,7 @@ import type {
 } from "./projection-plan.js";
 import { SkinnedBatch, isSimilarityTransform } from "./projection-skinned.js";
 import { baseColorOf, uniformUnchanged } from "./projection-uniform.js";
+import { observeAnimationRates } from "./render-camera-cull.js";
 import {
   disposeBatchedMeshVelocity,
   ensureBatchedMeshVelocity,
@@ -39,7 +40,6 @@ import {
   setBatchedMeshMatrixWithVelocity,
   setBatchedMeshPreviousMatrix,
 } from "./render/batched-velocity.js";
-import { observeAnimationRates } from "./render-camera-cull.js";
 import type { ProjectionExactReason, ProjectionMaterialChecks } from "./renderProjection.js";
 
 /**

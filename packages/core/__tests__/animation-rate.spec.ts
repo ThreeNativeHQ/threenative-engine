@@ -863,14 +863,18 @@ describe("camera-rate walk cost", () => {
     const rig = player(1);
     const view = rendered(rig, -20);
     let reads = 0;
+    const read = <T>(value: T): T => {
+      reads += 1;
+      return value;
+    };
     for (let index = 0; index < 50; index += 1) {
       const prop = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
       prop.position.set(index, 0, -30);
       const { geometry, userData } = prop;
-      Object.defineProperty(prop, "geometry", { get: () => (reads += 1) && geometry });
-      Object.defineProperty(prop, "userData", { get: () => (reads += 1) && userData });
+      Object.defineProperty(prop, "geometry", { get: () => read(geometry) });
+      Object.defineProperty(prop, "userData", { get: () => read(userData) });
       // The walk itself does not reach scenery either: it starts at the rigs.
-      Object.defineProperty(prop, "visible", { get: () => (reads += 1) > 0, set: () => {} });
+      Object.defineProperty(prop, "visible", { get: () => read(true), set: () => {} });
       view.scene.add(prop);
     }
     view.scene.updateMatrixWorld(true);
@@ -909,7 +913,10 @@ describe("camera-rate walk cost", () => {
     for (const group of groups) {
       const parent = group.parent;
       Object.defineProperty(group, "parent", {
-        get: () => (reads += 1) && parent,
+        get: () => {
+          reads += 1;
+          return parent;
+        },
         configurable: true,
       });
     }
