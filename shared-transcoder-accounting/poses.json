@@ -1,0 +1,408 @@
+{
+ "arms": {
+  "BEFORE": [
+   {
+    "adapter": {
+     "vendor": "nvidia",
+     "architecture": "turing",
+     "device": "",
+     "description": ""
+    },
+    "shots": [
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-0-20.png",
+      "clip": "Walk",
+      "fraction": 0.2,
+      "sha": "17abc21329b3f3d8"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-0-50.png",
+      "clip": "Walk",
+      "fraction": 0.5,
+      "sha": "14fc73bfdd848302"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-0-80.png",
+      "clip": "Walk",
+      "fraction": 0.8,
+      "sha": "d18725857e1458c6"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-1-20.png",
+      "clip": "Run",
+      "fraction": 0.2,
+      "sha": "a5e39ace07148506"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-1-50.png",
+      "clip": "Run",
+      "fraction": 0.5,
+      "sha": "9b730c2a3047aca9"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-1-80.png",
+      "clip": "Run",
+      "fraction": 0.8,
+      "sha": "0ef2f5887f3bde7c"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-2-20.png",
+      "clip": "Reload",
+      "fraction": 0.2,
+      "sha": "fd9a1b7775435939"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-2-50.png",
+      "clip": "Reload",
+      "fraction": 0.5,
+      "sha": "4b6aeef2c8ce1e96"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-2-80.png",
+      "clip": "Reload",
+      "fraction": 0.8,
+      "sha": "63043916001dc08a"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-3-20.png",
+      "clip": "Shoot",
+      "fraction": 0.2,
+      "sha": "4f234ce631a38487"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-3-50.png",
+      "clip": "Shoot",
+      "fraction": 0.5,
+      "sha": "fae03d05afac216d"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-3-80.png",
+      "clip": "Shoot",
+      "fraction": 0.8,
+      "sha": "43a063449ad25508"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-4-20.png",
+      "clip": "Idle",
+      "fraction": 0.2,
+      "sha": "a7c08259db87b19f"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-4-50.png",
+      "clip": "Idle",
+      "fraction": 0.5,
+      "sha": "315c236031952a6a"
+     },
+     {
+      "name": "BEFORE-run1-player_viewmodel_glb-4-80.png",
+      "clip": "Idle",
+      "fraction": 0.8,
+      "sha": "62fbc2263c823dfa"
+     }
+    ]
+   },
+   {
+    "adapter": {
+     "vendor": "nvidia",
+     "architecture": "turing",
+     "device": "",
+     "description": ""
+    },
+    "shots": [
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-0-20.png",
+      "clip": "Walk",
+      "fraction": 0.2,
+      "sha": "17abc21329b3f3d8"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-0-50.png",
+      "clip": "Walk",
+      "fraction": 0.5,
+      "sha": "14fc73bfdd848302"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-0-80.png",
+      "clip": "Walk",
+      "fraction": 0.8,
+      "sha": "d18725857e1458c6"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-1-20.png",
+      "clip": "Run",
+      "fraction": 0.2,
+      "sha": "a5e39ace07148506"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-1-50.png",
+      "clip": "Run",
+      "fraction": 0.5,
+      "sha": "9b730c2a3047aca9"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-1-80.png",
+      "clip": "Run",
+      "fraction": 0.8,
+      "sha": "0ef2f5887f3bde7c"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-2-20.png",
+      "clip": "Reload",
+      "fraction": 0.2,
+      "sha": "fd9a1b7775435939"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-2-50.png",
+      "clip": "Reload",
+      "fraction": 0.5,
+      "sha": "4b6aeef2c8ce1e96"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-2-80.png",
+      "clip": "Reload",
+      "fraction": 0.8,
+      "sha": "63043916001dc08a"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-3-20.png",
+      "clip": "Shoot",
+      "fraction": 0.2,
+      "sha": "4f234ce631a38487"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-3-50.png",
+      "clip": "Shoot",
+      "fraction": 0.5,
+      "sha": "fae03d05afac216d"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-3-80.png",
+      "clip": "Shoot",
+      "fraction": 0.8,
+      "sha": "43a063449ad25508"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-4-20.png",
+      "clip": "Idle",
+      "fraction": 0.2,
+      "sha": "a7c08259db87b19f"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-4-50.png",
+      "clip": "Idle",
+      "fraction": 0.5,
+      "sha": "315c236031952a6a"
+     },
+     {
+      "name": "BEFORE-run2-player_viewmodel_glb-4-80.png",
+      "clip": "Idle",
+      "fraction": 0.8,
+      "sha": "62fbc2263c823dfa"
+     }
+    ]
+   }
+  ],
+  "AFTER": [
+   {
+    "adapter": {
+     "vendor": "nvidia",
+     "architecture": "turing",
+     "device": "",
+     "description": ""
+    },
+    "shots": [
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-0-20.png",
+      "clip": "Walk",
+      "fraction": 0.2,
+      "sha": "172b536b60178e53"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-0-50.png",
+      "clip": "Walk",
+      "fraction": 0.5,
+      "sha": "24b7130465393744"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-0-80.png",
+      "clip": "Walk",
+      "fraction": 0.8,
+      "sha": "a15fb05fa4c7905d"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-1-20.png",
+      "clip": "Run",
+      "fraction": 0.2,
+      "sha": "472552e298a6e8a1"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-1-50.png",
+      "clip": "Run",
+      "fraction": 0.5,
+      "sha": "93fea5d8b123945e"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-1-80.png",
+      "clip": "Run",
+      "fraction": 0.8,
+      "sha": "81f6b283ad9885e9"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-2-20.png",
+      "clip": "Reload",
+      "fraction": 0.2,
+      "sha": "66e53535bd943850"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-2-50.png",
+      "clip": "Reload",
+      "fraction": 0.5,
+      "sha": "ee1527346f4eefa7"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-2-80.png",
+      "clip": "Reload",
+      "fraction": 0.8,
+      "sha": "f6254d0db396f299"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-3-20.png",
+      "clip": "Shoot",
+      "fraction": 0.2,
+      "sha": "0c211a80a6741b72"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-3-50.png",
+      "clip": "Shoot",
+      "fraction": 0.5,
+      "sha": "c526255866f3fc3a"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-3-80.png",
+      "clip": "Shoot",
+      "fraction": 0.8,
+      "sha": "6532ee0b67c9b1bb"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-4-20.png",
+      "clip": "Idle",
+      "fraction": 0.2,
+      "sha": "43897d6c0b68bd3c"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-4-50.png",
+      "clip": "Idle",
+      "fraction": 0.5,
+      "sha": "bbf46abf5dfd040b"
+     },
+     {
+      "name": "AFTER-run1-player_viewmodel_glb-4-80.png",
+      "clip": "Idle",
+      "fraction": 0.8,
+      "sha": "240bf59f8bb35e91"
+     }
+    ]
+   },
+   {
+    "adapter": {
+     "vendor": "nvidia",
+     "architecture": "turing",
+     "device": "",
+     "description": ""
+    },
+    "shots": [
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-0-20.png",
+      "clip": "Walk",
+      "fraction": 0.2,
+      "sha": "172b536b60178e53"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-0-50.png",
+      "clip": "Walk",
+      "fraction": 0.5,
+      "sha": "24b7130465393744"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-0-80.png",
+      "clip": "Walk",
+      "fraction": 0.8,
+      "sha": "a15fb05fa4c7905d"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-1-20.png",
+      "clip": "Run",
+      "fraction": 0.2,
+      "sha": "472552e298a6e8a1"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-1-50.png",
+      "clip": "Run",
+      "fraction": 0.5,
+      "sha": "93fea5d8b123945e"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-1-80.png",
+      "clip": "Run",
+      "fraction": 0.8,
+      "sha": "81f6b283ad9885e9"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-2-20.png",
+      "clip": "Reload",
+      "fraction": 0.2,
+      "sha": "66e53535bd943850"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-2-50.png",
+      "clip": "Reload",
+      "fraction": 0.5,
+      "sha": "ee1527346f4eefa7"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-2-80.png",
+      "clip": "Reload",
+      "fraction": 0.8,
+      "sha": "f6254d0db396f299"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-3-20.png",
+      "clip": "Shoot",
+      "fraction": 0.2,
+      "sha": "0c211a80a6741b72"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-3-50.png",
+      "clip": "Shoot",
+      "fraction": 0.5,
+      "sha": "c526255866f3fc3a"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-3-80.png",
+      "clip": "Shoot",
+      "fraction": 0.8,
+      "sha": "6532ee0b67c9b1bb"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-4-20.png",
+      "clip": "Idle",
+      "fraction": 0.2,
+      "sha": "43897d6c0b68bd3c"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-4-50.png",
+      "clip": "Idle",
+      "fraction": 0.5,
+      "sha": "bbf46abf5dfd040b"
+     },
+     {
+      "name": "AFTER-run2-player_viewmodel_glb-4-80.png",
+      "clip": "Idle",
+      "fraction": 0.8,
+      "sha": "240bf59f8bb35e91"
+     }
+    ]
+   }
+  ]
+ }
+}
