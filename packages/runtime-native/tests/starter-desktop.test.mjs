@@ -35,7 +35,20 @@ test('accepts the real CI capture in which the proof pennant is visible', () => 
   // and the whole frame read as a wash.
   const result = inspectStarterScreenshot(REAL_CAPTURE);
   assert.equal(result.magentaAssetPixels, 521);
-  assert.equal(result.cyanAssetPixels, 321);
+  // 321 at the old cyan margin of 70; the margin is 40 since the Unreal look, which also admits the
+  // ocean that lies inside the pennant's bounds in this frame. Magenta stays the discriminator.
+  assert.equal(result.cyanAssetPixels, 1649);
+});
+
+// The scaffolded starter's lavapipe capture on the Unreal default look (Actions run 40214259234,
+// linux-arm64), cropped to the pennant's 320x180 surroundings: the pennant's cyan renders pale, rgb(195,240,243), a channel margin of 45. The
+// margin of 70 counted 40 of its pixels, under the floor of 50.
+test('accepts the real capture in which the Unreal look renders the pennant pale', () => {
+  const result = inspectStarterScreenshot(
+    fileURLToPath(new URL('./fixtures/starter-desktop-unreal-look-capture.png', import.meta.url)),
+  );
+  assert.equal(result.magentaAssetPixels, 474);
+  assert.equal(result.cyanAssetPixels, 463);
 });
 
 test('rejects the same ocean with the proof pennant cropped away', () => {

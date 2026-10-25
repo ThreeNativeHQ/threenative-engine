@@ -35,7 +35,11 @@ const ASSET_PIXEL_FLOOR = 100;
 // pennant, against 0 in the same frame with the pennant cropped away.
 const PROOF_MAGENTA_MIN_MARGIN = 40;
 // Corroborating cyan, counted only inside the magenta bounds so the background cannot supply it.
-const PROOF_CYAN_MIN_MARGIN = 70;
+// Under the Unreal default look (filmic tone curve, metered exposure; PRD-723) the pennant's cyan
+// renders pale: measured on the lavapipe capture of Actions run 40214259234 it is rgb(195,240,243),
+// a channel margin of 45, where the old look left 94 to 103. The magenta margin above is 40, and
+// a margin of 40 keeps 463 of the pennant's cyan pixels where a margin of 70 kept 40.
+const PROOF_CYAN_MIN_MARGIN = 40;
 const PROOF_CYAN_IN_BOUNDS_FLOOR = 50;
 // A proof region may occupy up to a quarter of a rendered frame; a wash that reaches almost every
 // part of the frame must not count as localized evidence.

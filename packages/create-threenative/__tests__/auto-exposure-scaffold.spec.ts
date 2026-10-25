@@ -21,7 +21,8 @@ const coreLook = (name: string): boolean => {
 const ownPolicy = allTemplates().filter((name) =>
   existsSync(path.join(root, "templates", name, "src/render/exposure.ts")),
 );
-const takesCore = allTemplates().filter(coreLook);
+// A kit with its own policy file is covered by the case above, which also forbids a vendored meter.
+const takesCore = allTemplates().filter((name) => coreLook(name) && !ownPolicy.includes(name));
 
 describe("generated eye adaptation", () => {
   it.each(ownPolicy)("ships game-owned exposure policy in %s", async (name) => {

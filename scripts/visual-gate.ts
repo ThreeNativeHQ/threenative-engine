@@ -18,7 +18,6 @@ import {
   createImageBlindBundle,
   hashPromptFile,
 } from "./score-blind.js";
-import { takesCoreLook } from "./template-quality.js";
 import {
   assertWebEngineBuilt,
   localPackageEntries,
@@ -234,15 +233,19 @@ export function inspectTemplate(
   // occlusion and enables no shadow map, so demanding the soft-filter settings there would only
   // demand dead configuration.
   if (/castShadow\s*=\s*true/u.test(lighting)) {
-    for (const marker of ["PCFSoftShadowMap", "normalBias"]) {
-      if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
-    }
+    // Three's PCFSoftShadowMap ignores `shadow.radius`, so PCFShadowMap with a radius is the soft
+    // filter a kit can actually widen (collectathon, kart, adventure).
+    const softFilter =
+      lighting.includes("PCFSoftShadowMap") ||
+      (/\bPCFShadowMap\b/u.test(lighting) && /\bshadow\.radius\s*=/u.test(lighting));
+    if (!softFilter) errors.push(`${template}: lighting.ts is missing PCFSoftShadowMap`);
+    if (!lighting.includes("normalBias"))
+      errors.push(`${template}: lighting.ts is missing normalBias`);
   }
-  // A kit on the core look (`WorldEnvironment` from `@threenative/core`) carries no chain source:
-  // the tone mapping, exposure, render chain and bloom are core's, proven by core's own specs.
-  const coreLook = takesCoreLook(post, "WorldEnvironment");
+  // A kit on the core look carries no chain source: when it imports and constructs core's
+  // `WorldEnvironment`, the markers are read from core's own source (`worldEnvironment` above).
   for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("]) {
-    if (!coreLook && !postPipeline.includes(marker))
+    if (!postPipeline.includes(marker))
       errors.push(`${template}: render pipeline is missing ${marker}`);
   }
 

@@ -1,4 +1,3 @@
-import { WorldEnvironment } from "@threenative/core";
 import {
   Box3,
   BoxGeometry,
@@ -17,7 +16,12 @@ import {
   Vector3,
   WebGPUCoordinateSystem,
 } from "three";
-import { Scene as GameScene, type ICtx, defineGame } from "../../../../packages/core/src/index.js";
+import {
+  Scene as GameScene,
+  type ICtx,
+  WorldEnvironment,
+  defineGame,
+} from "../../../../packages/core/src/index.js";
 import { playtest } from "../../../../packages/core/src/playtest.js";
 import { createVolumetricFog } from "../../../../packages/create-threenative/templates/starter/src/render/volumetricFog.js";
 

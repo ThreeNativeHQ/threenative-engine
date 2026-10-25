@@ -281,13 +281,14 @@ function contractProblems(
   spans: IContractSpan[],
 ): string[] {
   if (source === undefined) return [];
-  // A kit on the core look delegates the tier contract to core's `qualityTiers.resolve`, which
-  // throws on an unknown tier itself (packages/core/src/look/quality.ts); there is no copy to hash.
-  if (takesCoreLook(source, "qualityTiers")) return [];
   let span: string;
   try {
     span = qualityContractSpan(source);
   } catch (error) {
+    // A kit that wraps core's `qualityTiers.resolve` in its own function has no copy to hash: core
+    // throws on an unknown tier itself (packages/core/src/look/quality.ts). Kits that assign
+    // `resolveQualityTier = qualityTiers.resolve` keep the delegated span and its hash.
+    if (takesCoreLook(source, "qualityTiers")) return [];
     return [`quality.ts ${error instanceof Error ? error.message : String(error)}`];
   }
   spans.push({ hash: contractSpanHash(span), template });

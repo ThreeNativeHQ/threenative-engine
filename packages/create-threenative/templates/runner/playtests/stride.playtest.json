@@ -19,7 +19,7 @@
     "footSlip": [
       {
         "atStep": "run",
-        "feet": ["foot_l", "foot_r"],
+        "feet": ["ball_l", "ball_r"],
         "maxSlideSpeed": 1
       }
     ]

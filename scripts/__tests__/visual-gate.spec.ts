@@ -111,7 +111,13 @@ describe("visual gate", () => {
       const lightingPath = path.join(kit, "src/render/lighting.ts");
       const lighting = await readFile(lightingPath, "utf8");
       expect(lighting).toMatch(/castShadow\s*=\s*true/u);
-      const stripped = lighting.replaceAll("PCFSoftShadowMap", "PCFShadowMap");
+      // Plain PCF with a radius is the soft filter three honours, so it passes; PCF without one does not.
+      await writeFile(lightingPath, lighting.replaceAll("PCFSoftShadowMap", "PCFShadowMap"));
+      const widened = inspectAllTemplates(root).find(({ template }) => template === "shadow-kit");
+      expect(widened?.errors).not.toContain("shadow-kit: lighting.ts is missing PCFSoftShadowMap");
+      const stripped = lighting
+        .replaceAll("PCFSoftShadowMap", "PCFShadowMap")
+        .replaceAll(/key\.shadow\.radius\s*=\s*\d+;/gu, "");
       await writeFile(lightingPath, stripped);
       const casting = inspectAllTemplates(root).find(({ template }) => template === "shadow-kit");
       expect(casting?.errors).toContain("shadow-kit: lighting.ts is missing PCFSoftShadowMap");

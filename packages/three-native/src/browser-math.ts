@@ -65,7 +65,7 @@ const clamp = (value: number, min: number, max: number): number =>
 export function defineMath() {
   let rotation: IQuaternionScratch | undefined;
   const scratchQuaternion = (): IQuaternionScratch => {
-    rotation ??= new Quaternion() as unknown as IQuaternionScratch;
+    rotation ??= new Quaternion() as IQuaternionScratch;
     return rotation;
   };
 

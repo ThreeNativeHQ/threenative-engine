@@ -307,23 +307,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
   // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
-  collectathon: "f81548e5708b06cdda241dc598b34c644c2afd1c1775a4389819431a793cdbb3",
+  collectathon: "addf70c1594e7f436e3ad79fc0bd58691bdf31083b037b9b2d1b806817c1135a",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
   // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
-  adventure: "e5f6bd6cc87166896923c655885a4d33c5564d39148c77b218c2971aa6d0c4a5",
+  adventure: "c41d3c13ba54e01ef9e79a4311a8fb3bdd60feffc9442827ae2c37b85172cc75",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "b63cb78ef8567c4d48ab944cef660fb2e4d22e238828f842488cec4003a504c2",
+  kart: "204d89e2c79e7ea7330b82342ffa29f68f2f77324638b7902f18708510adae87",
   minimal: "feb73967c52019009fe034bd20756e25e0906e37caf1bb05d984e271160cfe59",
   platformer: "d01108608d138acbbdf31e0df8dfca3f3bd9befc46513d89f5a1ebdecd3d68ed",
   puzzle: "e7f9370513c60a8c50ab5a8392b857e35c658e745c493bbc5e6b6b27e8611013",
   racing: "7c19f159e3c593de2ab197f175bcc218ca8f1eb9851250b9c797bf79a59fa5e1",
-  rain: "5dc9bcce2956fe10bd92c79c1b430607d7d439174713cae90c2a84374457fbf4",
+  rain: "a9eef648d1fc75b519a759351bc969ad2b0327366a9271b85146eb70668ab7c0",
   rts: "5df9b5830c8d749f97530113fe63b1d2e74b37decf5e605c0e3c7fe435819d48",
-  runner: "f3cd04eb19dcc39cde90b5115b0b5b44cbbb285213f715a30d7226b136731d35",
+  runner: "489dd125c7ab50a977f8fd5458fc28603b4e266f15e2ed7ebe5167a9a44c5438",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "2e77feed7c4caf6eace5dda2265ff8efb88522624188c29d44884293b8df63cb",
+  sailing: "f5aab39585f1d612e60cc2a1b27aca29e1e6932f693e694aad84be51c8491d55",
   shooter: "5bbf94164445a91361b89e19c519a835f485d4f899591009eedf06cf342a056d",
   snow: "dedd4e1b27bfc9e9b4dd0a8701f7c66dfc59409213b5d488e7469e37ddfe1122",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.

@@ -95,7 +95,7 @@ export function contentMergeable(geometry: BufferGeometry): boolean {
 }
 
 function arrayOf(attribute: BufferAttribute): ArrayBufferView & { length: number } {
-  return attribute.array as unknown as ArrayBufferView & { length: number };
+  return attribute.array as ArrayBufferView & { length: number };
 }
 
 /** Everything but the bytes: two geometries with different layouts can never share a class. */

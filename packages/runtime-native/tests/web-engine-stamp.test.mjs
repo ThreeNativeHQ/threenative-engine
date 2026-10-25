@@ -1,18 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   assertEngineStampCurrent,
   engineSourceHash,
   writeEngineStamp,
 } from "../scripts/web-engine-stamp.mjs";
 
-const roots = [];
-
 function tree() {
-  const root = mkdtempSync(join(tmpdir(), "tn-web-engine-stamp-"));
-  roots.push(root);
+  const root = makeTempDirSync("tn-web-engine-stamp-");
   for (const directory of ["src/engine/renderer", "src/engine/player", "include/threenative", "build/web"])
     mkdirSync(join(root, directory), { recursive: true });
   writeFileSync(join(root, "src/engine/renderer/plan.h"), "int decide();\n");
@@ -21,10 +18,6 @@ function tree() {
   writeFileSync(join(root, "build/web/tn-native-engine-web.wasm"), "\0asm");
   return root;
 }
-
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-});
 
 describe("web engine stamp", () => {
   it("passes a module built from the sources in the tree", () => {
