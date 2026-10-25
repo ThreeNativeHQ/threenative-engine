@@ -1037,7 +1037,7 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     const apply = vi.spyOn(Vector3.prototype, "applyMatrix4");
     try {
       leg.play("walk");
-      expect(leg.stride.clipGroundSpeed).toBeGreaterThan(0.2);
+      expect(leg.stride.clipGroundSpeed).toBeCloseTo(0.6444015098802138, 12); // the per-corner applyMatrix4 code measured this
       expect(apply).not.toHaveBeenCalled();
     } finally {
       apply.mockRestore();
