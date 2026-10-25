@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { withTextureSources } from "../src/browser-entry.js";
 
 import { describe, expect, it } from "vitest";
 
@@ -298,9 +299,13 @@ describe("the browser-JS back end", () => {
 
   it("hands a numeric typed array to construct unchanged when the runtime accepts typed arrays", () => {
     const seen: (readonly EngineValue[])[] = [];
+    const writes: [string, EngineValue][] = [];
     const runtime: IBrowserRuntime = {
       ...surfaceOnly(),
       typedArrays: true,
+      set: (_ref, name, value) => {
+        writes.push([name, value]);
+      },
       construct: (name, args) => {
         seen.push(args);
         return { key: name, type: runtime.typeId(name) };
@@ -319,6 +324,13 @@ describe("the browser-JS back end", () => {
     expect(Array.isArray(handed)).toBe(false);
     expect((handed as Float32Array).byteOffset).toBe(backing.BYTES_PER_ELEMENT);
     expect((handed as Float32Array).length).toBe(4);
+    const textures = withTextureSources(bound, runtime);
+    const DataTexture = textures.DataTexture as new (
+      ...args: unknown[]
+    ) => { needsUpdate: boolean };
+    const texture = new DataTexture(view, 1, 1, 1023, 1015);
+    texture.needsUpdate = true;
+    expect(writes.find(([name]) => name === "image.data")?.[1]).toBe(view);
   });
 
   it("refuses to construct a class the registry gives no constructor", () => {

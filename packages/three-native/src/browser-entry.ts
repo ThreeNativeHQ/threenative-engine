@@ -20,6 +20,7 @@ import {
   createWasmRuntime,
   defineBrowserClasses,
 } from "./browser-backend.js";
+import { ColorManagement } from "./browser-math.js";
 import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
@@ -249,13 +250,13 @@ export async function bindWebEngine(
 
 /**
  * The engine classes plus what plain JS adds over them: three's texture sources (typed array,
- * canvas, image, ImageBitmapLoader) and `DataUtils`, which touches no engine object at all.
+ * canvas, image, ImageBitmapLoader), `DataUtils`, and the `ColorManagement` singleton.
  */
 export function withTextureSources(
   classes: Readonly<Record<string, unknown>>,
   runtime: IBrowserRuntime,
 ): Record<string, unknown> {
-  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
+  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils, ColorManagement };
 }
 
 interface IPipelineRenderer {
