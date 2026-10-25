@@ -288,10 +288,10 @@ On the web, the asset loader stores every compiled file it downloads in the Cach
 back on the next visit, so a returning player downloads no compiled asset again. Files a game
 authors straight into `public/` outside the asset pipeline (for example its own audio) are not in
 the manifest and are not covered. Entries are content-addressed, so
-they never go stale; the cache name carries a fingerprint of the release and startup deletes the
-previous release's bytes, for the same game (base path and manifest). The loader reads
-`navigator.storage.estimate()`, evicts the least recently accessed entries the current session has
-not touched when a write hits the quota, and retries once. Only a complete body reaches disk: a
+they never go stale. Each game (page, base path and manifest) keeps one cache across releases:
+startup deletes only the files the new manifest no longer lists, so a one-file patch downloads one
+file. When the browser refuses a write for quota, the loader evicts the least recently accessed
+entries the current session has not touched, one at a time, and retries after each. Only a complete body reaches disk: a
 short or failed download retries after 0.5 s, 1 s and 2 s, then rejects naming the url and the last
 status. A 404 or 403 is not retried, so the next candidate url starts at once.
 

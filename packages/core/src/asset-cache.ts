@@ -51,7 +51,7 @@ export interface IAssetCache {
   /** Warm the disk with these files. Resolves when every request settles. */
   prefetch(entries: readonly IAssetCacheEntry[]): Promise<void>;
   /** Name the release and the files it publishes. Called once, when the manifest lands. */
-  setManifest(fingerprint: string, entries: readonly IAssetCacheEntry[]): void;
+  setManifest(entries: readonly IAssetCacheEntry[]): void;
   /** Start the post-reveal fill of everything not on disk yet. Idempotent. */
   startFill(): Promise<void>;
   /** Delete the whole cache. */
@@ -60,7 +60,7 @@ export interface IAssetCache {
   dispose(): void;
 }
 
-const CACHE_PREFIX = "threenative-assets-";
+const CACHE_NAME = "threenative-assets";
 const DEFAULT_CONCURRENCY = 6;
 const DEFAULT_RETRY_DELAYS_MS = [500, 1000, 2000] as const;
 const BYTES_HEADER = "x-tn-bytes";
@@ -97,7 +97,6 @@ function cacheStorage(): CacheStorageLike | undefined {
 
 function storageManager():
   | {
-      estimate?: () => Promise<{ quota?: number; usage?: number }>;
       persist?: () => Promise<boolean>;
       persisted?: () => Promise<boolean>;
     }
@@ -106,7 +105,6 @@ function storageManager():
     globalThis as {
       navigator?: {
         storage?: {
-          estimate?: () => Promise<{ quota?: number; usage?: number }>;
           persist?: () => Promise<boolean>;
           persisted?: () => Promise<boolean>;
         };
@@ -157,9 +155,10 @@ export function manifestFingerprint(entries: readonly IAssetCacheEntry[]): strin
 /**
  * The disk and network layer under the asset loader.
  *
- * Content-addressed outputs never go stale, so an entry needs no revalidation and the cache name
- * carries the release fingerprint: a new build is a new cache, and the old one is deleted at
- * startup. Only a complete body reaches the disk, and a `now` request starts ahead of every fill.
+ * Content-addressed outputs never go stale, so an entry needs no revalidation. Each game keeps one
+ * cache across releases: a new build deletes only the files its manifest no longer lists, so a
+ * one-file patch downloads one file. Only a complete body reaches the disk, and a `now` request
+ * starts ahead of every fill.
  */
 export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache {
   const storage = cacheStorage();
@@ -177,10 +176,10 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   const retryDelays = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
 
   let cacheName: string | undefined;
-  const cachePrefix =
+  const gameCacheName =
     options.namespace === undefined || options.namespace === ""
-      ? CACHE_PREFIX
-      : `${CACHE_PREFIX}${manifestFingerprint([{ url: options.namespace }]).slice(0, 8)}-`;
+      ? CACHE_NAME
+      : `${CACHE_NAME}-${manifestFingerprint([{ url: options.namespace }]).slice(0, 8)}`;
   let entries: readonly IAssetCacheEntry[] = [];
   /** Every manifest output and its compiled size, for the fetch bridge's hit and write checks. */
   const known = new Map<string, number | undefined>();
@@ -209,6 +208,8 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   const touched = new Set<string>();
   /** The whole lookup, cache read included, keyed by url so two callers share one download. */
   const requests = new Map<string, { priority: AssetPriority; promise: Promise<ArrayBuffer> }>();
+  /** Disk writes a `now` or `soon` caller did not wait for, keyed by url. */
+  const writes = new Map<string, Promise<void>>();
   const queues: Record<AssetPriority, IJob[]> = { now: [], soon: [], idle: [] };
   let active = 0;
   let activeNow = 0;
@@ -218,9 +219,14 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     return storage.open(cacheName);
   };
 
-  const measureOnDisk = async (cache: CacheLike): Promise<void> => {
+  /** Delete the files this release no longer lists and sum the ones it keeps. */
+  const pruneAndMeasure = async (cache: CacheLike): Promise<void> => {
     let total = 0;
     for (const request of await cache.keys()) {
+      if (!known.has(canonicalUrl(request.url))) {
+        await cache.delete(request.url);
+        continue;
+      }
       const response = await cache.match(request.url);
       const size = Number(response?.headers.get(BYTES_HEADER) ?? "0");
       if (Number.isFinite(size) && size > 0) total += size;
@@ -239,30 +245,6 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     }
   };
 
-  const evictFor = async (cache: CacheLike, needed: number): Promise<boolean> => {
-    const estimate = await storageManager()
-      ?.estimate?.()
-      .catch(() => undefined);
-    const quota = estimate?.quota;
-    if (typeof quota !== "number" || quota <= 0) return false;
-    // The quota belongs to the whole origin, so compare against measured usage when the browser
-    // reports it. Our own bytes are the fallback where it does not.
-    let used = typeof estimate?.usage === "number" ? estimate.usage : bytesOnDisk;
-    if (used + needed <= quota) return true;
-    // The least recently accessed entry goes first; this session's entries are never evicted.
-    const candidates = await readCandidates(cache);
-    candidates.sort((left, right) => left.access - right.access);
-    for (const candidate of candidates) {
-      if (used + needed <= quota) return true;
-      if (touched.has(canonicalUrl(candidate.url))) continue;
-      if (await cache.delete(candidate.url)) {
-        bytesOnDisk = Math.max(0, bytesOnDisk - candidate.size);
-        used = Math.max(0, used - candidate.size);
-      }
-    }
-    return used + needed <= quota;
-  };
-
   /** Read the stored entries' sizes and access stamps, unsorted. */
   const readCandidates = async (
     cache: CacheLike,
@@ -279,26 +261,15 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     return candidates;
   };
 
-  /**
-   * Delete the least recently accessed entries this session has not touched.
-   *
-   * The quota error path calls this even when `estimate()` says there is room: the browser's own
-   * accounting is the final word, so the oldest untouched entry is the one to give up before the
-   * one write is retried.
-   */
-  const evictLeastRecent = async (cache: CacheLike): Promise<boolean> => {
-    const candidates = await readCandidates(cache);
-    candidates.sort((left, right) => left.access - right.access);
-    for (const candidate of candidates) {
-      if (touched.has(canonicalUrl(candidate.url))) continue;
-      if (await cache.delete(candidate.url)) {
-        bytesOnDisk = Math.max(0, bytesOnDisk - candidate.size);
-        return true;
-      }
-    }
-    return false;
-  };
+  const isQuotaError = (error: unknown): boolean =>
+    error instanceof Error &&
+    (error.name === "QuotaExceededError" || /quota/iu.test(error.message));
 
+  /**
+   * Write one complete body. The browser's own quota is the only limit consulted: a refused write
+   * gives up the least recently accessed entry this session has not touched, one at a time, and
+   * retries, so a write that fits costs no quota query and no index scan.
+   */
   const store = async (
     cache: CacheLike,
     url: string,
@@ -306,50 +277,44 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     generation: number,
   ): Promise<void> => {
     if (generation !== cacheGeneration) return;
-    const response = new Response(buffer, {
-      headers: {
-        [ACCESS_HEADER]: String(Date.now()),
-        [BYTES_HEADER]: String(buffer.byteLength),
-      },
-    });
+    const put = (): Promise<void> =>
+      cache.put(
+        url,
+        new Response(buffer, {
+          headers: {
+            [ACCESS_HEADER]: String(Date.now()),
+            [BYTES_HEADER]: String(buffer.byteLength),
+          },
+        }),
+      );
     try {
-      try {
-        await evictFor(cache, buffer.byteLength);
-      } catch {
-        // Eviction is an optimisation; a storage failure here must not block the write attempt.
-      }
-      await cache.put(url, response);
+      await put();
       if (measured) bytesOnDisk += buffer.byteLength;
+      return;
     } catch (error) {
-      const quotaError =
-        error instanceof Error &&
-        (error.name === "QuotaExceededError" || /quota/iu.test(error.message));
-      if (!quotaError) return;
-      // One eviction pass and one retry. The browser refused a body after `estimate()` said
-      // there was room, so give up the least recently accessed untouched entry and try once.
-      try {
-        await evictLeastRecent(cache);
-      } catch {
-        storageFull = true;
-        return;
-      }
-      try {
-        await cache.put(
-          url,
-          new Response(buffer, {
-            headers: {
-              [ACCESS_HEADER]: String(Date.now()),
-              [BYTES_HEADER]: String(buffer.byteLength),
-            },
-          }),
-        );
-        if (measured) bytesOnDisk += buffer.byteLength;
-      } catch {
-        // The bytes are in hand and the game still gets them; only the disk write failed. Stop
-        // the fill: every later file would be downloaded again on the next visit.
-        storageFull = true;
-      }
+      if (!isQuotaError(error)) return;
     }
+    try {
+      const candidates = await readCandidates(cache);
+      candidates.sort((left, right) => left.access - right.access);
+      for (const candidate of candidates) {
+        if (touched.has(canonicalUrl(candidate.url))) continue;
+        if (!(await cache.delete(candidate.url))) continue;
+        bytesOnDisk = Math.max(0, bytesOnDisk - candidate.size);
+        try {
+          await put();
+          if (measured) bytesOnDisk += buffer.byteLength;
+          return;
+        } catch (error) {
+          if (!isQuotaError(error)) return;
+        }
+      }
+    } catch {
+      // A storage failure while evicting is the same outcome as nothing left to evict.
+    }
+    // The bytes are in hand and the game still gets them; only the disk write failed. Stop the
+    // fill: every later file would be downloaded again on the next visit.
+    storageFull = true;
   };
 
   const download = async (
@@ -392,7 +357,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
 
   const load = async (
     url: string,
-    priority: AssetPriority,
+    request: { readonly priority: AssetPriority },
     expectedBytes: number | undefined,
   ): Promise<ArrayBuffer> => {
     if (!enabled) {
@@ -401,6 +366,11 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       return response.arrayBuffer();
     }
     const generation = cacheGeneration;
+    const key = canonicalUrl(url);
+    // A write still on its way to disk finishes first, so the read after it is a hit. No await
+    // otherwise: a `now` request must reach the queue in the tick it was made.
+    const pendingWrite = writes.get(key);
+    if (pendingWrite !== undefined) await pendingWrite;
     let cache = expectedBytes === undefined ? undefined : await openCache().catch(() => undefined);
     if (cache !== undefined) {
       try {
@@ -443,11 +413,24 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       }
     }
     misses += 1;
-    const buffer = await enqueue(url, priority, expectedBytes);
+    // Read at enqueue time, not at call time: a `now` caller may have promoted this request while
+    // it was still reading the disk.
+    const buffer = await enqueue(url, request.priority, expectedBytes);
     if (cache !== undefined) {
-      touched.add(canonicalUrl(url));
-      await askToPersist();
-      await store(cache, url, buffer, generation);
+      touched.add(key);
+      // Never awaited: Firefox resolves `persist()` only after the player answers its prompt.
+      void askToPersist();
+      const write = store(cache, url, buffer, generation);
+      // The fill waits for its own write, so it never holds more downloaded bytes than the disk
+      // took. A file the frame waits on goes to the caller first.
+      if (request.priority === "idle") {
+        await write;
+      } else {
+        writes.set(key, write);
+        void write.then(() => {
+          if (writes.get(key) === write) writes.delete(key);
+        });
+      }
     }
     return buffer;
   };
@@ -508,7 +491,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
         existing.priority = priority;
         // A queued request is already in a queue; move it so the new priority is honoured.
         for (const queue of Object.values(queues)) {
-          const job = queue.find((candidate) => candidate.url === url);
+          const job = queue.find((candidate) => canonicalUrl(candidate.url) === key);
           if (job === undefined) continue;
           queue.splice(queue.indexOf(job), 1);
           job.priority = priority;
@@ -520,8 +503,10 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       pump();
       return existing.promise;
     }
-    const promise = load(url, priority, expectedBytes);
-    requests.set(key, { priority, promise });
+    const request = { priority } as { priority: AssetPriority; promise: Promise<ArrayBuffer> };
+    request.promise = load(url, request, expectedBytes);
+    requests.set(key, request);
+    const promise = request.promise;
     void promise.then(
       () => requests.delete(key),
       () => requests.delete(key),
@@ -540,8 +525,8 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   /**
    * Serve a cache hit for any GET the page makes, so a loader core does not wrap — three's
    * `KTX2Loader`, `RGBELoader`, `AudioLoader` — also reads the bytes the fill already stored.
-   * A miss delegates to the original fetch untouched; the bridge never writes and never changes a
-   * response, so an uncached request behaves exactly as before. Web-only, like the cache itself.
+   * Only a manifest output with a recorded size is ever on disk, so every other request goes
+   * straight to the original fetch without a storage lookup. Web-only, like the cache itself.
    */
   const installFetchBridge = (name: string): void => {
     if (typeof globalThis.fetch !== "function" || storage === undefined) return;
@@ -552,79 +537,72 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const key = canonicalUrl(url);
       const expected = known.get(key);
-      if (method.toUpperCase() === "GET") {
-        // A core download for the same url is already in flight: wait for it instead of fetching
-        // the same bytes a second time.
-        const pending = requests.get(key);
-        if (pending !== undefined) {
-          const buffer = await pending.promise;
-          return new Response(buffer, {
-            headers: { [BYTES_HEADER]: String(buffer.byteLength) },
-          });
+      if (method.toUpperCase() !== "GET" || expected === undefined) return original(input, init);
+      // A core download for the same url is already in flight: wait for it instead of fetching
+      // the same bytes a second time.
+      const pending = requests.get(key);
+      if (pending !== undefined) {
+        const buffer = await pending.promise;
+        return new Response(buffer, {
+          headers: { [BYTES_HEADER]: String(buffer.byteLength) },
+        });
+      }
+      try {
+        const cache = await storage.open(name);
+        const hit = await cache.match(url);
+        if (hit !== undefined) {
+          const access = Number(hit.headers.get(ACCESS_HEADER) ?? "0");
+          const cached = await hit.arrayBuffer();
+          if (cached.byteLength === expected) {
+            touched.add(key);
+            if (Date.now() - access > ACCESS_REFRESH_MS) {
+              void cache
+                .put(
+                  url,
+                  new Response(cached, {
+                    headers: {
+                      [ACCESS_HEADER]: String(Date.now()),
+                      [BYTES_HEADER]: String(cached.byteLength),
+                    },
+                  }),
+                )
+                .catch(() => undefined);
+            }
+            return new Response(cached, {
+              headers: {
+                [ACCESS_HEADER]: String(Date.now()),
+                [BYTES_HEADER]: String(cached.byteLength),
+              },
+            });
+          }
+          console.warn(
+            `TN_ASSETS_CACHE_TRUNCATED '${url}': stored ${String(cached.byteLength)} of ${String(expected)} bytes; fetching again.`,
+          );
+          await cache.delete(url).catch(() => undefined);
         }
+      } catch {
+        // A storage failure falls through to the network; the game still loads.
+      }
+      const response = await original(input, init);
+      // The bridge normally only reads. When a loader core does not wrap fetches a manifest
+      // output the fill has not reached yet, keep it: otherwise the first visit downloads that
+      // file twice, once here and once in the fill.
+      if (response.ok && !requests.has(key)) {
         try {
           const cache = await storage.open(name);
-          const hit = await cache.match(url);
-          if (hit !== undefined) {
-            if (expected === undefined) {
-              touched.add(key);
-              return hit;
-            }
-            const access = Number(hit.headers.get(ACCESS_HEADER) ?? "0");
-            const cached = await hit.arrayBuffer();
-            if (cached.byteLength === expected) {
-              touched.add(key);
-              if (Date.now() - access > ACCESS_REFRESH_MS) {
-                void cache
-                  .put(
-                    url,
-                    new Response(cached, {
-                      headers: {
-                        [ACCESS_HEADER]: String(Date.now()),
-                        [BYTES_HEADER]: String(cached.byteLength),
-                      },
-                    }),
-                  )
-                  .catch(() => undefined);
-              }
-              return new Response(cached, {
-                headers: {
-                  [ACCESS_HEADER]: String(Date.now()),
-                  [BYTES_HEADER]: String(cached.byteLength),
-                },
-              });
-            }
-            console.warn(
-              `TN_ASSETS_CACHE_TRUNCATED '${url}': stored ${String(cached.byteLength)} of ${String(expected)} bytes; fetching again.`,
-            );
-            await cache.delete(url).catch(() => undefined);
-          }
+          const copy = response.clone();
+          void copy
+            .arrayBuffer()
+            .then((buffer) => {
+              if (buffer.byteLength === expected) return store(cache, url, buffer, cacheGeneration);
+              return undefined;
+            })
+            .catch(() => undefined);
         } catch {
-          // A storage failure falls through to the network; the game still loads.
+          // The clone is an optimisation; the caller's response is already on its way.
         }
-        const response = await original(input, init);
-        // The bridge normally only reads. When a loader core does not wrap fetches a manifest
-        // output the fill has not reached yet, keep it: otherwise the first visit downloads that
-        // file twice, once here and once in the fill.
-        if (response.ok && expected !== undefined && !requests.has(key)) {
-          try {
-            const cache = await storage.open(name);
-            const copy = response.clone();
-            void copy
-              .arrayBuffer()
-              .then((buffer) => {
-                if (buffer.byteLength === expected)
-                  return store(cache, url, buffer, cacheGeneration);
-                return undefined;
-              })
-              .catch(() => undefined);
-          } catch {
-            // The clone is an optimisation; the caller's response is already on its way.
-          }
-        }
-        return response;
       }
-      return original(input, init);
+      return response;
     };
     globalThis.fetch = wrapped as typeof fetch;
     restoreFetch = () => {
@@ -669,7 +647,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     },
     fetchBytes,
     prefetch: async (targets) => prefetch(targets, "soon"),
-    setManifest: (fingerprint, manifestEntries) => {
+    setManifest: (manifestEntries) => {
       if (cacheName !== undefined) return;
       // Nothing content-addressed to store: a project with no manifest keeps the web path it had.
       if (manifestEntries.length === 0) {
@@ -690,19 +668,14 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
         resolveManifest?.();
         return;
       }
-      const name = `${cachePrefix}${fingerprint}`;
-      cacheName = name;
-      installFetchBridge(name);
-      // A release cleans up after the last one: without this every build adds its full size to
-      // the player's disk and nothing ever removes the old bytes.
-      const current = name;
+      cacheName = gameCacheName;
+      installFetchBridge(gameCacheName);
+      // Without the prune every build adds its changed files to the player's disk and nothing
+      // ever removes the old ones.
       void (async () => {
         try {
-          for (const other of (await storage?.keys()) ?? []) {
-            if (other.startsWith(cachePrefix) && other !== current) await storage?.delete(other);
-          }
           const cache = await openCache();
-          if (cache !== undefined) await measureOnDisk(cache);
+          if (cache !== undefined) await pruneAndMeasure(cache);
         } catch {
           // A storage failure must not stop a game from starting.
         }

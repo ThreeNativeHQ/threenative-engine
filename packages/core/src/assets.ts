@@ -13,12 +13,7 @@ import {
   type TextureLoader,
   type Wrapping,
 } from "three";
-import {
-  type AssetPriority,
-  type IAssetCacheReport,
-  createAssetCache,
-  manifestFingerprint,
-} from "./asset-cache.js";
+import { type AssetPriority, type IAssetCacheReport, createAssetCache } from "./asset-cache.js";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
@@ -891,16 +886,16 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         .catch((error: unknown) => {
           // A malformed manifest still has to release the fill gate; otherwise a game that awaits
           // the documented `startBackgroundFill()` promise waits forever.
-          assetCache.setManifest("", []);
+          assetCache.setManifest([]);
           throw error;
         })
         .then((manifest) => {
           if (manifest !== undefined) {
             const entries = fillEntries(manifest);
-            assetCache.setManifest(manifestFingerprint(entries), entries);
+            assetCache.setManifest(entries);
           } else {
             // No manifest means nothing is content-addressed, so the cache stays out of the way.
-            assetCache.setManifest("", []);
+            assetCache.setManifest([]);
           }
           return manifest;
         });

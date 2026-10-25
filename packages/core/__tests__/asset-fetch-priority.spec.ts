@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAssetCache, manifestFingerprint } from "../src/asset-cache.js";
+import { createAssetCache } from "../src/asset-cache.js";
 import { FakeCacheStorage } from "./fixtures/fake-cache.js";
 
 interface IGate {
@@ -107,7 +107,7 @@ describe("asset fetch priority", () => {
       { bytes: 1, url: "clear-b" },
     ];
     const cache = createAssetCache({ concurrency: 1, retryDelaysMs: [0] });
-    cache.setManifest(manifestFingerprint(entries), entries);
+    cache.setManifest(entries);
     const fill = cache.startFill();
     await vi.waitFor(() => expect(gated.order).toEqual(["clear-a"]));
 
@@ -128,7 +128,7 @@ describe("asset fetch priority", () => {
       { bytes: 1, url: "fill-b" },
     ];
     const cache = createAssetCache({ concurrency: 1, retryDelaysMs: [0] });
-    cache.setManifest(manifestFingerprint(entries), entries);
+    cache.setManifest(entries);
     cache.startFill();
 
     await vi.waitFor(() => expect(gated.order).toEqual(["fill-a"]));
@@ -143,5 +143,32 @@ describe("asset fetch priority", () => {
 
     await urgent;
     await vi.waitFor(() => expect(cache.report.filling).toBe(false));
+  });
+
+  it("should honour a now caller that arrives while the idle request still reads the disk", async () => {
+    stub();
+    const gated = gatedFetch();
+    vi.stubGlobal("fetch", gated.fetch);
+    const entries = [
+      { bytes: 1, url: "busy" },
+      { bytes: 1, url: "queued" },
+      { bytes: 1, url: "late-now" },
+    ];
+    const cache = createAssetCache({ concurrency: 1, retryDelaysMs: [0] });
+    cache.setManifest(entries);
+    const busy = cache.fetchBytes("busy", "idle", 1);
+    await vi.waitFor(() => expect(gated.order).toEqual(["busy"]));
+
+    const queued = cache.fetchBytes("queued", "idle", 1);
+    const lookup = cache.fetchBytes("late-now", "idle", 1);
+    // Same tick: the idle request for this url has not reached the queue yet.
+    const urgent = cache.fetchBytes("late-now", "now", 1);
+
+    await vi.waitFor(() => expect(gated.order).toEqual(["busy", "late-now"]));
+    gated.gates.get("busy")?.release();
+    gated.gates.get("late-now")?.release();
+    await vi.waitFor(() => expect(gated.order).toEqual(["busy", "late-now", "queued"]));
+    gated.gates.get("queued")?.release();
+    await Promise.all([busy, queued, lookup, urgent]);
   });
 });
