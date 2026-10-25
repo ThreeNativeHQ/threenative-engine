@@ -287,10 +287,9 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
 // r185 DenoiseNode.setup, including its exact noise channel expression and rotation matrix.
 const char* kDenoise = R"WGSL(
 fn luma(color: vec3<f32>) -> f32 { return dot(color,vec3<f32>(0.2126,0.7152,0.0722)); }
-fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coord: vec2<f32>) -> vec4<f32> {
+fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coord: vec2<f32>, neighborNormal: vec3<f32>) -> vec4<f32> {
     let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
     let depth = sampleDepth(coord);
-    let neighborNormal = sampleNormal(coord);
     let neighborPosition = viewPosition(coord,depth);
     let normalSimilarity = pow(max(dot(normal,neighborNormal),0.0),u.normalPhi);
     let lumaSimilarity = max(1.0-abs(luma(texel.rgb)-luma(center))/u.lumaPhi,0.0);
@@ -299,11 +298,17 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     return vec4<f32>(texel.rgb*w,w);
 }
 @fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    // sampleNormal's depth-derived fallback (nine depth loads) cost the filter about half its time by register
+    // pressure alone, taken or not. A pixel whose draw wrote no normal takes its face's from the derivatives of its
+    // position instead (no read), and a tap that read none takes the centre's: the depth term still parts surfaces.
     let depth = sampleDepth(coord);
-    let normal = sampleNormal(coord);
-    let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
-    if (depth>=1.0 || dot(normal,normal)==0.0) { return texel; }
     let position = viewPosition(coord,depth);
+    let face = cross(dpdx(position),dpdy(position));
+    let own = sampleNormalRaw(coord);
+    let n = select(face,own,dot(own,own)>0.0);
+    let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
+    if (depth>=1.0 || dot(n,n)==0.0) { return texel; }
+    let normal = normalize(n);
     let noiseUv = vec2<f32>(coord.x,1.0-coord.y)*vec2<f32>(textureDimensions(t_input))/vec2<f32>(textureDimensions(t_noise));
     let noise = textureSampleLevel(t_noise,smp_noise,noiseUv,0.0);
     let channel = i32((u.index-floor(u.index/4.0)*4.0)*2.0*3.141592653589793);
@@ -313,7 +318,8 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     for (var i=0; i<16; i++) {
         let dir = samples[i];
         let offset = rotation*(dir.xy*(1.0+dir.z*(u.radius-1.0)))/vec2<f32>(textureDimensions(t_input));
-        let result = denoiseSample(texel.rgb,normal,position,coord+offset);
+        let tap = sampleNormalRaw(coord+offset);
+        let result = denoiseSample(texel.rgb,normal,position,coord+offset,select(normal,normalize(tap),dot(tap,tap)>0.0));
         denoised += result.xyz; totalWeight += result.w;
     }
     if (totalWeight>0.0) { denoised /= totalWeight; }
@@ -488,7 +494,10 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
         code += effect.normal ? "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { let n = "
                                 "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; "
                                 "if (dot(n,n)==0.0) { return normalFromDepth(coord); } return normalize(n); }\n"
-                              : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n";
+                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return "
+                                "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; }\n"
+                              : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n"
+                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return vec3<f32>(0.0); }\n";
     }
     if (effect.kind == "DenoiseNode") {
         const auto& samples = effect.parameters.at("sampleVectors");
