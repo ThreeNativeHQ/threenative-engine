@@ -883,4 +883,41 @@ describe("camera-rate walk cost", () => {
     expect(state?.frame).toBe(view.cull.animationFrame);
     rig.dispose();
   });
+
+  // Lantern Vale battle capture: each rig part walked its parents to the scene root twice a frame
+  // (rate states, then camera attachment), 7% of the main thread. The parts above a rig are read
+  // once per rig, not once per part.
+  it("reads the groups above a rig once per rig, not once per part", () => {
+    const rig = player(1);
+    const view = rendered(rig, -20);
+    for (let index = 0; index < 20; index += 1) {
+      const part = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshBasicMaterial());
+      part.position.x = index * 0.1;
+      rig.root.add(part);
+    }
+    let outer: Group = view.scene as unknown as Group;
+    const groups: Group[] = [];
+    for (let depth = 0; depth < 8; depth += 1) {
+      const group = new Group();
+      outer.add(group);
+      groups.push(group);
+      outer = group;
+    }
+    outer.add(rig.root);
+    view.scene.updateMatrixWorld(true);
+    let reads = 0;
+    for (const group of groups) {
+      const parent = group.parent;
+      Object.defineProperty(group, "parent", {
+        get: () => (reads += 1) && parent,
+        configurable: true,
+      });
+    }
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(reads).toBeLessThanOrEqual(groups.length);
+    const state = animationRateStates.get(rig.root);
+    expect(state?.frame).toBe(view.cull.animationFrame);
+    expect(state?.rate).toBe(1);
+    rig.dispose();
+  });
 });
