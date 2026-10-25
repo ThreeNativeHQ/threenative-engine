@@ -305,22 +305,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "b63ede76ac9d6f5d7fc683df9c630ad535ac6c7f5038c79310a61383865b8aa8",
+  collectathon: "397fe4a40d84fbc2114b23a0a5a9cea703a3002f06b41721e4c86b44c0adcac1",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
-  adventure: "45ce0c805d9f9f4b52ff8093d8af2a616edfb69d1f373dafb7d7e26c0e5834af",
+  adventure: "28dc65d537171ac27509293c0f81b3af2930ede64dd579b9053a0159671f1e9b",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "f5253c53b519a6124a6aff0f10898d6c05370adc39cb505c55f840bdb85e2cc7",
+  kart: "3d741ac16ecf9e1ede70c4327a4f49931017eb4ecf00e477f237b69cca00bd1c",
   minimal: "feb73967c52019009fe034bd20756e25e0906e37caf1bb05d984e271160cfe59",
   platformer: "d01108608d138acbbdf31e0df8dfca3f3bd9befc46513d89f5a1ebdecd3d68ed",
   puzzle: "e7f9370513c60a8c50ab5a8392b857e35c658e745c493bbc5e6b6b27e8611013",
   racing: "7c19f159e3c593de2ab197f175bcc218ca8f1eb9851250b9c797bf79a59fa5e1",
-  rain: "5dc9bcce2956fe10bd92c79c1b430607d7d439174713cae90c2a84374457fbf4",
+  rain: "a9eef648d1fc75b519a759351bc969ad2b0327366a9271b85146eb70668ab7c0",
   rts: "5df9b5830c8d749f97530113fe63b1d2e74b37decf5e605c0e3c7fe435819d48",
-  runner: "f3cd04eb19dcc39cde90b5115b0b5b44cbbb285213f715a30d7226b136731d35",
+  runner: "489dd125c7ab50a977f8fd5458fc28603b4e266f15e2ed7ebe5167a9a44c5438",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "2e77feed7c4caf6eace5dda2265ff8efb88522624188c29d44884293b8df63cb",
+  sailing: "f5aab39585f1d612e60cc2a1b27aca29e1e6932f693e694aad84be51c8491d55",
   shooter: "5bbf94164445a91361b89e19c519a835f485d4f899591009eedf06cf342a056d",
   snow: "dedd4e1b27bfc9e9b4dd0a8701f7c66dfc59409213b5d488e7469e37ddfe1122",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
