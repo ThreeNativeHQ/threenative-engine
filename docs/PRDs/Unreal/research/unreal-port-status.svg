@@ -2,8 +2,8 @@
 <defs><pattern id="gap" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#8a3b37"/><rect width="4" height="8" fill="#e0625a"/></pattern>
 <style>.a{fill:#9aa49f;font-size:10px;font-weight:600;letter-spacing:.06em}.s{fill:#e7ebe8;font-size:10.5px;font-weight:600}.l{fill:#fff;font-size:9.5px}.g{fill:#e7ebe8;font-size:12px}.h{fill:#e7ebe8;font-size:17px;font-weight:700}</style></defs>
 <rect width="1200" height="720" rx="10" fill="#121513"/>
-<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 20% done, 20% in progress (share of 676K Unreal lines)</text>
-<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 20%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 20%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 37%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 16%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 5%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
+<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 20% done, 24% in progress (share of 676K Unreal lines)</text>
+<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 20%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 24%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 33%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 16%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 5%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
 <rect x="10" y="66" width="343.60301046210975" height="644" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
 <text x="17" y="79" class="a">LIGHTING &amp; GI · 199K</text>
 <rect x="14" y="85" width="335.60301046210975" height="246.81476595230424" rx="4" fill="#232826"/>
@@ -456,7 +456,8 @@
 <text x="1020.5161209318092" y="79" class="a">WORLD, ANIM, VFX · 57K</text>
 <rect x="1017.5161209318092" y="85" width="168.48387906819084" height="168.2240277968048" rx="4" fill="#232826"/>
 <text x="1021.5161209318092" y="96" class="s">Anim budget + AnimGraphRun…</text>
-<rect x="1018.5161209318092" y="98" width="165.48387906819084" height="153.2240277968048" rx="2" fill="#4a86d6"><title>Anim budget + AnimGraphRuntime · Whole system (not split) · Not started</title></rect>
+<rect x="1018.5161209318092" y="98" width="165.48387906819084" height="153.2240277968048" rx="2" fill="#d9961f"><title>Anim budget + AnimGraphRuntime · Whole system (not split) · In progress</title></rect>
+<rect x="1018.5161209318092" y="248.2240277968048" width="87.60911244786574" height="3" fill="#fff" opacity=".85"/>
 <text x="1021.5161209318092" y="109" class="l">Whole system (not split)</text>
 <rect x="1017.5161209318092" y="255.2240277968048" width="120.3585227247479" height="163.52742615026708" rx="4" fill="#232826"/>
 <text x="1021.5161209318092" y="266.22402779680476" class="s">Texture + mesh str…</text>
