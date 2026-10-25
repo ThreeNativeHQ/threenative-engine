@@ -116,6 +116,9 @@ None.
   file under `packages/playtest/__tests__/fixtures/`, because a real page needs the built core and a bridge. Its
   model loader is synthetic and its manifest hand-written (the property under test is the reveal measurement and
   the report chain, not GLB decoding), and its scenarios are not yet in `pnpm test:playtest`.
+- 2026-10-25 (agent): `packages/playtest/__tests__/generated-shooter-input.spec.ts` fails 2 of 3 tests (a 500 from the
+  scaffolded shooter's dev server) with and without this change: a control on a fresh `origin/develop` worktree
+  (`ae3336204`, built, same command) failed the same two tests. It is not caused by this PRD and is left alone.
 - 2026-10-25 (agent): MB in every report is decimal (1,000,000 bytes), so the figure matches the Mbit/s link speed.
 - 2026-10-25 (agent): no core export. The measurement is internal; the report is a console line plus a bridge
   field, so there is no new capability row and no template edit.
