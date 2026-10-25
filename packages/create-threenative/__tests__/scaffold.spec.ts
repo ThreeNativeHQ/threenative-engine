@@ -288,7 +288,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "6744398563d899e86741b0e822c3080a21f36dcb8f0ba0acfb7500089498b915",
+  "action-rpg": "a37f5e3d7ba5b3939eb130aae1c7fa58034a8903fc8f54fd15c9699338ed957b",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -304,24 +304,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   adventure: "b6c99d654c4ec95f2ddd5d823f9fe0846f1a1a7e7630450ab983f180cf651bcb",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "1d8e3badac5f8fb38dba98763e440b7bbf2a32309a141665703462b440202d8d",
-  minimal: "10d0987573f9ac54b42b6cba5f743a50f27a9178aac5043d61fa69026be8e772",
-  platformer: "7ecdaef09c04bf98ca7b13b7000d6ed649a9f5bdbe60b6c5a05fcf9a18a47cc9",
-  puzzle: "3524506e408feaf575535ca62b059beab9bee0f503c23fa574f7a2d810e3a221",
-  racing: "c965b2ecea0ed5470ab66ab44ed035d4cd7cc4c2d6b260a0f84bb7f02a31d113",
-  rain: "ad7943ae059b0dea123ce32200801c6ef2479cba6e0df20712b45b78d6b80f02",
-  rts: "b58156b5e29ee4d75d7704628583511e9ac4fb34328f3c87d94f6d768aadf113",
-  runner: "74b7f2cc0dc4becfc30795ca1cebee245d68cbb7dd6be5a47c8db9783229cb0e",
+  minimal: "1aec183a15c7dd10d16e4f9578db0643b22f589e0ce43d7d35ef38e1086007f0",
+  platformer: "4108b8a2edd510eaf09b034901f380c56552cdd5129105305ae4e1da145f61d0",
+  puzzle: "a67ea12f3316a5e3137fd720b4396a41133edf23f72ac05fc3e9ae2f34a6ea17",
+  racing: "1c3b4facdb30f995cb76bc47f0683b9132a28cef092afe3b9ccfba2957bc96a2",
+  rain: "d7c429b39aa62e80fabc34524412b1bc4bfb73c837fa4e4233d61d7381570de1",
+  rts: "569380cf9b4a0b8216e13366b9bf15836dfdee9510bfdec4225ece236fc939aa",
+  runner: "9685f7e34afd67e66a794e7c586096b8cc18d19f4222080898062f3e97c49de0",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "32d2160d27f7539fd2fd96790a48797a36b827e1a89ae2c92c2fb3c0da449a29",
-  shooter: "2d7cec1eba912e05ab5a28da82d6afa82bddd1584504412a098dae56c649655f",
-  snow: "0ac33b33d97e08154afc366cfb364222d313245535fea14da69f5772c725da7d",
+  sailing: "2e181dda712562d439844cb187427b6443542d09b02d7896ce40abeb89c1cac4",
+  shooter: "7460a64718de1470d00bb37b9197946db96d1481378a60fbbffb127fb3c51b80",
+  snow: "fa196f749512930092ee6bc27590edf29f26fd47d15898a4f98c01a4561bf752",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "b2d628ba927b5c2c5b8341d7c288ccdb1fa5dc080cb240bc0b669c7c3404df8d",
-  "tower-defense": "92274470e47a7c6c0a204a869e44d0986fa17f8cefbeb9078cefe996ec456590",
+  starter: "aff11e4b497d0b06c676bf29f1b49bf1fe2a823e1db59f85fa3c66f652db458a",
+  "tower-defense": "7b9ba38b336a1d3ff21706f732ee99fd72a1643f5c2836b7642c6462482d5f8b",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
