@@ -1102,6 +1102,12 @@ void invariantScope() {
         else { ++colour; CHECK(flagged(source)); }
     }
     CHECK(velocity == 1 && colour >= 1);  // the TRAA frame built its own flagged colour program beside the plain one
+    // A steady TRAA frame makes no bind group: the velocity fill and the resolve made one each a frame before.
+    database.render(renderer, s.scene, s.camera);
+    const uint64_t groups = bindGroupsCreated();
+    database.render(renderer, s.scene, s.camera);
+    database.render(renderer, s.scene, s.camera);
+    CHECK(bindGroupsCreated() == groups);
 }
 
 void directionalTarget() {

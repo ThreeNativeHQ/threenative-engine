@@ -573,7 +573,50 @@ void initializeTexture() {
 
 }  // namespace
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}
+// A pass whose input alternates frame by frame (a ping-pong history) makes its two bind groups once.
+void recentBindGroups() {
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) return;
+    WGPUBindGroupLayoutEntry layoutEntry = {};
+    layoutEntry.binding = 0;
+    layoutEntry.visibility = WGPUShaderStage_Fragment;
+    layoutEntry.buffer.type = WGPUBufferBindingType_Uniform;
+    WGPUBindGroupLayoutDescriptor layoutDesc = {};
+    layoutDesc.entryCount = 1;
+    layoutDesc.entries = &layoutEntry;
+    WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(d.device, &layoutDesc);
+    const auto buffer = [&] {
+        WGPUBufferDescriptor desc = {};
+        desc.size = 16;
+        desc.usage = WGPUBufferUsage_Uniform;
+        return wgpuDeviceCreateBuffer(d.device, &desc);
+    };
+    WGPUBuffer ping = buffer(), pong = buffer(), third = buffer();
+    const auto entries = [](WGPUBuffer b) {
+        std::vector<WGPUBindGroupEntry> e(1);
+        e[0].binding = 0;
+        e[0].buffer = b;
+        e[0].size = 16;
+        return e;
+    };
+    RecentBindGroups groups;
+    const uint64_t before = bindGroupsCreated();
+    WGPUBindGroup first = groups.get(d.device, layout, entries(ping));
+    CHECK(first != nullptr);
+    for (int frame = 0; frame < 6; ++frame) groups.get(d.device, layout, entries(frame % 2 ? ping : pong));
+    CHECK(bindGroupsCreated() == before + 2);
+    CHECK(groups.get(d.device, layout, entries(ping)) == first);
+    groups.get(d.device, layout, entries(third));  // a third set drops the oldest
+    groups.get(d.device, layout, entries(ping));
+    CHECK(bindGroupsCreated() == before + 4);
+    // The cache holds its own references: the buffers can go first.
+    for (WGPUBuffer b : {ping, pong, third}) wgpuBufferRelease(b);
+    wgpuBindGroupLayoutRelease(layout);
+    groups.clear();
+}
+
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}

@@ -1,5 +1,6 @@
 #include "pipeline_cache.h"
 
+#include <algorithm>
 #include <bit>
 #include <stdexcept>
 #include <optional>
@@ -108,6 +109,50 @@ WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* 
 }
 
 uint64_t bindGroupsCreated() { return bindGroupCount; }
+
+WGPUBindGroup RecentBindGroups::get(WGPUDevice device, WGPUBindGroupLayout layout,
+                                    const std::vector<WGPUBindGroupEntry>& entries) {
+    const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
+        return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
+               a.sampler == b.sampler && a.textureView == b.textureView;
+    };
+    for (const Slot& slot : slots_)
+        if (slot.layout == layout && std::equal(entries.begin(), entries.end(), slot.entries.begin(), slot.entries.end(), same))
+            return slot.group;
+    WGPUBindGroupDescriptor desc = {};
+    desc.layout = layout;
+    desc.entryCount = entries.size();
+    desc.entries = entries.data();
+    WGPUBindGroup group = createBindGroup(device, &desc);
+    if (!group) return nullptr;
+    wgpuBindGroupLayoutAddRef(layout);
+    for (const WGPUBindGroupEntry& e : entries) {
+        if (e.buffer) wgpuBufferAddRef(e.buffer);
+        if (e.textureView) wgpuTextureViewAddRef(e.textureView);
+        if (e.sampler) wgpuSamplerAddRef(e.sampler);
+    }
+    if (slots_.size() == capacity_) {
+        release(slots_.front());
+        slots_.erase(slots_.begin());
+    }
+    slots_.push_back({layout, entries, group});
+    return group;
+}
+
+void RecentBindGroups::release(const Slot& slot) {
+    wgpuBindGroupRelease(slot.group);
+    wgpuBindGroupLayoutRelease(slot.layout);
+    for (const WGPUBindGroupEntry& e : slot.entries) {
+        if (e.buffer) wgpuBufferRelease(e.buffer);
+        if (e.textureView) wgpuTextureViewRelease(e.textureView);
+        if (e.sampler) wgpuSamplerRelease(e.sampler);
+    }
+}
+
+void RecentBindGroups::clear() {
+    for (const Slot& slot : slots_) release(slot);
+    slots_.clear();
+}
 
 size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     // 64-bit on every target: size_t is 32 bits on wasm32, where `size << 32` was undefined and gave

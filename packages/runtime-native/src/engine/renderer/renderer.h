@@ -779,7 +779,7 @@ private:
                             const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps = nullptr,
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
                             WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
-                            const GraphTextures* graphTextures = nullptr);
+                            const GraphTextures* graphTextures = nullptr, RecentBindGroups* cache = nullptr);
     /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
     struct MaterialTexture {
         WGPUTexture texture = nullptr;
@@ -863,6 +863,9 @@ private:
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
     GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
     void releaseOutputGroup();
+    // The output pass's groups for its last two binding sets: a post graph texture that ping-pongs between two
+    // render targets (an exposure history) finds its group again. outputGroup_ is borrowed from here.
+    RecentBindGroups outputGroups_;
     void outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat);
 
     WGPUInstance instance_;

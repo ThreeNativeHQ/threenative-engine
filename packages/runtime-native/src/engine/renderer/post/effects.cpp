@@ -184,14 +184,9 @@ PostEffects::~PostEffects() {
 }
 void PostEffects::releaseGroups() {
     for (auto& pass : passes_) {
-        if (pass.group)
-            wgpuBindGroupRelease(pass.group);
-        if (pass.vertexGroup)
-            wgpuBindGroupRelease(pass.vertexGroup);
-        pass.vertexGroup = nullptr;
-        pass.vertexEntries.clear();
-        pass.group = nullptr;
-        pass.groupEntries.clear();
+        pass.groups.clear();
+        pass.vertexGroups.clear();
+        pass.group = pass.vertexGroup = nullptr;
     }
 }
 void PostEffects::clearTargets() {
@@ -488,7 +483,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
             const auto buffer = stageIndex == 0 ? pass.vertexUniforms : pass.uniforms;
             const auto layout = stageIndex == 0 ? pass.vertexLayout : pass.layout;
             auto& cachedGroup = stageIndex == 0 ? pass.vertexGroup : pass.group;
-            auto& cachedEntries = stageIndex == 0 ? pass.vertexEntries : pass.groupEntries;
+            auto& cache = stageIndex == 0 ? pass.vertexGroups : pass.groups;
             if (buffer) {
                 std::vector<uint8_t> block(stage.uniformBlockSize);
                 for (const auto& field : stage.uniforms) {
@@ -525,21 +520,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
                 }
                 entries.push_back(entry);
             }
-            const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
-                return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
-                       a.sampler == b.sampler && a.textureView == b.textureView;
-            };
-            if (!cachedGroup ||
-                !std::equal(entries.begin(), entries.end(), cachedEntries.begin(), cachedEntries.end(), same)) {
-                if (cachedGroup)
-                    wgpuBindGroupRelease(cachedGroup);
-                WGPUBindGroupDescriptor groupDesc{};
-                groupDesc.layout = layout;
-                groupDesc.entryCount = entries.size();
-                groupDesc.entries = entries.data();
-                cachedGroup = createBindGroup(device_, &groupDesc);
-                cachedEntries = entries;
-            }
+            cachedGroup = cache.get(device_, layout, entries);  // a ping-pong input hits one of the last two
         }
         const auto group = pass.group;
         WGPURenderPassColorAttachment color{};

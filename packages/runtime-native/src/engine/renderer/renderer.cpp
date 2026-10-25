@@ -848,6 +848,7 @@ Renderer::~Renderer() {
         if (atlas.texture) wgpuTextureRelease(atlas.texture);
     }
     releaseTargets();
+    outputGroups_.clear();
     releaseOutputGroup();
     if (depthResolve_) wgpuRenderPipelineRelease(depthResolve_);
     if (overlayView_) wgpuTextureViewRelease(overlayView_);
@@ -906,12 +907,12 @@ void Renderer::releaseTargets() {
     depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = materialTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     msaaAuxColor_ = nullptr;
     msaaAuxColorView_ = nullptr;
-    releaseOutputGroup();  // it binds the scene target
+    outputGroups_.clear();  // they hold the scene target
+    releaseOutputGroup();
 }
 
 void Renderer::releaseOutputGroup() {
-    if (outputGroup_) wgpuBindGroupRelease(outputGroup_);
-    outputGroup_ = nullptr;
+    outputGroup_ = nullptr;  // outputGroups_ owns it
 }
 
 std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
@@ -1266,7 +1267,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
                                   const std::array<const MaterialTexture*, shader::kPbrMapCount>* pbrMaps,
                                   WGPUTextureView pmremView, WGPUSampler pmremSampler,
                                   WGPUTextureView reflectorView, WGPUSampler reflectorSampler,
-                                  const GraphTextures* graphTextures) {
+                                  const GraphTextures* graphTextures, RecentBindGroups* cache) {
     // A graph texture's GPU texture, by its `t_<name>` / `smp_<name>` binding; null for any other.
     const auto graph = [&](std::string_view name, bool sampler) -> const MaterialTexture* {
         if (!graphTextures) return nullptr;
@@ -1365,7 +1366,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     desc.layout = layout;
     desc.entryCount = entries.size();
     desc.entries = entries.data();
-    return createBindGroup(device_, &desc);
+    return cache ? cache->get(device_, layout, entries) : createBindGroup(device_, &desc);
 }
 
 void Renderer::copyDepthToTexture(const Texture& texture) {
@@ -3846,7 +3847,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     if (!postTextures_.empty() && !outputGroup_)
         outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_,
-            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
     for (const auto& node : shader::graph::uniformNodes(output_.customToneMapping)) postUniforms_[node->name] = node->values;
@@ -4307,7 +4308,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     // group serves both and needs no rebuild when the present format changes.
     WGPUBindGroup& group = outputGroup_;
     if (!group) {
-        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
+        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_, &outputGroups_);
     }
     WGPURenderPassColorAttachment color = {};
     color.view = present ? present : colorView_;
