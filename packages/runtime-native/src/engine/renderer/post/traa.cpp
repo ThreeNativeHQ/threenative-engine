@@ -154,7 +154,6 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     let validUV = all(historyUV >= vec2(0)) && all(historyUV <= vec2(1));
     let edge = farthest - closest > u.edgeDepthDiff;
     let disocclusion = closest - oldDepth > u.depthThreshold;
-    let oldDynamic = upsampling && textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
     let dynamic = motionSample.z != 1;
     var dynamicNeighborhood = dynamic;
     var completeMotion = motionSample.z > 0.5;
@@ -170,7 +169,7 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
             completeMotion = completeMotion && all(g00 > vec4(0.5)) && all(g10 > vec4(0.5)) &&
                              all(g01 > vec4(0.5)) && all(g11 > vec4(0.5));
         }
-        if (oldDynamic && !dynamicNeighborhood) {
+        if (!dynamicNeighborhood) {
             let nearestOrigin = vec2<f32>(vec2<i32>(closestPosition)) + 0.25;
             let nearest00 = textureGather(2, velocity, linearSampler, nearestOrigin / u.size);
             let nearest11 = textureGather(2, velocity, linearSampler, (nearestOrigin + vec2(1,1)) / u.size);
@@ -180,6 +179,7 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
         }
     }
     let highClamp = upsampling;
+    let oldDynamic = upsampling && textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
     let departed = !dynamicNeighborhood && oldDynamic;
     let valid = u.historyValid != 0 && validUV && (edge || !disocclusion) && !departed;
     let counting = u.count != 0;
