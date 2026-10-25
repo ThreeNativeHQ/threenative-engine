@@ -1,10 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <atomic>
 #include <memory>
 #ifndef __EMSCRIPTEN__
-#include <array>
 #include <condition_variable>  // TN_WORKER_ONLY: the compile workers park between jobs
 #include <deque>
 #include <functional>
@@ -62,6 +62,10 @@ struct PipelineTarget {
     uint64_t instanceStepMask = 0;
     WGPUPrimitiveTopology topology = WGPUPrimitiveTopology_TriangleList;
     WGPUIndexFormat stripIndexFormat = WGPUIndexFormat_Undefined;  // an indexed line strip's index format
+    // The colour targets after `color` (MRT, the fragment's @location(1...)): the first Undefined ends the list. They
+    // share colorWrite and take no blend.
+    std::array<WGPUTextureFormat, 4> moreColors{WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined,
+                                                WGPUTextureFormat_Undefined, WGPUTextureFormat_Undefined};
 };
 
 /**

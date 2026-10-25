@@ -64,6 +64,15 @@ public:
 private:
     bool encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
                 const std::vector<uint8_t>& uniformBlock, std::span<const WGPUBindGroupEntry> textures = {});
+    struct CachedGroup {
+        std::vector<uint64_t> key;
+        WGPUBindGroup group;
+        std::vector<WGPUBindGroupEntry> entries;  // each resource holds one reference while cached
+    };
+    WGPUBindGroup bindGroup(const std::vector<WGPUBindGroupEntry>& entries);
+    static void release(const CachedGroup& cached);
+    std::vector<CachedGroup> groups_;
+    WGPUBindGroupLayout layout_ = nullptr;
     WGPUDevice device_;
     GpuResources& gpu_;
     shader::StageModule module_;
