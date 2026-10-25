@@ -440,6 +440,8 @@ public:
         uint64_t countedFrame = 0;
     };
     const TemporalStatus& temporalStatus() const { return temporalStatus_; }
+    /** The PCF rotation's frame term (`shadowNoiseFrame`): the temporal pass's frame mod 8 (Unreal's StateFrameIndexMod8), else 0. */
+    double shadowNoiseFrame() const { return temporalStatus_.active ? double(temporalStatus_.frame % 8) : 0; }
     void cutHistory();
     const OutputState& output() const { return output_; }
 
@@ -686,7 +688,7 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSubsurfaceColor, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,

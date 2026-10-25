@@ -176,7 +176,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -3149,6 +3149,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
         }
+        put(frameUniforms_, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
         put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
         put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld

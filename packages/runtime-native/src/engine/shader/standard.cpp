@@ -746,9 +746,16 @@ struct Incoming {
     ExprId sourceRadius = kInvalid;  // a lamp's Source Radius, metres: read only when lampSize asks (a sun has none)
 };
 
-// interleavedGradientNoise(screenCoordinate.xy) * 2pi, PCF's per-pixel rotation.
+// interleavedGradientNoise(screenCoordinate.xy) * 2pi, PCF's per-pixel rotation, with Unreal's frame term: the
+// coordinate moves by FrameId * (47, 17) * 0.695 (UE 5.8.3: Engine/Shaders/Private/RandomInterleavedGradientNoise.ush:11-18,
+// seeded with View.StateFrameIndexMod8 as in Engine/Shaders/Private/DeferredLightPixelShaders.usf:440). The renderer sets
+// `shadowNoiseFrame` to the temporal pass's frame mod 8, so TRAA averages eight rotations instead of one fixed stipple;
+// with no temporal pass it is 0, three's static rotation, and a still stays deterministic. A named difference from three:
+// `engine: "threejs"` keeps three's ShadowFilterNode (static rotation, the stipple at a wide radius) unpatched.
 static ExprId noisePhi(Program& f, Tsl& t) {
-    const ExprId coordinate = f.swizzle(f.builtin("position"), "xy");
+    const ExprId frame = f.uniform("shadowNoiseFrame", Type::f32());
+    const ExprId coordinate = f.add(f.swizzle(f.builtin("position"), "xy"),
+                                    f.mul(f.construct(Type::vec(2), {t.f(47 * 0.695f), t.f(17 * 0.695f)}), frame));
     const ExprId noise = f.call("fract", {f.mul(t.f(52.9829189f), f.call("fract", {t.dot(coordinate, f.construct(Type::vec(2), {t.f(0.06711056f), t.f(0.00583715f)}))}))});
     return f.mul(noise, t.f(6.28318530718f));
 }

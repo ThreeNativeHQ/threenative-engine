@@ -3945,6 +3945,44 @@ void leafReceiver() {
     CHECK(std::abs(hardCut.width - hard.width) < 0.05);   // a plain cut card keeps the sun's own source
 }
 
+// PCF's five taps turn by interleaved gradient noise of the pixel. With a fixed rotation a wide radius leaves a stipple
+// the temporal pass cannot average (Lantern Vale, radius 12), so the noise takes Unreal's frame term: every PCF filter
+// (directional, point, virtual) reads `shadowNoiseFrame`, which is the temporal pass's frame mod 8 and 0 without it.
+void shadowNoiseFrame() {
+    for (const char* kinds : {"D", "P", "2"}) {
+        const auto fragment = shader::buildStage(shader::buildStandard({}, {}, {kinds}).fragment, 1);
+        CHECK(fragment.wgsl.ok());
+        CHECK(fragment.wgsl.code.find("shadowNoiseFrame") != std::string::npos);
+    }
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 32);
+    PerspectiveCamera camera(60, 1, 0.1, 100);
+    camera.position.set(0, 0, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    Mesh box{makeBoxGeometry(1, 1, 1), std::make_shared<Material>(MaterialType::Standard)};
+    scene.add(box);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    for (int frame = 0; frame < 3; ++frame) {
+        database.render(renderer, scene, camera);
+        CHECK(renderer.shadowNoiseFrame() == 0);  // no temporal pass: three's static rotation, a deterministic still
+    }
+    renderer.setTraa(TraaOptions{});
+    std::vector<double> seen;
+    for (int frame = 0; frame < 9; ++frame) {
+        database.render(renderer, scene, camera);
+        CHECK(renderer.shadowNoiseFrame() >= 0 && renderer.shadowNoiseFrame() < 8);
+        seen.push_back(renderer.shadowNoiseFrame());
+    }
+    std::sort(seen.begin(), seen.end());
+    CHECK(std::unique(seen.begin(), seen.end()) - seen.begin() == 8);  // eight rotations, as StateFrameIndexMod8
+}
+
 // PRD-653: a material marked roughDiffuse shades direct light with Unreal's Substrate rough diffuse (the EON
 // model) where three shades Lambert. A grey floor seen from above at 26.6 degrees and lit at 45 degrees from the
 // camera's side (back-scatter) or from the far side (forward scatter) differs between the two renders by EON's
@@ -5890,7 +5928,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

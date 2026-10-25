@@ -192,7 +192,8 @@ struct VertexVariant {
  * (view space), `light{i}Distance`, `light{i}Decay`, `light{i}Axis` (view space, target to light),
  * `light{i}ConeCos` and `light{i}PenumbraCos`. An upper-case kind also casts a shadow the mesh
  * receives: `light{i}ShadowMatrix`, `ShadowBias`, `ShadowNormalBias`, `ShadowRadius`,
- * `ShadowMapSize` and `ShadowIntensity`, and the depth texture `shadow{i}`. A program is specialized per layout, as three's is per
+ * `ShadowMapSize` and `ShadowIntensity`, and the depth texture `shadow{i}`; its PCF rotation also reads `shadowNoiseFrame`
+ * (the temporal pass's frame mod 8, else 0). A program is specialized per layout, as three's is per
  * lights hash; the default is the one directional light the first renderer drew.
  */
 // '1'..'8': a directional virtual shadow with that many clip levels. It reads the depth
