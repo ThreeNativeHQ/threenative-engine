@@ -925,7 +925,7 @@ void registerFog(ClassBinding& b, bool exp2) {
         if (exp2) return std::make_shared<FogExp2>(color, optional(a, 1, 0.00025));
         return std::make_shared<Fog>(color, optional(a, 1, 1), optional(a, 2, 1000));
     };
-    b.members["color"] = memberAliasMethod(&Fog::color, "Color");
+    fixedMember(b, "color", memberAliasMethod(&Fog::color, "Color"));
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string("color.") + "rgb"[i];
         b.getters[path] = [i](void* self) { const auto& c = as<Fog>(self)->color; return Value::of(i == 0 ? c.r : i == 1 ? c.g : c.b); };
