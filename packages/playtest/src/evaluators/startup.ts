@@ -1,5 +1,55 @@
 import type { IEvaluationContext } from "./context.js";
 
+const MB = 1_000_000;
+const mb = (bytes: number): string => `${(bytes / MB).toFixed(1)} MB`;
+
+/**
+ * Bytes the reveal waited for that the spawn camera does not show.
+ *
+ * The runtime measures it and decides whether it is a warning (most of the wait bought nothing on
+ * screen); this only reports it. A run with no ceiling asserted still gets the warning, because the
+ * game that needs it is the one that never wrote the assertion. A ceiling fails closed when the
+ * runtime reported no measurement or could size nothing it awaited.
+ */
+function emitOffscreenBytes(ctx: IEvaluationContext): void {
+  const ceiling = ctx.scenarioAssertions.startup?.maxOffscreenBytes;
+  const observed = ctx.input.report.observations?.startup?.offscreenBytes;
+  const unsized = observed !== undefined && observed.awaitedBytes === 0 && observed.unsizedFiles > 0;
+  if (ceiling !== undefined) {
+    const measured = observed !== undefined && !unsized;
+    const pass = measured && observed.offscreenBytes <= ceiling;
+    ctx.assertions.push({
+      details: { expected: ceiling, observed: measured ? observed.offscreenBytes : undefined },
+      id: "startup.offscreenBytes",
+      pass,
+    });
+    if (!pass) {
+      ctx.diagnostics.push({
+        code: measured ? "TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES" : "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
+        message: measured
+          ? `The reveal waited for ${mb(observed.offscreenBytes)} the spawn camera does not show (${observed.top.map((file) => `${file.path} ${mb(file.bytes)} ${file.reason}`).join(", ")}), past the asserted ceiling of ${mb(ceiling)}.`
+          : observed === undefined
+            ? "Off-screen startup bytes were not observed: the runtime reported no measurement."
+            : `Off-screen startup bytes were not observable: the runtime awaited ${observed.unsizedFiles} file(s) and the asset manifest records no size for any of them.`,
+        observedRuntimePath: "observations.json/startup/offscreenBytes",
+        severity: "error",
+        suggestion: measured
+          ? observed.fix
+          : "Build the game's assets with the asset pipeline so the manifest records each file's bytes, and keep the playtest bridge installed before startup.",
+      });
+      return;
+    }
+  }
+  if (observed?.warn !== true) return;
+  ctx.diagnostics.push({
+    code: "TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES",
+    message: `Most of the reveal's wait bought nothing on screen: ${mb(observed.offscreenBytes)} of ${mb(observed.awaitedBytes)} awaited is not shown by the spawn camera (${observed.top.map((file) => `${file.path} ${mb(file.bytes)} ${file.reason}`).join(", ")}).`,
+    observedRuntimePath: "observations.json/startup/offscreenBytes",
+    severity: "warning",
+    suggestion: observed.fix,
+  });
+}
+
 const MILESTONES = {
   maxCompileSettledMs: "compileSettledMs",
   maxEnteredMs: "enteredMs",
@@ -12,6 +62,7 @@ const MILESTONES = {
  * game which never entered its world cannot vouch for how fast it did.
  */
 export function emitStartup(ctx: IEvaluationContext): void {
+  emitOffscreenBytes(ctx);
   const assertion = ctx.scenarioAssertions.startup;
   if (assertion === undefined) return;
   const timeline = ctx.input.report.observations?.startup?.timeline;

@@ -473,6 +473,11 @@ export interface IPlaytestStartupAssertion {
   maxCompileSettledMs?: number;
   /** `whenReady()` resolved: the world is safe to show. */
   maxReadyMs?: number;
+  /**
+   * Ceiling on the bytes the reveal waited for that the spawn camera does not show, from the
+   * runtime's own measurement. `0` asserts that everything awaited is in view.
+   */
+  maxOffscreenBytes?: number;
 }
 
 /** Ceilings on work observed after the runtime's explicit shader warm-up settled. */

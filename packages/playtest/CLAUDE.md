@@ -103,6 +103,10 @@ vocabulary behind them is in [docs/reference.md](docs/reference.md).
 - **Advertise only what you registered.** An unknown capability is
   `TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN`, so a new observation channel is registered in
   `src/capabilities.ts` in the same change that starts advertising it.
+- **Off-screen startup bytes are a warning, not a failure, until a scenario sets `assert.startup.maxOffscreenBytes`.**
+  `TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES` means the reveal awaited files the spawn camera does not show;
+  the fix is to stream or prefetch those, never to defer what the camera sees
+  ([docs/reference.md](docs/reference.md)).
 
 ## Determinism
 

@@ -13,6 +13,7 @@ import type {
   IPlaytestRenderChainObservation,
   IPlaytestSceneNodesObservation,
   IPlaytestSceneObservation,
+  IPlaytestStartupOffscreenBytes,
   IPlaytestStartupTimeline,
   JsonValue,
 } from "./protocol.js";
@@ -89,6 +90,7 @@ export interface IPlaytestObservations {
   /** The startup observation the runner waited on, with the rule it resolved under. */
   startup?: {
     compileSettled?: boolean;
+    offscreenBytes?: IPlaytestStartupOffscreenBytes;
     phase: string;
     progress: number;
     rule?: string;

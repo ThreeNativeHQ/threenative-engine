@@ -525,8 +525,16 @@ export function validateStartupAssertion(
     }
     result[key] = ceiling;
   }
+  const bytes = record.maxOffscreenBytes;
+  if (bytes !== undefined) {
+    // Zero is meaningful here ("everything awaited is in view"), so it is the one ceiling allowed to be 0.
+    if (typeof bytes !== "number" || !Number.isInteger(bytes) || bytes < 0) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.maxOffscreenBytes' must be a non-negative integer number of bytes, received ${describeValue(bytes)}.`);
+    }
+    result.maxOffscreenBytes = bytes;
+  }
   if (Object.keys(result).length === 0) {
-    throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${STARTUP_CEILINGS.join(", ")}; an empty startup assertion observes nothing.`);
+    throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${[...STARTUP_CEILINGS, "maxOffscreenBytes"].join(", ")}; an empty startup assertion observes nothing.`);
   }
   return result;
 }

@@ -832,6 +832,7 @@ Bounds when the application's startup milestones happened: the world entered, fi
 | `maxEnteredMs` | number | no |
 | `maxCompileSettledMs` | number | no |
 | `maxReadyMs` | number | no |
+| `maxOffscreenBytes` | number | no |
 
 
 ```json
@@ -845,7 +846,7 @@ Bounds when the application's startup milestones happened: the world entered, fi
 
 ### `pipelineCensus`
 
-Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
+Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; a named streamed scope must also prove its target-bound first visible world frame, and missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.pipelineCensus
 

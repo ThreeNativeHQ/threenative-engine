@@ -1,6 +1,6 @@
 # PRD-744 — Startup reports the bytes it awaits that the spawn camera does not show
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Priority:** P1 — all boxes are open: an agent told "your assets are big" defers content the spawn camera sees (Wildwood revealed a bare valley, `trees=1 ferns=0`, then froze 2-4 s in play), and no engine signal separates that mistake from the right fix
 **Complexity:** 5 (MEDIUM) — 6–10 files (2), new measurement module (+2), crosses core and playtest builds (+2) → 6; risk override: none
 **Owner:** João (decisions), agent (implementation)
@@ -87,8 +87,8 @@ fix text asks the author to check it. Instanced meshes built from the model's ow
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A reveal that awaited one visible model and one large out-of-view model logs a `console.warn` `TN_STARTUP_OFFSCREEN_BYTES` naming the large file; the clean variant logs no warning. — proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: The playtest report carries the same measurement as a warning diagnostic, and `assert.startup.maxOffscreenBytes` fails the offscreen fixture and passes the clean one, in a browser run. — proof: playtest scenario `packages/playtest/__tests__/fixtures/startup-offscreen/` run with the commands in Phase 3 — Evidence: pending.
+- [x] AC-1 [local]: A reveal that awaited one visible model and one large out-of-view model logs a `console.warn` `TN_STARTUP_OFFSCREEN_BYTES` naming the large file; the clean variant logs no warning. — proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — 8 passed through `defineGame`; the `reveal` tests warn on the far-behind variant and print nothing on the clean one.
+- [x] AC-2 [local]: The playtest report carries the same measurement as a warning diagnostic, and `assert.startup.maxOffscreenBytes` fails the offscreen fixture and passes the clean one, in a browser run. — proof: the `examples/startup-offscreen` scenarios run with the commands in Phase 3 — evidence under the Phase 3 browser box (hardware nvidia adapter; offscreen variant exit 1, clean exit 0, warning-only scenario exit 0 with the warning).
 
 ## Blocked on
 
@@ -98,8 +98,8 @@ None.
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Off-screen bytes measured at the reveal | `startupReadiness.whenReady()` handler, `packages/core/src/game.ts` (beside `unlitFoliageWarning`) | New; no incumbent | AC-1 |
-| Bridge field `startup.offscreenBytes` | `packages/core/src/playtest.ts` `startup()` → `evaluators/startup.ts`, `runner/sceneOverview.ts` | Extends the startup observation | AC-2 |
+| Off-screen bytes measured at the reveal | `startupReadiness.whenReady()` handler, `packages/core/src/game.ts:1284` (beside `unlitFoliageWarning`) | New; no incumbent | AC-1 |
+| Bridge field `startup.offscreenBytes` | `packages/core/src/playtest.ts:165` `startup()` → `evaluators/startup.ts`, `runner/sceneOverview.ts` | Extends the startup observation | AC-2 |
 | `assert.startup.maxOffscreenBytes` | scenario file → `emitStartup` | Extends `STARTUP_CEILINGS` | AC-2 |
 
 ## Decisions
@@ -112,6 +112,11 @@ None.
 - 2026-10-25 (agent): the doctor estimate lives on `playtest doctor --url`, not `threenative doctor`, because the
   first scene's awaited set is only knowable by loading it; the static manifest total would overstate an
   open-world game by its streamed cells.
+- 2026-10-25 (agent): the browser proof fixture is a workspace example, `examples/startup-offscreen/`, not a
+  file under `packages/playtest/__tests__/fixtures/`, because a real page needs the built core and a bridge. Its
+  model loader is synthetic and its manifest hand-written (the property under test is the reveal measurement and
+  the report chain, not GLB decoding), and its scenarios are not yet in `pnpm test:playtest`.
+- 2026-10-25 (agent): MB in every report is decimal (1,000,000 bytes), so the figure matches the Mbit/s link speed.
 - 2026-10-25 (agent): no core export. The measurement is internal; the report is a console line plus a bridge
   field, so there is no new capability row and no template edit.
 
@@ -129,22 +134,22 @@ None.
 **Verification:** `pnpm --filter @threenative/core typecheck` (exit 0) and the three proofs above.
 
 #### Phase 2: Playtest warns, gates and estimates
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/playtest/src/protocol.ts`, `src/evaluators/startup.ts`, `src/scenario/schema-base.ts`, `src/scenario/schema-accessors.ts`, `src/assertion-schema.ts` (+ regenerated validators), `src/runner/sceneOverview.ts`, `__tests__/startup-assertion.spec.ts`, `__tests__/` doctor/overview spec
 **Implementation:** the report gets a `warning` diagnostic `TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES` under the same rule; `maxOffscreenBytes` joins the ceilings and fails closed on a missing measurement; `formatSceneOverview` prints awaited MB, off-screen MB and the 20 Mbit/s estimate.
 
-- [ ] A run whose bridge reports warn-level off-screen bytes carries the warning diagnostic; an inform or clean run carries none. proof: `pnpm exec vitest run packages/playtest/__tests__/startup-assertion.spec.ts` — pending.
-- [ ] `assert.startup.maxOffscreenBytes` passes under the ceiling, fails over it, and fails closed with no measurement; a wrong-typed value throws at load. proof: `pnpm exec vitest run packages/playtest/__tests__/startup-assertion.spec.ts packages/playtest/__tests__/scenario.spec.ts` — pending.
-- [ ] `doctor --url` prints awaited and off-screen MB with the estimated reveal time at 20 Mbit/s. proof: `pnpm exec vitest run packages/playtest/__tests__/scene-overview.spec.ts` — pending.
+- [x] A run whose bridge reports warn-level off-screen bytes carries the warning diagnostic; an inform or clean run carries none. proof: `pnpm exec vitest run packages/playtest/__tests__/startup-assertion.spec.ts` — 10 passed (warning with a ceiling-free scenario; inform and clean runs stay quiet).
+- [x] `assert.startup.maxOffscreenBytes` passes under the ceiling, fails over it, and fails closed with no measurement; a wrong-typed value throws at load. proof: `pnpm exec vitest run packages/playtest/__tests__/startup-assertion.spec.ts packages/playtest/__tests__/scenario.spec.ts` — 99 passed across startup-assertion, scenario and scene-overview specs; `0` is accepted, negative, fractional and string ceilings throw.
+- [x] `doctor --url` prints awaited and off-screen MB with the estimated reveal time at 20 Mbit/s. proof: `pnpm exec vitest run packages/playtest/__tests__/scene-overview.spec.ts` — passed; and a real `doctor --url 'http://127.0.0.1:5182/?forest=behind' --text` printed `awaited 48.1 MB · off-screen 48.0 MB · est. reveal download 19.2 s at 20 Mbit/s` plus the largest off-screen file and the fix.
 
-**Verification:** `pnpm --filter @threenative/playtest typecheck`, the generated-validator drift check, and the proofs above.
+**Verification:** `pnpm --filter @threenative/playtest typecheck` (0 errors), `pnpm tsx scripts/generate-assertion-validators.ts` (regenerated, +1 line), and the proofs above.
 
 #### Phase 3: Playtest proof on a real page, docs, manifest
-**Status:** NOT STARTED
-**Files:** `packages/playtest/__tests__/fixtures/startup-offscreen/` (small game: offscreen and clean variants, two scenarios), `packages/playtest/AGENTS.md`, `packages/playtest/docs/reference.md`, `packages/create-threenative/agent-docs/references/assertion-reference.md`
+**Status:** DONE
+**Files:** `examples/startup-offscreen/` (small game: `?forest=behind` and default variants, two scenarios; a workspace package, so `pnpm-lock.yaml` gains its importer), `packages/playtest/AGENTS.md`, `packages/playtest/docs/reference.md`, `packages/create-threenative/agent-docs/references/assertion-reference.md`
 **Implementation:** one fixture page awaits a visible model and a large out-of-view model; the clean variant awaits the visible one only. The AGENTS and reference docs name the warning and the assertion. Templates stay untouched.
 
-- [ ] Browser playtest: the offscreen scenario reports the warning and `maxOffscreenBytes` fails it; the clean scenario passes. proof: `node packages/playtest/dist/runner/cli.js packages/playtest/__tests__/fixtures/startup-offscreen/*.playtest.json --url … --browser-recipe webgpu` — pending.
-- [ ] Docs and capability checks stay green. proof: `pnpm capabilities:sync && pnpm exec vitest run scripts/__tests__/capability-*.spec.ts scripts/__tests__/check-capability-docs.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts` — pending.
+- [x] Browser playtest: the offscreen variant reports the warning and `maxOffscreenBytes: 0` fails it; the clean variant passes. proof: `sh scripts/xvfb.sh node packages/playtest/dist/runner/cli.js examples/startup-offscreen/playtests/startup-offscreen.playtest.json --url 'http://127.0.0.1:5181/[?forest=behind]' --server-command 'pnpm --filter startup-offscreen dev --host 127.0.0.1 --port 5181 --strictPort' --browser-recipe webgpu --headed` — local nvidia turing hardware adapter (not SwiftShader): default URL exit 0, `startup.offscreenBytes` 0 of 48,120,000 awaited; `?forest=behind` exit 1, `TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES` error naming `forest.glb` `outside-view`. `startup-offscreen-warning.playtest.json` (only `maxReadyMs`) on `?forest=behind`: exit 0 with the warning diagnostic.
+- [x] Docs and capability checks stay green. proof: `pnpm capabilities:sync && pnpm exec vitest run scripts/__tests__/capability-*.spec.ts scripts/__tests__/check-capability-docs.spec.ts packages/create-threenative/__tests__/scaffold.spec.ts` — 7 files, 148 passed; `pnpm check:docs` exit 0; `check-doc-links`, `sync-agent-docs`, `primary-docs` specs 28 passed.
 
 **Verification:** the two proofs above.
