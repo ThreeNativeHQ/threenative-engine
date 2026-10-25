@@ -1668,6 +1668,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 reported,
                 describeSceneShape(reported, this.#cameraCull?.report),
                 target.targetFps,
+                renderer.gpuClass?.class,
               );
               if (warning !== undefined) reportWarning(formatSceneWarning(warning));
               // The same sentence goes to the UI on a dev launch, so a human watching the window

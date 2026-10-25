@@ -3151,7 +3151,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/core",
-      "signature": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, ): ISceneWarning | undefined { … }",
+      "signature": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, gpuClass?: string, ): ISceneWarning | undefined { … }",
       "situations": [
         "find out whether a slow frame is the scene's shape or the device",
         "tell an authoring agent what to reduce before it promises a merge"

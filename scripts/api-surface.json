@@ -201,7 +201,7 @@
         "@threenative/core#RippleField": "export class RippleField { … }",
         "@threenative/core#Scene": "export abstract class Scene< TState extends Record<string, unknown> = Record<string, unknown>, TPhysics = undefined, > { … }",
         "@threenative/core#ScenePicker": "export class ScenePicker { … }",
-        "@threenative/core#sceneWarning": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, ): ISceneWarning | undefined { … }",
+        "@threenative/core#sceneWarning": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, gpuClass?: string, ): ISceneWarning | undefined { … }",
         "@threenative/core#Scheduler": "export class Scheduler { … }",
         "@threenative/core#setAttitude": "export function setAttitude( state: IFlightState, heading = 0, pitch = 0, roll = 0, ): IFlightQuaternion { … }",
         "@threenative/core#setSpanRecorder": "export function setSpanRecorder(next: SpanRecorder | undefined): void { … }",

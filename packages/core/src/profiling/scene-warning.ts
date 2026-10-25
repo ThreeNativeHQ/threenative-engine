@@ -104,13 +104,17 @@ export function displayPeriodMs(
  * Fails closed in both directions: a window whose GPU was never measured gets no verdict, because
  * "the GPU is idle" is a claim and an absent reading is not evidence for it; and a window with no
  * shape to report gets none either, because a warning that cannot say what to change is noise.
+ * A software adapter gets none: its rasteriser runs inside the CPU's submit, so the render phase
+ * carries the GPU's work and "the GPU is idle" is false (a 3-draw UI frame read 54 ms on
+ * `Microsoft Basic Render Driver`).
  */
 export function sceneWarning(
   window: IFrameBudgetWindow,
   shape: ISceneShape | undefined,
   declaredTargetFps: number | undefined,
+  gpuClass?: string,
 ): ISceneWarning | undefined {
-  if (shape === undefined) return undefined;
+  if (shape === undefined || gpuClass === "software") return undefined;
   const gpuMs = window.gpu?.mean;
   const frameMs = window.presented.mean;
   if (gpuMs === undefined || !(frameMs > 0)) return undefined;
