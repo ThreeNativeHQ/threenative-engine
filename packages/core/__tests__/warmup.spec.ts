@@ -1,7 +1,12 @@
 import { PMREMNode } from "three/webgpu";
 import { describe, expect, test, vi } from "vitest";
 
-import { type IWarmUpProgress, warmUpComputeNodes, warmUpScene } from "../src/warmup.js";
+import {
+  type IWarmUpProgress,
+  prepareSceneEnvironment,
+  warmUpComputeNodes,
+  warmUpScene,
+} from "../src/warmup.js";
 
 /**
  * The launch this exists to fix: a Pixel 8 spent 24.5 seconds across 107 pipeline compiles inside
@@ -96,6 +101,30 @@ describe("scene warm-up", () => {
       const report = await promise;
       expect(events).toEqual(["prepare", "compile", "covered-render"]);
       expect(report.passes).toEqual(["main"]);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
+  test("should give up on a WebGPU environment bake at its deadline, as the native preparer does", async () => {
+    // Action RPG restart on 2-CPU SwiftShader: the transition waited the whole sky bake (about 30 s)
+    // past its deadline, and the playtest's advance timed out at 20.25 s with no frame drawn.
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: () => new Promise<boolean>(() => undefined),
+    });
+    try {
+      const started = performance.now();
+      const prepared = await prepareSceneEnvironment(
+        { raw: { backend: { isWebGPUBackend: true } } },
+        { children: [], environment: { isTexture: true } } as never,
+        {} as never,
+        started + 30,
+      );
+      expect(prepared).toBe(false);
+      expect(performance.now() - started).toBeLessThan(1000);
     } finally {
       if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
       else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
