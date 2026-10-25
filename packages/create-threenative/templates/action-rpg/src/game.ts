@@ -33,9 +33,6 @@ const game = defineGame<GameState, IPhysicsContext>({
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest({ events: drainPlaytestEvents })],
   display: config.display,
   render: config.renderer,
-  // The authored props are unique (geometry, material) pairs; the batching projection measures
-  // `notWorthwhile` and falls back, so the game states the opt-out instead of paying its scan.
-  renderer: { projection: false },
   scenes: { play: Play },
   seed: 93093,
   start: "play",
