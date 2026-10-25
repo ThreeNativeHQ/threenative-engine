@@ -4,7 +4,7 @@
 // One sun, and the sky in `sky.ts` is the fill — a fresh Unreal level's directional light and sky
 // light, and nothing stacked on top. A hemisphere or ambient light next to an image-based
 // environment fills the same faces twice and flattens the shadow side the sun is there to make.
-import { DirectionalLight, PCFShadowMap, type Scene, type Vector3 } from "three";
+import { DirectionalLight, PCFShadowMap, Vector3, type Scene } from "three";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
@@ -12,7 +12,7 @@ type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 export interface ILighting {
   /** Aimed at the hero every frame, so one shadow map covers the play space around it. */
   readonly key: DirectionalLight;
-  follow(target: Vector3): void;
+  follow(target: Vector3, forward?: Vector3): void;
 }
 
 export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = false): ILighting {
@@ -23,8 +23,10 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
   // number sets the sun against the sky, not how bright the picture is.
   const key = new DirectionalLight(0xffcf9e, 6);
   key.castShadow = true;
-  // The camera sees about 30 m of island around the hero; the map is fitted to that and travels.
+  // The camera sees about 30 m of island ahead of the hero; the map is fitted to that and travels.
   // A 2.5 cm texel and a 4-texel filter give a 10 cm soft edge, a morning sun's, not a cut-out.
+  // The 52 m window sits 14 m ahead of the hero, so the ground the camera sees keeps its shadows
+  // without paying for a wider map or a heavier shadow pass.
   const size = mobile ? 1024 : 2048;
   const extent = mobile ? 16 : 26;
   key.shadow.mapSize.set(size, size);
@@ -41,10 +43,17 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
   scene.add(key);
   scene.add(key.target);
   const offset = SUN_DIRECTION.clone().multiplyScalar(60);
+  const ahead = new Vector3();
   return {
-    follow(target: Vector3): void {
-      key.position.set(target.x + offset.x, target.y + offset.y, target.z + offset.z);
-      key.target.position.copy(target);
+    follow(target: Vector3, forward?: Vector3): void {
+      ahead.set(0, 0, 0);
+      if (forward !== undefined) {
+        ahead.copy(forward);
+        ahead.y = 0;
+        if (ahead.lengthSq() > 1e-6) ahead.normalize().multiplyScalar(14);
+      }
+      key.position.set(target.x + ahead.x + offset.x, target.y + offset.y, target.z + ahead.z + offset.z);
+      key.target.position.copy(target).add(ahead);
       key.target.updateMatrixWorld();
     },
     key,

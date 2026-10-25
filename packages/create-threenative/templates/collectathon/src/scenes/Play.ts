@@ -203,6 +203,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       return ctx.physics.directSpaceState.intersectRay({ collisionMask: WORLD_LAYER, from, to })
         ?.distance;
     };
+    const shadowForward = new Vector3();
     const orbit = createOrbitCamera(camera);
     orbit.snap(hero.mesh.position, hero.yaw, probe);
     // Whether the camera sees the hero: a ray from the lens to the hero's waist hits no wall.
@@ -218,7 +219,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
       orbit.update(hero.mesh.position, hero.body.velocity, dt, probe);
       rayClear = probe(camera.position, hero.mesh.position) === undefined;
-      lighting.follow(hero.mesh.position);
+      lighting.follow(hero.mesh.position, camera.getWorldDirection(shadowForward));
       course.meadow.update(camera.position);
     });
 
