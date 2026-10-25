@@ -21,7 +21,9 @@ export interface IExposureSettings {
   snapLo: number;
   snapHi: number;
   snapGain: number;
-  /** Seed for known cuts. reset() without a value adopts the next measured target. */
+  /**
+   * Seed for reset(value). The first frame and reset() without a value adopt the measured target.
+   */
   initialExposure: number;
   settleStops: number;
   /** Limit catch-up after a suspended frame, avoiding an unrequested cut. */
