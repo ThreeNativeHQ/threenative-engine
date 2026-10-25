@@ -224,6 +224,12 @@ export interface IScalerWindow {
   readonly fps: number;
   /** Loop frames represented by this closed window, used for the sub-rectangle cadence guard. */
   readonly frames?: number;
+  /**
+   * Loop frames of the window whose render the renderer declined (the Wasm web engine's gate while
+   * two frames are on the GPU). A declined frame shows nothing new, so the rate the panel saw is
+   * `fps * (frames - renderSkips) / frames`, and `presented`, the loop's cadence, does not show them.
+   */
+  readonly renderSkips?: number;
   /** Current drawing surface, used to quantize a continuous estimate to eight pixels. */
   readonly surface?: {
     readonly drawingBufferWidth: number;
@@ -374,7 +380,8 @@ export class ResolutionScaler {
   }
   #floorReported = false;
 
-  #observeWindow(window: IScalerWindow): number | undefined {
+  #observeWindow(observed: IScalerWindow): number | undefined {
+    const window = drawnWindow(observed);
     this.#windowIndex += 1;
     const frames = window.frames;
     this.#continuousFrames +=
@@ -749,7 +756,12 @@ export class ResolutionScaler {
   }
 
   #overBudget(window: IScalerWindow): boolean {
-    return window.presented.p50 > this.budgetMs || window.presented.p95 > this.tailMs;
+    return (
+      window.presented.p50 > this.budgetMs ||
+      window.presented.p95 > this.tailMs ||
+      // The loop kept the cadence by declining draws: the drawn frames' mean interval is the cost.
+      ((window.renderSkips ?? 0) > 0 && 1000 / window.fps > this.budgetMs)
+    );
   }
 
   #freshGpuMs({ gpu, gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
@@ -838,4 +850,15 @@ export class ResolutionScaler {
     this.#scaleSource = "auto-pinned";
     this.#pinWindows = RESOLUTION_SCALER.oscillationWindows;
   }
+}
+
+/**
+ * The window as the panel saw it: `fps` of the frames drawn, not of the loop. Lantern Vale on Iris
+ * Xe declined 105 of 300 renders at 25 ms of GPU each; the loop's 59.88 fps held the scale at 1.
+ */
+function drawnWindow(window: IScalerWindow): IScalerWindow {
+  const { frames, renderSkips } = window;
+  if (renderSkips === undefined || renderSkips <= 0 || frames === undefined || !(frames > 0))
+    return window;
+  return { ...window, fps: (window.fps * Math.max(0, frames - renderSkips)) / frames };
 }
