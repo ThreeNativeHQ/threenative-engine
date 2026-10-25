@@ -206,15 +206,21 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   READABILITY FAIL, because the burr icon (even rays round a disc) read as a sun. The icon became a
   shaded brown ball with hooked bristles, and the burr model went warmer brown with brighter tips.
   Round 2: ORIGINALITY PASS, READABILITY PASS. All three BEFORE items read as the Nintendo
-  originals, and no AFTER item does. Open polish notes: the burr is small on the asphalt at play
-  size (20-30% larger), and the can icon reads as a battery (a nozzle or a flame would say nitro).
+  originals, and no AFTER item does.
+- 2026-10-24 (lead): Deferred polish, from the round 2 item judge. The burr is small on the
+  asphalt at play size (20-30% larger), and the nitro can icon reads as a battery (a nozzle or a
+  flame would say nitro). Revisit when a later item or HUD judge flags either again; each change
+  needs one Opus round on readability and originality against a0b25780a.
 - 2026-10-24 (agent, round 8 judge note): the place readout gets a dark 3 px halo, because an
   orange "2nd" washed out over the orange mini-turbo sparks. Fresh Opus judge on the finish pose
   (2 runs per arm): IMPROVEMENT in both runs, the halo follows the letterforms, nothing else
-  changed. The dust puff's hard bottom edge stays open: each puff ends at the top of a skid strip,
-  but neither fading the sprite's lower half nor a constant depth bias on the skid strips (in place
-  of the slope bias) changed the frame, so the edge is not a plain depth intersection. Next check:
-  a puff over bare road with no skids, then the AO alpha test and the temporal history.
+  changed.
+- 2026-10-24 (lead): Deferred, the dust puff's hard bottom edge (round 8 judge note). Each puff ends
+  at the top of a skid strip. Two fixes left the frame unchanged and were reverted: fading the
+  sprite's lower half in `effects.ts`, and a constant depth bias (`polygonOffsetUnits: -4`) on the
+  skid strips in place of the slope bias. So the edge is not a plain depth intersection. Next
+  check: a puff over bare road with no skids, then the dust material's AO alpha test and the
+  temporal history. Revisit when a look judge flags the dust again.
 - 2026-10-24 (lead): Deferred engine bug, not worked around further. A `VirtualShadowNode` sun
   with `shadow.radius = 2` on the Wasm engine throws `TN_VIRTUAL_SHADOW_UNSUPPORTED`, then
   `TN_WASM_RENDERER_LOST`; at radius 1 it costs a 30-50 ms render phase. Repro: in
@@ -315,5 +321,5 @@ film; a fresh read-only judge with the reference frames.
 - [ ] AC-9: the `performance` scenario stays inside its budget on `high` (RTX 2080) and on `medium` (the Debian laptop's integrated GPU). proof: `playtests/performance.playtest.json`
   At 9a8558837 both runs exit 0 on the scenario's own bounds: `high` (nvidia turing) 114 draws, 151,353 triangles; `medium` (Intel gen-12lp) 108 draws, 151,345 triangles. The harness's 16.7 ms p95 is not held: `high` 25.2 ms over 939 samples (desktop load 25-34 on 12 cores), `medium` 16.9 ms over 777. The slow samples are host gap (13 and 16 ms), not the game's render phase (5.7 and 3.9 ms), so the next step is a quiet-host run before any scene cut.
   At ec05e52ab on a fresh tarball consumer (`high`, RTX 2080, the runner's private Xvfb): p95 16.9 ms over 748 samples (17.2-17.3 ms before the shared geometry and the fifth emitter cut), no `TN_SCENE_WARNING`, projection `belowMeshFloor` (107 renderables, too small to batch). Only 16 of the 748 samples drew: the Wasm frame cap skips most renders under Xvfb, and the slow samples are zero-draw frames with a 16.9 ms host gap (render phase 2.7 ms). Open until the harness's engine-cost metric (playtest-gates lane, PRD-735) lands and this reruns on it; `explore` exit 0.
-  On the display-aware gate (4d71d852a), clean pack of a2f5ccb24: `high` on the RTX 2080 (private Xvfb, cost gated) exits 0 at cost p95 9.95 ms (CPU 1.0, GPU 9.95), interval 17.4 ms not gated, 107 draws. The Debian laptop's real display (Intel gen-12lp, both gates, 75-78 °C and load 1.2-1.7 at each start, idle tn-local runners) exits 1 in all four runs: `medium` cost p95 24.3 and 24.0 ms, `high` (forced through `setupPost`'s `tier`) 44.4 and 42.7 ms, all GPU; CPU 4.1-4.5 ms, interval 16.9-17.1 ms, render phase 4.7-5.4 ms, host gap 3.0-3.2 ms, no `TN_SCENE_WARNING`, projection `belowMeshFloor` (91 renderables). The GPU reading contradicts the frame count: 300 frames rendered per 5 simulated seconds, at a 17 ms interval, cannot each hold 24 ms of GPU work on one queue, and the GPU samples are up to 26 frames old. So the laptop result is not yet a valid fail or pass; it waits on the playtest-gates lane's answer on the Intel GPU timer.
+  On the display-aware gate (4d71d852a), clean pack of a2f5ccb24: `high` on the RTX 2080 (private Xvfb, cost gated) exits 0 at cost p95 9.95 ms (CPU 1.0, GPU 9.95), interval 17.4 ms not gated, 107 draws. The Debian laptop's real display (Intel gen-12lp, both gates, 75-78 °C and load 1.2-1.7 at each start, idle tn-local runners) exits 1 in all four runs: `medium` cost p95 24.3 and 24.0 ms, `high` (forced through `setupPost`'s `tier`) 44.4 and 42.7 ms, all GPU; CPU 4.1-4.5 ms, interval 16.9-17.1 ms, render phase 4.7-5.4 ms, host gap 3.0-3.2 ms, no `TN_SCENE_WARNING`, projection `belowMeshFloor` (91 renderables). The GPU reading contradicts the frame count: 300 frames rendered per 5 simulated seconds, at a 17 ms interval, cannot each hold 24 ms of GPU work on one queue, and the GPU samples are up to 26 frames old. So the laptop result is not yet a valid fail or pass; it waits on the playtest-gates lane's answer on the Intel GPU timer. It makes no fps claim either way: the pack was a2f5ccb24, not the shipped HEAD, and the run held only the GPU lock, because the laptop's idle tn-local runners hold the shared quiet lock. The AC-9 rerun uses a pack built from one `git archive HEAD` (facade, core and stamped Wasm, web host ABI 2 from 2ee81c747) on a quiet laptop below 80 °C.
 - [x] AC-10: the visual judge returns PASS on kart feel, drift sparks, course depth and relief, lighting and no regressions. proof: the judge report linked from the PR — round 4 (fresh opus, BEFORE 32b787ad2, AFTER 9a8558837): PASS, overall IMPROVEMENT, all 4 intended effects met (item roulette and mushroom in the HUD from f200, no box looms, pad plate inside the edge line, stage-1 sparks). Rounds 1-3 FAIL drove the Decisions above. Stills and film: `screenshots/kart/`. Round 8 (fresh opus, BEFORE e5071d49d, AFTER ec05e52ab, on the owner's addenda: crisp at speed, no repeating pattern, a grazing road view, sparks and an item hit in the film): PASS, film IMPROVEMENT, all 4 intended effects met (continuous skid strips, no dotted flame row, the banana spin at f32-f56, CPU power-slides with sparks). Rounds 5-7 drove the skid, slide and flame Decisions. Set: `screenshots/kart/*-ec05e52ab.*`.
