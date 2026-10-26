@@ -1,0 +1,149 @@
+{
+  "name": "kart-lap-times",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 68.24,
+          "y": 1.38,
+          "z": 45.76
+        },
+        "facing": {
+          "yaw": -1.7562
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "over-line",
+      "press": [
+        "KeyW"
+      ],
+      "holdTicks": 150,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "autopilot-on",
+      "press": [
+        "KeyW",
+        "KeyP"
+      ],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "lap-one-done",
+      "waitForResource": {
+        "id": "state",
+        "path": "lap",
+        "equals": 2
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot-off",
+      "press": [
+        "KeyP"
+      ],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reverse",
+      "press": [
+        "KeyS"
+      ],
+      "holdTicks": 60,
+      "release": false
+    },
+    {
+      "label": "back-over",
+      "waitForResource": {
+        "id": "state",
+        "path": "lap",
+        "equals": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "let-go-of-brake",
+      "press": "KeyS",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "forward",
+      "press": [
+        "KeyW"
+      ],
+      "holdTicks": 60,
+      "release": false
+    },
+    {
+      "label": "over-again",
+      "waitForResource": {
+        "id": "state",
+        "path": "lap",
+        "equals": 2
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "backCrossings",
+        "equals": 1,
+        "allowTrivial": "The kart backed over the line once after its first lap."
+      },
+      {
+        "entity": "race",
+        "component": "lapsTimed",
+        "equals": 1,
+        "allowTrivial": "One lap was driven, so one lap time: backing over the line and crossing it again must not time that lap twice."
+      }
+    ]
+  }
+}

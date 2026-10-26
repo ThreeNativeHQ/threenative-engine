@@ -400,6 +400,7 @@ export class Race extends Scene<GameState> {
         ...race,
         elapsed,
         itemsUsed: race.thrown.burr + race.thrown.nitro + race.thrown.acorn,
+        lapsTimed: lapTimes.length,
         order: rank(field.map((e) => e.racer)).map((r) => r.name),
         raceTime: goTime < 0 ? 0 : elapsed - goTime,
         stuckWorst: Math.max(...field.filter((e) => !e.player).map((e) => e.stuckWorst)),
@@ -628,8 +629,10 @@ export class Race extends Scene<GameState> {
       for (const [racer, place] of crossing)
         if (racer.rank !== place) race.finishRankMismatches += 1;
       race.finishedCount = field.filter((e) => e.racer.finished).length;
-      if (player.racer.lap !== lastLap) {
-        if (player.racer.lap > lastLap && player.racer.lap >= 1) {
+      // `lastLap` is the furthest lap reached, not the last one seen: backing over the line takes a
+      // lap back and crossing again returns it, and that return must not time the lap twice.
+      if (player.racer.lap > lastLap) {
+        if (player.racer.lap >= 1) {
           lapTimes.push(raceTime - lapStart);
           lapStart = raceTime;
           if (player.racer.lap === RACE.laps - 1) toast("FINAL LAP!", 2);
