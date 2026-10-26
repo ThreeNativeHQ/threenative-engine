@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <iomanip>
 #include <sstream>
+#include <string>
 
 namespace tn::engine {
 namespace {
@@ -93,7 +94,10 @@ std::array<float, 8> TraaPass::historyDepthRows(const Matrix& projection, const 
 // UE 5.8.3 TemporalAA.usf:2175-2190,2334-2343 rejects departed dynamic history;
 // a separate R8 target keeps the authored colour alpha intact.
 // UE 5.8.3 TemporalAA.usf:1463-1478,1772-1808,1961-1990,2278: responsive history for incomplete motion.
-const char* traaResolveWgsl() { return R"WGSL(
+const char* traaResolveWgsl() {
+    // UE 5.8.3 TemporalAA.usf:1574 explicitly unrolls reconstruction; WGSL has no unroll hint.
+    static const std::string shader = [] {
+        std::string shader = R"WGSL(
 struct Params {
     depthNumerator: vec4<f32>, depthDenominator: vec4<f32>,
     size: vec2<f32>, depthThreshold: f32, edgeDepthDiff: f32,
@@ -135,14 +139,20 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     var closest = 2.0;
     var farthest = -1.0;
     var closestPosition = vec2<f32>(0);
-    for (var x = -1; x <= 1; x++) {
-        for (var y = -1; y <= 1; y++) {
+)WGSL";
+        for (int x = -1; x <= 1; ++x) {
+            for (int y = -1; y <= 1; ++y) {
+                shader += "\n{ let x = " + std::to_string(x) + "; let y = " + std::to_string(y) + ";\n";
+                shader += R"WGSL(
             let neighbor = currentUV * u.size + vec2<f32>(f32(x), f32(y));
             let d = textureLoad(depth, vec2<i32>(neighbor), 0);
             if (d < closest) { closest = d; closestPosition = neighbor; }
             if (d > farthest) { farthest = d; }
+}
+)WGSL";
+            }
         }
-    }
+        shader += R"WGSL(
     let motionSample = textureLoad(velocity, vec2<i32>(closestPosition), 0);
     let offset = motionSample.xy * vec2(0.5, -0.5);
     let historyUV = input.uv - offset;
@@ -195,8 +205,11 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
         let radius = 1.51 - 0.21 * (max(upscale.x, upscale.y) - 1);
         var sum = vec4<f32>(0);
         var weights = 0.0;
-        for (var y = -1; y <= 1; y++) {
-            for (var x = -1; x <= 1; x++) {
+)WGSL";
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                shader += "\n{ let x = " + std::to_string(x) + "; let y = " + std::to_string(y) + ";\n";
+                shader += R"WGSL(
                 let samplePosition = centre + vec2<f32>(f32(x), f32(y));
                 let distance = samplePosition + 0.5 - currentUV * u.size;
                 let delta = distance * upscale;
@@ -212,8 +225,11 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
                     low = min(low, neighborhood);
                     high = max(high, neighborhood);
                 }
+}
+)WGSL";
             }
         }
+        shader += R"WGSL(
         current = sum / weights;
     } else {
         current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
@@ -260,7 +276,11 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     currentWeight /= dot(compressedCurrent.rgb, luminance) + 1;
     return Resolved((current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001), select(0.f, 1.f, dynamic || (valid && oldDynamic)));
 }
-)WGSL"; }
+)WGSL";
+        return shader;
+    }();
+    return shader.c_str();
+}
 
 // The camera's motion at each pixel: the point the depth buffer holds, in the jittered frame it was rasterised in, seen
 // through the unjittered current and previous cameras. The same NDC difference the rigid velocity pass writes, so a
