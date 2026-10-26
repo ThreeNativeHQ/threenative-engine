@@ -13,8 +13,9 @@ the Wildwood tweak in `wildwood/*.patch`.
 | walked-2 | walked-2-before-1.png | walked-2-before-2.png | walked-2-after-1.png | walked-2-after-2.png |
 
 Visual judge (fresh read-only Opus, 2026-10-26): NEUTRAL at spawn, settled, walked, walked-2 and
-after, and overall. The AFTER-to-BEFORE mean pixel difference stays inside the BEFORE-to-BEFORE
-spread. Defects seen in both arms: the walked camera sits inside a foliage card, and HUD lines
+after, and overall. Per pose the AFTER-to-BEFORE mean pixel difference is the same size as the
+BEFORE-to-BEFORE one (spawn 5.6-11.4 against 9.6, settled 6.8-11.3 against 10.0, walked 3.1-4.3
+against 3.9, walked-2 5.8-10.4 against 9.7). Defects seen in both arms: the walked camera sits inside a foliage card, and HUD lines
 overlap at walked-2.
 
 ## Reveal time (`startup.readyMs`, full forest `trees=2341 ferns=7600` in every run)
@@ -38,6 +39,8 @@ Probe at the same throttle, one fresh profile per arm (`reports/return-reveal-*.
 
 ## Return visit (AC-1)
 
+Every manifest output is read from disk. AC-1 stays open on its planned text ("0 asset requests"),
+because Wildwood loads 35 `.ogg` files outside the asset pipeline.
 `reports/return-visit-final5.json`: second visit `{ hits: 121, misses: 0, bytesOnDisk: 297153760,
 bytesTotal: 297153760 }`, 0 requests for any manifest output (GLB, KTX2, HDRI, JPG, PNG). The only
 35 requests are the game's non-manifest `public/audio/*.ogg`. `return-visit-nofill-final5.json`
