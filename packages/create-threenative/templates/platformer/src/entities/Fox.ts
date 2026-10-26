@@ -1,6 +1,6 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { Group, MathUtils, Vector3 } from "three";
+import { Group, MathUtils, type Object3D, Vector3 } from "three";
 import { type IFox, createFox } from "../render/fox.js";
 import type { ITouchInput } from "../render/touch-layout.js";
 import type { GameState } from "../state.js";
@@ -66,6 +66,7 @@ export class Fox {
   state: FoxState = "idle";
   #facing = 1;
   #coyote = 0;
+  #legL: Object3D | undefined;
   #buffered = 0;
   #dashTimer = 0;
   #dashCooldown = 0;
@@ -77,6 +78,7 @@ export class Fox {
 
   constructor(ctx: GameCtx, spawn: Vector3) {
     this.rig = createFox();
+    this.#legL = this.rig.group.getObjectByName("legL");
     this.mesh = new Group();
     this.mesh.add(this.rig.group);
     this.rig.group.position.y = -FOOT_OFFSET;
@@ -156,7 +158,10 @@ export class Fox {
       vy: this.body.velocity.y,
     });
     if (this.body.grounded && Math.hypot(this.body.velocity.x, this.body.velocity.z) < 0.05)
-      this.standingSwing = Math.max(this.standingSwing, Math.abs(this.rig.legSwing));
+      this.standingSwing = Math.max(
+        this.standingSwing,
+        Math.abs(this.#legL?.rotation.z ?? Number.NaN),
+      );
   }
 
   /** The stomp bounce: one jump, and no coyote window for the frames it spends rising. */
