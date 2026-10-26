@@ -1018,6 +1018,35 @@ shader::graph::Node thresholdOf(shader::graph::Node colour) {
 // Dynamic history over a now-static pixel resets only when the depth shows its surface left (UE 5.8.3
 // TemporalAA.usf:2175-2190 resets it at any depth): a surface that stops where it stood keeps its history, so a character
 // that stops does not show the input grid while its history refills.
+// A game that jitters its own camera (three's TRAANode setViewOffset, the kits' temporal AA) renders with its own sample
+// offsets; the upsampled resolve places its kernel with the pass's jitter, so that jitter has to be the game's, read from
+// the projection it drew with. With this pass's own Halton index instead, every sub-pixel sample lands at a wrong place
+// and a still 0.72 edge never converges (the kart kerbs and track lines stayed stair-stepped).
+void traaManualJitter() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    TraaPass temporal(context.getDevice(), context.getQueue(), TraaOptions{});
+    temporal.resize(16, 12, 24, 18);
+    const TraaPass::Matrix identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    const TraaPass::Matrix perspective{1.2,0,0,0, 0,1.6,0,0, 0,0,-1.002,-1, 0,0,-0.2002,0};
+    const TraaPass::Matrix orthographic{0.1,0,0,0, 0,0.1,0,0, 0,0,-0.02,0, 0,0,-1,1};
+    const std::array<std::array<double, 2>, 3> offsets{{{0.3, -0.2}, {-0.1, 0.4}, {0.45, 0.05}}};
+    double error = 0;
+    for (const auto& projection : {perspective, orthographic}) {
+        for (const auto& [x, y] : offsets) {
+            auto manual = projection;  // Camera.setViewOffset in pixels of the 16 x 12 input
+            if (projection[11] == -1) { manual[8] += 2 * x / 16; manual[9] -= 2 * y / 12; }
+            else { manual[12] -= 2 * x / 16; manual[13] += 2 * y / 12; }
+            const auto drawn = temporal.begin(projection, identity, identity, &manual);
+            const auto status = temporal.status();
+            error = std::max({error, std::abs(status.jitterX - x), std::abs(status.jitterY - y)});
+            for (size_t i = 0; i < drawn.size(); ++i) error = std::max(error, std::abs(drawn[i] - manual[i]));
+        }
+    }
+    std::fprintf(stderr, "TN_TRAA_MANUAL_JITTER error=%.9f\n", error);
+    CHECK(error < 1e-9);
+}
+
 void traaHistoryClipping() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2545,6 +2574,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_skinned_velocity", traaSkinnedVelocity},
              {"traa_instanced_velocity", traaInstancedVelocity},
              {"traa_alpha_tested_velocity", traaAlphaTestedVelocity},
+             {"traa_manual_jitter", traaManualJitter},
              {"traa_deformation_velocity", traaDeformationVelocity},
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},

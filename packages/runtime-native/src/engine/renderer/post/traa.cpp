@@ -448,8 +448,14 @@ TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, 
     // Perspective setViewOffset changes column 2; orthographic changes the translation column.
     if (projection[11] == -1) { jittered[8] += 2 * jitter[0] / width_; jittered[9] -= 2 * jitter[1] / height_; }
     else { jittered[12] -= 2 * jitter[0] / width_; jittered[13] += 2 * jitter[1] / height_; }
-    if (viewProjection)
+    if (viewProjection) {
+        // The game jittered its own camera (three's TRAANode setViewOffset): it drew with its sample offset, so the
+        // resolve places its kernel with that one, read back from the projection, not with this pass's sequence.
         jittered = *viewProjection;
+        if (projection[11] == -1)
+            jitter_ = {(jittered[8] - projection[8]) * width_ / 2, (projection[9] - jittered[9]) * height_ / 2};
+        else jitter_ = {(projection[12] - jittered[12]) * width_ / 2, (jittered[13] - projection[13]) * height_ / 2};
+    }
     inverseProjection_ = inverse(jittered);
     if (debugDump_) {
         debugDump_->frame = history_.frame();
@@ -457,7 +463,7 @@ TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, 
         std::ostringstream json; json << std::setprecision(17);
         json << "{\"frame\":" << history_.frame() << ",\"frameCount\":" << history_.frame() + 1
              << ",\"indexBase\":0,\"jitterIndex\":" << history_.frame() % jitterLength_
-             << ",\"jitterPixels\":[" << jitter[0] << ',' << jitter[1] << "],\"projectionMatrix\":[";
+             << ",\"jitterPixels\":[" << jitter_[0] << ',' << jitter_[1] << "],\"projectionMatrix\":[";
         for (size_t i = 0; i < jittered.size(); ++i) json << (i ? "," : "") << jittered[i];
         json << "]}\n"; debugDump_->metadata = json.str();
     }

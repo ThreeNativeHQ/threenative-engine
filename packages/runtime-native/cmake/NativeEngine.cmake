@@ -144,6 +144,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_skinned_velocity=traa_skinned_velocity
         native_engine_traa_instanced_velocity=traa_instanced_velocity
         native_engine_traa_alpha_tested_velocity=traa_alpha_tested_velocity
+        native_engine_traa_manual_jitter=traa_manual_jitter
         native_engine_traa_deformation_velocity=traa_deformation_velocity
         native_engine_traa_feeds_the_chain=traa_feeds_the_chain
         native_engine_velocity_needs_traa=velocity_needs_traa
