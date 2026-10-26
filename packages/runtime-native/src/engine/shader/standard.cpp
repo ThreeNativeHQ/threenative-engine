@@ -306,7 +306,8 @@ static ExprId nodeType(Program& p, ExprId id, Type type) {
 }
 
 static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal,
-                               const std::unordered_map<std::string, ExprId>& uniformInputs = {}) {
+                               const std::unordered_map<std::string, ExprId>& uniformInputs = {},
+                               bool previousPalette = false) {
     ExprId position = v.attribute("position", Type::vec(3));
     ExprId normal = withNormal ? v.attribute("normal", Type::vec(3)) : kInvalid;
     if (variant.morphTargets > 0) {
@@ -363,8 +364,10 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         applyInstance();
     if (variant.skinned) {
         // getSkinnedPosition and getSkinnedNormalAndTangent, operand for operand.
-        const uint32_t bones = v.storageBuffer("boneMatrices", Type::mat(4, 4));
-        ExprId base = v.construct(Type::u32(), {v.uniform("boneBase", Type::f32())});
+        // The velocity stage's previous position reads the previous frame's palette at its previous base.
+        const std::string palette = previousPalette ? previousDeformationUniformPrefix : "";
+        const uint32_t bones = v.storageBuffer(palette + "boneMatrices", Type::mat(4, 4));
+        ExprId base = v.construct(Type::u32(), {v.uniform(palette + "boneBase", Type::f32())});
         if (variant.skinnedPalette) {
             const ExprId stride = v.construct(Type::u32(), {v.uniform("boneStride", Type::f32())});
             base = v.add(base, v.mul(v.builtin("instanceIndex"), stride));
@@ -449,7 +452,7 @@ OutputPrograms velocityPrograms(const VertexVariant& variant) {
             previousUniforms["uniform:" + uniform->name] =
                 v.uniform(std::string(previousDeformationUniformPrefix) + uniform->name, uniform->type);
     }
-    const auto previous = localVertex(v, variant, false, previousUniforms);
+    const auto previous = localVertex(v, variant, false, previousUniforms, true);
     v.output("previousClip", v.mul(v.uniform("previousProjection", Type::mat(4, 4)),
         v.mul(v.uniform("previousView", Type::mat(4, 4)),
             v.mul(v.uniform("previousModel", Type::mat(4, 4)), previous.position))));

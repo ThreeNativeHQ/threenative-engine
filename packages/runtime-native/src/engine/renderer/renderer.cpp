@@ -462,6 +462,10 @@ struct Renderer::ShadowPass {
 
 struct Renderer::FrameJob {
     uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
+    // Skinned velocity: the palette bytes copied to traaPrevious_boneMatrices after the velocity pass (zero copies
+    // nothing), and whether a seeded frame copies them before it too.
+    uint64_t paletteBytes = 0;
+    bool paletteSeed = false;
     std::vector<Planned> plan, velocityPlan, auxPlan;
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
     std::vector<ShadowPass> shadowPasses;
@@ -517,10 +521,12 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     // One triangle covers the frame; the output pass samples the scene target texel for texel.
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
     outputTriangle_ = gpu_.createBuffer(sizeof triangle, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-    for (const char* name : {"boneMatrices", "morphData", "morphInfluences", "instances"}) {
+    // traaPrevious_boneMatrices: the previous frame's palette, copied from boneMatrices after the velocity pass.
+    for (const char* name : {"boneMatrices", "morphData", "morphInfluences", "instances", "traaPrevious_boneMatrices"}) {
         FrameStorage& storage = storages_[name];
         storage.capacity = 64;
-        storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+        storage.buffer = gpu_.createBuffer(storage.capacity,
+            WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     }
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
@@ -3017,6 +3023,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.paletteBytes = 0; job.paletteSeed = false;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -3390,7 +3397,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
             const auto& variant = draw.program->variant;
-            const bool unsupported = item.skinIndices || item.morphGeometry || item.sprite || item.background ||
+            const bool unsupported = item.morphGeometry || item.sprite || item.background ||
                 item.positionNode || item.nodes.vertexNode || item.transparent || item.material->alphaTest > 0 ||
                 item.material->alphaHash;
             const auto skip = [&](const char* reason) {
@@ -3409,7 +3416,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // GPU-written storage and sampled displacement have no retained previous contents.
             if (std::any_of(velocity.vertex.bindings.begin(), velocity.vertex.bindings.end(), [](const auto& binding) {
                 return binding.kind != shader::BindingKind::Uniform &&
-                    !(binding.kind == shader::BindingKind::Storage && binding.name == "s_instances");
+                    !(binding.kind == shader::BindingKind::Storage && (binding.name == "s_instances" ||
+                        binding.name == "s_boneMatrices" || binding.name == "s_traaPrevious_boneMatrices"));
             })) { skip("storage/texture history"); continue; }
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
@@ -3446,7 +3454,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             putNodes(frameUniforms_, offset, velocity.vertex, item.nodes, frameTime_, frameDelta_, lights);
             const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
-            const std::array<double, 1> dynamic{previousModel != item.matrixWorld || item.nodes.positionNode ? 1.0 : 0.0};
+            const std::array<double, 1> dynamic{
+                previousModel != item.matrixWorld || item.nodes.positionNode || item.boneMatrices ? 1.0 : 0.0};
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, previousModel);
@@ -3463,12 +3472,26 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     ? previous->uniforms.data() : frameUniforms_.data() + offset;
                 std::memcpy(frameUniforms_.data() + offset + field.offset, retained + from->offset, field.size);
             }
-            if (item.nodes.positionNode)
+            if (item.nodes.positionNode || item.boneMatrices)  // a skinned draw's previous boneBase
                 current.uniforms.assign(frameUniforms_.begin() + offset,
                     frameUniforms_.begin() + offset + velocity.vertex.uniformBlockSize);
             const bool changedBuffers = previous && previous->buffers != current.buffers;
             job.deformationFrames[item.key] = std::move(current);
             if (changedBuffers) { skip("changed vertex data"); continue; }
+            if (item.boneMatrices) {
+                // The previous palette holds last frame's layout. A seeded frame copies this frame's palette there first, so
+                // both positions match. A draw new to an unseeded frame has no previous base, and a palette that outgrew the
+                // previous buffer replaces it: both draw no velocity for one frame.
+                const uint64_t bytes = jointPrefix + bones.size() * 4;
+                if (bytes > storages_["traaPrevious_boneMatrices"].capacity) {
+                    job.paletteBytes = std::max(job.paletteBytes, bytes);
+                    skip("skinned palette outgrew its previous copy");
+                    continue;
+                }
+                if (!previous && !traa_->needsSeed()) { skip("skinned draw without a previous palette"); continue; }
+                job.paletteSeed = job.paletteSeed || !previous;
+                job.paletteBytes = std::max(job.paletteBytes, bytes);
+            }
             const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
@@ -3641,7 +3664,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             gpu_.destroy(storage.buffer);
             storage.capacity = std::max<uint64_t>((prefix + storage.data.size() * 4) * 2, 64 * 1024);
             jointBufferMoved = jointBufferMoved || (name == "boneMatrices" && jointPrefix);
-            storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+            storage.buffer = gpu_.createBuffer(storage.capacity,
+                WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
             rebuildGroups();
         }
         if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, prefix, storage.data.data(), storage.data.size() * 4);
@@ -3660,6 +3684,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             gpuJoints_->revoke();
             throw std::runtime_error("TN_GPU_JOINTS: dispatch refused before submission");
         }
+    }
+    // A palette that outgrew its previous copy: the copy grows now, its skinned draws skipped velocity this frame, and the
+    // copy after the velocity pass fills it for the next.
+    if (FrameStorage& previous = storages_.at("traaPrevious_boneMatrices"); job.paletteBytes > previous.capacity) {
+        gpu_.destroy(previous.buffer);
+        previous.capacity = std::max<uint64_t>(job.paletteBytes * 2, 64 * 1024);
+        previous.buffer = gpu_.createBuffer(previous.capacity,
+            WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+        rebuildGroups();
     }
 
     // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
@@ -4262,10 +4295,16 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor motionDesc{};
         motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
         motionDesc.depthStencilAttachment = &motionDepth;
+        const auto copyPalette = [&] {
+            wgpuCommandEncoderCopyBufferToBuffer(encoder, gpu_.buffer(storages_.at("boneMatrices").buffer), 0,
+                gpu_.buffer(storages_.at("traaPrevious_boneMatrices").buffer), 0, job.paletteBytes);
+        };
+        if (job.paletteSeed) copyPalette();
         auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
         const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
         replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
+        if (job.paletteBytes) copyPalette();
         if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
     // A game's RenderTarget the post graph samples is drawn where the frame first reads it, after the render-to-texture

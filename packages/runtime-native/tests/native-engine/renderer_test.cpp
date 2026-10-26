@@ -755,6 +755,65 @@ void traaCameraVelocity() {
     CHECK(moving > 50);  // the sphere's pixels move with the camera, not zero
 }
 
+// A skinned draw writes its own motion: the velocity stage skins with this frame's and the previous frame's palettes (Unreal's
+// previous bone transforms). Without it the character's pixels read as incomplete dynamic motion, upsampling rejects their
+// history and the 0.72 input grid shows on every animated edge. One bone slides the sphere 0.02 along x per frame under a
+// still camera.
+void traaSkinnedVelocity() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    const std::size_t vertices = ball->positions.count() / 3;
+    BufferStore skinIndices(Scalar::U16, vertices * 4), skinWeights(Scalar::F32, vertices * 4);
+    const std::vector<uint16_t> indices(vertices * 4, 0);
+    std::vector<float> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    skinIndices.write(0, indices.data(), indices.size() * sizeof(uint16_t));
+    skinWeights.write(0, weights.data(), weights.size() * sizeof(float));
+    const auto directory = std::filesystem::current_path() /
+        ("traa-skinned-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(width, height);
+    renderer.setOutput(OutputState{});
+    renderer.setTraa(TraaOptions{});
+    auto* pass = renderer.traaDebugPass();
+    pass->enableDebugDump();
+    std::vector<float> bones{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    DrawItem item;
+    item.key = item.id = 1; item.kind = MaterialKind::Basic;
+    item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.skinIndices = &skinIndices; item.skinWeights = &skinWeights; item.boneMatrices = &bones;
+    item.bindMatrix = item.bindMatrixInverse = item.matrixWorld;
+    bool noted = false;
+    for (int frame = 0; frame <= 20; ++frame) {
+        bones[12] = 0.02f * float(frame);
+        renderer.render({&item, 1}, slidingCamera(double(width) / height, 0), LightState{}, {0, 0, 0, 1});
+        for (const auto& note : renderer.diagnostics()) noted = noted || note.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0;
+        tn::fixture::finishTraaDump(*pass, context.getInstance(), directory);
+    }
+    std::ifstream file(directory / "frame-20-velocity.bin", std::ios::binary);
+    CHECK(file.good());
+    std::vector<float> texels(size_t{width} * height * 4);
+    file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+    size_t moving = 0, wrong = 0;
+    for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+        if (texels[texel * 4 + 2] != 3) continue;  // the background stays known static
+        // NDC x moves by 0.02 * projection x 1.61 / view depth 3 to 4 (the unit sphere): 0.008 to 0.0107.
+        if (texels[texel * 4] > 0.0075f && texels[texel * 4] < 0.0115f && std::abs(texels[texel * 4 + 1]) < 1e-3f) ++moving;
+        else ++wrong;
+    }
+    std::fprintf(stderr, "TN_TRAA_SKINNED_VELOCITY moving=%zu wrong=%zu noted=%d\n", moving, wrong, int(noted));
+    CHECK(!noted);
+    CHECK(moving > 50 && wrong == 0);
+    std::filesystem::remove_all(directory);
+}
+
 // The shape a template gives the engine: the temporal effect is the colour convertToTexture hands the stages, and a stage
 // samples the velocity target the temporal pass draws. The effect has to be found inside the render texture (a TRAA the
 // engine never saw leaves the camera unjittered and the velocity undrawn) and a stage's `velocity` input has to be bound.
@@ -2420,6 +2479,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
+             {"traa_skinned_velocity", traaSkinnedVelocity},
              {"traa_deformation_velocity", traaDeformationVelocity},
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},
