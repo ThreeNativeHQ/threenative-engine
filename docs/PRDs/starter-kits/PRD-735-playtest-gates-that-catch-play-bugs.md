@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — every kit had green scenarios while the owner hit a crash, 30 fps, skating limbs, dead controls and a smeared image by hand (all phases open).
 **Complexity:** 5 (MEDIUM) — `packages/playtest` schema, evaluators and capture (+3), kit scenario files (+1), template `AGENTS.md` rules (+1). Risk override: none.
 **Owner:** João
-**Depends on:** none. Sibling of [PRD-732](PRD-732-hop-garden-3d-platformer-starter-kit.md), [PRD-733](PRD-733-lantern-vale-3d-action-adventure-starter-kit.md) and [PRD-734](PRD-734-clover-cup-kart-racer-starter-kit.md); the gates ship in their PR (#563).
+**Depends on:** none. Sibling of [PRD-732](PRD-732-hop-garden-3d-platformer-starter-kit.md), [PRD-733](../done/starter-kits/PRD-733-lantern-vale-3d-action-adventure-starter-kit.md) and [PRD-734](PRD-734-clover-cup-kart-racer-starter-kit.md); the gates ship in their PR (#563).
 
 ## Context
 

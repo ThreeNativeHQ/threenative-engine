@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-733 — Lantern Vale: a 3D action-adventure starter kit with lock-on combat and a dungeon puzzle
 
-**Status:** PARTIAL — Phases 1 and 2 done, Phase 3 AC-8 done (AC-9 engine-blocked, AC-10 at the judge)
+**Status:** DONE (2026-10-26) — all three phases and AC-1 to AC-10 ticked
 **Priority:** P2 — new genre kit: the dungeon loop (Phase 2) and the registration, native and judge gates (Phase 3) are open, and no shipped kit has lock-on targeting, a shield, a pushable-block puzzle or a key-and-door dungeon loop.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2). Risk override: none. The kit is game code in one template. No `packages/` API changes.
 **Owner:** João
-**Depends on:** [PRD-723](../Unreal/look/PRD-723-every-template-game-looks-like-unreal-on-the-engine-defaults.md) (aligned, not gating: the kit is born on the core Unreal defaults, so it pins no tone curve or fixed exposure and needs no PRD-723 migration). Owner order, 2026-10-23: "use unreal defaults for these new starter kits". Sibling of [PRD-732](PRD-732-hop-garden-3d-platformer-starter-kit.md): both kits ship in one PR (owner order, 2026-10-23).
+**Depends on:** [PRD-723](../../Unreal/look/PRD-723-every-template-game-looks-like-unreal-on-the-engine-defaults.md) (aligned, not gating: the kit is born on the core Unreal defaults, so it pins no tone curve or fixed exposure and needs no PRD-723 migration). Owner order, 2026-10-23: "use unreal defaults for these new starter kits". Sibling of [PRD-732](../../starter-kits/PRD-732-hop-garden-3d-platformer-starter-kit.md): both kits ship in one PR (owner order, 2026-10-23).
 
 ## Context
 
@@ -579,7 +579,7 @@ runs the native player once to record whether navigation is bound.
 
 #### Phase 3: Registered, native and judged
 
-**Status:** PARTIAL (2026-10-24): AC-8 done, AC-9 engine-blocked, AC-10 waits for the judge
+**Status:** DONE (2026-10-26): AC-8, AC-9 and AC-10 done
 **Files:** the registration list above, `native-playtests/survives.playtest.json`,
 `playtests/performance.playtest.json`.
 **Implementation:** register the kit in every gate. Capture the clearing, the block room and the
