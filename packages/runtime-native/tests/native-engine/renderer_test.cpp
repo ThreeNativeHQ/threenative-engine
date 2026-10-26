@@ -1996,9 +1996,10 @@ void traaResponsiveTransparent() {
     CHECK(full > 0.02 && upsampled >= full);
 }
 
-// A mover walking across ground that writes its own motion (wind grass: alpha-tested, dynamic). The ground it uncovers has
-// complete motion too, so a depth test skipped for complete motion keeps the mover's colour there, and the clip leaves a
-// speckled halo behind it (Hop Garden judge). Measured: the colour left behind the mover, against a non-temporal frame.
+// A purple mover walking over striped green ground that writes its own motion, as Hop Garden's enemies cross wind grass.
+// At 0.72 the sample-distance box spans both sides of the rim, holds the grey blend of the two colours and kept a grey
+// ring and trail (the judge's speckled halo). Measured: the blue channel's distance from the mover's hard footprint and the
+// bare ground's resolve at the same scale: full 5770, 0.72 13444 before the near-sample box on motion boundaries, 7709 after.
 void traaMoverOverDynamicGround() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2007,22 +2008,27 @@ void traaMoverOverDynamicGround() {
     constexpr uint32_t width = 64, height = 48;
     constexpr int frames = 30;
     const auto ball = sphere(32, 16);
+    const auto backing = plane(40, 40);
     BarField field;
-    shader::StandardMaterial grass, body;
-    grass.color = {0.1, 0.5, 0.1};
+    shader::StandardMaterial grass, dark, body;
+    grass.color = {0.3, 0.9, 0.2};
+    dark.color = {0.02, 0.15, 0.02};
     body.color = {0.8, 0.3, 0.9};
-    DrawItem ground, mover;
+    DrawItem ground, soil, mover;
     ground.key = ground.id = 1; ground.kind = MaterialKind::Basic;
     ground.positions = &field.positions; ground.indices = &field.indices; ground.material = &grass;
+    soil.key = soil.id = 3; soil.kind = MaterialKind::Basic;
+    soil.positions = &backing->positions; soil.indices = &backing->indices; soil.material = &dark;
     mover.key = mover.id = 2; mover.kind = MaterialKind::Basic;
     mover.positions = &ball->positions; mover.indices = &ball->indices; mover.material = &body;
     const auto place = [&](int frame) {
         // The ground sways by a hair, so it writes complete dynamic motion as wind grass does.
         const float sway = frame % 2 ? 2e-3f : 0.f;
         ground.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, sway, 0, 0, 1};
+        soil.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, sway, 0, -1.05f, 1};
         mover.matrixWorld = {0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, -1.5f + 0.06f * float(frame), 0, 0.5f, 1};
     };
-    const auto run = [&](float scale, bool temporal) {
+    const auto run = [&](float scale, bool temporal, bool withMover) {
         EventQueue events;
         Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
         renderer.setSize(width, height);
@@ -2031,32 +2037,28 @@ void traaMoverOverDynamicGround() {
         renderer.setRenderScale(scale);
         for (int frame = temporal ? 0 : frames - 1; frame < frames; ++frame) {
             place(frame);
-            const std::array<DrawItem, 2> items{ground, mover};
-            renderer.render({items.data(), items.size()}, ::camera(double(width) / height), LightState{}, {0, 0, 0, 1});
+            const std::array<DrawItem, 3> items{soil, ground, mover};
+            renderer.render({items.data(), withMover ? size_t{3} : size_t{2}}, ::camera(double(width) / height), LightState{},
+                            {0, 0, 0, 1});
         }
         return read(renderer, events);
     };
-    const auto now = run(1, false);
+    const auto now = run(1, false, true);
     const auto halo = [&](float scale) {
-        const auto seen = run(scale, true);
-        CHECK(seen.size() == now.size() && now.size() == size_t{width} * height * 4);
-        if (seen.size() != now.size()) return -1.0;
+        const auto seen = run(scale, true, true), bare = run(scale, true, false);
+        CHECK(seen.size() == now.size() && bare.size() == now.size() && now.size() == size_t{width} * height * 4);
+        if (seen.size() != now.size() || bare.size() != now.size()) return -1.0;
+        // The blue channel against what the pixel shows now: the mover where it is, and the same scale's resolve of the
+        // bare ground elsewhere, so the 0.72 reconstruction of the stripes is not counted. A grey rim lowers the mover's
+        // blue and raises the ground's.
         double sum = 0;
-        for (int y = 2; y < int(height) - 2; ++y)
-            for (int x = 2; x < int(width) - 2; ++x) {
-                // Behind the mover only: ground now, with no mover pixel within two pixels.
-                bool near = false;
-                for (int dy = -2; dy <= 2; ++dy)
-                    for (int dx = -2; dx <= 2; ++dx) near = near || now[(size_t(y + dy) * width + x + dx) * 4 + 2] > 120;
-                const size_t i = (size_t(y) * width + x) * 4;
-                if (!near && now[i + 1] > 0) sum += std::max(0, int(seen[i + 2]) - int(now[i + 2]));  // the mover's blue
-            }
+        for (size_t i = 0; i < now.size(); i += 4) sum += std::abs(int(seen[i + 2]) - int(now[i + 2] > 120 ? now[i + 2] : bare[i + 2]));
         return sum;
     };
     const double full = halo(1), upsampled = halo(0.72f);
-    std::fprintf(stderr, "TN_TRAA_MOVER_HALO blue left behind: full %.0f, upsampled %.0f\n", full, upsampled);
-    CHECK(full >= 0 && upsampled >= 0);
-    CHECK(upsampled <= full * 1.5 + 50);
+    std::fprintf(stderr, "TN_TRAA_MOVER_HALO blue off the mover's rim: full %.0f, upsampled %.0f\n", full, upsampled);
+    CHECK(full > 0 && upsampled > 0);
+    CHECK(upsampled < full * 1.5);
 }
 
 // Where history is ignored (the first frame here; in play the ground a walking enemy uncovers), UE 5.8.3 widens the current
