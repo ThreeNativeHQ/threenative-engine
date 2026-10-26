@@ -449,6 +449,12 @@ export class Race extends Scene<GameState> {
 
     return (frameCtx, rawDt) => {
       loading.update();
+      if (frameCtx.input.justPressed("restart")) {
+        frameCtx.state.set(Race.initialState);
+        frameCtx.state.flush();
+        void frameCtx.goto("race");
+        return;
+      }
       const dt = Math.min(rawDt, 1 / 30);
       elapsed += dt;
       const input = frameCtx.input;

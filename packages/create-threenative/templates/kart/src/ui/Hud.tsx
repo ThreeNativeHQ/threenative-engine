@@ -158,6 +158,7 @@ export function Hud() {
               <span className="tabular-nums">{r.time > 0 ? clock(r.time) : "--"}</span>
             </div>
           ))}
+          <div className="mt-2 text-center text-xs text-dim">press R to race again</div>
         </div>
       ) : null}
     </div>

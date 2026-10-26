@@ -17,6 +17,7 @@ const game = defineGame<GameState>({
     item: { buttons: [4, 6], keys: ["KeyE", "KeyX"] },
     // The player's kart drives itself while this is on (the scenarios use it for whole laps).
     autopilot: { keys: ["KeyP"] },
+    restart: { keys: ["KeyR"] },
   },
   plugins: [playtest({ events })],
   display: config.display,
