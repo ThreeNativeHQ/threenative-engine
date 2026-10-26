@@ -51,8 +51,8 @@ that the measurement says pay, tighten the scenario to the measured numbers, and
 
 ### Phase 1 — A skinned draw writes its own velocity (engine)
 
-- [ ] Skinned, morphed and node-deformed draws render in the velocity pass through their own vertex stage, with `previousClip = previousProjection * previousView * previousModel * currentDeformedLocal`. The camera-motion fill stays only for instanced, sprite and transparent draws. proof: a red-green case in `packages/runtime-native/tests/native-engine/renderer_test.cpp` (a skinned box under a camera, 5° yaw between two frames: box pixels read |v| < 1e-3 NDC, background reads the camera delta), and `TN_TRAA_VELOCITY_SKIPPED: skinned` no longer prints in the shooter.
-- [ ] The renderer's frame delta advances once per presented frame, not in `compileAsync` (`renderer.cpp:2490-2493`). proof: a red-green renderer test.
+- [x] Skinned, morphed and node-deformed draws render in the velocity pass through their own vertex stage, with `previousClip = previousProjection * previousView * previousModel * currentDeformedLocal`. The camera-motion fill stays only for instanced, sprite and transparent draws. proof: a red-green case in `packages/runtime-native/tests/native-engine/renderer_test.cpp` (a skinned box under a camera, 5° yaw between two frames: box pixels read |v| < 1e-3 NDC, background reads the camera delta), and `TN_TRAA_VELOCITY_SKIPPED: skinned` no longer prints in the shooter. Result (d165e3e4a): `traa_skinned_velocity` RED on the pre-fix code (77 failed checks, 76 box texels |v| >= 1e-3), GREEN after; all 32 renderer_test cases pass; the shooter page log printed `TN_TRAA_VELOCITY_SKIPPED: skinned` 36 times before, 0 after.
+- [x] The renderer's frame delta advances once per presented frame, not in `compileAsync` (`renderer.cpp:2490-2493`). proof: a red-green renderer test. Result (d165e3e4a): `frame_delta_skips_compiles` RED before (deltaTime 0.2 s, not 0.4 s), GREEN after.
 
 ### Phase 2 — Adopt what pays
 
