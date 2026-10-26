@@ -90,7 +90,8 @@ std::array<float, 8> TraaPass::historyDepthRows(const Matrix& projection, const 
 // Counted frames record rejection/clipping only. Projection jitter has the opposite sign to UE's;
 // depth uses nearest sampling and CPU-composed reprojection rows. The current radial filter shares
 // its nine texels with the UE High clamp; incomplete motion uses responsive history.
-// UE 5.8.3 TemporalAA.usf:2175-2190,2334-2343 rejects departed dynamic history;
+// UE 5.8.3 TemporalAA.usf:2175-2190,2334-2343 rejects departed dynamic history; here only where the depth shows the
+// surface left, so a mover that stops keeps its history instead of showing the input grid while it refills;
 // a separate R8 target keeps the authored colour alpha intact.
 // UE 5.8.3 TemporalAA.usf:1463-1478,1772-1808,1961-1990,2278: responsive history for incomplete motion.
 const char* traaResolveWgsl() { return R"WGSL(
@@ -180,7 +181,7 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     }
     let highClamp = upsampling;
     let oldDynamic = upsampling && textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
-    let departed = !dynamicNeighborhood && oldDynamic;
+    let departed = !dynamicNeighborhood && oldDynamic && disocclusion;
     let valid = u.historyValid != 0 && validUV && (edge || !disocclusion) && !departed;
     let counting = u.count != 0;
     if (counting && !valid) { atomicAdd(&stats[0], 1u); }

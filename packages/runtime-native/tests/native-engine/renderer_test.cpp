@@ -1011,6 +1011,9 @@ shader::graph::Node thresholdOf(shader::graph::Node colour) {
 // all-or-nothing edge pixels without the effect.
 // A controlled GPU history: white is inside the centre-inclusive min/max box but outside the sparse input's
 // variance box. Upsampling must retain that history; the full-resolution Three variance path stays unchanged.
+// Dynamic history over a now-static pixel resets only when the depth shows its surface left (UE 5.8.3
+// TemporalAA.usf:2175-2190 resets it at any depth): a surface that stops where it stood keeps its history, so a character
+// that stops does not show the input grid while its history refills.
 void traaHistoryClipping() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -1021,7 +1024,7 @@ void traaHistoryClipping() {
     const auto directory = std::filesystem::temp_directory_path() /
         ("traa-history-clipping-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     struct Observation { float maximum; std::vector<float> pixels; };
-    const auto retained = [&](uint32_t inputSize, float previousMarker, bool cut = false) {
+    const auto retained = [&](uint32_t inputSize, float previousMarker, bool cut = false, float previousDepth = 0.5f) {
         constexpr uint32_t outputSize = 24;
         TraaPass temporal(device, queue, TraaOptions{});
         temporal.resize(inputSize, inputSize, outputSize, outputSize);
@@ -1059,7 +1062,7 @@ void traaHistoryClipping() {
             const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
             WGPURenderPassDepthStencilAttachment attachment{};
             attachment.view = depthView; attachment.depthLoadOp = WGPULoadOp_Clear;
-            attachment.depthStoreOp = WGPUStoreOp_Store; attachment.depthClearValue = 0.5f;
+            attachment.depthStoreOp = WGPUStoreOp_Store; attachment.depthClearValue = frame == 18 ? 0.5f : previousDepth;
             WGPURenderPassDescriptor clear{}; clear.depthStencilAttachment = &attachment;
             const auto clearing = wgpuCommandEncoderBeginRenderPass(encoder, &clear);
             wgpuRenderPassEncoderEnd(clearing); wgpuRenderPassEncoderRelease(clearing);
@@ -1103,20 +1106,22 @@ void traaHistoryClipping() {
         return Observation{maximum, std::move(resolved)};
     };
     const auto upsampled = retained(16, 1), full = retained(24, 1);
-    const auto departed = retained(16, 3), reset = retained(16, 1, true);
-    float separation = 0, resetDifference = 0, alphaError = 0;
+    const auto departed = retained(16, 3, false, 0.49f), reset = retained(16, 1, true), stopped = retained(16, 3);
+    float separation = 0, resetDifference = 0, alphaError = 0, stoppedDifference = 0;
     for (uint32_t y = 6; y < 18; ++y) for (uint32_t x = 6; x < 18; ++x) {
         const auto pixel = (size_t(y) * 24 + x) * 4;
         separation = std::max(separation, upsampled.pixels[pixel] - departed.pixels[pixel]);
         resetDifference = std::max(resetDifference, std::abs(departed.pixels[pixel] - reset.pixels[pixel]));
-        for (const auto* observation : {&upsampled, &full, &departed, &reset})
+        stoppedDifference = std::max(stoppedDifference, std::abs(stopped.pixels[pixel] - upsampled.pixels[pixel]));
+        for (const auto* observation : {&upsampled, &full, &departed, &reset, &stopped})
             alphaError = std::max(alphaError, std::abs(observation->pixels[pixel + 3] - 0.25f));
     }
-    std::fprintf(stderr, "TN_TRAA_HISTORY_CLIPPING upscale=%.6f full=%.6f departedSeparation=%.6f resetDifference=%.6f alphaError=%.6f\n",
-                 upsampled.maximum, full.maximum, separation, resetDifference, alphaError);
+    std::fprintf(stderr, "TN_TRAA_HISTORY_CLIPPING upscale=%.6f full=%.6f departedSeparation=%.6f resetDifference=%.6f stoppedDifference=%.6f alphaError=%.6f\n",
+                 upsampled.maximum, full.maximum, separation, resetDifference, stoppedDifference, alphaError);
     CHECK(upsampled.maximum > 0.9f);
     CHECK(full.maximum < 0.7f);
     CHECK(separation > 0.75f && resetDifference < 0.005f);
+    CHECK(stoppedDifference < 0.005f);
     CHECK(alphaError < 0.005f);
     std::filesystem::remove_all(directory);
 }
