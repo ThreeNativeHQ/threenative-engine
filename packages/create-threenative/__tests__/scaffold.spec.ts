@@ -315,7 +315,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
   adventure: "e13451037e7c1e49467f636c2e5ec8656a492c3c5d59aa0942dcf4027bda022f",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "165a14d6c28bfdfd63970db4b4cce570ad4472b3541fde70aacd681abcd9605a",
+  // PRD-741: the kerb lies level with the road, closing the slot that showed grass under its edge.
+  kart: "c8a2a51189784428532a547dfc9f5cf189aa0001a4bf9d3b89f7748cbce914de",
   minimal: "2786d7eee1ba93183585b2a9a20ea370c7d98cad4543cbd07849b5145c17d49e",
   platformer: "c26471c971cb8c50b631056f00d023ccf415fa1ec12eb2102b164fb6f84ce33a",
   puzzle: "40cbf8678e99518926645d85e18f3b4bcd15d203acae0dee11370a279670b7fe",
