@@ -153,6 +153,7 @@ export function adaptExposure(
   delta: Node<"float">,
   policy: Readonly<IExposureSettings>,
   decode: Decode,
+  bias: Node<"float"> = float(0),
 ): Node<"vec4"> {
   return Fn(() => {
     const measure = clippedLog2Mean(histogram, policy);
@@ -162,6 +163,7 @@ export function adaptExposure(
       .and(luminance.greaterThan(0))
       .and(luminance.lessThan(3.4e38));
     const goal = float(Math.log2(policy.key))
+      .add(bias)
       .sub(luminance.max(1e-20).log2())
       .clamp(policy.minStops, policy.maxStops);
     const history = textureLoad(previous, ivec2(0));

@@ -322,7 +322,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "2e9ffb4da293d54fb1da3c75f3c24a22b1a876911d1057efe8984b028edb0d0a",
   shooter: "0a296e383f2c5e7280a81567e4d0828a5ff625c617afc4cecb7333eff1e15412",
-  snow: "dedd4e1b27bfc9e9b4dd0a8701f7c66dfc59409213b5d488e7469e37ddfe1122",
+  snow: "7c05692626004a70bf99574720f7de95ec93e7908cd7163a81a17d0d6dc1ecb7",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.

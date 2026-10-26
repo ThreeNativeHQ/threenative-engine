@@ -665,9 +665,9 @@ const effects = new AudioBus({ camera });
 export class AutoExposureNode extends TempNode<"float"> { … }
 ```
 
-- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change · a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather
 - **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
-- **Overrides:** every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
+- **Overrides:** every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default · `setExposureBias(stops)` is Unreal's Exposure Compensation, live: the game changes it per place or weather (`WorldEnvironment.apply` returns the node as `exposure`)
 
 ```ts
 const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);

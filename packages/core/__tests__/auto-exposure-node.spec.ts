@@ -217,13 +217,48 @@ describe("GPU exposure lifecycle", () => {
     const { node, frame } = harness();
     node.updateBefore(frame);
     node.updateBefore(frame);
-    // The adaptation draw is the fifth; its scalars are the reset mode, the seed and the delta.
-    expect(draws[4]?.scalars).toEqual([2, 0, 1 / 60]);
-    expect(draws[9]?.scalars).toEqual([0, 0, 1 / 60]);
+    // The adaptation draw is the fifth; its scalars are the reset mode, the seed, the exposure
+    // bias and the delta.
+    expect(draws[4]?.scalars).toEqual([2, 0, 0, 1 / 60]);
+    expect(draws[9]?.scalars).toEqual([0, 0, 0, 1 / 60]);
     // In history mode, a history luminance at or below zero (never drawn, or an empty histogram)
     // takes the target.
     expect(draws[4]?.code).toMatch(/== 0\.0 \) && \( nodeVar\d+\.y <= 0\.0 \)/u);
     node.dispose();
+  });
+
+  // Unreal's Exposure Compensation (AutoExposureBias, UE 5.8.3: Engine/Source/Runtime/Engine/
+  // Classes/Engine/Scene.h:1933) is a per-view artist value that post-process volumes blend at run
+  // time. A snowfield wants about +2 stops in clear weather and less in a blizzard.
+  it("takes a live exposure bias in stops without rebuilding the adaptation graph", () => {
+    const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+    vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+    const capabilities = Reflect.get(renderer.backend, "capabilities");
+    vi.spyOn(capabilities, "getUniformBufferLimit").mockReturnValue(65_536);
+    const draws: unknown[][] = [];
+    vi.mocked(QuadMesh.prototype.render).mockImplementation(function (this: QuadMesh) {
+      if (!(this.material instanceof NodeMaterial)) throw new Error("missing node material");
+      const builder = new WGSLNodeBuilder(this, renderer) as WGSLNodeBuilder & {
+        setShaderStage(stage: string): void;
+        flowStagesNode(node: unknown, output: string): { code: string };
+        uniforms: Record<string, Array<{ value: unknown }>>;
+      };
+      builder.setShaderStage("fragment");
+      builder.flowStagesNode(this.material.fragmentNode, "vec4");
+      draws.push(builder.uniforms.fragment?.map(({ value }) => value) ?? []);
+    });
+    const { node, frame } = harness();
+    const graph = Reflect.get(node, "settings");
+    node.updateBefore(frame);
+    node.setExposureBias(1.75);
+    node.updateBefore(frame);
+    expect(draws[4]).toContain(0);
+    expect(draws[4]).not.toContain(1.75);
+    expect(draws[9]).toContain(1.75);
+    expect(Reflect.get(node, "settings")).toBe(graph);
+    expect(() => node.setExposureBias(Number.NaN)).toThrow(/finite/u);
+    node.dispose();
+    expect(() => node.setExposureBias(0)).toThrow(/disposed/u);
   });
 
   // The owned engine draws the held scene while it bakes the environment

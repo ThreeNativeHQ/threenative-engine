@@ -53,9 +53,7 @@ const VENDORED_RENDER_FILES = [
  * Kits whose look may deviate from the phase-1 defaults. Every key needs a nonempty reason
  * tracking its pending visual migration; remove each entry only after IMPROVEMENT.
  */
-const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
-  snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-};
+const LOOK_OVERRIDES: Readonly<Record<string, string>> = {};
 
 /** Runtime names imported from `@threenative/core` in one file. */
 function coreImportNames(file: string): ReadonlySet<string> {
@@ -378,4 +376,39 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       expect(preset.autoExposureEnabled, `rain/${tier} metered exposure`).toBe(true);
     },
   );
+  it.each(TIERS)("snow/%s follows the core preset with its named cost override", async (tier) => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const quality = (await import(pathToFileURL(renderFile("snow", "quality.ts")).href)) as {
+      qualityPreset: (tier: string) => Record<string, unknown>;
+    };
+    const exposure = (await import(pathToFileURL(renderFile("snow", "exposure.ts")).href)) as {
+      exposureSettings: Record<string, unknown>;
+      EXPOSURE_BIAS: { clear: number; blizzard: number };
+      exposureBias: (storm: number) => number;
+    };
+    const core = await import("@threenative/core");
+    const preset = quality.qualityPreset(tier);
+    expect(exposure.exposureSettings).toEqual(core.exposureSettings);
+    // Exposure compensation per weather: two stops over the meter in clear weather, less in the
+    // blizzard, blended on the eased storm level so the change never pops.
+    expect(exposure.exposureBias(0)).toBe(2);
+    expect(exposure.exposureBias(1)).toBe(exposure.EXPOSURE_BIAS.blizzard);
+    expect(exposure.EXPOSURE_BIAS.blizzard).toBeLessThan(exposure.EXPOSURE_BIAS.clear);
+    expect(exposure.exposureBias(0.5)).toBeCloseTo(
+      (exposure.EXPOSURE_BIAS.clear + exposure.EXPOSURE_BIAS.blizzard) / 2,
+    );
+    expect(preset).toEqual({
+      ...core.qualityPreset(tier),
+      exposurePolicy: exposure.exposureSettings,
+      finalGatherMethod: "none",
+      ssgiEnabled: false,
+      ssrEnabled: false,
+      temporalAA: false,
+      motionBlurEnabled: false,
+      bloomEnabled: false,
+      localExposureEnabled: false,
+    });
+    expect(preset.tonemapMode, `snow/${tier} tonemapMode`).toBe("filmic");
+    expect(preset.autoExposureEnabled, `snow/${tier} metered exposure`).toBe(true);
+  });
 });

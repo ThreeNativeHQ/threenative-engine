@@ -1,4 +1,4 @@
-import type { OutputRenderer } from "@threenative/core";
+import type { AutoExposureNode, OutputRenderer } from "@threenative/core";
 import { WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
@@ -30,7 +30,12 @@ export function setupPost(
     tier?: QualityTier;
     onTierChanged?: (tier: QualityTier) => void;
   } = {},
-): { readonly tier: QualityTier; dispose(): void } {
+): {
+  readonly tier: QualityTier;
+  /** The live meter; absent when the meter is off or refused. `exposure.ts` sets its bias. */
+  readonly exposure?: AutoExposureNode;
+  dispose(): void;
+} {
   const tier = resolveQualityTier({
     mobile: environment.mobile,
     gpuClass: environment.gpuClass,
@@ -49,6 +54,7 @@ export function setupPost(
   let disposed = false;
   return {
     tier,
+    exposure: applied.exposure,
     dispose(): void {
       if (disposed) return;
       disposed = true;

@@ -1197,6 +1197,8 @@ export type { RendererToneMapping } from "./look/default-tone-mapping.js";
  * @situation the frame should expose itself the way a fresh Unreal project does as the sun and the view change
  * @constraint WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
  * @override every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
+ * @override `setExposureBias(stops)` is Unreal's Exposure Compensation, live: the game changes it per place or weather (`WorldEnvironment.apply` returns the node as `exposure`)
+ * @situation a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather
  * @example const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
  */
 export { AutoExposureNode } from "./look/auto-exposure.js";

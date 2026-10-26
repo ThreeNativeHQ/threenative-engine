@@ -869,12 +869,14 @@
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
-        "every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default"
+        "every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default",
+        "`setExposureBias(stops)` is Unreal's Exposure Compensation, live: the game changes it per place or weather (`WorldEnvironment.apply` returns the node as `exposure`)"
       ],
       "package": "@threenative/core",
       "signature": "export class AutoExposureNode extends TempNode<\"float\"> { … }",
       "situations": [
-        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change"
+        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change",
+        "a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather"
       ],
       "summary": "Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.",
       "supersedes": [],

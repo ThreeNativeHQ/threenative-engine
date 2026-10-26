@@ -60,6 +60,7 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #resetMode = uniform(2);
   readonly #seed = uniform(0);
   readonly #enabled = uniform(false);
+  readonly #bias = uniform(0);
   readonly #quad = new QuadMesh();
   readonly #meterMaterial = new NodeMaterial();
   readonly #reduceMaterial = new NodeMaterial();
@@ -114,6 +115,7 @@ export class AutoExposureNode extends TempNode<"float"> {
       this.#delta,
       policy,
       decode,
+      this.#bias,
     );
   }
 
@@ -147,6 +149,20 @@ export class AutoExposureNode extends TempNode<"float"> {
     if (this.#disposed) throw new Error("Exposure node is disposed.");
     this.#enabled.value = enabled;
     this.#observation.invalidate();
+  }
+
+  /**
+   * Exposure compensation in stops over the metered key, live: Unreal's AutoExposureBias
+   * (UE 5.8.3: Engine/Source/Runtime/Engine/Classes/Engine/Scene.h:1933), which post-process
+   * volumes blend at run time. Unreal applies 2^bias outside the smoothing
+   * (Engine/Shaders/Private/PostProcessEyeAdaptation.usf:179); here it moves the goal, so a change
+   * adapts at `rateUp`/`rateDown` and the reported exposure includes it.
+   */
+  setExposureBias(stops: number): void {
+    if (this.#disposed) throw new Error("Exposure node is disposed.");
+    if (!Number.isFinite(Math.fround(stops)))
+      throw new Error("Exposure bias must be a finite float32 number of stops.");
+    this.#bias.value = stops;
   }
 
   getObservation(): Record<string, unknown> {
