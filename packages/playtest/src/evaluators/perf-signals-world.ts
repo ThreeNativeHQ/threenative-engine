@@ -1,20 +1,42 @@
 import { readPath, jsonEqual, textValue } from '../assertion-report.js';
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
+import { classifyAdapter, type IAdapterClassification } from "./adapter-class.js";
+import { frameDisplay, gpuWindows } from "./frame-cost.js";
 import { evaluatePerformanceAssertion, evaluateResourceAnyOfAssertion, hasFinalPathExpectation, evaluatePathAssertion, pathValuePass, matchingSignals, evaluateWorldAssertion, evaluateAudioAssertion } from "./helpers.js";
+
+function gpuLane(consoleTexts: readonly unknown[]): { gpuP95?: number; gpuSamples?: number } {
+  const { p95, samples } = gpuWindows(consoleTexts);
+  return p95 === undefined ? {} : { gpuP95: p95, ...(samples === undefined ? {} : { gpuSamples: samples }) };
+}
 
 export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
   const { input, scenarioAssertions } = ctx;
   emitTerrainResidency(input.report.observations?.components?.terrain, assertions, diagnostics);
   if (scenarioAssertions.performance !== undefined) {
+    const budget = frameBudget(scenarioAssertions.performance.maxFrameMsP95, classifyAdapter(input.report), scenarioAssertions.performance.maxFrameMsReason);
     const result = evaluatePerformanceAssertion(
-      scenarioAssertions.performance,
+      budget.maxFrameMsP95 === undefined ? scenarioAssertions.performance : { ...scenarioAssertions.performance, maxFrameMsP95: budget.maxFrameMsP95 },
       input.report.observations?.performanceSeries,
       input.scenario.sourcePath,
+      { display: frameDisplay(), ...gpuLane((input.report.observations?.console ?? []).map(({ text }) => text)) },
     );
-    assertions.push(...result.assertions);
+    // The budget rides on the rows that always exist, so a run says which budget held it, or why none did.
+    assertions.push(...result.assertions.map((row) =>
+      row.id === "performance.samples" || row.id === "performance.maxFrameMsP95" ? { ...row, details: { ...row.details, frameBudget: budget } } : row));
     diagnostics.push(...result.diagnostics);
+    if (budget.unmeasurable === true) {
+      assertions.push({ details: { frameBudget: budget }, id: "performance.maxFrameMsP95", pass: false });
+      diagnostics.push({
+        code: "TN_PLAYTEST_PERFORMANCE_UNMEASURABLE",
+        message: `performance.maxFrameMsP95 cannot be judged: ${budget.reason}.`,
+        observedRuntimePath: `${input.scenario.sourcePath ?? "playtest"}/observations.json/performanceSeries`,
+        severity: "error",
+        sourcePath: input.scenario.sourcePath,
+        suggestion: "Run the scenario on a hardware GPU, or set maxFrameMsP95 with a maxFrameMsReason that names the adapter.",
+      });
+    }
   }
   for (const assertion of scenarioAssertions.resources ?? []) {
     if (assertion.anyOf !== undefined) {
@@ -161,4 +183,41 @@ function emitTerrainResidency(
       severity: "error",
       suggestion: "Expose TerrainTiles.debug() through the terrain entity and inspect the residency counters.",
     });
+}
+
+/** One 60 Hz frame. The budget is the same on every tier: a discrete, integrated or mobile GPU alike must hold 60 fps. */
+export const FRAME_BUDGET_MS = 16.7;
+
+export interface IFrameBudget {
+  readonly adapterClass?: string;
+  readonly gpuFamily?: string;
+  /** Absent when the adapter cannot be measured; `reason` then says why and the run fails closed. */
+  readonly maxFrameMsP95?: number;
+  readonly reason: string;
+  readonly source: "adapter" | "scenario";
+  readonly unmeasurable?: true;
+}
+
+/**
+ * The frame budget a `performance` assertion is held to: 16.7 ms at p95 on every tier.
+ *
+ * A budget the author picks is the one that went wrong: every starter kit wrote 33 ms, so 30 fps on
+ * a desktop RTX 2080 passed, and a tier table that relaxed integrated GPUs to 40 ms repeated it.
+ * The goal is 60 fps, so unset, the budget is one 60 Hz frame whatever the adapter. A scenario may
+ * set a looser `maxFrameMsP95` only with a written `reason`, which the report prints
+ * (`validatePerformanceAssertion` refuses one without). A CPU rasteriser cannot vouch for a frame
+ * rate, so it is unmeasurable and the run fails closed.
+ */
+export function frameBudget(explicit: number | undefined, adapter: IAdapterClassification, reason?: string): IFrameBudget {
+  const identity = {
+    ...(adapter.adapterClass === undefined ? {} : { adapterClass: adapter.adapterClass }),
+    ...(adapter.gpuFamily === undefined ? {} : { gpuFamily: adapter.gpuFamily }),
+  };
+  if (explicit !== undefined) {
+    return { ...identity, maxFrameMsP95: explicit, reason: `maxFrameMsP95 set in the scenario overrides ${FRAME_BUDGET_MS} ms${reason === undefined ? "" : `: ${reason}`}`, source: "scenario" };
+  }
+  if (adapter.adapterClass === "software") {
+    return { ...identity, reason: `software adapter ${adapter.softwareAdapter ?? ""} is unmeasurable: it cannot carry a frame rate`.replace("  ", " "), source: "adapter", unmeasurable: true };
+  }
+  return { ...identity, maxFrameMsP95: FRAME_BUDGET_MS, reason: `one 60 Hz frame (${FRAME_BUDGET_MS} ms) on every tier`, source: "adapter" };
 }

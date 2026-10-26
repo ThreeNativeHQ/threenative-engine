@@ -274,6 +274,53 @@ void multiMaterialGroups() {
     CHECK(triangles == 4 * 12);
 }
 
+// Forty copies that each built their own box draw as one instanced item from one copy's buffers;
+// copies with different data at the same vertex count do not; a copy whose data moves leaves.
+void contentIdenticalGeometryBatches() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(20, 30, 60);
+    camera.lookAt(20, 0, 0);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 40; ++i) {
+        meshes.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+        meshes.back()->position.set(i, 0, 0);
+        scene.add(*meshes.back());
+    }
+    auto items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 1 && items[0].instanceCount == 40);
+    if (items.size() != 1) return;
+    const BufferStore* drawn = items[0].positions;
+    const auto owner = std::find_if(meshes.begin(), meshes.end(), [&](const auto& mesh) {
+        return mesh->geometry->attributes.at("position")->store.get() == drawn;
+    });
+    CHECK(owner != meshes.end());
+    if (owner == meshes.end()) return;
+    auto position = (*owner)->geometry->attributes.at("position");
+    position->setY(0, 5);
+    position->setNeedsUpdate();
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 2);
+    const bool moved = std::any_of(items.begin(), items.end(), [&](const DrawItem& item) {
+        return item.instanceCount <= 1 && item.positions == position->store.get();
+    });
+    const bool rest = std::any_of(items.begin(), items.end(), [&](const DrawItem& item) {
+        return item.instanceCount == 39 && item.positions != position->store.get();
+    });
+    CHECK(moved && rest);
+
+    Scene varied; RenderDatabase other;
+    std::vector<std::shared_ptr<Mesh>> keep;
+    for (int i = 0; i < 40; ++i) {
+        auto geometry = makeBoxGeometry();
+        geometry->scale(1, 1 + i / 100.0, 1);
+        keep.push_back(std::make_shared<Mesh>(geometry, material));
+        keep.back()->position.set(i, 0, 0);
+        varied.add(*keep.back());
+    }
+    CHECK(other.prepare(varied, camera, lights).size() == 40);
+}
+
 void uniformBatchPreparation() {
     rigRelativePreparation();
     Material a(MaterialType::Standard), b(MaterialType::Standard);
@@ -778,6 +825,131 @@ void presentDirect() {
     renderer.gpu().destroy(stale);
 }
 
+// The world's post graph still reaches the canvas after an overlay draw, in the web host's order: each world frame
+// takes the canvas view only when it draws (presentWhenDrawn), and the canvas-layer overlay draws over it.
+void postSurvivesOverlay() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    LitScene s;
+    RenderDatabase database, overlayDatabase;
+    const WGPUTextureFormat format = WGPUTextureFormat_BGRA8Unorm;
+    const Handle surface = renderer.gpu().createTexture(160, 120, format, WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    WGPUTextureView view = wgpuTextureCreateView(renderer.gpu().texture(surface), nullptr);
+    const auto world = [&] {
+        Renderer::PresentScope present(renderer, [&] { return view; }, format);
+        database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+        return readTexture(renderer, events, surface);
+    };
+    Scene layer;
+    OrthographicCamera ortho(-1, 1, 1, -1, 0.1, 10);
+    ortho.position.z = 5;
+    ortho.updateProjectionMatrix();
+    layer.updateMatrixWorld(true);
+    const auto overlay = [&] {
+        Renderer& target = renderer.overlayRenderer();
+        Renderer::PresentScope present(target, [&] { return view; }, format);
+        overlayDatabase.render(target, layer, ortho, {0, 0, 0, 0});
+    };
+    const std::vector<uint8_t> plain = world();
+    renderer.setPostGraph(g::mul(g::texture("scene", g::uv()), g::float_(0.25)));
+    const std::vector<uint8_t> posted = world();
+    CHECK(posted != plain);
+    for (int frame = 0; frame < 3; ++frame) {
+        overlay();
+        CHECK(world() == posted);
+    }
+    wgpuTextureViewRelease(view);
+    renderer.gpu().destroy(surface);
+}
+
+// The canvas-layer overlay (core's loading screen) draws over the presented world frame: an empty overlay leaves it
+// byte for byte, a plane over the left half replaces only that half. Drawn through the world renderer it cleared the
+// frame and ran the world's temporal step. The overlay is UI, so it draws with no tone curve (Unreal's Slate composites
+// after the tonemapper): its grey lands on the CSS value within 2 levels under a world output that tone maps. And a frame the renderer skips (its environment still bakes) never asks
+// for the surface view: a taken canvas texture presents, so the skipped frame flashed black.
+void canvasLayerOverlay() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    LitScene s;
+    RenderDatabase database;
+    const WGPUTextureFormat format = WGPUTextureFormat_BGRA8Unorm;
+    const Handle surface = renderer.gpu().createTexture(160, 120, format, WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    WGPUTextureView view = wgpuTextureCreateView(renderer.gpu().texture(surface), nullptr);
+    renderer.presentNext(view, format);
+    database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    const std::vector<uint8_t> world = readTexture(renderer, events, surface);
+    CHECK(world.size() == 160 * 120 * 4);
+
+    Scene layer;
+    OrthographicCamera ortho(-1, 1, 1, -1, 0.1, 10);
+    ortho.position.z = 5;
+    ortho.updateProjectionMatrix();
+    RenderDatabase overlayDatabase;
+    Renderer& overlay = renderer.overlayRenderer();
+    layer.updateMatrixWorld(true);
+    overlay.presentNext(view, format);
+    overlayDatabase.render(overlay, layer, ortho, {0, 0, 0, 0});
+    CHECK(overlayDatabase.diagnostics().empty());
+    CHECK(readTexture(renderer, events, surface) == world);
+
+    // Mid grey: sRGB 128 is linear 0.2158. The world's ACES curve took it to about 146; UI draws after the curve.
+    auto cover = std::make_shared<Material>(MaterialType::Basic);
+    cover->color.setRGB(0.2158, 0.2158, 0.2158);
+    Mesh plane(makePlaneGeometry(1, 2), cover);
+    plane.position.x = -0.5;
+    layer.add(plane);
+    layer.updateMatrixWorld(true);
+    overlay.presentNext(view, format);
+    overlayDatabase.render(overlay, layer, ortho, {0, 0, 0, 0});
+    const std::vector<uint8_t> covered = readTexture(renderer, events, surface);
+    bool rightKept = true, leftCovered = true;
+    for (size_t y = 0; y < 120; ++y)
+        for (size_t x = 0; x < 160; ++x) {
+            const size_t at = (y * 160 + x) * 4;
+            if (x >= 84) rightKept = rightKept && std::equal(&covered[at], &covered[at] + 4, &world[at]);
+            if (x < 76)
+                for (size_t c = 0; c < 3; ++c) leftCovered = leftCovered && std::abs(int(covered[at + c]) - 128) <= 2;
+        }
+    CHECK(rightKept);
+    CHECK(leftCovered);
+
+    auto sky = std::make_shared<DataTexture>();
+    sky->mapping = 303;
+    sky->width = 128;
+    sky->height = 64;
+    sky->data.assign(size_t(sky->width) * sky->height * 4, 255);
+    sky->needsUpdate();
+    s.scene.environment = sky;
+    int asked = 0;
+    const auto acquire = [&] { ++asked; return view; };
+    {
+        Renderer::PresentScope present(renderer, acquire, format);
+        CHECK(database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1}) == 0);  // the bake skips this frame
+    }
+    CHECK(asked == 0);
+    for (int frame = 0; frame < 5000 && asked == 0; ++frame) {
+        {
+            Renderer::PresentScope present(renderer, acquire, format);
+            database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+        }
+        renderer.poll();
+        events.drain();
+        if (asked == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(asked == 1);  // the first drawn frame asked once
+    wgpuTextureViewRelease(view);
+    renderer.gpu().destroy(surface);
+}
+
 // The instance storage keeps its elements between frames: N instances, then fewer, then more, must
 // each draw exactly what a renderer that never saw another count draws.
 void instanceCounts() {
@@ -930,6 +1102,12 @@ void invariantScope() {
         else { ++colour; CHECK(flagged(source)); }
     }
     CHECK(velocity == 1 && colour >= 1);  // the TRAA frame built its own flagged colour program beside the plain one
+    // A steady TRAA frame makes no bind group: the velocity fill and the resolve made one each a frame before.
+    database.render(renderer, s.scene, s.camera);
+    const uint64_t groups = bindGroupsCreated();
+    database.render(renderer, s.scene, s.camera);
+    database.render(renderer, s.scene, s.camera);
+    CHECK(bindGroupsCreated() == groups);
 }
 
 void directionalTarget() {
@@ -3457,6 +3635,7 @@ void batchCachesStayPut() {
     std::vector<std::shared_ptr<Mesh>> meshes;
     for (int g = 0; g < 64; ++g) {
         const auto geometry = makeBoxGeometry();
+        geometry->scale(1, 1 + g / 100.0, 1); // distinct bytes: equal boxes would batch as one group
         auto material = std::make_shared<Material>(MaterialType::Standard);
         for (int i = 0; i < 4; ++i) {
             auto mesh = std::make_shared<Mesh>(geometry, material);
@@ -3770,6 +3949,44 @@ void leafReceiver() {
                 hardCut.width, soft.width);
     CHECK(soft.width > hard.width + 0.15);         // the 5 degree minimum widens the marked leaf's penumbra
     CHECK(std::abs(hardCut.width - hard.width) < 0.05);   // a plain cut card keeps the sun's own source
+}
+
+// PCF's five taps turn by interleaved gradient noise of the pixel. With a fixed rotation a wide radius leaves a stipple
+// the temporal pass cannot average (Lantern Vale, radius 12), so the noise takes Unreal's frame term: every PCF filter
+// (directional, point, virtual) reads `shadowNoiseFrame`, which is the temporal pass's frame mod 8 and 0 without it.
+void shadowNoiseFrame() {
+    for (const char* kinds : {"D", "P", "2"}) {
+        const auto fragment = shader::buildStage(shader::buildStandard({}, {}, {kinds}).fragment, 1);
+        CHECK(fragment.wgsl.ok());
+        CHECK(fragment.wgsl.code.find("shadowNoiseFrame") != std::string::npos);
+    }
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 32);
+    PerspectiveCamera camera(60, 1, 0.1, 100);
+    camera.position.set(0, 0, 4);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    Mesh box{makeBoxGeometry(1, 1, 1), std::make_shared<Material>(MaterialType::Standard)};
+    scene.add(box);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    for (int frame = 0; frame < 3; ++frame) {
+        database.render(renderer, scene, camera);
+        CHECK(renderer.shadowNoiseFrame() == 0);  // no temporal pass: three's static rotation, a deterministic still
+    }
+    renderer.setTraa(TraaOptions{});
+    std::vector<double> seen;
+    for (int frame = 0; frame < 9; ++frame) {
+        database.render(renderer, scene, camera);
+        CHECK(renderer.shadowNoiseFrame() >= 0 && renderer.shadowNoiseFrame() < 8);
+        seen.push_back(renderer.shadowNoiseFrame());
+    }
+    std::sort(seen.begin(), seen.end());
+    CHECK(std::unique(seen.begin(), seen.end()) - seen.begin() == 8);  // eight rotations, as StateFrameIndexMod8
 }
 
 // PRD-653: a material marked roughDiffuse shades direct light with Unreal's Substrate rough diffuse (the EON
@@ -5708,7 +5925,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -5717,7 +5934,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

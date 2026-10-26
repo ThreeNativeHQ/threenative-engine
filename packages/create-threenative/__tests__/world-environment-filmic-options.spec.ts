@@ -1,7 +1,10 @@
 import { CustomToneMapping, PerspectiveCamera, Scene } from "three";
 import { float, vec3 } from "three/tsl";
 import { describe, expect, it } from "vitest";
-import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
+import {
+  type OutputRenderer,
+  WorldEnvironment,
+} from "../../../test-support/isolated-world-environment.js";
 
 // PRD-632 Phase 4, GAP-5: a game reaches Unreal's film curve numbers and colour grade through the options.
 function apply(options: ConstructorParameters<typeof WorldEnvironment>[0]) {

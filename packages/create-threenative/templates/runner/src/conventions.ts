@@ -16,7 +16,9 @@ export interface IRunnerConventions {
 export function prepareRunnerConventions(model: Object3D): IRunnerConventions {
   // Measured to the mannequin's `Head` joint, the base of the skull: 1.545 m there is a 1.8 m figure.
   const normaliseFactor = normaliseToMetres(model, { axis: "height", metres: 1.545 });
-  const groundSnap = new GroundSnap(model);
+  // The jog's flight phase lifts both feet up to 0.27 m. An exact snap pulls that onto the track
+  // and the leading foot skates at 8 m/s; `maxRate` keeps the flight and still raises a sunken pose.
+  const groundSnap = new GroundSnap(model, { maxRate: 0.25 });
   return {
     applyGrounding: (surfaceY, dt) => groundSnap.apply(model, surfaceY, dt),
     groundSnap,

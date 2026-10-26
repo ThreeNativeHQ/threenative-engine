@@ -1568,17 +1568,20 @@ test("an authored hold counts for a pointer step, not only a key press", () => {
   ).toBe(0);
 });
 
+/** The engine meter's GPU reading: the frame bound judges CPU and GPU cost, so a fixture needs both. */
+const GPU_METER = `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}`;
+
 test("runner carries performance samples in their separate report channel", () => {
   const currentScenario = scenario({ performance: { maxFrameMsP95: 20 } });
   const snapshot: IPlaytestObservationSnapshot = {
     clock: { mode: "render-frame", timeMs: 32 },
     runtimeDiagnosticsSeries: [
-      { frameMs: 16, drawCalls: 2, triangles: 12 },
-      { frameMs: 18, drawCalls: 3, triangles: 20 },
+      { frameMs: 16, drawCalls: 2, phases: { render: 1, update: 0.1 }, triangles: 12 },
+      { frameMs: 18, drawCalls: 3, phases: { render: 1, update: 0.1 }, triangles: 20 },
     ],
   };
 
-  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [{ text: GPU_METER, type: "log" }], []);
 
   expect(result.observations?.performanceSeries).toEqual(snapshot.runtimeDiagnosticsSeries);
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "performance.maxFrameMsP95", pass: true }));
@@ -1617,7 +1620,7 @@ test("runner keeps performance samples out of visual throughout-frame observatio
   });
   const snapshot: IPlaytestObservationSnapshot = {
     clock: { mode: "render-frame", timeMs: 32 },
-    runtimeDiagnosticsSeries: [{ frameMs: 16, drawCalls: 2, triangles: 12 }],
+    runtimeDiagnosticsSeries: [{ frameMs: 16, drawCalls: 2, phases: { render: 1, update: 0.1 }, triangles: 12 }],
   };
   const visualSeries = [{
     scene: {
@@ -1625,7 +1628,7 @@ test("runner keeps performance samples out of visual throughout-frame observatio
     },
   }];
 
-  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], [], undefined, {}, true, {
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [{ text: GPU_METER, type: "log" }], [], undefined, {}, true, {
     runtimeDiagnosticsSeries: visualSeries,
   });
 

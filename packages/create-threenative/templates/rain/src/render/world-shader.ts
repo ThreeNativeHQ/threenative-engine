@@ -209,33 +209,82 @@ export const choose = /*@__PURE__*/ Fn(([a, b]: [Node<"vec2">, Node<"vec2">]) =>
   return select(a.x.lessThan(b.x), a, b);
 });
 
-export const sceneMap = /*@__PURE__*/ Fn(([p]: [Node<"vec3">]) => {
-  const h = terrain(p.xz).toVar();
-  const res = vec2(p.y.sub(select(h.greaterThan(1), h, -3.5)).mul(0.58), 1).toVar();
+// One bounded procedural tree per spatial cell; crowns fit inside their cells.
 
-  // One bounded procedural tree per spatial cell; crowns fit inside their cells.
+export const treeCell = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
+  return floor(p.add(vec2(2, 1)).div(10.5));
+});
 
-  const cell = floor(p.xz.add(vec2(2, 1)).div(10.5)).toVar();
-  const seed = hash12(cell.add(17)).toVar();
-  const tc = cell
+export const treeCentre = /*@__PURE__*/ Fn(([cell]: [Node<"vec2">]) => {
+  return cell
     .add(0.5)
     .mul(10.5)
     .sub(vec2(2, 1))
     .add(vec2(hash12(cell.add(3)), hash12(cell.add(7))).mul(0.9))
-    .sub(0.45)
-    .toVar();
-  const th = terrain(tc).toVar();
-  const rel = tc.x.sub(roadCenter(tc.y)).toVar();
-  const forest = rel
-    .lessThan(-9)
-    .or(tc.y.lessThan(-175))
-    .and(th.greaterThan(-0.2))
-    .and(th.lessThan(115))
-    .and(seed.greaterThan(0.15))
-    .and(tc.y.lessThan(-12).or(tc.x.lessThan(-45)))
-    .toVar();
+    .sub(0.45);
+});
 
-  If(forest, () => {
+// The ground under a cell's tree, or 1e4 when the cell grows none. terrain() is the costliest call
+// in the march, so it runs only for a cell the cheap tests admit, and trace() asks once per cell.
+
+export const treeBase = /*@__PURE__*/ Fn(([cell]: [Node<"vec2">]) => {
+  const seed = hash12(cell.add(17)).toVar();
+  const tc = treeCentre(cell).toVar();
+  const rel = tc.x.sub(roadCenter(tc.y)).toVar();
+  const th = float(1e4).toVar();
+
+  If(
+    rel
+      .lessThan(-9)
+      .or(tc.y.lessThan(-175))
+      .and(seed.greaterThan(0.15))
+      .and(tc.y.lessThan(-12).or(tc.x.lessThan(-45))),
+    () => {
+      const g = terrain(tc).toVar();
+
+      If(g.greaterThan(-0.2).and(g.lessThan(115)), () => {
+        th.assign(g);
+      });
+    },
+  );
+
+  return th;
+});
+
+// The march reads a hill only where it rises above 1 m, else the -3.5 floor. Each hill's weight times
+// its largest height (the noises stay below 1) bounds it, so a point no hill can lift past 1 m skips
+// terrain()'s five noises and gets the same floor it would have.
+
+export const hillHeight = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
+  const di = p.sub(vec2(94, -205)).div(vec2(39, 48)).toVar();
+  const h = float(-3.5).toVar();
+
+  If(
+    smoothstep(13, 155, p.x.negate())
+      .mul(183)
+      .greaterThan(1)
+      .or(smoothstep(280, 670, p.y.negate()).mul(223).greaterThan(1))
+      .or(smoothstep(190, 430, p.x).mul(125).greaterThan(1))
+      .or(exp(dot(di, di).negate()).mul(28).greaterThan(1)),
+    () => {
+      const g = terrain(p).toVar();
+
+      If(g.greaterThan(1), () => {
+        h.assign(g);
+      });
+    },
+  );
+
+  return h;
+});
+
+export const sceneAt = /*@__PURE__*/ Fn(([p, th]: [Node<"vec3">, Node<"float">]) => {
+  const res = vec2(p.y.sub(hillHeight(p.xz)).mul(0.58), 1).toVar();
+
+  If(th.lessThan(1e3), () => {
+    const cell = treeCell(p.xz).toVar();
+    const seed = hash12(cell.add(17)).toVar();
+    const tc = treeCentre(cell).toVar();
     const q = p.sub(vec3(tc.x, th, tc.y)).toVar();
     const ht = add(6, seed.mul(13)).toVar();
     const cy = clamp(q.y.div(ht), 0, 1).toVar();
@@ -312,10 +361,16 @@ export const sceneMap = /*@__PURE__*/ Fn(([p]: [Node<"vec3">]) => {
   return res;
 });
 
+export const sceneMap = /*@__PURE__*/ Fn(([p]: [Node<"vec3">]) => {
+  return sceneAt(p, treeBase(treeCell(p.xz)));
+});
+
 export const trace = /*@__PURE__*/ Fn(
   ([ro, rd, limit]: [Node<"vec3">, Node<"vec3">, Node<"float">]) => {
     const t = float(0.25).toVar();
     const mat = float(-1).toVar();
+    const lastCell = vec2(1e9).toVar();
+    const th = float(1e4).toVar();
 
     Loop({ start: int(0), end: 148 }, () => {
       If(t.greaterThan(limit).or(t.greaterThan(1850)), () => {
@@ -323,7 +378,14 @@ export const trace = /*@__PURE__*/ Fn(
       });
 
       const p = ro.add(rd.mul(t)).toVar();
-      const d = sceneMap(p).toVar();
+      const cell = treeCell(p.xz).toVar();
+
+      If(cell.x.notEqual(lastCell.x).or(cell.y.notEqual(lastCell.y)), () => {
+        th.assign(treeBase(cell));
+        lastCell.assign(cell);
+      });
+
+      const d = sceneAt(p, th).toVar();
       const eps = max(0.007, t.mul(0.00048)).toVar();
 
       If(d.x.lessThan(eps), () => {
@@ -344,16 +406,33 @@ export const trace = /*@__PURE__*/ Fn(
   },
 );
 
+// The scene at a normal tap: its cell's tree base is the hit's own unless the tap crossed a cell edge.
+
+export const tapScene = /*@__PURE__*/ Fn(
+  ([q, hitCell, hitBase]: [Node<"vec3">, Node<"vec2">, Node<"float">]) => {
+    const c = treeCell(q.xz).toVar();
+    const th = hitBase.toVar();
+
+    If(c.x.notEqual(hitCell.x).or(c.y.notEqual(hitCell.y)), () => {
+      th.assign(treeBase(c));
+    });
+
+    return sceneAt(q, th).x;
+  },
+);
+
 export const getNormal = /*@__PURE__*/ Fn(([p, t]: [Node<"vec3">, Node<"float">]) => {
   const e = max(0.008, t.mul(0.00032)).toVar();
   const k = vec2(1, -1).mul(0.5773).toVar();
+  const hc = treeCell(p.xz).toVar();
+  const hb = treeBase(hc).toVar();
 
   return normalize(
     k.xyy
-      .mul(sceneMap(p.add(k.xyy.mul(e))).x)
-      .add(k.yyx.mul(sceneMap(p.add(k.yyx.mul(e))).x))
-      .add(k.yxy.mul(sceneMap(p.add(k.yxy.mul(e))).x))
-      .add(k.xxx.mul(sceneMap(p.add(k.xxx.mul(e))).x)),
+      .mul(tapScene(p.add(k.xyy.mul(e)), hc, hb))
+      .add(k.yyx.mul(tapScene(p.add(k.yyx.mul(e)), hc, hb)))
+      .add(k.yxy.mul(tapScene(p.add(k.yxy.mul(e)), hc, hb)))
+      .add(k.xxx.mul(tapScene(p.add(k.xxx.mul(e)), hc, hb))),
   );
 });
 
@@ -500,6 +579,8 @@ export const reflected = /*@__PURE__*/ Fn(
 
     If(uReflect.notEqual(0), () => {
       const t = float(0.5).toVar();
+      const lastCell = vec2(1e9).toVar();
+      const th = float(1e4).toVar();
 
       Loop({ start: int(0), end: 36 }, () => {
         If(t.greaterThan(280), () => {
@@ -507,7 +588,14 @@ export const reflected = /*@__PURE__*/ Fn(
         });
 
         const q = p.add(rd.mul(t)).toVar();
-        const d = sceneMap(q).toVar();
+        const cell = treeCell(q.xz).toVar();
+
+        If(cell.x.notEqual(lastCell.x).or(cell.y.notEqual(lastCell.y)), () => {
+          th.assign(treeBase(cell));
+          lastCell.assign(cell);
+        });
+
+        const d = sceneAt(q, th).toVar();
 
         If(d.x.lessThan(max(0.03, t.mul(0.0016))), () => {
           If(d.y.greaterThan(5.5).and(d.y.lessThan(6.5)), () => {

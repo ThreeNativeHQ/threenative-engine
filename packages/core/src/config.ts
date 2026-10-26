@@ -303,6 +303,8 @@ export interface IThreeNativePerformanceBudget {
   readonly maxDrawCalls?: number;
   /** Maximum nearest-rank 95th-percentile frame time in milliseconds. */
   readonly maxFrameMsP95?: number;
+  /** Why this profile cannot hold 60 fps; the harness requires it when `maxFrameMsP95` is above 16.7. */
+  readonly maxFrameMsReason?: string;
   /** Maximum renderer triangle count across every pass combined. */
   readonly maxTriangles?: number;
   /** Frame-budget floor: the median presented frame must sustain at least this many frames a second. */

@@ -210,6 +210,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
+  // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
   // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
   // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
@@ -288,25 +290,47 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-743 (2026-10-25): every template AGENTS.md gains the on-demand assets convention, so all thirteen trees move.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "f3c8e92b3c8c7a180acc5c4f9507c50faf6b8bbafd67420b2a7ed91548896676",
-  minimal: "77c9943ecd90b01baa8b9248838d53b4da7db9ab6a0f4652785c6609c28ff628",
-  platformer: "3d16c6b5ff0244e2d6cbf74110c3f8a5683430c41e2dbd83f7883c53ca73721a",
-  puzzle: "920c85394f330f49df56fd4fd0a33e988aa0cfc55c27bdf6d01b37b0bed1f10d",
-  racing: "1e1d55bcd1107699ae5b6e202277ab178935e44504cf040a5062cd6f86e3e2a7",
-  rain: "6670af8bb441a64c0b0fdfd081f891474f933eef3d067cc70b3c4852b9849254",
-  rts: "1f1304ea34d2d07bbf227e2bd0385cfa0e3562f6cff26efead226b858fefa016",
-  runner: "501fc0d0454eff758979dac4bbc16dfde81df28926277663b880715dc49b3b16",
+  // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
+  // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
+  "action-rpg": "3328522bb755658638ca1952ff49f3e8d8108eb517f610d16554d716baf8961b",
+  // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
+  // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
+  // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
+  // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
+  // Recomputed 2026-10-24 for the look round: terrain, castle, meadow, sky and world assertions
+  // (method checked against this kit's previous value, from a copy holding only this template).
+  // Recomputed 2026-10-24 for the double jump (chain window, press buffer, HUD hint, double-tap
+  // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
+  // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
+  // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
+  // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
+  // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
+  // stay the same.
+  collectathon: "f74b17bf776afc8a2d432fdee6db0df3beda3233ba776abda6a5d4187d25d6c6",
+  // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
+  // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
+  // wind on the crowns, clusters and grass tufts. Only this tree moves.
+  adventure: "df21f0d88fa88177edfb1070c19857b6a7c55034fc70392d405a44092e80ab27",
+  // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
+  kart: "028a13659ff063ff678ef9587869c29621343ee8954ae842045a58f5b09efb87",
+  minimal: "2786d7eee1ba93183585b2a9a20ea370c7d98cad4543cbd07849b5145c17d49e",
+  platformer: "c26471c971cb8c50b631056f00d023ccf415fa1ec12eb2102b164fb6f84ce33a",
+  puzzle: "40cbf8678e99518926645d85e18f3b4bcd15d203acae0dee11370a279670b7fe",
+  racing: "af1a4f9bfa7b72f4706840c4284231455f6fcba9331ff0c91a975427c9b59f07",
+  rain: "cf83bea415bc3a6fdb5654a3d906c2608b5625666189e264279aac1a38e2e155",
+  rts: "22059980238c7743d8251ebdd49eaffd49ae7f878a7904fb75a3a8be93582cf8",
+  runner: "cda53296a601c2dac944f169afc60d94d3fa03f049f5a3eaf88889819f1ec55d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "753022ac6dbeff45a0d8016111df0a02fd7c6eefe79a74383d4cb65585daeee1",
-  shooter: "1641c8252f7a782bd856c0688e1358a1d07fce44c9c9fd5541b1c06913df8d7c",
-  snow: "e626387b20b3ab5b22643e3bf9a73e7b63f0341294351d1c3b5378e1fd99401a",
+  sailing: "5383db14b9c32f6185f406113a83054b465a869a36e171eb2a9308d544a5522d",
+  shooter: "07eb04cfbb07bab2321795b66c0a81b372a0e801df4120da74dce22e570f4b2e",
+  snow: "183b80ada822f22f25c9f7e6ca0f45aef2f5789a71f51f8cc3048965ddda8d2b",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "fb6ff33b693a3e22102117084b5742b4c46937bf5fd11a5b0682158d4d8cb5a4",
-  "tower-defense": "58c7a431431ffc504bf1d7c76cc498a25a1997f0b4562a3d82fc4eb13782ac3a",
+  starter: "603cce83c0b7da17f1ed2eba72e317f940840327e95081555191c22849041a73",
+  "tower-defense": "c2874bdeedfb61095c23374f4e9716aacedfc801e0966648b067bbf267b1cb11",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -408,8 +432,6 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/qualityPolicy.ts",
-  "src/render/worldEnvironment.ts",
-  "src/render/tonemap.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
   "src/render/temporalAAResolve.ts",
@@ -422,7 +444,6 @@ const STARTER_PATHS = [
   "src/render/temporalCurrentVisibility.ts",
   "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
-  "src/render/autoExposure.ts",
   "src/render/volumetricFog.ts",
   "src/render/volumetricFogOptions.ts",
   "src/render/volumetricFogVolume.ts",
@@ -600,6 +621,38 @@ describe("create-threenative", () => {
         actual[template] = await scaffoldTreeHash(target);
         if (template === "platformer") {
           await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
+        if (template === "collectathon" || template === "adventure") {
+          // Hop Garden's and Lantern Vale's geometry is procedural; their tiling surfaces are images (owner,
+          // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
+          // traced in PROVENANCE.md.
+          const files = await readdir(path.join(target, "assets"), { recursive: true });
+          const sizes = await Promise.all(
+            files.map(async (file) => {
+              const info = await stat(path.join(target, "assets", file));
+              return info.isFile() ? info.size : 0;
+            }),
+          );
+          expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
+          // The textures ship once in `template-assets/assets/tex-*`; the licence record follows.
+          const provenance = await readFile(
+            path.join(target, "assets", "tex-PROVENANCE.md"),
+            "utf8",
+          );
+          const textures = files.filter((name) => name.endsWith(".webp"));
+          expect(textures).toHaveLength(template === "collectathon" ? 12 : 5);
+          for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
+        }
+        if (template === "kart") {
+          // Clover Cup is all procedural (owner, 2026-10-24): no assets folder and
+          // no image or model file but the shared icon, so every texture is painted in code.
+          await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
+          const media = (await readdir(target, { recursive: true })).filter(
+            (file) =>
+              /\.(png|jpe?g|webp|ktx2|hdr|exr|glb|gltf|fbx|obj)$/u.test(file) &&
+              file !== path.join("public", "icon.png"),
+          );
+          expect(media).toEqual([]);
         }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
@@ -1057,7 +1110,9 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, "src/render", file), "utf8"),
         ),
       );
-      expect(renderFiles.join("\n")).not.toContain("@threenative/");
+      expect(
+        renderFiles.join("\n").replaceAll('from "@threenative/core"', 'from "shared-core"'),
+      ).not.toContain("@threenative/");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

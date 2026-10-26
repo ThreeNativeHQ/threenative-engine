@@ -25,8 +25,8 @@ export const MAX_OBSTACLES = 4;
 export const LANE_X = [-LANE_WIDTH, 0, LANE_WIDTH] as const;
 /** No obstacles this close to the start, so the first seconds teach the controls. */
 const GRACE_METRES = 34;
-/** Where an unused slot goes: far under the floor, scaled to nothing. */
-const PARKED = new Matrix4().makeScale(0, 0, 0).setPosition(0, -1000, 0);
+/** Where an unused slot goes: scaled to nothing at the chunk's centre, so it keeps the bounds tight. */
+const PARKED = new Matrix4().makeScale(0, 0, 0);
 
 export interface IChunkContext {
   readonly physics: RunnerPhysics;
@@ -119,7 +119,12 @@ export class Chunk {
     for (let slot = placed; slot < MAX_OBSTACLES; slot += 1) {
       this.#obstacles?.setMatrixAt(slot, PARKED);
     }
-    if (this.#obstacles !== undefined) this.#obstacles.instanceMatrix.needsUpdate = true;
+    if (this.#obstacles !== undefined) {
+      this.#obstacles.instanceMatrix.needsUpdate = true;
+      // Three.js culls an InstancedMesh by the bounds it last computed. Those were taken around the
+      // parked slots, so without this every rewritten obstacle was culled: unseen, still solid.
+      this.#obstacles.computeBoundingSphere();
+    }
   }
 
   dispose(): void {

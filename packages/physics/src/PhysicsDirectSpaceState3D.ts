@@ -21,6 +21,11 @@ export interface IIntersectRayOptions {
   readonly from: PhysicsQueryVector3;
   readonly to: PhysicsQueryVector3;
   readonly collisionMask?: number;
+  /**
+   * Godot `PhysicsRayQueryParameters3D.hit_from_inside`, default false: a ray whose origin is
+   * inside a solid ignores that solid. True returns it as a distance 0 hit with a zero normal.
+   */
+  readonly hitFromInside?: boolean;
 }
 
 export interface IIntersectShapeOptions {
@@ -53,6 +58,7 @@ function rayQuery(options: IIntersectRayOptions): IPhysicsRayQuery {
   return requirePhysicsRayQuery({
     collisionMask: options.collisionMask === undefined ? 0xffff : options.collisionMask,
     from: options.from,
+    hitFromInside: options.hitFromInside,
     to: options.to,
   });
 }

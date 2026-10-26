@@ -3,6 +3,8 @@ import {
   type AnimationClip,
   AnimationMixer,
   type AnimationMixerEventMap,
+  type Box3,
+  type BufferGeometry,
   type EventListener,
   LoopOnce,
   LoopRepeat,
@@ -20,7 +22,11 @@ import {
   animationPacketTimeReaders,
 } from "./animation-packet-state.js";
 import { clipTrackBindings } from "./clip-audit.js";
-import { type IAnimationRateState, animationRateStates } from "./render-camera-cull.js";
+import {
+  type IAnimationRateState,
+  animationRateStates,
+  trackAnimationRate,
+} from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
 export interface IAnimationPlayerOptions {
@@ -158,13 +164,196 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 }
 
 /**
+ * The box a mesh's contact point is read from, or undefined for the object's own origin.
+ *
+ * A procedural boot or sole has its origin wherever the author put the geometry, usually the
+ * middle. On a leg that swings from the hip the origin sweeps a smaller circle than the sole does,
+ * so reading it reports a stride shorter than the ground the sole covers, and the clip plays too
+ * fast. A skinned mesh keeps its bind-pose box under a static matrix, so its bones carry the
+ * motion and it stays on the origin path.
+ */
+function contactBox(object: Object3D): Box3 | undefined {
+  const mesh = object as Object3D & { geometry?: BufferGeometry; isSkinnedMesh?: boolean };
+  if (mesh.geometry === undefined || mesh.isSkinnedMesh === true) return undefined;
+  if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox;
+  if (box === null || box.isEmpty()) return undefined;
+  const finite = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+  return finite.every(Number.isFinite) ? box : undefined;
+}
+
+/**
+ * Where an object meets the floor: its lowest world-space geometry point, with the horizontal
+ * position taken at the middle of the four lowest corners of its box (the sole, however it tilts).
+ * An object without geometry is its origin.
+ */
+function contactPoint(elements: Float64Array, box: Box3 | undefined, target: Vector3): Vector3 {
+  if (box === undefined)
+    return target.set(elements[12] as number, elements[13] as number, elements[14] as number);
+  // Plain arithmetic over one read of the matrix and the box, Vector3.applyMatrix4's own formula:
+  // on the owned engine each vector call crosses into the engine, and 8 corners per mesh per sample
+  // held Lantern Vale's first walk and first run for 43 ms each.
+  const e0 = elements[0] as number;
+  const e1 = elements[1] as number;
+  const e2 = elements[2] as number;
+  const e3 = elements[3] as number;
+  const e4 = elements[4] as number;
+  const e5 = elements[5] as number;
+  const e6 = elements[6] as number;
+  const e7 = elements[7] as number;
+  const e8 = elements[8] as number;
+  const e9 = elements[9] as number;
+  const e10 = elements[10] as number;
+  const e11 = elements[11] as number;
+  const e12 = elements[12] as number;
+  const e13 = elements[13] as number;
+  const e14 = elements[14] as number;
+  const e15 = elements[15] as number;
+  const { x: minX, y: minY, z: minZ } = box.min;
+  const { x: maxX, y: maxY, z: maxZ } = box.max;
+  for (let index = 0; index < 8; index += 1) {
+    const x = index & 1 ? maxX : minX;
+    const y = index & 2 ? maxY : minY;
+    const z = index & 4 ? maxZ : minZ;
+    const w = 1 / (e3 * x + e7 * y + e11 * z + e15);
+    cornerX[index] = (e0 * x + e4 * y + e8 * z + e12) * w;
+    cornerY[index] = (e1 * x + e5 * y + e9 * z + e13) * w;
+    cornerZ[index] = (e2 * x + e6 * y + e10 * z + e14) * w;
+    // Insert by height as each corner lands: a stable sort of 8 without Array.sort's comparator calls,
+    // which cost three quarters of this function on Lantern Vale's first walk.
+    const height = cornerY[index] as number;
+    let slot = index;
+    while (slot > 0 && (cornerY[cornerOrder[slot - 1] as number] as number) > height) {
+      cornerOrder[slot] = cornerOrder[slot - 1] as number;
+      slot -= 1;
+    }
+    cornerOrder[slot] = index;
+  }
+  let x = 0;
+  let z = 0;
+  for (let index = 0; index < 4; index += 1) {
+    const corner = cornerOrder[index] as number;
+    x += cornerX[corner] as number;
+    z += cornerZ[corner] as number;
+  }
+  return target.set(x / 4, cornerY[cornerOrder[0] as number] as number, z / 4);
+}
+
+/** An object's current world matrix into `target`, identity for none; the engine copies it out. */
+function worldOf(object: Object3D | null, target: Float64Array): void {
+  if (object === null) {
+    target.set(IDENTITY);
+    return;
+  }
+  const source = object as Object3D & { __tnCopyMatrixWorld?: (target: Matrix4) => void };
+  // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
+  if (source.__tnCopyMatrixWorld === undefined) target.set(object.matrixWorld.elements);
+  else {
+    source.__tnCopyMatrixWorld(scratchMatrixWorld);
+    target.set(scratchMatrixWorld.elements);
+  }
+}
+
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+/** Matrix4.compose from the object's position, quaternion and scale, three's own formula. */
+function composeLocal(object: Object3D, te: Float64Array): void {
+  const { x, y, z, w } = object.quaternion;
+  const x2 = x + x;
+  const y2 = y + y;
+  const z2 = z + z;
+  const xx = x * x2;
+  const xy = x * y2;
+  const xz = x * z2;
+  const yy = y * y2;
+  const yz = y * z2;
+  const zz = z * z2;
+  const wx = w * x2;
+  const wy = w * y2;
+  const wz = w * z2;
+  const { x: sx, y: sy, z: sz } = object.scale;
+  te[0] = (1 - (yy + zz)) * sx;
+  te[1] = (xy + wz) * sx;
+  te[2] = (xz - wy) * sx;
+  te[3] = 0;
+  te[4] = (xy - wz) * sy;
+  te[5] = (1 - (xx + zz)) * sy;
+  te[6] = (yz + wx) * sy;
+  te[7] = 0;
+  te[8] = (xz + wy) * sz;
+  te[9] = (yz - wx) * sz;
+  te[10] = (1 - (xx + yy)) * sz;
+  te[11] = 0;
+  te[12] = object.position.x;
+  te[13] = object.position.y;
+  te[14] = object.position.z;
+  te[15] = 1;
+}
+
+/**
+ * Matrix4.multiplyMatrices(a, b) into `te`, three's own formula. Indexed reads on purpose: this runs
+ * on a clip's first play, before the JIT warms, where destructuring a Float64Array runs its
+ * iterator at twice the cost.
+ */
+function multiplyInto(ae: Float64Array, be: Float64Array, te: Float64Array): void {
+  const a11 = ae[0] as number;
+  const a21 = ae[1] as number;
+  const a31 = ae[2] as number;
+  const a41 = ae[3] as number;
+  const a12 = ae[4] as number;
+  const a22 = ae[5] as number;
+  const a32 = ae[6] as number;
+  const a42 = ae[7] as number;
+  const a13 = ae[8] as number;
+  const a23 = ae[9] as number;
+  const a33 = ae[10] as number;
+  const a43 = ae[11] as number;
+  const a14 = ae[12] as number;
+  const a24 = ae[13] as number;
+  const a34 = ae[14] as number;
+  const a44 = ae[15] as number;
+  const b11 = be[0] as number;
+  const b21 = be[1] as number;
+  const b31 = be[2] as number;
+  const b41 = be[3] as number;
+  const b12 = be[4] as number;
+  const b22 = be[5] as number;
+  const b32 = be[6] as number;
+  const b42 = be[7] as number;
+  const b13 = be[8] as number;
+  const b23 = be[9] as number;
+  const b33 = be[10] as number;
+  const b43 = be[11] as number;
+  const b14 = be[12] as number;
+  const b24 = be[13] as number;
+  const b34 = be[14] as number;
+  const b44 = be[15] as number;
+  te[0] = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
+  te[4] = a11 * b12 + a12 * b22 + a13 * b32 + a14 * b42;
+  te[8] = a11 * b13 + a12 * b23 + a13 * b33 + a14 * b43;
+  te[12] = a11 * b14 + a12 * b24 + a13 * b34 + a14 * b44;
+  te[1] = a21 * b11 + a22 * b21 + a23 * b31 + a24 * b41;
+  te[5] = a21 * b12 + a22 * b22 + a23 * b32 + a24 * b42;
+  te[9] = a21 * b13 + a22 * b23 + a23 * b33 + a24 * b43;
+  te[13] = a21 * b14 + a22 * b24 + a23 * b34 + a24 * b44;
+  te[2] = a31 * b11 + a32 * b21 + a33 * b31 + a34 * b41;
+  te[6] = a31 * b12 + a32 * b22 + a33 * b32 + a34 * b42;
+  te[10] = a31 * b13 + a32 * b23 + a33 * b33 + a34 * b43;
+  te[14] = a31 * b14 + a32 * b24 + a33 * b34 + a34 * b44;
+  te[3] = a41 * b11 + a42 * b21 + a43 * b31 + a44 * b41;
+  te[7] = a41 * b12 + a42 * b22 + a43 * b32 + a44 * b42;
+  te[11] = a41 * b13 + a42 * b23 + a43 * b33 + a44 * b43;
+  te[15] = a41 * b14 + a42 * b24 + a43 * b34 + a44 * b44;
+}
+
+/**
  * The ground an in-place clip was authored for, read off the feet, in world metres per clip-second.
  *
  * A planted foot sweeps backward relative to the body at exactly the speed the body is meant to be
  * travelling — that is what "planted" means — so the stance phase of a cycle states the clip's
  * speed even though nothing in it translates. Contact bones are found by where they go rather than
  * by what they are called: whatever reaches the bottom of the rig's arc is a foot, in any rig and
- * any language. The median over stance frames rejects the toe-off and heel-strike ends of the
+ * any language. A mesh counts at its lowest geometry point, not its origin (`contactPoint`). The median over stance frames rejects the toe-off and heel-strike ends of the
  * sweep, and the median over feet rejects a limb that never plants.
  *
  * The rig is driven and then restored to the transforms it arrived with, once per clip.
@@ -172,6 +361,7 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const objects: Object3D[] = [];
   root.traverse((object) => objects.push(object));
+  const boxes = objects.map(contactBox);
 
   // The root belongs to the game, which turns it with `rotation.y +=`. A quaternion restore
   // rewrites `rotation` as the equivalent Euler, so a yaw of PI comes back as (PI, 0, PI) and the
@@ -186,19 +376,38 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const step = clip.duration / PLANT_SAMPLES;
   // The mixer animates only the rig, so its ancestors need one refresh, not one per sample.
   root.parent?.updateWorldMatrix(true, false);
+  // A rig that updates its own matrices gets its world matrices here, with three's own compose and
+  // multiply over plain arrays: on the owned engine a world read is one crossing and a matrix read
+  // sixteen proxied ones, per node per sample, and those held Lantern Vale's first walk 13 ms on a
+  // desktop. A node with a hand-set matrix keeps the engine's world read.
+  const composed = objects.every(
+    (object) => object.matrixAutoUpdate !== false && object.matrixWorldAutoUpdate !== false,
+  );
+  const worlds = objects.map(() => new Float64Array(16));
+  const local = new Float64Array(16);
+  const rootParentWorld = new Float64Array(16);
+  const parentOf = new Map(objects.map((object, index) => [object, index]));
+  const parents = objects.map((object) =>
+    object === root ? -1 : (parentOf.get(object.parent as Object3D) ?? -1),
+  );
+  if (composed) worldOf(root.parent, rootParentWorld);
   try {
     for (let frame = 0; frame <= PLANT_SAMPLES; frame += 1) {
       mixer.setTime(frame * step);
-      root.updateMatrixWorld(true);
+      if (!composed) root.updateMatrixWorld(true);
       for (let index = 0; index < objects.length; index += 1) {
-        // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
-        const object = objects[index] as Object3D & {
-          __tnCopyMatrixWorld?: (target: Matrix4) => void;
-        };
-        if (object.__tnCopyMatrixWorld !== undefined) {
-          object.__tnCopyMatrixWorld(scratchMatrixWorld);
-          scratchWorld.setFromMatrixPosition(scratchMatrixWorld);
-        } else scratchWorld.setFromMatrixPosition(object.matrixWorld);
+        const object = objects[index] as Object3D;
+        const world = worlds[index] as Float64Array;
+        if (composed) {
+          composeLocal(object, local);
+          const parent = parents[index] as number;
+          multiplyInto(
+            parent < 0 ? rootParentWorld : (worlds[parent] as Float64Array),
+            local,
+            world,
+          );
+        } else worldOf(object, world);
+        contactPoint(world, boxes[index], scratchWorld);
         (paths[index] as { x: number; y: number; z: number }[]).push({
           x: scratchWorld.x,
           y: scratchWorld.y,
@@ -471,7 +680,7 @@ export class AnimationPlayer {
     }
     animationPacketReaders.set(this.root, this.#packetReader);
     animationPacketTimeReaders.set(this.root, this.#packetTimeReader);
-    animationRateStates.set(this.root, this.#rateState);
+    trackAnimationRate(this.root, this.#rateState);
     this.root.userData[ANIMATION_RATE_STATE_KEY] = this.#rateState;
   }
 
@@ -1321,6 +1530,10 @@ export class AnimationPlayer {
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
 const scratchMatrixWorld = new Matrix4();
+const cornerX = new Float64Array(8);
+const cornerY = new Float64Array(8);
+const cornerZ = new Float64Array(8);
+const cornerOrder = new Uint8Array(8);
 
 /**
  * Validate one weighted request into normalized, non-zero target weights.

@@ -42,6 +42,7 @@ import {
   If,
   color,
   convertToTexture,
+  cross,
   diffuseColor,
   emissive,
   float,
@@ -61,7 +62,13 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import {
+  BlendMode,
+  type Node,
+  type NodeBuilder,
+  NodeUpdateType,
+  type TextureNode,
+} from "three/webgpu";
 import { RENDER_CHAIN_TIERS } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
@@ -155,6 +162,12 @@ export interface IWorldEnvironmentOptions {
    * at half resolution costs a quarter of the rays and is very hard to see in the result.
    */
   readonly ssrResolutionScale?: number;
+  /**
+   * The most steps one reflection ray marches. Defaults to Unreal's count for the render chain
+   * tier (`RENDER_CHAIN_TIERS`: 32 on high, 16 on medium, 8 on low). Fewer steps cost less and
+   * step over thin objects sooner.
+   */
+  readonly ssrMaxSteps?: number;
   /** Spatial denoise over the SSGI result. Off is noisier and cheaper. */
   readonly denoiseEnabled?: boolean;
   /** The SSGI denoise's reach in gather pixels; omit for DenoiseNode's 5. A half-resolution gather wants more. */
@@ -707,6 +720,7 @@ export class WorldEnvironment {
       ssrEnabled: options.ssrEnabled ?? lookDiagnostics.layer >= 8,
       ssrMaxDistance: options.ssrMaxDistance ?? 30,
       ssrResolutionScale: options.ssrResolutionScale ?? 1,
+      ssrMaxSteps: options.ssrMaxSteps ?? RENDER_CHAIN_TIERS[renderChainTier].ssrMaxSteps,
       denoiseEnabled: options.denoiseEnabled ?? true,
       ssgiDenoiseRadius: options.ssgiDenoiseRadius,
       ssgiScreenProbes: options.ssgiScreenProbes ?? false,
@@ -737,7 +751,7 @@ export class WorldEnvironment {
       gtaoResolutionScale: options.gtaoResolutionScale ?? 1,
       gtaoMultiBounceAlbedo: options.gtaoMultiBounceAlbedo ?? UNREAL_AO_MULTIBOUNCE_ALBEDO,
       gtaoIndirectOnly: options.gtaoIndirectOnly ?? true,
-      ssgiResolutionScale: options.ssgiResolutionScale ?? 1,
+      ssgiResolutionScale: options.ssgiResolutionScale ?? 0.5,
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
       vignetteAmount: options.vignetteAmount ?? 0,
@@ -1018,8 +1032,13 @@ export class WorldEnvironment {
         const filter = denoise(result, depth(), normal(), view) as {
           gpuStage?: string;
           index: { value: number };
+          resolutionScale?: number;
         };
         filter.index.value = pass;
+        // Filtered at the gather's resolution, as the AO filter runs at the AO's: at full resolution the owned
+        // engine filtered four times the gather's pixels (3.7 ms of a 15 ms frame at 2560x1440). Upstream three
+        // filters inline and ignores it.
+        filter.resolutionScale = options.ssgiResolutionScale;
         // The owned engine times the gather's denoise with the gather (`GI_STAGES`); three ignores the property.
         if (options.ssgiTimedPass === undefined || options.ssgiTimedPass === "denoise")
           filter.gpuStage = "SSGI";
@@ -1162,10 +1181,52 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
-          // No normal input: GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
+          // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
-          const contact = ao(subrectTexture(depth()), null as never, view);
+          const aoDepth = subrectTexture(depth());
+          let reconstructedNormal: { sample: (at: Node<"vec2">) => Node<"vec3"> } | null = null;
+          if (!ownedEngine) {
+            const extent = new Vector2(1, 1);
+            // The pass viewport is the active pixel extent, including for multisampled depth.
+            const activeSize = uniform(extent).onRenderUpdate(() =>
+              extent.set(scenePass.renderTarget.viewport.z, scenePass.renderTarget.viewport.w),
+            );
+            const inverseProjection = uniform(view.projectionMatrixInverse);
+            // Reconstruct through TextureNode samplers: Three's raw depth path bypasses retained clamps and misqueries MSAA dimensions.
+            reconstructedNormal = {
+              sample: Fn(([at]: [Node<"vec2">]) => {
+                const size = activeSize.toVar();
+                const pixel = at.mul(size).floor().add(0.5).div(size);
+                const tap = (x: number, y: number) =>
+                  aoDepth.sample(pixel.add(vec2(x, y).div(size))).r.toVar();
+                const c = tap(0, 0);
+                const l2 = tap(-2, 0);
+                const l1 = tap(-1, 0);
+                const r1 = tap(1, 0);
+                const r2 = tap(2, 0);
+                const b2 = tap(0, 2);
+                const b1 = tap(0, 1);
+                const t1 = tap(0, -1);
+                const t2 = tap(0, -2);
+                const dl = l1.mul(2).sub(l2).sub(c).abs();
+                const dr = r1.mul(2).sub(r2).sub(c).abs();
+                const db = b1.mul(2).sub(b2).sub(c).abs();
+                const dt = t1.mul(2).sub(t2).sub(c).abs();
+                const center = getViewPosition(at, c, inverseProjection).toVar();
+                const position = (x: number, y: number, z: Node<"float">) =>
+                  getViewPosition(at.add(vec2(x, y).div(size)), z, inverseProjection);
+                const dx = dl
+                  .lessThan(dr)
+                  .select(center.sub(position(-1, 0, l1)), position(1, 0, r1).sub(center));
+                const dy = db
+                  .lessThan(dt)
+                  .select(center.sub(position(0, 1, b1)), position(0, -1, t1).sub(center));
+                return cross(dx, dy).normalize();
+              }),
+            };
+          }
+          const contact = ao(aoDepth, reconstructedNormal as never, view);
           if (options.gtaoRadius !== undefined) {
             contact.radius.value = options.gtaoRadius;
           } else {
@@ -1191,7 +1252,20 @@ export class WorldEnvironment {
           };
           resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
           sample(contact.getTextureNode());
+          let filterTexture:
+            | (ReturnType<typeof convertToTexture> & {
+                setResolutionScale(scale: number): void;
+                renderTarget: RenderTarget;
+                _quadMesh: { material: { dispose(): void } };
+              })
+            | undefined;
           releaseAo = () => {
+            if (filterTexture) {
+              resolutionSubrect?.release(filterTexture);
+              filterTexture.renderTarget.dispose();
+              filterTexture._quadMesh.material.dispose();
+              filterTexture = undefined;
+            }
             contactOcclusion = undefined;
             resolutionSubrect?.release(retained);
             contact.dispose();
@@ -1212,6 +1286,12 @@ export class WorldEnvironment {
           if (filter && options.gtaoDenoiseRadius !== undefined)
             (filter as typeof filter & { radius: { value: number } }).radius.value =
               options.gtaoDenoiseRadius;
+          // Filtered at the AO resolution, as Unreal's GTAO spatial filter reads the AO texture at its own size (UE
+          // 5.8.3: Engine/Shaders/Private/PostProcessAmbientOcclusion.usf:1600-1602). The owned engine runs the filter
+          // as its own pass and sizes it by this; upstream three filters inline and ignores it.
+          if (filter)
+            (filter as typeof filter & { resolutionScale: number }).resolutionScale =
+              options.gtaoResolutionScale;
           if (filter && resolutionSubrect) {
             const denoiser = filter as typeof filter & {
               textureNode: TextureNode;
@@ -1227,7 +1307,14 @@ export class WorldEnvironment {
               if (fraction) this._resolution.value.multiply(fraction);
             };
           }
-          const occlusion = filter ? denoised(filter) : contact;
+          if (filter && !ownedEngine && options.gtaoResolutionScale < 1) {
+            // Upstream Denoise is inline: materialise it at the authored AO extent before the composite.
+            filterTexture = convertToTexture(denoised(filter)) as NonNullable<typeof filterTexture>;
+            filterTexture.setResolutionScale(options.gtaoResolutionScale);
+            filterTexture.updateBeforeType = NodeUpdateType.FRAME;
+            sample(filterTexture);
+          }
+          const occlusion = filterTexture ?? (filter ? denoised(filter) : contact);
           // The factor the indirect diffuse light keeps: the occlusion through multi-bounce for the pixel's own albedo
           // (the diffuse colour target already has the metal's share removed), per channel. The fit is a cubic of the
           // occlusion with linear coefficients of the capped albedo (Jimenez et al. 2016, as Unreal's composite).
@@ -1390,10 +1477,12 @@ export class WorldEnvironment {
             });
             return base.add(traced.mul(trace.weight(rough().g)));
           }
+          // Level 0: three's march samples the normal inside its loop, and FXC (D3D12) cannot compile an
+          // implicit-gradient sample in a dynamic loop ("X3511: unable to unroll loop"). The target has no mips.
           const reflections = ssr(
             base,
             depth(),
-            normal() as ReturnType<typeof normal> & Parameters<typeof ssr>[2],
+            normal().level(float(0)) as ReturnType<typeof normal> & Parameters<typeof ssr>[2],
             {
               camera: view,
               metalnessNode: metal().r,
@@ -1403,6 +1492,18 @@ export class WorldEnvironment {
           );
           reflections.maxDistance.value = options.ssrMaxDistance;
           reflections.resolutionScale = options.ssrResolutionScale;
+          // `maxSteps` is the core three patch's step cap; `@types/three` does not declare it. An
+          // engine whose SSR has no cap keeps the reflections, runs the march uncapped and says so.
+          const stepCap = (reflections as { maxSteps?: { value: number } }).maxSteps;
+          if (stepCap) stepCap.value = options.ssrMaxSteps;
+          else
+            console.warn(
+              `TN_SSR_STEP_CAP_UNSUPPORTED: this engine's SSR has no maxSteps; ssrMaxSteps ${options.ssrMaxSteps} is not applied`,
+            );
+          // Unreal traces no ray for a surface at or above the roughness cut-off below. An SSR that can skip those pixels
+          // (`maxRoughness`) does; the weight below is 0 there either way, so the frame does not change.
+          const roughnessGate = (reflections as { maxRoughness?: { value: number } }).maxRoughness;
+          if (roughnessGate) roughnessGate.value = REFLECTION_CUTOFF;
           // Unreal traces reflections only for surfaces smoother than a roughness cut-off and fades
           // the trace out over the last stretch: cut-off 0.4 (Engine/Source/Runtime/Engine/Private/
           // Scene.cpp:658), fade 0.1 (Renderer/Private/Lumen/LumenReflections.cpp:129). Above it the
@@ -1793,6 +1894,8 @@ export class WorldEnvironment {
         screenSpaceAA: options.screenSpaceAA,
         temporalAA: options.temporalAA,
         ssgiQuality: options.ssgiQuality,
+        ssgiResolutionScale: options.ssgiResolutionScale,
+        ssrMaxSteps: options.ssrMaxSteps,
         stages,
         tonemapMode: options.tonemapMode,
         unrealBloom: options.unrealBloomEnabled,

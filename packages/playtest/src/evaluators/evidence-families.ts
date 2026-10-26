@@ -147,6 +147,17 @@ export function emitEvidenceFamilies(ctx: IEvaluationContext): void {
         const pass = observed !== undefined && observed.nonblankPixelRatio >= minimum;
         assertions.push({ id: `visual.${index}.region`, pass, details: { after: pass, expected: { equals: true }, minimum, observed: observed?.nonblankPixelRatio } });
         if (!pass) diagnostics.push({ code: "TN_PLAYTEST_REGION_BLANK", message: `Screenshot region at (${staticRegion.x}, ${staticRegion.y}) did not meet nonblank ratio ${minimum}.`, severity: "error", suggestion: "Check camera framing and whether expected geometry renders in the asserted region." });
+        if (staticRegion.minSharpness !== undefined) {
+          const sharpness = observed?.sharpness;
+          const sharpPass = sharpness !== undefined && sharpness >= staticRegion.minSharpness;
+          assertions.push({ id: `visual.${index}.region.sharpness`, pass: sharpPass, details: { minimum: staticRegion.minSharpness, observed: sharpness ?? null } });
+          if (!sharpPass) diagnostics.push({
+            code: "TN_PLAYTEST_REGION_BLURRED",
+            message: `Screenshot region at (${staticRegion.x}, ${staticRegion.y}) measured sharpness ${sharpness === undefined ? "unavailable" : sharpness.toFixed(3)}, below the floor ${staticRegion.minSharpness} (luminance Laplacian variance at full resolution over half resolution).`,
+            severity: "error",
+            suggestion: "A post stage that smears the frame (motion blur at rest, a blur or low-resolution pass) or a surface with no detail drops this. Capture the frame and fix the stage; do not lower the floor to pass.",
+          });
+        }
         if (staticRegion.minDarkPixelRatio !== undefined) {
           const darkPass = observed?.darkPixelRatio !== undefined && observed.darkPixelRatio >= staticRegion.minDarkPixelRatio;
           assertions.push({

@@ -181,8 +181,16 @@ export interface IRendererLike {
   warmUpSettled?(): void;
   /** Marks a repeatable streamed warm-up boundary for the next first draw. */
   warmUpScopeSettled?(label: string, target?: Object3D): void;
-  /** Performs one covered output-pipeline render without marking first present. */
-  warmUpWorldPass?(scene: Object3D, camera: Camera, targetScene?: Object3D): void;
+  /**
+   * Performs one covered output-pipeline render without marking first present. `afterDraw` runs in
+   * the same task as every draw it makes, the frame gate's retries included, to repaint a cover.
+   */
+  warmUpWorldPass?(
+    scene: Object3D,
+    camera: Camera,
+    targetScene?: Object3D,
+    afterDraw?: () => void,
+  ): void | Promise<void>;
   /**
    * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
    *
@@ -746,8 +754,32 @@ function wrapRenderer(
       pipelineCensus?.endWorldFrame(scene, completed);
     }
   };
+  let overlayReported = false;
   const renderOverlayFrame = (scene: Object3D, camera: Camera): void => {
     bindSurface();
+    // The owned engine draws an overlay over the presented frame with no post, no temporal step and
+    // no tone curve; through its render() the loading screen moved the world's temporal history and
+    // exposure (a ghosted hand-off).
+    const overlay = (raw as { renderOverlay?: (scene: Object3D, camera: Camera) => void })
+      .renderOverlay;
+    // The canvas layer is UI, and UI composites after the tone curve, as Unreal draws Slate onto the
+    // already tone-mapped back buffer (UE 5.8.3: Engine/Source/Runtime/SlateRHIRenderer/Private/
+    // SlateRHIRenderer.cpp:986 and :1032). Reported, because three's WebGPURenderer cannot: it tone
+    // maps the canvas layer and the world below it in one output pass over a shared frame buffer.
+    if (!overlayReported) {
+      overlayReported = true;
+      console.log(
+        `TN_CANVAS_LAYER:${JSON.stringify(
+          overlay !== undefined
+            ? { toneMapping: "none", composite: "after the tone curve" }
+            : { toneMapping: "renderer", composite: "with the world in three's output pass" },
+        )}`,
+      );
+    }
+    if (overlay !== undefined) {
+      overlay.call(raw, scene, camera);
+      return;
+    }
     const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
     const autoClear = raw.autoClear;
     raw.autoClear = false;
@@ -805,7 +837,11 @@ function wrapRenderer(
         }),
     get warmUpWorldPass() {
       if (outputPipeline === undefined) return undefined;
-      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> => {
+      const drawOnce = (
+        scene: Object3D,
+        camera: Camera,
+        targetScene?: Object3D,
+      ): void | Promise<void> => {
         const outputRoot = targetScene ?? scene;
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
@@ -916,6 +952,13 @@ function wrapRenderer(
         // no async cache still returns synchronously, exactly as before.
         return asyncPipelines?.settled();
       };
+      return (
+        scene: Object3D,
+        camera: Camera,
+        targetScene?: Object3D,
+        afterDraw?: () => void,
+      ): void | Promise<void> =>
+        drawPastFrameGate(raw, () => drawOnce(scene, camera, targetScene), undefined, afterDraw);
     },
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
@@ -932,7 +975,11 @@ function wrapRenderer(
         disposed ||
         kind !== "webgpu" ||
         !timestampCapable ||
-        typeof raw.resolveTimestampsAsync !== "function"
+        typeof raw.resolveTimestampsAsync !== "function" ||
+        // Three's backend creates the pool record at construction; a backend without it (the owned web
+        // engine's facade) never allocates one, so an observer would wait on it forever.
+        raw.backend === undefined ||
+        !("timestampQueryPool" in raw.backend)
       )
         throw new Error("TN_GPU_FRAME_OBSERVATION_UNSUPPORTED");
       if (gpuObservation !== undefined && gpuObservation.status().state !== "disposed")
@@ -1462,6 +1509,64 @@ function isOutputPassNode(node: unknown): node is PassNode {
   return isObject(node) && node.isPassNode === true;
 }
 
+/** How long a covered warm-up draw waits for the GPU to take a frame before it fails. */
+const FRAME_GATE_WAIT_MS = 5000;
+
+/** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
+export function rendererFrameGateSkips(raw: unknown): number | undefined {
+  const info = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | null)?.info;
+  const skips = info?.engine?.frameGateSkips;
+  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
+}
+
+/**
+ * Whether the renderer is drawing under the loading cover to finish its environment bake. A bake
+ * draw presents nothing and its world is still unlit, so its pixels are not the view's first frame:
+ * the eye adaptation must not adopt them. A renderer without an engine report answers false.
+ */
+export function rendererEnvironmentBake(raw: unknown): boolean {
+  const info = (raw as { info?: { engine?: { environmentBake?: unknown } } } | null)?.info;
+  return info?.engine?.environmentBake === true;
+}
+
+/**
+ * Runs a covered warm-up draw until the renderer takes it. The Wasm web engine's frame gate declines
+ * a draw while two frames are still on the GPU, and a declined draw compiles nothing: on Lantern Vale
+ * the startup pass was declined, so the TRAA, aux and post pipelines (92) compiled synchronously
+ * 1.1 s after the reveal and stalled the queue for 2.3 s. A renderer with no gate, or one that took
+ * the first draw, returns that draw's result unchanged. `afterDraw` runs straight after every draw,
+ * in its task: a retry presents on its own, and a cover painted only after the declined first call
+ * left Hop Garden's world showing through it for one frame.
+ */
+export function drawPastFrameGate(
+  raw: unknown,
+  draw: () => void | Promise<void>,
+  waitMs = FRAME_GATE_WAIT_MS,
+  afterDraw?: () => void,
+): void | Promise<void> {
+  const before = rendererFrameGateSkips(raw);
+  const first = draw();
+  afterDraw?.();
+  if (before === undefined || rendererFrameGateSkips(raw) === before) return first;
+  const now = (): number => globalThis.performance?.now() ?? Date.now();
+  return (async () => {
+    await first;
+    // The wait starts once the declined draw settled, so a slow settle does not use up the retries.
+    const deadline = now() + waitMs;
+    while (now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+      const skips = rendererFrameGateSkips(raw);
+      const drawn = draw();
+      afterDraw?.();
+      if (rendererFrameGateSkips(raw) === skips) return drawn;
+      await drawn;
+    }
+    throw new Error(
+      `TN_WARMUP_FRAME_GATE: the covered warm-up draw waited ${waitMs} ms for the GPU to take a frame and never drew.`,
+    );
+  })();
+}
+
 function selectOutputPass(node: unknown, worldPass: unknown): PassNode | undefined {
   return outputPassOf(worldPass) ?? outputPassOf(node) ?? findSoleOutputPass(node);
 }
@@ -1695,6 +1800,9 @@ const TEXTURE_LIMITS = {
   // three stores every morph target of a mesh as one layer of a texture array: a MetaHuman head
   // carries 821, and past the default 256 the mesh never draws.
   maxTextureArrayLayers: 256,
+  // Seven RGBA16Float render targets carry 56 bytes per sample; the device default of 32 invalidates
+  // the pipeline even when the adapter reports 128.
+  maxColorAttachmentBytesPerSample: 32,
 } as const;
 
 /**
@@ -1810,7 +1918,10 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       );
       if (adapter.gpuClass !== undefined)
         report(`${GPU_CLASS_MARKER}:${JSON.stringify(adapter.gpuClass)}`);
-    } catch {
+    } catch (error) {
+      // A facade and Wasm engine from two builds is an install fault, not a device without
+      // WebGPU: falling back would report TN_NO_RENDERER and hide the fix.
+      if (error instanceof Error && error.message.startsWith("TN_WASM_ABI_MISMATCH")) throw error;
       renderer = undefined;
     }
   }

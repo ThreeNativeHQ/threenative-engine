@@ -18,7 +18,9 @@ function harness(enabled = true) {
   const frame = new NodeFrame();
   let size: [number, number] = [17, 5];
   const targets: RenderTarget[] = [];
+  const info = { engine: { environmentBake: false, frameGateSkips: 0 } };
   frame.renderer = {
+    info,
     getDrawingBufferSize: (target: { set(x: number, y: number): unknown }) =>
       target.set(size[0], size[1]),
     setRenderTarget: vi.fn((target: RenderTarget | null) => {
@@ -47,6 +49,7 @@ function harness(enabled = true) {
     frame,
     targets,
     renderer: frame.renderer,
+    info,
     settings,
     resize: (width: number, height: number) => {
       size = [width, height];
@@ -185,6 +188,102 @@ describe("GPU exposure lifecycle", () => {
     expect(generated[4]).toContain("exp(");
     expect(generated[4]).not.toContain("99999");
     expect(generated.join("\n")).not.toContain("textureSample(");
+    node.dispose();
+  });
+
+  // Unreal forces the eye-adaptation target on a view's first frame (UE 5.8.3:
+  // Engine/Source/Runtime/Renderer/Private/SceneVisibility.cpp:5495 and :5552,
+  // PostProcess/PostProcessEyeAdaptation.cpp:723). Seeded at 1 instead, with the first adapt draws
+  // skipped while the Wasm engine compiled them, Lantern Vale opened 1.8 stops under its target
+  // and the first second of play brightened by 9%.
+  it("adopts the measured target on the first frame and while the history holds no measurement", () => {
+    const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+    vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+    const capabilities = Reflect.get(renderer.backend, "capabilities");
+    vi.spyOn(capabilities, "getUniformBufferLimit").mockReturnValue(65_536);
+    const draws: { code: string; scalars: unknown[] }[] = [];
+    vi.mocked(QuadMesh.prototype.render).mockImplementation(function (this: QuadMesh) {
+      if (!(this.material instanceof NodeMaterial)) throw new Error("missing node material");
+      const builder = new WGSLNodeBuilder(this, renderer) as WGSLNodeBuilder & {
+        setShaderStage(stage: string): void;
+        flowStagesNode(node: unknown, output: string): { code: string };
+        uniforms: Record<string, Array<{ value: unknown }>>;
+      };
+      builder.setShaderStage("fragment");
+      const { code } = builder.flowStagesNode(this.material.fragmentNode, "vec4");
+      const values = builder.uniforms.fragment?.map(({ value }) => value) ?? [];
+      draws.push({ code, scalars: values.filter((value) => typeof value === "number") });
+    });
+    const { node, frame } = harness();
+    node.updateBefore(frame);
+    node.updateBefore(frame);
+    // The adaptation draw is the fifth; its scalars are the reset mode, the seed and the delta.
+    expect(draws[4]?.scalars).toEqual([2, 0, 1 / 60]);
+    expect(draws[9]?.scalars).toEqual([0, 0, 1 / 60]);
+    // In history mode, a history luminance at or below zero (never drawn, or an empty histogram)
+    // takes the target.
+    expect(draws[4]?.code).toMatch(/== 0\.0 \) && \( nodeVar\d+\.y <= 0\.0 \)/u);
+    node.dispose();
+  });
+
+  // The owned engine draws the held scene while it bakes the environment
+  // (`prepareEnvironmentAsync`). Under the loading cover that frame is black: metering it clamped
+  // the target to maxStops (8.53), the first-frame adoption took it, and the world opened 5.7
+  // stops bright. A bake draw is not the view's first frame; the first presented frame adopts its
+  // target, as Unreal forces it.
+  it("does not meter the renderer's environment bake", () => {
+    const { node, frame, targets, info } = harness();
+    info.engine.environmentBake = true;
+    node.updateBefore(frame);
+    expect(targets).toHaveLength(0);
+    expect(node.getObservation()).toEqual({ measured: false, applied: true });
+    info.engine.environmentBake = false;
+    node.updateBefore(frame);
+    expect(targets).toHaveLength(5);
+    node.dispose();
+  });
+
+  // The Wasm engine's frame gate declines a render() while two frames are on the GPU. The drawn
+  // frame's deltaTime covers the whole gap (the declined calls never reach the node), but maxDelta
+  // clamped it to 0.1 s, so on SwiftShader the eye adapted at a fifth of its authored rate and the
+  // parity capture caught it 0.9 stops high. A delta with no declined frame is still a suspension.
+  it("spends the time of the frames the renderer declined and still clamps a suspended frame", () => {
+    const draws: { code: string; scalars: unknown[] }[] = [];
+    const gpu = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+    vi.spyOn(gpu, "hasFeature").mockReturnValue(false);
+    const capabilities = Reflect.get(gpu.backend, "capabilities");
+    vi.spyOn(capabilities, "getUniformBufferLimit").mockReturnValue(65_536);
+    vi.mocked(QuadMesh.prototype.render).mockImplementation(function (this: QuadMesh) {
+      if (!(this.material instanceof NodeMaterial)) throw new Error("missing node material");
+      const builder = new WGSLNodeBuilder(this, gpu) as WGSLNodeBuilder & {
+        setShaderStage(stage: string): void;
+        flowStagesNode(node: unknown, output: string): { code: string };
+        uniforms: Record<string, Array<{ value: unknown }>>;
+      };
+      builder.setShaderStage("fragment");
+      const { code } = builder.flowStagesNode(this.material.fragmentNode, "vec4");
+      const values = builder.uniforms.fragment?.map(({ value }) => value) ?? [];
+      draws.push({ code, scalars: values.filter((value) => typeof value === "number") });
+    });
+    const { node, frame, info } = harness();
+    node.updateBefore(frame);
+    info.engine.frameGateSkips = 4;
+    frame.deltaTime = 0.5;
+    frame.time += 0.5;
+    node.updateBefore(frame);
+    frame.deltaTime = 2;
+    frame.time += 2;
+    node.updateBefore(frame);
+    // One declined call stands for one frame, not for a suspended page's whole gap.
+    info.engine.frameGateSkips = 5;
+    frame.deltaTime = 5;
+    frame.time += 5;
+    node.updateBefore(frame);
+    // The adaptation draw is the fifth of each frame; its last scalar is the delta.
+    expect(draws[4]?.scalars.at(-1)).toBeCloseTo(1 / 60);
+    expect(draws[9]?.scalars.at(-1)).toBeCloseTo(0.5);
+    expect(draws[14]?.scalars.at(-1)).toBeCloseTo(0.1);
+    expect(draws[19]?.scalars.at(-1)).toBeCloseTo(0.2);
     node.dispose();
   });
 

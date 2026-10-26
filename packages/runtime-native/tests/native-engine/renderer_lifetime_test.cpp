@@ -9,10 +9,13 @@
 // report Pending (and the caller retry) rather than publish the previous target as a valid face.
 // `probe_capture_callback_camera`: an onBeforeRender during a capture gets the face camera, as three
 // hands the camera it renders with: a shared object posed at the probe, looking down the face's axis.
+// `database_environment_warmup`: startup warm-up's bake step (the V8 player's tn.prepareEnvironment)
+// advances the PMREM bake with no frame drawn, so the first frame after it draws the world.
 
 #include "check.h"
 #include "engine/assets/probe_volume.h"
 #include "engine/renderer/probes/capture.h"
+#include "engine/renderer/render_database.h"
 #include "engine/renderer/renderer.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/material.h"
@@ -216,8 +219,46 @@ void probeCaptureCallbackCamera() {
     }
 }
 
+// Without this step, core's startup readiness counted the frames render() skipped for the bake as
+// fast frames, lifted the loading cover and handed over a world that was never drawn (PRD-573 gate).
+void databaseEnvironmentWarmUp() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 24);
+    Scene scene;
+    PerspectiveCamera camera(55, 4.0 / 3, 0.1, 100);
+    camera.position.set(0, 0, 6); camera.lookAt(0, 0, 0);
+    auto sky = std::make_shared<DataTexture>();
+    sky->mapping = 303;
+    sky->width = 128;
+    sky->height = 64;
+    sky->data.assign(size_t(sky->width) * sky->height * 4, 255);
+    sky->needsUpdate();
+    scene.environment = sky;
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    Mesh sphere(makeSphereGeometry(), material);
+    scene.add(sphere);
+    scene.updateMatrixWorld(true);
+
+    RenderDatabase warmUp;
+    CHECK(!warmUp.prepareEnvironments(renderer, scene, camera));  // begins the bake, draws nothing
+    CHECK(renderer.lastFrame().draws == 0);
+    int steps = 1;
+    CHECK(waitFor(renderer, [&] { ++steps; return warmUp.prepareEnvironments(renderer, scene, camera); }));
+    CHECK(steps > 2);  // the bake really spanned several submissions
+    CHECK(!renderer.environmentPending());
+    CHECK(renderer.lastFrame().draws == 0);  // still no frame drawn by the warm-up
+
+    RenderDatabase frame;
+    CHECK(frame.render(renderer, scene, camera, {0, 0, 0, 0}) != 0);  // the first frame is not skipped
+    CHECK(renderer.lastFrame().draws > 0);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"shared_retired_sweep", sharedRetiredSweep},
+TN_TEST_MAIN({"database_environment_warmup", databaseEnvironmentWarmUp},
+             {"shared_retired_sweep", sharedRetiredSweep},
              {"probe_capture_environment", probeCaptureDuringEnvironmentBake},
              {"probe_capture_callback_camera", probeCaptureCallbackCamera})

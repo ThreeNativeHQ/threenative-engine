@@ -164,13 +164,19 @@ export function adaptExposure(
     const goal = float(Math.log2(policy.key))
       .sub(luminance.max(1e-20).log2())
       .clamp(policy.minStops, policy.maxStops);
-    const old = resetMode.equal(1).select(seed, textureLoad(previous, ivec2(0)).r);
+    const history = textureLoad(previous, ivec2(0));
+    const old = resetMode.equal(1).select(seed, history.r);
+    // History with no measured luminance (a target never drawn reads 0, an empty histogram wrote -1)
+    // is no history: adopt the target, as Unreal forces it on a view's first frame. On the Wasm
+    // engine the first adapt draws are skipped while pipelines compile, so a first-draw-only snap
+    // was lost and Lantern Vale opened 1.8 stops dark, then brightened for a second after its cover.
+    const fresh = resetMode.equal(2).or(resetMode.equal(0).and(history.g.lessThanEqual(0)));
     const error = goal.sub(old);
     const rate = error.greaterThan(0).select(float(policy.rateUp), float(policy.rateDown));
     const normal = float(1).sub(delta.mul(rate).negate().exp());
     const cut = smoothstep(policy.snapLo, policy.snapHi, error.abs()).mul(policy.snapGain);
     const adapted = valid.select(
-      resetMode.equal(2).select(goal, mix(old, goal, mix(normal, float(1), cut))),
+      fresh.select(goal, mix(old, goal, mix(normal, float(1), cut))),
       old,
     );
     const settled = goal.sub(adapted).abs().lessThanEqual(policy.settleStops).select(1, 0);

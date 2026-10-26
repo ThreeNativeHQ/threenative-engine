@@ -8,7 +8,8 @@ import { studyTier } from "../templates/rain/src/render/quality.js";
 import { Coast, type WeatherCtx } from "../templates/rain/src/scenes/Boot.js";
 import { intentPatch, preset } from "../templates/rain/src/state.js";
 
-vi.mock("@threenative/core", () => ({
+vi.mock("@threenative/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@threenative/core")>()),
   Scene: class {
     load() {}
   },

@@ -406,6 +406,8 @@ export function animationObservationPass(assertion: IPlaytestAnimationAssertion,
 export interface IStrideReading {
   clipGroundSpeed: number;
   groundSpeed: number;
+  /** The producer's own flag: the clip has no root motion and its stride came from the feet. */
+  inPlace: boolean;
   overridden: boolean;
   rate: number;
   synced: boolean;
@@ -427,6 +429,7 @@ export function strideReading(observed: unknown): IStrideReading | undefined {
   return {
     clipGroundSpeed: stride.clipGroundSpeed as number,
     groundSpeed: stride.groundSpeed as number,
+    inPlace: stride.inPlace === true,
     overridden: stride.overridden,
     rate: stride.rate as number,
     synced: stride.synced,
@@ -435,6 +438,16 @@ export function strideReading(observed: unknown): IStrideReading | undefined {
 
 /** Below this the body is standing still, and a slide ratio would divide by noise. */
 const STRIDE_GROUND_SPEED_FLOOR = 1e-3;
+
+/**
+ * True when a character is moving on a clip whose feet showed no plant: `inPlace` with a zero clip
+ * ground speed means stride sync found nothing to sync, so the rate is not applied and the feet skate.
+ */
+export function strideHasNoFootPlant(reading: IStrideReading): boolean {
+  return reading.inPlace && Math.abs(reading.clipGroundSpeed) <= STRIDE_GROUND_SPEED_FLOOR && Math.abs(reading.groundSpeed) > STRIDE_GROUND_SPEED_FLOOR;
+}
+
+export const NO_FOOT_PLANT_DETAIL = "no foot plant found: stride sync is off";
 
 /**
  * The rate the clip is actually playing at.
@@ -479,6 +492,8 @@ export function strideFailure(
       detail:
         "the runtime reported no stride for this clip, so neither the feet nor the ground were measured",
     };
+  if (assertion.strideSynced !== false && strideHasNoFootPlant(reading))
+    return { code: "TN_PLAYTEST_STRIDE_NO_FOOT_PLANT", detail: NO_FOOT_PLANT_DETAIL };
   if (assertion.strideSynced !== undefined && reading.synced !== assertion.strideSynced)
     return {
       code: "TN_PLAYTEST_STRIDE_NOT_SYNCED",

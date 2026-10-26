@@ -19,7 +19,7 @@ export function Hud() {
   return (
     <div className="pointer-events-none absolute inset-0 p-6 text-[11px] uppercase tracking-[0.16em] text-text">
       <div className="flex items-start justify-between">
-        <div>
+        <div className="-m-3 bg-panel p-3">
           <div className="text-[10px] text-muted">circuit / northern loop</div>
           <div className="mt-2 flex items-baseline gap-5 text-[18px] text-white">
             <span>
@@ -31,14 +31,14 @@ export function Hud() {
             </span>
           </div>
         </div>
-        <div className="text-right">
+        <div className="-m-3 bg-panel p-3 text-right">
           <div className="text-[10px] text-muted">position</div>
           <div className="mt-2 text-[22px] text-white" id="position">
             P{state.place}
           </div>
         </div>
       </div>
-      <div className="absolute bottom-6 left-6 flex items-end gap-8">
+      <div className="absolute bottom-6 left-6 -m-3 flex items-end gap-8 bg-panel p-3">
         <div>
           <div className="text-[10px] text-muted">speed</div>
           <div className="mt-1 text-[26px] leading-none text-white">
@@ -61,7 +61,7 @@ export function Hud() {
       </div>
       {state.raceStatus !== "RACING" && (
         <div
-          className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border px-8 py-5 text-center ${state.raceStatus === "WON" ? "border-win/70 bg-win/10" : "border-danger/70 bg-danger/10"}`}
+          className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border px-8 py-5 text-center ${state.raceStatus === "WON" ? "border-win/70 bg-panel" : "border-danger/70 bg-panel"}`}
         >
           <div className={`text-[28px] tracking-[0.28em] ${statusClass}`}>{state.raceStatus}</div>
           <div className="mt-2 text-[10px] text-muted">press R to restart</div>

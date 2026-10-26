@@ -294,13 +294,16 @@ describe("template quality tiers", () => {
     ];
     const read: string[] = [];
     for (const name of names) {
-      const { resolveQualityTier } = await load(name);
+      const { qualityPreset, resolveQualityTier } = await load(name);
       for (const { chain, label } of await renderChains(name)) {
         read.push(label);
         for (const [adapter, request] of adapters) {
           const asserted = scenarioTier(chain, adapter);
           if (asserted === undefined) continue;
-          expect(asserted, `${label}: ${adapter} row`).toBe(resolveQualityTier(request));
+          const tier = resolveQualityTier(request);
+          expect(asserted, `${label}: ${adapter} row`).toBe(
+            name === "runner" ? qualityPreset(tier).renderChainTier : tier,
+          );
         }
       }
     }
@@ -318,6 +321,36 @@ describe("template quality tiers", () => {
   // `perAdapter.software: {tier: "low"}` was green anyway, because those are read off the tier the
   // game chose rather than off the chain that ran. The same gap sat in `medium` for ten kits: the
   // game resolved `medium` for an integrated or mobile-high GPU while the chain stayed on `high`.
+  it.each(QUALITY_TIERS)(
+    "Runner keeps SSR off at %s without changing its core curve or meter",
+    async (tier) => {
+      const { qualityPreset } = await load("runner");
+      expect(qualityPreset(tier)).toMatchObject({
+        ssrEnabled: false,
+        tonemapMode: "filmic",
+        autoExposureEnabled: true,
+        gtaoRadius: 0.35,
+        samples: 4,
+      });
+    },
+  );
+
+  it("Runner's measured cap preserves every non-overridden core medium option", async () => {
+    const { qualityPreset, resolveQualityTier } = await load("runner");
+    const core = await import("@threenative/core");
+    const { exposureSettings } = await import(
+      path.join(templatesDir, "runner/src/render/exposure.ts")
+    );
+    expect(resolveQualityTier({ tier: "high" })).toBe("high");
+    expect(qualityPreset("high")).toEqual({
+      ...core.qualityPreset("medium"),
+      ssrEnabled: false,
+      gtaoRadius: 0.35,
+      samples: 4,
+      exposurePolicy: exposureSettings,
+    });
+  });
+
   it("should request the chain tier it names in every template's preset", async () => {
     for (const name of names) {
       const { qualityPreset } = await load(name);
@@ -326,7 +359,7 @@ describe("template quality tiers", () => {
         expect(
           qualityPreset(tier).renderChainTier ?? "high",
           `${name}: ${tier} preset leaves the render chain on another tier`,
-        ).toBe(tier);
+        ).toBe(name === "runner" && tier === "high" ? "medium" : tier);
       }
     }
   });
@@ -344,9 +377,14 @@ describe("template quality tiers", () => {
   it("should give medium its own look, between the other two", async () => {
     for (const name of names) {
       const { qualityPreset } = await load(name);
-      expect(qualityPreset("medium"), `${name}: medium equals high`).not.toEqual(
-        qualityPreset("high"),
-      );
+      if (name === "runner")
+        expect(qualityPreset("high"), "Runner's measured high-to-medium cap").toEqual(
+          qualityPreset("medium"),
+        );
+      else
+        expect(qualityPreset("medium"), `${name}: medium equals high`).not.toEqual(
+          qualityPreset("high"),
+        );
       expect(qualityPreset("medium"), `${name}: medium equals low`).not.toEqual(
         qualityPreset("low"),
       );

@@ -80,6 +80,16 @@ test.each(["android", "desktop", "ios"] as const)("%s captures requested tone de
   ]);
 });
 
+test.each(["android", "desktop", "ios"] as const)("%s measures a regional tone assertion at a named step", async (target) => {
+  // The device runner kept only the whole-frame tone, so a region at a step stayed unobserved
+  // (TN_PLAYTEST_TONE_UNOBSERVED) on the starter's desktop consumer run.
+  const region = { x: 128, y: 0, width: 128, height: 1 };
+  const { report } = await run(target, { tone: [{ atStep: "landed", region, mean: { min: 150 } }] });
+  expect(report.pass).toBe(true);
+  expect(report.assertionResults).toContainEqual(expect.objectContaining({ id: "tone.0.mean", pass: true }));
+  expect(report.observations?.tone).toContainEqual(expect.objectContaining({ code: "TN_TONE", atStep: "landed", assertionIndex: 0, region }));
+});
+
 test("ordinary captures retain tone even without tone assertions", async () => {
   const { report } = await run("desktop", { diagnostics: {} }, "after");
   expect(report.observations?.tone).toEqual([{ code: "TN_TONE", label: "after.png", ...inspectFrame(pixels).tone }]);

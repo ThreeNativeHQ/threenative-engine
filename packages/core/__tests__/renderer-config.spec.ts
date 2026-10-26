@@ -121,11 +121,11 @@ describe("resolveRendererScaleSetting", () => {
 
 describe("resolvePlatformResolutionFloor", () => {
   it("holds a desktop above the mush and leaves the phone ladder whole", () => {
-    // A desktop without a temporal reconstruction stage has nothing to turn 0.23 of the pixels
-    // back into a picture, so its rungs stop at 0.61 and the frame reports it is out of room.
+    // A desktop without a temporal reconstruction stage has nothing to turn fewer pixels back
+    // into a picture, so it holds full resolution and the frame reports it is out of room.
     // The phones keep every rung: their rungs are what the device arm measured and accepted.
     for (const os of ["linux", "macos", "windows", "unknown"] as const)
-      expect(resolvePlatformResolutionFloor(os), os).toBe(0.61);
+      expect(resolvePlatformResolutionFloor(os), os).toBe(1);
     expect(resolvePlatformResolutionFloor("android")).toBeUndefined();
     expect(resolvePlatformResolutionFloor("ios")).toBeUndefined();
   });

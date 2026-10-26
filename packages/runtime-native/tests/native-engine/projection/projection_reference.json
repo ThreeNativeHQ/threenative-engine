@@ -1000,7 +1000,8 @@
      },
      {
       "id": "ball2",
-      "kind": "sphere"
+      "kind": "sphere",
+      "radius": 0.6
      }
     ],
     "materials": [
@@ -4217,6 +4218,130 @@
     "sourceRenderables": 200,
     "projectedObjects": 0,
     "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {},
+    "cause": "uniqueMaterial",
+    "causeMeshes": 200
+   }
+  },
+  {
+   "scene": {
+    "name": "per-copy-geometry",
+    "minMeshes": 8,
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 40,
+      "ownGeometry": "same"
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 40,
+    "projectedObjects": 40,
+    "instancedBatches": 1,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {}
+   }
+  },
+  {
+   "scene": {
+    "name": "per-copy-geometry-varied",
+    "minMeshes": 8,
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 40,
+      "ownGeometry": "varied"
+     }
+    ]
+   },
+   "decision": {
+    "projecting": false,
+    "reasonCode": "notWorthwhile",
+    "sourceRenderables": 40,
+    "projectedObjects": 0,
+    "instancedBatches": 0,
+    "materialBatches": 0,
+    "skinnedBatches": 0,
+    "exactObjects": 0,
+    "exact": {},
+    "cause": "uniqueGeometry",
+    "causeMeshes": 40
+   }
+  },
+  {
+   "scene": {
+    "name": "per-copy-and-shared",
+    "minMeshes": 8,
+    "geometries": [
+     {
+      "id": "box",
+      "kind": "box"
+     }
+    ],
+    "materials": [
+     {
+      "id": "std",
+      "type": "MeshStandardMaterial"
+     }
+    ],
+    "objects": [
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 20
+     },
+     {
+      "kind": "mesh",
+      "geometry": "box",
+      "material": "std",
+      "repeat": 20,
+      "ownGeometry": "same"
+     }
+    ]
+   },
+   "decision": {
+    "projecting": true,
+    "reasonCode": "projected",
+    "sourceRenderables": 40,
+    "projectedObjects": 40,
+    "instancedBatches": 1,
     "materialBatches": 0,
     "skinnedBatches": 0,
     "exactObjects": 0,

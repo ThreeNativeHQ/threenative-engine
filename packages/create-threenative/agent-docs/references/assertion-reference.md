@@ -165,7 +165,7 @@ Proves screenshot change, populated coordinate or DOM element-bound regions, dar
 | Field | Type | Required |
 | --- | --- | --- |
 | `frameDiff` | { baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number } | no |
-| `region` | static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
+| `region` | static bounds { x: number, y: number, width: number, height: number, minSharpness?: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
 | `entityVisible` | { entity: string, minProjectedPixels: number, throughoutFrames?: boolean } | no |
 
 
@@ -495,6 +495,7 @@ Proves a live render sample exists and optionally bounds frame time, an fps floo
 | Field | Type | Required |
 | --- | --- | --- |
 | `maxFrameMsP95` | number | no |
+| `maxFrameMsReason` | non-empty string | no |
 | `minFps` | number | no |
 | `maxPhaseMsP95` | { [phase]: number } | no |
 | `maxDrawCalls` | number | no |
@@ -785,6 +786,37 @@ Bounds on named nodes of the scene graph — where an object is, whether it is o
 }
 ```
 
+### `footSlip`
+
+Bounds how far a planted foot slides while the subject moves, measured every tick from named foot nodes' world positions, so it holds a procedural rig to the feet-meet-the-floor convention as well as a clip. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** entity.observe, scene.nodes
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `atStep` | string | no |
+| `feet` | Array<string> | no |
+| `maxSlip` | positive number | no |
+| `maxSlideSpeed` | positive number | no |
+| `stepSeconds` | positive number | no |
+| `entity` | string | no |
+
+
+```json
+{
+  "footSlip": [
+    {
+      "atStep": "run",
+      "feet": [
+        "footL",
+        "footR"
+      ],
+      "maxSlip": 0.35
+    }
+  ]
+}
+```
+
 ### `causedBy`
 
 Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs. **Use when** that is the thing the scenario must prove.
@@ -833,6 +865,7 @@ Bounds when the application's startup milestones happened: the world entered, fi
 | `maxCompileSettledMs` | number | no |
 | `maxReadyMs` | number | no |
 | `maxOffscreenBytes` | number | no |
+| `steadyCover` | boolean | no |
 
 
 ```json

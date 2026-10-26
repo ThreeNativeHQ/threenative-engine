@@ -539,6 +539,7 @@ describe("rts kit ordinary-frame runtime cost", () => {
   it("syncs a playing sixty-unit match for 600 frames with no render literal and no new range", async () => {
     const three = await import("three");
     const watcher = watchLiterals(["render"], {
+      "@threenative/core": await import("@threenative/core"),
       three,
       "three/tsl": await import("three/tsl"),
       "three/webgpu": await import("three/webgpu"),

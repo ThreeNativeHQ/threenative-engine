@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -70,6 +70,17 @@ async function fixture(
   overrides: { quality?: string; post?: string; doc?: string } = {},
 ): Promise<string> {
   const root = await makeTempDir("template-quality");
+  await mkdir(path.join(root, "node_modules/@threenative"), { recursive: true });
+  await symlink(
+    path.join(repoRoot, "packages/core"),
+    path.join(root, "node_modules/@threenative/core"),
+    "dir",
+  );
+  await mkdir(path.join(root, "packages/core/src/look"), { recursive: true });
+  await writeFile(
+    path.join(root, "packages/core/src/look/quality.ts"),
+    await readFile(path.join(repoRoot, "packages/core/src/look/quality.ts"), "utf8"),
+  );
   const render = path.join(
     root,
     "packages",
@@ -95,6 +106,58 @@ describe("check-template-quality", () => {
     expect(formatTemplateQualityReport(report)).toMatch(/^template quality: /u);
     expect(report.findings).toEqual([]);
     expect(report.templates.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("evaluates public delegated tiers and accepts authored caps and overrides", async () => {
+    const quality = `import { qualityPreset as coreQualityPreset, qualityTiers } from "@threenative/core";
+export const resolveQualityTier = qualityTiers.resolve;
+export function qualityPreset(tier: string) {
+  const renderTier = tier === "high" ? "medium" : tier;
+  return { ...coreQualityPreset(renderTier), gtaoRadius: 0.35, samples: 4 };
+}`;
+    const report = await checkTemplateQuality(await fixture({ quality }));
+    expect(report.findings.filter((finding) => finding.problem.startsWith("quality.ts"))).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    "null",
+    "[]",
+    '{ renderChainTier: "ultra" }',
+    '{ renderChainTier: "low", bloomEnabled: 1 }',
+  ])("rejects a malformed delegated preset: %s", async (result) => {
+    const quality = `import { qualityPreset as coreQualityPreset, qualityTiers } from "@threenative/core";
+export const resolveQualityTier = qualityTiers.resolve;
+export function qualityPreset(tier: string) { coreQualityPreset(tier); return ${result}; }`;
+    const report = await checkTemplateQuality(await fixture({ quality }));
+    expect(formatTemplateQualityReport(report)).toContain("cannot evaluate public quality presets");
+  });
+
+  it("rejects delegated factories that silently accept unknown tiers", async () => {
+    const quality = `import { qualityPreset as coreQualityPreset, qualityTiers } from "@threenative/core";
+export const resolveQualityTier = qualityTiers.resolve;
+export function qualityPreset() { return coreQualityPreset("low"); }`;
+    const report = await checkTemplateQuality(await fixture({ quality }));
+    expect(formatTemplateQualityReport(report)).toContain("unknown quality tier");
+  });
+
+  it("retains inherited core cost checks for delegated presets", async () => {
+    const quality = `import { qualityPreset as coreQualityPreset, qualityTiers } from "@threenative/core";
+export const resolveQualityTier = qualityTiers.resolve;
+export const qualityPreset = coreQualityPreset;`;
+    const root = await fixture({ quality });
+    const file = path.join(root, "packages/core/src/look/quality.ts");
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(
+        "  // Bloom cost: ~4.6 ms in the reference ablation — the second most expensive stage there.\n",
+        "",
+      ),
+    );
+    expect(formatTemplateQualityReport(await checkTemplateQuality(root))).toContain(
+      "core quality.ts enables bloomEnabled",
+    );
   });
 
   it("should agree on one fail-closed tier contract across every shipped template", async () => {

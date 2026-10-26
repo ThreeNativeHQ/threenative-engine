@@ -96,6 +96,7 @@
     "profile:production": "node scripts/profile-production.mjs",
     "parity": "node conformance/run-conformance.mjs",
     "install": "node scripts/install-prebuilt.mjs",
+    "prepack": "node scripts/web-engine-stamp.mjs --check",
     "test": "vitest run --config vitest.config.ts && pnpm native:physics:parity && publint --strict",
     "native:css:licenses": "node scripts/native-css-license-inventory.mjs"
   },

@@ -1,10 +1,11 @@
 import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, type ICompletionWindow } from "./steps.js";
 import { cpuWindowLabels, measureCpuWindow, type ICpuWindow } from "./linuxCpuWindow.js";
-import type { IPlaytestToneObservation } from "../tone.js";
+import type { IPlaytestToneAssertion } from "../scenario/schema-base.js";
+import type { IPlaytestToneCaptureObservation } from "../tone.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { assertCaptureNotBlank, assertDesktopCaptureNotBlank } from "../capture.js";
+import { assertCaptureNotBlank, assertDesktopCaptureNotBlank, collectRegionalTone } from "../capture.js";
 import {
   loadPlaytestScenario,
   playtestDiagnostic,
@@ -312,11 +313,11 @@ async function runDevicePlaytestInternal(
       // One armed capture per sample; absent means the bridge does no geometry work at all.
       ...(scenario.assert?.geometry === undefined ? {} : { geometry: scenario.assert.geometry }),
     } as const;
-    const tone: IPlaytestToneObservation[] = [];
+    const tone: IPlaytestToneCaptureObservation[] = [];
     const before = await bridge.sample(sampleRequest);
     if (completionLabel !== undefined && before.clock.mode !== "fixed-step") throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: prefix requires fixed-step clock");
     if (scenario.artifacts?.screenshots === "before-after" && config.captureArtifactScreenshots !== false) {
-      await captureDeviceScreenshot(target, join(config.artifactDirectory, "before.png"), tone, "before.png", undefined, renderOnly);
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "before.png"), tone, "before.png", undefined, renderOnly, scenario.assert?.tone);
     }
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
@@ -522,7 +523,7 @@ async function runDevicePlaytestInternal(
       const wantsStepTone = step.label !== undefined && scenario.assert?.tone?.some(({ atStep }) => atStep === step.label) === true;
       if (step.screenshot !== undefined || wantsStepTone) {
         const label = step.screenshot === undefined ? `tone-${index}.png` : `${safePart(step.screenshot)}.png`;
-        await captureDeviceScreenshot(target, join(config.artifactDirectory, label), tone, label, step.label, renderOnly);
+        await captureDeviceScreenshot(target, join(config.artifactDirectory, label), tone, label, step.label, renderOnly, scenario.assert?.tone);
       }
       if (step.release && pressed !== undefined) {
         const released = typeof pressed === "string" ? [pressed] : [...pressed];
@@ -583,7 +584,7 @@ async function runDevicePlaytestInternal(
     metrics?.stop();
     await metrics?.sampleNow("after").catch(() => undefined);
     if (scenario.artifacts?.screenshots !== false || scenario.assert?.tone?.some(({ atStep }) => atStep === undefined) === true) {
-      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"), tone, "after.png", undefined, renderOnly);
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"), tone, "after.png", undefined, renderOnly, scenario.assert?.tone);
     }
     if (!(await target.driver.isAlive())) {
       return failureReport(config, scenario, playtestDiagnostic(
@@ -730,10 +731,11 @@ async function runDevicePlaytestInternal(
 async function captureDeviceScreenshot(
   target: IDevicePlaytestTarget,
   path: string,
-  tone: IPlaytestToneObservation[],
+  tone: IPlaytestToneCaptureObservation[],
   label: string,
   atStep?: string,
   renderOnly?: () => Promise<void>,
+  toneAssertions: readonly IPlaytestToneAssertion[] = [],
 ): Promise<void> {
   await target.driver.screenshot(path, renderOnly);
   const png = await readFile(path);
@@ -741,6 +743,7 @@ async function captureDeviceScreenshot(
   // Its content ratio is at least 0.0044, so desktop takes the content floor.
   const stats = target.name === "desktop" ? assertDesktopCaptureNotBlank(png, path) : assertCaptureNotBlank(png, path);
   if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+  tone.push(...collectRegionalTone(png, toneAssertions, label, atStep));
 }
 
 /**

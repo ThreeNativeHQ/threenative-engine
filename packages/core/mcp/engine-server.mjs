@@ -592,6 +592,11 @@ function validateManifest(value, file) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
   }
+  for (const [index, raw] of (Array.isArray(value.starterKits) ? value.starterKits : []).entries()) {
+    if (!isRecord(raw) || typeof raw.name !== "string" || typeof raw.title !== "string" || typeof raw.blurb !== "string" || !isStringArray(raw.words)) {
+      throw manifestError(file, `starterKits ${index} is malformed`);
+    }
+  }
   const notOwnedIds = /* @__PURE__ */ new Set();
   for (const [index, raw] of value.notOwned.entries()) {
     if (!isRecord(raw) || typeof raw.id !== "string" || raw.id.trim().length === 0 || !Array.isArray(raw.situations) || raw.situations.length === 0 || !raw.situations.every(
@@ -757,10 +762,48 @@ function capabilitySearchKey(entry) {
 ${entry.summary}
 ${entry.situations.join("\n")}`;
 }
+function matchedStarterKits(situation, kits) {
+  const words = (text2) => ` ${text2.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim()} `;
+  const request = words(situation);
+  const claims = kits.map((kit) => ({
+    kit,
+    spans: kit.words.flatMap((word) => {
+      const at = request.indexOf(words(word));
+      return at < 0 ? [] : [{ at, end: at + words(word).length }];
+    })
+  }));
+  const inside = (span, own) => claims.some(
+    (other) => other !== own && other.spans.some(
+      (o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at
+    )
+  );
+  return claims.map((claim) => ({
+    at: Math.min(...claim.spans.filter((span) => !inside(span, claim)).map((span) => span.at)),
+    kit: claim.kit
+  })).filter(({ at }) => Number.isFinite(at)).sort((left, right) => left.at - right.at).map(({ kit: { blurb, name, title } }) => ({
+    blurb,
+    command: `npx create-threenative <dir> --template ${name}`,
+    name,
+    title
+  }));
+}
 function searchCapabilities(situation, manifestFile = defaultManifestPath(), scope = "mechanic") {
   if (typeof situation !== "string" || situation.trim().length === 0)
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
+  const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
+  const response = searchMechanics(situation, manifest, scope);
+  if (starterKits.length === 0) return response;
+  return {
+    starterKits,
+    ...response,
+    ...response.verdict === "none" ? {
+      guidance: `Scaffold from the starter kit first, then search the mechanics it does not cover. ${response.guidance}`,
+      verdict: "starterKit"
+    } : {}
+  };
+}
+function searchMechanics(situation, manifest, scope) {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);

@@ -125,6 +125,16 @@ export interface IWarmUpOptions {
    */
   readonly renderPasses?: boolean;
   /**
+   * Runs right after every draw the warm-up makes outside the game's frame loop, so the loading
+   * cover can be painted over it.
+   *
+   * Such a draw runs in a timer task, and the browser presents it on its own: a Wasm engine that is
+   * still baking the environment presents black, and the cover flickers against it for the whole
+   * bake. Painting the cover in the same task makes the presented frame the cover again. Leave it
+   * unset when nothing covers the canvas.
+   */
+  readonly afterCoveredDraw?: () => void;
+  /**
    * Also render objects the scene has hidden for that one covered render. Default `false`.
    *
    * `renderPasses` already disables frustum culling, so every caster is submitted to the shadow
@@ -239,6 +249,7 @@ export interface IWarmUpRenderer {
     scene: Object3D,
     camera: Camera,
     targetScene?: Object3D,
+    afterDraw?: () => void,
   ) => void | Promise<void>;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
@@ -252,7 +263,12 @@ interface IPMREMNodeClass {
 
 /** The native engine's facade bakes the environment itself; warm-up draws the held scene until it is done. */
 interface INativeEnvironmentPreparer {
-  prepareEnvironmentAsync(scene: Object3D, camera: Camera, deadlineMs: number): Promise<boolean>;
+  prepareEnvironmentAsync(
+    scene: Object3D,
+    camera: Camera,
+    deadlineMs: number,
+    afterDraw?: () => void,
+  ): Promise<boolean>;
 }
 
 function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | undefined {
@@ -262,7 +278,10 @@ function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | u
     : undefined;
 }
 
-function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Object3D): boolean {
+export function sceneNeedsEnvironmentPreparation(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+): boolean {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return false;
 
@@ -273,11 +292,12 @@ function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Obje
   return backend?.isWebGPUBackend === true;
 }
 
-async function prepareSceneEnvironment(
+export async function prepareSceneEnvironment(
   renderer: IWarmUpRenderer,
   scene: Object3D,
   camera: Camera,
   deadlineMs: number,
+  afterDraw?: () => void,
 ): Promise<boolean> {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return true;
@@ -285,7 +305,8 @@ async function prepareSceneEnvironment(
   const raw = renderer.raw;
   if (typeof raw !== "object" || raw === null) return true;
   const native = nativeEnvironmentPreparer(raw);
-  if (native !== undefined) return native.prepareEnvironmentAsync(scene, camera, deadlineMs);
+  if (native !== undefined)
+    return native.prepareEnvironmentAsync(scene, camera, deadlineMs, afterDraw);
   const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
   if (backend?.isWebGPUBackend !== true) return true;
 
@@ -296,7 +317,22 @@ async function prepareSceneEnvironment(
       "TN_PMREM_ASYNC_PREPARER_UNAVAILABLE: patched Three.js has no PMREM cache preparer.",
     );
   }
-  return prepare.call(PMREMNode, raw, environment);
+  // False at the deadline, as the native preparer does; the bake keeps running. Unbounded, an Action
+  // RPG restart on 2-CPU SwiftShader waited the whole sky bake (about 30 s) with no frame drawn.
+  const prepared = prepare.call(PMREMNode, raw, environment);
+  const remaining = deadlineMs - (globalThis.performance?.now() ?? Date.now());
+  if (!Number.isFinite(remaining)) return prepared;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      prepared,
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), Math.max(0, remaining));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const DEFAULT_SLICE_SIZE = 24;
@@ -812,14 +848,18 @@ async function renderWarmPasses(
   enabled: boolean,
   includeHidden: boolean,
   targetScene?: Object3D,
+  afterCoveredDraw?: () => void,
 ): Promise<IWarmPassRender | undefined> {
   const coveredWorldPass = renderer.warmUpWorldPass;
   const render =
     coveredWorldPass === undefined
       ? renderer.render === undefined
         ? undefined
-        : () => renderer.render?.(scene, camera)
-      : () => coveredWorldPass(scene, camera, targetScene);
+        : () => {
+            renderer.render?.(scene, camera);
+            afterCoveredDraw?.();
+          }
+      : () => coveredWorldPass(scene, camera, targetScene, afterCoveredDraw);
   if (render === undefined) return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
@@ -967,6 +1007,7 @@ export async function warmUpScene(
         targetScene,
         camera,
         environmentDeadline,
+        options.afterCoveredDraw,
       ).then((prepared) => {
         environmentPrepared = prepared;
         if (!prepared) {
@@ -1183,6 +1224,7 @@ export async function warmUpScene(
         options.renderPasses !== false,
         options.includeHidden === true,
         options.targetScene,
+        options.afterCoveredDraw,
       );
     } catch (error) {
       passError = error;

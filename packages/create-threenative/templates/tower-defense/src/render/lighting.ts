@@ -23,8 +23,10 @@ export function setupLighting(
 ): { key: DirectionalLight } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  scene.add(new HemisphereLight(0xd5e8db, 0x3a4435, 1.5));
-  const key = new DirectionalLight(0xffe3b1, 3.4);
+  // Sun 4.6 against a fill of 1 (hemisphere) plus the sky at 0.7 (`sky.ts`): the metered exposure sets
+  // the level, so the sun-to-shade ratio is what gives the board its depth.
+  scene.add(new HemisphereLight(0xcfe3ec, 0x3a4435, 1));
+  const key = new DirectionalLight(0xffe3b1, 4.6);
   key.position.set(-18, 30, 17);
   key.castShadow = true;
   const size = mobile ? 2048 : 4096;

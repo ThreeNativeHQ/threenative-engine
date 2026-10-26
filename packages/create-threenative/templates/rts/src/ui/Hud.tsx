@@ -38,7 +38,7 @@ export function Hud() {
   return (
     <>
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 p-4">
-        <div className="flex items-center gap-5 bg-panel/80 px-4 py-2 text-lume">
+        <div className="flex items-center gap-5 bg-black/80 px-4 py-2 text-lume">
           <Stat label="ore" value={state.ore.toLocaleString()} id="ore" />
           <Stat label="gas" value={state.gas.toLocaleString()} id="gas" />
           <Stat
@@ -50,13 +50,13 @@ export function Hud() {
           <Stat label="clock" value={clock(state.simTime / 20)} id="clock" />
         </div>
         {state.notice === "" ? null : (
-          <output className="max-w-sm bg-panel/80 px-3 py-2 text-xs uppercase tracking-[0.14em] text-warn">
+          <output className="max-w-sm bg-black/80 px-3 py-2 text-xs uppercase tracking-[0.14em] text-warn">
             {state.notice}
           </output>
         )}
       </header>
 
-      <section className="pointer-events-none absolute bottom-4 left-4 w-72 bg-panel/80 p-3">
+      <section className="pointer-events-none absolute bottom-4 left-4 w-72 bg-black/80 p-3">
         <div className="flex items-baseline justify-between text-[10px] uppercase tracking-[0.14em] text-dim">
           <span>{state.selection === 0 ? "no selection" : "strike group"}</span>
           <span id="selection-count">{state.selection} selected</span>
@@ -123,12 +123,12 @@ export function Hud() {
       </p>
       <div className="pointer-events-none absolute right-4 bottom-4 flex flex-col items-end gap-1">
         {state.result === "" ? null : (
-          <span className="bg-panel/80 px-3 py-1 text-xs uppercase tracking-[0.2em] text-warn">
+          <span className="bg-black/80 px-3 py-1 text-xs uppercase tracking-[0.2em] text-warn">
             {state.result}
           </span>
         )}
         <button
-          className="pointer-events-auto border border-line bg-panel/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
+          className="pointer-events-auto border border-line bg-black/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
           data-tn-interactive
           onClick={() => send(state.paused ? "resume" : "pause")}
           type="button"

@@ -30,12 +30,11 @@ export function startRealismEffectsScene(canvas, dimensions, effect, build, opti
     scene.add(subject, companion);
 
     const scenePass = pass(scene, camera);
-    const velocitySource = options.velocityNode ?? defaultVelocity;
-    scenePass.setMRT(mrt({ output, normal: normalView, velocity: velocitySource, depth }));
+    scenePass.setMRT(mrt({ output, normal: normalView, ...(options.velocityNode === undefined ? { velocity: defaultVelocity, depth } : {}) }));
     const colorNode = scenePass.getTextureNode("output");
     const depthNode = scenePass.getTextureNode("depth");
     const normalNode = scenePass.getTextureNode("normal");
-    const velocityNode = scenePass.getTextureNode("velocity");
+    const velocityNode = options.velocityNode ?? scenePass.getTextureNode("velocity");
     const buildResult = build({
       camera,
       color: colorNode,

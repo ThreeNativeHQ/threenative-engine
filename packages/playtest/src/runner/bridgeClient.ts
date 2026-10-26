@@ -362,6 +362,16 @@ function assertBoundedPayload(value: unknown): void {
   }
 }
 
+/**
+ * The page global that keeps a pending bridge promise reachable while Chromium awaits it.
+ *
+ * `Runtime.awaitPromise` holds the awaited promise weakly. A major GC while a call waits on
+ * engine work — the start scene's `load()` before setup can name its entities, a long `advance` —
+ * collected it and the run failed with Playwright's "Resulting promise was garbage collected."
+ * Rooting the promise in the page until it settles makes the collector leave it alone.
+ */
+export const PENDING_BRIDGE_OPERATIONS_GLOBAL = "__THREENATIVE_PLAYTEST_PENDING_OPERATIONS__";
+
 async function bridgeCall<T = void>(
   page: Page,
   method: string,
@@ -373,15 +383,30 @@ async function bridgeCall<T = void>(
   try {
     return await Promise.race([
       page.evaluate(
-        async ({ argument, globalName, method, options }) => {
+        ({ argument, globalName, method, options, pendingOperationsGlobal }) => {
           const bridge = (globalThis as Record<string, unknown>)[globalName] as Record<string, unknown> | undefined;
           const operation = bridge?.[method];
           if (typeof operation !== "function") {
             throw new Error(`Bridge operation '${method}' is unavailable.`);
           }
-          return operation.call(bridge, argument, options);
+          const result: unknown = operation.call(bridge, argument, options);
+          if (result === null || (typeof result !== "object" && typeof result !== "function")) return result;
+          if (typeof (result as { then?: unknown }).then !== "function") return result;
+          const host = globalThis as Record<string, unknown>;
+          const pending = (host[pendingOperationsGlobal] as Set<unknown> | undefined) ?? new Set<unknown>();
+          host[pendingOperationsGlobal] = pending;
+          pending.add(result);
+          const forget = (): boolean => pending.delete(result);
+          void (result as Promise<unknown>).then(forget, forget);
+          return result;
         },
-        { argument, globalName: PLAYTEST_BRIDGE_GLOBAL, method, options },
+        {
+          argument,
+          globalName: PLAYTEST_BRIDGE_GLOBAL,
+          method,
+          options,
+          pendingOperationsGlobal: PENDING_BRIDGE_OPERATIONS_GLOBAL,
+        },
       ) as Promise<T>,
       new Promise<T>((_resolve, reject) => {
         timeout = setTimeout(() => reject(new PlaytestBridgeError(playtestDiagnostic(

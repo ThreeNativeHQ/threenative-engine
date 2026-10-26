@@ -71,8 +71,9 @@ const RUNNING = join(tmpdir(), "tn-asset-perf-running.json");
 /** The corpus: every asset directory the scaffolder ships, keyed by the folder it lands in. */
 export const CORPUS = [
   ["shared", resolve(ROOT, "packages/create-threenative/template-assets/assets")],
-  ...readdirSync(TEMPLATES)
-    .map((name) => [name, join(TEMPLATES, name, "assets")])
+  ...readdirSync(TEMPLATES, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map(({ name }) => [name, join(TEMPLATES, name, "assets")])
     .filter(([, dir]) => statSync(dir, { throwIfNoEntry: false })?.isDirectory()),
 ];
 

@@ -94,7 +94,90 @@ describe("defineScreenSpaceReflections", () => {
       /TN_NATIVE_SSR_CAMERA/,
     );
   });
+
+  it("caps the march at maxSteps, and the capped slices still reach maxDistance", () => {
+    const { tsl, make, branches, minCalls } = tracedTsl();
+    const node = defineScreenSpaceReflections(tsl)(make(), make(), make(), { camera }) as {
+      maxSteps?: object;
+    };
+    const cap = node.maxSteps;
+    expect(cap).toBeDefined();
+    // A branch that depends on the cap ends the march: Unreal's per-tier step count.
+    expect(branches.some((branch) => cap && branch.sources.has(cap) && branch.broke)).toBe(true);
+    // The slice fraction divides by min(maxSteps, 48), so a capped ray still spans maxDistance.
+    expect(minCalls.some((args) => args.includes(cap) && args.includes(48))).toBe(true);
+  });
+
+  it("skips the march on pixels at or above maxRoughness, and traces every pixel by default", () => {
+    const { tsl, make, branches, initial, uniform } = tracedTsl();
+    const roughnessNode = uniform(0.7);
+    const node = defineScreenSpaceReflections(tsl)(make(), make(), make(), {
+      camera,
+      roughnessNode,
+    }) as { maxRoughness?: object };
+    const cut = node.maxRoughness;
+    expect(cut).toBeDefined();
+    expect(cut && initial.get(cut)).toBe(1);
+    // One branch reads both the pixel's roughness and the cut-off: the gate around the per-pixel work.
+    expect(
+      branches.some(
+        (branch) => cut && branch.sources.has(cut) && branch.sources.has(roughnessNode),
+      ),
+    ).toBe(true);
+  });
 });
+
+/** TSL nodes that remember the uniforms they were built from, so a test can name what a branch depends on. */
+function tracedTsl() {
+  const sources = new WeakMap<object, Set<object>>();
+  const from = (inputs: unknown[]): Set<object> =>
+    new Set(inputs.flatMap((input) => [...(sources.get(input as object) ?? [])]));
+  const make = (deps = new Set<object>()): object => {
+    const node: object = new Proxy(() => undefined, {
+      get: (_target, key) => (key === "then" ? undefined : make(deps)),
+      apply: (_target, _this, args: unknown[]) => make(new Set([...deps, ...from(args)])),
+    });
+    sources.set(node, deps);
+    return node;
+  };
+  const initial = new WeakMap<object, unknown>();
+  const uniform = (value?: unknown): object => {
+    const deps = new Set<object>();
+    const node = make(deps);
+    deps.add(node);
+    initial.set(node, value);
+    return node;
+  };
+  const branches: { sources: Set<object>; broke: boolean }[] = [];
+  const minCalls: unknown[][] = [];
+  let current: { broke: boolean } | undefined;
+  const tsl: Record<string, unknown> = {
+    Break: () => {
+      if (current) current.broke = true;
+    },
+    Fn: (body: () => unknown) => () => body(),
+    If: (condition: unknown, body: () => void) => {
+      const branch = { sources: from([condition]), broke: false };
+      branches.push(branch);
+      const outer = current;
+      current = branch;
+      body();
+      current = outer;
+      return { Else: (other: () => void) => other() };
+    },
+    Loop: (_options: unknown, body: (indices: { i: unknown }) => void) => body({ i: make() }),
+    rtt: () => ({}),
+    uniform,
+  };
+  for (const name of ["clamp", "dot", "float", "int", "max", "min", "mix", "normalize", "reflect"])
+    tsl[name] = (...args: unknown[]) => {
+      if (name === "min") minCalls.push(args);
+      return make(from(args));
+    };
+  for (const name of ["smoothstep", "uv", "vec2", "vec3", "vec4"])
+    tsl[name] = (...args: unknown[]) => make(from(args));
+  return { tsl: tsl as unknown as IScreenSpaceTsl, make, branches, minCalls, initial, uniform };
+}
 
 describe("defineScreenSpaceGi", () => {
   const camera = {

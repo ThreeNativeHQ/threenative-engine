@@ -1,4 +1,5 @@
 {
+  "clock": "wall-clock",
   "name": "play",
   "target": "web",
   "schemaVersion": 1,
@@ -34,7 +35,6 @@
     ],
     "performance": {
       "maxDrawCalls": 128,
-      "maxFrameMsP95": 33,
       "maxTriangles": 80000,
       "minFps": 30
     },

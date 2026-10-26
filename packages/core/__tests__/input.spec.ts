@@ -557,6 +557,32 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("keeps a held mouse button held through a button-less move while the pointer is locked", () => {
+    const target = Object.assign(new EventTarget(), { requestPointerLock: () => undefined });
+    const input = new InputMap({ block: { mouseButtons: [2] } }, target, target);
+    input.captureMouse();
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 2));
+    // Chromium's pointer-locked move: no button changed, and `buttons` reads 0 with right held.
+    target.dispatchEvent(Object.assign(pointerEvent("pointermove", 1, 12, 10, 0), { button: -1 }));
+    input.tick();
+    expect(input.pressed("block")).toBe(true);
+    target.dispatchEvent(pointerEvent("pointerup", 1, 12, 10));
+    input.tick();
+    expect(input.pressed("block")).toBe(false);
+    input.dispose();
+  });
+
+  it("releases a held mouse button on a button-less move while the pointer is free", () => {
+    // Released outside the window, no pointerup arrives: the next move is what clears it.
+    const target = new EventTarget();
+    const input = new InputMap({ block: { mouseButtons: [2] } }, target, target);
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 2));
+    target.dispatchEvent(Object.assign(pointerEvent("pointermove", 1, 12, 10, 0), { button: -1 }));
+    input.tick();
+    expect(input.pressed("block")).toBe(false);
+    input.dispose();
+  });
+
   it("should press an action bound to the middle mouse button", () => {
     const target = new EventTarget();
     const input = new InputMap({ melee: { mouseButtons: [1] } }, target);

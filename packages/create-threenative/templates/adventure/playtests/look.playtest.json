@@ -1,0 +1,72 @@
+{
+  "name": "adventure-look",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "click",
+      "label": "focus",
+      "at": {
+        "x": 640,
+        "y": 360
+      },
+      "waitTicks": 10
+    },
+    {
+      "kind": "input",
+      "label": "look-right",
+      "pointerPosition": {
+        "x": 0.9,
+        "y": 0.5
+      },
+      "holdTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "look-left",
+      "pointerPosition": {
+        "x": 0.2,
+        "y": 0.45
+      },
+      "holdTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "look-back",
+      "pointerPosition": {
+        "x": 0.95,
+        "y": 0.55
+      },
+      "holdTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "camera.main",
+      "rotationChanged": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lookOffCentreWorst",
+        "lte": 0.25,
+        "allowTrivial": "Unlocked, how far Wren's centre strayed from the middle of the frame (0 is the middle, 1 the edge, 2 behind the lens) while the mouse turned the view; a running maximum. The view follows the mouse at once, so a fast turn never leaves her at the edge."
+      }
+    ]
+  }
+}

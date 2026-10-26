@@ -144,6 +144,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
   }),
   "performance": Object.freeze({
     "maxFrameMsP95": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "maxFrameMsReason": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minFps": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxPhaseMsP95": (value: unknown) => isRecord(value),
     "maxDrawCalls": (value: unknown) => typeof value === "number" && Number.isFinite(value),
@@ -225,6 +226,14 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxCount": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "minTriangles": (value: unknown) => typeof value === "number" && Number.isFinite(value),
   }),
+  "footSlip": Object.freeze({
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "feet": (value: unknown) => Array.isArray(value),
+    "maxSlip": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "maxSlideSpeed": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "stepSeconds": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
+  }),
   "causedBy": Object.freeze({
     "cause": (value: unknown) => isRecord(value),
     "effect": (value: unknown) => isRecord(value),
@@ -236,6 +245,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxCompileSettledMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxReadyMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxOffscreenBytes": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "steadyCover": (value: unknown) => typeof value === "boolean",
   }),
   "pipelineCensus": Object.freeze({
     "maxNodeBuildsAfterWarmUpSettled": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,

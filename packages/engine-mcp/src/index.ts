@@ -40,6 +40,22 @@ export interface ICapabilityManifest {
   readonly version: number;
   readonly entries: readonly ICapabilityEntry[];
   readonly notOwned: readonly INotOwnedCapability[];
+  readonly starterKits?: readonly IStarterKit[];
+}
+
+export interface IStarterKit {
+  readonly name: string;
+  readonly title: string;
+  readonly blurb: string;
+  /** Genre plus kit.json aliases, lowercase. */
+  readonly words: readonly string[];
+}
+
+export interface IStarterKitResult {
+  readonly name: string;
+  readonly title: string;
+  readonly blurb: string;
+  readonly command: string;
 }
 
 export interface ICapabilitySearchResult {
@@ -54,7 +70,10 @@ export interface ICapabilitySearchResult {
 }
 
 export interface ICapabilitySearchResponse {
-  readonly verdict: "matched" | "none";
+  /** Present when the request names a genre or game a starter kit covers; it leads the response. */
+  readonly starterKits?: readonly IStarterKitResult[];
+  /** "starterKit": a kit matched but no engine capability did; scaffold the kit, then search its gaps. */
+  readonly verdict: "matched" | "none" | "starterKit";
   readonly results: readonly ICapabilitySearchResult[];
   readonly guidance: string;
 }
@@ -316,6 +335,20 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
+    }
+  }
+  for (const [index, raw] of (Array.isArray(value.starterKits)
+    ? value.starterKits
+    : []
+  ).entries()) {
+    if (
+      !isRecord(raw) ||
+      typeof raw.name !== "string" ||
+      typeof raw.title !== "string" ||
+      typeof raw.blurb !== "string" ||
+      !isStringArray(raw.words)
+    ) {
+      throw manifestError(file, `starterKits ${index} is malformed`);
     }
   }
   const notOwnedIds = new Set<string>();
@@ -636,6 +669,49 @@ function capabilitySearchKey(entry: ICapabilityEntry): string {
   return `${entry.importPath}\n${entry.summary}\n${entry.situations.join("\n")}`;
 }
 
+/** Kits whose genre or kit.json alias is a whole word or phrase of the request, earliest first. */
+function matchedStarterKits(
+  situation: string,
+  kits: readonly IStarterKit[],
+): readonly IStarterKitResult[] {
+  const words = (text: string) =>
+    ` ${text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, " ")
+      .trim()} `;
+  const request = words(situation);
+  const claims = kits.map((kit) => ({
+    kit,
+    spans: kit.words.flatMap((word) => {
+      const at = request.indexOf(words(word));
+      return at < 0 ? [] : [{ at, end: at + words(word).length }];
+    }),
+  }));
+  // A kit word inside a longer phrase another kit claims is that kit's: "mario kart" is the kart
+  // kit's, not the collectathon's "mario".
+  const inside = (span: { at: number; end: number }, own: (typeof claims)[number]) =>
+    claims.some(
+      (other) =>
+        other !== own &&
+        other.spans.some(
+          (o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at,
+        ),
+    );
+  return claims
+    .map((claim) => ({
+      at: Math.min(...claim.spans.filter((span) => !inside(span, claim)).map((span) => span.at)),
+      kit: claim.kit,
+    }))
+    .filter(({ at }) => Number.isFinite(at))
+    .sort((left, right) => left.at - right.at)
+    .map(({ kit: { blurb, name, title } }) => ({
+      blurb,
+      command: `npx create-threenative <dir> --template ${name}`,
+      name,
+      title,
+    }));
+}
+
 export function searchCapabilities(
   situation: string,
   manifestFile = defaultManifestPath(),
@@ -644,6 +720,27 @@ export function searchCapabilities(
   if (typeof situation !== "string" || situation.trim().length === 0)
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
+  const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
+  const response = searchMechanics(situation, manifest, scope);
+  if (starterKits.length === 0) return response;
+  // The kit leads the response; the mechanics it does not cover follow unchanged.
+  return {
+    starterKits,
+    ...response,
+    ...(response.verdict === "none"
+      ? {
+          guidance: `Scaffold from the starter kit first, then search the mechanics it does not cover. ${response.guidance}`,
+          verdict: "starterKit" as const,
+        }
+      : {}),
+  };
+}
+
+function searchMechanics(
+  situation: string,
+  manifest: ICapabilityManifest,
+  scope: "mechanic" | "request",
+): ICapabilitySearchResponse {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);
