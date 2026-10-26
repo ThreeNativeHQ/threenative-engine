@@ -263,9 +263,15 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
         // leaves in-range channels alone and so keeps static edges resolved.
         let bounded = clipAABB(vec4(0, 0, 0, clamp(old.a, low.a, high.a)), historyColor, low, high);
         if (dynamicNeighborhood && any(bounded != historyColor)) { clipped = vec4(neighborhoodToRgb * bounded.rgb, bounded.a); }
-        // Static history: UE's per-channel clamp (in-range channels stay, so static edges stay resolved), but in RGB: in
-        // YCoCg a white rim over red and dark clamps to grey or orange (the kart start lamps).
-        if (!dynamicNeighborhood) { clipped = clamp(old, rgbLow, rgbHigh); }
+        // Static history: UE's per-channel clamp (in-range channels stay, so static edges stay resolved), first in RGB,
+        // then in YCoCg. YCoCg alone turns a white rim over red and dark grey or orange (the kart start lamps); RGB alone
+        // keeps purple history over a grey wall, whose luma range spans every RGB channel.
+        if (!dynamicNeighborhood) {
+            let rgbBounded = clamp(old, rgbLow, rgbHigh);
+            let rgbColor = vec4(rgbToNeighborhood * rgbBounded.rgb, rgbBounded.a);
+            let both = clamp(rgbColor, low, high);
+            clipped = select(rgbBounded, vec4(neighborhoodToRgb * both.rgb, both.a), any(both != rgbColor));
+        }
     } else {
         let mean = moment1 / 9;
         let variance = sqrt(max(moment2 / 9 - mean * mean, vec4(0.0))) * gamma;
