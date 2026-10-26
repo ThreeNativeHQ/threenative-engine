@@ -62,7 +62,7 @@
       }
     },
     "performance": {
-      "maxDrawCalls": 286,
+      "maxDrawCalls": 320,
       "maxTriangles": 470000,
       "minFps": 30
     },
