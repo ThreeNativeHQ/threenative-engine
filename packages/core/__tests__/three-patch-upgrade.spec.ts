@@ -615,6 +615,13 @@ const QUEUE_ORDER_BLOBS = {
   "src/renderers/webgpu/WebGPUBackend.js": "94b48d64ed8f2e57f00cb5fd5bd0112da085aeae",
 };
 
+// Exact blobs at PR #574 f4a53547, before each skeleton read its own previous bones.
+const SHARED_SKIN_HISTORY_BLOBS = {
+  "build/three.webgpu.js": "d835e23ec85acea5fd8ba15a2b76c83b83561c3c",
+  "build/three.webgpu.nodes.js": "d030da8cf893d8f222330d437b45297e3a06c0d0",
+  "src/nodes/accessors/Skinning.js": "76303e765bc29853cfd7f139dd3ec76545b70798",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -675,6 +682,7 @@ describe.each([
   ["published PR398 63aa4b9b", TEMPORAL_PUBLISHED_BLOBS],
   ["develop fluid c2e051df", FLUID_DEVELOP_BLOBS],
   ["published PR398 4e86 /7036a173", CURRENT_RECONSTRUCTION_BLOBS],
+  ["PR574 f4a53547 shared skin history", SHARED_SKIN_HISTORY_BLOBS],
 ])("actual previously shipped Three files (%s)", (_name, priorBlobs) => {
   it.each([false, true])(
     "upgrades the exact prior patch and remains idempotent (CRLF=%s)",

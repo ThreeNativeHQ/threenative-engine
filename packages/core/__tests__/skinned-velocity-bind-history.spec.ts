@@ -47,8 +47,17 @@ function fixture(detached = false) {
   return { bone, mesh, scene, tracker };
 }
 
-/** Read the exact inverse uniform and bone buffer used by Three's compiled previous position. */
-function shaderPreviousPosition(mesh: SkinnedMesh, point: Vector3, compute = false): Vector3 {
+/**
+ * Read the exact inverse uniform and bone buffer used by Three's compiled previous position.
+ * `drawn` is the mesh the compiled program draws: meshes sharing a material and geometry share
+ * one program, built for whichever of them rendered first.
+ */
+function shaderPreviousPosition(
+  mesh: SkinnedMesh,
+  point: Vector3,
+  compute = false,
+  drawn: SkinnedMesh = mesh,
+): Vector3 {
   const builder = new WGSLNodeBuilder(mesh, {
     backend: { capabilities: { getUniformBufferLimit: () => 65_536 } },
     getMRT: () => new Set(["velocity"]),
@@ -60,7 +69,7 @@ function shaderPreviousPosition(mesh: SkinnedMesh, point: Vector3, compute = fal
   );
   builder.buildUpdateNodes();
   const frame = new NodeFrame();
-  frame.object = mesh;
+  frame.object = drawn;
   frame.frameId = 2;
   for (const node of builder.updateNodes) frame.updateNode(node);
   const previousLine = shader.code
@@ -74,11 +83,11 @@ function shaderPreviousPosition(mesh: SkinnedMesh, point: Vector3, compute = fal
   const bones = builder.uniforms.vertex.find(({ name }) => name === boneName)?.node.value;
   if (!(bones instanceof Float32Array))
     throw new Error("Compiled previous bone buffer is missing.");
-  const world = readVelocityPreviousWorldMatrix(mesh);
+  const world = readVelocityPreviousWorldMatrix(drawn);
   if (world === undefined) throw new Error("Scheduled previous world matrix is missing.");
   return point
     .clone()
-    .applyMatrix4(mesh.bindMatrix)
+    .applyMatrix4(drawn.bindMatrix)
     .applyMatrix4(new Matrix4().fromArray(bones))
     .applyMatrix4(inverse)
     .applyMatrix4(world);
@@ -173,5 +182,33 @@ describe("scheduled skin bind-inverse history", () => {
     scene.remove(mesh);
     tracker.update(scene);
     expect(Reflect.has(mesh, previousBind)).toBe(false);
+  });
+
+  it("reads each skeleton's own bone history when meshes share one material and geometry", () => {
+    // A crowd of one rig: SkeletonUtils.clone gives every figure its own skeleton but shares the
+    // geometry, and a game that tints the crowd shares one material, so all of them draw through
+    // the program built for the first. Its previous bones must still be the drawn figure's own.
+    const { mesh, scene, tracker } = fixture();
+    const bone = new Bone();
+    const other = new SkinnedMesh(mesh.geometry, mesh.material);
+    other.position.set(4, 0.3, 1);
+    other.add(bone);
+    other.bind(new Skeleton([bone]));
+    scene.add(other);
+    tracker.update(scene);
+    const point = new Vector3(0.3, 0.1, -0.2);
+    shaderPreviousPosition(mesh, point);
+    // The other figure is mid-stride and the first is at rest: only the drawn figure's own bones
+    // put its previous position where it was.
+    bone.position.set(0.2, 0.4, 0);
+    scene.updateMatrixWorld(true);
+    tracker.commit(scene);
+    const previous = other.applyBoneTransform(0, point.clone()).applyMatrix4(other.matrixWorld);
+    other.position.x += 0.25;
+    bone.position.set(0.3, 0.5, 0);
+    tracker.update(scene);
+    expect(shaderPreviousPosition(mesh, point, false, other).distanceTo(previous)).toBeLessThan(
+      1e-6,
+    );
   });
 });

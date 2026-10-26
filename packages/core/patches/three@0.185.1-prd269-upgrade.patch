@@ -22416,3 +22416,266 @@ index 2e3a84341d1d3af4e4b8c0327c4ad2cde4df0c5b..c4c33cf3060d8c75398000589ed4e3f9
  
  		if ( texture.isCubeTexture ) {
  
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index d835e23ec85acea5fd8ba15a2b76c83b83561c3c..754d9674a2398367cacecbfaaaca526db6edcf41 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18829,6 +18829,31 @@ function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix,
+ 
+ }
+ 
++/**
++ * The previous frame's bone matrices for one skeleton, created on first use at the current pose
++ * so a skeleton's first frame has zero skin motion.
++ *
++ * @param {Skeleton} skeleton - The skeleton.
++ * @returns {{previousBoneMatrices: Float32Array}} The skeleton's bone history.
++ */
++function previousBoneMatricesData( skeleton ) {
++
++	let data = _previousBoneMatricesData.get( skeleton );
++
++	if ( data === undefined ) {
++
++		skeleton.update();
++
++		data = { previousBoneMatrices: new Float32Array( skeleton.boneMatrices ) };
++
++		_previousBoneMatricesData.set( skeleton, data );
++
++	}
++
++	return data;
++
++}
++
+ /**
+  * Retrieves or initializes the previous frame skinned position node for motion vectors.
+  * Uses a WeakMap to cache previous frame bone matrix arrays and their TSL buffer nodes.
+@@ -18842,24 +18867,15 @@ function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix,
+  */
+ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode ) {
+ 
+-	const skeleton = skinnedMesh.skeleton;
+-
+-	let data = _previousBoneMatricesData.get( skeleton );
+-
+-	if ( data === undefined ) {
+-
+-		skeleton.update();
++	// Meshes that share a material and geometry share this program, so the bone history is the
++	// drawn object's own skeleton's, resolved per object like the current bones, never the
++	// skeleton the program happened to be built for.
++	const previousBoneMatricesNode = buffer( previousBoneMatricesData( skinnedMesh.skeleton ).previousBoneMatrices, 'mat4', skinnedMesh.skeleton.bones.length ).onObjectUpdate( ( { object } ) => {
+ 
+-		const previousBoneMatrices = new Float32Array( skeleton.boneMatrices );
+-
+-		data = {
+-			previousBoneMatrices,
+-			node: buffer( previousBoneMatrices, 'mat4', skeleton.bones.length )
+-		};
+-
+-		_previousBoneMatricesData.set( skeleton, data );
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return previousBoneMatricesData( mesh.skeleton ).previousBoneMatrices;
+ 
+-	}
++	} );
+ 
+ 	// The previous bones and world matrix must use the same frame's bind inverse.
+ 	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
+@@ -18869,7 +18885,7 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	} );
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
++	return getSkinnedPosition( previousBoneMatricesNode, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -18897,11 +18913,13 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+ 
+ 			_skeletonsUpdated.set( skeleton, frameId );
+ 
+-			const skeletonData = _previousBoneMatricesData.get( skeleton );
++			// A scheduled history means velocity is on: the skeleton gets its own history even when
++			// the program was built for another skeleton.
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
++			const skeletonData = scheduledPrevious !== undefined ? previousBoneMatricesData( skeleton ) : _previousBoneMatricesData.get( skeleton );
+ 
+ 			if ( skeletonData !== undefined ) {
+ 
+-				const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
+ 				skeletonData.previousBoneMatrices.set( scheduledPrevious ?? skeleton.boneMatrices );
+ 
+ 			}
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index d030da8cf893d8f222330d437b45297e3a06c0d0..46b9864470ab0489d095513c7ab6493e25ae5c17 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -18815,6 +18815,31 @@ function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix,
+ 
+ }
+ 
++/**
++ * The previous frame's bone matrices for one skeleton, created on first use at the current pose
++ * so a skeleton's first frame has zero skin motion.
++ *
++ * @param {Skeleton} skeleton - The skeleton.
++ * @returns {{previousBoneMatrices: Float32Array}} The skeleton's bone history.
++ */
++function previousBoneMatricesData( skeleton ) {
++
++	let data = _previousBoneMatricesData.get( skeleton );
++
++	if ( data === undefined ) {
++
++		skeleton.update();
++
++		data = { previousBoneMatrices: new Float32Array( skeleton.boneMatrices ) };
++
++		_previousBoneMatricesData.set( skeleton, data );
++
++	}
++
++	return data;
++
++}
++
+ /**
+  * Retrieves or initializes the previous frame skinned position node for motion vectors.
+  * Uses a WeakMap to cache previous frame bone matrix arrays and their TSL buffer nodes.
+@@ -18828,24 +18853,15 @@ function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix,
+  */
+ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode ) {
+ 
+-	const skeleton = skinnedMesh.skeleton;
+-
+-	let data = _previousBoneMatricesData.get( skeleton );
+-
+-	if ( data === undefined ) {
+-
+-		skeleton.update();
++	// Meshes that share a material and geometry share this program, so the bone history is the
++	// drawn object's own skeleton's, resolved per object like the current bones, never the
++	// skeleton the program happened to be built for.
++	const previousBoneMatricesNode = buffer( previousBoneMatricesData( skinnedMesh.skeleton ).previousBoneMatrices, 'mat4', skinnedMesh.skeleton.bones.length ).onObjectUpdate( ( { object } ) => {
+ 
+-		const previousBoneMatrices = new Float32Array( skeleton.boneMatrices );
+-
+-		data = {
+-			previousBoneMatrices,
+-			node: buffer( previousBoneMatrices, 'mat4', skeleton.bones.length )
+-		};
+-
+-		_previousBoneMatricesData.set( skeleton, data );
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return previousBoneMatricesData( mesh.skeleton ).previousBoneMatrices;
+ 
+-	}
++	} );
+ 
+ 	// The previous bones and world matrix must use the same frame's bind inverse.
+ 	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
+@@ -18855,7 +18871,7 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	} );
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
++	return getSkinnedPosition( previousBoneMatricesNode, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
+index 76303e765bc29853cfd7f139dd3ec76545b70798..7e77f7559b7e988777d22585c64f37f72aa1f666 100644
+--- a/src/nodes/accessors/Skinning.js
++++ b/src/nodes/accessors/Skinning.js
+@@ -85,6 +85,31 @@ function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix,
+ 
+ }
+ 
++/**
++ * The previous frame's bone matrices for one skeleton, created on first use at the current pose
++ * so a skeleton's first frame has zero skin motion.
++ *
++ * @param {Skeleton} skeleton - The skeleton.
++ * @returns {{previousBoneMatrices: Float32Array}} The skeleton's bone history.
++ */
++function previousBoneMatricesData( skeleton ) {
++
++	let data = _previousBoneMatricesData.get( skeleton );
++
++	if ( data === undefined ) {
++
++		skeleton.update();
++
++		data = { previousBoneMatrices: new Float32Array( skeleton.boneMatrices ) };
++
++		_previousBoneMatricesData.set( skeleton, data );
++
++	}
++
++	return data;
++
++}
++
+ /**
+  * Retrieves or initializes the previous frame skinned position node for motion vectors.
+  * Uses a WeakMap to cache previous frame bone matrix arrays and their TSL buffer nodes.
+@@ -98,24 +123,15 @@ function getSkinnedNormalAndTangent( boneMatrices, normal, tangent, bindMatrix,
+  */
+ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode ) {
+ 
+-	const skeleton = skinnedMesh.skeleton;
+-
+-	let data = _previousBoneMatricesData.get( skeleton );
+-
+-	if ( data === undefined ) {
++	// Meshes that share a material and geometry share this program, so the bone history is the
++	// drawn object's own skeleton's, resolved per object like the current bones, never the
++	// skeleton the program happened to be built for.
++	const previousBoneMatricesNode = buffer( previousBoneMatricesData( skinnedMesh.skeleton ).previousBoneMatrices, 'mat4', skinnedMesh.skeleton.bones.length ).onObjectUpdate( ( { object } ) => {
+ 
+-		skeleton.update();
+-
+-		const previousBoneMatrices = new Float32Array( skeleton.boneMatrices );
+-
+-		data = {
+-			previousBoneMatrices,
+-			node: buffer( previousBoneMatrices, 'mat4', skeleton.bones.length )
+-		};
+-
+-		_previousBoneMatricesData.set( skeleton, data );
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return previousBoneMatricesData( mesh.skeleton ).previousBoneMatrices;
+ 
+-	}
++	} );
+ 
+ 	// The previous bones and world matrix must use the same frame's bind inverse.
+ 	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
+@@ -125,7 +141,7 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	} );
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
++	return getSkinnedPosition( previousBoneMatricesNode, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -153,11 +169,13 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+ 
+ 			_skeletonsUpdated.set( skeleton, frameId );
+ 
+-			const skeletonData = _previousBoneMatricesData.get( skeleton );
++			// A scheduled history means velocity is on: the skeleton gets its own history even when
++			// the program was built for another skeleton.
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
++			const skeletonData = scheduledPrevious !== undefined ? previousBoneMatricesData( skeleton ) : _previousBoneMatricesData.get( skeleton );
+ 
+ 			if ( skeletonData !== undefined ) {
+ 
+-				const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousBoneMatrices' ) ];
+ 				skeletonData.previousBoneMatrices.set( scheduledPrevious ?? skeleton.boneMatrices );
+ 
+ 			}
