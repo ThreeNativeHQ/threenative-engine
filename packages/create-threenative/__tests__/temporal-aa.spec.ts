@@ -1228,4 +1228,19 @@ describe("generated temporal detail controls", () => {
     source.dispose?.();
     expect(() => sharpen.build(composite, chain)).toThrow(/source/);
   });
+  it("reads the velocity flag so dynamic pixels are not sharpened", () => {
+    const [source, sharpen] = temporalDetailStages();
+    if (!source || !sharpen) throw new Error("Temporal detail needs a source and output stage.");
+    const temporal = rtt(output);
+    const motion = rtt(output, 853, 480);
+    const chain = { velocityNode: motion } as never;
+    source.build(temporal, chain);
+    const result = sharpen.build(temporal, chain) as Node;
+    let flagRead = false;
+    result.traverse((node) => {
+      const split = node as { components?: string; node?: { value?: unknown } };
+      if (split.components === "z" && split.node?.value === motion.value) flagRead = true;
+    });
+    expect(flagRead).toBe(true);
+  });
 });

@@ -88,7 +88,10 @@ export function temporalDetailStages(): [ChainStage, ChainStage] {
           max(abs(dot(left, luma).sub(centreLuma)), abs(dot(right, luma).sub(centreLuma))),
           max(abs(dot(up, luma).sub(centreLuma)), abs(dot(down, luma).sub(centreLuma))),
         );
-        const mask = edge.oneMinus().clamp(0, 1);
+        // Deviation from UE: a dynamic pixel (velocity z = 3) resolves mostly from the current
+        // frame, so sharpening it amplifies the input grid on spinning or animated subjects.
+        const moving = (chain.velocityNode as TextureNode).sample(screenUV).z.greaterThan(2);
+        const mask = select(moving, 0, edge.oneMinus().clamp(0, 1));
         const delta = left.add(right).add(up).add(down).sub(centre.rgb.mul(4));
         return vec4(
           select(upscaled, frame.rgb.sub(delta.mul(mask).mul(strength / 6)), frame.rgb),
