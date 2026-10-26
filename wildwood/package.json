@@ -19,9 +19,9 @@
     "test:audio": "threenative-playtest audio --dir public/audio --expect audio.expect.json --text"
   },
   "dependencies": {
-    "@threenative/core": "file:/tmp/prd743-tarballs/threenative-core-0.3.6-final2.tgz",
-    "@threenative/physics": "file:/tmp/prd743-tarballs/threenative-physics-0.3.6-final.tgz",
-    "@threenative/ui": "file:/tmp/prd743-tarballs/threenative-ui-0.3.6-final.tgz",
+    "@threenative/core": "file:/home/joao/.cache/tmp-tn/prd743-tarballs/threenative-core-0.3.6-final5.tgz",
+    "@threenative/physics": "file:/home/joao/.cache/tmp-tn/prd743-tarballs/threenative-physics-0.3.6-final5.tgz",
+    "@threenative/ui": "file:/home/joao/.cache/tmp-tn/prd743-tarballs/threenative-ui-0.3.6-final5.tgz",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-reconciler": "0.33.0",
@@ -30,8 +30,8 @@
   "devDependencies": {
     "@gltf-transform/cli": "4.4.2",
     "@tailwindcss/vite": "4.3.3",
-    "@threenative/assets": "file:/tmp/prd743-tarballs/threenative-assets-0.3.7-final.tgz",
-    "@threenative/playtest": "file:/tmp/prd743-tarballs/threenative-playtest-0.3.6-final.tgz",
+    "@threenative/assets": "file:/home/joao/.cache/tmp-tn/prd743-tarballs/threenative-assets-0.3.7-final5.tgz",
+    "@threenative/playtest": "file:/home/joao/.cache/tmp-tn/prd743-tarballs/threenative-playtest-0.3.6-final5.tgz",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
     "@types/three": "0.185.3",
