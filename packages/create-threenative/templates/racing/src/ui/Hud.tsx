@@ -42,7 +42,7 @@ export function Hud() {
         <div>
           <div className="text-[10px] text-muted">speed</div>
           <div className="mt-1 text-[26px] leading-none text-white">
-            <span id="speed">{Math.round(state.speed * 10)}</span>
+            <span id="speed">{Math.round(state.speed * 3.6)}</span>
             <span className="text-[11px] text-muted"> km/h</span>
           </div>
         </div>
@@ -55,7 +55,7 @@ export function Hud() {
         <div className={state.boostActive ? "text-accent" : "text-muted"}>
           <div className="text-[10px]">boost</div>
           <div className="mt-1 text-[18px] leading-none" id="boost">
-            {state.boostActive ? "ACTIVE" : `${state.boostUses} READY`}
+            {state.boostActive ? "ACTIVE" : "READY"}
           </div>
         </div>
       </div>
