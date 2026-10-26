@@ -19,17 +19,19 @@ stock Unreal 5.8.3. A starter kit is the first thing an agent copies, so every d
 - The engine layer when a defect is in `packages/` (fix it there, never in a kit).
 - Out: new kit features, new kits, asset replacement.
 
-## Phase 1 — Exposure matches stock Unreal
+## Phases
+
+### Phase 1 — Exposure matches stock Unreal
 
 - [ ] Core's look (tone curve, auto exposure key and range, bloom, local exposure, colour grading defaults) is checked term by term against UE 5.8.3 source, each deviation fixed in core or recorded with its reason. proof: the term table with `UE 5.8.3: Engine/...:line` per row and a red-green unit spec per fixed term.
 - [ ] Every kit's look overrides are listed with their measured effect, and a kit that reads dull against its pre-migration look and the Unreal reference gets fixed (core first, kit override only with a judged reason). proof: per-kit judge verdict (fresh Opus, headed WebGPU, 2 runs per arm) and the median luminance, saturation and contrast per pose.
 
-## Phase 2 — Verified bugs fixed red-green
+### Phase 2 — Verified bugs fixed red-green
 
 - [ ] Every scout finding is checked against its cited line; confirmed ones are listed with layer and root cause. proof: the verified table below, rejected findings named with the reason.
 - [ ] Each confirmed bug has a playtest scenario (or a unit spec for engine code) that fails before the fix and passes after. proof: red and green run results per bug.
 
-## Phase 3 — Every kit plays clean
+### Phase 3 — Every kit plays clean
 
 - [ ] Every kit passes its own scenarios plus the PRD-735 explore and footSlip gates: `pnpm test:templates`. proof: the run's per-kit result.
 - [ ] A fresh agent plays each kit for five minutes with real input and reports no new defect. proof: per-kit play report.
