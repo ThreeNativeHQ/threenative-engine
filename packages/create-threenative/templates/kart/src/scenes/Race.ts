@@ -480,7 +480,8 @@ export class Race extends Scene<GameState> {
         if (throttleHeld && GO_AT - throttlePressedAt <= RACE.rocketWindow) {
           player.kart.startBoost();
           race.rocket = true;
-          toast("ROCKET START!", 1.2);
+          // The HUD hides toasts while "GO!" shows (1 s), so the toast outlasts it by 1.2 s.
+          toast("ROCKET START!", 1 + 1.2);
         }
       }
       const remaining = GO_AT - elapsed;
