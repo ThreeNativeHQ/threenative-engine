@@ -80,21 +80,35 @@ describe("web branding adapter", () => {
     let handler:
       | ((req: { url?: string }, res: IFakeResponse, next: () => void) => void)
       | undefined;
-    plugin.configureServer({ middlewares: { use: (use) => (handler = use) } });
+    plugin.configureServer({
+      middlewares: {
+        use: (use) => {
+          handler = use;
+        },
+      },
+    });
     const res: IFakeResponse = {
       body: "",
       headers: {},
-      setHeader: (k, v) => (res.headers[k] = v),
-      end: (b) => (res.body = b),
+      setHeader: (k, v) => {
+        res.headers[k] = v;
+      },
+      end: (b) => {
+        res.body = b;
+      },
     };
     let passed = false;
-    handler?.({ url: "/manifest.webmanifest" }, res, () => (passed = true));
+    handler?.({ url: "/manifest.webmanifest" }, res, () => {
+      passed = true;
+    });
     // Without this route Vite answers the link with index.html and Chrome logs
     // "Manifest: Line: 1, column: 1, Syntax error." on every dev page load.
     expect(passed).toBe(false);
     expect(res.headers["Content-Type"]).toBe("application/manifest+json");
     expect(JSON.parse(res.body)).toMatchObject({ name: "Dev Quest" });
-    handler?.({ url: "/index.html" }, res, () => (passed = true));
+    handler?.({ url: "/index.html" }, res, () => {
+      passed = true;
+    });
     expect(passed).toBe(true);
   });
   it("leaves upstream three alone in a native bundle, whose host is not a browser (PRD-637)", async () => {
