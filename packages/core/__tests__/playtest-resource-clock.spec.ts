@@ -38,7 +38,20 @@ test.each([false, true])(
       },
       entities: { snapshot: () => ({}), forEach: () => {}, get: () => undefined },
       state: { flush: () => {}, getState: () => ({ tick: loop.tick() }) },
-      assets: { resolved: new Map() },
+      assets: {
+        resolved: new Map(),
+        cache: {
+          enabled: false,
+          reason: "test stub",
+          persisted: false,
+          hits: 0,
+          misses: 0,
+          bytesOnDisk: 0,
+          bytesTotal: 0,
+          filling: false,
+          backgroundFill: false,
+        },
+      },
       random: { state: 0 },
       startup: { phase: "ready", progress: 1 },
     } as unknown as ICtx;

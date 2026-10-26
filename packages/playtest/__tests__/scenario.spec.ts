@@ -131,10 +131,10 @@ test("scenario parser accepts a bounded waitForResource step", async () => {
 test.each([
   ["missing timeout", { waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
   ["zero timeout", { timeoutMs: 0, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
-  ["timeout above maximum", { timeoutMs: 120_001, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+  ["timeout above maximum", { timeoutMs: 300_001, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
 ])("scenario parser rejects a waitForResource step with %s", async (_label, step) => {
   await expect(loadScenarioWithSteps([step])).rejects.toMatchObject({
-    diagnostic: { message: expect.stringMatching(/timeoutMs.*positive integer.*120000|timeoutMs.*120000/u) },
+    diagnostic: { message: expect.stringMatching(/timeoutMs.*positive integer.*300000|timeoutMs.*300000/u) },
   });
 });
 

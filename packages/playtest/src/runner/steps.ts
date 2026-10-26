@@ -242,7 +242,7 @@ export async function runStep(
       throw new PlaytestBridgeError(playtestDiagnostic(
         "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
         `Resource wait for '${wait.id}.${wait.path}' has no timeout.`,
-        "Validate the scenario with timeoutMs as a positive integer no greater than 120000.",
+        "Validate the scenario with timeoutMs as a positive integer no greater than 300000.",
       ));
     }
     const after = await waitForResource({
