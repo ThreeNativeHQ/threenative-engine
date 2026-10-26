@@ -107,6 +107,36 @@ describe("scene warm-up", () => {
     }
   });
 
+  test("should repaint the loading cover in the same task as the covered world pass draw", async () => {
+    // Hop Garden on the RTX 2080: collectathon-survives showed one bare world frame under the loading
+    // cover about 400 ms before the hand-off (2 of 3 runs). The covered world pass draws outside the
+    // frame loop, so the browser presents it on its own unless the cover is painted over it.
+    const events: string[] = [];
+    let settle: (() => void) | undefined;
+    const report = warmUpScene(
+      {
+        compileAsync: vi.fn(async () => undefined),
+        warmUpWorldPass: vi.fn(() => {
+          events.push("world-pass");
+          return new Promise<void>((resolve) => {
+            settle = resolve;
+          });
+        }),
+      },
+      sceneOf(1) as never,
+      {} as never,
+      {
+        granularity: "scene",
+        yieldFrame: () => Promise.resolve(),
+        afterCoveredDraw: () => events.push("cover"),
+      },
+    );
+    await vi.waitFor(() => expect(events).toContain("world-pass"));
+    expect(events).toEqual(["world-pass", "cover"]);
+    settle?.();
+    expect((await report).passes).toEqual(["main"]);
+  });
+
   test("should give up on a WebGPU environment bake at its deadline, as the native preparer does", async () => {
     // Action RPG restart on 2-CPU SwiftShader: the transition waited the whole sky bake (about 30 s)
     // past its deadline, and the playtest's advance timed out at 20.25 s with no frame drawn.

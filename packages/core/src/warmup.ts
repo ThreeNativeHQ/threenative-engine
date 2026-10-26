@@ -847,6 +847,7 @@ async function renderWarmPasses(
   enabled: boolean,
   includeHidden: boolean,
   targetScene?: Object3D,
+  afterCoveredDraw?: () => void,
 ): Promise<IWarmPassRender | undefined> {
   const coveredWorldPass = renderer.warmUpWorldPass;
   const render =
@@ -918,7 +919,11 @@ async function renderWarmPasses(
     if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
-    await render();
+    // The draw happens in this call; the promise only waits for its pipelines. Paint the cover in the
+    // same task, or the browser presents the bare world frame under the loading cover.
+    const drawn = render();
+    afterCoveredDraw?.();
+    await drawn;
   } finally {
     if (raw !== undefined) {
       if (hadOwnAutoClear) raw.autoClear = autoClear;
@@ -1219,6 +1224,7 @@ export async function warmUpScene(
         options.renderPasses !== false,
         options.includeHidden === true,
         options.targetScene,
+        options.afterCoveredDraw,
       );
     } catch (error) {
       passError = error;
