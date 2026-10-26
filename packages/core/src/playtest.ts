@@ -161,6 +161,13 @@ export function playtest<
           ...(runtime?.startupTimeline === undefined
             ? {}
             : { timeline: runtime.startupTimeline() }),
+          // What the reveal waited for that the spawn camera does not show, once the reveal ran.
+          ...((offscreen) =>
+            offscreen === undefined
+              ? {}
+              : {
+                  offscreenBytes: { ...offscreen, top: offscreen.top.map((file) => ({ ...file })) },
+                })(runtime?.startupOffscreenBytes?.()),
         }),
       };
       const installation = installThreePlaytestBridge(bridgeOptions);
@@ -819,12 +826,29 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // Where every asset was actually served from, on every target and not only in a browser
         // console log: a game whose manifest never loaded runs on the uncompiled source directory
         // and looks healthy, and without this nothing observable says so.
+        ["assetCache", assetCacheReport(ctx.assets)],
         ["assets", assetResolutions(ctx.assets)],
         ...(runtime?.frameCounts === undefined
           ? []
           : [["__threenativeFrameCounts", runtime.frameCounts()]]),
       ]);
     },
+  };
+}
+
+/** The cache counters and switches, without the action; observations are data. */
+function assetCacheReport(assets: IAssetLoader): Record<string, JsonValue> {
+  const cache = assets.cache;
+  return {
+    enabled: cache.enabled,
+    persisted: cache.persisted,
+    hits: cache.hits,
+    misses: cache.misses,
+    bytesOnDisk: cache.bytesOnDisk,
+    bytesTotal: cache.bytesTotal,
+    filling: cache.filling,
+    backgroundFill: cache.backgroundFill,
+    ...(cache.reason === undefined ? {} : { reason: cache.reason }),
   };
 }
 

@@ -864,6 +864,7 @@ Bounds when the application's startup milestones happened: the world entered, fi
 | `maxEnteredMs` | number | no |
 | `maxCompileSettledMs` | number | no |
 | `maxReadyMs` | number | no |
+| `maxOffscreenBytes` | number | no |
 | `steadyCover` | boolean | no |
 
 
