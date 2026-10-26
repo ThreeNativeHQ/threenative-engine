@@ -15,19 +15,19 @@
 //
 // Everything is deterministic (`makeRandom`, never `Math.random`) so a replay
 // renders the same tree twice, and the whole run of trees is drawn from three
-// prototype geometries through `InstancedBatch` — a palm is a repeated prop, and
+// prototype geometries through `InstancedMesh` — a palm is a repeated prop, and
 // generating fresh geometry per placement is how a prop budget disappears.
 //
 // Colour variation is baked into a vertex-colour attribute instead of extra
 // materials: frond tips read sun-bleached, frond bases shaded, and the bark
 // grooves darker, all inside one draw call per part. (CanvasTexture samples
 // black under WebGPURenderer, so a painted gradient is not an option here.)
-import { InstancedBatch } from "@threenative/core";
 import {
   BufferGeometry,
   CatmullRomCurve3,
   Float32BufferAttribute,
   type Group,
+  InstancedMesh,
   type Material,
   Matrix4,
   MeshStandardMaterial,
@@ -397,7 +397,7 @@ function derive(source: Material, hex: number | undefined): Material {
 /**
  * Build every palm in the town.
  *
- * Three prototypes are generated once and drawn through one `InstancedBatch`
+ * Three prototypes are generated once and drawn through one `InstancedMesh`
  * per prototype per material — twelve draw calls for the whole run of trees,
  * whatever the placement table grows to.
  */
@@ -442,9 +442,14 @@ export function addPalms(
       [parts.fruit, fruitMaterial, "palm-dates"],
     ];
     for (const [geometry, material, name] of layers) {
-      const batch = new InstancedBatch({ geometry, material });
-      for (const matrix of matrices) batch.add(matrix);
-      batch.build({ castShadow: true, name, parent: group, receiveShadow: true });
+      const mesh = new InstancedMesh(geometry, material, matrices.length);
+      mesh.name = name;
+      matrices.forEach((matrix, slot) => mesh.setMatrixAt(slot, matrix));
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.computeBoundingSphere();
+      group.add(mesh);
     }
   });
 }
