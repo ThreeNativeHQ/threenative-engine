@@ -245,9 +245,6 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         var weights = 0.0;
         var spread1 = vec4<f32>(0);
         var spread2 = vec4<f32>(0);
-        var boundary = false;
-        var nearLow = vec4(1e30);
-        var nearHigh = vec4(-1e30);
         for (var y = -1; y <= 1; y++) {
             for (var x = -1; x <= 1; x++) {
                 let samplePosition = centre + vec2<f32>(f32(x), f32(y));
@@ -262,13 +259,6 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
                 weights += weight;
                 let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
                 spread1 += neighborhood; spread2 += neighborhood * neighborhood;
-                if (dynamicNeighborhood) {
-                    let sampleMotion = textureLoad(velocity, pixel, 0).xy;
-                    boundary = boundary || length((sampleMotion - motionSample.xy) * 0.5 * u.size) > 0.5;
-                    if ((x == 0 && y == 0) || dot(distance * upscale, distance * upscale) < 1) {
-                        nearLow = min(nearLow, neighborhood); nearHigh = max(nearHigh, neighborhood);
-                    }
-                }
                 if (highClamp && ((x == 0 && y == 0) || dot(distance, distance) < radius * radius)) {
                     low = min(low, neighborhood);
                     rgbLow = min(rgbLow, color); rgbHigh = max(rgbHigh, color);
@@ -287,14 +277,6 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
             let filtered = vec4(rgbToNeighborhood * current.rgb, current.a);
             low = min(mean - sigma, filtered);
             high = max(mean + sigma, filtered);
-        }
-        // A footprint that holds two motions (a mover's rim over still or wind-swayed ground) takes its box from the
-        // samples within one output pixel, the footprint full resolution clips with. The 0.72 sample-distance box spans
-        // both sides of the rim and keeps their blend: a purple enemy over green grass kept a grey rim.
-        if (boundary) {
-            let filtered = vec4(rgbToNeighborhood * current.rgb, current.a);
-            low = min(nearLow, filtered);
-            high = max(nearHigh, filtered);
         }
     } else {
         current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
