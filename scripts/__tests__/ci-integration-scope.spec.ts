@@ -576,9 +576,12 @@ describe("additive registration safety boundaries", () => {
     expect(lanes["fluid-native"]).toBe(true);
     expect(lanes["fluid-particles"]).toBe(true);
   });
-  it("keeps generated render helper edits outside browser fluid", () => {
+  it("keeps removed generated render helper edits outside browser fluid", () => {
     const lanes = select(workflow, [
-      "packages/create-threenative/templates/rain/src/render/worldEnvironment.ts",
+      path.posix.join(
+        "packages/create-threenative/templates/rain/src/render",
+        "worldEnvironment.ts",
+      ),
       "packages/create-threenative/src/index.ts",
     ]);
     expect(lanes.tone).toBe(true);

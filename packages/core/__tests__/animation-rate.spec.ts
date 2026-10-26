@@ -674,6 +674,71 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  it("sizes a many-part rig by the whole rig, not by its largest part (Lantern Vale's hero held every other pose)", () => {
+    const rig = player();
+    // Eleven 29 px parts stacked into a 175 px figure, off the centre ray.
+    for (let index = 0; index < 11; index += 1) {
+      const part = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshBasicMaterial());
+      part.position.y = index * 0.2 - 1;
+      rig.root.add(part);
+    }
+    rig.root.position.set(3, 0, -8);
+    const scene = new Scene();
+    scene.add(rig.root);
+    const cull = new RenderCameraCull();
+    scene.updateMatrixWorld(true);
+    cull.apply(scene, new PerspectiveCamera(60, 1, 0.1, 1000), 720);
+    cull.restore();
+    rig.update(1 / 60);
+    expect(rig.updateRateReport.rate).toBe(1);
+    cull.dispose();
+    rig.dispose();
+  });
+
+  /**
+   * The rig's rate with these parts, `radius` or `[radius, x, y]` (radius 0 = a part scaled to
+   * nothing), in this order, off the centre ray.
+   */
+  const rigRate = (parts: readonly (number | readonly [number, number, number])[]): number => {
+    const rig = player();
+    for (const entry of parts) {
+      const [radius, x, y] = typeof entry === "number" ? [entry, 0, 0] : entry;
+      const part = new Mesh(new SphereGeometry(radius || 1, 8, 6), new MeshBasicMaterial());
+      if (radius === 0) part.scale.setScalar(0);
+      part.position.set(x, y, 0);
+      rig.root.add(part);
+    }
+    rig.root.position.set(3, 0, -8);
+    const scene = new Scene();
+    scene.add(rig.root);
+    const cull = new RenderCameraCull();
+    scene.updateMatrixWorld(true);
+    cull.apply(scene, new PerspectiveCamera(60, 1, 0.1, 1000), 720);
+    cull.restore();
+    rig.update(1 / 60);
+    const { rate } = rig.updateRateReport;
+    cull.dispose();
+    rig.dispose();
+    return rate;
+  };
+
+  it("lets a part scaled to nothing leave the rig's rate to its other parts", () => {
+    // A 59 px body; the zero-scale part held the rig at rate 1 when it counted as a centre-ray hit.
+    expect(rigRate([0.4])).toBe(2);
+    expect(rigRate([0.4, 0])).toBe(2);
+  });
+
+  it("grows a rig's sphere the same in any part order and keeps it for a part inside it", () => {
+    const tiny = [0.05, 0.05, 0.05, 0.05, 0.05];
+    expect(rigRate([0.4])).toBe(2);
+    expect(rigRate([0.4, ...tiny])).toBe(2);
+    expect(rigRate([...tiny, 0.4])).toBe(2);
+    // Two 59 px parts 0.85 m apart make one 128+ px figure; a part inside the first must not
+    // shrink the sphere the second grows from.
+    expect(rigRate([0.4, [0.4, 0, 0.85]])).toBe(1);
+    expect(rigRate([0.4, [0.05, 0.1, 0], [0.4, 0, 0.85]])).toBe(1);
+  });
+
   it("keeps a distant unparented camera target at full rate and retargeting drops promotion", () => {
     const rig = player();
     const view = rendered(rig, -120);
@@ -852,5 +917,104 @@ describe("AnimationPlayer update rate", () => {
     expect(mean).toBeCloseTo(128 / rate, 5);
     expect(Math.max(...counts)).toBeLessThanOrEqual(1.5 * mean);
     for (const rig of rigs) rig.dispose();
+  });
+});
+
+describe("camera-rate walk cost", () => {
+  // Lantern Vale on the web engine: the camera-rate pass walked every visible object to find the few
+  // rigs, and each object's userData, geometry and parent read crossed into the engine. It was 41% of
+  // the main thread. Scenery that no rig owns and no stand-in observes is not read at all.
+  it("reads nothing from scenery that carries no animation rate", () => {
+    const rig = player(1);
+    const view = rendered(rig, -20);
+    let reads = 0;
+    const read = <T>(value: T): T => {
+      reads += 1;
+      return value;
+    };
+    for (let index = 0; index < 50; index += 1) {
+      const prop = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
+      prop.position.set(index, 0, -30);
+      const { geometry, userData } = prop;
+      Object.defineProperty(prop, "geometry", { get: () => read(geometry) });
+      Object.defineProperty(prop, "userData", { get: () => read(userData) });
+      // The walk itself does not reach scenery either: it starts at the rigs.
+      Object.defineProperty(prop, "visible", { get: () => read(true), set: () => {} });
+      view.scene.add(prop);
+    }
+    view.scene.updateMatrixWorld(true);
+    reads = 0;
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(reads).toBe(0);
+    // The rig is still observed on the frame the walk published.
+    const state = animationRateStates.get(rig.root);
+    expect(state?.source).toBe(view.cull);
+    expect(state?.frame).toBe(view.cull.animationFrame);
+    rig.dispose();
+  });
+
+  // Lantern Vale battle capture: each rig part walked its parents to the scene root twice a frame
+  // (rate states, then camera attachment), 7% of the main thread. The parts above a rig are read
+  // once per rig, not once per part.
+  it("reads the groups above a rig once per rig, not once per part", () => {
+    const rig = player(1);
+    const view = rendered(rig, -20);
+    for (let index = 0; index < 20; index += 1) {
+      const part = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshBasicMaterial());
+      part.position.x = index * 0.1;
+      rig.root.add(part);
+    }
+    let outer: Group = view.scene as unknown as Group;
+    const groups: Group[] = [];
+    for (let depth = 0; depth < 8; depth += 1) {
+      const group = new Group();
+      outer.add(group);
+      groups.push(group);
+      outer = group;
+    }
+    outer.add(rig.root);
+    view.scene.updateMatrixWorld(true);
+    let reads = 0;
+    for (const group of groups) {
+      const parent = group.parent;
+      Object.defineProperty(group, "parent", {
+        get: () => {
+          reads += 1;
+          return parent;
+        },
+        configurable: true,
+      });
+    }
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(reads).toBeLessThanOrEqual(groups.length);
+    const state = animationRateStates.get(rig.root);
+    expect(state?.frame).toBe(view.cull.animationFrame);
+    expect(state?.rate).toBe(1);
+    rig.dispose();
+  });
+
+  // A respawn disposes the rig's player and makes a new one on the same root within one frame. Each
+  // registration added a root of its own, so the camera pass walked that rig once more per respawn.
+  it("walks a rig once per frame however many players it has had", () => {
+    const rig = player();
+    const view = rendered(rig, -20);
+    let current = rig;
+    for (let respawn = 0; respawn < 5; respawn += 1) {
+      current.dispose();
+      current = new AnimationPlayer({
+        root: rig.root,
+        clips: [
+          new AnimationClip("idle", 1, [new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1])]),
+        ],
+        strideSync: false,
+        updateRate: "auto",
+      });
+      current.play("idle");
+    }
+    const walks = vi.spyOn(rig.root, "traverse");
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(walks).toHaveBeenCalledTimes(1);
+    expect(animationRateStates.get(rig.root)?.frame).toBe(view.cull.animationFrame);
+    current.dispose();
   });
 });

@@ -564,14 +564,14 @@ animation.setWeights([0.5, 0.5]); animation.update(dt);
 
 ### `AnimationPlayer`
 
-`class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so. Evaluation is automatic by default: `updateRate: "auto"` follows measured camera visibility and projected size. `updateRate: 1` evaluates every frame; another positive safe integer names that frame interval. `updateRateReport` reports the effective rate, whether a named override is active, and whether the latest update evaluated. One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `"loop"` listener promotes the player to full-rate and observes only loop events after registration, so skipped pre-registration cycles are not replayed; `updateRateReport` reports that effective rate.
+`class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so. A mesh counts at its lowest geometry point, so a boot's origin may sit anywhere; an in-place clip with no foot plant reports `inPlace: true` and `clipGroundSpeed: 0`, and stride sync stays off. Evaluation is automatic by default: `updateRate: "auto"` follows measured camera visibility and projected size. `updateRate: 1` evaluates every frame; another positive safe integer names that frame interval. `updateRateReport` reports the effective rate, whether a named override is active, and whether the latest update evaluated. One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `"loop"` listener promotes the player to full-rate and observes only loop events after registration, so skipped pre-registration cycles are not replayed; `updateRateReport` reports that effective rate.
 
 ```ts
 export class AnimationPlayer { … }
 ```
 
 - **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving · match an in-place walk cycle with no root motion to the body's speed · find out what speed an animation clip was authored for · reduce animation CPU for distant characters · inspect the effective animation evaluation rate
-- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only · the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
+- **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only · a foot mesh is measured at its lowest geometry point (the sole), never its origin; a skinned mesh is measured through its bones · `stride.inPlace: true` with `clipGroundSpeed: 0` means no foot plant was found and stride sync is not active; the playtest `stride` observation carries `inPlace` · the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
 - **Overrides:** strideSync controls whether the matched rate is applied while stride is still measured · updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
 
 ```ts
@@ -997,8 +997,9 @@ const counters = FrameCounters.install(counterDeviceOf(renderer.raw));
 export function createAssetLoader(options: IAssetLoaderOptions = { … }
 ```
 
-- **Use when:** preload models, textures, or audio before a scene enters · load assets from a nonstandard base path or a compiled asset manifest
-- **Constraints:** reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
+- **Use when:** preload models, textures, or audio before a scene enters · keep downloaded web assets on disk between visits · download the next scene before the player gets there · free the disk cache from a settings menu · prefetch assets into the Cache Storage disk cache of a large web game · load assets from a nonstandard base path or a compiled asset manifest
+- **Constraints:** reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches · await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world · web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
+- **Overrides:** `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
 
 ```ts
 const assets = createAssetLoader({ basePath: "/assets" });
@@ -2436,7 +2437,7 @@ const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: 
 `function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
 
 ```ts
-export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, ): ISceneWarning | undefined { … }
+export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, gpuClass?: string, ): ISceneWarning | undefined { … }
 ```
 
 - **Use when:** find out whether a slow frame is the scene's shape or the device · tell an authoring agent what to reduce before it promises a merge
@@ -3592,7 +3593,7 @@ export class WorldCells extends Group implements IComputeDriven { … }
 ```
 
 - **Use when:** stream a large Blender-authored world by cell instead of one huge GLB · keep scattered props and hand-placed chunks resident around a moving player · honour per-asset draw distances and hard streaming budgets without a mid-frame throw
-- **Constraints:** surface is the game's; this class creates no material, colour or geometry · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
+- **Constraints:** surface is the game's; this class creates no material, colour or geometry · a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first · budgets are hard caps that report pressure instead of over-committing · model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell · refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first · admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has · SkinnedMesh parts are skipped; an instanced copy would draw one rest pose · a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts · eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation · `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number · every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers · two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct · the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds · a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left · `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
 - **Overrides:** `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
 
 ```ts
@@ -3863,8 +3864,9 @@ export class PhysicsDirectSpaceState3D { … }
 ```
 
 - **Use when:** raycast for visibility or aiming · find bodies inside a shape or point query
-- **Constraints:** query results are bounded by the configured result limit
+- **Constraints:** query results are bounded by the configured result limit · intersectRay ignores a solid that contains the ray origin and returns the next real hit or none, like Godot hit_from_inside false
 - **Requires:** npm i @threenative/physics
+- **Overrides:** hitFromInside: true returns the solid around the ray origin as a distance 0 hit with a zero normal
 
 ```ts
 const space = new PhysicsDirectSpaceState3D(context);
@@ -5461,6 +5463,21 @@ export async function withBrowserCapture<T>( config: IStandalonePlaytestConfig, 
 import { parseStandalonePlaytestArgs, withBrowserCapture } from "@threenative/playtest/runner";
 const config = parseStandalonePlaytestArgs(["--scenario", "playtests/smoke.playtest.json", "--url", "http://127.0.0.1:5173"]);
 await withBrowserCapture(config, async (session) => session.screenshot("ready"));
+```
+
+### `withScenarioClock`
+
+`function` — Parse standalone playtest runner configuration.
+
+```ts
+export function withScenarioClock<T extends { … }
+```
+
+- **Use when:** invoke the playtest CLI from a scaffold · validate runner flags before launching a browser
+- **Constraints:** invalid flags throw a named usage error
+
+```ts
+const config = parseStandalonePlaytestArgs(argv);
 ```
 
 ### `writeCaptureProvenance`
@@ -7177,23 +7194,6 @@ createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWeatherWorld
 
 ```ts
 src/render/world.ts — edit the shader there, or the weather it is fed from src/state.ts
-```
-
-## `src/render/worldEnvironment.ts`
-
-### `WorldEnvironment`
-
-`class` — The generated file that composes every lighting stage and prints TN_RENDER_CHAIN naming each one as applied or refused with a reason. It is the game's source, not the framework's — edit it.
-
-```ts
-class WorldEnvironment
-```
-
-- **Use when:** turn a lighting or post-processing effect on or off · find out why an effect you enabled is not visible · change how the scene is lit, graded, or tonemapped · match a reference image's lighting
-- **Constraints:** Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped. · A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it. · Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.
-
-```ts
-src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment
 ```
 
 ## `three/addons/tsl/display/BloomNode.js`

@@ -103,6 +103,23 @@ export interface IPlaytestStartupTimeline {
   readyMs?: number;
 }
 
+/**
+ * What the reveal waited for through the asset loader, split by whether the spawn camera shows it.
+ * Measured by the application at the reveal; mirrors core's `IStartupOffscreenBytes`.
+ */
+export interface IPlaytestStartupOffscreenBytes {
+  awaitedBytes: number;
+  fix: string;
+  offscreenBytes: number;
+  top: { bytes: number; path: string; reason: "hidden" | "not-placed" | "outside-view" }[];
+  unattributedBytes: number;
+  /** Awaited files with no manifest size, in no byte count. */
+  unsizedFiles: number;
+  visibleBytes: number;
+  /** Off-screen bytes exceed visible bytes: most of the wait bought nothing on screen. */
+  warn: boolean;
+}
+
 export interface IPlaytestStartupObservation {
   phase: "observing" | "collapsing" | "ready";
   /** 0 while first-use work is pending, then 1. */
@@ -130,6 +147,27 @@ export interface IPlaytestStartupObservation {
   compileSettled?: boolean;
   /** Present when the application records its startup milestones. */
   timeline?: IPlaytestStartupTimeline;
+  /** Present once the reveal ran and the application measured what it waited for. */
+  offscreenBytes?: IPlaytestStartupOffscreenBytes;
+  /** The frames the page presented before readiness; recorded by the browser runner on request. */
+  cover?: IPlaytestStartupCoverObservation;
+}
+
+/**
+ * The compositor frames from navigation to readiness, each compared with the last one before
+ * readiness. A frame differs when more than a quarter of its pixels moved past the tolerance.
+ */
+export interface IPlaytestStartupCoverObservation {
+  /** Frames recorded between navigation and readiness. */
+  frames: number;
+  /** Mean colour of the reference frame, the last before readiness, 0-255. */
+  reference: [number, number, number];
+  /** Every differing frame: ms since navigation, its mean colour and its differing pixel share. */
+  differing: Array<{ ms: number; mean: [number, number, number]; share: number }>;
+  /** The first frame after readiness that differs from the cover, ms since navigation; absent when none was recorded. */
+  worldMs?: number;
+  /** Frames between readiness and `worldMs` that show the world's page UI (a HUD) over the cover. */
+  uiOverCover: Array<{ ms: number; share: number }>;
 }
 
 /**
@@ -215,6 +253,11 @@ export interface IPlaytestStrideObservation {
   clipGroundSpeed: number;
   /** Metres per second the body actually covered, as the producer smoothed it. */
   groundSpeed: number;
+  /**
+   * True when the clip carries no root motion and its stride came from the feet. With a zero
+   * `clipGroundSpeed` it says no foot plant was found, which is why stride sync is not active.
+   */
+  inPlace?: boolean;
   /** True when a rate was measured and deliberately not applied. */
   overridden: boolean;
   /** The playback rate those two imply, after the producer's own clamping. */

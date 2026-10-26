@@ -4,6 +4,7 @@
 // One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
 // sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import { ARENA, GROUND_Y } from "./arena.js";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
@@ -28,7 +29,12 @@ export function setupLighting(
   key.shadow.radius = 2;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 80;
-  const extent = 14;
+  // Cover the arena's diagonal in light space, so a wall shadow cannot stop at the map edge.
+  const extent = Math.hypot(
+    ARENA.halfX + ARENA.thickness / 2,
+    ARENA.halfZ + ARENA.thickness / 2,
+    Math.max(Math.abs(GROUND_Y), Math.abs(ARENA.wallTop)),
+  );
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;

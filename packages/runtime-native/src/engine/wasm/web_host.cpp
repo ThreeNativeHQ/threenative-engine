@@ -24,6 +24,7 @@
 
 #include <emscripten/emscripten.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,6 +32,11 @@
 using namespace tn::engine;
 
 namespace {
+// The tnw_* contract with the facade (browser-renderer.ts `WEB_HOST_ABI`). Bump both on every tnw_*
+// signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
+// 2 = tnw_web_render's overlay argument (39295d1f3). 3 = tnw_web_compile_async and tnw_web_compile_status.
+constexpr uint32_t kWebHostAbi = 3;
+
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
 WebState state = Pending;
@@ -46,6 +52,8 @@ WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
+RenderDatabase overlayDatabase;  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
+Renderer* lastDrawn = nullptr;  // the renderer of the last tnw_web_render: its draws are that call's renderer.info
 tn::engine::shader::graph::Node customToneMapping;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
 ComputeQueue computeQueue;  // PRD-620: renderer.compute kernels and storage reads, run in call order
@@ -181,8 +189,19 @@ Camera* cameraOf(const tn_handle_t* handle) {
 }
 } // namespace
 
-/** Starts adapter and device requests on the canvas `selector` names; poll until Ready or Failed. */
-extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h) {
+/** The web host ABI this module speaks; the facade refuses a module whose number differs. */
+extern "C" uint32_t tnw_web_host_abi() { return kWebHostAbi; }
+
+/**
+ * Starts adapter and device requests on the canvas `selector` names; poll until Ready or Failed.
+ * `facadeAbi` is the facade's WEB_HOST_ABI: a facade older than the number passes none (0), and
+ * would otherwise call every later export with the arguments of another ABI.
+ */
+extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h, uint32_t facadeAbi) {
+    if (facadeAbi != kWebHostAbi)
+        return fail("TN_WASM_ABI_MISMATCH: the facade speaks web host ABI " + std::to_string(facadeAbi) +
+                    ", this engine " + std::to_string(kWebHostAbi) +
+                    ": install create-threenative and @threenative/runtime-native from one build");
     if (started) return fail("TN_WASM_INIT: already initialized");
     started = true;
     if (selector == nullptr || !validSize(w, h)) return fail("TN_WASM_INIT: canvas selector or size invalid");
@@ -228,18 +247,26 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
     return 0;
 }
 
-/** Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. */
+/**
+ * Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. A nonzero `overlay`
+ * is three's overlay render (core's canvas layer): drawn over the frame already on the canvas, with no post and no
+ * temporal step (Renderer::overlayRenderer). The canvas texture is taken only by a frame that draws: a frame the
+ * renderer skips while an environment bakes leaves the last presented frame on screen.
+ */
 extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t* cameraHandle, double r, double g,
-                              double b, double a, uint32_t sourceFrame) {
+                              double b, double a, int overlay, uint32_t sourceFrame) {
     tnw_web_poll();
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
     auto* scene = rootOf(sceneHandle);
     auto* camera = cameraOf(cameraHandle);
     if (scene == nullptr || camera == nullptr) return fail("TN_WASM_RENDER: scene or camera handle invalid");
     WGPUSurfaceTexture frame = {};
-    wgpuSurfaceGetCurrentTexture(surface, &frame);
-    if (frame.texture == nullptr) return fail("TN_WASM_SURFACE: no canvas texture");
-    WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
+    WGPUTextureView view = nullptr;
+    const auto acquire = [&]() -> WGPUTextureView {
+        wgpuSurfaceGetCurrentTexture(surface, &frame);
+        if (frame.texture == nullptr) throw std::runtime_error("TN_WASM_SURFACE: no canvas texture");
+        return view = wgpuTextureCreateView(frame.texture, nullptr);
+    };
     flushCompute();
     if (outputChanged) renderer->setOutput(output);
     outputChanged = false;
@@ -258,15 +285,23 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     database.shadowMapType = shadowMapType;
     try {
         if (!refused.empty()) throw std::runtime_error(refused);
-        renderer->setSampleCount(sampleCount);
-        renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
-        Renderer::PresentScope present(*renderer, view, surfaceFormat);
-        database.render(*renderer, *scene, *camera, {r, g, b, a});
+        if (overlay) {
+            Renderer& target = renderer->overlayRenderer();
+            lastDrawn = &target;
+            Renderer::PresentScope present(target, acquire, surfaceFormat);
+            overlayDatabase.render(target, *scene, *camera, {0, 0, 0, 0});
+        } else {
+            lastDrawn = renderer.get();
+            renderer->setSampleCount(sampleCount);
+            renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
+            Renderer::PresentScope present(*renderer, acquire, surfaceFormat);
+            database.render(*renderer, *scene, *camera, {r, g, b, a});
+        }
     } catch (const std::exception& error) {
         refused = error.what();
     }
-    wgpuTextureViewRelease(view);
-    wgpuTextureRelease(frame.texture);
+    if (view) wgpuTextureViewRelease(view);
+    if (frame.texture) wgpuTextureRelease(frame.texture);
     framesOnGpu.push_back(renderer->gpu().submittedSerial());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
@@ -274,15 +309,85 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     // the camera) and TN_TRAA_MSAA_OFF (the temporal pass replaces the multisampling), so they go to the console log, which a
     // playtest's no-console-errors policy does not fail on.
     static std::set<std::string> reported;
-    for (const std::string& diagnostic : renderer->diagnostics())
+    for (const std::string& diagnostic : (lastDrawn ? *lastDrawn : *renderer).diagnostics())
         if (reported.insert(diagnostic).second) {
             const bool note = diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 || diagnostic.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0 ||
                               diagnostic.rfind("TN_TRAA_MSAA_OFF", 0) == 0;
             std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
         }
     if (!refused.empty()) return fail(refused);
-    if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
+    const RenderDatabase& drawn = overlay ? overlayDatabase : database;
+    if (!drawn.diagnostics().empty()) return fail(drawn.diagnostics().front());
     return 0;
+}
+
+namespace {
+// three's compileAsync, by the id tnw_web_compile_async returned: the pipelines still compiling.
+std::map<uint32_t, std::vector<std::shared_ptr<PipelineCompilation>>> compilations;
+uint32_t nextCompilation = 1;
+} // namespace
+
+/**
+ * three's compileAsync(root, camera, targetScene), as the V8 player's: builds every pipeline the first draw of `root`
+ * will take, with the renderer settings that draw will use, through createRenderPipelineAsync, so the browser compiles
+ * them off the queue instead of stalling the first frames behind each one. Returns the id tnw_web_compile_status
+ * polls, or 0 when it refused (tnw_web_error names it; the host keeps drawing, and the first draw compiles instead).
+ */
+extern "C" uint32_t tnw_web_compile_async(const tn_handle_t* rootHandle, const tn_handle_t* cameraHandle,
+                                          const tn_handle_t* sceneHandle) {
+    tnw_web_poll();
+    if (state != Ready) {
+        if (state == Pending) refuse("TN_WASM_COMPILE: device not ready");  // a Failed host keeps its message
+        return 0;
+    }
+    auto* root = rootOf(rootHandle);
+    auto* camera = cameraOf(cameraHandle);
+    auto* scene = sceneHandle ? rootOf(sceneHandle) : nullptr;
+    if (!root || !camera || (sceneHandle && !scene)) {
+        refuse("TN_WASM_COMPILE: root, camera or target scene invalid");
+        return 0;
+    }
+    try {
+        if (outputChanged) renderer->setOutput(output);
+        outputChanged = false;
+        if (postChanged) renderer->setPostGraph(pendingPost);
+        postChanged = false;
+        renderer->setSampleCount(sampleCount);
+        RenderDatabase compiling;  // the frame's own database keeps its records for the draws
+        compiling.shadowMapEnabled = shadowMap;
+        compiling.shadowMapType = shadowMapType;
+        compilations[nextCompilation] = compiling.compileAsync(*renderer, *root, *camera, scene, surfaceFormat);
+    } catch (const std::exception& error) {
+        refuse(std::string("TN_WASM_COMPILE: ") + error.what());
+        return 0;
+    }
+    return nextCompilation++;
+}
+
+/** 0 while a pipeline of compilation `id` still compiles, 1 once every one is built, -1 when one was refused (named by tnw_web_error). */
+extern "C" int tnw_web_compile_status(uint32_t id) {
+    tnw_web_poll();
+    const auto found = compilations.find(id);
+    if (state == Failed && found != compilations.end()) {
+        compilations.erase(found);  // a lost device may never complete the pipelines; its failure names why
+        return -1;
+    }
+    if (found == compilations.end()) {
+        refuse("TN_WASM_COMPILE: no compilation " + std::to_string(id));
+        return -1;
+    }
+    for (const auto& pipeline : found->second)
+        if (!pipeline->ready()) return 0;
+    std::string refused;
+    for (const auto& pipeline : found->second) {
+        try { pipeline->get(); } catch (const std::exception& error) { refused = error.what(); break; }
+    }
+    compilations.erase(found);
+    if (!refused.empty()) {
+        refuse("TN_WASM_PIPELINE_REFUSED: " + refused);
+        return -1;
+    }
+    return 1;
 }
 
 /**
@@ -583,11 +688,12 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
+    if (!lastDrawn) lastDrawn = renderer.get();
     switch (field) {
         // three's renderer.info.render counts every pass of a render(), the shadow pass's included, as the
         // V8 player's frameDrawn does: one scene is counted the same on every backend.
-        case 0: return double(renderer->lastFrame().draws + renderer->lastFrame().shadowDraws);
-        case 1: return double(renderer->lastFrame().triangles + renderer->lastFrame().shadowTriangles);
+        case 0: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);
+        case 1: return double(lastDrawn->lastFrame().triangles + lastDrawn->lastFrame().shadowTriangles);
         case 2: return double(renderer->pipelines().compiles());
         case 3: return double(renderer->pipelines().textLookups());
         case 4: return double(bindGroupsCreated());

@@ -18,6 +18,8 @@ export const CENTER = 0;
 export const AVERAGE = 1;
 export const SAH = 2;
 
+const generatedBounds = new WeakMap<object, object>();
+
 export class MeshBVH {
   readonly geometry: object;
 
@@ -35,6 +37,20 @@ export class MeshBVH {
         `TN_NATIVE_MESH_BVH_OPTIONS_UNSUPPORTED: ${unsupported.join(", ")}: the engine MeshBVH builds no tree, so it takes no other build option`,
       );
     this.geometry = geometry;
+    const bounded = geometry as {
+      readonly boundingBox?: object | null;
+      computeBoundingBox?: () => void;
+    };
+    const previous = generatedBounds.get(geometry);
+    if (
+      typeof bounded.computeBoundingBox === "function" &&
+      (bounded.boundingBox === null || (previous !== undefined && bounded.boundingBox === previous))
+    ) {
+      // Core rebuilds after position-version changes. Refresh only the box this adapter owns;
+      // callers override that ownership by assigning a different box, not editing it in place.
+      bounded.computeBoundingBox();
+      if (bounded.boundingBox != null) generatedBounds.set(geometry, bounded.boundingBox);
+    }
   }
 
   /** three-mesh-bvh's `raycastObject3D`: the object's hits (only the nearest with `firstHitOnly`). */

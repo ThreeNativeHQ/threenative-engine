@@ -1,0 +1,124 @@
+{
+  "name": "collectathon-effects",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "walker.0",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": -10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": -30,
+          "y": 0,
+          "z": -5
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "idle",
+      "waitTicks": 60,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run",
+      "press": ["KeyW"],
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 8,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "air",
+      "press": ["KeyW"],
+      "holdTicks": 60,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "stand",
+      "waitTicks": 40,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "effects",
+        "component": "fired",
+        "path": "run",
+        "gte": 5,
+        "atSteps": [
+          {
+            "label": "idle",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "effects",
+        "component": "fired",
+        "path": "takeoff",
+        "gte": 1,
+        "atSteps": [
+          {
+            "label": "run",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "effects",
+        "component": "fired",
+        "path": "landing",
+        "gte": 2
+      },
+      {
+        "entity": "effects",
+        "component": "dust",
+        "gte": 100
+      }
+    ]
+  }
+}

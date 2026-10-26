@@ -8,7 +8,8 @@ import { waitFrames } from "../src/runner/steps.js";
 
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
-import { parseStandalonePlaytestArgs, PlaytestCliUsageError } from "../src/runner/config.js";
+import { parseStandalonePlaytestArgs, PlaytestCliUsageError, withScenarioClock } from "../src/runner/config.js";
+import { validatePlaytestScenario } from "../src/scenario.js";
 import { buildReport } from "../src/runner/runner-support.js";
 import { failureReport } from "../src/runner/shared.js";
 import type { IPlaytestScenario } from "../src/index.js";
@@ -78,6 +79,20 @@ test("the flag is off by default and names the browser and desktop lanes", () =>
     "android",
     "--live-clock",
   ])).toThrow(PlaytestCliUsageError);
+});
+
+test("a scenario asks for the wall clock itself, so one glob run measures a performance scenario beside counted ones", () => {
+  const base = { name: "standing", schemaVersion: 1, steps: [{ waitTicks: 300 }], target: "web", viewport: { height: 720, width: 1280 } };
+  expect(validatePlaytestScenario({ ...base, clock: "wall-clock" }, "perf.playtest.json").clock).toBe("wall-clock");
+  expect(validatePlaytestScenario(base, "counted.playtest.json").clock).toBeUndefined();
+  expect(() => validatePlaytestScenario({ ...base, clock: "fast" }, "bad.playtest.json")).toThrow(/clock must be 'wall-clock'/u);
+  expect(() => validatePlaytestScenario({ ...base, clock: "wall-clock", target: "desktop" }, "desktop.playtest.json")).toThrow(/clock is browser-only/u);
+  const config = { artifactDirectory: "/tmp/artifacts", headless: false, url: "http://127.0.0.1:5173" } as Parameters<typeof buildReport>[0];
+  const asks = validatePlaytestScenario({ ...base, clock: "wall-clock" }, "perf.playtest.json");
+  const counted = validatePlaytestScenario(base, "counted.playtest.json");
+  expect(withScenarioClock(config, asks).liveClock).toBe(true);
+  expect(withScenarioClock(config, counted).liveClock).toBeUndefined();
+  expect(buildReport(withScenarioClock(config, asks), asks, undefined, undefined, [], []).clock).toBe("wall-clock");
 });
 
 test("every report names the clock it measured on", () => {

@@ -50,6 +50,13 @@ struct Game {
      *  core's describe() waiting for the scene the game enters). */
     std::function<void()> frameWithoutView;
     /**
+     * three's overlay render (core's canvas layer). overlay: 0 for none this frame, 1 drawn over the world frame, 2
+     * drawn alone (a held loader frame: no world this frame, published or not). drawOverlay: after the world frame,
+     * the overlay composited over the renderer's output frame (Renderer::overlayRenderer), before the present.
+     */
+    std::function<int()> overlay;
+    std::function<void(Renderer&)> drawOverlay;
+    /**
      * PRD-554: a UI the game runtime shows over the frame (the V8 player's overlay seam). Every hook is
      * optional; a game with no UI sets none, and this loop links no UI code.
      * - uiAttach: once the window exists (null when headless); false stops the player by name.

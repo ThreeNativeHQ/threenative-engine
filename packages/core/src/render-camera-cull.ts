@@ -73,8 +73,12 @@ interface IPositionVersion {
 /** A sphere nearer than this to the camera would divide by zero; treat it as this far away. */
 const MIN_DISTANCE = 1e-4;
 
-/** Internal mirror metadata: a skinned batch carries its authored source rigs to the camera gate. */
-const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
+/**
+ * Internal mirror metadata: a projection stand-in or a skinned batch observes the authored rigs it
+ * draws. A JS map, not `userData`: on the web engine every `userData` read crosses into Wasm, and the
+ * camera pass asked every object in the scene for it.
+ */
+export const animationRateSources = new WeakMap<Object3D, ReadonlyMap<Object3D, unknown>>();
 
 /** Internal observations shared with AnimationPlayer, owned by the root rather than the game. */
 export interface IAnimationRateState {
@@ -93,6 +97,32 @@ export interface IAnimationRateState {
   syncBones?: () => void;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
+/** The roots that may hold a rate state, so the camera pass walks the rigs instead of the scene. */
+const animationRateRoots = new Set<WeakRef<Object3D>>();
+const animationRateRootRefs = new WeakMap<Object3D, WeakRef<Object3D>>();
+/** The stand-ins named in {@link animationRateSources}, so the pass can reach them without a scene walk. */
+const animationRateCarriers = new Set<WeakRef<Object3D>>();
+
+/** A projection stand-in or skinned batch names the rigs it draws (see {@link animationRateSources}). */
+export function observeAnimationRates(
+  carrier: Object3D,
+  sources: ReadonlyMap<Object3D, unknown>,
+): void {
+  if (!animationRateSources.has(carrier)) animationRateCarriers.add(new WeakRef(carrier));
+  animationRateSources.set(carrier, sources);
+}
+
+/** AnimationPlayer's registration: the state the camera pass writes, and the root it is found on. */
+export function trackAnimationRate(root: Object3D, state: IAnimationRateState): void {
+  animationRateStates.set(root, state);
+  // One ref per root: a respawn's new player on the same root must not add a second walk of it.
+  let ref = animationRateRootRefs.get(root);
+  if (ref === undefined) {
+    ref = new WeakRef(root);
+    animationRateRootRefs.set(root, ref);
+  }
+  animationRateRoots.add(ref);
+}
 
 export interface IRenderCameraCullOptions {
   /**
@@ -205,6 +235,16 @@ export class RenderCameraCull {
   readonly #hidden: Object3D[] = [];
   readonly #animationVisitor: (object: Object3D) => void;
   readonly #visitor: (object: Object3D) => void;
+  /**
+   * Every object under a live rate root this frame, with the states of the roots above it: only
+   * these can change a rate, and their states need no walk up the parents.
+   */
+  readonly #animated = new Map<Object3D, readonly IAnimationRateState[]>();
+  #collecting: readonly IAnimationRateState[] = [];
+  readonly #collectAnimated: (object: Object3D) => void;
+  /** The camera's descendants this frame, so camera attachment needs no walk up the parents. */
+  readonly #cameraParts = new Set<Object3D>();
+  readonly #collectCameraPart: (object: Object3D) => void;
   /** Last position-buffer version seen per geometry, so a rewritten dynamic bound is recomputed. */
   readonly #positionVersions = new WeakMap<object, IPositionVersion>();
   #hiddenCount = 0;
@@ -215,6 +255,8 @@ export class RenderCameraCull {
   #scale = 0;
   #cameraResolved = true;
   readonly #animationRay = new Ray();
+  /** Per rig: [frame, x, y, z, radius] of the union of its parts' spheres so far this frame. */
+  readonly #rigSpheres = new WeakMap<IAnimationRateState, Float64Array>();
   #considered = 0;
   #culled = 0;
   #exemptCameraAttached = 0;
@@ -237,6 +279,30 @@ export class RenderCameraCull {
     this.#minimumPixels = requested === false ? DEFAULT_MINIMUM_PROJECTED_PIXELS : requested;
     this.#animationVisitor = (object) => this.#visitAnimation(object);
     this.#visitor = (object) => this.#visit(object);
+    this.#collectAnimated = (object) => {
+      const outer = this.#animated.get(object);
+      // A rig nested in another rig answers to both roots.
+      this.#animated.set(
+        object,
+        outer === undefined ? this.#collecting : [...outer, ...this.#collecting],
+      );
+    };
+    this.#collectCameraPart = (object) => this.#cameraParts.add(object);
+  }
+
+  /** Rebuilds {@link #animated} from the live rate roots; false when no rig can take a rate. */
+  #prepareAnimated(): boolean {
+    this.#animated.clear();
+    for (const ref of animationRateRoots) {
+      const root = ref.deref();
+      if (root === undefined || !animationRateStates.has(root)) {
+        animationRateRoots.delete(ref);
+        continue;
+      }
+      this.#collecting = [animationRateStates.get(root) as IAnimationRateState];
+      root.traverse(this.#collectAnimated);
+    }
+    return this.#animated.size > 0;
   }
 
   get report(): IRenderCameraCullReport {
@@ -275,7 +341,41 @@ export class RenderCameraCull {
     this.#animationFrame += 1;
     this.#animationPrepared = true;
     this.#prepareCamera(camera, viewportHeight);
-    root.traverseVisible(this.#animationVisitor);
+    if (!this.#prepareAnimated()) return;
+    // Start at each rig and each stand-in that observes one, never at the scene: the walk then visits
+    // the same objects a scene walk would have acted on, and nothing else.
+    for (const ref of animationRateRoots) {
+      const rig = ref.deref();
+      if (rig !== undefined && this.#reaches(rig, root))
+        rig.traverseVisible(this.#animationVisitor);
+    }
+    for (const ref of animationRateCarriers) {
+      const carrier = ref.deref();
+      const sources = carrier === undefined ? undefined : animationRateSources.get(carrier);
+      if (carrier === undefined || sources === undefined) {
+        animationRateCarriers.delete(ref);
+        continue;
+      }
+      // A carrier inside a rig is visited by that rig's walk.
+      if (this.#animated.has(carrier)) continue;
+      let observes = false;
+      for (const source of sources.keys()) observes ||= this.#animated.has(source);
+      if (observes && this.#reaches(carrier, root)) carrier.traverseVisible(this.#animationVisitor);
+    }
+  }
+
+  /**
+   * True when a scene walk from `root` would visit `object`: it and every parent up to `root` are
+   * visible. A rate root above it answers false, since that root's own walk covers it.
+   */
+  #reaches(object: Object3D, root: unknown): boolean {
+    if (!object.visible) return false;
+    for (let node = object.parent; node !== null; node = node.parent) {
+      if (animationRateStates.has(node)) return false;
+      if (!node.visible) return false;
+      if (node === root) return true;
+    }
+    return object === root;
   }
 
   /**
@@ -292,7 +392,10 @@ export class RenderCameraCull {
     viewportHeight: number,
   ): void {
     this.restore();
-    if (!this.#animationPrepared) this.#animationFrame += 1;
+    if (!this.#animationPrepared) {
+      this.#animationFrame += 1;
+      this.#prepareAnimated();
+    }
     this.#animationPrepared = false;
     this.#considered = 0;
     this.#culled = 0;
@@ -345,6 +448,9 @@ export class RenderCameraCull {
     } else {
       if (camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
       this.#camera = camera;
+      this.#cameraParts.clear();
+      camera.traverse(this.#collectCameraPart);
+      this.#cameraParts.delete(camera);
       this.#scale = viewportHeight / (2 * Math.tan((perspective.fov * Math.PI) / 360));
     }
     if (engine !== undefined) {
@@ -386,8 +492,13 @@ export class RenderCameraCull {
   }
 
   #visitAnimation(object: Object3D): void {
+    // Only a rig's own parts and the stand-ins that observe rigs can change a rate; everything else
+    // is left unread (each read is an engine crossing on the web engine).
+    const animated = this.#animated.has(object);
+    if (!animated && !animationRateSources.has(object)) return;
     if (!isRenderable(object)) return;
     this.#observeAnimationSources(object);
+    if (!animated) return;
     if (this.#isCameraAttached(object)) {
       this.#observeAnimation(object, undefined);
       return;
@@ -473,43 +584,35 @@ export class RenderCameraCull {
     sphere: IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined,
     notRendered = false,
   ): void {
-    for (let root: Object3D | null = object; root !== null; root = root.parent) {
-      const state = animationRateStates.get(root);
-      if (state === undefined) continue;
-      let rate = notRendered ? 8 : 1;
-      if (
-        !notRendered &&
-        this.#cameraResolved &&
-        sphere !== undefined &&
-        sphere !== DYNAMIC_BOUNDS &&
-        Number.isFinite(sphere.radius) &&
-        sphere.radius > 0
-      ) {
-        this.#center.copy(sphere.center).applyMatrix4(object.matrixWorld);
-        const radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
-        // A known bound on the camera's forward centre ray is the conservative observable target
-        // signal. Test each source independently so a nearer bound cannot hide a farther target.
-        if (this.#animationRay.intersectsSphere(this.#animationSphere.set(this.#center, radius)))
-          rate = 1;
-        else {
-          const distance = Math.hypot(
-            this.#center.x - this.#cameraX,
-            this.#center.y - this.#cameraY,
-            this.#center.z - this.#cameraZ,
-          );
-          const pixels = projectedDiameterPixels(radius, distance, this.#scale);
-          // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
-          rate = this.#frustum.intersectsSphere(this.#animationSphere.set(this.#center, radius))
-            ? pixels >= 128
-              ? 1
-              : pixels >= 32
-                ? 2
-                : pixels >= 8
-                  ? 4
-                  : 8
-            : 8;
-        }
-      }
+    // An object under no live rate root has no state above it.
+    const states = this.#animated.get(object);
+    if (states === undefined) return;
+    let rate = notRendered ? 8 : 1;
+    let radius = 0;
+    let banded = false;
+    if (
+      !notRendered &&
+      this.#cameraResolved &&
+      sphere !== undefined &&
+      sphere !== DYNAMIC_BOUNDS &&
+      Number.isFinite(sphere.radius) &&
+      sphere.radius > 0
+    ) {
+      this.#center.copy(sphere.center).applyMatrix4(object.matrixWorld);
+      radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
+      // A known bound on the camera's forward centre ray is the conservative observable target
+      // signal. Test each source independently so a nearer bound cannot hide a farther target.
+      banded = !this.#animationRay.intersectsSphere(
+        this.#animationSphere.set(this.#center, radius),
+      );
+    }
+    const { x, y, z } = this.#center;
+    for (const state of states) {
+      // The pixel band reads the whole rig this frame, not this part: Lantern Vale's hero is 51 rigid
+      // parts, the largest 80 px at 720p while the hero stands 170 px, and per part it held every
+      // other pose. A one-mesh rig's union is its own sphere.
+      // A part scaled to nothing projects 0 px: it leaves the rig to its other parts.
+      if (banded) rate = radius > 0 ? this.#bandRate(this.#rigSphere(state, x, y, z, radius)) : 8;
       if (state.source === this && state.frame === this.#animationFrame)
         state.rate = Math.min(state.rate, rate);
       else state.rate = rate;
@@ -518,10 +621,60 @@ export class RenderCameraCull {
     }
   }
 
+  /** Grows `state`'s sphere for this frame to hold the part at `x, y, z` and `radius`, into `#animationSphere`. */
+  #rigSphere(state: IAnimationRateState, x: number, y: number, z: number, radius: number): Sphere {
+    let union = this.#rigSpheres.get(state);
+    if (union === undefined) {
+      union = new Float64Array(5);
+      this.#rigSpheres.set(state, union);
+    }
+    // In place, a part at a time each frame: no array literal and no typed-array destructuring.
+    if (union[0] !== this.#animationFrame) {
+      union[0] = this.#animationFrame;
+      union[1] = x;
+      union[2] = y;
+      union[3] = z;
+      union[4] = radius;
+    } else {
+      const ux = union[1] as number;
+      const uy = union[2] as number;
+      const uz = union[3] as number;
+      const ur = union[4] as number;
+      const distance = Math.hypot(x - ux, y - uy, z - uz);
+      if (distance + radius > ur) {
+        if (distance + ur <= radius) {
+          union[1] = x;
+          union[2] = y;
+          union[3] = z;
+          union[4] = radius;
+        } else {
+          const grown = (distance + ur + radius) / 2;
+          const shift = (grown - ur) / distance;
+          union[1] = ux + (x - ux) * shift;
+          union[2] = uy + (y - uy) * shift;
+          union[3] = uz + (z - uz) * shift;
+          union[4] = grown;
+        }
+      }
+    }
+    this.#center.set(union[1] as number, union[2] as number, union[3] as number);
+    return this.#animationSphere.set(this.#center, union[4] as number);
+  }
+
+  #bandRate(sphere: Sphere): number {
+    if (!this.#frustum.intersectsSphere(sphere)) return 8;
+    const { x, y, z } = sphere.center;
+    const distance = Math.hypot(x - this.#cameraX, y - this.#cameraY, z - this.#cameraZ);
+    const pixels = projectedDiameterPixels(sphere.radius, distance, this.#scale);
+    // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
+    return pixels >= 128 ? 1 : pixels >= 32 ? 2 : pixels >= 8 ? 4 : 8;
+  }
+
   #observeAnimationSources(object: Object3D): void {
-    const sources = object.userData[ANIMATION_RATE_SOURCES_KEY];
-    if (!(sources instanceof Map)) return;
+    const sources = animationRateSources.get(object);
+    if (sources === undefined) return;
     for (const source of sources.keys()) {
+      if (!this.#animated.has(source)) continue;
       const visible = this.#isVisibleInWorld(source);
       if (this.#isCameraAttached(source)) {
         this.#observeAnimation(source, undefined);
@@ -543,12 +696,7 @@ export class RenderCameraCull {
   }
 
   #isCameraAttached(object: Object3D): boolean {
-    const camera = this.#camera;
-    if (camera === undefined) return false;
-    for (let node = object.parent; node !== null; node = node.parent) {
-      if (node === camera) return true;
-    }
-    return false;
+    return this.#camera !== undefined && this.#cameraParts.has(object);
   }
 }
 

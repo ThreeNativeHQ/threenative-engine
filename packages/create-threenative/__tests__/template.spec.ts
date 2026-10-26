@@ -48,7 +48,8 @@ const authoringSkills = [
 ] as const;
 // The frame-time ceiling stays mandatory; PRD-214 added an fps floor and per-phase ceilings
 // beside it, so the pattern bounds the opening of the object rather than its whole shape.
-const performanceBoundPattern = /"performance":\s*\{\s*"maxFrameMsP95":\s*33\s*[,}]/u;
+const DERIVED_FRAME_BUDGET_KITS = new Set(["adventure", "collectathon", "kart"]);
+const performanceBoundPattern = /"performance":\s*\{\s*"minFps":\s*60\s*[,}]/u;
 const externalMcps = ["threenative-asset-mcp", "threenative-sculpt-mcp"] as const;
 const execFileAsync = promisify(execFile);
 
@@ -281,15 +282,20 @@ describe("template contracts", () => {
       expect(performance, `${template} performance assertion`).toBeDefined();
       if (performance === undefined) continue;
 
-      expect(Object.keys(performance).sort(), template).toEqual([
-        "maxDrawCalls",
-        "maxFrameMsP95",
-        "maxTriangles",
-        // PRD-222 Phase 1: the Tier 3 fps floor ships beside the ceilings.
-        "minFps",
-      ]);
-      expect(performance.minFps, template).toBe(30);
-      expect(performance.maxFrameMsP95, template).toBe(33);
+      // PRD-735: a 30 fps run passed the pinned 33 ms. No template pins a frame time: the harness
+      // holds every tier to 16.7 ms p95, and a looser number needs a written maxFrameMsReason.
+      expect(performance.maxFrameMsP95, template).toBeUndefined();
+      if (DERIVED_FRAME_BUDGET_KITS.has(template)) {
+        expect(Object.keys(performance).sort(), template).toEqual(["maxDrawCalls", "maxTriangles"]);
+      } else {
+        expect(Object.keys(performance).sort(), template).toEqual([
+          "maxDrawCalls",
+          "maxTriangles",
+          // PRD-222 Phase 1: the Tier 3 fps floor ships beside the ceilings.
+          "minFps",
+        ]);
+        expect(performance.minFps, template).toBe(30);
+      }
       expect(typeof performance.maxDrawCalls, template).toBe("number");
       expect(typeof performance.maxTriangles, template).toBe("number");
       expect(performance.maxDrawCalls, template).toBeGreaterThan(0);

@@ -288,4 +288,30 @@ describe("scene overview, the parts that catch a broken run", () => {
     expect(formatSceneOverview(broken)).toMatch(/TypeError/);
     expect(formatSceneOverview(broken)).toMatch(/4\.2 s/);
   });
+
+  it("prints what the reveal awaited and the estimated download at the stated link speed", () => {
+    const overview = summariseScene({
+      ...OBSERVATION,
+      startup: {
+        offscreenBytes: {
+          awaitedBytes: 50_000_000,
+          fix: "Stream these files with WorldCells.",
+          offscreenBytes: 45_000_000,
+          top: [{ bytes: 45_000_000, path: "forest.glb", reason: "outside-view" }],
+          unattributedBytes: 0,
+          unsizedFiles: 0,
+          visibleBytes: 5_000_000,
+          warn: true,
+        },
+        phase: "ready",
+        progress: 1,
+      },
+    });
+    const text = formatSceneOverview(overview);
+    // 50 MB = 400 Mbit, which is 20.0 s at 20 Mbit/s.
+    expect(text).toMatch(/awaited 50\.0 MB · off-screen 45\.0 MB · est\. reveal download 20\.0 s at 20 Mbit\/s/u);
+    expect(text).toMatch(/forest\.glb 45\.0 MB \(outside-view\)/u);
+    expect(text).toMatch(/warning: Stream these files with WorldCells/u);
+    expect(overview.startup?.offscreenBytes?.awaitedBytes).toBe(50_000_000);
+  });
 });

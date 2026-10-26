@@ -1,0 +1,406 @@
+{
+  "name": "boss",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "spawn": {
+      "x": 100,
+      "y": 0.9,
+      "z": -30
+    },
+    "place": [
+      {
+        "entity": "chest.sword",
+        "at": {
+          "x": 98.4,
+          "y": 0,
+          "z": -30
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "take-sword",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lock",
+      "press": ["KeyQ"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "charge-1",
+      "waitForResource": {
+        "id": "state",
+        "path": "wardenState",
+        "equals": "charge"
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "dodge",
+      "press": ["KeyQ", "ArrowRight", "Space"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "strafe",
+      "press": ["KeyQ", "ArrowRight"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stand",
+      "press": ["KeyQ"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "stun-1",
+      "waitForResource": {
+        "id": "state",
+        "path": "wardenStuns",
+        "gte": 1
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "close",
+      "press": ["KeyQ", "ArrowUp"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-1",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "ready",
+      "press": ["KeyQ"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "clank",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "hold",
+      "press": ["KeyQ"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "charged",
+      "waitForResource": {
+        "id": "state",
+        "path": "hitsTaken",
+        "gte": 1
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "raise-2",
+      "press": ["KeyQ", "ShiftLeft"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "stun-2",
+      "waitForResource": {
+        "id": "state",
+        "path": "wardenStuns",
+        "gte": 2
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-2",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "raise-3",
+      "press": ["KeyQ", "ShiftLeft"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "stun-3",
+      "waitForResource": {
+        "id": "state",
+        "path": "wardenStuns",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-3",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "settle",
+      "press": [],
+      "holdTicks": 100,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "take-vessel",
+      "press": ["ArrowUp"],
+      "holdTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "wardenHealth",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "stun-1",
+            "equals": 3
+          },
+          {
+            "label": "cut-1",
+            "equals": 2
+          },
+          {
+            "label": "clank",
+            "equals": 2
+          },
+          {
+            "label": "cut-2",
+            "equals": 1
+          },
+          {
+            "label": "cut-3",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "wardenStuns",
+        "equals": 3,
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": 0
+          },
+          {
+            "label": "stun-1",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "capacity",
+        "equals": 4,
+        "atSteps": [
+          {
+            "label": "stun-3",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "hearts",
+        "equals": 4,
+        "atSteps": [
+          {
+            "label": "charged",
+            "equals": 2
+          },
+          {
+            "label": "stun-3",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cleared",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "shieldBlocks",
+        "equals": 2
+      },
+      {
+        "id": "state",
+        "path": "lockTarget",
+        "equals": "",
+        "atSteps": [
+          {
+            "label": "charged",
+            "equals": "warden"
+          }
+        ],
+        "allowTrivial": "The lock ends empty once the Warden falls; the charged step proves the marker was measured on the Warden."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerShown",
+        "equals": false,
+        "atSteps": [
+          {
+            "label": "charged",
+            "equals": true
+          },
+          {
+            "label": "stun-1",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The per-step values prove the marker shows while a target is locked and is gone once the lock drops."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerLowest",
+        "gte": 0.3,
+        "allowTrivial": "The lowest the marker tip floated over a locked target's bounds top; 0 until a lock, so a run that never locks fails."
+      },
+      {
+        "id": "state",
+        "path": "fightFramedShare",
+        "gte": 0.95,
+        "allowTrivial": "Of every tick a fight is on (a lock, or a hostile within 8 m), the share with Wren and the target both inside the frame with a 5% margin; 0 until a fight starts."
+      },
+      {
+        "id": "state",
+        "path": "fightOutRun",
+        "lte": 10,
+        "allowTrivial": "The longest run of fight ticks without Wren and the target both framed; a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "fightOccluded",
+        "lte": 0,
+        "allowTrivial": "Fight ticks with Wren's screen centre behind the target's on-screen box, or, once a lock has glided in for 15 ticks, Wren hiding over half of the locked target's; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "hintOverlap",
+        "lte": 0,
+        "allowTrivial": "Ticks with Wren's on-screen box under the controls card; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "toastOverlap",
+        "lte": 0,
+        "allowTrivial": "Fight ticks with a toast over Wren's or the target's on-screen box; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "cameraTurnWorst",
+        "lte": 2.5,
+        "allowTrivial": "The most the view turned in one 60 Hz tick, in degrees (2.5 is 150 per second); a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "torsoCovered",
+        "lte": 0.33,
+        "allowTrivial": "Locked on the Warden within 5 m, its chest rune ring facing the lens and 0.4 m or more from Wren: the most of the ring's on-screen box her box covers (a third at most); a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "ringFacingLeast",
+        "gte": 0.33,
+        "allowTrivial": "While the locked Warden is shield-stunned within 5 m, its chest ring facing Wren: the least its on-screen width reached of its face-on width (a third at least, never an edge-on sliver); 0 until measured, so a run with no shield stun fails."
+      },
+      {
+        "id": "state",
+        "path": "torsoContactWorst",
+        "lte": 0.75,
+        "allowTrivial": "The same share at shield contact (ring under 0.4 m from Wren), where no lens clears it: a guard that it grows no worse; a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "openingFramedShare",
+        "gte": 0.95,
+        "allowTrivial": "Of the Warden's opening ticks (awake, nothing locked), the share with Wren and the whole Warden inside the frame, 6% clear of the top; 0 until it wakes, so a run that never wakes it fails."
+      },
+      {
+        "id": "state",
+        "path": "cameraBlocked",
+        "lte": 0,
+        "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "nearWallWorst",
+        "lte": 0.2,
+        "allowTrivial": "The most of the frame that walls in the front half of the way from the lens to Wren covered (a 24-ray grid, every 6th tick), so the camera never films her through a doorway; a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "companionFarthest",
+        "gte": 0.5,
+        "lte": 3,
+        "allowTrivial": "The companion orb's farthest stray from Wren's head over the whole run; it starts measuring before the fight, so the bound holds before and after."
+      }
+    ],
+    "components": [
+      {
+        "entity": "warden",
+        "component": "clanks",
+        "gte": 1,
+        "atSteps": [
+          {
+            "label": "clank",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

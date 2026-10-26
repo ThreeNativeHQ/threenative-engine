@@ -16,6 +16,17 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
   *) exec "$@" ;;
 esac
 
+# Preserve the same explicit host-display opt-in as the playtest runner.
+case "${TN_PLAYTEST_HOST_DISPLAY:-}" in
+  1|[tT][rR][uU][eE])
+    if [ -z "${DISPLAY:-}" ]; then
+      echo "TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: the requested host display requires DISPLAY." >&2
+      exit 2
+    fi
+    exec "$@"
+    ;;
+esac
+
 if ! command -v Xvfb >/dev/null 2>&1; then
   echo "scripts/xvfb.sh: Xvfb is required for headless Linux runs and is not installed." >&2
   echo "scripts/xvfb.sh: install it (Debian/Ubuntu 'xvfb', Arch 'xorg-server-xvfb', Fedora" >&2

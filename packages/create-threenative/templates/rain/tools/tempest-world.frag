@@ -38,15 +38,30 @@ float terrain(vec2 p){
 float sdBox(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
 float capsule(vec3 p,vec3 a,vec3 b,float r){vec3 pa=p-a,ba=b-a;return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.,1.))-r;}
 vec2 choose(vec2 a,vec2 b){return a.x<b.x?a:b;}
-vec2 sceneMap(vec3 p){
- float h=terrain(p.xz);vec2 res=vec2((p.y-(h>1.?h:-3.5))*.58,1.);
- // One bounded procedural tree per spatial cell; crowns fit inside their cells.
- vec2 cell=floor((p.xz+vec2(2.,1.))/10.5);
- float seed=hash12(cell+17.);
- vec2 tc=(cell+.5)*10.5-vec2(2.,1.)+vec2(hash12(cell+3.),hash12(cell+7.))*.9-.45;
- float th=terrain(tc), rel=tc.x-roadCenter(tc.y);
- bool forest=(rel< -9.||tc.y< -175.)&&th>-.2&&th<115.&&seed>.15&&(tc.y< -12.||tc.x< -45.);
- if(forest){
+// One bounded procedural tree per spatial cell; crowns fit inside their cells.
+vec2 treeCell(vec2 p){return floor((p+vec2(2.,1.))/10.5);}
+vec2 treeCentre(vec2 cell){return (cell+.5)*10.5-vec2(2.,1.)+vec2(hash12(cell+3.),hash12(cell+7.))*.9-.45;}
+// The ground under a cell's tree, or 1e4 when the cell grows none. terrain() is the costliest call
+// in the march, so it runs only for a cell the cheap tests admit, and trace() asks once per cell.
+float treeBase(vec2 cell){
+ float seed=hash12(cell+17.);vec2 tc=treeCentre(cell);
+ float rel=tc.x-roadCenter(tc.y),th=1e4;
+ if((rel< -9.||tc.y< -175.)&&seed>.15&&(tc.y< -12.||tc.x< -45.)){float g=terrain(tc);if(g>-.2&&g<115.)th=g;}
+ return th;
+}
+// The march reads a hill only where it rises above 1 m, else the -3.5 floor. Each hill's weight times
+// its largest height (the noises stay below 1) bounds it, so a point no hill can lift past 1 m skips
+// terrain()'s five noises and gets the same floor it would have.
+float hillHeight(vec2 p){
+ vec2 di=(p-vec2(94.,-205.))/vec2(39.,48.);
+ float h=-3.5;
+ if(smoothstep(13.,155.,-p.x)*183.>1.||smoothstep(280.,670.,-p.y)*223.>1.||smoothstep(190.,430.,p.x)*125.>1.||exp(-dot(di,di))*28.>1.){float g=terrain(p);if(g>1.)h=g;}
+ return h;
+}
+vec2 sceneAt(vec3 p,float th){
+ vec2 res=vec2((p.y-hillHeight(p.xz))*.58,1.);
+ if(th<1e3){
+  vec2 cell=treeCell(p.xz);float seed=hash12(cell+17.);vec2 tc=treeCentre(cell);
   vec3 q=p-vec3(tc.x,th,tc.y);float ht=6.+seed*13.;
   float cy=clamp(q.y/ht,0.,1.);float angle=atan(q.z,q.x);
   float tier=.77+.23*sin(q.y*3.5+seed*13.);
@@ -83,11 +98,16 @@ vec2 sceneMap(vec3 p){
  res=choose(res,vec2(capsule(p,vec3(-19.,3.9,-74.),vec3(-19.,13.,-74.),.045),4.));
  return res;
 }
+vec2 sceneMap(vec3 p){return sceneAt(p,treeBase(treeCell(p.xz)));}
 vec2 trace(vec3 ro,vec3 rd,float limit){
  float t=.25,mat=-1.;
+ vec2 lastCell=vec2(1e9);float th=1e4;
  for(int i=0;i<148;i++){
   if(t>limit||t>1850.)break;
-  vec3 p=ro+rd*t;vec2 d=sceneMap(p);
+  vec3 p=ro+rd*t;
+  vec2 cell=treeCell(p.xz);
+  if(cell.x!=lastCell.x||cell.y!=lastCell.y){th=treeBase(cell);lastCell=cell;}
+  vec2 d=sceneAt(p,th);
   float eps=max(.007,t*.00048);
   if(d.x<eps){mat=d.y;break;}
   float stepD=max(.05,d.x*.87);
@@ -96,7 +116,9 @@ vec2 trace(vec3 ro,vec3 rd,float limit){
  }
  return vec2(t,mat);
 }
-vec3 getNormal(vec3 p,float t){float e=max(.008,t*.00032);vec2 k=vec2(1.,-1.)*.5773;return normalize(k.xyy*sceneMap(p+k.xyy*e).x+k.yyx*sceneMap(p+k.yyx*e).x+k.yxy*sceneMap(p+k.yxy*e).x+k.xxx*sceneMap(p+k.xxx*e).x);}
+// The scene at a normal tap: its cell's tree base is the hit's own unless the tap crossed a cell edge.
+float tapScene(vec3 q,vec2 hitCell,float hitBase){vec2 c=treeCell(q.xz);float th=hitBase;if(c.x!=hitCell.x||c.y!=hitCell.y)th=treeBase(c);return sceneAt(q,th).x;}
+vec3 getNormal(vec3 p,float t){float e=max(.008,t*.00032);vec2 k=vec2(1.,-1.)*.5773;vec2 hc=treeCell(p.xz);float hb=treeBase(hc);return normalize(k.xyy*tapScene(p+k.xyy*e,hc,hb)+k.yyx*tapScene(p+k.yyx*e,hc,hb)+k.yxy*tapScene(p+k.yxy*e,hc,hb)+k.xxx*tapScene(p+k.xxx*e,hc,hb));}
 vec3 baseColor(vec3 p,float mat,vec3 n){
  float grit=noise2(p.xz*4.3+p.y)*.2+noise2(p.xz*31.)*.09;
  // One value, one return. The transpiler turns a GLSL early return into a JavaScript return that
@@ -141,9 +163,13 @@ vec3 reflected(vec3 p,vec3 rd,vec3 sky){
  vec3 res=sky;
  if(uReflect!=0){
   float t=.5;
+  vec2 lastCell=vec2(1e9);float th=1e4;
   for(int i=0;i<36;i++){
    if(t>280.)break;
-   vec3 q=p+rd*t;vec2 d=sceneMap(q);
+   vec3 q=p+rd*t;
+   vec2 cell=treeCell(q.xz);
+   if(cell.x!=lastCell.x||cell.y!=lastCell.y){th=treeBase(cell);lastCell=cell;}
+   vec2 d=sceneAt(q,th);
    if(d.x<max(.03,t*.0016)){
     if(d.y>5.5&&d.y<6.5)res=uLampGlow*.75;
     else res=mix(baseColor(q,d.y,vec3(0,1,0))*.7,hazeColor(rd),1.-exp(-t*(.0015+uFog*.004)));

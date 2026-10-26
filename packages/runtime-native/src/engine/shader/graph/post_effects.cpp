@@ -127,7 +127,7 @@ fn rayZ(s: f32, start: f32, end: f32, perspective: bool) -> f32 {
         end=position+direction*((-u.cameraNear-position.z)/direction.z);
     }
     let span = (screenPosition(end)-coord)*u.resolution;
-    let steps = max(1,i32(trunc(max(abs(span.x),abs(span.y))*clamp(u.quality,0.0,1.0))));
+    let steps = max(1,i32(min(trunc(max(abs(span.x),abs(span.y))*clamp(u.quality,0.0,1.0)),u.maxSteps)));
     let ray = end-position;
     let rayLength = length(ray);
     if (rayLength==0.0) { return vec4<f32>(0.0); }
@@ -287,10 +287,9 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
 // r185 DenoiseNode.setup, including its exact noise channel expression and rotation matrix.
 const char* kDenoise = R"WGSL(
 fn luma(color: vec3<f32>) -> f32 { return dot(color,vec3<f32>(0.2126,0.7152,0.0722)); }
-fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coord: vec2<f32>) -> vec4<f32> {
+fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coord: vec2<f32>, neighborNormal: vec3<f32>) -> vec4<f32> {
     let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
     let depth = sampleDepth(coord);
-    let neighborNormal = sampleNormal(coord);
     let neighborPosition = viewPosition(coord,depth);
     let normalSimilarity = pow(max(dot(normal,neighborNormal),0.0),u.normalPhi);
     let lumaSimilarity = max(1.0-abs(luma(texel.rgb)-luma(center))/u.lumaPhi,0.0);
@@ -299,11 +298,19 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     return vec4<f32>(texel.rgb*w,w);
 }
 @fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    // sampleNormal's depth-derived fallback (nine depth loads) cost the filter about half its time by register
+    // pressure alone, taken or not. A pixel whose draw wrote no normal takes its face's from the derivatives of its
+    // position instead (no read), and a tap that read none takes the centre's: the depth term still parts surfaces.
+    // A denoise given no normal input keeps the depth-derived normal on every tap.
     let depth = sampleDepth(coord);
-    let normal = sampleNormal(coord);
-    let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
-    if (depth>=1.0 || dot(normal,normal)==0.0) { return texel; }
     let position = viewPosition(coord,depth);
+    // WGSL's dpdy grows down the framebuffer, view y up: the face faces the camera as -dpdy (three's dFdy).
+    let face = cross(dpdx(position),-dpdy(position));
+    let own = sampleNormalRaw(coord);
+    let n = select(face,own,dot(own,own)>0.0);
+    let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
+    if (depth>=1.0 || dot(n,n)==0.0) { return texel; }
+    let normal = normalize(n);
     let noiseUv = vec2<f32>(coord.x,1.0-coord.y)*vec2<f32>(textureDimensions(t_input))/vec2<f32>(textureDimensions(t_noise));
     let noise = textureSampleLevel(t_noise,smp_noise,noiseUv,0.0);
     let channel = i32((u.index-floor(u.index/4.0)*4.0)*2.0*3.141592653589793);
@@ -313,7 +320,8 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     for (var i=0; i<16; i++) {
         let dir = samples[i];
         let offset = rotation*(dir.xy*(1.0+dir.z*(u.radius-1.0)))/vec2<f32>(textureDimensions(t_input));
-        let result = denoiseSample(texel.rgb,normal,position,coord+offset);
+        let tap = sampleNormalRaw(coord+offset);
+        let result = denoiseSample(texel.rgb,normal,position,coord+offset,select(normal,normalize(tap),dot(tap,tap)>0.0));
         denoised += result.xyz; totalWeight += result.w;
     }
     if (totalWeight>0.0) { denoised /= totalWeight; }
@@ -488,7 +496,10 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
         code += effect.normal ? "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { let n = "
                                 "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; "
                                 "if (dot(n,n)==0.0) { return normalFromDepth(coord); } return normalize(n); }\n"
-                              : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n";
+                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return "
+                                "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; }\n"
+                              : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n"
+                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n";
     }
     if (effect.kind == "DenoiseNode") {
         const auto& samples = effect.parameters.at("sampleVectors");
@@ -900,7 +911,7 @@ std::shared_ptr<PostEffect> ssrEffect(Node color, Node depth, Node normal, Node 
     effect->roughness = roughness != nullptr;
     effect->inputs = {color, depth, normal, metalness ? metalness : float_(0), roughness ? roughness : float_(0)};
     effect->parameters = {{"maxDistance", {1}}, {"thickness", {0.1f}}, {"opacity", {1}},
-        {"quality", {0.5f}}, {"blurQuality", {2}}, {"reflectNonMetals", {0}}, {"binaryRefine", {0}},
+        {"quality", {0.5f}}, {"maxSteps", {1e6f}}, {"blurQuality", {2}}, {"reflectNonMetals", {0}}, {"binaryRefine", {0}},
         {"intensity", {1}}, {"maxLuminance", {10}}, {"cameraNear", {0.1f}},
         {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
         {"_cameraWorldMatrix", identity16()}};

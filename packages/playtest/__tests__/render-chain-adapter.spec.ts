@@ -579,8 +579,9 @@ describe("renderChain perAdapter GPU families", () => {
   const LOOK_MEDIUM_STAGES = ["ambientOcclusion", "traa", "bloom", "vignette"];
   const LOOK_LOW_STAGES = ["bloom", "vignette", "antialias"];
   // The starter's native render-chain scenario runs the three.js host (CI pins engine "threejs"): no traa, spatial antialias.
-  const NATIVE_CHAIN_HIGH_STAGES = ["ambientOcclusion", "motionBlur", "bloom", "vignette", "antialias"];
-  const NATIVE_CHAIN_MEDIUM_STAGES = ["ambientOcclusion", "bloom", "vignette", "antialias"];
+  // High and medium run the temporal pass (traa, Unreal's TAA default); only low keeps the SMAA antialias stage.
+  const NATIVE_CHAIN_HIGH_STAGES = ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"];
+  const NATIVE_CHAIN_MEDIUM_STAGES = ["ambientOcclusion", "traa", "bloom", "vignette"];
   const lookChain = (tier: "high" | "low" | "medium"): IPlaytestRenderChainObservation => {
     const stages = { high: LOOK_HIGH_STAGES, low: LOOK_LOW_STAGES, medium: LOOK_MEDIUM_STAGES }[tier];
     return {

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "threenative-assets": {
+      "type": "local",
+      "command": [
+        "node",
+        "./node_modules/@threenative/core/mcp/assets.mjs"
+      ],
+      "enabled": true,
+      "environment": {
+        "ASSET_DOWNLOAD_DIR": "./public/assets",
+        "AUDIO_DOWNLOAD_DIR": "./public/audio"
+      }
+    },
+    "threenative-sculpt": {
+      "type": "local",
+      "command": [
+        "node",
+        "./node_modules/@threenative/core/mcp/sculpt.mjs"
+      ],
+      "enabled": true
+    },
+    "threenative-engine": {
+      "type": "local",
+      "command": [
+        "node",
+        "./node_modules/@threenative/core/mcp/engine.mjs"
+      ],
+      "enabled": true
+    },
+    "threenative-blender": {
+      "type": "local",
+      "command": [
+        "node",
+        "./node_modules/@threenative/core/mcp/blender.mjs"
+      ],
+      "enabled": true
+    }
+  }
+}

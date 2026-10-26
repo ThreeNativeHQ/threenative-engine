@@ -17,9 +17,9 @@ import { pass } from "three/tsl";
 import type { WebGPURenderer } from "three/webgpu";
 import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
-import { applyExposure } from "../../../template-assets/autoExposure.js";
+import { applyExposure } from "../../../../core/src/look/auto-exposure.js";
+import { WorldEnvironment } from "../../../../core/src/look/world-environment.js";
 import { exposureSettings } from "../../../template-assets/exposure.js";
-import { WorldEnvironment } from "../../../template-assets/worldEnvironment.js";
 import { createFixedExposureRooms } from "./fixedRooms.js";
 import { ObservedExposureNode } from "./observedExposure.js";
 

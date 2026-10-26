@@ -7,7 +7,13 @@ import { defineStorage, defineStorageTextures } from "./storage.js";
 import { type INodeFrame, NodeUpdateType, defineTempNode } from "./temp-node.js";
 import { defineTslExtras } from "./tsl-extras.js";
 import { defineStruct } from "./tsl-struct.js";
-import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
+import {
+  type ConstClasses,
+  booleanUniforms,
+  liveUniforms,
+  uniformLanes,
+  withConstValues,
+} from "./tsl-uniforms.js";
 import { defineWgslFn } from "./wgsl-fn.js";
 /**
  * TSL on the Wasm engine (PRD-540): three's `three/tsl` authoring functions and node methods as JS
@@ -772,22 +778,9 @@ export function defineTsl(
     exports.uniform as (value: unknown, type?: unknown) => ITslNode,
     (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
   );
-  exports.uniform = (value: unknown, type?: unknown) => {
-    if (typeof value !== "boolean") return live.uniform(value, type);
-    if (type !== undefined && type !== "bool")
-      throw new TypeError("TN_TSL_UNIFORM_VALUE: a boolean uniform requires bool type");
-    // The ABI stores numeric lanes; compare the live float to produce a shader bool.
-    const scalar = live.uniform(Number(value)) as ITslNode & { value: number };
-    const boolean = wrap(call("notEqual", scalar[TSL_NODE], [0]));
-    return Object.defineProperty(boolean, "value", {
-      get: () => Boolean(scalar.value),
-      set: (next: unknown) => {
-        if (typeof next !== "boolean")
-          throw new TypeError("TN_TSL_UNIFORM_VALUE: expected a boolean");
-        scalar.value = Number(next);
-      },
-    });
-  };
+  exports.uniform = booleanUniforms(live.uniform, (scalar) =>
+    wrap(call("notEqual", scalar[TSL_NODE], [0])),
+  );
   exports.uniformArray = live.uniformArray;
   exports.reference = live.reference;
   if (classes !== undefined) withConstValues(exports, classes);

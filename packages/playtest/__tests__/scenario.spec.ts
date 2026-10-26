@@ -131,10 +131,10 @@ test("scenario parser accepts a bounded waitForResource step", async () => {
 test.each([
   ["missing timeout", { waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
   ["zero timeout", { timeoutMs: 0, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
-  ["timeout above maximum", { timeoutMs: 120_001, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
+  ["timeout above maximum", { timeoutMs: 300_001, waitForResource: { equals: true, id: "state", path: "networkConnected" } }],
 ])("scenario parser rejects a waitForResource step with %s", async (_label, step) => {
   await expect(loadScenarioWithSteps([step])).rejects.toMatchObject({
-    diagnostic: { message: expect.stringMatching(/timeoutMs.*positive integer.*120000|timeoutMs.*120000/u) },
+    diagnostic: { message: expect.stringMatching(/timeoutMs.*positive integer.*300000|timeoutMs.*300000/u) },
   });
 });
 
@@ -601,7 +601,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   occluded: [{ entity: "listener", target: "emitter" }],
   overlayNodes: [{ equals: "true", overlayId: "game-ui", selector: "[data-testid=fps-crosshair]" }],
   parity: { minFpsRatio: 0.85, reference: { fps: 100, serial: "fixture-phone", thermallyConfounded: false }, referenceReport: "native.json", referenceSide: "native" },
-  performance: { maxDrawCalls: 10, maxFrameMsP95: 33, maxTriangles: 10_000 },
+  performance: { maxDrawCalls: 10, maxFrameMsP95: 16, maxTriangles: 10_000 },
   reachability: { artifact: "artifacts/envelope.json", entities: ["platform.a", "platform.b"] },
   resources: [{ changed: true, gte: 1, id: "GameState", path: "coins" }],
   renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },
@@ -611,6 +611,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   },
   scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
   sceneNodes: [{ select: { nameContains: "crate" }, visible: true }],
+  footSlip: [{ atStep: "loading-end", feet: ["footL", "footR"], maxSlip: 0.35 }],
   causedBy: [
     {
       cause: { contact: { entity: "fox", kind: "trigger", with: "coin" } },
@@ -666,6 +667,7 @@ const FAMILY_PASS_IDS = [
   "scene.cameraClearsScene",
   "sceneNodes[0].count",
   "sceneNodes[0].visible",
+  "footSlip[0].slip",
   "causedBy[0].neverBefore",
   "causedBy[0].withinTicks",
   "startup.readyMs",
@@ -713,7 +715,7 @@ function familyReportObservations(fulfilled: boolean) {
   return {
     tone: [{ code: "TN_TONE", label: "after.png", mean: 100, p1: 0, p50: 100, p99: 200, clipFraction: 0, blackFraction: 0 }],
     components: { player: { health: { after: 2, before: 3 } } },
-    console: [],
+    console: [{ level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` }],
     deviceMetrics: {
       available: true,
       errors: [],
@@ -747,7 +749,7 @@ function familyReportObservations(fulfilled: boolean) {
     hud: { "score-label": { after: { text: "Score: 10" }, before: { text: "—" } } },
     network: [],
     overlayNodes: { "game-ui:[data-testid=fps-crosshair]": { after: { text: "true", visible: true } } },
-    performanceSeries: [{ drawCalls: 5, frameMs: 10, triangles: 100 }],
+    performanceSeries: [{ drawCalls: 5, frameMs: 10, phases: { render: 1, update: 0.1 }, triangles: 100 }],
     physicsDebugBefore: physicsSample([
       { category: "sleep", entity: "crate.1", value: 0 },
       { category: "sleep", entity: "crate.2", value: 0 },
@@ -823,6 +825,20 @@ function familyReportObservations(fulfilled: boolean) {
       incompleteReasons: [],
     },
     resources: { GameState: { after: { coins: 2 }, before: { coins: 0 } } },
+    // A stride matched to the ground: each foot holds still for half of a 20-tick cycle.
+    footSlip: [{
+      entity: "player",
+      feet: ["footL", "footR"],
+      label: "loading-end",
+      samples: Array.from({ length: 41 }, (_, tick) => {
+        const foot = (offset: number) => {
+          const phase = (tick + offset) % 20;
+          const planted = Math.floor((tick + offset) / 20) * 2 + 0.3;
+          return phase < 10 ? [0, -0.9, planted] : [0, -0.8, planted + (phase - 9) * 0.2];
+        };
+        return { body: [0, 0, tick * 0.1], feet: [foot(0), foot(10)] };
+      }),
+    }],
     sceneNodes: [
       {
         matched: 1,
@@ -950,6 +966,7 @@ test("should preserve every assertion family's result contract", async () => {
     // family says so once rather than failing each bound against nothing.
     "scene.observed",
     "sceneNodes.observed",
+    "footSlip[0].observed",
     "causedBy.observed",
     "startup.readyMs",
     "diagnostics",
@@ -994,6 +1011,7 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_PIPELINE_CENSUS_UNOBSERVABLE",
     "TN_PLAYTEST_SCENE_UNOBSERVED",
     "TN_PLAYTEST_SCENE_NODES_UNOBSERVED",
+    "TN_PLAYTEST_FOOT_SLIP_UNOBSERVED",
     "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",

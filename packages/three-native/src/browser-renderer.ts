@@ -19,11 +19,14 @@ import { defineToneMappingLibrary } from "./tone-mapping.js";
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
   | "_tnw_web_init"
+  | "_tnw_web_host_abi"
   | "_tnw_web_poll"
   | "_tnw_web_error"
   | "_tnw_web_adapter"
   | "_tnw_web_resize"
   | "_tnw_web_render"
+  | "_tnw_web_compile_async"
+  | "_tnw_web_compile_status"
   | "_tnw_web_renderer_state"
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
@@ -41,11 +44,19 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
   return typeof (module as Partial<WebHostModule>)._tnw_web_init === "function";
 }
 
+/**
+ * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
+ * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
+ */
+export const WEB_HOST_ABI = 3;
+
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
 const READY = 1;
 /** The facade's own redraw, for RenderPipeline (browser-entry.ts). */
 export const RENDER_AGAIN = Symbol("tn.renderAgain");
+/** The last RenderPipeline's post graph install, which the warm-up entry points run first (browser-entry.ts). */
+export const PIPELINE_POST = Symbol("tn.pipelinePost");
 const DRAW_TARGET = Symbol("tn.drawTarget");
 const FAILED = 2;
 /**
@@ -65,6 +76,19 @@ interface IColorLike {
   readonly r: number;
   readonly g: number;
   readonly b: number;
+}
+
+/** Resolves once compilation `id` (0: it never started) has built every pipeline; rejects naming the refusal. */
+async function compiled(module: WebEngineModule, id: number): Promise<void> {
+  const refused = (): Error => new Error(module.UTF8ToString(module._tnw_web_error()));
+  if (id === 0) throw refused();
+  for (;;) {
+    const status = module._tnw_web_compile_status(id);
+    if (status === 1) return;
+    if (status < 0) throw refused();
+    // A macrotask: the browser delivers the pipelines' completions between tasks.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 function unsupported(name: string): never {
@@ -140,6 +164,10 @@ export function defineWebRenderer(
         graphKeys: 0,
         programs: 0,
         frameGateSkips: 0,
+        // True while prepareEnvironmentAsync draws the held scene under the loading cover. The world
+        // is still unlit, so these pixels are not the view's first frame: core's eye adaptation holds
+        // its history rather than adopting this bake's black target.
+        environmentBake: false,
         // The temporal pass, read from the engine each frame. `active` is false until a traa() effect is in the post
         // graph, so a graph that never reached the engine shows here as a pass that never ran.
         temporal: {
@@ -223,8 +251,13 @@ export function defineWebRenderer(
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
+    [PIPELINE_POST]?: () => void;
     /** The host is Failed for good (the GPU process destroyed the device, an uncaptured error): see #drawStatus. */
     #lost = false;
+    /** A draw got through in this task, so later draws land on its surface texture: see render(). */
+    #frameOpen = false;
+    /** The draw in flight is renderOverlay's. */
+    #overlay = false;
     #state: string | undefined;
     #gpuSamples = 0;
     #holdsSlot = true;
@@ -265,12 +298,21 @@ export function defineWebRenderer(
     init(): Promise<this> {
       this.#initialized ??= (async () => {
         if (started === undefined) {
+          // A module of another ABI reads every later call's arguments as something else: the
+          // overlay flag as the frame number drew the world without post (39295d1f3).
+          const engine = (module as Partial<WebHostModule>)._tnw_web_host_abi?.();
+          if (engine !== WEB_HOST_ABI)
+            throw new Error(
+              `TN_WASM_ABI_MISMATCH: this facade speaks web host ABI ${WEB_HOST_ABI}, the engine ${engine ?? "none (older than ABI 2)"}: install create-threenative and @threenative/runtime-native from one build`,
+            );
           started = this.domElement;
           module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
           handles = module._malloc(36) >>> 0;
           const selector = string(CANVAS_TARGET);
           try {
-            check(module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight()));
+            check(
+              module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight(), WEB_HOST_ABI),
+            );
           } finally {
             module._free(selector);
           }
@@ -362,6 +404,20 @@ export function defineWebRenderer(
       this.#clear[3] = alpha;
     }
 
+    /**
+     * core's canvas-layer overlay (a loading screen, a canvas HUD): drawn over the frame already on the canvas, with
+     * no post and no temporal step. Through render() it replaced the world frame and moved the temporal history and
+     * the metered exposure, so the world came back ghosted and blurred after the loading screen.
+     */
+    renderOverlay(scene: unknown, camera: unknown): void {
+      this.#overlay = true;
+      try {
+        this.render(scene, camera);
+      } finally {
+        this.#overlay = false;
+      }
+    }
+
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
@@ -369,11 +425,24 @@ export function defineWebRenderer(
       // Chromium queues a submitted frame without bound. When rAF outruns the GPU (an unthrottled
       // loop, a heavy scene) the page blocks until the GPU drains and the GPU process is killed.
       // The host says 1 while two drawn frames are still on the GPU: draw nothing this call.
-      if (module._tnw_web_frame(11) === 1) {
+      // The gate holds back a frame, not a draw: a draw after one that got through in the same task
+      // (the overlay over the world, a loading cover over a covered bake) lands on the surface
+      // texture already taken, so refusing it saves no frame and presents the world without it.
+      // Measured on Lantern Vale: every cover over a drawn frame was refused, so the loading screen
+      // flickered black for the whole environment bake and then showed the unfinished world.
+      if (!this.#frameOpen && module._tnw_web_frame(11) === 1) {
         // Counted, never hidden: the loop's render phase for this frame is near zero, and a meter that
         // averages it with drawn frames reads cheaper than the work that was done (core's `renderSkips`).
         this.info.engine.frameGateSkips += 1;
         return;
+      }
+      if (!this.#frameOpen) {
+        this.#frameOpen = true;
+        // Every draw of a frame is synchronous in one task (the frame loop's callback, a warm-up timer
+        // task), so the frame closes when the task's synchronous work is done.
+        queueMicrotask(() => {
+          this.#frameOpen = false;
+        });
       }
       syncVirtualShadowLods();
       beforeRender({ camera, scene, renderer: this, frameId: this.info.frame });
@@ -386,7 +455,15 @@ export function defineWebRenderer(
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       const renderFrame = this.info.frame;
-      this.#drawStatus(module._tnw_web_render(handles, handles + 12, ...this.#clear, renderFrame));
+      this.#drawStatus(
+        module._tnw_web_render(
+          handles,
+          handles + 12,
+          ...this.#clear,
+          this.#overlay ? 1 : 0,
+          renderFrame,
+        ),
+      );
       this.info.frame += 1;
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
@@ -514,8 +591,28 @@ export function defineWebRenderer(
       return 16;
     }
 
-    compileAsync(): Promise<void> {
-      return Promise.resolve();
+    /**
+     * three's compileAsync: the engine builds the pipelines the first draw of `scene` takes through
+     * createRenderPipelineAsync (tnw_web_compile_async), and this resolves once every one is built. A no-op
+     * here left them to that draw, which compiled each one synchronously: all 205 of Lantern Vale's, behind
+     * its loading screen. A refusal rejects; the first draw then compiles instead.
+     */
+    async compileAsync(scene: unknown, camera: unknown, targetScene?: unknown): Promise<void> {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: compileAsync() before init() finished.");
+      if (this.#lost) return;
+      // The game's first draw runs through its RenderPipeline: compile with that graph's settings.
+      this[PIPELINE_POST]?.();
+      this.#applyState();
+      writeHandle(0, scene, "scene");
+      writeHandle(12, camera, "camera");
+      if (targetScene != null) writeHandle(24, targetScene, "target scene");
+      const id = module._tnw_web_compile_async(
+        handles,
+        handles + 12,
+        targetScene == null ? 0 : handles + 24,
+      );
+      await compiled(module, id);
     }
 
     /**
@@ -524,21 +621,55 @@ export function defineWebRenderer(
      * (behind the loading cover) until a render is no longer skipped for it. True when it drew;
      * false at `deadlineMs` (a `performance.now()` time), so a bake that never finishes cannot
      * hold the caller or keep drawing after it gave up.
+     *
+     * Each draw runs in a timer task, not in the animation frame, so the browser presents it by
+     * itself: an environment still baking presents black. `afterDraw` runs straight after every
+     * draw, in the same task, so the caller can paint its loading cover over that frame; without
+     * it the cover flickers against black for as long as the bake lasts.
      */
     async prepareEnvironmentAsync(
       scene: unknown,
       camera: unknown,
       deadlineMs = Number.POSITIVE_INFINITY,
+      afterDraw?: () => void,
     ): Promise<boolean> {
-      while (performance.now() < deadlineMs) {
-        const gated = this.info.engine.frameGateSkips;
-        this.render(scene, camera);
-        if (this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0)
-          return true;
-        // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      // Lantern Vale's bake drew the main pass at 4x MSAA before its TRAA graph was installed: 39
+      // pipelines the game never drew, compiled synchronously behind the cover.
+      this[PIPELINE_POST]?.();
+      // The bake's last draw is the scene's first, so build its pipelines off the queue first: on
+      // Lantern Vale that draw compiled 84 synchronously and held the GPU queue for over a second
+      // (ready 6.3 s -> 4.5 s). A refusal is the draw's to report, where it compiles that pipeline again.
+      // It waits at most half the time left, so a slow compile still leaves the bake its draws.
+      const compiling = this.compileAsync(scene, camera).catch(() => undefined);
+      const left = (deadlineMs - performance.now()) / 2;
+      if (Number.isFinite(left)) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          compiling,
+          new Promise((resolve) => {
+            timer = setTimeout(resolve, Math.max(0, left));
+          }),
+        ]);
+        clearTimeout(timer);
+      } else await compiling;
+      this.info.engine.environmentBake = true;
+      try {
+        while (performance.now() < deadlineMs) {
+          const gated = this.info.engine.frameGateSkips;
+          this.render(scene, camera);
+          // Read before `afterDraw`: the cover is a draw too, and the engine's "skipped for an unbaked
+          // environment" flag describes the last draw it made.
+          const baked =
+            this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
+          afterDraw?.();
+          if (baked) return true;
+          // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        return false;
+      } finally {
+        this.info.engine.environmentBake = false;
       }
-      return false;
     }
 
     async resolveTimestampsAsync(type = "render"): Promise<number | undefined> {

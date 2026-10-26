@@ -4,6 +4,7 @@ import * as ts from "typescript";
 import { expect, test, vi } from "vitest";
 
 import {
+  measurementBrowserArgs,
   PERFORMANCE_BROWSER_ARGS,
   reconcileBrowserPointers,
   WEBGPU_BROWSER_ARGS,
@@ -52,6 +53,16 @@ test("performance probes can bypass the virtual display compositor cadence", () 
     "--disable-frame-rate-limit",
     "--disable-gpu-vsync",
   ]);
+});
+
+test("a frame-time assertion unthrottles only the virtual display, so a real display keeps its cadence", () => {
+  expect(measurementBrowserArgs(true, false, "virtual")).toEqual(PERFORMANCE_BROWSER_ARGS);
+  // Unthrottled on a real display, a game faster than 60 fps reads the swapchain's back-pressure
+  // (about one 17 ms wait every few rAF callbacks) as an interval p95 over 16.7 ms.
+  expect(measurementBrowserArgs(true, false, "real")).toEqual([]);
+  // The completion window measures unthrottled completion on the session display by design.
+  expect(measurementBrowserArgs(false, true, "real")).toEqual(PERFORMANCE_BROWSER_ARGS);
+  expect(measurementBrowserArgs(false, false, "virtual")).toEqual([]);
 });
 
 test("browser module loads without Node process and keeps software adapter detection", () => {

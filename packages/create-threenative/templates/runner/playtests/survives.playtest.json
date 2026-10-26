@@ -18,10 +18,10 @@
     },
     "components": [
       {
-        "allowTrivial": "GroundSnap settles the runner on the track before this observation; the finite near-zero clearance is the generated call-site proof.",
+        "allowTrivial": "GroundSnap keeps the runner's feet out of the track; a jog's flight phase lifts them up to 0.27 m, so the call-site proof is a clearance that never sinks below the track.",
         "component": "groundClearance",
         "entity": "player",
-        "lte": 0.01
+        "gte": -0.01
       }
     ],
     "movement": {

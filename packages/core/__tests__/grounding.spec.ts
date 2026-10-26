@@ -45,6 +45,17 @@ describe("GroundSnap", () => {
     expect(snap.clearance).toBeCloseTo(1, 6);
   });
 
+  it("raises a sunken pose at once even with maxRate", () => {
+    const { root, mesh } = model();
+    root.position.y = -1;
+    const snap = new GroundSnap(root, { maxRate: 0.25, meshes: [mesh] });
+
+    snap.apply(root, 0, 1 / 60);
+
+    expect(snap.clearance).toBeCloseTo(0, 6);
+    expect(root.position.y).toBeCloseTo(-0.5, 6);
+  });
+
   it("converts a world correction through a scaled and rotated parent", () => {
     const parent = new Group();
     parent.position.set(3, -2, 1);

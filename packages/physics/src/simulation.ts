@@ -135,6 +135,8 @@ export interface IPhysicsRayQuery {
   readonly from: IPhysicsVector3;
   readonly to: IPhysicsVector3;
   readonly collisionMask: number;
+  /** Godot `hit_from_inside`; default false: a solid that contains `from` is skipped. */
+  readonly hitFromInside?: boolean;
 }
 
 export interface IPhysicsShapeQuery {
@@ -500,6 +502,8 @@ interface ISimulationBody {
   controllerHandle?: IPhysicsHandle;
   character?: IPhysicsCharacterOptions;
   groundCollider?: number;
+  /** The last step asked to move down and the floor held the character in place. */
+  held?: boolean;
 }
 
 interface IStoredCharacterState {
@@ -621,6 +625,15 @@ const QUERY_SHAPE_KINDS = new Set<PhysicsShapeKind>([
   "heightfield",
 ]);
 
+/** Rapier reports a solid cast that starts inside a collider as toi 0 with a zero normal. */
+function startsInside(hit: {
+  readonly timeOfImpact: number;
+  readonly normal: IPhysicsVector3;
+}): boolean {
+  const { x, y, z } = hit.normal;
+  return hit.timeOfImpact === 0 && x === 0 && y === 0 && z === 0;
+}
+
 function queryObject(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null)
     throw new Error(`IPhysicsSimulation ${label} must be an object.`);
@@ -718,9 +731,12 @@ export function requirePhysicsRayQuery(value: unknown): IPhysicsRayQuery {
   const to = queryVector(query.to, "ray to");
   if (from.x === to.x && from.y === to.y && from.z === to.z)
     throw new Error("IPhysicsSimulation ray must have non-zero length.");
+  if (query.hitFromInside !== undefined && typeof query.hitFromInside !== "boolean")
+    throw new Error("IPhysicsSimulation ray hitFromInside must be a boolean.");
   return {
     collisionMask: requirePhysicsCollisionMask(query.collisionMask),
     from,
+    hitFromInside: query.hitFromInside === true,
     to,
   };
 }
@@ -845,7 +861,9 @@ function characterState(
   let groundNormal: IPhysicsVector3 | undefined;
   // Rapier flags a contact as ground at any positive up component, so a wall that leans back a
   // degree reads as floor. When the only contacts are such walls, the character is not grounded;
-  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone.
+  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone. A
+  // character standing still on a floor while it presses a wall records only the wall: the floor
+  // held its downward step in place, so Rapier's answer stands there too.
   let walkable = false;
   let contacts = 0;
   for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
@@ -863,7 +881,8 @@ function characterState(
       }
     }
   }
-  const grounded = controller.computedGrounded() && (walkable || contacts === 0);
+  const grounded =
+    controller.computedGrounded() && (walkable || contacts === 0 || simulationBody.held === true);
   if (groundCollider !== undefined) simulationBody.groundCollider = groundCollider;
   else if (!grounded) simulationBody.groundCollider = undefined;
   state.grounded = grounded;
@@ -1299,6 +1318,7 @@ export function createWebPhysicsSimulation(
               filterPredicate,
             );
             const movement = controller.computedMovement();
+            entry.held = desired.y < -1e-4 && Math.abs(movement.y) < 1e-4;
             const nextTranslation = kinematicScratch.nextTranslation;
             nextTranslation.x = current.x + movement.x;
             nextTranslation.y = current.y + movement.y;
@@ -1385,24 +1405,40 @@ export function createWebPhysicsSimulation(
         y: dy / distance,
         z: dz / distance,
       });
-      const hit = options.world.castRayAndGetNormal(
-        ray,
-        distance,
-        true,
-        options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
-        undefined,
-        undefined,
-        undefined,
-        queryPredicate(query.collisionMask),
-      );
-      let closestCollider = hit?.collider;
-      let closestTime = hit?.timeOfImpact;
-      let closestNormal = hit?.normal;
+      // Rapier's solid cast reports a ray that starts inside a collider as toi 0 with a zero
+      // normal. Godot's default (`hit_from_inside` false) skips that collider, so skip it here
+      // and cast again; the loop ends after at most one pass per overlapping collider.
+      const skipped = new Set<number>();
+      const accepts = queryPredicate(query.collisionMask);
+      let closestCollider: rapier.Collider | undefined;
+      let closestTime: number | undefined;
+      let closestNormal: { readonly x: number; readonly y: number; readonly z: number } | undefined;
+      for (;;) {
+        const hit = options.world.castRayAndGetNormal(
+          ray,
+          distance,
+          true,
+          options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+          undefined,
+          undefined,
+          undefined,
+          (collider) => !skipped.has(collider.handle) && accepts(collider),
+        );
+        if (hit !== null && !query.hitFromInside && startsInside(hit)) {
+          skipped.add(hit.collider.handle);
+          continue;
+        }
+        closestCollider = hit?.collider;
+        closestTime = hit?.timeOfImpact;
+        closestNormal = hit?.normal;
+        break;
+      }
       for (const dirtyBody of dirtyBodies) {
         if (!queryMatches(query.collisionMask, dirtyBody.collider)) continue;
         const dirtyHit = dirtyBody.collider.castRayAndGetNormal(ray, distance, true);
         if (
           dirtyHit === null ||
+          (!query.hitFromInside && startsInside(dirtyHit)) ||
           (closestTime !== undefined && dirtyHit.timeOfImpact >= closestTime)
         )
           continue;

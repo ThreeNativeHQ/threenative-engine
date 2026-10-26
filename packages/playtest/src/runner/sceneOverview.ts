@@ -382,6 +382,32 @@ function startupLine(overview: ISceneOverview): string | undefined {
     : `  startup      ${parts.join(" · ")}`;
 }
 
+/**
+ * The reference link for the reveal estimate, in megabits per second: a modest home or mobile
+ * connection (2.5 MB/s). It is printed with the figure so a reader can rescale it, and the JSON
+ * carries the raw bytes. It reports a cost and gates nothing.
+ */
+export const REVEAL_ESTIMATE_LINK_MBIT = 20;
+
+function revealLine(overview: ISceneOverview): string | undefined {
+  const offscreen = overview.startup?.offscreenBytes;
+  if (offscreen === undefined) return undefined;
+  const mb = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`;
+  const seconds = (offscreen.awaitedBytes * 8) / (REVEAL_ESTIMATE_LINK_MBIT * 1_000_000);
+  const parts = [
+    `awaited ${mb(offscreen.awaitedBytes)}`,
+    `off-screen ${mb(offscreen.offscreenBytes)}`,
+    `est. reveal download ${seconds.toFixed(1)} s at ${REVEAL_ESTIMATE_LINK_MBIT} Mbit/s`,
+  ];
+  if (offscreen.unsizedFiles > 0) parts.push(`${offscreen.unsizedFiles} file(s) with no manifest size`);
+  const worst = offscreen.top[0];
+  const tail =
+    offscreen.offscreenBytes > 0 && worst !== undefined
+      ? `\n               largest off-screen: ${offscreen.top.map((file) => `${file.path} ${mb(file.bytes)} (${file.reason})`).join(", ")}${offscreen.warn ? `\n               warning: ${offscreen.fix}` : ""}`
+      : "";
+  return `  reveal       ${parts.join(" · ")}${tail}`;
+}
+
 function screenLine(overview: ISceneOverview): string | undefined {
   const { screen } = overview;
   if (screen === undefined) return undefined;
@@ -450,6 +476,7 @@ export function formatSceneOverview(overview: ISceneOverview): string {
   const lines = [
     `scene overview — ${overview.url}`,
     startupLine(overview),
+    revealLine(overview),
     screenLine(overview),
     `  runtime      core ${runtime.core ?? "?"} · rapier ${runtime.rapier ?? "none"} · seed ${
       runtime.seed ?? "none"

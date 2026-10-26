@@ -4,7 +4,7 @@ import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./err
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS, PLAYTEST_PER_ADAPTER_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -28,6 +28,9 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       if (authoredEdge !== undefined) {
         throw invalidScenario(scenarioPath, `'${objectPath}.region.${authoredEdge}' cannot be combined with an element-bound region; the element supplies its bounds.`);
       }
+      if (hasKey(regionRecord, "minSharpness")) {
+        throw invalidScenario(scenarioPath, `'${objectPath}.region.minSharpness' measures the rendered frame; bound a static x/y/width/height region instead of an element.`);
+      }
       region = {
         element,
         ...present("maxDarkPixelRatio", optionalRatio(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
@@ -46,6 +49,7 @@ export function validateVisualAssertion(value: unknown, scenarioPath: string, ob
       }
       region = {
         ...edges,
+        ...present("minSharpness", optionalPositiveNumber(regionRecord, "minSharpness", scenarioPath, `${objectPath}.region`)),
         ...present("maxDarkPixelRatio", optionalRatio(regionRecord, "maxDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
         ...present("maxLuminance", optionalRatio(regionRecord, "maxLuminance", scenarioPath, `${objectPath}.region`)),
         ...present("minDarkPixelRatio", optionalRatio(regionRecord, "minDarkPixelRatio", scenarioPath, `${objectPath}.region`)),
@@ -300,16 +304,23 @@ export function validateDeviceMetricsAssertion(value: unknown, scenarioPath: str
 
 export function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxPassDrawCalls", "maxPassTriangles", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxFrameMsReason", "maxPassDrawCalls", "maxPassTriangles", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
   const assertion = {
     ...present("maxDrawCalls", optionalNonNegativeNumber(record, "maxDrawCalls", scenarioPath, objectPath)),
     ...present("maxFrameMsP95", optionalNonNegativeNumber(record, "maxFrameMsP95", scenarioPath, objectPath)),
+    ...present("maxFrameMsReason", optionalString(record, "maxFrameMsReason", scenarioPath, objectPath)),
     ...present("maxPassDrawCalls", validatePassBudget(record.maxPassDrawCalls, scenarioPath, `${objectPath}.maxPassDrawCalls`)),
     ...present("maxPassTriangles", validatePassBudget(record.maxPassTriangles, scenarioPath, `${objectPath}.maxPassTriangles`)),
     ...present("maxPhaseMsP95", validatePhaseBudget(record.maxPhaseMsP95, scenarioPath, `${objectPath}.maxPhaseMsP95`)),
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
     ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
   };
+  if (assertion.maxFrameMsP95 !== undefined && assertion.maxFrameMsP95 > 16.7 && (assertion.maxFrameMsReason ?? "").trim() === "") {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}.maxFrameMsP95' is ${assertion.maxFrameMsP95} ms, looser than the 16.7 ms (60 fps) budget every tier gets: set 'maxFrameMsReason' to say why, or drop maxFrameMsP95.`,
+    );
+  }
   // A performance assertion with no ceiling reports the numbers it measured and passes; it
   // measures without judging, which is the vacuous shape this package refuses.
   if (Object.keys(assertion).length === 0) {
@@ -516,7 +527,7 @@ export function validateStartupAssertion(
   objectPath: string,
 ): IPlaytestStartupAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  const result: { -readonly [K in keyof IPlaytestStartupAssertion]: number } = {};
+  const result: { -readonly [K in (typeof STARTUP_CEILINGS)[number]]?: number } & { maxOffscreenBytes?: number; steadyCover?: true } = {};
   for (const key of STARTUP_CEILINGS) {
     const ceiling = record[key];
     if (ceiling === undefined) continue;
@@ -525,8 +536,22 @@ export function validateStartupAssertion(
     }
     result[key] = ceiling;
   }
+  const bytes = record.maxOffscreenBytes;
+  if (bytes !== undefined) {
+    // Zero is meaningful here ("everything awaited is in view"), so it is the one ceiling allowed to be 0.
+    if (typeof bytes !== "number" || !Number.isInteger(bytes) || bytes < 0) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.maxOffscreenBytes' must be a non-negative integer number of bytes, received ${describeValue(bytes)}.`);
+    }
+    result.maxOffscreenBytes = bytes;
+  }
+  if (record.steadyCover !== undefined) {
+    if (record.steadyCover !== true) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.steadyCover' must be true, received ${describeValue(record.steadyCover)}; leave it out to skip the check.`);
+    }
+    result.steadyCover = true;
+  }
   if (Object.keys(result).length === 0) {
-    throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${STARTUP_CEILINGS.join(", ")}; an empty startup assertion observes nothing.`);
+    throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${[...STARTUP_CEILINGS, "maxOffscreenBytes", "steadyCover"].join(", ")}; an empty startup assertion observes nothing.`);
   }
   return result;
 }
@@ -908,6 +933,27 @@ export function validateSceneNodesAssertion(
   return result;
 }
 
+export function validateFootSlipAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestFootSlipAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", "entity", "feet", "maxSlideSpeed", "maxSlip", "stepSeconds"], scenarioPath, objectPath);
+  const feet = record.feet;
+  if (!Array.isArray(feet) || feet.length === 0 || feet.some((foot) => typeof foot !== "string" || foot.trim() === "")
+    || new Set(feet).size !== feet.length)
+    throw invalidScenario(scenarioPath, `${objectPath}.feet must be a non-empty array of unique node names; got ${describeValue(feet)}.`);
+  const maxSlip = optionalPositiveNumber(record, "maxSlip", scenarioPath, objectPath);
+  const maxSlideSpeed = optionalPositiveNumber(record, "maxSlideSpeed", scenarioPath, objectPath);
+  if (maxSlip === undefined && maxSlideSpeed === undefined)
+    throw invalidScenario(scenarioPath, `${objectPath}.maxSlip or ${objectPath}.maxSlideSpeed is required; a slip measure with no ceiling bounds nothing.`);
+  return {
+    atStep: requireString(record, "atStep", scenarioPath, objectPath),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    feet: feet as string[],
+    ...present("maxSlideSpeed", maxSlideSpeed),
+    ...present("maxSlip", maxSlip),
+    ...present("stepSeconds", optionalPositiveNumber(record, "stepSeconds", scenarioPath, objectPath)),
+  };
+}
+
 export function validateAnimationAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAnimationAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "clip", "entered", "entity", "finished", "maxFootSlide", "strideSynced"], scenarioPath, objectPath);
@@ -1170,7 +1216,7 @@ export function validateNestedAssertionKeys(
     const fields = {
       entityVisible: ["entity", "minProjectedPixels", "throughoutFrames"],
       frameDiff: ["baselineImage", "maxChangedPixelRatio", "minChangedPixelRatio"],
-      region: ["element", "height", "maxDarkPixelRatio", "maxLuminance", "minDarkPixelRatio", "minNonblankPixelRatio", "width", "x", "y"],
+      region: ["element", "height", "maxDarkPixelRatio", "maxLuminance", "minDarkPixelRatio", "minNonblankPixelRatio", "minSharpness", "width", "x", "y"],
     } as const;
     for (const [field, keys] of Object.entries(fields)) {
       if (isRecord(value[field])) {

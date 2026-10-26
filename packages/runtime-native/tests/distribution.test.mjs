@@ -114,7 +114,8 @@ async function packRuntime(root) {
   const { stdout } = await run('pnpm', ['pack', '--json', '--pack-destination', archives], {
     cwd: new URL('..', import.meta.url),
   });
-  const packed = JSON.parse(stdout);
+  // pnpm prints the prepack script's banner (the web engine stamp check) to stdout before the JSON.
+  const packed = JSON.parse(stdout.slice(stdout.search(/^\{/mu)));
   return { archive: packed.filename, files: packed.files.map(({ path }) => path) };
 }
 

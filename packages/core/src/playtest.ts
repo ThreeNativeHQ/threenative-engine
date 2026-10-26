@@ -161,6 +161,13 @@ export function playtest<
           ...(runtime?.startupTimeline === undefined
             ? {}
             : { timeline: runtime.startupTimeline() }),
+          // What the reveal waited for that the spawn camera does not show, once the reveal ran.
+          ...((offscreen) =>
+            offscreen === undefined
+              ? {}
+              : {
+                  offscreenBytes: { ...offscreen, top: offscreen.top.map((file) => ({ ...file })) },
+                })(runtime?.startupOffscreenBytes?.()),
         }),
       };
       const installation = installThreePlaytestBridge(bridgeOptions);
@@ -227,7 +234,12 @@ export function playtest<
         if (!wallClock) runtime?.freezeClock?.();
       }
       dispose = installation.dispose;
-      attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
+      attached = holdUntilAttached(
+        installation.bridge,
+        options,
+        () => startSceneEntered,
+        runtime?.startSceneLoaded,
+      );
       const cleanup = () => {
         if (!clockDisposed && clockRuntime?._setClockMode !== undefined)
           clockControl._setClockMode("fixed-step");
@@ -378,6 +390,7 @@ function holdUntilAttached(
   bridge: IPlaytestBridgeV1,
   options: IPlaytestOptions,
   startSceneEntered: () => Promise<void> | undefined,
+  startSceneLoaded?: () => Promise<void>,
 ): Promise<void> | undefined {
   if (!shouldHoldUntilAttached(options)) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
@@ -413,6 +426,9 @@ function holdUntilAttached(
     if (applySetup !== undefined) {
       bridge.applySetup = async (request) => {
         try {
+          // Setup names entities the start scene's load() registers; an async load is still
+          // pending when the runner first attaches.
+          await startSceneLoaded?.();
           const confirmation = await applySetup(request);
           release();
           return confirmation;
@@ -599,6 +615,7 @@ function strideObservation(value: unknown): IPlaytestStrideObservation | undefin
   return {
     clipGroundSpeed: report.clipGroundSpeed as number,
     groundSpeed: report.groundSpeed as number,
+    ...(typeof report.inPlace === "boolean" ? { inPlace: report.inPlace } : {}),
     overridden: report.overridden as boolean,
     rate: report.rate as number,
     synced: report.synced as boolean,
@@ -809,12 +826,29 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // Where every asset was actually served from, on every target and not only in a browser
         // console log: a game whose manifest never loaded runs on the uncompiled source directory
         // and looks healthy, and without this nothing observable says so.
+        ["assetCache", assetCacheReport(ctx.assets)],
         ["assets", assetResolutions(ctx.assets)],
         ...(runtime?.frameCounts === undefined
           ? []
           : [["__threenativeFrameCounts", runtime.frameCounts()]]),
       ]);
     },
+  };
+}
+
+/** The cache counters and switches, without the action; observations are data. */
+function assetCacheReport(assets: IAssetLoader): Record<string, JsonValue> {
+  const cache = assets.cache;
+  return {
+    enabled: cache.enabled,
+    persisted: cache.persisted,
+    hits: cache.hits,
+    misses: cache.misses,
+    bytesOnDisk: cache.bytesOnDisk,
+    bytesTotal: cache.bytesTotal,
+    filling: cache.filling,
+    backgroundFill: cache.backgroundFill,
+    ...(cache.reason === undefined ? {} : { reason: cache.reason }),
   };
 }
 

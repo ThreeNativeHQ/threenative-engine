@@ -18,6 +18,14 @@ Measured on Wildwood (`sandbox/prd743-after`, 2026-10-26):
 - A `TN_FRAME_HITCH` of 2.2-2.6 s happens while the detail tier stages. It is behind the curtain today; a coarse-first reveal would move it into play.
 - Runtime fixed cost before any game file, compressed: Wasm engine about 1.36 MB (gzip of 4,182,174 B), core `index.js` about 0.38 MB, Basis transcoder about 0.25 MB. That is about 2.2 MB. The Vite output total is unmeasured: no sandbox `dist/` exists yet.
 
+A CDP waterfall of one first visit per arm at 20 Mbit/s (2026-10-26, both arms routing audio through the manifest) shows where the time goes:
+
+- The dev server sends 31.7 MB of unbundled JS in 80 requests, and the first asset request starts at about 13 s. A production bundle is the first lever, and it applies to every game.
+- 51.5 MB of assets then fill the link until about 34 s on both arms. BEFORE leaves about 1 s of the link idle, so download order alone does not reveal the full forest earlier: BEFORE 39.96 s, AFTER 39.62 s.
+- 5.2 s pass after the last byte: a 2.2 s frame while the staged forest attaches, then a 2.8 s held warm-up of 226 pipelines (`TN_STARTUP_WARMUP_HELD`).
+
+This PRD takes over [PRD-743](../done/PRD-743-a-large-web-game-plays-after-its-first-scene-downloads-and-keeps-its-bytes-on-disk.md) AC-2 (AFTER reveals earlier than BEFORE at identical output). AC-1 below, at most 10 s with a NEUTRAL judge, implies it.
+
 The research pasted on 2026-10-25 proposes 10/20/50 Mbit/s tiers, a first playable of about 12 MB and a coarse-first reveal. This PRD takes 20 Mbit/s and 10 s as the gate and reports 10 Mbit/s only. A 10 s budget at 20 Mbit/s moves at most 25 MB, and the runtime takes about 2.2 MB of it.
 
 What already ships (inspected 2026-10-26):

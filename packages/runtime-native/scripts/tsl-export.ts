@@ -1,3 +1,4 @@
+import { WebGPUCoordinateSystem } from "three";
 import { Fn, convert, expression, int, nodeObject, uv } from "three/tsl";
 import { NodeBuilder } from "three/webgpu";
 import { exportNativePost } from "./tsl-post-export.js";
@@ -53,7 +54,7 @@ export interface ISerializedTslGraph {
 export function exportTslGraph(root: unknown): ISerializedTslGraph {
   const builder = new (NodeBuilder as unknown as new (...args: unknown[]) => NodeBuilder)(
     null,
-    null,
+    { coordinateSystem: WebGPUCoordinateSystem },
     null,
   );
   const ids = new Map<ITslNode, number>();

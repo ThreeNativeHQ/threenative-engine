@@ -4,8 +4,10 @@ import { PerspectiveCamera, Scene } from "three";
 import { vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TEMPLATE_ROOT, templatesShipping } from "../../../test-support/templates.js";
-import type { OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
+import type {
+  OutputRenderer,
+  WorldEnvironment,
+} from "../../../test-support/isolated-world-environment.js";
 
 /**
  * The vignette stage of every `worldEnvironment.ts` a game can start from.
@@ -156,16 +158,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const COPIES = [
-  {
-    name: "template-assets",
-    file: path.resolve("packages/create-threenative/template-assets/worldEnvironment.ts"),
-  },
-  ...templatesShipping("src/render/worldEnvironment.ts").map((template) => ({
-    name: template,
-    file: path.join(TEMPLATE_ROOT, template, "src/render/worldEnvironment.ts"),
-  })),
-];
+const COPIES = [{ name: "core", file: path.resolve("test-support/isolated-world-environment.ts") }];
 const FRAMES = [
   { width: 1280, height: 720 },
   { width: 1024, height: 768 },

@@ -140,18 +140,40 @@ describe("three's math values on the browser back end", () => {
     expect(calls.filter((call) => call === "construct Vector3")).toHaveLength(1);
   });
 
-  it("turns a value a constructor keeps into an engine object in place", () => {
-    const { runtime, heap } = memoryRuntime();
+  it("lends a Box3's own upstream Vector3 member to an engine call", () => {
+    const { runtime, calls } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Box3 = classes.Box3 as new () => { min: IVec };
+    const Object3D = classes.Object3D as new () => { lookAt(v: IVec): void };
+    const box = new Box3();
+    // Box3's default min comes from three's own Vector3 module, not the hand-written class.
+    new Object3D().lookAt(box.min);
+    expect(calls.some((call) => call.startsWith("lookAt"))).toBe(true);
+  });
+
+  it("keeps a JS box's member vectors in JS until the box itself crosses", () => {
+    const { runtime, calls } = memoryRuntime();
     const { classes } = defineBrowserClasses(registry, runtime);
     const Vector3 = classes.Vector3 as new (x?: number, y?: number, z?: number) => IVec;
-    const Box3 = classes.Box3 as new (min: IVec, max: IVec) => object;
+    const Box3 = classes.Box3 as new (
+      min: IVec,
+      max: IVec,
+    ) => {
+      min: IVec;
+      max: IVec;
+      expandByPoint(point: IVec): unknown;
+    };
     const min = new Vector3(1, 2, 3);
-    new Box3(min, new Vector3(4, 5, 6));
-    expect(engineRef(min)).toBeDefined();
-    expect(min).toBeInstanceOf(Vector3);
-    min.x = 10;
-    const at = (runtime.get(engineRef(min) as IEngineRef, "__address") as number) / 8;
-    expect([...heap.subarray(at, at + 3)]).toEqual([10, 2, 3]);
+    const max = new Vector3(4, 5, 6);
+    const box = new Box3(min, max);
+    // three keeps the vectors it is handed; the box crosses to the engine, not its members.
+    expect(box.min).toBe(min);
+    expect(box.max).toBe(max);
+    box.expandByPoint(new Vector3(1, 1, 1));
+    expect(calls).toEqual([]);
+    const geometry = new (classes.BufferGeometry as new () => { boundingBox: object | null })();
+    geometry.boundingBox = box;
+    expect(engineRef(box)).toBeDefined();
   });
 
   it("answers MathUtils without calling the engine", () => {
@@ -267,12 +289,14 @@ describe("three's math values on the browser back end", () => {
       expect([x, y, z, w]).toEqual([expected.x, expected.y, expected.z, expected.w]);
     });
     expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toEqual([]);
-    rotation.set(0, 0, 0, "XYZ"); // a new order: the engine reorders and syncs
-    expect(calls.at(-1)).toBe("invoke set");
-    // An Euler no object owns still crosses, so its own callback (if any) runs in the engine.
+    rotation.set(0, 0, 0, "XYZ"); // a new order: the engine owns the reorder
+    expect(calls.at(-1)).toBe("set order");
+    // A JS Euler crosses nothing: its angles and its callback are JS.
     const free = new (classes.Euler as new () => IRotation)();
+    const before = calls.length;
     free.x = 1;
-    expect(calls.at(-1)).toBe("set x");
+    free.set(0, 0, 0, "ZYX");
+    expect(calls).toHaveLength(before);
   });
 
   it("asks every fresh wrapper immediately, then covers settled wrappers within 64 bounded safe points", () => {
@@ -417,6 +441,38 @@ describe("three's math values on the browser back end", () => {
     expect(calls.slice(before).filter((call) => /^(invoke|get|set) /u.test(call))).toEqual([]);
   });
 
+  it("reads an engine matrix's elements off the heap view, with no copy call (Lantern Vale reads ~700 a frame)", () => {
+    const { runtime, heap } = memoryRuntime();
+    let copies = 0;
+    const { classes } = defineBrowserClasses(registry, {
+      ...runtime,
+      heapF64: () => heap,
+      readDoubles(address, count) {
+        copies++;
+        return runtime.readDoubles?.(address, count) as number[];
+      },
+      get(self, property) {
+        if (property === "matrixWorld") {
+          const matrix = runtime.construct("Matrix4", []);
+          runtime.construct("Object3D", []); // the spacer: a matrix is 16 doubles, an object 8
+          return matrix;
+        }
+        return runtime.get(self, property);
+      },
+    });
+    const matrix = new (classes.Group as new () => { matrixWorld: { elements: number[] } })()
+      .matrixWorld;
+    const [offset = 0] = registry.classes.Matrix4?.fields?.elements ?? [];
+    const values = Array.from({ length: 16 }, (_, i) => i + 0.25);
+    heap.set(values, (64 + offset) / 8);
+    copies = 0;
+    for (let i = 0; i < 100; i++) void matrix.elements;
+    expect(copies).toBe(0);
+    expect([...matrix.elements]).toEqual(values);
+    heap[(64 + offset) / 8 + 12] = 7; // the engine moved it: the next read sees it
+    expect(matrix.elements[12]).toBe(7);
+  });
+
   it("binds the host projection report as one engine call, which core's projection takes (web cut 3)", () => {
     const { runtime } = memoryRuntime();
     const invoked: string[] = [];
@@ -520,5 +576,13 @@ describe("three's math values on the browser back end", () => {
       "setAttribute uv",
       "hasAttribute uv",
     ]);
+  });
+  it("lends three's own Vector3, as a Box3 default member, to an engine call", () => {
+    const { runtime, calls } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Box3 = classes.Box3 as new () => { min: IVec };
+    const Object3D = classes.Object3D as new () => { lookAt(v: IVec): void };
+    new Object3D().lookAt(new Box3().min);
+    expect(calls.some((call) => call.startsWith("lookAt"))).toBe(true);
   });
 });

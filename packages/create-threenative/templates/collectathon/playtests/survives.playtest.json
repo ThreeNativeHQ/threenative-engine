@@ -1,0 +1,123 @@
+{
+  "name": "collectathon-survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stand",
+      "waitTicks": 480,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "startup": {
+      "steadyCover": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "groundY",
+        "gte": -0.3,
+        "lte": 0.3,
+        "allowTrivial": "The capsule's origin is the waist, so the feet sit 0.8 m below it; a ground line near zero after 600 ticks proves the hero stands on the island floor and is not floating a body-length above it."
+      },
+      {
+        "entity": "course",
+        "component": "floating",
+        "equals": 0,
+        "allowTrivial": "A layout check measured once at load: every solid block stands on the ground or on a solid that does, so no landmark hangs in the sky."
+      },
+      {
+        "entity": "course",
+        "component": "crowded",
+        "equals": 0,
+        "allowTrivial": "A layout check measured once at load: no coin, gem or Sunseed sits within 1 m of a tree, rock, bush or hedge."
+      },
+      {
+        "entity": "course",
+        "component": "reliefMetres",
+        "gte": 8,
+        "allowTrivial": "Measured once at load: the land climbs at least 8 m from the shore to the castle plateau, so the island is hills and not a flat drum."
+      },
+      {
+        "entity": "course",
+        "component": "steepShare",
+        "gte": 0.05,
+        "lte": 0.3,
+        "allowTrivial": "Measured once at load: between 5% and 30% of the land is steeper than the hero can walk, so cliffs and rock faces exist but do not wall in the course."
+      },
+      {
+        "entity": "course",
+        "component": "levelShare",
+        "lte": 0.5,
+        "allowTrivial": "Measured once at load: at most half the land is dead level; the rest is the terrain's own relief round the routes."
+      },
+      {
+        "entity": "course",
+        "component": "castleParts",
+        "gte": 6,
+        "allowTrivial": "Measured once at load: the keep on the plateau is built (stone, roofs, door and windows, sprout relief, windmill sails, flag)."
+      },
+      {
+        "entity": "course",
+        "component": "grassTufts",
+        "gte": 5000,
+        "allowTrivial": "Measured once at load: the meadow holds at least 5000 tufts at the running tier, the low tier's share included."
+      },
+      {
+        "entity": "course",
+        "component": "pathPebbles",
+        "gte": 400,
+        "allowTrivial": "Measured once at load: the dirt path is strewn with at least 400 pebbles."
+      },
+      {
+        "entity": "course",
+        "component": "signposts",
+        "equals": 1,
+        "allowTrivial": "Measured once at load: the wooden arrow sign stands beside the path near spawn."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 5
+    },
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": false,
+        "allowTrivial": "Desktop keyboard lanes omit touch controls; movement proves the scene is live."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

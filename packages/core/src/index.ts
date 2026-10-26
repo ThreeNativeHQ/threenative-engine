@@ -16,7 +16,9 @@ export const version = "0.3.6";
  * `player.stride` reports the measurement either way. Name the body a game moves as
  * `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and
  * Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their
- * stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
+ * stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so. A mesh counts
+ * at its lowest geometry point, so a boot's origin may sit anywhere; an in-place clip with no
+ * foot plant reports `inPlace: true` and `clipGroundSpeed: 0`, and stride sync stays off.
  * Evaluation is automatic by default: `updateRate: "auto"` follows measured camera visibility
  * and projected size. `updateRate: 1` evaluates every frame; another positive safe integer names
  * that frame interval. `updateRateReport` reports the effective rate, whether a named override is
@@ -35,6 +37,8 @@ export const version = "0.3.6";
  * @situation inspect the effective animation evaluation rate
  * @constraint name the body a game moves as strideRoot when the animated rig is a child of it
  * @constraint a one-shot clip always plays at its authored rate; the matched rate re-times loops only
+ * @constraint a foot mesh is measured at its lowest geometry point (the sole), never its origin; a skinned mesh is measured through its bones
+ * @constraint `stride.inPlace: true` with `clipGroundSpeed: 0` means no foot plant was found and stride sync is not active; the playtest `stride` observation carries `inPlace`
  * @constraint the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
  * @override strideSync controls whether the matched rate is applied while stride is still measured
  * @override updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
@@ -135,10 +139,17 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
 /**
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
+ * @situation keep downloaded web assets on disk between visits
+ * @situation download the next scene before the player gets there
+ * @situation free the disk cache from a settings menu
+ * @situation prefetch assets into the Cache Storage disk cache of a large web game
  * @situation load assets from a nonstandard base path or a compiled asset manifest
  * @alias different area props
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
+ * @constraint await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world
+ * @constraint web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
+ * @override `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */
@@ -146,7 +157,15 @@ export { createAssetLoader } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
-export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
+export type {
+  IAssetCacheState,
+  IAssetLoader,
+  IAssetLoaderOptions,
+  IAssetPrefetchProgress,
+  IAssetRequestOptions,
+  ITextureOptions,
+} from "./assets.js";
+export type { AssetPriority, IAssetCacheReport } from "./asset-cache.js";
 export type {
   IAudioBusOptions,
   IAudioCompressorOptions,

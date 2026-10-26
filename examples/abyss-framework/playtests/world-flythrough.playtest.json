@@ -73,7 +73,8 @@
   ],
   "assert": {
     "performance": {
-      "maxFrameMsP95": 93
+      "maxFrameMsP95": 93,
+      "maxFrameMsReason": "world flythrough streams terrain tiles; the 93 ms bound predates the 60 fps order and is the recorded ceiling"
     },
     "diagnostics": {
       "noConsoleErrors": true,

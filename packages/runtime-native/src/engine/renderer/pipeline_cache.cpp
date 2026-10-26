@@ -1,5 +1,6 @@
 #include "pipeline_cache.h"
 
+#include <algorithm>
 #include <bit>
 #include <stdexcept>
 #include <optional>
@@ -88,7 +89,7 @@ PipelineCache::~PipelineCache() {
 
 bool PipelineCache::IdKey::operator==(const IdKey& o) const {
     return vertex == o.vertex && fragment == o.fragment && vertexSize == o.vertexSize &&
-           fragmentSize == o.fragmentSize && target.color == o.target.color &&
+           fragmentSize == o.fragmentSize && target.color == o.target.color && target.moreColors == o.target.moreColors &&
            target.depth == o.target.depth && target.sampleCount == o.target.sampleCount &&
            target.cull == o.target.cull && target.blend == o.target.blend &&
            target.depthWrite == o.target.depthWrite && target.colorWrite == o.target.colorWrite && target.layout == o.target.layout &&
@@ -109,6 +110,50 @@ WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* 
 
 uint64_t bindGroupsCreated() { return bindGroupCount; }
 
+WGPUBindGroup RecentBindGroups::get(WGPUDevice device, WGPUBindGroupLayout layout,
+                                    const std::vector<WGPUBindGroupEntry>& entries) {
+    const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
+        return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
+               a.sampler == b.sampler && a.textureView == b.textureView;
+    };
+    for (const Slot& slot : slots_)
+        if (slot.layout == layout && std::equal(entries.begin(), entries.end(), slot.entries.begin(), slot.entries.end(), same))
+            return slot.group;
+    WGPUBindGroupDescriptor desc = {};
+    desc.layout = layout;
+    desc.entryCount = entries.size();
+    desc.entries = entries.data();
+    WGPUBindGroup group = createBindGroup(device, &desc);
+    if (!group) return nullptr;
+    wgpuBindGroupLayoutAddRef(layout);
+    for (const WGPUBindGroupEntry& e : entries) {
+        if (e.buffer) wgpuBufferAddRef(e.buffer);
+        if (e.textureView) wgpuTextureViewAddRef(e.textureView);
+        if (e.sampler) wgpuSamplerAddRef(e.sampler);
+    }
+    if (slots_.size() == capacity_) {
+        release(slots_.front());
+        slots_.erase(slots_.begin());
+    }
+    slots_.push_back({layout, entries, group});
+    return group;
+}
+
+void RecentBindGroups::release(const Slot& slot) {
+    wgpuBindGroupRelease(slot.group);
+    wgpuBindGroupLayoutRelease(slot.layout);
+    for (const WGPUBindGroupEntry& e : slot.entries) {
+        if (e.buffer) wgpuBufferRelease(e.buffer);
+        if (e.textureView) wgpuTextureViewRelease(e.textureView);
+        if (e.sampler) wgpuSamplerRelease(e.sampler);
+    }
+}
+
+void RecentBindGroups::clear() {
+    for (const Slot& slot : slots_) release(slot);
+    slots_.clear();
+}
+
 size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     // 64-bit on every target: size_t is 32 bits on wasm32, where `size << 32` was undefined and gave
     // equal keys different hashes, so every lookup missed and the alias map grew each frame.
@@ -124,6 +169,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(key.target.instanceStepMask);
     mix(uint64_t(key.target.topology) | uint64_t(key.target.stripIndexFormat) << 32);
+    for (const WGPUTextureFormat format : key.target.moreColors) mix(uint64_t(format));
     return size_t(h ^ h >> 32);
 }
 
@@ -145,6 +191,7 @@ std::string PipelineCache::textKey(const shader::StageModule& vertex, const shad
            std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale)) +
            ':' + std::to_string(target.instanceStepMask) + ':' + std::to_string(target.topology) + ':' +
            std::to_string(target.stripIndexFormat);
+    for (const WGPUTextureFormat format : target.moreColors) key += ':' + std::to_string(format);
     return key;
 }
 
@@ -288,8 +335,12 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     depth.format = target.depth;
     depth.depthWriteEnabled = target.depthWrite ? WGPU_OPTIONAL_BOOL_TRUE : WGPU_OPTIONAL_BOOL_FALSE;
     depth.depthCompare = target.depthCompare;
-    depth.depthBias = target.depthBias;
-    depth.depthBiasSlopeScale = target.depthBiasSlopeScale;
+    // WebGPU takes a depth bias on triangles only: a line or point pipeline with one is refused, and
+    // the 4x aux pass biased the shooter's tracer lines that way.
+    const bool triangles = target.topology == WGPUPrimitiveTopology_TriangleList ||
+                           target.topology == WGPUPrimitiveTopology_TriangleStrip;
+    depth.depthBias = triangles ? target.depthBias : 0;
+    depth.depthBiasSlopeScale = triangles ? target.depthBiasSlopeScale : 0;
     if (target.depth != WGPUTextureFormat_Undefined) desc.depthStencil = &depth;
     WGPUColorTargetState color = {};
     color.format = target.color;
@@ -302,13 +353,21 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     blend.color = {WGPUBlendOperation_Add, src, dst};
     blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, dst};
     if (target.blend) color.blend = &blend;
+    std::array<WGPUColorTargetState, 1 + std::tuple_size_v<decltype(target.moreColors)>> colors{color};
+    size_t colorCount = target.color != WGPUTextureFormat_Undefined ? 1 : 0;
+    for (const WGPUTextureFormat format : target.moreColors) {
+        if (!colorCount || format == WGPUTextureFormat_Undefined) break;
+        colors[colorCount] = {};
+        colors[colorCount].format = format;
+        colors[colorCount++].writeMask = color.writeMask;
+    }
     WGPUFragmentState fragmentState = {};
     if (fs) {
         fragmentState.module = fs;
         WGPU_SET_ENTRY_POINT(fragmentState, "main");
         // A depth-only pass keeps a fragment stage only to discard (a masked shadow caster): no target.
-        fragmentState.targetCount = target.color != WGPUTextureFormat_Undefined ? 1 : 0;
-        fragmentState.targets = fragmentState.targetCount ? &color : nullptr;
+        fragmentState.targetCount = colorCount;
+        fragmentState.targets = colorCount ? colors.data() : nullptr;
         desc.fragment = &fragmentState;
     }
     WGPURenderPipeline pipeline = nullptr;

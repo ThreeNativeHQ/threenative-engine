@@ -1747,9 +1747,153 @@ void emissivePass(bool requirePixels) {
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }
 
+// PRD-740: a post graph that reads every post target (normal, metalness and roughness, albedo, emissive) costs one
+// scene pass, which writes all four as MRT, and a steady frame replays that pass from its cached bundle, recording
+// no draw. Each target still holds its own value at the lit plane's centre. An alpha-tested plane writes its targets
+// where its fragment survives the test and leaves them clear where it is cut, as three's MRT and Unreal's base pass do,
+// whether the graph reads every target or the normal alone.
+void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false) {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    renderer.setSampleCount(samples);
+    namespace g = shader::graph;
+    const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
+    // The bloom makes it a pass graph, which is what reads the scene targets (as emissive_target does).
+    renderer.setPostGraph(normalOnly ? g::bloom(g::vec4({lane("normal"), g::float_(0), g::float_(0), g::float_(0)}), 0, 0, 0)
+                                     : g::bloom(g::vec4({lane("normal"), lane("metalness"), lane("albedo"), lane("emissive")}), 0, 0, 0));
+    const auto geometry = plane(4, 4);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};  // plane() carries no normals
+    geometry->normals.resize(12);
+    geometry->normals.write(0, facing, sizeof facing);
+    shader::StandardMaterial material;
+    material.color = {0.25f, 0.5f, 1};
+    material.metalness = 1; material.roughness = 0.5f;
+    material.emissive = {1, 0.5f, 0}; material.emissiveIntensity = 4;
+    material.alphaTest = alphaTest; material.opacity = opacity; material.alphaHash = alphaHash;
+    const bool cut = (alphaTest > 0 && opacity <= alphaTest) || (alphaHash && opacity == 0);
+    DrawItem item;
+    item.key = item.id = 1;
+    item.kind = MaterialKind::Standard;
+    item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
+    item.material = &material;
+    item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    for (int frame = 0; frame < 3; ++frame)
+        renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
+    std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
+                renderer.lastFrame().auxRecorded);
+    CHECK(renderer.lastFrame().auxPasses == 1);
+    CHECK(renderer.lastFrame().auxRecorded == 0);
+    const auto centre = [&](GpuStatus (Renderer::*read)(ReadbackCallback)) {
+        std::vector<uint8_t> pixels;
+        bool done = false;
+        CHECK((renderer.*read)([&](GpuStatus status, std::vector<uint8_t> bytes) {
+            CHECK(status == GpuStatus::Ok);
+            pixels = std::move(bytes); done = true;
+        }) == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        std::array<float, 4> value{-1, -1, -1, -1};
+        CHECK(done && pixels.size() == 16 * 16 * 8);
+        if (pixels.size() != 16 * 16 * 8) return value;
+        for (int l = 0; l < 4; ++l) {
+            const size_t offset = (8 * 16 + 8) * 8 + l * 2;
+            const uint16_t half = uint16_t(pixels[offset]) | uint16_t(pixels[offset + 1] << 8);
+            const int exponent = (half >> 10) & 31, mantissa = half & 1023;
+            value[l] = (half >> 15 ? -1.f : 1.f) * (exponent ? std::ldexp(1.f + mantissa / 1024.f, exponent - 15) : std::ldexp(mantissa / 1024.f, -14));
+        }
+        return value;
+    };
+    const auto near = [](std::array<float, 4> got, std::array<float, 4> want) {
+        bool same = true;
+        for (int l = 0; l < 4; ++l) same = same && std::abs(got[l] - want[l]) < 0.01f;
+        if (!same) std::printf("  got %g %g %g %g, want %g %g %g %g\n", got[0], got[1], got[2], got[3], want[0], want[1], want[2], want[3]);
+        return same;
+    };
+    // The plane faces the camera; its alpha packs metalness level 7 and roughness 0.5: 2 * 7 + 0.25 + 0.25.
+    CHECK(near(centre(&Renderer::readNormalPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0, 0, 1, 14.5f}));
+    if (normalOnly) return;
+    CHECK(near(centre(&Renderer::readAlbedoPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0.25f, 0.5f, 1, 1}));
+    CHECK(near(centre(&Renderer::readEmissivePixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{4, 2, 0, 1}));
+}
+
+// A denoised pixel whose draw wrote no normal (an unlit patch) takes its face normal from the derivatives of its
+// position. That normal must face the camera, as the lit plane around it does, or every lit tap weighs 0 and the
+// patch keeps its own colour: an unlit red patch on a lit blue plane, the denoise over the scene, blue at its centre.
+void denoiseFaceNormal() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    namespace g = shader::graph;
+    renderer.setPostGraph(g::effectNode(g::denoiseEffect(g::texture("scene", g::uv()), g::texture("depth", g::uv()),
+                                                         g::texture("normal", g::uv()), 1)));
+    const auto ground = plane(8, 8), patch = plane(2, 2);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+    ground->normals.resize(12);
+    ground->normals.write(0, facing, sizeof facing);
+    shader::StandardMaterial lit, unlit;
+    lit.color = {0, 0, 0};
+    lit.emissive = {0, 0, 1};
+    unlit.color = {1, 0, 0};
+    std::array<DrawItem, 2> items;
+    items[0].key = items[0].id = 1;
+    items[0].kind = MaterialKind::Standard;
+    items[0].positions = &ground->positions; items[0].normals = &ground->normals; items[0].indices = &ground->indices;
+    items[0].material = &lit;
+    items[0].matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    items[1].key = items[1].id = 2;
+    items[1].kind = MaterialKind::Basic;
+    items[1].positions = &patch->positions; items[1].indices = &patch->indices;
+    items[1].material = &unlit;
+    items[1].matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0.001,1};
+    for (int frame = 0; frame < 3; ++frame)
+        renderer.render(std::span<const DrawItem>(items.data(), items.size()), camera(1), LightState{}, {0,0,0,0});
+    std::vector<uint8_t> pixels;
+    bool done = false;
+    CHECK(renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> bytes) {
+        CHECK(status == GpuStatus::Ok);
+        pixels = std::move(bytes); done = true;
+    }) == GpuStatus::Ok);
+    for (int i = 0; i < 4000 && !done; ++i) {
+        renderer.poll(); events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(done && pixels.size() == 16 * 16 * 4);
+    if (pixels.size() != 16 * 16 * 4) return;
+    const uint8_t* centre = &pixels[(8 * 16 + 8) * 4];
+    const uint8_t* edge = &pixels[(1 * 16 + 1) * 4];
+    std::printf("denoise face normal: centre %u %u %u, plane %u %u %u\n", centre[0], centre[1], centre[2], edge[0], edge[1], edge[2]);
+    CHECK(edge[2] > 200 && edge[0] < 20);  // the plane is blue
+    CHECK(centre[0] > 20);                 // the patch is there
+    CHECK(centre[2] > 20);                 // and its lit neighbours filter into it
+}
+void auxTargetsOnePass() { auxTargets(false, 0, 1); }
+void auxTargetsAlphaTested() {
+    auxTargets(false, 0.5f, 1);
+    auxTargets(false, 0.5f, 0.4f);
+    auxTargets(true, 0.5f, 1);
+    auxTargets(true, 0.5f, 0.4f);
+    // At 4x the pass tests LessEqual with a bias, so only the fragment's own discard keeps the cut clear.
+    auxTargets(true, 0.5f, 0.4f, 4);
+    auxTargets(false, 0.5f, 0.4f, 4);
+    auxTargets(true, 0, 0, 4, true);  // an alpha-hashed draw at opacity 0 hashes every pixel away, at 4x too
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

@@ -21,10 +21,15 @@ export interface IExposureSettings {
   snapLo: number;
   snapHi: number;
   snapGain: number;
-  /** Seed for known cuts. reset() without a value adopts the next measured target. */
+  /**
+   * Seed for reset(value). The first frame and reset() without a value adopt the measured target.
+   */
   initialExposure: number;
   settleStops: number;
-  /** Limit catch-up after a suspended frame, avoiding an unrequested cut. */
+  /**
+   * Limit catch-up after a suspended frame, avoiding an unrequested cut. A frame the renderer's
+   * gate declined is not a suspension: the drawn frame already spans that time, so it is spent.
+   */
   maxDelta: number;
   /** Readback/marker cadence in seconds. Metering still runs on every drawn frame. */
   reportInterval: number;

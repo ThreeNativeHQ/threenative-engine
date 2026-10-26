@@ -576,10 +576,31 @@ function cacheLoader(load: (path: string) => Object3D | undefined = () => makeMo
   const cleared: number[] = [];
   const assets: IAssetLoader = {
     audio: () => Promise.reject(new Error("unused")),
+    cache: {
+      backgroundFill: false,
+      bytesOnDisk: 0,
+      bytesTotal: 0,
+      clear: async () => {
+        cleared.push(2);
+      },
+      enabled: false,
+      filling: false,
+      hits: 0,
+      misses: 0,
+      persisted: false,
+      reason: "test double",
+    },
     clear: () => {
       cleared.push(1);
     },
     dispose: () => undefined,
+    prefetch: async () => ({
+      requested: 0,
+      requestedBytes: 0,
+      settled: 0,
+      settledBytes: 0,
+    }),
+    startBackgroundFill: async () => undefined,
     model: ((path: string) => {
       loaded.push(path);
       const model = load(path);

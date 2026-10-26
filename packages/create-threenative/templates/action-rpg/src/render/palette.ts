@@ -2,7 +2,7 @@
 // Neutral greys carry the light; one saturated blue marks what you can touch.
 export const palette = {
   /** Light grid: room floors and the ground the dungeon stands on. */
-  floor: 0xb4b1ae,
+  floor: 0x98948e,
   /** Dark grid: walls, door lintels, pillars — anything structural. */
   structure: 0x747578,
   /** The metre line both grids are drawn in. */
@@ -10,7 +10,7 @@ export const palette = {
   /** The one saturated colour: chests, dropped loot, and anything else you can touch. */
   accent: 0x2a6cf0,
   /** The sky photograph's own horizon: distance fades into this, and it is the loading backdrop. */
-  horizon: 0xacb1c1,
+  horizon: 0x8f9ab0,
 } as const;
 
 // The hostile tint, the torch flame and the blade steel are not roles of their own — they are

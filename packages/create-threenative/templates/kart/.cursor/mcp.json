@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "threenative-assets": {
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/assets.mjs"
+      ],
+      "env": {
+        "ASSET_DOWNLOAD_DIR": "./public/assets",
+        "AUDIO_DOWNLOAD_DIR": "./public/audio"
+      }
+    },
+    "threenative-sculpt": {
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/sculpt.mjs"
+      ]
+    },
+    "threenative-engine": {
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/engine.mjs"
+      ]
+    },
+    "threenative-blender": {
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/blender.mjs"
+      ]
+    }
+  }
+}

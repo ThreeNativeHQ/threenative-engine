@@ -7,6 +7,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import {
+  Box3,
+  DoubleSide,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Raycaster,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 
 import { DataUtils, fromHalfFloat, toHalfFloat } from "../src/addons/data-utils.js";
@@ -173,6 +182,65 @@ describe("MeshBVH", () => {
       this.calls.push([object, recursive]);
       return hits;
     },
+  });
+
+  it("initializes missing bounds without changing actual ray hits", () => {
+    const geometry = new PlaneGeometry(2, 2, 2, 2);
+    const mesh = new Mesh(geometry, new MeshBasicMaterial({ side: DoubleSide }));
+    mesh.updateMatrixWorld();
+    const ray = new Raycaster(new Vector3(0, 0, 5), new Vector3(0, 0, -1));
+    const before = ray.intersectObject(mesh, false);
+    expect(before.length).toBeGreaterThan(0);
+    expect(geometry.boundingBox).toBeNull();
+    const tree = new MeshBVH(geometry);
+    expect(geometry.boundingBox).toEqual(new Box3(new Vector3(-1, -1, 0), new Vector3(1, 1, 0)));
+    expect(tree.raycastObject3D(mesh, ray)).toEqual(before);
+  });
+
+  it("refreshes generated bounds when rebuilt after geometry changes", () => {
+    const geometry = new PlaneGeometry(2, 200, 2, 2);
+    const position = geometry.getAttribute("position");
+    if (position == null) throw new Error("plane needs positions");
+    for (let index = 0; index < position.count; index++)
+      position.setX(index, position.getX(index) + 11);
+    const mesh = new Mesh(geometry, new MeshBasicMaterial({ side: DoubleSide }));
+    mesh.updateMatrixWorld();
+    const ray = new Raycaster(new Vector3(0, 0, 5), new Vector3(0, 0, -1));
+    const tree = new MeshBVH(geometry);
+    expect(tree.raycastObject3D(mesh, ray)).toEqual([]);
+    const generated = geometry.boundingBox;
+    for (let index = 0; index < position.count; index++)
+      position.setX(index, position.getX(index) - 11);
+    const rebuilt = new MeshBVH(geometry);
+    expect(rebuilt.raycastObject3D(mesh, ray)).toHaveLength(6);
+    expect(geometry.boundingBox).not.toBeNull();
+    expect(geometry.boundingBox).toBe(generated);
+    expect(geometry.boundingBox?.min.x).toBe(-1);
+  });
+
+  it("preserves preexisting authored bounds", () => {
+    const geometry = new PlaneGeometry(2, 2);
+    const authored = new Box3(new Vector3(-10, -10, -10), new Vector3(10, 10, 10));
+    geometry.boundingBox = authored;
+    new MeshBVH(geometry);
+    expect(geometry.boundingBox).toBe(authored);
+    expect(authored.max.x).toBe(10);
+    authored.min.x = -20;
+    new MeshBVH(geometry);
+    expect(geometry.boundingBox).toBe(authored);
+    expect(authored.min.x).toBe(-20);
+  });
+
+  it("preserves an authored box replacing generated bounds on rebuild", () => {
+    const geometry = new PlaneGeometry(2, 2);
+    new MeshBVH(geometry);
+    const authored = new Box3(new Vector3(-10, -10, -10), new Vector3(10, 10, 10));
+    geometry.boundingBox = authored;
+    const position = geometry.getAttribute("position");
+    if (position == null) throw new Error("plane needs positions");
+    new MeshBVH(geometry);
+    expect(geometry.boundingBox).toBe(authored);
+    expect(authored.max.x).toBe(10);
   });
 
   it("answers raycastObject3D from the engine raycast, nearest only under firstHitOnly", () => {

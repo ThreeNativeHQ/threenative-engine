@@ -313,6 +313,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-render-target.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_render_target PROPERTIES LABELS "native-engine")
+    # core's canvas layer (renderOverlay) over the world frame, before the world and in a held loader frame.
+    add_test(NAME native_engine_player_overlay
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-overlay.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_overlay PROPERTIES LABELS "native-engine")
     # A render-target read settles from the GPU event drain; its continuation must run with the isolate entered.
     add_test(NAME native_engine_player_read_target_osr
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-read-target-osr.mjs

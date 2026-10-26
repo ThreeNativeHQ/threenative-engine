@@ -1,0 +1,45 @@
+{
+  "name": "adventure-explore",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "explore",
+      "label": "explored",
+      "seed": 1,
+      "ticks": 7200,
+      "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+      "actions": ["KeyJ", "Space", "ShiftLeft", "KeyQ", "Tab", "KeyE"],
+      "pointer": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 5
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 160,
+          "y": 90,
+          "width": 960,
+          "height": 540,
+          "minSharpness": 0.3
+        }
+      }
+    ]
+  }
+}
