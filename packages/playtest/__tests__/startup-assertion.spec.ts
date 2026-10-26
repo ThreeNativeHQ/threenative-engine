@@ -153,6 +153,17 @@ describe("startup steadyCover", () => {
     expect(broken.differing.map(({ ms }) => ms)).toEqual([80, 450]);
   });
 
+  it("leaves out the blank tab's frames before the page's first paint, and keeps the page's own", () => {
+    // Iris Xe, Hop Garden at 629b4d2db: 1 of 6 runs failed on a white frame 14 ms after navigation
+    // start, the blank tab still on screen; the page's first paint was the cover, 15 ms later.
+    const white: [number, number, number] = [255, 255, 255];
+    const frames = [frame(14, white), frame(29, cover), frame(500, cover, 0.5), frame(900, cover, 0.9)];
+    expect(compareStartupFrames(frames, Number.POSITIVE_INFINITY, 29).differing).toEqual([]);
+    expect(compareStartupFrames(frames, Number.POSITIVE_INFINITY, 29).frames).toBe(3);
+    // A white frame the page painted itself, at or after its first paint, still fails.
+    expect(compareStartupFrames(frames, Number.POSITIVE_INFINITY, 14).differing.map(({ ms }) => ms)).toEqual([14]);
+  });
+
   it("fails a broken cover, and fails closed when no frame was recorded", async () => {
     const scenario = await scenarioWith({ steadyCover: true });
     const evaluate = (observation: IPlaytestStartupCoverObservation | undefined) => {
