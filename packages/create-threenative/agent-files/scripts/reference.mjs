@@ -373,8 +373,9 @@ function hasImageModality(architecture, key) {
 }
 
 function capabilitySupportsImages(value, needsInput) {
-  if (!Array.isArray(value?.data)) return false;
-  return value.data.some((endpoint) => {
+  // OpenRouter answers `/models/<id>/endpoints` with the model object; a list is accepted too.
+  const entries = Array.isArray(value?.data) ? value.data : value?.data ? [value.data] : [];
+  return entries.some((endpoint) => {
     const architecture = endpoint?.architecture;
     return (
       hasImageModality(architecture, "output_modalities") &&
@@ -646,7 +647,10 @@ async function generate(options, recordFile, record, roots) {
     const safeError =
       error instanceof ProviderError
         ? error
-        : new ProviderError("provider operation failed", { category: "provider" });
+        : // A check of the returned image (its type, its extension) names what failed; it holds no secret.
+          error instanceof InputError
+          ? new ProviderError(error.message, { category: "invalid-image" })
+          : new ProviderError("provider operation failed", { category: "provider" });
     const receipt = removeRequest(record, requestId, "pending");
     if (receipt !== undefined) {
       const destination =
