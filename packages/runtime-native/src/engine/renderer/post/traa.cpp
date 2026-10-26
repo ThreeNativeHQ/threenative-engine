@@ -128,6 +128,26 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
 const rgbToNeighborhood = mat3x3<f32>(vec3<f32>(1,2,-1), vec3<f32>(2,0,2), vec3<f32>(1,-2,-1));
 const neighborhoodToRgb = mat3x3<f32>(vec3<f32>(.25), vec3<f32>(.25,0,-.25), vec3<f32>(-.25,.25,-.25));
 struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
+// UE 5.8.3's five-tap Catmull-Rom history fetch (TextureSampling.ush:120-157, TemporalAA.usf:1868-1877): a bilinear fetch
+// blurs the history at every fractional offset, so a fast pan softens it until the raw input wins.
+fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
+    let pixel = uv * size;
+    let iuv = floor(pixel - 0.5) + 1.0;
+    let f = pixel - iuv;
+    let f2 = f * f;
+    let s = (1.25 - f2) * f + 0.5;
+    let t0 = (0.25 * f2 - 0.0625) * (1.125 - 0.5 * f2.yx);
+    let w0 = t0 - 2.0 * f * t0;
+    let w3 = t0 + 2.0 * f * t0;
+    let inv = 1.0 / size;
+    let c = (iuv - 0.5) * inv;
+    let o = s * inv;
+    return textureSampleLevel(history, linearSampler, c + vec2(-inv.x, o.y), 0.0) * w0.x +
+           textureSampleLevel(history, linearSampler, c + vec2(2.0 * inv.x, o.y), 0.0) * w3.x +
+           textureSampleLevel(history, linearSampler, c + o, 0.0) * (1.0 - w0.x - w3.x - w0.y - w3.y) +
+           textureSampleLevel(history, linearSampler, c + vec2(o.x, -inv.y), 0.0) * w0.y +
+           textureSampleLevel(history, linearSampler, c + vec2(o.x, 2.0 * inv.y), 0.0) * w3.y;
+}
 @fragment fn fs(input: Vertex) -> Resolved {
     let outputSize = vec2<f32>(textureDimensions(history));
     let upsampling = any(outputSize != u.size);
@@ -239,7 +259,8 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     } else {
         current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
     }
-    let old = textureSampleLevel(history, linearSampler, historyUV, 0.0);
+    var old = textureSampleLevel(history, linearSampler, historyUV, 0.0);
+    if (upsampling) { old = max(catmullRomHistory(historyUV, outputSize), vec4(0)); }
     let motion = clamp(length((input.uv - historyUV) * u.size) / u.maxVelocityLength, 0.0, 1.0);
     var currentWeight = 0.05;
     if (u.subpixel != 0) {

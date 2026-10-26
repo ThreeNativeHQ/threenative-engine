@@ -1975,6 +1975,75 @@ void traaRecedingMover() {
     CHECK(receding < 60);
 }
 
+// A fast camera pan (a kart at speed) over slanted bars: the upsampled history is resampled at a fractional offset every
+// frame, and a bilinear fetch blurs it each time until the raw 0.72 input, stepped on the 1.39-pixel input grid, is what
+// shows. UE 5.8.3 fetches upsampled history with a five-tap Catmull-Rom (TemporalAA.usf:1868-1877). The measure is the red
+// channel's mean difference from a 4x4-supersampled frame of the same pose, at 0.72 against the full-resolution resolve
+// under the same pan: bilinear 27.27 against 23.02, Catmull-Rom 21.88.
+void traaFastPanEdges() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    constexpr int frames = 24;
+    constexpr double per = 1.0;  // a world unit a frame: about ten pixels at the bars' depth
+    BarField field;
+    shader::StandardMaterial white;
+    white.color = {1, 1, 1};
+    DrawItem bars;
+    bars.key = bars.id = 2; bars.kind = MaterialKind::Basic;
+    bars.positions = &field.positions; bars.indices = &field.indices; bars.material = &white;
+    const float c = std::cos(0.25f), s = std::sin(0.25f);
+    bars.matrixWorld = {c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const auto at = [&](double x, double aspect) {
+        CameraState camera = ::camera(aspect);
+        camera.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 4, 1};
+        camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, 0, -4, 1};
+        return camera;
+    };
+    const double last = -12 + per * (frames - 1);
+    std::vector<double> reference(size_t{width} * height, 0);
+    {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width * 4, height * 4);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        renderer.render({&bars, 1}, at(last, double(width) / height), LightState{}, {0, 0, 0, 1});
+        const auto big = read(renderer, events);
+        CHECK(big.size() == size_t{width} * height * 64);
+        if (big.size() != size_t{width} * height * 64) return;
+        for (uint32_t y = 0; y < height * 4; ++y)
+            for (uint32_t x = 0; x < width * 4; ++x)
+                reference[size_t(y / 4) * width + x / 4] += big[(size_t(y) * width * 4 + x) * 4] / 16.0;
+    }
+    const auto error = [&](float scale) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        renderer.setPostGraph(temporalColour());
+        renderer.setRenderScale(scale);
+        for (int frame = 0; frame < frames; ++frame)
+            renderer.render({&bars, 1}, at(-12 + per * frame, double(width) / height), LightState{}, {0, 0, 0, 1});
+        const auto pixels = read(renderer, events);
+        CHECK(pixels.size() == size_t{width} * height * 4);
+        if (pixels.size() != size_t{width} * height * 4) return -1.0;
+        double sum = 0;
+        int count = 0;
+        for (uint32_t y = 4; y < height - 4; ++y)
+            for (uint32_t x = 4; x < width - 4; ++x) {
+                sum += std::abs(pixels[(size_t(y) * width + x) * 4] - reference[size_t(y) * width + x]);
+                ++count;
+            }
+        return sum / count;
+    };
+    const double full = error(1), upsampled = error(0.72f);
+    std::fprintf(stderr, "TN_TRAA_FAST_PAN error from supersampled: full %.2f, upsampled %.2f\n", full, upsampled);
+    CHECK(full > 0 && upsampled > 0);
+    CHECK(upsampled < full * 1.15);
+}
+
 // The same field seen by a camera that slides: the history is read where the camera's own motion moved it, so the bars keep
 // their contrast. A history read at the wrong place blends neighbouring bars into grey. The measure is the spread of the red
 // channel (its standard deviation) once the camera has slid for 40 frames, over the spread with the camera still.
@@ -2637,6 +2706,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_camera_pan", traaCameraPan},
              {"traa_rejection", traaRejection},
              {"traa_receding_mover", traaRecedingMover},
+             {"traa_fast_pan_edges", traaFastPanEdges},
              {"output_screen_size", outputScreenSize},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_velocity_footprint", traaVelocityFootprint},
