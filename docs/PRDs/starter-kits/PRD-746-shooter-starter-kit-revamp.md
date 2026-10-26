@@ -66,7 +66,7 @@ claim comes from a 60 Hz real display or is marked unverified.
 
 ### Phase 3 — The look
 
-- [ ] Each of the three exposure overrides is kept only if a judge frame shows why. proof: the judge verdict per override.
+- [ ] The shooter's base look is the 7b546d6 look, restored as named, reported overrides on core's preset: ACES, fixed exposure 1, no motion blur or temporal AA, the 7b546d6 bloom, sun 0xfff1e0 at 4.5, ground 0xb4b1ae and the full sky range. proof: a fresh judge reads MATCH or CLOSE against `~/Downloads/pr563-prd723-shooter/frames/BEFORE-*` and `kit-look-defaults.spec.ts` asserts the overrides.
 - [ ] The town's plaster, stone, wood, metal and ground take tiling surfaces generated through OpenRouter (`agent-files/scripts/reference.mjs`, a cheap image model), at most 8 images of 512 px WebP and 1 MB in total, applied through the `surfaced()` pattern of `templates/adventure/src/render/surface.ts`, licence and prompts in `assets/tex-PROVENANCE.md`. Geometry stays procedural. proof: the byte total and the `survives` scenario.
 - [ ] Unreal-grade polish on procedural geometry only (owner, 2026-10-26: "polish visuals also as if its a unreal game, procedural only"): material response per surface, trims, edge wear and contact shading, judged against the Phase 3 BEFORE set. proof: the judge verdict below.
 - [ ] Fresh judge against BEFORE captures taken at the PR #574 head before Phase 2 (headed WebGPU, nvidia/turing, two runs per arm): IMPROVEMENT overall, the weapon sharp while turning and strafing, no REGRESSION. proof: the verdict and the sheets on the PR.
@@ -78,6 +78,8 @@ claim comes from a 60 Hz real display or is marked unverified.
 - [ ] `TN_TEMPLATE_ONLY=shooter pnpm test:templates` passes and the scaffold hash is re-pinned. proof: the run on the PR head.
 
 ## Decisions
+
+- 2026-10-26 (owner): the shooter keeps the 7b546d6 look as its base. He compared `BEFORE-survives-run2.png` (7b546d6) with `AFTER-five-soldiers-run2.png` (the core look) and wrote: "i actually prefer this version (polish considering this look). the after version sucks. looks yellowish". The yellow cast came from the kit's own migration edits (ground 0x9b9185, sun 0xffe6c8 at 6.5, sky fill 0.55) plus the filmic curve at key 0.14. The engine default stays the Unreal look; this kit opts out with named overrides.
 
 - 2026-10-26 (lead, measured): `markStatic` on the town is dropped. Three alternating pairs gave CPU p95 11.4/11.4/14.5 ms with it against 11.2/11.2/11.8 without, so no gain; `?tnRenderListValidate=1` showed 0 divergences over 660 frames while it was on.
 - 2026-10-26 (lead, measured): palms stay on `InstancedMesh`. `InstancedBatch` was neutral (same draws and triangles) and calling it from `src/render/palm.ts` breaks the render portability check (`scripts/check-core-boundary.ts`); reverted in 390696886.
