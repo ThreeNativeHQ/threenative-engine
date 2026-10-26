@@ -25,8 +25,13 @@ const DODGE_SPEED = 9;
 /** Capsule for a 1.8 m figure: 0.38 m half-height plus a 0.34 m radius at each end. */
 const HALF_HEIGHT = 0.38;
 const RADIUS = 0.34;
-/** How long a swing, a cast and a roll keep the legs from taking over the clip. */
-const SWING = 0.45;
+/**
+ * How long a swing, a cast and a roll keep the legs from taking over the clip. The swing holds
+ * through the follow-through of `Sword_Attack` (1.53 s); a new swing waits for it.
+ */
+const SWING = 0.8;
+/** When the blade crosses the front of the figure in `Sword_Attack`: the hand peaks at 0.40 s. */
+const SWING_CONTACT = 0.4;
 const CAST = 0.7;
 const ROLL = 0.5;
 const DODGE_COOLDOWN = 1;
@@ -39,6 +44,8 @@ export class Player extends Fighter {
   dead = false;
   equippedItem = "";
   #bodyDisposed = false;
+  /** The landing half of the swing in progress: damage waits for the blade, not the key. */
+  #swing: { remaining: number; land: () => void } | undefined;
   #dodgeCooldown = 0;
   #dodgeRemaining = 0;
   #forward = new Vector3();
@@ -89,11 +96,25 @@ export class Player extends Fighter {
     this.conventions.applyGrounding(0, dt);
     const heading = this.busy ? undefined : Math.atan2(this.body.velocity.x, this.body.velocity.z);
     this.animateRig(dt, heading, Math.hypot(this.body.velocity.x, this.body.velocity.z));
+    const swing = this.#swing;
+    if (swing === undefined) return;
+    swing.remaining -= dt;
+    if (swing.remaining > 0) return;
+    this.#swing = undefined;
+    // A cast or a roll that took the clip over took the blade with it.
+    if (this.action === "attack") swing.land();
   }
 
-  /** The swing, the cast and the roll: three inputs, three clips, one state machine. */
-  strike(): void {
+  /**
+   * The swing, the cast and the roll: three inputs, three clips, one state machine. `land` runs
+   * when the blade reaches the front of the figure; a press during a swing is ignored, so the
+   * clip and the hits it deals stay one to one.
+   */
+  strike(land: () => void): boolean {
+    if (this.dead || (this.action === "attack" && this.busy)) return false;
     this.play("attack", { fade: 0.05, hold: SWING });
+    this.#swing = { land, remaining: SWING_CONTACT };
+    return true;
   }
 
   cast(): void {

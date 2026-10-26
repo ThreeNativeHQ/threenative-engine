@@ -9,11 +9,11 @@
     { "kind": "input", "label": "cross-rooms", "press": "KeyD", "holdTicks": 285, "release": true },
     { "kind": "input", "label": "surge", "press": "KeyE", "holdTicks": 1, "release": true },
     { "kind": "input", "label": "boss-hit-1", "press": "KeyF", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "boss-ready-2", "waitTicks": 8, "release": true },
+    { "kind": "wait", "label": "boss-ready-2", "waitTicks": 50, "release": true },
     { "kind": "input", "label": "boss-hit-2", "press": "KeyF", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "boss-ready-3", "waitTicks": 8, "release": true },
+    { "kind": "wait", "label": "boss-ready-3", "waitTicks": 50, "release": true },
     { "kind": "input", "label": "boss-hit-3", "press": "KeyF", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "boss-ready-4", "waitTicks": 8, "release": true },
+    { "kind": "wait", "label": "boss-ready-4", "waitTicks": 50, "release": true },
     { "kind": "input", "label": "boss-hit-4", "press": "KeyF", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "win-settled", "waitTicks": 30, "release": true }
   ],
@@ -24,7 +24,7 @@
       { "id": "state", "path": "phase", "equals": "won", "changed": true },
       { "id": "state", "path": "enemiesDefeated", "gte": 1, "changed": true }
     ],
-    "signals": [{ "name": "defeated", "entity": "boss", "minCount": 1, "atStep": "boss-hit-3" }],
+    "signals": [{ "name": "defeated", "entity": "boss", "minCount": 1, "atStep": "win-settled" }],
     "visibility": [
       {
         "allowTrivial": "The action RPG scene begins with the player visible and in frame; this held visibility row accompanies the win assertion.",
