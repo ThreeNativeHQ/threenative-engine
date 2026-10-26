@@ -1,6 +1,6 @@
 # PRD-748: Performance by construction — the engine decides the fast path and fails closed
 
-**Status:** NOT STARTED — evidence inventory running
+**Status:** NOT STARTED — evidence in, Phase 1 lane starting
 **Priority:** P1 — starter kits keep shipping draw-call, hitch and skinned-crowd bugs that no default prevents (all phases open)
 **PR:** #574 (owner rule: one PR for related work)
 **Owner ask (2026-10-26):** "we must structure our architecture/abstractions/whatever in a way that makes these performance bugs on simple FUCKING STARTER KITS, almost impossible to happen". Chosen option (owner, 2026-10-26): "1)" — the engine decides, and dev time fails closed.
@@ -21,14 +21,15 @@ The repo rule "auto by default: if the engine can measure a value where it is us
 
 ### Phase 1 — Detect and fail closed
 
-- [ ] Hitch detector: after warm-up, a frame over 2x the running median that creates a pipeline, uploads above a size threshold, or allocates above a rate threshold prints `TN_HITCH` with the cause and call site, and any playtest fails on it by default. proof: a unit spec in `packages/core/__tests__`, and a red run on a kit build that compiles a pipeline mid-play.
-- [ ] Budget contract: `kit.json` declares draws, triangles, pipelines and hitch count. The engine measures them live, shows a dev overlay and fails the playtest when a budget breaks, naming the capability that fixes it. proof: a spec, and the pre-merge shooter town (375 draws) reads red.
+- [ ] Hitches fail by default: `TN_FRAME_HITCH` (core/src/frame-budget.ts:1024) becomes a default-on assertion in every scenario, startup included, and each hitch names its cause (pipeline compile, upload, GC, script call site). proof: a spec in `packages/playtest/__tests__`, and the collectathon `skyTexture` 7.7 s hitch commit reads red.
+- [ ] Cost per stage: `TN_FRAME_BUDGET` attributes GPU ms to the shadow, main, post-stage (GTAO, SSR, bloom, motion blur, TAA) and present passes, and a failing frame bound names its top stage and the override that cuts it. proof: a spec, and the runner GTAO arm (51 ms) reads red with "GTAO" named.
+- [ ] Allocation guard: after warm-up, a JS heap growth or GC rate above a bound fails the scenario, naming the top allocation site. proof: a spec, and the adventure "one material per tick" commit reads red.
+- [ ] The frame, draw and triangle bounds also run on the `explore` and `controls` gates, not only the scripted pose. proof: a spec, and the shooter's pre-merge town reads red on `explore`.
 
 ### Phase 2 — The engine decides
 
-- [ ] Static meshes merge by material automatically at scene build, with a named opt-out. proof: the shooter town reaches its merged draw count with `collapseTown` deleted, and a judge reads NEUTRAL.
-- [ ] Repeated meshes (same geometry and material) instance automatically, with a named opt-out. proof: a spec, and a kit's prop field reads one draw per material.
-- [ ] Every material and variant in the scene compiles before the first presented frame, including the scene pass. proof: zero pipeline creations after frame 1 in every kit (`TN_HITCH` silent).
+- [ ] Static meshes merge by material and repeated meshes instance automatically at scene build, each with a named opt-out on the same object that the engine reports. Kits then call no mechanism from `src/render/`, which also removes the conflict with the portability boundary (`scripts/check-core-boundary.ts` blocked `InstancedBatch` in the shooter). proof: the shooter town reaches its merged draw count with `collapseTown` deleted, adventure (331 renderables, 0 batches) batches, and a judge reads NEUTRAL.
+- [ ] Every material and variant compiles before the first presented frame, including the scene pass, and one-shot builds over a frame's budget run sliced. proof: the Phase 1 hitch gate stays silent after frame 1 in every kit.
 
 ### Phase 3 — Every kit on the default
 
@@ -42,7 +43,21 @@ The repo rule "auto by default: if the engine can measure a value where it is us
 
 ## Evidence
 
-(filled from the perf-inventory report)
+perf-inventory, 2026-10-26 (commit messages and PRD text, no kit re-run): about 24 shipped kit perf bugs in 9 classes. Full report: lead scratch `perf-inventory.md`.
+
+| Class | n | Kits | Example | Fixed in | Guard that would have caught it |
+|---|---|---|---|---|---|
+| Unmerged geometry (too many draws) | 6 | shooter, action-rpg, adventure, collectathon, kart | 08310c739 (draws 417 to 207), 20df34f75 | kit (the engine had `mergeByMaterial`, opt-in) | `TN_PLAYTEST_PERF_WARNING` in part; loose `maxDrawCalls` (600 on four kits) |
+| Triangle waste | 3 | collectathon, action-rpg, adventure | 20df34f75 | kit | `maxTriangles` set at the measured value plus 10%, or raised |
+| Post-chain cost per tier | 5 | runner (51 ms GTAO), rts, shooter, kart, adventure | PRD-723:169, 226, 248; PRD-734:327 | kit and engine | frame bound (symptom only, no stage) |
+| Per-pixel kit TSL cost | 1 | rain | c21a8bffe | kit (deferred) | frame bound (symptom only) |
+| Shadow settings | 1 | kart (course-wide VSM) | PRD-734:195 | kit | frame bound |
+| Startup and one-shot CPU | 3 | collectathon (7.7 s `skyTexture`), adventure (800 ms), shooter (sync town) | PRD-732:629, PRD-733:532 | kit | `TN_FRAME_HITCH` prints; no assertion reads it |
+| Per-frame allocation, step spiral | 2 | adventure | PRD-733:532-538 | kit | none |
+| Skinned crowd cost | 1 | shooter and others | e639ded74 | engine (default on) | engine default |
+| Author-picked frame budgets | 1 | all kits | 268b1c5f5 | harness | fixed |
+
+Top gaps, ranked by shipped bugs prevented: opt-in geometry mechanisms (about 9), no per-stage attribution (7), ungated startup hitches (3), no allocation guard (2), bounds checked only on the scripted pose (about 5 earlier catches). Phase 1 and Phase 2 close them in that order.
 
 ## Decisions
 
