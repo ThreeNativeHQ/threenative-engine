@@ -27,9 +27,7 @@ export function Minimap() {
   // redraw signal: this map repaints twenty times a second, not once per published frame.
   const fog = state?.minimapFog;
   const dots = state?.minimapDots;
-  const cameraX = state?.cameraX ?? 0;
-  const cameraZ = state?.cameraZ ?? 0;
-  const cameraZoom = state?.cameraZoom ?? 30;
+  const view = state?.minimapView;
   useEffect(() => {
     const host = canvas.current;
     if (host === null || fog === undefined || fog === "") return;
@@ -45,8 +43,9 @@ export function Minimap() {
       }
     const contacts = dots ?? [];
     for (let index = 0; index < contacts.length; index += 4) {
-      const x = (contacts[index] ?? 0) / 10;
-      const z = (contacts[index + 1] ?? 0) / 10;
+      // Published in tenths of a raster cell; the canvas is `cell` pixels per raster cell.
+      const x = ((contacts[index] ?? 0) / 10) * cell;
+      const z = ((contacts[index + 1] ?? 0) / 10) * cell;
       const team = contacts[index + 2] ?? 0;
       const kind = contacts[index + 3] ?? 0;
       if (team === 9) {
@@ -58,15 +57,21 @@ export function Minimap() {
       if (kind === 1) context.fillRect(x - 2.5, z - 2.5, 5, 5);
       else context.fillRect(x - 1.5, z - 1.5, 3, 3);
     }
-    // The view rectangle: what the camera is actually looking at, at the map's own scale.
-    const span = cameraZoom;
-    const half = (span / SIZE) * (size / 2);
-    const cx = cameraX / 2 + size / 2;
-    const cz = cameraZ / 2 + size / 2;
-    context.strokeStyle = EDGE;
-    context.lineWidth = 1;
-    context.strokeRect(cx - half, cz - half, half * 2, half * 2);
-  }, [fog, dots, cameraX, cameraZ, cameraZoom]);
+    // The view: the ground under the frame's four corners, which is what the camera really sees.
+    const corners = view ?? [];
+    if (corners.length === 8) {
+      context.strokeStyle = EDGE;
+      context.lineWidth = 1;
+      context.beginPath();
+      for (let index = 0; index < 8; index += 2)
+        context.lineTo(
+          ((corners[index] ?? 0) / 10) * cell,
+          ((corners[index + 1] ?? 0) / 10) * cell,
+        );
+      context.closePath();
+      context.stroke();
+    }
+  }, [fog, dots, view]);
 
   return (
     <section className="pointer-events-none bg-black/80 p-2">

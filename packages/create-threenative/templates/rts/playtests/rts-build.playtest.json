@@ -64,6 +64,18 @@
       { "id": "state", "path": "primaryProgress", "changed": true }
     ],
     "hud": [{ "id": "health", "gte": 171, "lte": 849 }],
+    "visual": [
+      {
+        "region": {
+          "x": 1098,
+          "y": 274,
+          "width": 24,
+          "height": 24,
+          "maxLuminance": 0.2,
+          "minDarkPixelRatio": 0.98
+        }
+      }
+    ],
     "renderChain": {
       "tier": "high",
       "perAdapter": {

@@ -58,6 +58,8 @@ export type GameState = {
    */
   minimapDots: number[];
   minimapFog: string;
+  /** The ground under the frame's four corners, `[x, z, …]` in the same units as `minimapDots`. */
+  minimapView: number[];
   /** The rubber band, in client pixels, or null. Drawn by the UI, not the scene. */
   dragBox: number[] | null;
   /** Set from the UI's pause and resume intents, and read back by the menu. */
@@ -76,6 +78,7 @@ export const INITIAL_STATE: GameState = {
   kills: 0,
   minimapDots: [],
   minimapFog: "",
+  minimapView: [],
   mode: "",
   notice: "",
   ore: 0,

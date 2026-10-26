@@ -139,6 +139,7 @@ export class Play extends Scene<GameState, undefined> {
   #notice = "";
   #fogText = "";
   #dots: number[] = [];
+  #viewCorners: number[] = [];
   #patch: Partial<GameState> = {};
 
   override async load(ctx: GameCtx): Promise<void> {
@@ -626,7 +627,32 @@ export class Play extends Scene<GameState, undefined> {
         (item) => `${item.type}:${item.progress.toFixed(2)}`,
       );
     }
+    // The view follows the camera every frame, paused or not, but is republished only when it moved.
+    if (this.#viewQuad(ctx.camera as OrthographicCamera, ctx.viewport.size))
+      patch.minimapView = this.#viewCorners;
     ctx.state.set(patch);
+  }
+
+  /**
+   * The ground under the frame's four corners, in the minimap's units (tenths of a raster cell):
+   * an orthographic camera at a pitch sees a slanted quad of map, not a square. True when it moved.
+   */
+  #viewQuad(camera: OrthographicCamera, size: { height: number; width: number }): boolean {
+    const scale = (MINIMAP / WORLD) * 10;
+    const view: number[] = [];
+    for (const [sx, sy] of [
+      [0, 0],
+      [size.width, 0],
+      [size.width, size.height],
+      [0, size.height],
+    ] as const) {
+      const ground = groundAt(camera, sx, sy, size);
+      if (ground === null) return false;
+      view.push(Math.round((ground.x + HALF) * scale), Math.round((ground.z + HALF) * scale));
+    }
+    if (view.every((value, index) => value === this.#viewCorners[index])) return false;
+    this.#viewCorners = view;
+    return true;
   }
 
   /**
