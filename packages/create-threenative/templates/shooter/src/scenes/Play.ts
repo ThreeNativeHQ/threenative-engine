@@ -45,6 +45,7 @@ import { TOWN_HALF, type Town, buildTown } from "../render/town.js";
 import { createTownMaterials } from "../render/townMaterials.js";
 import { type GameState, TARGET_GOAL } from "../state.js";
 import { resolveSurface } from "../surfaces.js";
+import { collapseTown } from "../townBatch.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -195,6 +196,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const loading = createLoadingScreen(ctx);
     const materials = createTownMaterials();
     const town: Town = buildTown(materials);
+    collapseTown(town.group, town.hittable);
     ctx.add(town.group);
     // Plates are raycast targets like any solid: without them in the list a round flies
     // straight through and scores whatever soldier happens to stand behind the plate.
