@@ -10,9 +10,9 @@ import {
 //
 // - `low` / `medium` / `high` are the engine render chain's tiers, which `postprocessing.ts` reads
 //   through `qualityPreset(resolveQualityTier(...))`. This study turns **every built-in stage off at
-//   every tier**: its bloom, ACES grade, vignette, lens beads and dither are the source study's own
-//   single post pass, installed as one authored stage, so a built-in bloom or tone map would do the
-//   same job a second time. What differs is the rung the chain reports and runs at
+//   every tier**: its bloom, grade, vignette, lens beads and dither are the source study's own
+//   single post pass, installed as one authored stage, so a built-in bloom would do the
+//   same job a second time; the tone map and the exposure are the core's. What differs is the rung the chain reports and runs at
 //   (`renderChainTier`), so a stage you add later with a `minimumTier` drops out on the cheap tiers.
 // - `STUDY_TIERS` is the player's "Render quality" select — the reference study's own four tiers,
 //   `performance` / `balanced` / `high` / `ultra`, number for number: the cloud pass's resolution
@@ -22,7 +22,6 @@ import {
 import type { QualityName } from "../state.js";
 import { exposureSettings } from "./exposure.js";
 export type { QualityTier } from "@threenative/core";
-import type { QualityTier } from "@threenative/core";
 
 /**
  * The engine chain's three tier names. `low` is what a phone gets and `high` what a desktop gets;
@@ -30,72 +29,41 @@ import type { QualityTier } from "@threenative/core";
  */
 export const resolveQualityTier = qualityTiers.resolve;
 
-const legacyDefaults: IWorldEnvironmentOptions = {
-  // PRD-723: preserve the vendored look until this kit earns IMPROVEMENT. Cost: unmeasured.
-  autoExposureEnabled: false,
-  // Bloom cost: unmeasured; preserve the vendored stage until this kit is judged.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.7,
-  bloomThreshold: 0.2,
-  exposure: 1,
-  finalGatherMethod: "none",
-  gtaoEnabled: false,
-  gtaoRadius: 0.25,
-  gtaoSamples: 16,
-  gtaoDistanceExponent: 1,
-  gtaoDistanceFalloff: 1,
-  gtaoIndirectOnly: false,
-  localExposureEnabled: false,
-  motionBlurEnabled: false,
-  ssgiEnabled: false,
-  ssgiRadius: 12,
-  ssgiResolutionScale: 0.5,
-  ssrEnabled: false,
-  ssrResolutionScale: 0.5,
-  temporalAA: false,
-  tonemapMode: "aces",
-  unrealBloomEnabled: false,
-  vignetteAmount: 0,
-};
-
-const high: IWorldEnvironmentOptions = {
-  bloomEnabled: false,
-  denoiseEnabled: false,
-  // Unreal's default anti-aliasing is temporal, and the engine offers it as `temporalAA: true`. It is off here: this study
-  // draws its own single post pass and keeps 4x multisampling. A temporal pass would add a second chain around it.
-  temporalAA: false,
-  // The post pass applies the weather's exposure itself, after its own bloom add.
-  autoExposureEnabled: false,
-  exposure: 1,
-  renderChainTier: "high",
-  ssgiEnabled: false,
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
-/** The rung in between: the same empty chain, run and reported at `medium`. */
-const medium: IWorldEnvironmentOptions = { ...high, renderChainTier: "medium" };
-
-/** What a phone gets: the same empty chain at `low`; the `performance` study tier is the cheap look. */
-const low: IWorldEnvironmentOptions = { ...high, renderChainTier: "low" };
-
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
-
-/** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
+/**
+ * The stages and strengths a tier turns on: the core preset, this game's exposure policy and one
+ * named override, reported on the `TN_RENDER_CHAIN_COST_OVERRIDE` console line. Every built-in
+ * stage is off: the storm's own post pass draws the bloom, the grade, the vignette, the lens beads
+ * and the dither, so a built-in stage would do the same job twice. What the core keeps is the Unreal
+ * filmic curve and the metered exposure, which the post pass no longer implements itself.
+ */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  const preset = QUALITY_PRESETS[tier as QualityTier];
-  if (preset === undefined) {
-    throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
-    );
-  }
+  const stagesOff = {
+    bloomEnabled: false,
+    denoiseEnabled: false,
+    finalGatherMethod: "none",
+    gtaoEnabled: false,
+    localExposureEnabled: false,
+    motionBlurEnabled: false,
+    sharpenEnabled: false,
+    ssgiEnabled: false,
+    ssrEnabled: false,
+    // This study keeps 4x multisampling: a temporal pass would add a second chain around its post pass.
+    temporalAA: false,
+    unrealBloomEnabled: false,
+    vignetteAmount: 0,
+  } as const satisfies IWorldEnvironmentOptions;
+  console.info(
+    `TN_RENDER_CHAIN_COST_OVERRIDE ${JSON.stringify({
+      reason:
+        "Rain: the storm's own post pass draws bloom, grade, vignette, lens beads and dither; a built-in stage would do the same job twice",
+      ...stagesOff,
+    })}`,
+  );
   return {
     ...coreQualityPreset(tier),
-    ...legacyDefaults,
-    ...preset,
+    ...stagesOff,
     exposurePolicy: exposureSettings,
-    samples: preset.samples ?? 4,
+    samples: 4,
   };
 }
 

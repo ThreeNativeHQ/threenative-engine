@@ -3,12 +3,12 @@
 //
 // The whole filmic half of the demo in one pass: twelve animated refractive beads near the lens
 // edges, a five-tap luma-edge antialias over the warped coordinate, the bloom added, weather
-// exposure, the ACES fit, the cool-shadow/warm-highlight grade, the vignette, gamma 1/2.2 and the
-// dither. Nothing here is a framework default — every constant is the demo's.
+// exposure, the cool-shadow/warm-highlight grade, the vignette and the dither. The demo's ACES fit and
+// gamma 1/2.2 are gone: the engine's filmic curve and sRGB encode run after this pass.
+// Nothing else here is a framework default — every constant is the demo's.
 precision highp float;
 in vec2 vUv;out vec4 fragColor;uniform sampler2D uScene,uBloom;uniform vec2 uRes;uniform float uTime,uExposure,uRain,uLens;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123);}
-vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
 vec3 antialias(vec2 uv){
  vec2 px=1./uRes;vec3 m=texture(uScene,uv).rgb;
  vec3 nw=texture(uScene,uv+vec2(-1.,-1.)*px).rgb,ne=texture(uScene,uv+vec2(1.,-1.)*px).rgb;
@@ -37,11 +37,9 @@ void main(){
  vec3 bloom=vec3(0.);float wt=0.;for(int i=-3;i<=3;i++){float w=exp(-float(i*i)*.26);bloom+=texture(uBloom,uv+vec2(0.,float(i)*3.)/uRes).rgb*w;wt+=w;}
  col+=bloom/wt*.22;
  col*=uExposure;
- col=aces(col);
  // Cool shadow / warm practical-light grade, retaining neutral highlights.
  col=pow(max(col,vec3(0.)),vec3(1.015,1.,.975));
  float vign=1.-.28*pow(length((uv-.5)*vec2(1.05,1.)),1.65);col*=vign;
- col=pow(col,vec3(1./2.2));
  col+=(hash(gl_FragCoord.xy+floor(uTime*24.))-.5)*.005+dropHighlight;
  fragColor=vec4(clamp(col,0.,1.),1.);
 }

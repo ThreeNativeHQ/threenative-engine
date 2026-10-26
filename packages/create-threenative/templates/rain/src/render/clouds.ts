@@ -120,7 +120,8 @@ export function createCloudPass({ camera }: ICloudPassOptions): ICloudPass {
       uTime.value = elapsed;
       uCloud.value = weather.cloud;
       uWind.value = weather.wind;
-      uFlash.value = flash;
+      // The filmic shoulder lights the flashed cloud deck whiter than the old ACES curve and hides the top of the bolt.
+      uFlash.value = flash * 0.3;
       uStrike.value.copy(strike);
 
       const tier = studyTier(quality);

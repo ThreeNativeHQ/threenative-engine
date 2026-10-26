@@ -54,7 +54,6 @@ const VENDORED_RENDER_FILES = [
  * tracking its pending visual migration; remove each entry only after IMPROVEMENT.
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
-  rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
 };
 
@@ -338,6 +337,45 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       });
       expect(preset.tonemapMode, `sailing/${tier} tonemapMode`).toBe("filmic");
       expect(preset.autoExposureEnabled, `sailing/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "rain/%s follows the core preset with its own post pass doing bloom and grade",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(pathToFileURL(renderFile("rain", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("rain", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.8,
+        minStops: -2,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        bloomEnabled: false,
+        denoiseEnabled: false,
+        finalGatherMethod: "none",
+        gtaoEnabled: false,
+        localExposureEnabled: false,
+        motionBlurEnabled: false,
+        sharpenEnabled: false,
+        ssgiEnabled: false,
+        ssrEnabled: false,
+        temporalAA: false,
+        unrealBloomEnabled: false,
+        vignetteAmount: 0,
+        samples: 4,
+      });
+      expect(preset.tonemapMode, `rain/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `rain/${tier} metered exposure`).toBe(true);
     },
   );
 });
