@@ -2576,15 +2576,17 @@ void tsl_ssr_parameters() {
     CHECK(node && node->post->kind == "SSRNode" && !node->post->roughness);
     const auto rough = tn::abi::tslCall("ssr", nullptr, {tex, tex, tex, TslArg::of(0.4), TslArg::of(0.2)}, serial);
     CHECK(rough && rough->post->roughness);
+    // Unbounded by default, like the three patch's SSRNode.maxSteps; a quality tier caps the march.
+    CHECK(tn::abi::tslEffectParameter(node, "maxSteps", nullptr) == 1e6);
     const std::pair<const char*, double> valid[]{{"maxDistance", 2}, {"thickness", 0}, {"opacity", 0.5},
-        {"quality", 1}, {"blurQuality", 3}, {"reflectNonMetals", 1}, {"binaryRefine", 1},
+        {"quality", 1}, {"maxSteps", 8}, {"blurQuality", 3}, {"reflectNonMetals", 1}, {"binaryRefine", 1},
         {"intensity", 2}, {"maxLuminance", 20}, {"resolutionScale", 0.5}};
     for (const auto& [name, value] : valid) {
         CHECK(tn::abi::tslEffectParameter(node, name, &value) == value);
         CHECK(tn::abi::tslEffectParameter(node, name, nullptr) == value);
     }
     const std::pair<const char*, double> invalid[]{{"maxDistance", 0}, {"thickness", -1}, {"opacity", -1},
-        {"quality", -0.1}, {"quality", 1.1}, {"blurQuality", 0}, {"blurQuality", 4}, {"blurQuality", 1.5},
+        {"quality", -0.1}, {"quality", 1.1}, {"maxSteps", 0}, {"maxSteps", 0.5}, {"blurQuality", 0}, {"blurQuality", 4}, {"blurQuality", 1.5},
         {"reflectNonMetals", 0.5}, {"binaryRefine", 2}, {"intensity", -1}, {"maxLuminance", -1},
         {"maxDistance", std::numeric_limits<double>::max()}, {"resolutionScale", 0}, {"resolutionScale", 1.1}};
     for (const auto& [name, value] : invalid) {

@@ -1696,6 +1696,7 @@ const ARTIFACT_BUDGET_SEVERITIES: readonly string[] = ["error", "warn"];
 export const PERFORMANCE_BUDGET_KEYS: readonly string[] = [
   "maxDrawCalls",
   "maxFrameMsP95",
+  "maxFrameMsReason",
   "maxPassDrawCalls",
   "maxPassTriangles",
   "maxPhaseMsP95",
@@ -1757,6 +1758,17 @@ function validatePerformanceBudget(raw: unknown, label: string): PerformanceBudg
     );
   }
   const out: Record<string, unknown> = {};
+  // The harness refuses a maxFrameMsP95 above 16.7 ms without this reason, so the budget carries it through.
+  const frameReason = budget.maxFrameMsReason;
+  if (frameReason !== undefined) {
+    if (typeof frameReason !== "string" || frameReason.trim() === "") {
+      fail(
+        "TN_CONFIG_PROFILE_INVALID",
+        `${label}.performanceBudget.maxFrameMsReason must be a non-empty string.`,
+      );
+    }
+    out.maxFrameMsReason = frameReason;
+  }
   for (const key of ["maxDrawCalls", "maxFrameMsP95", "maxTriangles", "minFps"] as const) {
     const value = budget[key];
     if (value === undefined) continue;

@@ -19,9 +19,9 @@ import { roundedBox } from "./shapes.js";
  * The light grid the arena stands on, six metres below the route. Nothing collides with it, which
  * is what makes the gap between the two platforms a real pit rather than scenery underfoot.
  */
-const GROUND_Y = -6;
+export const GROUND_Y = -6;
 /** The dark-grid walls that close the arena, and how far the route's own ground sits below them. */
-const ARENA = { halfX: 13, halfZ: 11, thickness: 1, wallTop: 4 } as const;
+export const ARENA = { halfX: 13, halfZ: 11, thickness: 1, wallTop: 4 } as const;
 
 const PLATE = 0.2;
 

@@ -65,8 +65,9 @@ export function resolveRendererScaleSetting(
  *
  * Android and iOS keep every rung: those rungs are what the device arm measured, and a phone buys
  * the pixels back in ways a desktop does not. Everything else stops at
- * `RESOLUTION_SCALER.desktopFloorScale`, because a desktop with nothing reconstructing the frame
- * from fewer pixels turns the bottom of that ladder into blocky mush rather than a faster frame.
+ * `RESOLUTION_SCALER.desktopFloorScale` (full resolution), because a desktop with nothing
+ * reconstructing the frame from fewer pixels shows every lost rung as blur, as Unreal's default
+ * of no dynamic resolution without its temporal upscaler assumes.
  * A desktop whose render chain does reconstruct it lifts the floor itself, per step.
  */
 export function resolvePlatformResolutionFloor(os: PlatformOS): number | undefined {

@@ -2455,10 +2455,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             --entry "__tests__/fixtures/auto-exposure/native-contract.ts"
             --target desktop --output "${TN_EXPOSURE_BUNDLE}"
         DEPENDS "${TN_EXPOSURE_FIXTURE}/native-contract.ts"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/autoExposure.ts"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposureGraph.ts"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposureReadback.ts"
-            "${CMAKE_CURRENT_SOURCE_DIR}/../create-threenative/template-assets/exposure.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../core/src/look/auto-exposure.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../core/src/look/exposure-graph.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../core/src/look/exposure-readback.ts"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../core/src/look/exposure-settings.ts"
             "${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle.mjs"
             "${CMAKE_CURRENT_SOURCE_DIR}/../../pnpm-lock.yaml")
     add_executable(threenative-exposure-graph-test EXCLUDE_FROM_ALL

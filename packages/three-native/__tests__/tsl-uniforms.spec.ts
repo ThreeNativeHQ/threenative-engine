@@ -1,7 +1,7 @@
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
-import { liveUniforms } from "../src/tsl-uniforms.js";
+import { booleanUniforms, liveUniforms } from "../src/tsl-uniforms.js";
 
 setFlagsFromString("--expose-gc");
 const collectGarbage = runInNewContext("gc") as () => void;
@@ -52,5 +52,85 @@ describe("uniform update hooks", () => {
         frame.camera === camera ? 7 : -1) as never);
     live.sync({ camera });
     expect(pushed.at(-1)).toEqual([7]);
+  });
+});
+
+describe("boolean uniforms", () => {
+  // The exposure meter's `enabled` is `uniform(false)`. A back end whose `uniform` takes numbers and vectors only
+  // refused it with "TN_TSL uniform: expected a TSL node or number", which stopped the engine player at startup.
+  it("keeps a boolean as the live float compared with zero, and answers .value in booleans", () => {
+    const { live, pushed } = setup();
+    const made: string[] = [];
+    const uniform = booleanUniforms(
+      (value, type) => {
+        if (typeof value === "boolean") throw new Error("expected a TSL node or number");
+        return live.uniform(value, type);
+      },
+      (scalar) => {
+        made.push("notEqual");
+        return { scalar } as IFakeNode;
+      },
+    );
+    const enabled = uniform(false);
+    expect(made).toEqual(["notEqual"]);
+    expect(enabled.value).toBe(false);
+    enabled.value = true;
+    expect(enabled.value).toBe(true);
+    expect(pushed.at(-1)).toEqual([1]);
+    expect(() => {
+      enabled.value = 1;
+    }).toThrow("TN_TSL_UNIFORM_VALUE");
+    expect(() => uniform(true, "float")).toThrow("requires bool type");
+  });
+
+  it("passes numbers through untouched", () => {
+    const { live } = setup();
+    const uniform = booleanUniforms(live.uniform, () => {
+      throw new Error("not a boolean");
+    });
+    expect(uniform(3).value).toBe(3);
+  });
+});
+
+describe("uniform sync cost", () => {
+  // Lantern Vale renders about ten post passes a frame, and every pass synced every uniform: 832 engine
+  // writes a frame for values that had not changed.
+  it("writes a hooked uniform only when its value changes", () => {
+    const { live, pushed } = setup();
+    let gain = 5;
+    live.uniform(0).onRenderUpdate?.(() => gain);
+    for (let pass = 0; pass < 10; pass++) live.sync({ frameId: 1 } as never);
+    expect(pushed).toEqual([[5]]);
+    gain = 6;
+    live.sync({ frameId: 2 } as never);
+    expect(pushed).toEqual([[5], [6]]);
+  });
+
+  it("writes an edited vector once per edit, however many renders follow", () => {
+    const { live, pushed } = setup();
+    const origin = { x: 1, y: 2 };
+    live.uniform(origin);
+    for (let pass = 0; pass < 10; pass++) live.sync();
+    expect(pushed).toEqual([[1, 2]]);
+    origin.x = 3;
+    live.sync();
+    live.sync();
+    expect(pushed).toEqual([
+      [1, 2],
+      [3, 2],
+    ]);
+  });
+
+  it("runs a frame update once per renderer frame and a render update once per render", () => {
+    const { live } = setup();
+    let frames = 0;
+    let renders = 0;
+    const hooked = live.uniform(0) as IFakeNode & { onFrameUpdate(callback: () => unknown): void };
+    hooked.onFrameUpdate(() => ++frames);
+    live.uniform(0).onRenderUpdate?.(() => ++renders);
+    for (let pass = 0; pass < 10; pass++) live.sync({ frameId: 7 } as never);
+    live.sync({ frameId: 8 } as never);
+    expect(frames).toBe(2);
+    expect(renders).toBe(11);
   });
 });

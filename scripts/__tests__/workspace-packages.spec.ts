@@ -5,6 +5,7 @@ import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   assertWebEngineBuilt,
   findLiteralPackageEnumerationViolations,
+  packWorkspacePackages,
   workspacePackageArchives,
   workspacePackageSourceFlag,
   workspacePackages,
@@ -344,5 +345,13 @@ describe("assertWebEngineBuilt", () => {
     await mkdir(web, { recursive: true });
     await writeFile(path.join(web, "tn-native-engine-web.wasm"), "\0asm");
     expect(() => assertWebEngineBuilt(repo)).not.toThrow();
+  });
+
+  it("stops the local pack before it builds or packs anything when the Wasm engine is missing", async () => {
+    const repo = await makeTempDir("tn-web-engine-pack-");
+    temporaryRoots.push(repo);
+    expect(() => packWorkspacePackages(repo, path.join(repo, "out"))).toThrow(
+      "TN_PACK_WEB_ENGINE_MISSING",
+    );
   });
 });

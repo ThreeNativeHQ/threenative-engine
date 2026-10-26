@@ -132,7 +132,7 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     const auto ctx = isolate_->GetCurrentContext();
     Wrapper* w = wrapper(value);
     // A texture names its map by the object's `name`; textureLoad also takes a texture node.
-    const bool texture = index == 0 && name == "texture";
+    const bool texture = index == 0 && (name == "texture" || name == "textureValue");
     const bool textureLoad = index == 0 && name == "textureLoad";
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself and texture3D samples it, and storage reads the attribute's buffer, not a map the material
@@ -144,6 +144,13 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
         const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
         if (object == nullptr) throw std::runtime_error(name + " needs an engine object as argument " + std::to_string(index));
         return abi::TslArg::objectOf(object->cls, object->ptr);
+    }
+    // A texture node's `.value = target.texture` swaps the engine Texture the node samples (the exposure meter's
+    // result and history). Anything but an engine object stays `other`, which the ABI refuses by name.
+    if (index == 0 && name == "textureValue") {
+        tn_handle_t handle{};
+        const binding::Object* object = engineObject && engineObject(value, handle) ? abi::objectOf(handle) : nullptr;
+        return object != nullptr ? abi::TslArg::objectOf(object->cls, object->ptr) : abi::TslArg::other();
     }
     if (value->IsNumber()) return abi::TslArg::of(value.As<v8::Number>()->Value());
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));

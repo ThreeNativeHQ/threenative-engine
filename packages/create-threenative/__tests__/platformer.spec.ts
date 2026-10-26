@@ -1,18 +1,15 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PerspectiveCamera, Vector2, Vector3 } from "three";
+import { PerspectiveCamera, Scene, Vector2, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { Checkpoints } from "../templates/platformer/src/level/Checkpoints.js";
 import { setupPost } from "../templates/platformer/src/render/postprocessing.js";
 import { TouchControls } from "../templates/platformer/src/render/touch-controls.js";
 import { touchControlPoint } from "../templates/platformer/src/render/touch-layout.js";
-import { WorldEnvironment } from "../templates/platformer/src/render/worldEnvironment.js";
 
-vi.mock("../templates/platformer/src/render/worldEnvironment.js", () => ({
-  WorldEnvironment: vi.fn().mockImplementation(function WorldEnvironmentMock() {
-    return { apply: vi.fn() };
-  }),
-}));
+type RenderChainOptions = Parameters<
+  NonNullable<Parameters<typeof setupPost>[0]["createRenderChain"]>
+>[0];
 
 type Target = Parameters<Checkpoints["hurt"]>[0];
 
@@ -32,33 +29,37 @@ describe("platformer checkpoints", () => {
     const globals = globalThis as typeof globalThis & {
       __THREENATIVE_PROFILE__?: { hostedSoftware?: boolean };
     };
-    const renderer = { raw: {} } as Parameters<typeof setupPost>[0];
-    const scene = {} as Parameters<typeof setupPost>[1];
-    const camera = {} as Parameters<typeof setupPost>[2];
+    const createRenderChain = vi.fn((options: RenderChainOptions) => ({
+      applied: { dropped: [], stages: [...(options.request?.stages ?? [])] },
+      dispose() {},
+    }));
+    const renderer = { kind: "webgpu", raw: {}, createRenderChain } as Parameters<
+      typeof setupPost
+    >[0];
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    // The applied environment prints its own report after the tier line; read that line out.
+    const reportedTier = (): string =>
+      info.mock.calls
+        .map((call) => String(call[0]))
+        .find((line) => line.startsWith("TN_QUALITY_TIER")) ?? "";
     vi.clearAllMocks();
 
     globals.__THREENATIVE_PROFILE__ = { hostedSoftware: true };
     setupPost(renderer, scene, camera, { mobile: false });
-    expect(info).toHaveBeenLastCalledWith(
+    expect(reportedTier()).toBe(
       "TN_QUALITY_TIER low mobile=false software=false source=hosted-software",
     );
 
+    info.mockClear();
     setupPost(renderer, scene, camera, { mobile: false, tier: "high" });
-    expect(info).toHaveBeenLastCalledWith(
-      "TN_QUALITY_TIER high mobile=false software=false source=override",
-    );
+    expect(reportedTier()).toBe("TN_QUALITY_TIER high mobile=false software=false source=override");
     // The three names must be three looks. On this level the difference is contact occlusion: a
     // 2,300-mesh route where every mesh costs per-object work is where a phone loses the screen-space
     // stages and a desktop keeps them.
-    expect(WorldEnvironment).toHaveBeenNthCalledWith(
-      1,
-      expect.not.objectContaining({ gtaoEnabled: expect.anything() }),
-    );
-    expect(WorldEnvironment).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ gtaoEnabled: true }),
-    );
+    expect(createRenderChain.mock.calls[0]?.[0].request?.stages).not.toContain("ambientOcclusion");
+    expect(createRenderChain.mock.calls[1]?.[0].request?.stages).toContain("ambientOcclusion");
 
     globals.__THREENATIVE_PROFILE__ = undefined;
     info.mockRestore();
@@ -287,7 +288,6 @@ describe("platformer checkpoints", () => {
       assert: {
         performance: {
           maxDrawCalls: number;
-          maxFrameMsP95: number;
           maxTriangles: number;
           minFps: number;
         };
@@ -301,12 +301,11 @@ describe("platformer checkpoints", () => {
     // `scenes/Play.ts` bought: the same scene un-collapsed is 2,128 draws, because a level
     // authored out of primitives is one draw per primitive until something merges it.
     //
-    // The frame-time and FPS ceilings deliberately did not move — measured p95 was 0.5 ms against
-    // the 33 ms ceiling. A cap raised to fit the work is a cap routed around; these three numbers
+    // The FPS floor deliberately did not move, and the scenario pins no frame time: the harness holds
+    // every tier to 16.7 ms p95 (PRD-735). A cap raised to fit the work is a cap routed around; these numbers
     // are a guard against the next change that makes the frame worse, not a score.
     expect(scenario.assert.performance).toEqual({
       maxDrawCalls: 600,
-      maxFrameMsP95: 33,
       maxTriangles: 190_000,
       // PRD-222 Phase 1: the Tier 3 Floor lives in the shipped scenario, beside the ceilings.
       minFps: 30,

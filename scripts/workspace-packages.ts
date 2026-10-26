@@ -253,7 +253,10 @@ function buildWorkspacePackages(repo: string): void {
   }
 }
 
-function packWorkspacePackages(repo: string, destination: string): void {
+export function packWorkspacePackages(repo: string, destination: string): void {
+  // runtime-native's prepack stamp check passes when build/web has no Wasm at all, so this pack
+  // shipped a tarball with no engine and exited 0.
+  assertWebEngineBuilt(repo);
   fs.mkdirSync(destination, { recursive: true });
   buildWorkspacePackages(repo);
   for (const item of workspaceBuildOrder(repo)) {

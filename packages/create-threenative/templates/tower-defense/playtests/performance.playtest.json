@@ -1,5 +1,6 @@
 {
   "acceptanceId": "tower-defense-production-performance",
+  "clock": "wall-clock",
   "name": "production-performance",
   "schemaVersion": 1,
   "target": "web",
@@ -62,7 +63,6 @@
   "assert": {
     "performance": {
       "maxDrawCalls": 340,
-      "maxFrameMsP95": 33,
       "maxTriangles": 29000,
       "minFps": 30
     },

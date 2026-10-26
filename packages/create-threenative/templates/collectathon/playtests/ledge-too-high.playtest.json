@@ -1,0 +1,115 @@
+{
+  "name": "collectathon-ledge-too-high",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": -17.15,
+          "y": 0.85,
+          "z": -6
+        },
+        "facing": {
+          "yaw": 1.5708
+        }
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": 10,
+          "y": 0,
+          "z": -14
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.4",
+        "at": {
+          "x": -4,
+          "y": 0,
+          "z": 26
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "reach",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "on-top",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 2
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stand",
+      "press": [],
+      "holdTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "ledgeGrabs",
+        "equals": 0,
+        "allowTrivial": "The wall's top is 1.5 m above the grab band, so zero grabs is the property under test."
+      },
+      {
+        "entity": "player",
+        "component": "groundY",
+        "gte": -0.1,
+        "lte": 0.1,
+        "allowTrivial": "Still on the floor at the wall's foot."
+      },
+      {
+        "entity": "player",
+        "component": "position",
+        "path": "0",
+        "gte": -17.8,
+        "lte": -17.4,
+        "allowTrivial": "Pressed against the wall face at x = -18 after the jump, so the missing grab is the wall's height, not a short jump."
+      },
+      {
+        "entity": "player",
+        "component": "apex",
+        "path": "single",
+        "gte": 2.0,
+        "allowTrivial": "The jump rose through the same band that grabbed the 3 m ledge in ledge.playtest.json."
+      }
+    ]
+  }
+}

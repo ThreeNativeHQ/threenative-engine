@@ -14,8 +14,8 @@ import {
 } from "three";
 import { palette } from "./palette.js";
 
-/** How much of the sky's light reaches the board. The JPEG holds radiance x 0.4, so 1 is dim. */
-const ENVIRONMENT = 1;
+/** How much of the sky's light reaches the board. The JPEG holds radiance x 0.4; 0.7 keeps the sun, not the sky, the main light so shade reads deep (PRD-723). */
+const ENVIRONMENT = 0.7;
 
 export function setupSky(scene: Scene, sky: Texture): void {
   sky.mapping = EquirectangularReflectionMapping;

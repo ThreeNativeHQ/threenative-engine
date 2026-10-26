@@ -1,8 +1,9 @@
+import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
-// owns which stages run at which tier and records what each one measured. `WorldEnvironment`,
-// also in this folder, builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
+// owns which stages run at which tier and records what each one measured. `WorldEnvironment` from
+// the core package builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
 // applied or refused **with a reason**, so a stage that silently no-op'd is never mistaken for
 // one you turned off.
 //
@@ -22,7 +23,6 @@ import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
 import type { FogMedium } from "./volumetricFog.js";
-import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
 interface IPostController {
   readonly tier: QualityTier;

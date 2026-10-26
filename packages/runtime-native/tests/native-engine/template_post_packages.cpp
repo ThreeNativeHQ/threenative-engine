@@ -96,7 +96,8 @@ int main(int argc, char** argv) {
     tn::engine::graph::RenderGraph renderGraph;
     using Desc = tn::engine::graph::TextureDesc;
     std::map<std::string, tn::engine::graph::ResourceId> resources;
-    for (const std::string name : {"scene", "depth", "normal"}) resources[name] = renderGraph.external(name, Desc{320,240,1,1});
+    for (const std::string name : {"scene", "depth", "normal", "roughness", "metalness", "diffuseColor", "emissive"})
+        resources[name] = renderGraph.external(name, Desc{320,240,1,1});
     const auto passes = graph::postPasses(node);
     for (const auto& pass : passes) {
         for (const auto& image : pass.images) resources[image.name] = renderGraph.external(image.name, Desc{image.width,image.height,1,1});
@@ -105,9 +106,14 @@ int main(int argc, char** argv) {
     for (const auto& pass : passes) {
         std::vector<tn::engine::graph::Read> reads;
         for (const auto& [binding, name] : pass.reads) {
-            // The host draws these: the velocity target, and the stages a template runs through the facade
-            // (the sweep names them `host_<node>`; their parity row is what proves them).
-            if (!resources.count(name) && (name == "velocity" || name.rfind("host_", 0) == 0))
+            // The host draws these: the velocity target; the emissive, albedo (three's `diffuseColor`) and material
+            // (metalness, roughness) targets it draws when a post pass reads them (renderer.cpp); the light and
+            // occlusion targets of the screen-space gather (`SSGI_*`); and the stages a template runs through the
+            // facade (the sweep names them `host_<node>`). The parity row of each effect is what proves it.
+            const bool hostDrawn = name == "velocity" || name == "emissive" || name == "metalness" ||
+                                   name == "roughness" || name == "diffuseColor" || name.rfind("SSGI_", 0) == 0 ||
+                                   name.rfind("host_", 0) == 0;
+            if (!resources.count(name) && hostDrawn)
                 resources[name] = renderGraph.external(name, Desc{320,240,1,1});
             if (!resources.count(name)) { std::cerr << package.name << ": TN_POST_INPUT_MISSING: " << name << '\n'; return 1; }
             reads.push_back({resources.at(name)});

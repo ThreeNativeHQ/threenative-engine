@@ -20,130 +20,19 @@
 // This level is bright: a photograph sky at full range, ~2,300 small meshes, one sun and no
 // screen-space colour work. `playtests/performance.playtest.json` is the proof of the numbers
 // below — read `TN_FRAME_BUDGET` back after you change a tier rather than trusting these.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import {
+  type IWorldEnvironmentOptions,
+  qualityPreset as coreQualityPreset,
+  qualityTiers,
+} from "@threenative/core";
+import { exposureSettings } from "./exposure.js";
+export type { QualityTier } from "@threenative/core";
+import type { QualityTier } from "@threenative/core";
 
-export type QualityTier = "low" | "medium" | "high";
+export const resolveQualityTier = qualityTiers.resolve;
 
-const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
-
-/**
- * Narrows an arbitrary string — a URL parameter, a saved setting — to a tier name. Not exported:
- * `resolveQualityTier` is the one door in, so an unknown name cannot be waved past the throw.
- */
-function isQualityTier(value: string): value is QualityTier {
-  return (QUALITY_TIERS as readonly string[]).includes(value);
-}
-
-/**
- * Where each GPU family starts, from `ctx.renderer.gpuClass`.
- *
- * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
- * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
- * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
- * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
- */
-const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
-  software: "low",
-  "mobile-low": "low",
-  "mobile-mid": "low",
-  "mobile-high": "medium",
-  integrated: "medium",
-  discrete: "high",
-};
-
-/**
- * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
- *
- * Fails closed. An unrecognised tier name throws with the value it was handed rather than
- * quietly rendering the default, because a silent fallback here looks exactly like a tier that
- * turned out to have no effect.
- */
-export function resolveQualityTier(
-  request: {
-    readonly gpuClass?: string;
-    readonly mobile?: boolean;
-    readonly software?: boolean;
-    readonly tier?: string;
-  } = {},
-): QualityTier {
-  const requested = request.tier;
-  if (requested !== undefined) {
-    if (!isQualityTier(requested)) {
-      throw new Error(
-        `Unknown quality tier ${JSON.stringify(requested)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-      );
-    }
-    return requested;
-  }
-  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
-  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
-  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
-  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
-  // `tier` above still wins over it.
-  if (request.software === true) return "low";
-  const family =
-    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
-  if (family !== undefined) return family;
-  return request.mobile === true ? "low" : "high";
-}
-
-/**
- * The look every tier shares: a narrow bloom on what is genuinely brighter than white — the gold
- * coins, the goal star — rather than a haze over the frame, a filmic curve so the photographed
- * sky's own highlights stay highlights, and a corner falloff that frames the route.
- */
-const shared: IWorldEnvironmentOptions = {
-  // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there. The
-  // threshold sits at 1 so only the gold and the specular hit it, never the pale stone.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.18,
-  bloomThreshold: 1,
-  // The sky photograph arrives at 2.5x, so the curve and the exposure below are what bring it
-  // back to a daylight frame instead of a white one.
-  autoExposureEnabled: false,
-  exposure: 0.6,
-  tonemapMode: "aces",
-  vignetteAmount: 0.2,
-};
-
-/**
- * What a desktop gets on top: contact occlusion — the dark line where a foot meets the ground and
- * a cliff meets the sky, which is most of what separates "objects in a world" from "objects
- * pasted on a background". Gathered at full resolution and denoised; at half, the upsample left
- * grain around every grass tuft.
- */
-const high: IWorldEnvironmentOptions = {
-  ...shared,
-  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
-  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
-  temporalAA: true,
-  // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
-  gtaoEnabled: true,
-  gtaoRadius: 0.4,
-};
-
-/** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
-
-/**
- * What a phone gets: the curve, the narrow bloom and the vignette, nothing screen-space. On a
- * 2,300-mesh level the per-object cost of GTAO is the part that does not scale down, so this tier
- * drops it rather than the effects on top of it.
- */
-const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
-
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
-
-/** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  const preset = QUALITY_PRESETS[tier as QualityTier];
-  if (preset === undefined) {
-    throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-    );
-  }
-  return preset;
+  return { ...coreQualityPreset(tier), exposurePolicy: exposureSettings };
 }
 
 /** First admitted material lane: high desktop hardware WebGPU in the browser only. */

@@ -227,7 +227,12 @@ export function playtest<
         if (!wallClock) runtime?.freezeClock?.();
       }
       dispose = installation.dispose;
-      attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
+      attached = holdUntilAttached(
+        installation.bridge,
+        options,
+        () => startSceneEntered,
+        runtime?.startSceneLoaded,
+      );
       const cleanup = () => {
         if (!clockDisposed && clockRuntime?._setClockMode !== undefined)
           clockControl._setClockMode("fixed-step");
@@ -378,6 +383,7 @@ function holdUntilAttached(
   bridge: IPlaytestBridgeV1,
   options: IPlaytestOptions,
   startSceneEntered: () => Promise<void> | undefined,
+  startSceneLoaded?: () => Promise<void>,
 ): Promise<void> | undefined {
   if (!shouldHoldUntilAttached(options)) return undefined;
   const timeoutMs = options.attachTimeoutMs ?? PLAYTEST_ATTACH_TIMEOUT_MS;
@@ -413,6 +419,9 @@ function holdUntilAttached(
     if (applySetup !== undefined) {
       bridge.applySetup = async (request) => {
         try {
+          // Setup names entities the start scene's load() registers; an async load is still
+          // pending when the runner first attaches.
+          await startSceneLoaded?.();
           const confirmation = await applySetup(request);
           release();
           return confirmation;
@@ -599,6 +608,7 @@ function strideObservation(value: unknown): IPlaytestStrideObservation | undefin
   return {
     clipGroundSpeed: report.clipGroundSpeed as number,
     groundSpeed: report.groundSpeed as number,
+    ...(typeof report.inPlace === "boolean" ? { inPlace: report.inPlace } : {}),
     overridden: report.overridden as boolean,
     rate: report.rate as number,
     synced: report.synced as boolean,

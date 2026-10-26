@@ -175,7 +175,9 @@ export default defineGame({
   camera: { projection: "perspective", fov: 85, near: 0.05, far: 50 },
   input: { gait: { keys: ["KeyC"] }, start: { keys: ["Space"] } },
   plugins: [playtest()],
-  render: { preferWebGPU: true },
+  // One mannequin and a few unique props: the batching projection measures `notWorthwhile` and
+  // falls back, so the game states the opt-out.
+  render: { preferWebGPU: true, projection: false },
   scenes: { locomotion: VqLocomotion },
   start: "locomotion",
 });

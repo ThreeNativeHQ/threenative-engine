@@ -1538,11 +1538,19 @@ void attributeArrays() {
         const index = new BoxGeometry().getIndex();
         const wide = new BufferAttribute(new Uint32Array([7, 8]), 1);
         wide.array[1] = 9;
+        // instanceMatrix is assignable, as in three: a stand-in sharing the source's buffer sees its later writes.
+        const source = new InstancedMesh(new BoxGeometry(), new MeshBasicMaterial(), 2);
+        const standIn = new InstancedMesh(source.geometry, source.material, 2);
+        standIn.instanceMatrix = source.instanceMatrix;
+        source.setMatrixAt(1, new Matrix4().makeTranslation(4, 0, 0));
+        const moved = new Matrix4();
+        standIn.getMatrixAt(1, moved);
         [a instanceof Float32Array, p.array === a, p.getX(1), g.boundingBox.max.x,
-         index.array instanceof Uint16Array, index.array.length, wide.array instanceof Uint32Array, wide.getX(1)].join()
+         index.array instanceof Uint16Array, index.array.length, wide.array instanceof Uint32Array, wide.getX(1),
+         standIn.instanceMatrix === source.instanceMatrix, moved.elements[12]].join()
     )JS");
-    CHECK(got == "true,true,5,5,true,36,true,9");
-    if (got != "true,true,5,5,true,36,true,9") std::fprintf(stderr, "attribute arrays: %s\n", got.c_str());
+    CHECK(got == "true,true,5,5,true,36,true,9,true,4");
+    if (got != "true,true,5,5,true,36,true,9,true,4") std::fprintf(stderr, "attribute arrays: %s\n", got.c_str());
 }
 
 // three's geometry.clone() is a deep copy of the same class, dispose() leaves the CPU data usable,

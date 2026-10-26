@@ -4,7 +4,12 @@ import { measureThreePose, posedBounds } from "./pose-measure.js";
 export interface IGroundSnapOptions {
   /** Whether to apply the correction. Measurement and `clearance` continue when this is false. */
   readonly enabled?: boolean;
-  /** Maximum correction speed in metres per second. Unset follows the authored pose exactly. */
+  /**
+   * Maximum downward correction speed in metres per second. Unset follows the authored pose
+   * exactly. A pose below the surface is still raised at once: the rate stops the snap pulling a
+   * run cycle's flight phase onto the floor, where the leading foot skates, and never lets a foot
+   * sink through it.
+   */
   readonly maxRate?: number;
   /** Visual meshes to measure. Defaults to every mesh below `model`. */
   readonly meshes?: readonly Object3D[];
@@ -50,7 +55,7 @@ export class GroundSnap {
 
     const desired = surfaceY - before.min[1];
     const correction =
-      this.maxRate === undefined ? desired : clamp(desired, -this.maxRate * dt, this.maxRate * dt);
+      this.maxRate === undefined || desired > 0 ? desired : Math.max(desired, -this.maxRate * dt);
     if (this.enabled) this.applyWorldCorrection(group, correction);
 
     // Re-read after the move. The group may be under a scaled or rotated parent, so the local
@@ -93,8 +98,4 @@ function validateMaxRate(maxRate: number | undefined): void {
   if (maxRate !== undefined && (!Number.isFinite(maxRate) || maxRate < 0)) {
     throw new Error("GroundSnap maxRate must be finite and non-negative.");
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }

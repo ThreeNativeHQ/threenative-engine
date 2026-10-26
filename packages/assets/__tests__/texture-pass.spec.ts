@@ -674,10 +674,19 @@ describe("the ktx2 texture pass", () => {
     expect((await readFile(path.join(root, "public", entry.output))).equals(source)).toBe(true);
   });
 
+  it("should accept a WebP source the decoder reads (kit tiling textures ship as .webp)", async () => {
+    const sharp = (await import("sharp")).default;
+    const webp = await sharp(rgbaPng({ height: 16, width: 16 }))
+      .webp({ lossless: true })
+      .toBuffer();
+    const result = await texturePass().apply(webp, "tex-grass.webp");
+    expect(Buffer.isBuffer(result) || result.buffer.byteLength > 0).toBe(true);
+  });
+
   it("should reject a source the encoder cannot decode, naming the file", async () => {
     const root = await makeTempDir("threenative-tex-undecodable-");
     await mkdir(path.join(root, "assets"));
-    // A .webp source is classified as a texture but has no decoder in this pass yet.
+    // A truncated .webp (a bare RIFF tag) is classified as a texture but is no image the decoder reads.
     await writeFile(path.join(root, "assets", "photo.webp"), Buffer.from([0x52, 0x49, 0x46, 0x46]));
     await expect(compileAssets({ cwd: root })).rejects.toThrow(/photo\.webp/u);
   });

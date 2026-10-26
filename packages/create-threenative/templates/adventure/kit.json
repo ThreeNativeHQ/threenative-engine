@@ -1,0 +1,8 @@
+{
+  "name": "adventure",
+  "title": "Lantern Vale",
+  "blurb": "Wren crosses a sunlit clearing and a three-room moss dungeon with lock-on sword combat, a shield, a block-and-switch puzzle, a small key and the Stone Warden mini-boss.",
+  "genre": "adventure",
+  "aliases": ["zelda", "ocarina", "action-adventure", "adventure"],
+  "kit": true
+}

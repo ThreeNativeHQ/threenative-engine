@@ -8,6 +8,7 @@
     { "kind": "input", "label": "move-under-live-hud", "press": "ArrowRight", "holdTicks": 20 }
   ],
   "assert": {
+    "tone": [{ "p50": { "min": 60, "max": 230 } }],
     "resources": [
       {
         "id": "state",

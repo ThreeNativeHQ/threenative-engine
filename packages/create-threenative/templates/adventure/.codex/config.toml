@@ -1,0 +1,19 @@
+[mcp_servers.threenative-assets]
+command = "node"
+args = ["./node_modules/@threenative/core/mcp/assets.mjs"]
+
+[mcp_servers.threenative-assets.env]
+ASSET_DOWNLOAD_DIR = "./public/assets"
+AUDIO_DOWNLOAD_DIR = "./public/audio"
+
+[mcp_servers.threenative-sculpt]
+command = "node"
+args = ["./node_modules/@threenative/core/mcp/sculpt.mjs"]
+
+[mcp_servers.threenative-engine]
+command = "node"
+args = ["./node_modules/@threenative/core/mcp/engine.mjs"]
+
+[mcp_servers.threenative-blender]
+command = "node"
+args = ["./node_modules/@threenative/core/mcp/blender.mjs"]

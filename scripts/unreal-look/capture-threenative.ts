@@ -152,10 +152,19 @@ export async function patchScaffold(
       ),
     );
   }
-  await cp(
-    path.join(SCAFFOLD_DIR, "Reference.ts.in"),
-    path.join(target, "src/scenes/Reference.ts"),
-  );
+  const reference = path.join(target, "src/scenes/Reference.ts");
+  await cp(path.join(SCAFFOLD_DIR, "Reference.ts.in"), reference);
+  // The template's own look takes WorldEnvironment from core since PRD-723; only the overlay vendors a copy.
+  if (baseline)
+    await writeFile(
+      reference,
+      replaceOnce(
+        await readFile(reference, "utf8"),
+        'import { WorldEnvironment } from "../render/worldEnvironment.js";',
+        'import { WorldEnvironment } from "@threenative/core";',
+        reference,
+      ),
+    );
   // The render modules that only the overlay has: the baseline arm gets inert stand-ins (the template look).
   await cp(
     path.join(SCAFFOLD_DIR, baseline ? "tuningBaseline.ts.in" : "tuning.ts.in"),

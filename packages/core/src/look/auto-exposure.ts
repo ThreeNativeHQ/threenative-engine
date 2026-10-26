@@ -21,6 +21,7 @@ import {
   validateExposureSettings,
 } from "./exposure-settings.js";
 
+import { rendererEnvironmentBake, rendererFrameGateSkips } from "../renderer.js";
 import {
   type ColourTexture,
   type Decode,
@@ -53,7 +54,10 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #reduceSize = uniform(new Vector2(1, 1));
   readonly #blockSize = uniform(new Vector2(1, 1));
   readonly #delta = uniform(0);
-  readonly #resetMode = uniform(1); // 0 = history, 1 = seed, 2 = next measured target
+  // 0 = history, 1 = seed, 2 = next measured target. The first frame adopts its measured target,
+  // as Unreal forces the target on a view's first frame (UE 5.8.3: Engine/Source/Runtime/
+  // Renderer/Private/SceneVisibility.cpp:5495, PostProcess/PostProcessEyeAdaptation.cpp:723).
+  readonly #resetMode = uniform(2);
   readonly #seed = uniform(0);
   readonly #enabled = uniform(false);
   readonly #quad = new QuadMesh();
@@ -73,6 +77,7 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #result = texture(this.#writeTarget.texture);
   #disposed = false;
   readonly #observation: ExposureReadback;
+  #gateSkips: number | undefined;
   // Three's runtime accepts undefined on first use, but its declaration requires a state.
   #rendererState: Parameters<typeof RendererUtils.resetRendererState>[1] | undefined;
 
@@ -154,11 +159,28 @@ export class AutoExposureNode extends TempNode<"float"> {
     if (renderer === null) throw new Error("Exposure requires a renderer.");
     if (!Number.isFinite(frame.deltaTime) || frame.deltaTime < 0 || !Number.isFinite(frame.time))
       throw new Error("Exposure frame time must be finite and nonnegative.");
+    // The owned engine draws the held scene under the loading cover while it bakes the
+    // environment, and that world is still unlit. Metering it clamps the target to maxStops and the
+    // first-frame adoption takes it, so the world opens several stops bright when the cover lifts
+    // and then adapts down at the authored rate. A bake draw presents nothing; the first presented
+    // frame adopts its measured target, as Unreal forces it on a view's first frame (UE 5.8.3:
+    // Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessEyeAdaptation.cpp:723).
+    if (rendererEnvironmentBake(renderer)) return;
     renderer.getDrawingBufferSize(this.#size);
     // Level 0 meters 4x4 pixels, level 1 averages 16x16. The histogram gathers level 1.
     const sizes = exposureReductionSizes(this.#size.x, this.#size.y).slice(0, 2);
     this.#sourceSize.value.copy(this.#size);
-    this.#delta.value = Math.min(frame.deltaTime, this.settings.maxDelta);
+    // The frame gate declines a draw while two frames are still on the GPU. The drawn frame's
+    // deltaTime already spans those declined calls (they never reach this node), so the decline is
+    // engine pacing, not a suspension: spend that time, up to maxDelta for each frame the call
+    // stands for. A frozen page banks no declined render and stays at one maxDelta.
+    const skips = rendererFrameGateSkips(renderer);
+    const declined =
+      skips !== undefined && this.#gateSkips !== undefined
+        ? Math.max(0, skips - this.#gateSkips)
+        : 0;
+    if (skips !== undefined) this.#gateSkips = skips;
+    this.#delta.value = Math.min(frame.deltaTime, this.settings.maxDelta * (1 + declined));
     while (this.#levels.length > sizes.length) this.#levels.pop()?.dispose();
     for (const [i, [width, height]] of sizes.entries()) {
       const level = this.#levels[i] ?? exposureTarget();

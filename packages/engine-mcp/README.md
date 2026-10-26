@@ -11,6 +11,16 @@ matches); mechanic searches use `scope: "mechanic"` (up to five). Inspect `match
 and the detail constraints before implementing. A `none` capability result includes up to three
 reference suggestions.
 
+First infer the concrete mechanics implied by the request. Call `engine_search_capabilities` once
+with that mechanically explicit request and `scope: "request"`, then once per mechanic with
+`scope: "mechanic"`. Complete requests return up to 15 deduplicated capabilities; focused
+situations return up to five. A request that names a game or genre a starter kit covers (`like mario`, `zelda-style`) leads with a
+`starterKits` entry carrying `npx create-threenative <dir> --template <name>`; scaffold it first, then
+search the mechanics it does not cover. The kits and their words come from each `kit.json` through
+the manifest's `starterKits` section (verdict `"starterKit"` when no mechanic also matched). Every result includes
+`matchedSituation`, so an authoring agent can verify why it was selected instead of treating a
+lexical coincidence as engine guidance.
+
 Reference search reads a gzipped stub index; detail fetches one pinned game's map and cards lazily.
 The source is the latest release of [threenative-game-refs](https://github.com/jonit-dev/threenative-game-refs),
 separate CC-BY 4.0 data. Downloads validate before replacing the cache in

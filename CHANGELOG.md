@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/core#sceneWarning` takes an optional fourth `gpuClass` argument and
+  returns no verdict for `"software"`: a CPU rasteriser puts the GPU's work inside the
+  render phase, so "the GPU is idle" is false there. Existing three-argument callers
+  remain valid.
+
 - `@threenative/playtest/runner#advanceFixedStep` now advances and settles each
   driven world frame individually, so browser HUD work runs between frames. Its
   optional fourth `settle` argument defaults to `true`; existing three-argument

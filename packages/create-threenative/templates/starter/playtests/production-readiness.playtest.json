@@ -133,6 +133,20 @@
         "entity": "player",
         "minProjectedPixels": 20
       }
+    ],
+    "tone": [
+      {
+        "atStep": "restarted",
+        "region": {
+          "x": 400,
+          "y": 240,
+          "width": 480,
+          "height": 240
+        },
+        "mean": {
+          "min": 16
+        }
+      }
     ]
   }
 }

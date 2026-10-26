@@ -117,6 +117,7 @@ describe("PhysicsDirectSpaceState3D", () => {
     const shortLength = 1e-30;
     const hit = space.intersectRay({
       from: { x: 0, y: 0, z: 0 },
+      hitFromInside: true,
       to: { x: shortLength, y: 0, z: 0 },
     });
 
@@ -328,5 +329,60 @@ describe("PhysicsDirectSpaceState3D", () => {
       }),
     ).toThrow(/collisionMask/);
     simulation.dispose();
+  });
+
+  describe("a ray that starts inside a solid", () => {
+    const from = { x: 0, y: 0, z: 0 };
+    const to = { x: 10, y: 0, z: 0 };
+
+    it("ignores that solid by default and reports the next real hit", () => {
+      const simulation = createSimulation();
+      addBox(simulation, { x: 0, y: 0, z: 0 });
+      const farId = addBox(simulation, { x: 5, y: 0, z: 0 });
+      simulation.step(1 / 60);
+      const hit = new PhysicsDirectSpaceState3D(simulation).intersectRay({ from, to });
+
+      expect(hit?.body.id).toBe(farId);
+      expect(hit?.distance).toBeCloseTo(4.5, 6);
+      expect(hit?.normal).toEqual({ x: -1, y: 0, z: 0 });
+      simulation.dispose();
+    });
+
+    it("reports no hit by default when nothing else is in the way", () => {
+      const simulation = createSimulation();
+      addBox(simulation, { x: 0, y: 0, z: 0 });
+      simulation.step(1 / 60);
+
+      expect(new PhysicsDirectSpaceState3D(simulation).intersectRay({ from, to })).toBeUndefined();
+      simulation.dispose();
+    });
+
+    it("returns the distance 0 hit with a zero normal when hitFromInside is true", () => {
+      const simulation = createSimulation();
+      const insideId = addBox(simulation, { x: 0, y: 0, z: 0 });
+      simulation.step(1 / 60);
+      const hit = new PhysicsDirectSpaceState3D(simulation).intersectRay({
+        from,
+        hitFromInside: true,
+        to,
+      });
+
+      expect(hit?.body.id).toBe(insideId);
+      expect(hit?.distance).toBe(0);
+      expect(hit?.normal).toEqual({ x: 0, y: 0, z: 0 });
+      simulation.dispose();
+    });
+
+    it("ignores a body teleported around the ray start by default", () => {
+      const simulation = createSimulation();
+      const movedId = addBox(simulation, { x: -20, y: 0, z: 0 });
+      simulation.step(1 / 60);
+      simulation.setBodyTransform(movedId, { x: 0, y: 0, z: 0 });
+      const space = new PhysicsDirectSpaceState3D(simulation);
+
+      expect(space.intersectRay({ from, to })).toBeUndefined();
+      expect(space.intersectRay({ from, hitFromInside: true, to })?.body.id).toBe(movedId);
+      simulation.dispose();
+    });
   });
 });

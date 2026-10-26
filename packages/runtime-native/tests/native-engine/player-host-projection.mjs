@@ -23,7 +23,7 @@ const outfile = resolve(work, "game.js");
 await writeFile(entry, `
 import {
   AmbientLight, BatchedMesh, BoxGeometry, BufferGeometry, Bone, Color, DirectionalLight, DoubleSide, Float32BufferAttribute,
-  Group, LOD, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry,
+  Group, InstancedMesh, LOD, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry,
   RenderTarget, Scene, Skeleton, SkinnedMesh, SphereGeometry, Sprite, SpriteMaterial, UnsignedByteType, Vector3,
 } from "three";
 import { WebGPURenderer } from "three/webgpu";
@@ -140,7 +140,12 @@ function build(withHook, withBatched) {
   });
   if (withBatched) scene.add(batched);
   if (withHook) cubes[0].onBeforeRender = () => { hookCalls += 1; };
-  return { cubes, hidden, scene };
+  // An authored InstancedMesh: the mirror's stand-in shares its instanceMatrix (copySpecializedState), so a
+  // setMatrixAt after the mirror is built moves what both paths draw.
+  const instanced = new InstancedMesh(box, new MeshStandardMaterial({ color: 0xffe080 }), 3);
+  for (let index = 0; index < 3; index += 1) instanced.setMatrixAt(index, new Matrix4().makeTranslation(-2 + index * 2, 0.6, 5));
+  scene.add(instanced);
+  return { cubes, hidden, instanced, scene };
 }
 
 const camera = new PerspectiveCamera(50, WIDTH / HEIGHT, 0.1, 200);
@@ -207,7 +212,7 @@ function compare(a, b) {
 async function check(label, withHook, withBatched) {
   const startedAt = Date.now();
   progress("check-start", { label });
-  const { cubes, hidden, scene } = build(withHook, withBatched);
+  const { cubes, hidden, instanced, scene } = build(withHook, withBatched);
   const host = new SceneRenderProjection(scene, { onReport: () => {} });
   const mirror = new SceneRenderProjection(scene, { onReport: () => {}, projection: "js" });
   const results = [];
@@ -221,6 +226,8 @@ async function check(label, withHook, withBatched) {
       hidden.visible = true;
       cubes[11].visible = false;
       cubes[12].material = cubes[13].material;
+      instanced.setMatrixAt(1, new Matrix4().makeTranslation(0, 2.4, 5));
+      instanced.instanceMatrix.needsUpdate = true;
     }
     if (frame === 2) {
       for (const cube of cubes) cube.rotation.y += 0.4;

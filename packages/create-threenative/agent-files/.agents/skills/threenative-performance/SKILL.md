@@ -5,8 +5,7 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 
 # ThreeNative performance evidence
 
-Pool objects; load static GLBs through `ctx.assets.model()`; never claim Android/iOS from a
-desktop proof. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`,
+Pool objects; load static GLBs via `ctx.assets.model()`; never claim Android/iOS from desktop. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`,
 `residual` and per-pass draws and triangles. `defineGame({ frameBudget: false })` silences
 output, never measurement.
 
@@ -15,8 +14,7 @@ output, never measurement.
 `TN_SCENE_WARNING` fires when the GPU used under a third of a frame whose render phase overran
 the display period: move draws and objects, not settings. `npx threenative doctor` and
 `DEV_MODE=true` repeat it; `TN_FRAME_SPANS=1` splits that phase.
-The largest static win is free — three skips per-object binding updates when nothing changed, so
-not writing a transform saved 7.35 ms on 1,561 objects where `markStatic(root)` saved 0.009 ms.
+Largest static win: three skips binding updates when nothing changed; not writing a transform saved 7.35 ms on 1,561 objects, `markStatic(root)` 0.009 ms.
 
 ## Use the shipped defaults
 
@@ -24,7 +22,7 @@ The engine prepares transforms, batches, culls, scales resolution and cooks asse
 read `node_modules/create-threenative/agent-docs/references/performance-basics.md` before hand-rolling any.
 Unexecuted platforms stay unverified; never invent numbers.
 Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. Bounded proof:
-`{"performance":{"maxFrameMsP95":33,"minFps":30,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`,
+`{"performance":{"minFps":60,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`; frame time defaults to 16.7 ms p95 (looser needs `maxFrameMsReason`);
 defined in `node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance`; pass bounds fail closed without a
 per-pass split.
 

@@ -488,7 +488,8 @@ describe("SceneRenderProjection", () => {
     const material = new MeshStandardMaterial();
     fill(scene, material, 32);
     for (let index = 0; index < 32; index += 1) {
-      const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
+      // Never 1: a copy of the filler's box would batch with it by content.
+      const mesh = new Mesh(new BoxGeometry(1, 1 + (index + 1) * 0.001, 1), material);
       mesh.position.z = index < 8 ? 0 : 1_000;
       scene.add(mesh);
     }
@@ -528,7 +529,8 @@ describe("SceneRenderProjection", () => {
     const anchorGeometry = new BoxGeometry(1, 1, 1);
 
     for (let index = 0; index < 8; index += 1) {
-      const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.01, 1), material);
+      // Never 1: a copy of the anchor's box would batch with it by content.
+      const mesh = new Mesh(new BoxGeometry(1, 1 + (index + 1) * 0.01, 1), material);
       mesh.position.z = index < 4 ? -1_000 : 1_000;
       mesh.frustumCulled = index < 4;
       scene.add(mesh);

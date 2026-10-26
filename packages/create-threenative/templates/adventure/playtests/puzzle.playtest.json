@@ -1,0 +1,250 @@
+{
+  "name": "puzzle",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "spawn": {
+      "x": 101,
+      "y": 0.9,
+      "z": -24.8
+    },
+    "place": [
+      {
+        "entity": "mossling.2",
+        "at": {
+          "x": 95,
+          "y": 0.42,
+          "z": -2
+        },
+        "frozen": true
+      },
+      {
+        "entity": "flicker.1",
+        "at": {
+          "x": 96,
+          "y": 1.9,
+          "z": -5
+        },
+        "frozen": true
+      },
+      {
+        "entity": "thornback.1",
+        "at": {
+          "x": 104,
+          "y": 0.55,
+          "z": -9
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "try-door",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "south",
+      "press": "ArrowDown",
+      "holdTicks": 105,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "west",
+      "press": "ArrowLeft",
+      "holdTicks": 114,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lean",
+      "press": ["ArrowUp"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "push",
+      "press": ["ArrowUp"],
+      "holdTicks": 200,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "refused",
+      "press": ["ArrowUp"],
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "to-gap",
+      "press": "ArrowDown",
+      "holdTicks": 258,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "to-chest",
+      "press": "ArrowRight",
+      "holdTicks": 320,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "key",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "to-door-x",
+      "press": "ArrowLeft",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "to-door",
+      "press": "ArrowUp",
+      "holdTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "unlock",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "doorOpen",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "try-door",
+            "equals": false
+          },
+          {
+            "label": "key",
+            "equals": false
+          },
+          {
+            "label": "unlock",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "prompt",
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "try-door",
+            "equals": "Locked"
+          }
+        ],
+        "allowTrivial": "The prompt at the door before the key is the claim: it reads Locked, and it changes once the door is open."
+      },
+      {
+        "id": "state",
+        "path": "keys",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "push",
+            "equals": 0
+          },
+          {
+            "label": "key",
+            "equals": 1
+          },
+          {
+            "label": "unlock",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "No key at the start and none after the door spends it; the per-step values prove the chest gave one."
+      },
+      {
+        "id": "state",
+        "path": "blockSteps",
+        "equals": 2,
+        "atSteps": [
+          {
+            "label": "push",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "grateOpen",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "west",
+            "equals": false
+          },
+          {
+            "label": "refused",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "heroViewNearest",
+        "gte": 1.8,
+        "allowTrivial": "A running minimum: 5.6 m at spawn, and it must stay over 1.8 m through the pushes into the wall (1.43 m before Wren hid from a close camera)."
+      },
+      {
+        "id": "state",
+        "path": "cameraBlocked",
+        "lte": 0,
+        "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."
+      }
+    ],
+    "components": [
+      {
+        "entity": "block",
+        "component": "refused",
+        "gte": 1
+      }
+    ],
+    "movement": {
+      "entity": "block",
+      "minDistance": 1.95,
+      "maxDistance": 2.05
+    }
+  }
+}

@@ -1,0 +1,246 @@
+{
+  "name": "collectathon-combat",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "walker.0",
+        "at": {
+          "x": 0,
+          "y": 0,
+          "z": 19.8
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": 0,
+          "y": 0,
+          "z": 4
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.2",
+        "at": {
+          "x": 1.8,
+          "y": 0,
+          "z": -6.9
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.3",
+        "at": {
+          "x": 0,
+          "y": 0,
+          "z": -14
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.4",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": 10
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run-up",
+      "press": ["KeyW"],
+      "holdTicks": 60,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stomp-jump",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 22,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stomp-fall",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "stomp-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 2
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "dive-run",
+      "press": ["KeyW"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "dive",
+      "press": ["KeyW", "KeyX"],
+      "holdTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "dive-slide",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "dive-stop",
+      "waitForResource": {
+        "id": "state",
+        "path": "action",
+        "equals": "idle"
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "pound-jump",
+      "press": ["Space"],
+      "holdTicks": 12,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "pound",
+      "press": ["ShiftLeft"],
+      "holdTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "pound-fall",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "pound-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "action",
+        "equals": "idle"
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "after-three",
+      "waitTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "touch-run",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "touched",
+      "waitForResource": {
+        "id": "state",
+        "path": "wedges",
+        "lte": 7
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stand",
+      "press": [],
+      "holdTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "defeated",
+        "equals": 3,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "wedges",
+        "equals": 7,
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "after-three",
+            "equals": 8
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "entity": "player",
+        "name": "stomped",
+        "minCount": 1
+      },
+      {
+        "entity": "player",
+        "name": "dived",
+        "minCount": 1
+      },
+      {
+        "entity": "player",
+        "name": "pounded",
+        "minCount": 1
+      },
+      {
+        "entity": "player",
+        "name": "hurt",
+        "minCount": 1
+      }
+    ]
+  }
+}

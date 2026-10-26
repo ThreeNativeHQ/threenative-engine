@@ -42,6 +42,7 @@ describe("native SSR facade", () => {
       thickness: { value: number };
       opacity: { value: number };
       quality: { value: number };
+      maxSteps: { value: number };
       blurQuality: { value: number };
       resolutionScale: number;
       getTextureNode(): unknown;
@@ -53,6 +54,7 @@ describe("native SSR facade", () => {
       ["thickness", 0.2],
       ["opacity", 0.6],
       ["quality", 0.75],
+      ["maxSteps", 16],
       ["blurQuality", 3],
     ] as const) {
       result[name].value = value;

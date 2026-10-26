@@ -1,6 +1,6 @@
 // TSL authoring calls the native lazy graph; no upstream shader implementation enters the player.
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
-import { liveUniforms, withConstValues } from "../../../../three-native/src/tsl-uniforms.ts";
+import { booleanUniforms, liveUniforms, withConstValues } from "../../../../three-native/src/tsl-uniforms.ts";
 import { defineReflector } from "../../../../three-native/src/reflector.ts";
 import { definePass, markNormalTarget } from "../../../../three-native/src/pass-node.ts";
 import { BufferAttribute, Color, Object3D, PerspectiveCamera, Vector2, Vector3, Vector4 } from "./core-three.mjs";
@@ -16,7 +16,8 @@ withConstValues(constants, { Vector2, Vector3, Vector4, Color });
 // three's `uniform.value = x` (shared with the Wasm back end): a number goes through at once; an
 // edited Color or VectorN goes through `syncUniforms`, which the renderer calls before each frame.
 const live = liveUniforms(globalThis.tsl.uniform, (node, lanes) => globalThis.tsl.setUniform(node, ...lanes));
-export const uniform = live.uniform;
+// A boolean uniform (the exposure meter's `enabled`) is the live float compared with zero, as on the Wasm back end.
+export const uniform = booleanUniforms(live.uniform, (scalar) => globalThis.tsl.notEqual(scalar, 0));
 export const uniformArray = live.uniformArray;
 export const reference = live.reference;
 export const syncUniforms = live.sync;
@@ -116,3 +117,7 @@ export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");
 export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
+
+// Refused at use, as on Wasm: core's WorldEnvironment imports textureSize for the
+// resolutionSubrect && !ownedEngine geometric-normals branch, which the owned path never takes.
+export const textureSize = unsupportedExport("textureSize");

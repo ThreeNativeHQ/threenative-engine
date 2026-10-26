@@ -25,7 +25,31 @@ std::string hex(double v) {
     return b;
 }
 
+void fogAliases() {
+    Driver driver;
+    registerAll(driver.classes);
+    for (const char* name : {"Fog", "FogExp2"}) {
+        CHECK(driver.classes.at(name).fixedMembers.count("color") == 1);
+        CHECK(driver.classes.at(name).setters.count("color") == 0);
+        std::istringstream in(std::string("new first ") + name + "\nnew second " + name +
+            "\ncall first color original\ncall first color repeated\ncall second color distinct\n"
+            "set original r " + hex(0.25) + "\nset first color.g " + hex(0.75) +
+            "\nobserve 0 repeated r - number\nobserve 1 original g - number\n"
+            "set first color r:distinct\nobserve 2 original r - number\nend\n");
+        std::ostringstream out;
+        CHECK(driver.run(in, out) == 0);
+        CHECK(out.str() == "obs 0 number " + hex(0.25) + "\nobs 1 number " + hex(0.75) +
+            "\nunsupported - " + name + ".color%20is%20not%20settable\nobs 2 number " + hex(0.25) + "\n");
+        const Value first{Value::Kind::Ref, 0, "original"};
+        const Value repeated{Value::Kind::Ref, 0, "repeated"};
+        const Value distinct{Value::Kind::Ref, 0, "distinct"};
+        CHECK(driver.find(first)->ptr == driver.find(repeated)->ptr);
+        CHECK(driver.find(first)->ptr != driver.find(distinct)->ptr);
+    }
+}
+
 void protocol() {
+    fogAliases();
     Driver driver;
     ClassBinding pair;
     pair.ctor = [](const Args& a, Store&) {

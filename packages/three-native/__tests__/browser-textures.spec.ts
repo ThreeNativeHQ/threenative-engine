@@ -238,6 +238,21 @@ describe("browser texture sources", () => {
   it("binds DataUtils to the shared, three-exact implementation", () => {
     expect(recording().bound.DataUtils).toBe(SharedDataUtils);
   });
+
+  it("binds three's ColorManagement object, so working-space conversion runs unchanged", async () => {
+    const { ColorManagement } = (await import("three/src/math/ColorManagement.js")) as {
+      ColorManagement: {
+        enabled: boolean;
+        workingToColorSpace(color: { r: number; g: number; b: number }, space: string): void;
+      };
+    };
+    const bound = recording().bound.ColorManagement as typeof ColorManagement;
+    expect(bound).toBe(ColorManagement);
+    expect(bound.enabled).toBe(true);
+    const color = { r: 0.21404114, g: 0.21404114, b: 0.21404114 };
+    bound.workingToColorSpace(color, "srgb");
+    expect(color.r).toBeCloseTo(0.5, 4);
+  });
 });
 
 describe("browser HDRLoader", () => {
