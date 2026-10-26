@@ -190,6 +190,8 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     var moment2 = vec4<f32>(0);
     var low = vec4(1e30);
     var high = vec4(-1e30);
+    var rgbLow = vec4(1e30);
+    var rgbHigh = vec4(-1e30);
     if (upsampling) {
         let centre = floor(currentUV * u.size);
         let upscale = outputSize / u.size;
@@ -214,6 +216,7 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
                 spread1 += neighborhood; spread2 += neighborhood * neighborhood;
                 if (highClamp && ((x == 0 && y == 0) || dot(distance, distance) < radius * radius)) {
                     low = min(low, neighborhood);
+                    rgbLow = min(rgbLow, color); rgbHigh = max(rgbHigh, color);
                     high = max(high, neighborhood);
                 }
             }
@@ -258,9 +261,11 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
         let historyColor = vec4(rgbToNeighborhood * old.rgb, old.a);
         // Near a mover, clip toward the box centre so history keeps its hue; elsewhere UE's per-channel clamp, which
         // leaves in-range channels alone and so keeps static edges resolved.
-        let bounded = select(clamp(historyColor, low, high),
-            clipAABB(vec4(0, 0, 0, clamp(old.a, low.a, high.a)), historyColor, low, high), dynamicNeighborhood);
-        if (any(bounded != historyColor)) { clipped = vec4(neighborhoodToRgb * bounded.rgb, bounded.a); }
+        let bounded = clipAABB(vec4(0, 0, 0, clamp(old.a, low.a, high.a)), historyColor, low, high);
+        if (dynamicNeighborhood && any(bounded != historyColor)) { clipped = vec4(neighborhoodToRgb * bounded.rgb, bounded.a); }
+        // Static history: UE's per-channel clamp (in-range channels stay, so static edges stay resolved), but in RGB: in
+        // YCoCg a white rim over red and dark clamps to grey or orange (the kart start lamps).
+        if (!dynamicNeighborhood) { clipped = clamp(old, rgbLow, rgbHigh); }
     } else {
         let mean = moment1 / 9;
         let variance = sqrt(max(moment2 / 9 - mean * mean, vec4(0.0))) * gamma;

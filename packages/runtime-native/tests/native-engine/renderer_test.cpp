@@ -1114,9 +1114,10 @@ void traaHistoryClipping() {
     const auto upsampled = retained(16, 1), full = retained(24, 1);
     const auto departed = retained(16, 3, false, 0.49f), reset = retained(16, 1, true), stopped = retained(16, 3);
     const auto moving = retained(16, 3, false, 0.5f, true), red = retained(16, 3, false, 0.5f, true, true);
+    const auto redStatic = retained(16, 1, false, 0.5f, false, true);
     float separation = 0, resetDifference = 0, alphaError = 0, stoppedDifference = 0;
     // The halo a mover leaves: retained white around the one white texel, static against moving neighbourhood.
-    float staticHalo = 0, movingHalo = 0, greyness = 0;
+    float staticHalo = 0, movingHalo = 0, greyness = 0, staticGreyness = 0;
     for (uint32_t y = 6; y < 18; ++y) for (uint32_t x = 6; x < 18; ++x) {
         const auto pixel = (size_t(y) * 24 + x) * 4;
         separation = std::max(separation, upsampled.pixels[pixel] - departed.pixels[pixel]);
@@ -1124,19 +1125,23 @@ void traaHistoryClipping() {
         stoppedDifference = std::max(stoppedDifference, std::abs(stopped.pixels[pixel] - upsampled.pixels[pixel]));
         staticHalo += upsampled.pixels[pixel] / 144; movingHalo += moving.pixels[pixel] / 144;
         if (red.pixels[pixel] > 0.05f) greyness = std::max(greyness, red.pixels[pixel + 1] / red.pixels[pixel]);
+        if (redStatic.pixels[pixel] > 0.05f)
+            staticGreyness = std::max(staticGreyness, redStatic.pixels[pixel + 1] / redStatic.pixels[pixel]);
         for (const auto* observation : {&upsampled, &full, &departed, &reset, &stopped})
             alphaError = std::max(alphaError, std::abs(observation->pixels[pixel + 3] - 0.25f));
     }
-    std::fprintf(stderr, "TN_TRAA_HISTORY_CLIPPING upscale=%.6f full=%.6f departedSeparation=%.6f resetDifference=%.6f stoppedDifference=%.6f alphaError=%.6f staticHalo=%.6f movingHalo=%.6f greyness=%.6f\n",
-                 upsampled.maximum, full.maximum, separation, resetDifference, stoppedDifference, alphaError, staticHalo, movingHalo, greyness);
+    std::fprintf(stderr, "TN_TRAA_HISTORY_CLIPPING upscale=%.6f full=%.6f departedSeparation=%.6f resetDifference=%.6f stoppedDifference=%.6f alphaError=%.6f staticHalo=%.6f movingHalo=%.6f greyness=%.6f staticGreyness=%.6f\n",
+                 upsampled.maximum, full.maximum, separation, resetDifference, stoppedDifference, alphaError, staticHalo, movingHalo, greyness, staticGreyness);
     CHECK(upsampled.maximum > 0.9f);
     CHECK(full.maximum < 0.7f);
     CHECK(separation > 0.75f && resetDifference < 0.005f);
     CHECK(stoppedDifference < 0.005f);
     // Near a mover: UE's variance box (red: equal halos) and a clip that keeps hue (red: the clamp turns white grey).
-    // Static history keeps the per-channel clamp: upscale above stays > 0.9.
+    // Static history keeps a per-channel clamp (upscale above stays > 0.9), in RGB so it keeps hue too
+    // (red: the YCoCg clamp turns white history over red and black grey, 0.995; the kart start lamps read orange).
     CHECK(movingHalo < staticHalo * 0.85f);
     CHECK(greyness < 0.5f);
+    CHECK(staticGreyness < 0.5f);
     CHECK(alphaError < 0.005f);
     std::filesystem::remove_all(directory);
 }
