@@ -325,8 +325,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "ac58cb2f1d94350034a65bafb3a1342b74321907498c0efe26aac774f4aef7ee",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  // Recomputed 2026-10-26 (PRD-746 look): the exposure policy keeps only the judged key override.
-  shooter: "3cfe6b52e1635e78e838a6dc0bce633d1cf0c0cb16700a9d8a18c9b169efd360",
+  // Recomputed 2026-10-26 (PRD-746 look): the exposure policy keeps only the judged key override,
+  // then the owner's 7b546d6 neutral look returns as named overrides.
+  shooter: "662a933b8f72dfab0ea861e6eb17788490b476e4f1f08ebc6df7b500acb5ec1c",
   snow: "fac9211670fda9559467ee53e287254517f4775791b989f4a81a5ec4158c3334",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
