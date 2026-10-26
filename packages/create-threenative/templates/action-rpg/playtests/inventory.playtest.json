@@ -6,6 +6,7 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
+    { "kind": "wait", "label": "start", "waitTicks": 2, "release": true },
     { "kind": "input", "label": "equip", "press": "KeyQ", "holdTicks": 1, "release": true },
     { "kind": "wait", "label": "equipped", "waitTicks": 4, "release": true },
     { "kind": "input", "label": "unequip", "press": "KeyU", "holdTicks": 1, "release": true },
@@ -105,6 +106,23 @@
       { "name": "loot-collected", "entity": "loot", "minCount": 1 },
       { "name": "defeated", "entity": "enemy", "minCount": 1, "atStep": "seeded-drops" },
       { "name": "seeded", "entity": "loot", "minCount": 1 }
+    ],
+    "components": [
+      {
+        "allowTrivial": "The hero is built holding the rusted blade, so the first observation already names it; the held value is what the HUD and the hand must agree on from the first frame.",
+        "entity": "player",
+        "component": "equippedItem",
+        "atSteps": [{ "label": "start", "equals": "rusted-blade" }]
+      },
+      {
+        "entity": "player",
+        "component": "weaponVisible",
+        "atSteps": [
+          { "label": "start", "equals": true },
+          { "label": "unequipped", "equals": false },
+          { "label": "re-equipped", "equals": true }
+        ]
+      }
     ],
     "visibility": [
       {

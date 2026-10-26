@@ -1,5 +1,5 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
-import { Vector3 } from "three";
+import { type Object3D, Vector3 } from "three";
 import { createSword } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
@@ -42,8 +42,9 @@ export class Player extends Fighter {
   readonly maxHealth = 100;
   health: number;
   dead = false;
-  equippedItem = "";
   #bodyDisposed = false;
+  #equippedItem = "";
+  #sword: Object3D;
   /** The landing half of the swing in progress: damage waits for the blade, not the key. */
   #swing: { remaining: number; land: () => void } | undefined;
   #dodgeCooldown = 0;
@@ -61,7 +62,10 @@ export class Player extends Fighter {
     onDamage: (amount: number) => void,
     onDeath: () => void,
   ) {
-    super(ctx, model, CLIPS, { halfExtent: HALF_HEIGHT + RADIUS, weapon: createSword() });
+    const sword = createSword();
+    super(ctx, model, CLIPS, { halfExtent: HALF_HEIGHT + RADIUS, weapon: sword });
+    this.#sword = sword;
+    this.equippedItem = "";
     this.health = Math.max(0, Math.min(this.maxHealth, health));
     this.mesh.position.copy(spawn);
     this.#onDamage = onDamage;
@@ -103,6 +107,16 @@ export class Player extends Fighter {
     this.#swing = undefined;
     // A cast or a roll that took the clip over took the blade with it.
     if (this.action === "attack") swing.land();
+  }
+
+  /** The hand holds the blade only while a weapon is equipped, so the figure and the HUD agree. */
+  get equippedItem(): string {
+    return this.#equippedItem;
+  }
+
+  set equippedItem(itemId: string) {
+    this.#equippedItem = itemId;
+    this.#sword.visible = itemId !== "";
   }
 
   /**
@@ -174,6 +188,7 @@ export class Player extends Fighter {
       position: this.mesh.position.toArray(),
       skeletonBones: this.conventions.boneNames,
       weaponBone: this.conventions.attachedBone,
+      weaponVisible: this.#sword.visible,
     };
   }
 

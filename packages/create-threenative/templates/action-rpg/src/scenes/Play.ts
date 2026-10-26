@@ -187,6 +187,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       inventory.add("rusted-blade", 1);
       inventory.add("ember-blade", 1);
       inventory.add("potion", 2);
+      // The hero starts with the rusted blade in hand, so the HUD names the sword the figure holds.
+      inventory.equip("rusted-blade");
     }
 
     const playerRef: { value?: Player } = {};
