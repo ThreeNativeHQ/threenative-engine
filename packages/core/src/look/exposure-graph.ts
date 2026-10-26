@@ -38,8 +38,9 @@ export function reduceExposure(
   meter?: Meter,
 ): Node<"vec4"> {
   return Fn(() => {
-    const sourceSize =
-      meter === undefined ? size : vec2(textureSize(input) as unknown as Node<"uvec2">);
+    // TextureSizeNode omits typed TSL extensions; retain its checked Node base before narrowing.
+    const measuredSize: Node = meter === undefined ? size : textureSize(input);
+    const sourceSize = meter === undefined ? size : vec2(measuredSize as Node<"uvec2">);
     const sum = vec2(0).toVar();
     const origin = screenCoordinate.xy.floor().mul(4);
     for (let y = 0; y < 4; y++)

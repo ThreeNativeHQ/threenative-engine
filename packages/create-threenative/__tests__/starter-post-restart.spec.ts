@@ -31,7 +31,7 @@ const { setupPost } = await import("../templates/starter/src/render/postprocessi
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 const post = (): ReturnType<typeof setupPost> =>
-  setupPost({} as never, {} as never, {} as never, { tier: "low" });
+  setupPost({ kind: "webgpu", raw: {} } as never, {} as never, {} as never, { tier: "low" });
 
 describe("starter post chain across a restart (PRD-637)", () => {
   beforeEach(() => {
