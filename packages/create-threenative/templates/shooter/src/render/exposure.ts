@@ -6,11 +6,7 @@ import {
 export type { IExposureSettings } from "@threenative/core";
 export const exposureSettings: Readonly<IExposureSettings> = {
   ...coreExposureSettings,
-  // A pale town: a lower middle-grey target keeps the sunlit street on the filmic shoulder instead
-  // of at white, and lets the sky and the shade keep their colour.
+  // A pale town: core's 0.36 drains the sunlit reds and blues and veils the under-deck lanes, and
+  // 0.20 or 0.27 still does (PRD-746 judge, 2026-10-26). The stock meter range needs no clamp.
   key: 0.14,
-  // The street is a bright exterior with dark under-deck lanes. The meter may close down for the sun
-  // and open at most half a stop, so a lane never blows the street out to flat white.
-  maxStops: 0.5,
-  minStops: -2,
 };

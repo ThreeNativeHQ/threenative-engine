@@ -189,7 +189,7 @@ describe("PRD-723 phase 1 kit look defaults", () => {
   );
 
   it.each(TIERS)(
-    "shooter/%s follows the core preset with its three named exposure overrides",
+    "shooter/%s follows the core preset with its one named exposure override",
     async (tier) => {
       const quality = (await import(pathToFileURL(renderFile("shooter", "quality.ts")).href)) as {
         qualityPreset: (tier: string) => Record<string, unknown>;
@@ -202,8 +202,6 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       expect(exposure.exposureSettings).toEqual({
         ...core.exposureSettings,
         key: 0.14,
-        maxStops: 0.5,
-        minStops: -2,
       });
       expect(preset).toEqual({
         ...core.qualityPreset(tier),
