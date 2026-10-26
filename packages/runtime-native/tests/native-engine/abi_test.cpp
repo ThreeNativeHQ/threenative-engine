@@ -2569,7 +2569,9 @@ void starter_post_bindings() {
         CHECK(programs.fragment.diagnostics().empty());
         return fragment;
     };
-    for (const auto& effect : {temporal, late}) {
+    // An early resolve's "scene" is the unresolved colour inside a render target, so it is drawn to a texture of its own.
+    CHECK(call("convertToTexture", {TslArg::of(temporal)})->kind == g::Kind::RenderTexture);
+    for (const auto& effect : {late}) {
         const auto texture = call("convertToTexture", {TslArg::of(effect)});
         CHECK(texture->kind == g::Kind::Texture && texture->name == effect->name);
         CHECK(call("convertToTexture", {TslArg::of(texture)}) == texture);
@@ -2581,8 +2583,8 @@ void starter_post_bindings() {
         for (const auto& consumer : {texture, sampled, loaded, size}) {
             CHECK(g::traaEffect(consumer) == effect->post);
             const auto retained = g::postPasses(consumer);
-            CHECK(retained.size() == (effect == late ? 2u : 0u));
-            if (effect == late && retained.size() == 2)
+            CHECK(retained.size() == 2u);
+            if (retained.size() == 2)
                 CHECK(retained.back().host == "traa" && retained.back().output == effect->name);
         }
         compile(sampled);

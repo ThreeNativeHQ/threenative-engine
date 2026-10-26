@@ -82,8 +82,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // three's convertToTexture: a texture stays as it is; any other node renders to a texture of its own.
     const auto toTexture = [&](const g::Node& source) -> g::Node {
         if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture) return source;
-        if (source->kind == g::Kind::PostEffect && source->post && source->post->kind == "TRAANode") {
-            // TRAA already owns a texture; retain its producer without drawing a copy.
+        if (source->kind == g::Kind::PostEffect && source->post && source->post->kind == "TRAANode" &&
+            source->post->output != "scene") {
+            // A late resolve already owns a named texture; retain its producer without drawing a copy. An early resolve
+            // writes "scene", which a render target's material reads as the unresolved scene colour, so it keeps its copy.
             auto texture = std::make_shared<g::NodeData>(*g::texture(source->name, g::uv()));
             texture->otherwise = {source};
             return texture;

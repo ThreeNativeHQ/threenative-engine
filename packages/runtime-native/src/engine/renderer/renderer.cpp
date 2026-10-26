@@ -238,9 +238,14 @@ std::array<double, 9> uvTransformOf(const Texture& t) {
 // A TSL texture(object, uv) binding (tsl_call's "nodeMap<id>"): the draw's own texture, in either stage.
 bool graphTextureBinding(std::string_view name) { return name.rfind("t_nodeMap", 0) == 0; }
 
-// A material node reading a post render-to-texture pass (convertToTexture's "native_rtt_<n>"): the pass's output view
-// belongs to the main renderer's post effects and moves when they resize, so each draw binds it itself.
-bool postTextureBinding(std::string_view name) { return (name.rfind("t_native_rtt", 0) == 0 || name.rfind("smp_native_rtt", 0) == 0); }
+// A material node reading a post render-to-texture pass (convertToTexture's "native_rtt_<n>", or a late resolve's own
+// "native_traa_<n>"): the pass's output view belongs to the main renderer's post effects and moves when they resize, so
+// each draw binds it itself.
+bool postTextureBinding(std::string_view name) {
+    for (const std::string_view prefix : {"t_native_rtt", "smp_native_rtt", "t_native_traa", "smp_native_traa"})
+        if (name.rfind(prefix, 0) == 0) return true;
+    return false;
+}
 
 // The store a vertex attribute reads for a draw, by the attribute's name; null for a name the draw lacks.
 // Shared by the plan, which syncs it, and the encode half, which binds it.
