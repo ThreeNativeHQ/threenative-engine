@@ -7,7 +7,7 @@ export function Menu() {
   if (state === undefined) return null;
   return (
     <div className="pointer-events-none absolute bottom-6 right-6 flex items-center gap-3 border border-line bg-panel/75 px-4 py-3 text-[10px] uppercase tracking-[0.14em] text-muted">
-      <span>WASD / arrows steer · C capsize test</span>
+      <span>WASD / arrows steer and trim</span>
       <button
         aria-pressed={state.paused}
         className="pointer-events-auto border border-line px-2 py-1 text-text hover:border-accent"
