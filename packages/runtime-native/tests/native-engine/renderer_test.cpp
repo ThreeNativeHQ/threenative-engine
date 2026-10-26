@@ -4,6 +4,7 @@
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/lights.h"
+#include "engine/shader/wgsl_strip.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/texture.h"
 #include "engine/renderer/renderer.h"
@@ -115,8 +116,9 @@ void traaVelocityFootprint() {
     EventQueue events;
     GpuResources gpu(context.getInstance(), device, queue, events, 1);
     const std::string production = traaResolveWgsl();
-    const auto start = production.find("    let dynamic = motionSample.z != 1;");
-    const auto end = production.find("    let highClamp =", start);
+    // The shipped shader is stripped of indentation and of blanks beside `=` (wgsl_strip.h), so the slice names the compact statements.
+    const auto start = production.find("let dynamic=motionSample.z !=1;");
+    const auto end = production.find("let highClamp=", start);
     CHECK(start != std::string::npos && end != std::string::npos);
     if (start == std::string::npos || end == std::string::npos) return;
     const std::string source = R"WGSL(
@@ -2194,6 +2196,13 @@ void traaSwayingBlades() {
     CHECK(upsampled < 45);
 }
 
+// Embedded WGSL keeps its comments and indentation in source and ships without them (the web engine's 4 MiB budget).
+void wgslStripKeepsLinesAndDropsBlanks() {
+    constexpr std::string_view source = "fn f() {\n    let a = ( 1 , 2 ) ;  // note\n\n\tlet b = a.x - -a.y;\n}\n";
+    constexpr auto stripped = wgslStrip<wgslStripLength(source)>(source);
+    CHECK(std::string_view(stripped.text) == "fn f(){\nlet a=(1,2);\n\nlet b=a.x - -a.y;\n}\n");
+}
+
 void traaRecedingMover() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2971,6 +2980,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_camera_pan", traaCameraPan},
              {"traa_rejection", traaRejection},
              {"traa_receding_mover", traaRecedingMover},
+             {"wgsl_strip", wgslStripKeepsLinesAndDropsBlanks},
              {"traa_swaying_blades", traaSwayingBlades},
              {"traa_ignored_history_filter", traaIgnoredHistoryFilter},
              {"traa_mover_over_dynamic_ground", traaMoverOverDynamicGround},

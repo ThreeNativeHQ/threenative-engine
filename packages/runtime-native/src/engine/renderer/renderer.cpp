@@ -1,3 +1,4 @@
+#include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/render_target_pass.h"
@@ -309,7 +310,7 @@ bool perDrawVertex(const shader::StageModule& stage) {
 // operation: getDirection/getFace/getUV/roughnessToMip/bilinearCubeUV/textureCubeUV and the GGX
 // VNDF convolution (512 samples). Hand-written because the material IR has no u32 loop or bit ops;
 // this is renderer-internal plumbing, not a material.
-const char* kPmremPrelude = R"WGSL(
+TN_WGSL_STRIPPED(kPmremPrelude, R"WGSL(
 struct PmremUniforms {
   roughness: f32, mipInt: f32, texelWidth: f32, texelHeight: f32,
   maxMip: f32, pad0: f32, pad1: f32, pad2: f32,
@@ -363,7 +364,7 @@ fn pmremDirection(uvIn: vec2<f32>, face: f32) -> vec3<f32> {
   else { d.z *= -1.0; }
   return d;
 }
-)WGSL";
+)WGSL");
 
 const char* kPmremEquirect = R"WGSL(
 @fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
@@ -374,7 +375,7 @@ const char* kPmremEquirect = R"WGSL(
 }
 )WGSL";
 
-const char* kPmremGgx = R"WGSL(
+TN_WGSL_STRIPPED(kPmremGgx, R"WGSL(
 fn pmremBilinear(directionIn: vec3<f32>, mipIn: f32) -> vec3<f32> {
   var mip = mipIn;
   var face = pmremFace(directionIn);
@@ -436,7 +437,7 @@ fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3
   }
   return vec4<f32>(prefiltered, 1.0);
 }
-)WGSL";
+)WGSL");
 
 }  // namespace
 

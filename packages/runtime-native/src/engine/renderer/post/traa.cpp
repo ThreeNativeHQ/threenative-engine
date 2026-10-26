@@ -2,11 +2,13 @@
 #include "traa.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/foundation/math/Matrix.h"
+#include "engine/shader/wgsl_strip.h"
 #include "mystral/webgpu_compat.h"
 #include <algorithm>
 #include <cstring>
 #include <cmath>
 #include <stdexcept>
+#include <string_view>
 #include <iomanip>
 #include <sstream>
 
@@ -94,7 +96,8 @@ std::array<float, 8> TraaPass::historyDepthRows(const Matrix& projection, const 
 // surface left, so a mover that stops keeps its history instead of showing the input grid while it refills;
 // a separate R8 target keeps the authored colour alpha intact.
 // UE 5.8.3 TemporalAA.usf:1463-1478,1772-1808,1961-1990,2278: responsive history for incomplete motion.
-const char* traaResolveWgsl() { return R"WGSL(
+const char* traaResolveWgsl() {
+    static constexpr std::string_view source = R"WGSL(
 struct Params {
     depthNumerator: vec4<f32>, depthDenominator: vec4<f32>,
     size: vec2<f32>, depthThreshold: f32, edgeDepthDiff: f32,
@@ -373,12 +376,16 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
     currentWeight /= dot(compressedCurrent.rgb, luminance) + 1;
     return Resolved((current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001), vec2(select(0.f, 1.f, dynamic || (valid && oldDynamic)), overlay));
 }
-)WGSL"; }
+)WGSL";
+    static constexpr auto stripped = wgslStrip<wgslStripLength(source)>(source);
+    return stripped.text;
+}
 
 // The camera's motion at each pixel: the point the depth buffer holds, in the jittered frame it was rasterised in, seen
 // through the unjittered current and previous cameras. The same NDC difference the rigid velocity pass writes, so a
 // rigid draw overwriting this target changes nothing but its own pixels. Alpha 1 marks a written velocity.
-const char* traaFillWgsl() { return R"WGSL(
+const char* traaFillWgsl() {
+    static constexpr std::string_view source = R"WGSL(
 struct Fill {
     inverseProjection: mat4x4<f32>, world: mat4x4<f32>, projection: mat4x4<f32>, view: mat4x4<f32>,
     previousView: mat4x4<f32>, previousProjection: mat4x4<f32>, size: vec2<f32>,
@@ -399,7 +406,10 @@ struct Vertex { @builtin(position) position: vec4<f32> }
     let previous = u.previousProjection * (u.previousView * worldPoint);
     return vec4(current.xy / current.w - previous.xy / previous.w, select(0.f, 1.f, clip.z == 1), 1);
 }
-)WGSL"; }
+)WGSL";
+    static constexpr auto stripped = wgslStrip<wgslStripLength(source)>(source);
+    return stripped.text;
+}
 
 TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
     : device_(device), queue_(queue), options_(options) {
