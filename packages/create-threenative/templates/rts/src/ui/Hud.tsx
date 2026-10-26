@@ -72,8 +72,8 @@ export function Hud() {
           />
         </div>
         <div className="mt-1 flex justify-between text-[10px] uppercase tracking-[0.14em] text-dim">
-          <span id="health">
-            {state.primaryMaxHp} / {state.primaryMaxHp}
+          <span data-value={state.primaryHp} id="health">
+            {state.primaryHp} / {state.primaryMaxHp}
           </span>
           <span id="selection-position">
             {state.selectionX.toFixed(0)} · {state.selectionZ.toFixed(0)}

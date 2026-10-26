@@ -63,6 +63,7 @@
       },
       { "id": "state", "path": "primaryProgress", "changed": true }
     ],
+    "hud": [{ "id": "health", "gte": 171, "lte": 849 }],
     "renderChain": {
       "tier": "high",
       "perAdapter": {

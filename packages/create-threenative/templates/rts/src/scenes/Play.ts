@@ -587,7 +587,8 @@ export class Play extends Scene<GameState, undefined> {
     patch.mode = this.#mode;
     patch.ore = Math.floor(sim.resources.ore);
     patch.primaryBuilt = primary?.built ?? true;
-    patch.primaryHp = primary?.hp ?? 0;
+    // Whole points, rounded up: the readout never shows a fraction or a living unit at 0.
+    patch.primaryHp = Math.ceil(primary?.hp ?? 0);
     patch.primaryMaxHp = primary?.maxHp ?? 0;
     patch.primaryProgress = primary?.progress ?? 0;
     patch.primaryTeam = primary?.team ?? 0;
