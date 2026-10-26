@@ -912,7 +912,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=b207fdf2b7b13bcb1694fa4de252c01548e9c081f8e907c9dd180787bbf9d5d6)
+        version: 0.185.1(patch_hash=07a8cc40e8948c5c5f8997a5a0ade65af2ea7f9cd832cd85c779e5572c9bdbc4)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
