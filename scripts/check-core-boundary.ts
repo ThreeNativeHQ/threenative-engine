@@ -49,6 +49,7 @@ const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
   "SpectralOcean",
   "exposureSettings",
   "IExposureSettings",
+  "AutoExposureNode",
   "ChainStage",
   "IWorldEnvironmentStageContext",
 ]);
