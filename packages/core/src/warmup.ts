@@ -249,6 +249,7 @@ export interface IWarmUpRenderer {
     scene: Object3D,
     camera: Camera,
     targetScene?: Object3D,
+    afterDraw?: () => void,
   ) => void | Promise<void>;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
@@ -854,8 +855,11 @@ async function renderWarmPasses(
     coveredWorldPass === undefined
       ? renderer.render === undefined
         ? undefined
-        : () => renderer.render?.(scene, camera)
-      : () => coveredWorldPass(scene, camera, targetScene);
+        : () => {
+            renderer.render?.(scene, camera);
+            afterCoveredDraw?.();
+          }
+      : () => coveredWorldPass(scene, camera, targetScene, afterCoveredDraw);
   if (render === undefined) return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
@@ -919,11 +923,7 @@ async function renderWarmPasses(
     if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
-    // The draw happens in this call; the promise only waits for its pipelines. Paint the cover in the
-    // same task, or the browser presents the bare world frame under the loading cover.
-    const drawn = render();
-    afterCoveredDraw?.();
-    await drawn;
+    await render();
   } finally {
     if (raw !== undefined) {
       if (hadOwnAutoClear) raw.autoClear = autoClear;

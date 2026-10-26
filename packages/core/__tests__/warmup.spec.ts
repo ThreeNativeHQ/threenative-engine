@@ -107,34 +107,23 @@ describe("scene warm-up", () => {
     }
   });
 
-  test("should repaint the loading cover in the same task as the covered world pass draw", async () => {
+  test("should hand the loading cover's repaint to the covered world pass", async () => {
     // Hop Garden on the RTX 2080: collectathon-survives showed one bare world frame under the loading
-    // cover about 400 ms before the hand-off (2 of 3 runs). The covered world pass draws outside the
-    // frame loop, so the browser presents it on its own unless the cover is painted over it.
-    const events: string[] = [];
-    let settle: (() => void) | undefined;
-    const report = warmUpScene(
-      {
-        compileAsync: vi.fn(async () => undefined),
-        warmUpWorldPass: vi.fn(() => {
-          events.push("world-pass");
-          return new Promise<void>((resolve) => {
-            settle = resolve;
-          });
-        }),
-      },
+    // cover about 400 ms before the hand-off. The covered world pass can draw in a later task (the
+    // frame gate's retry), so the pass itself must repaint the cover after the draw it makes.
+    const afterCoveredDraw = vi.fn();
+    const warmUpWorldPass = vi.fn((_scene, _camera, _target, afterDraw?: () => void) => {
+      afterDraw?.();
+    });
+    const report = await warmUpScene(
+      { compileAsync: vi.fn(async () => undefined), warmUpWorldPass },
       sceneOf(1) as never,
       {} as never,
-      {
-        granularity: "scene",
-        yieldFrame: () => Promise.resolve(),
-        afterCoveredDraw: () => events.push("cover"),
-      },
+      { granularity: "scene", yieldFrame: () => Promise.resolve(), afterCoveredDraw },
     );
-    await vi.waitFor(() => expect(events).toContain("world-pass"));
-    expect(events).toEqual(["world-pass", "cover"]);
-    settle?.();
-    expect((await report).passes).toEqual(["main"]);
+    expect(report.passes).toEqual(["main"]);
+    expect(warmUpWorldPass.mock.calls[0]?.[3]).toBe(afterCoveredDraw);
+    expect(afterCoveredDraw).toHaveBeenCalledTimes(1);
   });
 
   test("should give up on a WebGPU environment bake at its deadline, as the native preparer does", async () => {
