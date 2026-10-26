@@ -42,6 +42,7 @@ public:
     const Matrix& previousProjection() const { return previousProjection_; }
     const Matrix& previousView() const { return previousView_; }
     WGPUTextureView velocityView() const { return velocityView_; }
+    WGPUTexture velocityTexture() const { return velocity_; }
     WGPUTextureView resultView() const { return resolveView_; }
     // The velocity every pixel takes from the camera's own motion, rebuilt from the depth buffer. The velocity pass then
     // loads this target and overwrites the pixels of the rigid draws it knows. The sky and the draws it leaves out

@@ -222,9 +222,11 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
             }
         }
         current = sum / weights;
-        // UE 5.8.3 TemporalAA.usf:1715-1770 variance box (mean +/- 1.25 sigma, widened to the filtered sample) where
-        // a mover is near: the sample-distance box spans both sides of a moving rim and keeps the colour it uncovered.
-        if (dynamicNeighborhood) {
+        // UE 5.8.3 TemporalAA.usf:1715-1770 variance box (mean +/- 1.25 sigma, widened to the filtered sample) on a
+        // still pixel that takes a mover's dilated motion: the sample-distance box spans both sides of the moving rim
+        // and keeps the colour it uncovered. A moving surface itself (wind grass, a coin face) keeps the
+        // sample-distance box, so its 0.72 detail is rebuilt from history.
+        if (dynamicNeighborhood && textureLoad(velocity, texel, 0).z == 1) {
             let mean = spread1 / 9;
             let sigma = sqrt(abs(spread2 / 9 - mean * mean)) * 1.25;
             let filtered = vec4(rgbToNeighborhood * current.rgb, current.a);

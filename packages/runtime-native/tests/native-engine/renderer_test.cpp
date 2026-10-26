@@ -1025,7 +1025,7 @@ void traaHistoryClipping() {
         ("traa-history-clipping-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     struct Observation { float maximum; std::vector<float> pixels; };
     const auto retained = [&](uint32_t inputSize, float previousMarker, bool cut = false, float previousDepth = 0.5f,
-                              bool moving = false, bool redHalf = false, bool purple = false) {
+                              bool moving = false, bool redHalf = false, bool purple = false, bool centreMoves = false) {
         constexpr uint32_t outputSize = 24;
         TraaPass temporal(device, queue, TraaOptions{});
         temporal.resize(inputSize, inputSize, outputSize, outputSize);
@@ -1054,6 +1054,16 @@ void traaHistoryClipping() {
         layout.bytesPerRow = inputSize * 8; layout.rowsPerImage = inputSize;
         const WGPUExtent3D extent{inputSize, inputSize, 1};
         wgpuQueueWriteTexture(queue, &destination, pixels.data(), pixels.size() * 2, &layout, &extent);
+        // Frame 18 velocity when only the centre texel moves: its still neighbours take its dilated motion.
+        descriptor.format = WGPUTextureFormat_RGBA16Float;
+        descriptor.usage = WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
+        const auto mover = wgpuDeviceCreateTexture(device, &descriptor);
+        std::vector<uint16_t> markers(size_t(inputSize) * inputSize * 4, 0);
+        for (size_t texel = 0; texel < size_t(inputSize) * inputSize; ++texel) markers[texel * 4 + 2] = markers[texel * 4 + 3] = 0x3c00;
+        markers[(size_t(inputSize / 2) * inputSize + inputSize / 2) * 4 + 2] = 0x4200;  // binary16 3
+        destination.texture = mover;
+        wgpuQueueWriteTexture(queue, &destination, markers.data(), markers.size() * 2, &layout, &extent);
+        destination.texture = beauty;
         const TraaPass::Matrix identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
         for (int frame = 0; frame <= 18; ++frame) {
             if (frame == 18) {
@@ -1092,6 +1102,12 @@ void traaHistoryClipping() {
                 mark.colorAttachmentCount = 1; mark.colorAttachments = &velocity;
                 const auto marking = wgpuCommandEncoderBeginRenderPass(encoder, &mark);
                 wgpuRenderPassEncoderEnd(marking); wgpuRenderPassEncoderRelease(marking);
+                if (centreMoves && frame == 18) {
+                    WGPUImageCopyTexture_Compat from{}, to{};
+                    from.texture = mover; from.aspect = to.aspect = WGPUTextureAspect_All;
+                    to.texture = temporal.velocityTexture();
+                    wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
+                }
             }
             temporal.resolve(encoder, beauty, beautyView, depth, depthView);
             const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
@@ -1099,7 +1115,7 @@ void traaHistoryClipping() {
             wgpuCommandBufferRelease(commands); wgpuCommandEncoderRelease(encoder);
         }
         const auto folder = directory / (std::to_string(inputSize) + "-" + std::to_string(previousMarker) + (cut ? "-cut" : "") +
-                                         (moving ? "-moving" : "") + (redHalf ? "-red" : "") + (purple ? "-purple" : "") + "-" + std::to_string(previousDepth));
+                                         (moving ? "-moving" : "") + (redHalf ? "-red" : "") + (purple ? "-purple" : "") + (centreMoves ? "-centre" : "") + "-" + std::to_string(previousDepth));
         const auto frame = temporal.debugDump()->frame;
         tn::fixture::finishTraaDump(temporal, context.getInstance(), folder);
         std::ifstream file(folder / ("frame-" + std::to_string(frame) + "-resolved.bin"), std::ios::binary);
@@ -1111,23 +1127,25 @@ void traaHistoryClipping() {
         for (uint32_t y = 6; y < 18; ++y) for (uint32_t x = 6; x < 18; ++x)
             maximum = std::max(maximum, resolved[(size_t(y) * outputSize + x) * 4]);
         wgpuTextureViewRelease(depthView); wgpuTextureRelease(depth);
-        wgpuTextureViewRelease(beautyView); wgpuTextureRelease(beauty);
+        wgpuTextureViewRelease(beautyView); wgpuTextureRelease(beauty); wgpuTextureRelease(mover);
         return Observation{maximum, std::move(resolved)};
     };
     const auto upsampled = retained(16, 1), full = retained(24, 1);
     const auto departed = retained(16, 3, false, 0.49f), reset = retained(16, 1, true), stopped = retained(16, 3);
     const auto moving = retained(16, 3, false, 0.5f, true), red = retained(16, 3, false, 0.5f, true, true);
+    const auto uncovered = retained(16, 3, false, 0.5f, true, false, false, true);
     const auto redStatic = retained(16, 1, false, 0.5f, false, true);
     const auto purple = retained(16, 1, false, 0.5f, false, false, true);
     float separation = 0, resetDifference = 0, alphaError = 0, stoppedDifference = 0;
     // The halo a mover leaves: retained white around the one white texel, static against moving neighbourhood.
-    float staticHalo = 0, movingHalo = 0, greyness = 0, staticGreyness = 0, purpleChroma = 0;
+    float staticHalo = 0, movingHalo = 0, uncoveredHalo = 0, greyness = 0, staticGreyness = 0, purpleChroma = 0;
     for (uint32_t y = 6; y < 18; ++y) for (uint32_t x = 6; x < 18; ++x) {
         const auto pixel = (size_t(y) * 24 + x) * 4;
         separation = std::max(separation, upsampled.pixels[pixel] - departed.pixels[pixel]);
         resetDifference = std::max(resetDifference, std::abs(departed.pixels[pixel] - reset.pixels[pixel]));
         stoppedDifference = std::max(stoppedDifference, std::abs(stopped.pixels[pixel] - upsampled.pixels[pixel]));
         staticHalo += upsampled.pixels[pixel] / 144; movingHalo += moving.pixels[pixel] / 144;
+        uncoveredHalo += uncovered.pixels[pixel] / 144;
         if (red.pixels[pixel] > 0.05f) greyness = std::max(greyness, red.pixels[pixel + 1] / red.pixels[pixel]);
         if (redStatic.pixels[pixel] > 0.05f)
             staticGreyness = std::max(staticGreyness, redStatic.pixels[pixel + 1] / redStatic.pixels[pixel]);
@@ -1135,16 +1153,19 @@ void traaHistoryClipping() {
         for (const auto* observation : {&upsampled, &full, &departed, &reset, &stopped})
             alphaError = std::max(alphaError, std::abs(observation->pixels[pixel + 3] - 0.25f));
     }
-    std::fprintf(stderr, "TN_TRAA_HISTORY_CLIPPING upscale=%.6f full=%.6f departedSeparation=%.6f resetDifference=%.6f stoppedDifference=%.6f alphaError=%.6f staticHalo=%.6f movingHalo=%.6f greyness=%.6f staticGreyness=%.6f purpleChroma=%.6f\n",
-                 upsampled.maximum, full.maximum, separation, resetDifference, stoppedDifference, alphaError, staticHalo, movingHalo, greyness, staticGreyness, purpleChroma);
+    std::fprintf(stderr, "TN_TRAA_HISTORY_CLIPPING upscale=%.6f full=%.6f departedSeparation=%.6f resetDifference=%.6f stoppedDifference=%.6f alphaError=%.6f staticHalo=%.6f movingHalo=%.6f uncoveredHalo=%.6f greyness=%.6f staticGreyness=%.6f purpleChroma=%.6f\n",
+                 upsampled.maximum, full.maximum, separation, resetDifference, stoppedDifference, alphaError, staticHalo, movingHalo, uncoveredHalo, greyness, staticGreyness, purpleChroma);
     CHECK(upsampled.maximum > 0.9f);
     CHECK(full.maximum < 0.7f);
     CHECK(separation > 0.75f && resetDifference < 0.005f);
     CHECK(stoppedDifference < 0.005f);
-    // Near a mover: UE's variance box (red: equal halos) and a clip that keeps hue (red: the clamp turns white grey).
-    // Static history keeps a per-channel clamp (upscale above stays > 0.9), in RGB so it keeps hue too
-    // (red: the YCoCg clamp turns white history over red and black grey, 0.995; the kart start lamps read orange).
-    CHECK(movingHalo < staticHalo * 0.85f);
+    // A still texel that takes a mover's dilated motion: UE's variance box (red: equal halos) and a clip that keeps hue
+    // (red: the clamp turns white grey). A moving surface itself keeps its history like a still one (red: the variance
+    // box there smeared the 0.72 wind grass, 0.070 against 0.091). Static history keeps a per-channel clamp (upscale
+    // above stays > 0.9), in RGB so it keeps hue too (red: the YCoCg clamp turns white history over red and black grey,
+    // 0.995; the kart start lamps read orange).
+    CHECK(uncoveredHalo < staticHalo * 0.85f);
+    CHECK(movingHalo > staticHalo * 0.95f);
     CHECK(greyness < 0.5f);
     CHECK(staticGreyness < 0.5f);
     // ... and the YCoCg clamp after it still strips colour the grey neighbourhood lacks (red: RGB alone keeps magenta).
