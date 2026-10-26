@@ -133,7 +133,9 @@ export class Fox {
 
     if (this.#dashTimer > 0) this.#driveDash();
     else this.#driveWalk(dt);
-    this.#tryJump();
+    // A jump ends the dash and keeps its speed: left running, the next dash tick zeroed the rise
+    // and the jump was spent without leaving the ground.
+    if (this.#tryJump()) this.#dashTimer = 0;
     this.body.moveAndSlide(dt);
     // The route is a line: the authored ground is 13 m wide and the fox is not going for a walk in
     // the clouds, so the sideways axis is clamped rather than left to a wall 60 m away.
@@ -193,21 +195,22 @@ export class Fox {
     this.mesh.removeFromParent();
   }
 
-  #tryJump(): void {
-    if (this.#buffered <= 0) return;
+  #tryJump(): boolean {
+    if (this.#buffered <= 0) return false;
     if (this.#coyote > 0) {
       this.body.velocity.y = FOX_FEEL.jumpSpeed;
       this.#buffered = 0;
       this.#coyote = 0;
       this.coyoteJumps += 1;
       this.jumps += 1;
-      return;
+      return true;
     }
-    if (this.#airJumpUsed) return;
+    if (this.#airJumpUsed) return false;
     this.body.velocity.y = FOX_FEEL.jumpSpeed * FOX_FEEL.jumpBoost;
     this.#buffered = 0;
     this.#airJumpUsed = true;
     this.jumps += 1;
+    return true;
   }
 
   #startDash(): void {
