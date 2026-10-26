@@ -41,6 +41,7 @@ import {
 } from "../render/quality.js";
 import { scale } from "../render/scale.js";
 import { setupSky } from "../render/sky.js";
+import { loadSurfaces } from "../render/surface.js";
 import { TOWN_HALF, type Town, buildTown } from "../render/town.js";
 import { createTownMaterials } from "../render/townMaterials.js";
 import { type GameState, TARGET_GOAL } from "../state.js";
@@ -129,6 +130,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.assets.model<LoadedModel>("player-viewmodel.glb"),
       ctx.assets.texture("sky.jpg"),
     ]);
+    // The town's five generated surfaces (`render/surface.ts`), before `enter` builds the town.
+    await loadSurfaces(ctx.assets);
     this.#assets = { enemy, viewmodel, sky };
     setupSky(ctx.scene, this.#assets.sky);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {

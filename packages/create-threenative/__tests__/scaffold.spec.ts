@@ -329,8 +329,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "346fef21e875c50ae41445c3cbde17a05d2195c8beed6a497dd1169297a89684",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
   // Recomputed 2026-10-26 (PRD-746 look): the exposure policy keeps only the judged key override,
-  // then the owner's 7b546d6 neutral look returns as named overrides.
-  shooter: "dd7813903a75c5a4e2db5e3bfa42b52b49fba0eaa8329550ec277cd2f5b802ca",
+  // then the owner's 7b546d6 neutral look returns as named overrides. Recomputed 2026-10-26 for the
+  // surfaces polish: eight bay-* textures (src/render/surface.ts) on the town's procedural geometry.
+  shooter: "deb4652e01d0f92ec804fed73ca9429288026368a5c9623f5bebca67fa85e42a",
   snow: "f0de635cde4223329bdacc303cdf01bda4f1f9f0083979911571f1e4a691dced",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
