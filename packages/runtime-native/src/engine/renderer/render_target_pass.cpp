@@ -32,6 +32,7 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
     if (!target.gpu) {
         auto gpu = std::make_shared<TargetGpu>();
         gpu->renderer = main.sibling(true);
+        gpu->renderer->gpu().batchSubmits();  // its draw reaches the queue with the frame's next submit
         // A FloatType target keeps float32: a half float rounds a value fed back each frame (auto exposure).
         // Without float32-blendable a blended draw into RGBA32Float fails validation, so it falls back to half.
         const bool float32 = target.texture->isFloat() && main.float32Blendable();
