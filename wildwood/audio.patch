@@ -1,0 +1,82 @@
+--- src/audio/Soundscape.ts	2026-09-03 17:06:18.000000000 -0700
++++ /home/joao/projects/threenative/sandbox/prd743-after/src/audio/Soundscape.ts	2026-10-25 22:39:41.030040889 -0700
+@@ -26,7 +26,6 @@
+   type Surface,
+   stepClip,
+ } from "./clips.js";
+-import { loadClip } from "./decode.js";
+ 
+ type Ctx = ICtx<GameState, IPhysicsContext>;
+ 
+@@ -122,6 +121,8 @@
+   readonly camera: Object3D;
+   /** The drawn terrain. Its `layerWeight` attribute is what decides the surface underfoot. */
+   readonly terrain: Mesh;
++  /** Clips load through the manifest, so they share the disk cache and the download priorities. */
++  readonly assets: Pick<Ctx["assets"], "audio">;
+ }
+ 
+ export interface IWalkerSound {
+@@ -154,6 +155,7 @@
+   readonly #ambience: AudioBus;
+   readonly #cues: AudioBus;
+   readonly #terrain: Mesh;
++  readonly #assets: Pick<Ctx["assets"], "audio">;
+   #chime: AudioBuffer | undefined;
+   #steps = new Map<string, AudioBuffer>();
+   #water: PositionalAudio[] = [];
+@@ -177,6 +179,7 @@
+     this.#ambience = new AudioBus({ camera: options.camera });
+     this.#cues = new AudioBus({ camera: options.camera });
+     this.#terrain = options.terrain;
++    this.#assets = options.assets;
+     void this.#load();
+   }
+ 
+@@ -229,16 +232,16 @@
+   }
+ 
+   async #load(): Promise<void> {
+-    const context = this.#ambience.listener.context;
++    const clip = (path: string) => this.#assets.audio(path);
+     const settled = await Promise.allSettled([
+-      loadClip(context, FOREST_BED.path),
+-      loadClip(context, FOREST_BIRDS.path),
+-      loadClip(context, LAKE_SHORE.path),
++      clip(FOREST_BED.path),
++      clip(FOREST_BIRDS.path),
++      clip(LAKE_SHORE.path),
+       // Same context: three hands every `AudioListener` the one shared `AudioContext`, so a
+       // buffer decoded for one bus plays on the other.
+-      loadClip(context, LANDMARK_FOUND.path),
+-      ...ALL_STEP_CLIPS.map((path) => loadClip(context, path)),
+-      ...ANIMAL_CLIPS.map((path) => loadClip(context, path)),
++      clip(LANDMARK_FOUND.path),
++      ...ALL_STEP_CLIPS.map(clip),
++      ...ANIMAL_CLIPS.map(clip),
+     ]);
+     if (this.#disposed) return;
+     const buffer = (index: number): AudioBuffer | undefined => {
+--- threenative.config.ts	2026-09-05 18:51:02.000000000 -0700
++++ /home/joao/projects/threenative/sandbox/prd743-after/threenative.config.ts	2026-10-25 23:05:37.879064597 -0700
+@@ -36,6 +36,9 @@
+     // Authoring material library, never loaded by the valley. The engine reports omitted bytes.
+     // Compression, shared images and the uncooked-byte budget use their target-aware defaults.
+     exclude: ["**/UnrealMaterialLibrary.glb"],
++    // The clips are authored loops in their shipping codec (cross-faded offline); list them in the
++    // manifest so they load through ctx.assets and its disk cache, and leave their bytes alone.
++    audio: { overrides: [{ glob: "audio/**", conditioning: "none" }] },
+   },
+   // One UI on every target: src/ui/ renders through the platform's own browser-class renderer,
+   // so the same React, Tailwind, CSS and SVG run on web, desktop, Android and iOS alike.
+--- /proc/self/fd/11	2026-10-25 23:12:01.848280250 -0700
++++ /home/joao/projects/threenative/sandbox/prd743-after/src/scenes/Valley.ts	2026-10-25 22:25:12.426447877 -0700
+@@ -616,7 +616,7 @@
+     // the listener and every voice hanging off it.
+     const soundscape = ctx.entities.add(
+       "soundscape",
+-      new Soundscape({ camera: ctx.camera, terrain: terrain.mesh }),
++      new Soundscape({ assets: ctx.assets, camera: ctx.camera, terrain: terrain.mesh }),
+     );
+ 
+     ctx.state.set({

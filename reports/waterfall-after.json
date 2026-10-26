@@ -1,0 +1,239 @@
+{
+ "url": "http://localhost:5202/",
+ "timing": {
+  "revealMs": 39624.5,
+  "startup": null
+ },
+ "totals": {
+  "asset": 51476592,
+  "code": 31868647,
+  "wasm": 527609
+ },
+ "counts": {
+  "asset": 160,
+  "code": 84,
+  "wasm": 1
+ },
+ "firstAsset": 13.087996000016574,
+ "lastCode": 20.39896600000793,
+ "markers": [
+  [
+   13.06,
+   "TN_VALLEY_CRITICAL_START generation=1"
+  ],
+  [
+   13.061,
+   "TN_VALLEY_DETAIL_PREFETCH generation=1 files=67"
+  ],
+  [
+   19.846,
+   "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":8,\"candidates\":8,\"attempted\":1,\"observed\":{\"created\":39,\"failed\":0,\"pending\""
+  ],
+  [
+   19.924,
+   "TN_VALLEY_BUILT generation=1 trees=1 ferns=0 grass=0 boulders=0 terrain=72200"
+  ],
+  [
+   19.924,
+   "TN_VALLEY_DETAIL_START generation=1"
+  ],
+  [
+   20.398,
+   "TN_AUDIO_READY beds=2 steps=15 water=2 animals=16 clipDrift=0"
+  ],
+  [
+   29.428,
+   "TN_LOAD_ALL items=52 concurrency=6 overridden=false ms=9503.1"
+  ],
+  [
+   34.426,
+   "TN_VALLEY_DETAIL_PREFETCHED generation=1 settled=115 requested=115 bytes=45646614"
+  ],
+  [
+   34.426,
+   "TN_VALLEY_ASSET_CACHE {\"enabled\":true,\"persisted\":false,\"hits\":38,\"misses\":121,\"bytesOnDisk\":45981733,\"bytesTotal\":29783"
+  ],
+  [
+   34.547,
+   "TN_VALLEY_DETAIL_STAGED generation=1"
+  ],
+  [
+   36.76,
+   "TN_FRAME_HITCH:{\"gapMs\":2184.6,\"uptimeMs\":36756.2,\"wallClock\":1792994864205}"
+  ],
+  [
+   36.813,
+   "TN_VALLEY_DETAIL_DONE generation=1 trees=2340 ferns=7600 grass=36300 boulders=2950"
+  ],
+  [
+   39.57,
+   "TN_STARTUP_WARMUP_HELD:{\"compiled\":1,\"pipelines\":226,\"candidates\":226,\"attempted\":1,\"observed\":{\"created\":33,\"failed\":0,"
+  ],
+  [
+   39.599,
+   "TN_VALLEY_REVEAL generation=1 trees=2341 ferns=7600"
+  ]
+ ],
+ "bins": {
+  "0": {
+   "asset": 0,
+   "code": 1828549,
+   "wasm": 0
+  },
+  "1": {
+   "asset": 0,
+   "code": 344226,
+   "wasm": 0
+  },
+  "5": {
+   "asset": 0,
+   "code": 4122270,
+   "wasm": 0
+  },
+  "6": {
+   "asset": 0,
+   "code": 6124866,
+   "wasm": 0
+  },
+  "7": {
+   "asset": 0,
+   "code": 1292820,
+   "wasm": 0
+  },
+  "8": {
+   "asset": 0,
+   "code": 1059538,
+   "wasm": 0
+  },
+  "9": {
+   "asset": 0,
+   "code": 424720,
+   "wasm": 0
+  },
+  "10": {
+   "asset": 0,
+   "code": 8157858,
+   "wasm": 0
+  },
+  "11": {
+   "asset": 0,
+   "code": 11821588,
+   "wasm": 0
+  },
+  "12": {
+   "asset": 0,
+   "code": 27399813,
+   "wasm": 0
+  },
+  "13": {
+   "asset": 1973403,
+   "code": 60529,
+   "wasm": 101320
+  },
+  "14": {
+   "asset": 1750500,
+   "code": 824228,
+   "wasm": 433513
+  },
+  "15": {
+   "asset": 2441176,
+   "code": 0,
+   "wasm": 0
+  },
+  "16": {
+   "asset": 2544484,
+   "code": 0,
+   "wasm": 0
+  },
+  "17": {
+   "asset": 2547499,
+   "code": 0,
+   "wasm": 0
+  },
+  "18": {
+   "asset": 2085080,
+   "code": 0,
+   "wasm": 0
+  },
+  "19": {
+   "asset": 3134550,
+   "code": 0,
+   "wasm": 0
+  },
+  "20": {
+   "asset": 2403921,
+   "code": 185588,
+   "wasm": 0
+  },
+  "21": {
+   "asset": 2570358,
+   "code": 0,
+   "wasm": 0
+  },
+  "22": {
+   "asset": 2474384,
+   "code": 0,
+   "wasm": 0
+  },
+  "23": {
+   "asset": 2568319,
+   "code": 0,
+   "wasm": 0
+  },
+  "24": {
+   "asset": 2564754,
+   "code": 0,
+   "wasm": 0
+  },
+  "25": {
+   "asset": 2557588,
+   "code": 0,
+   "wasm": 0
+  },
+  "26": {
+   "asset": 2563972,
+   "code": 0,
+   "wasm": 0
+  },
+  "27": {
+   "asset": 2583604,
+   "code": 0,
+   "wasm": 0
+  },
+  "28": {
+   "asset": 2574650,
+   "code": 0,
+   "wasm": 0
+  },
+  "29": {
+   "asset": 2552347,
+   "code": 0,
+   "wasm": 0
+  },
+  "30": {
+   "asset": 2552728,
+   "code": 0,
+   "wasm": 0
+  },
+  "31": {
+   "asset": 2566579,
+   "code": 0,
+   "wasm": 0
+  },
+  "32": {
+   "asset": 2711883,
+   "code": 0,
+   "wasm": 0
+  },
+  "33": {
+   "asset": 2900470,
+   "code": 0,
+   "wasm": 0
+  },
+  "34": {
+   "asset": 1165689,
+   "code": 0,
+   "wasm": 0
+  }
+ }
+}

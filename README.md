@@ -26,7 +26,7 @@ overlap at walked-2.
 | AFTER | 43.60 s | 42.44 s |
 
 AFTER is 2.2 s earlier on the mean, inside the 2.5 s spread between the two BEFORE runs, so
-PRD-743 AC-2 stays open. The reveal moves about 50.7 MB, about 20 s at 20 Mbit/s. The first-visit
+PRD-743 AC-2 is not met; it moved to PRD-745 (2026-10-26). The reveal moves about 50.7 MB, about 20 s at 20 Mbit/s. The first-visit
 win needs a coarse tier (PRD-745). before-14 and after-25 hit Chrome `ERR_NETWORK_CHANGED` and are
 records only.
 
@@ -37,15 +37,25 @@ Probe at the same throttle, one fresh profile per arm (`reports/return-reveal-*.
 | BEFORE | 40.6 s | 9.45 s |
 | AFTER | 39.7 s | 8.57 s |
 
+## Waterfall (2026-10-26, why AC-2 moved to PRD-745)
+
+`reports/waterfall-before.json` and `reports/waterfall-after.json`, one fresh profile per arm, 20 Mbit/s and
+40 ms, both arms routing the clips through the manifest (`reports/prd743-waterfall.mjs`). The dev
+server sends 31.7 MB of JS in 80 requests; the first asset request starts at 13.0 s on both arms. 51.5 MB of
+assets then fill the link until about 34 s. Reveal: BEFORE 39.96 s, AFTER 39.62 s. After the last
+byte, 5.2 s are pipeline compile on both arms: a 2.2 s attach frame, then a 2.8 s held warm-up of 226
+pipelines.
+
 ## Return visit (AC-1)
 
-Every manifest output is read from disk. AC-1 stays open on its planned text ("0 asset requests"),
-because Wildwood loads 35 `.ogg` files outside the asset pipeline.
-`reports/return-visit-final5.json`: second visit `{ hits: 121, misses: 0, bytesOnDisk: 297153760,
-bytesTotal: 297153760 }`, 0 requests for any manifest output (GLB, KTX2, HDRI, JPG, PNG). The only
-35 requests are the game's non-manifest `public/audio/*.ogg`. `return-visit-nofill-final5.json`
-repeats it with `?nofill`: 121/121 from disk, 50,748,558 B on disk. The 2 console errors per visit
-are the dev server's web-app-manifest syntax error, in both arms.
+PASS on the planned text (2026-10-26). `reports/return-visit-audio.json`: second visit 0 asset requests,
+`{ hits: 121, misses: 0, bytesOnDisk: 297838428, bytesTotal: 297838428 }`, 0 console errors on both
+visits, fill 3.23 s. The clips now load through the manifest (`wildwood/audio.patch`), and the dev server
+serves its web-app manifest (engine fix 34ad0792a). A third cached visit (`reports/prd743-audio-ready.mjs`)
+logged `TN_AUDIO_READY beds=2 steps=15 water=2 animals=16 clipDrift=0` with 0 asset requests.
+
+Earlier, kept: `reports/return-visit-final5.json` had 0 manifest-output requests but 35 raw
+`public/audio/*.ogg` requests and 2 dev web-app-manifest console errors per visit.
 
 ## Reproduction
 
@@ -56,6 +66,7 @@ are the dev server's web-app-manifest syntax error, in both arms.
   fixed poses, a scripted walk and the detail-tier wait.
 - `reports/prd743-return-visit.mjs` is the persistent-profile second-visit probe;
   `reports/prd743-return-reveal.mjs` is the throttled two-visit reveal probe.
+- `wildwood/audio.patch` moves the clips to `assets/audio/` and loads them with `ctx.assets.audio` (both arms).
 - `reports/prd743-native-verify.log` is `pnpm native:verify:desktop` on the PR head.
 - Older runs kept for history: `before-7`/`before-12` (engine 0.3.3) and `after-11`/`after-14`
   (a reveal that showed `trees=1 ferns=0`, a bug the detail hold fixed).

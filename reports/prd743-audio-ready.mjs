@@ -1,0 +1,12 @@
+import { chromium } from "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/node_modules/.pnpm/playwright@1.62.1/node_modules/playwright/index.mjs";
+const [url, profile] = process.argv.slice(2);
+const context = await chromium.launchPersistentContext(profile, { args: ["--ozone-platform=x11", "--enable-unsafe-webgpu", "--disable-gpu-sandbox", "--ignore-gpu-blocklist", "--enable-features=Vulkan", "--autoplay-policy=no-user-gesture-required"], headless: false, viewport: { width: 1280, height: 720 } });
+const page = context.pages()[0] ?? (await context.newPage());
+const lines = []; let assetReqs = 0;
+page.on("console", (m) => { const t = m.text(); if (/^TN_AUDIO|^TN_VALLEY_REVEAL/u.test(t) || m.type() === "error") lines.push(`${m.type()}: ${t}`); });
+page.on("request", (r) => { if (/\.(ogg|glb|ktx2|hdr|jpg|png)(\?|$)/u.test(r.url()) && !r.url().includes("/node_modules/") && !r.url().includes("/basis/")) assetReqs += 1; });
+await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120_000 });
+const started = Date.now();
+while (!lines.some((l) => l.includes("TN_AUDIO_READY")) && Date.now() - started < 180_000) await page.waitForTimeout(250);
+console.log(JSON.stringify({ assetReqs, lines }, null, 1));
+await context.close();

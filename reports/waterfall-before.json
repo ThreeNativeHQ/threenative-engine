@@ -1,0 +1,227 @@
+{
+ "url": "http://localhost:5201/",
+ "timing": {
+  "revealMs": 39964.30000001192,
+  "startup": null
+ },
+ "totals": {
+  "asset": 51481164,
+  "code": 31729582,
+  "wasm": 527609
+ },
+ "counts": {
+  "asset": 196,
+  "code": 80,
+  "wasm": 1
+ },
+ "firstAsset": 12.980476999975508,
+ "lastCode": 18.159825999988243,
+ "markers": [
+  [
+   12.988,
+   "TN_VALLEY_CRITICAL_START generation=1"
+  ],
+  [
+   17.743,
+   "TN_AUDIO_READY beds=2 steps=15 water=2 animals=16 clipDrift=0"
+  ],
+  [
+   18.047,
+   "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":8,\"candidates\":8,\"attempted\":1,\"observed\":{\"created\":39,\"failed\":0,\"pending\""
+  ],
+  [
+   18.123,
+   "TN_VALLEY_BUILT generation=1 trees=1 ferns=0 grass=0 boulders=0 terrain=72200"
+  ],
+  [
+   18.124,
+   "TN_VALLEY_DETAIL_START generation=1"
+  ],
+  [
+   35.015,
+   "TN_LOAD_ALL items=52 concurrency=6 overridden=false ms=16890.3"
+  ],
+  [
+   35.015,
+   "TN_VALLEY_DETAIL_STAGED generation=1"
+  ],
+  [
+   35.523,
+   "TN_VALLEY_DETAIL_DONE generation=1 trees=2340 ferns=7600 grass=36300 boulders=2950"
+  ],
+  [
+   39.935,
+   "TN_FRAME_HITCH:{\"gapMs\":2167.8,\"uptimeMs\":39926.9,\"wallClock\":1792994815707}"
+  ],
+  [
+   39.939,
+   "TN_STARTUP_WARMUP_HELD:{\"compiled\":1,\"pipelines\":226,\"candidates\":226,\"attempted\":1,\"observed\":{\"created\":61,\"failed\":0,"
+  ],
+  [
+   39.94,
+   "TN_VALLEY_REVEAL generation=1 trees=2341 ferns=7600"
+  ]
+ ],
+ "bins": {
+  "0": {
+   "asset": 0,
+   "code": 1802487,
+   "wasm": 0
+  },
+  "1": {
+   "asset": 0,
+   "code": 344234,
+   "wasm": 0
+  },
+  "5": {
+   "asset": 0,
+   "code": 4121918,
+   "wasm": 0
+  },
+  "6": {
+   "asset": 0,
+   "code": 6123646,
+   "wasm": 0
+  },
+  "7": {
+   "asset": 0,
+   "code": 1292132,
+   "wasm": 0
+  },
+  "8": {
+   "asset": 0,
+   "code": 1056698,
+   "wasm": 0
+  },
+  "9": {
+   "asset": 0,
+   "code": 422944,
+   "wasm": 0
+  },
+  "10": {
+   "asset": 0,
+   "code": 8157506,
+   "wasm": 0
+  },
+  "11": {
+   "asset": 0,
+   "code": 11650582,
+   "wasm": 0
+  },
+  "12": {
+   "asset": 0,
+   "code": 27321633,
+   "wasm": 0
+  },
+  "13": {
+   "asset": 2485103,
+   "code": 0,
+   "wasm": 0
+  },
+  "14": {
+   "asset": 1810218,
+   "code": 734121,
+   "wasm": 288820
+  },
+  "15": {
+   "asset": 2279355,
+   "code": 149924,
+   "wasm": 249013
+  },
+  "16": {
+   "asset": 2566716,
+   "code": 0,
+   "wasm": 0
+  },
+  "17": {
+   "asset": 813183,
+   "code": 0,
+   "wasm": 0
+  },
+  "18": {
+   "asset": 2130066,
+   "code": 185588,
+   "wasm": 0
+  },
+  "19": {
+   "asset": 2552547,
+   "code": 0,
+   "wasm": 0
+  },
+  "20": {
+   "asset": 2572244,
+   "code": 0,
+   "wasm": 0
+  },
+  "21": {
+   "asset": 6429191,
+   "code": 0,
+   "wasm": 0
+  },
+  "22": {
+   "asset": 2534680,
+   "code": 0,
+   "wasm": 0
+  },
+  "23": {
+   "asset": 2570906,
+   "code": 0,
+   "wasm": 0
+  },
+  "24": {
+   "asset": 2559000,
+   "code": 0,
+   "wasm": 0
+  },
+  "25": {
+   "asset": 2583039,
+   "code": 0,
+   "wasm": 0
+  },
+  "26": {
+   "asset": 5245602,
+   "code": 0,
+   "wasm": 0
+  },
+  "27": {
+   "asset": 6402007,
+   "code": 0,
+   "wasm": 0
+  },
+  "28": {
+   "asset": 5260504,
+   "code": 0,
+   "wasm": 0
+  },
+  "29": {
+   "asset": 7547007,
+   "code": 0,
+   "wasm": 0
+  },
+  "30": {
+   "asset": 4120386,
+   "code": 0,
+   "wasm": 0
+  },
+  "31": {
+   "asset": 2606684,
+   "code": 0,
+   "wasm": 0
+  },
+  "32": {
+   "asset": 2633287,
+   "code": 0,
+   "wasm": 0
+  },
+  "33": {
+   "asset": 6355846,
+   "code": 0,
+   "wasm": 0
+  },
+  "34": {
+   "asset": 2501064,
+   "code": 0,
+   "wasm": 0
+  }
+ }
+}
