@@ -387,7 +387,8 @@ function capabilityEndpoint(apiEndpoint, model) {
   if (process.env.NODE_ENV === "test" && process.env.TN_REFERENCE_CAPABILITIES_ENDPOINT)
     return process.env.TN_REFERENCE_CAPABILITIES_ENDPOINT;
   const endpoint = new URL(apiEndpoint);
-  endpoint.pathname = `/api/v1/models/${encodeURIComponent(model)}/endpoints`;
+  // OpenRouter routes `<author>/<slug>` as two path segments; an encoded slash is a 404.
+  endpoint.pathname = `/api/v1/models/${model.split("/").map(encodeURIComponent).join("/")}/endpoints`;
   endpoint.search = "";
   return endpoint.toString();
 }

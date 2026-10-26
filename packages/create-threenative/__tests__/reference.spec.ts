@@ -167,6 +167,36 @@ describe("generated reference script", () => {
     }
   });
 
+  it("asks OpenRouter for the model's endpoints with the slash in the model id kept", async () => {
+    const root = await makeTempDir("threenative-reference-");
+    const fixture = await fixtureServer();
+    try {
+      await runFixture(root);
+      const result = await runReference(
+        root,
+        [
+          "--record",
+          ".dream-loop/run-1/run.json",
+          "--request-id",
+          "target-001",
+          "--prompt-file",
+          ".dream-loop/run-1/prompt.txt",
+          "--out",
+          ".dream-loop/run-1/target.png",
+        ],
+        { ...fixture, endpoint: fixture.endpoint.replace("/v1/", "/api/v1/") },
+        { TN_REFERENCE_CAPABILITIES_ENDPOINT: "" },
+      );
+      expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(fixture.requests.find(({ method }) => method === "GET")?.path).toBe(
+        "/api/v1/models/meta/muse-image/endpoints",
+      );
+    } finally {
+      await fixture.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("reuses a completed request and never duplicates a POST after a crash", async () => {
     const root = await makeTempDir("threenative-reference-retry-");
     const fixture = await fixtureServer();
