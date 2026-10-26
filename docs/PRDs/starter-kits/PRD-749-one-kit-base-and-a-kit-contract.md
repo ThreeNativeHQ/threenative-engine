@@ -33,6 +33,8 @@ The 16 kits hold 663 source files and 100,401 lines (measured 2026-10-26 at 321f
 - [ ] The byte-identical environment and backlight files and the common plumbing move to `template-assets/base/`, and the scaffolder copies them into each kit. proof: `packages/create-threenative/__tests__` scaffold specs, and the generated trees byte-identical to before.
 - [ ] Each kit's copies of the shared files are cut to its deltas (overrides and gameplay only). proof: the LOC drop across templates (`pnpm tsx scripts/count-loc.ts`), the contract green on all 16 kits, and a judge NEUTRAL per kit.
 
+- [ ] The agent docs describe the structure (owner, 2026-10-26: "add on this PRD instructions to tweak CLAUDE.md AGENTS.md informing about these starter kit structures"): the templates' `AGENTS.md` that every scaffold receives, `packages/create-threenative/AGENTS.md` and the root `AGENTS.md` "Where a change goes" table say what lives in the base, what a kit owns, how a contract row and its opt-out work, which engine defaults (PRD-748) a game gets without asking, and the rule "a bug found in one kit is fixed in the base, an engine node or a contract row, never only in that kit". Edit each `AGENTS.md`, then `pnpm sync:agents` for the `CLAUDE.md` mirrors. proof: `pnpm sync:agents --check`, `scripts/__tests__/primary-docs.spec.ts` and the prose-only doc lane.
+
 ## Acceptance criteria
 
 - [ ] A bug fixed in the base or an engine node reaches every kit with no per-kit edit. proof: one Phase 3 fix shown landing in all 16 scaffolds.
