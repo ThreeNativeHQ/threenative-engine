@@ -67,6 +67,8 @@ claim comes from a 60 Hz real display or is marked unverified.
 ### Phase 3 — The look
 
 - [ ] Each of the three exposure overrides is kept only if a judge frame shows why. proof: the judge verdict per override.
+- [ ] The town's plaster, stone, wood, metal and ground take tiling surfaces generated through OpenRouter (`agent-files/scripts/reference.mjs`, a cheap image model), at most 8 images of 512 px WebP and 1 MB in total, applied through the `surfaced()` pattern of `templates/adventure/src/render/surface.ts`, licence and prompts in `assets/tex-PROVENANCE.md`. Geometry stays procedural. proof: the byte total and the `survives` scenario.
+- [ ] Unreal-grade polish on procedural geometry only (owner, 2026-10-26: "polish visuals also as if its a unreal game, procedural only"): material response per surface, trims, edge wear and contact shading, judged against the Phase 3 BEFORE set. proof: the judge verdict below.
 - [ ] Fresh judge against BEFORE captures taken at the PR #574 head before Phase 2 (headed WebGPU, nvidia/turing, two runs per arm): IMPROVEMENT overall, the weapon sharp while turning and strafing, no REGRESSION. proof: the verdict and the sheets on the PR.
 
 ## Acceptance criteria
