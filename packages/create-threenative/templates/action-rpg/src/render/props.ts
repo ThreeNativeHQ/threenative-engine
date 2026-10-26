@@ -28,7 +28,9 @@ export function solidBox(
   material: Material,
   radius = BEVEL,
 ): Mesh {
-  const geometry = new RoundedBoxGeometry(size[0], size[1], size[2], 2, radius);
+  // One bevel segment: at 3 cm the second ring of a two-segment round is under a pixel from the
+  // top-down camera, and it triples the triangles of every wall in the main and the shadow pass.
+  const geometry = new RoundedBoxGeometry(size[0], size[1], size[2], 1, radius);
   geometry.translate(at[0], at[1] + size[1] / 2 - radius, at[2]);
   const mesh = new Mesh(worldGridUVs(geometry), material);
   mesh.castShadow = true;
@@ -74,6 +76,12 @@ export function bakeByMaterial(parts: readonly Mesh[], into: Group, name: string
     merged.castShadow = meshes[0]?.castShadow ?? true;
     merged.receiveShadow = true;
     into.add(merged);
+    // The merged mesh replaces its parts. Left in place they draw a second time, in the main and
+    // the shadow pass alike.
+    for (const mesh of meshes) {
+      mesh.removeFromParent();
+      mesh.geometry.dispose();
+    }
   }
 }
 
