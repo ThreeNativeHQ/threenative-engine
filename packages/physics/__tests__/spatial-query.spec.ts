@@ -348,6 +348,32 @@ describe("PhysicsDirectSpaceState3D", () => {
       simulation.dispose();
     });
 
+    // Rapier reports a ball or capsule hit from inside with the reversed ray as its normal, not
+    // the zero normal a box gets: a ray from a character's centre must still skip its capsule.
+    it("ignores a capsule around the ray start by default", () => {
+      const simulation = createSimulation();
+      simulation.createBody({
+        mass: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        sensor: false,
+        shape: CollisionShape3D.capsule(0.6, 0.3).descriptor,
+        type: "kinematic",
+      });
+      const farId = addBox(simulation, { x: 5, y: 0, z: 0 });
+      simulation.step(1 / 60);
+      const space = new PhysicsDirectSpaceState3D(simulation);
+
+      expect(space.intersectRay({ from, to })?.body.id).toBe(farId);
+      expect(space.intersectRay({ from, to: { x: 0, y: 5, z: 0 } })).toBeUndefined();
+      expect(space.intersectRay({ from, hitFromInside: true, to })?.normal).toEqual({
+        x: 0,
+        y: 0,
+        z: 0,
+      });
+      simulation.dispose();
+    });
+
     it("reports no hit by default when nothing else is in the way", () => {
       const simulation = createSimulation();
       addBox(simulation, { x: 0, y: 0, z: 0 });
