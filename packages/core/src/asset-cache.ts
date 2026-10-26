@@ -325,8 +325,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     let last: unknown;
     for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
       try {
-        const init =
-          priority === "idle" ? ({ priority: "low" } as unknown as RequestInit) : undefined;
+        const init = priority === "idle" ? ({ priority: "low" } satisfies RequestInit) : undefined;
         const response = await (init === undefined ? nativeFetch(url) : nativeFetch(url, init));
         if (!response.ok) {
           const status = response.status;
