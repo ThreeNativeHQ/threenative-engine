@@ -1113,7 +1113,7 @@ void traaHistoryClipping() {
     };
     const auto upsampled = retained(16, 1), full = retained(24, 1);
     const auto departed = retained(16, 3, false, 0.49f), reset = retained(16, 1, true), stopped = retained(16, 3);
-    const auto moving = retained(16, 3, false, 0.5f, true), red = retained(16, 1, false, 0.5f, false, true);
+    const auto moving = retained(16, 3, false, 0.5f, true), red = retained(16, 3, false, 0.5f, true, true);
     float separation = 0, resetDifference = 0, alphaError = 0, stoppedDifference = 0;
     // The halo a mover leaves: retained white around the one white texel, static against moving neighbourhood.
     float staticHalo = 0, movingHalo = 0, greyness = 0;
@@ -1133,7 +1133,8 @@ void traaHistoryClipping() {
     CHECK(full.maximum < 0.7f);
     CHECK(separation > 0.75f && resetDifference < 0.005f);
     CHECK(stoppedDifference < 0.005f);
-    // UE's variance box near a mover (red: equal halos) and a clip that keeps hue (red: the clamp turns white grey, 0.995).
+    // Near a mover: UE's variance box (red: equal halos) and a clip that keeps hue (red: the clamp turns white grey).
+    // Static history keeps the per-channel clamp: upscale above stays > 0.9.
     CHECK(movingHalo < staticHalo * 0.85f);
     CHECK(greyness < 0.5f);
     CHECK(alphaError < 0.005f);

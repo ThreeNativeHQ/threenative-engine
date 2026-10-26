@@ -256,7 +256,10 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     var clipped = old;
     if (highClamp) {
         let historyColor = vec4(rgbToNeighborhood * old.rgb, old.a);
-        let bounded = clipAABB(vec4(0, 0, 0, clamp(old.a, low.a, high.a)), historyColor, low, high);
+        // Near a mover, clip toward the box centre so history keeps its hue; elsewhere UE's per-channel clamp, which
+        // leaves in-range channels alone and so keeps static edges resolved.
+        let bounded = select(clamp(historyColor, low, high),
+            clipAABB(vec4(0, 0, 0, clamp(old.a, low.a, high.a)), historyColor, low, high), dynamicNeighborhood);
         if (any(bounded != historyColor)) { clipped = vec4(neighborhoodToRgb * bounded.rgb, bounded.a); }
     } else {
         let mean = moment1 / 9;
