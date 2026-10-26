@@ -174,7 +174,8 @@ function assertPolicyFollowsIdentity(observed) {
   // The relationship, not the value: this host is hardware, so `high` is its honest answer and
   // says nothing about a software adapter natively. Both halves follow from the observed identity.
   assert.equal(observed.policyTier, adapterClass === "hardware" ? "high" : "low");
-  assert.equal(observed.renderChainTier, observed.policyTier === "low" ? "low" : null);
+  // Each preset names the tier its chain runs at (`high` since 89ed1247f), so the two settings agree.
+  assert.equal(observed.renderChainTier, observed.policyTier);
 
   // The software branch of the same policy, executed natively because it is pure. This is where a
   // low preset that chose `low` but left the chain's own tier at its default gets caught: the tier
