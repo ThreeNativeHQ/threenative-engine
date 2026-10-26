@@ -92,6 +92,7 @@ exploration step, no sharpness metric and no procedural-rig slip measurement exi
 ## Acceptance criteria
 
 - [ ] A cold agent's kit gets the frame budget, the smear and the dead control as red scenarios without adding a check (the crash leaves this criterion with the dropped wall-probe box, 2026-10-26). proof: the Phase 1, 2 and 3 red runs above
+  Open (2026-10-26, lead): the frame budget (268b1c5f5) and the dead control (bf8e37804) are real red scenario runs. The smear has no red scenario run: the "Lantern Vale SSR arm 0.22" frame (`~/.cache/tmp-tn/kits-perf/vale/artifacts/arms/v1080-ssr/after.png`, `?tnOff=ssr`) is a different camera pose, not a smear (the MSAA arm at that pose also reads about 0.21). Rerun at the PR head (headed WebGPU, nvidia/turing, shipped `explore` unchanged, floor 0.3): SSR-off arm exit 0, sharpness 0.3472; unmodified exit 0, 0.3470. No induced smear arm was run, because that would be a manufactured red. The smear check stays unit-proven (`sharpness.spec.ts`) only. ⚠️ The Lantern Vale `explore` end frame reads 0.347 here against the 0.62 recorded in Phase 2, so its margin to the 0.3 floor is 0.047.
 
 ## Decisions
 
