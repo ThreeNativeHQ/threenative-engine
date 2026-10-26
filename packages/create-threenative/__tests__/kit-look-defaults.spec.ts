@@ -55,7 +55,6 @@ const VENDORED_RENDER_FILES = [
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
   rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
 };
 
@@ -313,6 +312,32 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       });
       expect(preset.tonemapMode, `puzzle/${tier} tonemapMode`).toBe("filmic");
       expect(preset.autoExposureEnabled, `puzzle/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "sailing/%s follows the core preset with its named cost override",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(pathToFileURL(renderFile("sailing", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("sailing", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual(core.exposureSettings);
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        finalGatherMethod: "none",
+        ssgiEnabled: false,
+        ssrEnabled: false,
+        motionBlurEnabled: false,
+      });
+      expect(preset.tonemapMode, `sailing/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `sailing/${tier} metered exposure`).toBe(true);
     },
   );
 });
