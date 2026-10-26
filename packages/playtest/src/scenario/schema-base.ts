@@ -493,6 +493,11 @@ export interface IPlaytestStartupAssertion {
   /** `whenReady()` resolved: the world is safe to show. */
   maxReadyMs?: number;
   /**
+   * Ceiling on the bytes the reveal waited for that the spawn camera does not show, from the
+   * runtime's own measurement. `0` asserts that everything awaited is in view.
+   */
+  maxOffscreenBytes?: number;
+  /**
    * Every frame the page presented between navigation and readiness looks like the last one
    * before readiness (the loading cover): no black, blank or page-background frame in between.
    */
@@ -783,6 +788,15 @@ export interface IPlaytestScenarioSetup {
   spawn?: IPlaytestSpawnRequest;
 }
 
+/**
+ * A browser-only network profile applied before the page loads, so a scenario can prove what a
+ * real link costs. Throughput is in kilobits per second, one direction, as a user reads a plan.
+ */
+export interface IPlaytestNetworkProfile {
+  readonly downloadKbps: number;
+  readonly latencyMs: number;
+}
+
 export interface IPlaytestScenario {
   acceptanceId?: string;
   artifacts?: IPlaytestArtifactRequest;
@@ -798,6 +812,8 @@ export interface IPlaytestScenario {
   awaitStartup?: boolean;
   inputDelivery?: PlaytestInputDelivery;
   name: string;
+  /** Browser-only: throttle the page before navigation. See {@link IPlaytestNetworkProfile}. */
+  network?: IPlaytestNetworkProfile;
   parity?: IPlaytestParityConfig;
   /**
    * Browser-only: run this scenario on the wall clock, as `--live-clock` does for a whole run. A

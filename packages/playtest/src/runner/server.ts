@@ -9,6 +9,7 @@ import {
 } from "../index.js";
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
+import { networkEmulation } from "./network.js";
 import { managedServerError } from "./shared.js";
 import type { Page } from "playwright";
 
@@ -224,6 +225,25 @@ export function pageLifecycleDiagnostic(
   );
 }
 
+/** Live CDP sessions by page: the throttle belongs to a session, so something must hold it. */
+const throttledPages = new WeakMap<Page, unknown>();
+
+/**
+ * Apply the scenario's browser-only network profile before navigation.
+ *
+ * CDP takes bytes per second; a plan is read in kilobits, so one conversion happens here. A
+ * session that cannot be created fails the run: a scenario that asked to be throttled must never
+ * report numbers from an unthrottled page.
+ */
+async function applyNetworkProfile(page: Page, scenario: IPlaytestScenario): Promise<void> {
+  const profile = scenario.network;
+  if (profile === undefined) return;
+  const session = await page.context().newCDPSession(page);
+  await session.send("Network.enable");
+  await session.send("Network.emulateNetworkConditions", networkEmulation(profile));
+  throttledPages.set(page, session);
+}
+
 /**
  * Navigate and complete the bridge handshake, re-navigating when the page reloads itself
  * before the handshake finishes. This never retries past the handshake: no observation has
@@ -236,6 +256,7 @@ export async function openPageAndConnectBridge(
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,
 ): Promise<IPlaytestBridgeClient | undefined> {
+  await applyNetworkProfile(page, scenario);
   const attempts = 3;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {

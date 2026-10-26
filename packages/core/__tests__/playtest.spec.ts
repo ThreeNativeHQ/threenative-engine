@@ -391,6 +391,17 @@ describe("playtest plugin", () => {
       expect(snapshot.resources).toEqual({
         __threenativeFrameCounts: { updates: 0, renders: 0 },
         GameState: { score: 0 },
+        assetCache: {
+          backgroundFill: false,
+          bytesOnDisk: 0,
+          bytesTotal: 0,
+          enabled: false,
+          filling: false,
+          hits: 0,
+          misses: 0,
+          persisted: false,
+          reason: "cache API unavailable",
+        },
         assets: {},
         state: { score: 0 },
       });

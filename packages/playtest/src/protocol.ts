@@ -103,6 +103,23 @@ export interface IPlaytestStartupTimeline {
   readyMs?: number;
 }
 
+/**
+ * What the reveal waited for through the asset loader, split by whether the spawn camera shows it.
+ * Measured by the application at the reveal; mirrors core's `IStartupOffscreenBytes`.
+ */
+export interface IPlaytestStartupOffscreenBytes {
+  awaitedBytes: number;
+  fix: string;
+  offscreenBytes: number;
+  top: { bytes: number; path: string; reason: "hidden" | "not-placed" | "outside-view" }[];
+  unattributedBytes: number;
+  /** Awaited files with no manifest size, in no byte count. */
+  unsizedFiles: number;
+  visibleBytes: number;
+  /** Off-screen bytes exceed visible bytes: most of the wait bought nothing on screen. */
+  warn: boolean;
+}
+
 export interface IPlaytestStartupObservation {
   phase: "observing" | "collapsing" | "ready";
   /** 0 while first-use work is pending, then 1. */
@@ -130,6 +147,8 @@ export interface IPlaytestStartupObservation {
   compileSettled?: boolean;
   /** Present when the application records its startup milestones. */
   timeline?: IPlaytestStartupTimeline;
+  /** Present once the reveal ran and the application measured what it waited for. */
+  offscreenBytes?: IPlaytestStartupOffscreenBytes;
   /** The frames the page presented before readiness; recorded by the browser runner on request. */
   cover?: IPlaytestStartupCoverObservation;
 }

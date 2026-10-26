@@ -183,10 +183,27 @@ so every spectrogram written is named in both. Verdicts, parsing and analysis li
 The runtime stamps its startup milestones on its own clock — `loadStartedMs`, `enteredMs`,
 `compileSettledMs`, `readyMs`, in milliseconds since navigation — and publishes them as
 `observations.startup.timeline`. Scenarios bound them with `assert.startup`: `maxEnteredMs`,
-`maxCompileSettledMs`, `maxReadyMs`. A milestone the run never reached fails closed
+`maxCompileSettledMs`, `maxReadyMs`, `maxOffscreenBytes`. A milestone the run never reached fails closed
 (`TN_PLAYTEST_STARTUP_UNOBSERVABLE`); one past its ceiling fails
 `TN_PLAYTEST_STARTUP_TOO_SLOW` with the measured value. Before this, startup was a console
 anecdote read off `TN_STARTUP_WARMUP` after the fact.
+
+### Bytes the reveal waited for that the spawn camera does not show
+
+At the reveal the runtime measures which models the game awaited through `ctx.assets` and how many of
+their manifest bytes have no object visible to the spawn camera (in the frustum, not hidden), and
+publishes it as `observations.startup.offscreenBytes`: `awaitedBytes`, `visibleBytes`, `offscreenBytes`,
+`unattributedBytes` (textures and audio, which no scene object ties to a view), `unsizedFiles`, the
+five largest off-screen files with a reason (`outside-view`, `hidden`, `not-placed`), `warn` and the fix.
+It also logs `TN_STARTUP_OFFSCREEN_BYTES:{...}`. No fixed MB threshold: it warns when off-screen bytes
+exceed visible bytes, and informs on any other off-screen byte. A warning run carries the
+`TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES` warning diagnostic; the fix is to stream those files with
+`WorldCells`, or `ctx.assets.prefetch` them after the reveal, and keep awaiting everything the spawn camera
+sees. Never defer what the camera sees to lower `readyMs`. `assert.startup.maxOffscreenBytes` turns it
+into a gate (`0` means everything awaited is in view); it fails closed with
+`TN_PLAYTEST_STARTUP_UNOBSERVABLE` when the runtime reported nothing or no awaited file has a manifest
+size. `doctor --url` prints awaited and off-screen MB with the estimated download time at 20 Mbit/s.
+Proof fixture: `examples/startup-offscreen/`.
 
 `steadyCover: true` checks what the player saw instead. The browser runner records every
 compositor frame through Chromium's screencast (128 x 72) from before navigation until 30

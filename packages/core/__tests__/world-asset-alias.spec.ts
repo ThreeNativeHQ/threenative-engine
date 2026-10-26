@@ -147,6 +147,9 @@ function countingLoader(): { assets: IAssetLoader; models: string[] } {
     get compressedTextures() {
       return inner.compressedTextures;
     },
+    get cache() {
+      return inner.cache;
+    },
     get progress() {
       return inner.progress;
     },
@@ -160,8 +163,10 @@ function countingLoader(): { assets: IAssetLoader; models: string[] } {
       models.push(path);
       return inner.model(path);
     },
+    prefetch: (paths) => inner.prefetch(paths),
     release: (kind, path) => inner.release(kind, path),
     resolve: (path) => inner.resolve(path),
+    startBackgroundFill: () => inner.startBackgroundFill(),
     texture: (path, options) => inner.texture(path, options),
   };
   return { assets, models };
