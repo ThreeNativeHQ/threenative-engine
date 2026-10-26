@@ -1695,10 +1695,12 @@ void traaGhostingAt(float inputScale) {
     // this fixture's trail: the bars hide the stale grey from the variance clip, and the depth test sees a pixel that was
     // background in the last frame too.
     CHECK(rigid.front() < 0.05 && instanced.front() < 0.05);
-    CHECK(rigid.back() < 0.7);
-    // Changed instance buffers have camera-only motion. The original full-resolution bound stays binding;
-    // the new scaled observation is diagnostic (bc19 already measured .451 against this .3 bound).
-    if (inputScale == 1) CHECK(instanced.back() < 0.3);
+    // Changed instance buffers have no previous transforms, so the instance draws no velocity and the resolve reads its
+    // pixels as incomplete, dynamic motion. Upsampling rejects their departed history, and the frames that rebuild the
+    // bars from one jittered input count as trail too: 0.46 (rigid) and 0.60 (instanced) at 0.72. Each scale keeps a
+    // bound just above what it measures, so a lost velocity or a weaker rejection fails at either scale.
+    CHECK(rigid.back() < (inputScale == 1 ? 0.7 : 0.5));
+    CHECK(instanced.back() < (inputScale == 1 ? 0.3 : 0.65));
 }
 
 void traaGhosting() { traaGhostingAt(1); traaGhostingAt(0.72f); }
