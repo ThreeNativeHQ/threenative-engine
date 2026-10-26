@@ -244,6 +244,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxEnteredMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxCompileSettledMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxReadyMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "maxOffscreenBytes": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "steadyCover": (value: unknown) => typeof value === "boolean",
   }),
   "pipelineCensus": Object.freeze({

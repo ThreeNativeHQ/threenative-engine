@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "entries": {
+    "near.glb": { "bytes": 120000, "kind": "model", "output": "near.glb", "passes": [] },
+    "forest.glb": { "bytes": 48000000, "kind": "model", "output": "forest.glb", "passes": [] }
+  }
+}

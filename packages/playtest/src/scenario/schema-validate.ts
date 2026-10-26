@@ -6,7 +6,7 @@ import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateFootSlipAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
-import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
+import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestNetworkProfile, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
@@ -16,6 +16,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "clock",
   "inputDelivery",
   "name",
+  "network",
   "parity",
   "reducedMotion",
   "schemaVersion",
@@ -71,6 +72,15 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.reducedMotion !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario reducedMotion is browser-only and requires target 'web'.");
   }
+  if (value.network !== undefined && !isRecord(value.network)) {
+    throw invalidScenario(scenarioPath, "Scenario network must be an object with downloadKbps and latencyMs.");
+  }
+  const network = value.network === undefined
+    ? undefined
+    : validateNetworkProfile(value.network, scenarioPath);
+  if (network !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario network is browser-only and requires target 'web'.");
+  }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
     throw invalidScenario(scenarioPath, "Scenario inputDelivery must be deterministic or focused-dom.");
@@ -107,6 +117,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     ...(value.clock === "wall-clock" ? { clock: value.clock } : {}),
     inputDelivery,
     name,
+    ...(network === undefined ? {} : { network }),
     ...(value.parity === undefined
       ? {}
       : { parity: validateParityConfig(requireRecord(value.parity, scenarioPath, "parity"), scenarioPath) }),
@@ -303,6 +314,30 @@ function validateParityTargets(value: unknown, scenarioPath: string, objectPath:
   });
 }
 
+/** A browser-only throttle; every key is required, so a typo fails the scenario rather than running unthrottled. */
+function validateNetworkProfile(
+  value: Record<string, unknown>,
+  scenarioPath: string,
+): IPlaytestNetworkProfile {
+  rejectUnknownKeys(value, ["downloadKbps", "latencyMs"], scenarioPath, "network");
+  const downloadKbps = value.downloadKbps;
+  if (
+    typeof downloadKbps !== "number" ||
+    !Number.isFinite(downloadKbps) ||
+    downloadKbps <= 0
+  ) {
+    throw invalidScenario(
+      scenarioPath,
+      "Scenario network.downloadKbps must be a positive number of kilobits per second.",
+    );
+  }
+  const latencyMs = value.latencyMs;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) {
+    throw invalidScenario(scenarioPath, "Scenario network.latencyMs must be a non-negative number.");
+  }
+  return { downloadKbps, latencyMs };
+}
+
 export function validateSetup(value: Record<string, unknown>, scenarioPath: string, subject?: string): IPlaytestScenarioSetup {
   rejectUnknownKeys(value, ["aim", "entities", "place", "resources", "spawn"], scenarioPath, "setup");
   const spawn = validateSpawnRequest(value.spawn, scenarioPath);
@@ -484,7 +519,9 @@ export const PLAYTEST_STEP_KEYS = [
   "window",
 ] as const;
 
-const MAX_RESOURCE_WAIT_TIMEOUT_MS = 120_000;
+// A multi-gigabyte web release on a 20 Mbit/s link can legitimately take minutes to reach its
+// final tier. The bound exists to fail a predicate that will never be true, not to cap a slow link.
+const MAX_RESOURCE_WAIT_TIMEOUT_MS = 300_000;
 
 export function validateStep(value: unknown, scenarioPath: string, index: number): IPlaytestStep {
   if (!isRecord(value)) {

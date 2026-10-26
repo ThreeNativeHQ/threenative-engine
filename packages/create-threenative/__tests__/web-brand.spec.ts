@@ -6,6 +6,13 @@ import { createWebBrandPlugin } from "../src/web-brand.js";
 
 const roots: string[] = [];
 
+interface IFakeResponse {
+  body: string;
+  headers: Record<string, string>;
+  setHeader(key: string, value: string): void;
+  end(body: string): void;
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -56,6 +63,53 @@ describe("web branding adapter", () => {
       name: "Branded Quest",
       theme_color: "#123456",
     });
+  });
+  it("serves the linked manifest from the dev server, where no bundle is emitted", async () => {
+    const root = await makeTempDir("threenative-web-brand-dev-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "dev-game", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { app: { name: "Dev Quest" } };\n',
+    );
+    const plugin = createWebBrandPlugin();
+    await plugin.configResolved({ root });
+    let handler:
+      | ((req: { url?: string }, res: IFakeResponse, next: () => void) => void)
+      | undefined;
+    plugin.configureServer({
+      middlewares: {
+        use: (use) => {
+          handler = use;
+        },
+      },
+    });
+    const res: IFakeResponse = {
+      body: "",
+      headers: {},
+      setHeader: (k, v) => {
+        res.headers[k] = v;
+      },
+      end: (b) => {
+        res.body = b;
+      },
+    };
+    let passed = false;
+    handler?.({ url: "/manifest.webmanifest" }, res, () => {
+      passed = true;
+    });
+    // Without this route Vite answers the link with index.html and Chrome logs
+    // "Manifest: Line: 1, column: 1, Syntax error." on every dev page load.
+    expect(passed).toBe(false);
+    expect(res.headers["Content-Type"]).toBe("application/manifest+json");
+    expect(JSON.parse(res.body)).toMatchObject({ name: "Dev Quest" });
+    handler?.({ url: "/index.html" }, res, () => {
+      passed = true;
+    });
+    expect(passed).toBe(true);
   });
   it("leaves upstream three alone in a native bundle, whose host is not a browser (PRD-637)", async () => {
     const root = await makeTempDir("threenative-web-brand-native-");

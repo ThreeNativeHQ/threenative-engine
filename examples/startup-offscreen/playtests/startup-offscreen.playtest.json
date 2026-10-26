@@ -1,0 +1,16 @@
+{
+  "name": "startup-offscreen-gate",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "steps": [{ "kind": "wait", "label": "settle", "waitTicks": 10, "release": true }],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "startup": { "maxOffscreenBytes": 0 }
+  }
+}

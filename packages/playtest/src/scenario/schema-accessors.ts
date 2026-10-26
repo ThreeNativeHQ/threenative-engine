@@ -527,7 +527,7 @@ export function validateStartupAssertion(
   objectPath: string,
 ): IPlaytestStartupAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  const result: { -readonly [K in (typeof STARTUP_CEILINGS)[number]]?: number } & { steadyCover?: true } = {};
+  const result: { -readonly [K in (typeof STARTUP_CEILINGS)[number]]?: number } & { maxOffscreenBytes?: number; steadyCover?: true } = {};
   for (const key of STARTUP_CEILINGS) {
     const ceiling = record[key];
     if (ceiling === undefined) continue;
@@ -536,6 +536,14 @@ export function validateStartupAssertion(
     }
     result[key] = ceiling;
   }
+  const bytes = record.maxOffscreenBytes;
+  if (bytes !== undefined) {
+    // Zero is meaningful here ("everything awaited is in view"), so it is the one ceiling allowed to be 0.
+    if (typeof bytes !== "number" || !Number.isInteger(bytes) || bytes < 0) {
+      throw invalidScenario(scenarioPath, `'${objectPath}.maxOffscreenBytes' must be a non-negative integer number of bytes, received ${describeValue(bytes)}.`);
+    }
+    result.maxOffscreenBytes = bytes;
+  }
   if (record.steadyCover !== undefined) {
     if (record.steadyCover !== true) {
       throw invalidScenario(scenarioPath, `'${objectPath}.steadyCover' must be true, received ${describeValue(record.steadyCover)}; leave it out to skip the check.`);
@@ -543,7 +551,7 @@ export function validateStartupAssertion(
     result.steadyCover = true;
   }
   if (Object.keys(result).length === 0) {
-    throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${[...STARTUP_CEILINGS, "steadyCover"].join(", ")}; an empty startup assertion observes nothing.`);
+    throw invalidScenario(scenarioPath, `'${objectPath}' must set at least one of ${[...STARTUP_CEILINGS, "maxOffscreenBytes", "steadyCover"].join(", ")}; an empty startup assertion observes nothing.`);
   }
   return result;
 }

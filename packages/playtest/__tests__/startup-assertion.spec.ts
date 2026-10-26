@@ -7,7 +7,7 @@ import {
   evaluateRichPlaytestAssertions,
   loadPlaytestScenario,
 } from "../src/index.js";
-import type { IPlaytestStartupCoverObservation, IPlaytestStartupTimeline } from "../src/protocol.js";
+import type { IPlaytestStartupCoverObservation, IPlaytestStartupOffscreenBytes, IPlaytestStartupTimeline } from "../src/protocol.js";
 import type { IPlaytestReport } from "../src/report.js";
 import { compareStartupFrames, type IStartupCoverFrame } from "../src/runner/startupCover.js";
 
@@ -17,7 +17,10 @@ import { compareStartupFrames, type IStartupCoverFrame } from "../src/runner/sta
  * a scenario asserts, and fails closed when the milestone was never reached.
  */
 
-function report(timeline: IPlaytestStartupTimeline | undefined): IPlaytestReport {
+function report(
+  timeline: IPlaytestStartupTimeline | undefined,
+  offscreenBytes?: IPlaytestStartupOffscreenBytes,
+): IPlaytestReport {
   return {
     diagnostics: [],
     distance: 0,
@@ -31,7 +34,15 @@ function report(timeline: IPlaytestStartupTimeline | undefined): IPlaytestReport
       resources: {},
       ...(timeline === undefined
         ? {}
-        : { startup: { phase: "ready", progress: 1, rule: "sustained-frames", timeline } }),
+        : {
+            startup: {
+              phase: "ready",
+              progress: 1,
+              rule: "sustained-frames",
+              timeline,
+              ...(offscreenBytes === undefined ? {} : { offscreenBytes }),
+            },
+          }),
     },
     trivialityOptOuts: [],
   };
@@ -64,6 +75,7 @@ describe("startup playtest assertion", () => {
     expect(entry?.fields.map((field) => field.name).sort()).toEqual([
       "maxCompileSettledMs",
       "maxEnteredMs",
+      "maxOffscreenBytes",
       "maxReadyMs",
       "steadyCover",
     ]);
@@ -192,5 +204,102 @@ describe("startup steadyCover", () => {
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_UI_OVER_COVER" }));
     // the bar filling to its end over the cover is not page UI
     expect(compareStartupFrames([frame(100, cover), frame(900, cover, 0.9), frame(960, cover, 1), frame(1000, world, 0, true)], 950).uiOverCover).toEqual([]);
+  });
+
+  describe("off-screen bytes", () => {
+    const measured = (
+      overrides: Partial<IPlaytestStartupOffscreenBytes> = {},
+    ): IPlaytestStartupOffscreenBytes => ({
+      awaitedBytes: 501_000,
+      fix: "Stream these files with WorldCells, or prefetch them after the reveal.",
+      offscreenBytes: 500_000,
+      top: [{ bytes: 500_000, path: "forest.glb", reason: "outside-view" }],
+      unattributedBytes: 0,
+      unsizedFiles: 0,
+      visibleBytes: 1_000,
+      warn: true,
+      ...overrides,
+    });
+    const timeline = { enteredMs: 1900, loadStartedMs: 300, readyMs: 4200 };
+
+    it("warns without any assertion when most of the wait is not on screen", async () => {
+      const scenario = await scenarioWith({ maxReadyMs: 8000 });
+      const result = evaluateRichPlaytestAssertions({
+        report: report(timeline, measured()),
+        scenario,
+      });
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES",
+          message: expect.stringContaining("forest.glb"),
+          severity: "warning",
+          suggestion: expect.stringContaining("WorldCells"),
+        }),
+      );
+      expect(result.assertions.every((assertion) => assertion.pass)).toBe(true);
+    });
+
+    it("stays quiet for an inform-level or clean measurement", async () => {
+      const scenario = await scenarioWith({ maxReadyMs: 8000 });
+      for (const offscreenBytes of [
+        measured({ offscreenBytes: 4_000, top: [], visibleBytes: 80_000, warn: false }),
+        measured({ offscreenBytes: 0, top: [], visibleBytes: 501_000, warn: false }),
+      ]) {
+        const result = evaluateRichPlaytestAssertions({
+          report: report(timeline, offscreenBytes),
+          scenario,
+        });
+        expect(result.diagnostics).toEqual([]);
+      }
+    });
+
+    it("gates on maxOffscreenBytes: passes under the ceiling and fails over it", async () => {
+      const over = evaluateRichPlaytestAssertions({
+        report: report(timeline, measured()),
+        scenario: await scenarioWith({ maxOffscreenBytes: 1_000 }),
+      });
+      expect(over.assertions).toContainEqual(
+        expect.objectContaining({ id: "startup.offscreenBytes", pass: false }),
+      );
+      expect(over.diagnostics).toContainEqual(
+        expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES", severity: "error" }),
+      );
+      const clean = evaluateRichPlaytestAssertions({
+        report: report(
+          timeline,
+          measured({ offscreenBytes: 0, top: [], visibleBytes: 501_000, warn: false }),
+        ),
+        scenario: await scenarioWith({ maxOffscreenBytes: 0 }),
+      });
+      expect(clean.assertions).toContainEqual(
+        expect.objectContaining({ id: "startup.offscreenBytes", pass: true }),
+      );
+      expect(clean.diagnostics).toEqual([]);
+    });
+
+    it("fails closed when there is no measurement or nothing awaited could be sized", async () => {
+      const scenario = await scenarioWith({ maxOffscreenBytes: 1_000 });
+      for (const offscreenBytes of [
+        undefined,
+        measured({ awaitedBytes: 0, offscreenBytes: 0, top: [], unsizedFiles: 3, warn: false }),
+      ]) {
+        const result = evaluateRichPlaytestAssertions({
+          report: report(timeline, offscreenBytes),
+          scenario,
+        });
+        expect(result.assertions).toContainEqual(
+          expect.objectContaining({ id: "startup.offscreenBytes", pass: false }),
+        );
+        expect(result.diagnostics).toContainEqual(
+          expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_UNOBSERVABLE" }),
+        );
+      }
+    });
+
+    it("rejects a negative or fractional ceiling at load", async () => {
+      await expect(scenarioWith({ maxOffscreenBytes: -1 })).rejects.toThrow(/non-negative integer/u);
+      await expect(scenarioWith({ maxOffscreenBytes: 1.5 })).rejects.toThrow(/non-negative integer/u);
+      await expect(scenarioWith({ maxOffscreenBytes: "0" })).rejects.toThrow(/maxOffscreenBytes/u);
+    });
   });
 });

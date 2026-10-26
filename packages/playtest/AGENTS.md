@@ -35,6 +35,8 @@ explicitly **not** test failures (external decoder absent; capture lock queue ti
 - A scaffolded project runs the same CLI as `npx @threenative/playtest`. The framework template
   installs the bridge with `playtest()` in `defineGame`; a plain Three.js project uses
   `installThreePlaytestBridge` from `@threenative/playtest/three`.
+- A scenario's `network: { downloadKbps, latencyMs }` throttles the browser link through CDP, so a
+  load-time claim runs at a stated link speed (for example 20000 kbps and 40 ms).
 - `diagnostics`, console, network, screenshot and trace assertions work against any URL. Semantic
   assertions (`movement`, `camera`, `visibility`) against a project with neither bridge fail
   `TN_PLAYTEST_BRIDGE_MISSING` — that is the harness being right. Install the bridge or narrow the
@@ -99,6 +101,10 @@ vocabulary behind them is in [docs/reference.md](docs/reference.md).
 - **Advertise only what you registered.** An unknown capability is
   `TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN`, so a new observation channel is registered in
   `src/capabilities.ts` in the same change that starts advertising it.
+- **Off-screen startup bytes are a warning, not a failure, until a scenario sets `assert.startup.maxOffscreenBytes`.**
+  `TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES` means the reveal awaited files the spawn camera does not show;
+  the fix is to stream or prefetch those, never to defer what the camera sees
+  ([docs/reference.md](docs/reference.md)).
 
 ## Determinism
 

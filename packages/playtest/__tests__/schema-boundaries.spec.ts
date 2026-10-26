@@ -103,6 +103,57 @@ describe("scenario schema boundaries", () => {
     }, "invalid-reduced-motion.playtest.json")).toThrow(/reducedMotion must be 'reduce'/u);
   });
 
+  it("allows a resource wait long enough for a throttled large release, and still caps it", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario(undefined),
+      steps: [
+        {
+          label: "slow-tier",
+          release: true,
+          timeoutMs: 240_000,
+          waitForResource: { gte: 100, id: "state", path: "treeCount" },
+        },
+      ],
+    }, "slow-tier.playtest.json");
+    expect(parsed.steps[0]?.timeoutMs).toBe(240_000);
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      steps: [
+        {
+          label: "too-long",
+          release: true,
+          timeoutMs: 300_001,
+          waitForResource: { gte: 100, id: "state", path: "treeCount" },
+        },
+      ],
+    }, "too-long.playtest.json")).toThrow(/no greater than 300000/u);
+  });
+
+  it("accepts a browser network profile and refuses an unknown key or a non-web target", () => {
+    const web = { ...scenario(undefined), target: "web", viewport: { height: 720, width: 1280 } };
+    const parsed = validatePlaytestScenario({
+      ...web,
+      network: { downloadKbps: 20000, latencyMs: 40 },
+    }, "throttled.playtest.json");
+    expect(parsed.network).toEqual({ downloadKbps: 20000, latencyMs: 40 });
+
+    expect(() => validatePlaytestScenario({
+      ...web,
+      network: { downloadKbps: 20000, latencyMs: 40, uploadKbps: 5000 },
+    }, "unknown-network-key.playtest.json")).toThrow(/Unknown key 'uploadKbps'/u);
+
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      network: { downloadKbps: 20000, latencyMs: 40 },
+      target: "desktop",
+    }, "desktop-network.playtest.json")).toThrow(/network is browser-only/u);
+
+    expect(() => validatePlaytestScenario({
+      ...web,
+      network: { downloadKbps: 0, latencyMs: 40 },
+    }, "invalid-download.playtest.json")).toThrow(/downloadKbps must be a positive number/u);
+  });
+
   it("accepts a click on a DOM element by id or selector, never both or neither", () => {
     const click = (at: unknown) => ({
       ...scenario(undefined),

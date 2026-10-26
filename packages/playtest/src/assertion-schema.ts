@@ -623,6 +623,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Ceiling on when the start scene's enter() returned, in ms since navigation.", name: "maxEnteredMs", type: "number" },
       { description: "Ceiling on when first-use compilation settled or its budget expired, in ms since navigation.", name: "maxCompileSettledMs", type: "number" },
       { description: "Ceiling on when startup readiness resolved, in ms since navigation.", name: "maxReadyMs", type: "number" },
+      { description: "Ceiling on the bytes the reveal waited for through ctx.assets that the spawn camera does not show, from the runtime's own measurement; 0 asserts everything awaited is in view.", name: "maxOffscreenBytes", type: "number" },
       { description: "true: every frame the browser presented between navigation and readiness matches the last one before readiness (the loading cover), so a black, blank or page-background frame fails, and no frame between readiness and the first world frame shows page UI (a HUD) over the cover. Browser target only; elsewhere it fails as unobserved.", name: "steadyCover", type: "boolean" },
     ],
     cardinality: "object",
