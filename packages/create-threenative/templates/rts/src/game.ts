@@ -58,7 +58,11 @@ game.ui.onIntent((intent, payload) => {
     sendSceneIntent("cancel");
   }
   if (intent === "resume") game.resume();
-  game.state.set({ paused: intent === "pause", uiReady: game.ui.connected });
+  // Only the pause and resume intents move the flag: an order sent while paused leaves it held.
+  game.state.set({
+    uiReady: game.ui.connected,
+    ...(intent === "pause" || intent === "resume" ? { paused: intent === "pause" } : {}),
+  });
   game.state.flush();
   if (intent !== "pause" && intent !== "resume") sendSceneIntent(intent, payload);
 });

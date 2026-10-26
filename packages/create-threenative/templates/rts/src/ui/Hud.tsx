@@ -130,6 +130,7 @@ export function Hud() {
         <button
           className="pointer-events-auto border border-line bg-black/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
           data-tn-interactive
+          data-testid="pause-toggle"
           onClick={() => send(state.paused ? "resume" : "pause")}
           type="button"
         >
