@@ -13,11 +13,8 @@ import {
 } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 
-/**
- * This game's reconstruction detail. Zero (UE 5.8.3 Scene.cpp:547, Sharpen 0) disables it; a positive strength
- * sharpens upsampled frames and also lifts the reduced raster's stair-steps. Full-resolution frames stay unchanged.
- */
-export const temporalDetail = { strength: 0 };
+/** This game's reconstruction detail. Zero disables it; full-resolution frames stay unchanged. */
+export const temporalDetail = { strength: 1 };
 const defaultStrength = temporalDetail.strength;
 let reportedStrength: number | undefined;
 
@@ -95,7 +92,9 @@ export function temporalDetailStages(): [ChainStage, ChainStage] {
         // Deviation from UE: a dynamic pixel (velocity z = 3) resolves mostly from the current
         // frame, so sharpening it amplifies the input grid on spinning or animated subjects.
         const moving = (chain.velocityNode as TextureNode).sample(screenUV).z.greaterThan(2);
-        const mask = select(moving, 0, edge.oneMinus().clamp(0, 1));
+        // Deviation from UE: the mask fades four times sooner, so texture (grass, stone) is sharpened and a strong
+        // geometric edge, whose 0.72 stair-steps sharpening would lift, is not.
+        const mask = select(moving, 0, edge.mul(4).oneMinus().clamp(0, 1));
         const delta = left.add(right).add(up).add(down).sub(centre.rgb.mul(4));
         return vec4(
           select(upscaled, frame.rgb.sub(delta.mul(mask).mul(strength / 6)), frame.rgb),

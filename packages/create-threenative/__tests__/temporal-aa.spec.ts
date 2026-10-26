@@ -8,7 +8,7 @@ import type {
   Texture,
   TextureNode,
 } from "three/webgpu";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RenderChain } from "../../core/src/render/chain.js";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
 import { createTemporalAAFrame } from "../templates/starter/src/render/temporalAAFrame.js";
@@ -1168,11 +1168,8 @@ describe("generated temporal detail controls", () => {
       ),
     ).toBe(false);
   });
-  beforeEach(() => {
-    temporalDetail.strength = 1;
-  });
   afterEach(() => {
-    temporalDetail.strength = 0;
+    temporalDetail.strength = 1;
   });
   function stage() {
     return temporalDetailStages()[1];
@@ -1245,13 +1242,5 @@ describe("generated temporal detail controls", () => {
       if (split.components === "z" && split.node?.value === motion.value) flagRead = true;
     });
     expect(flagRead).toBe(true);
-  });
-});
-describe("temporal detail default", () => {
-  it("ships UE 5.8.3's Sharpen 0, so the reduced raster's stair-steps are not lifted", () => {
-    expect(temporalDetail.strength).toBe(0);
-    expect(temporalDetailStages()[1]?.available?.({ velocityNode: rtt(output) } as never)).toBe(
-      "temporal-detail:strength=0",
-    );
   });
 });
