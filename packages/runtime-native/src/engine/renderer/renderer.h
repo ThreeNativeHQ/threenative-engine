@@ -1118,6 +1118,7 @@ private:
     struct DeformationFrame {
         Program* program = nullptr;
         std::vector<uint64_t> buffers;
+        std::size_t instanceHash = 0;  // the instance matrices' contents: an instance moved since last frame when it differs
         std::vector<uint8_t> uniforms;
     };
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.

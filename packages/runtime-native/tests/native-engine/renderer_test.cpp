@@ -755,11 +755,12 @@ void traaCameraVelocity() {
     CHECK(moving > 50);  // the sphere's pixels move with the camera, not zero
 }
 
-// A skinned draw writes its own motion: the velocity stage skins with this frame's and the previous frame's palettes (Unreal's
-// previous bone transforms). Without it the character's pixels read as incomplete dynamic motion, upsampling rejects their
-// history and the 0.72 input grid shows on every animated edge. One bone slides the sphere 0.02 along x per frame under a
-// still camera.
-void traaSkinnedVelocity() {
+// A skinned or instanced draw writes its own motion: the velocity stage places its previous position with the previous
+// frame's palette or instance matrices (Unreal's previous bone and instance transforms). Without it the pixels read as
+// incomplete dynamic motion, upsampling rejects their history and the 0.72 input grid shows on every animated edge (the kits
+// build their characters from instanced parts). One bone, or the one instance, slides the sphere 0.02 along x per frame
+// under a still camera.
+void traaSlidingVelocity(bool instanced) {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     CHECK(rendersPixels(context));
@@ -774,7 +775,7 @@ void traaSkinnedVelocity() {
     skinIndices.write(0, indices.data(), indices.size() * sizeof(uint16_t));
     skinWeights.write(0, weights.data(), weights.size() * sizeof(float));
     const auto directory = std::filesystem::current_path() /
-        ("traa-skinned-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        ("traa-sliding-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     constexpr uint32_t width = 32, height = 24;
     EventQueue events;
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
@@ -788,11 +789,14 @@ void traaSkinnedVelocity() {
     item.key = item.id = 1; item.kind = MaterialKind::Basic;
     item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
     item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-    item.skinIndices = &skinIndices; item.skinWeights = &skinWeights; item.boneMatrices = &bones;
+    BufferStore matrices(Scalar::F32, 16);
+    if (instanced) { item.instanceMatrices = &matrices; item.instanceCount = 1; }
+    else { item.skinIndices = &skinIndices; item.skinWeights = &skinWeights; item.boneMatrices = &bones; }
     item.bindMatrix = item.bindMatrixInverse = item.matrixWorld;
     bool noted = false;
     for (int frame = 0; frame <= 20; ++frame) {
         bones[12] = 0.02f * float(frame);
+        matrices.write(0, bones.data(), bones.size() * sizeof(float));
         renderer.render({&item, 1}, slidingCamera(double(width) / height, 0), LightState{}, {0, 0, 0, 1});
         for (const auto& note : renderer.diagnostics()) noted = noted || note.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0;
         tn::fixture::finishTraaDump(*pass, context.getInstance(), directory);
@@ -808,11 +812,14 @@ void traaSkinnedVelocity() {
         if (texels[texel * 4] > 0.0075f && texels[texel * 4] < 0.0115f && std::abs(texels[texel * 4 + 1]) < 1e-3f) ++moving;
         else ++wrong;
     }
-    std::fprintf(stderr, "TN_TRAA_SKINNED_VELOCITY moving=%zu wrong=%zu noted=%d\n", moving, wrong, int(noted));
+    std::fprintf(stderr, "TN_TRAA_SLIDING_VELOCITY instanced=%d moving=%zu wrong=%zu noted=%d\n", int(instanced), moving, wrong,
+                 int(noted));
     CHECK(!noted);
     CHECK(moving > 50 && wrong == 0);
     std::filesystem::remove_all(directory);
 }
+void traaSkinnedVelocity() { traaSlidingVelocity(false); }
+void traaInstancedVelocity() { traaSlidingVelocity(true); }
 
 // The shape a template gives the engine: the temporal effect is the colour convertToTexture hands the stages, and a stage
 // samples the velocity target the temporal pass draws. The effect has to be found inside the render texture (a TRAA the
@@ -947,7 +954,8 @@ void traaDeformationVelocity() {
         if (instanced) {
             matrix[12] = 0.04f;
             matrices.write(0, matrix.data(), sizeof matrix);
-            CHECK(std::abs(frame(0.16) - 128) <= 2);  // changing instance data has no retained previous buffer
+            // The previous frame's instances place the moved instance: its 0.04 jump adds to the deformation's 0.02 step.
+            CHECK(std::abs(frame(0.16) - (128 + 3 * (moving - 128))) <= 8);
             CHECK(std::abs(frame(0.18) - moving) <= 4);  // unchanged instance data recovers next frame
         }
     }
@@ -1748,18 +1756,16 @@ void traaGhostingAt(float inputScale) {
     for (size_t i = 0; i < std::min(rigid.size(), instanced.size()); ++i)
         std::fprintf(stderr, "TN_DEBUG ghost, frame %zu of the move: trail %.3f of the sphere's contrast (rigid), %.3f (instanced)\n", i + 1, rigid[i], instanced[i]);
     if (rigid.size() != size_t{moved} || instanced.size() != size_t{moved}) return;
-    // The trail sums every pixel the sphere has left, so it grows with the move: 0.46 (rigid) and 0.22 (instanced) after 8
-    // frames of one pixel each, and nothing before the third frame. A history read in place, not where the motion put it, gives
-    // 0.44 for both, so the instanced bound catches a velocity that is lost. The resolve's disocclusion test does not move
-    // this fixture's trail: the bars hide the stale grey from the variance clip, and the depth test sees a pixel that was
-    // background in the last frame too.
+    // The trail sums every pixel the sphere has left, so it grows with the move: 0.46 after 8 frames of one pixel each at
+    // either scale, and nothing before the third frame. The resolve's disocclusion test does not move this fixture's trail:
+    // the bars hide the stale grey from the variance clip, and the depth test sees a pixel that was background in the last
+    // frame too.
     CHECK(rigid.front() < 0.05 && instanced.front() < 0.05);
-    // Changed instance buffers have no previous transforms, so the instance draws no velocity and the resolve reads its
-    // pixels as incomplete, dynamic motion. Upsampling rejects their departed history, and the frames that rebuild the
-    // bars from one jittered input count as trail too: 0.46 (rigid) and 0.60 (instanced) at 0.72. Each scale keeps a
-    // bound just above what it measures, so a lost velocity or a weaker rejection fails at either scale.
     CHECK(rigid.back() < (inputScale == 1 ? 0.7 : 0.5));
-    CHECK(instanced.back() < (inputScale == 1 ? 0.3 : 0.65));
+    // The previous frame's instance matrices give the instance the rigid draw's velocity and motion flag, so it trails exactly
+    // like the rigid draw. Without them (0.22 at 1.0, 0.60 at 0.72) the instance read as incomplete motion and upsampling drew
+    // the kits' instanced characters from one jittered input.
+    for (size_t i = 0; i < rigid.size(); ++i) CHECK(std::abs(instanced[i] - rigid[i]) < 0.01);
 }
 
 void traaGhosting() { traaGhostingAt(1); traaGhostingAt(0.72f); }
@@ -2480,6 +2486,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
              {"traa_skinned_velocity", traaSkinnedVelocity},
+             {"traa_instanced_velocity", traaInstancedVelocity},
              {"traa_deformation_velocity", traaDeformationVelocity},
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},

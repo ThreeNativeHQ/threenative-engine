@@ -307,7 +307,7 @@ static ExprId nodeType(Program& p, ExprId id, Type type) {
 
 static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool withNormal,
                                const std::unordered_map<std::string, ExprId>& uniformInputs = {},
-                               bool previousPalette = false) {
+                               bool previousFrame = false) {
     ExprId position = v.attribute("position", Type::vec(3));
     ExprId normal = withNormal ? v.attribute("normal", Type::vec(3)) : kInvalid;
     if (variant.morphTargets > 0) {
@@ -336,9 +336,11 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     }
     uint32_t instances = 0;
     ExprId instanceBase = kInvalid;
+    // The velocity stage's previous position reads the previous frame's instances and palette at their previous bases.
+    const std::string previous = previousFrame ? previousDeformationUniformPrefix : "";
     if (variant.instanceStorage) {
-        instances = v.storageBuffer("instances", Type::vec(4));
-        instanceBase = v.add(v.construct(Type::u32(), {v.uniform("instanceBase", Type::f32())}),
+        instances = v.storageBuffer(previous + "instances", Type::vec(4));
+        instanceBase = v.add(v.construct(Type::u32(), {v.uniform(previous + "instanceBase", Type::f32())}),
                             v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(5)})));
     }
     const auto applyInstance = [&] {
@@ -364,10 +366,8 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         applyInstance();
     if (variant.skinned) {
         // getSkinnedPosition and getSkinnedNormalAndTangent, operand for operand.
-        // The velocity stage's previous position reads the previous frame's palette at its previous base.
-        const std::string palette = previousPalette ? previousDeformationUniformPrefix : "";
-        const uint32_t bones = v.storageBuffer(palette + "boneMatrices", Type::mat(4, 4));
-        ExprId base = v.construct(Type::u32(), {v.uniform(palette + "boneBase", Type::f32())});
+        const uint32_t bones = v.storageBuffer(previous + "boneMatrices", Type::mat(4, 4));
+        ExprId base = v.construct(Type::u32(), {v.uniform(previous + "boneBase", Type::f32())});
         if (variant.skinnedPalette) {
             const ExprId stride = v.construct(Type::u32(), {v.uniform("boneStride", Type::f32())});
             base = v.add(base, v.mul(v.builtin("instanceIndex"), stride));
