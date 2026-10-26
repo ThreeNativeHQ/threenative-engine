@@ -63,7 +63,12 @@ export function Hud() {
         <div
           className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border px-8 py-5 text-center ${state.raceStatus === "WON" ? "border-win/70 bg-panel" : "border-danger/70 bg-panel"}`}
         >
-          <div className={`text-[28px] tracking-[0.28em] ${statusClass}`}>{state.raceStatus}</div>
+          <div className={`text-[28px] tracking-[0.28em] ${statusClass}`} id="outcome">
+            {/* Every lap done behind the rival is a loss, but not a "did not finish": name the place. */}
+            {state.raceStatus === "DNF" && state.completedLaps >= state.totalLaps
+              ? `P${state.place}`
+              : state.raceStatus}
+          </div>
           <div className="mt-2 text-[10px] text-muted">press R to restart</div>
         </div>
       )}

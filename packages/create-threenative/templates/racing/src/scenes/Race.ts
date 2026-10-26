@@ -323,7 +323,8 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         void frameCtx.goto("race");
         return;
       }
-      elapsed += dt;
+      // The race clock stops with the race, so the outcome panel reads the finishing time.
+      if (status === "RACING") elapsed += dt;
       advanceRace(frameCtx, dt);
       const ranked = rankRace();
       const player = playerRanking(ranked);
