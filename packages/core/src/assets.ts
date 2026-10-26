@@ -13,7 +13,13 @@ import {
   type TextureLoader,
   type Wrapping,
 } from "three";
-import { type AssetPriority, type IAssetCacheReport, createAssetCache } from "./asset-cache.js";
+import {
+  type AssetPriority,
+  type IAssetCacheReport,
+  PRIORITY_ORDER,
+  canonicalUrl,
+  createAssetCache,
+} from "./asset-cache.js";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
@@ -435,6 +441,10 @@ interface IAssetEntry {
   loaded: boolean;
   promise: Promise<unknown>;
   released: boolean;
+  /** The most urgent priority any caller asked for; the download starts at it. */
+  priority: AssetPriority;
+  /** The candidate url the load is downloading, so a later, more urgent caller can promote it. */
+  url?: string;
   value?: unknown;
 }
 
@@ -865,21 +875,20 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   const assetCache = createAssetCache({
     enabled: options.cache,
     backgroundFill: options.backgroundFill,
-    // A different page, base path or manifest is a different game on the same origin, and must not
-    // delete this one's cache at startup.
-    namespace: `${(globalThis as { location?: { pathname?: string } }).location?.pathname ?? ""}|${basePath}|${options.manifest ?? "assets.manifest.json"}`,
+    // A different manifest url is a different game on the same origin, and must not delete this
+    // one's cache at startup. Two urls of the same page (`/` and `/index.html`) read the same one.
+    namespace: canonicalUrl(manifestUrl),
   });
   /** The urls the background fill warms, in manifest order, with the sizes the manifest records. */
   const fillEntries = (manifest: IAssetManifest): readonly { bytes?: number; url: string }[] => {
     const byUrl = new Map<string, { bytes?: number; url: string }>();
     const add = (output: unknown, bytes: unknown): void => {
-      if (typeof output !== "string") return;
+      // The disk keeps only a file whose size the manifest records, so an unsized one would be
+      // downloaded and thrown away on every visit.
+      if (typeof output !== "string" || !isSize(bytes)) return;
       const url = resolvePath(basePath, output);
       if (byUrl.has(url)) return;
-      byUrl.set(url, {
-        url,
-        ...(typeof bytes === "number" ? { bytes } : {}),
-      });
+      byUrl.set(url, { bytes, url });
     };
     for (const entry of Object.values(manifest.entries)) {
       if (!isRecord(entry)) continue;
@@ -1126,7 +1135,15 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   ): Promise<T> => {
     const key = `${kind}:${path}`;
     const existing = cache.get(key);
-    if (existing !== undefined) return existing.promise as Promise<T>;
+    if (existing !== undefined) {
+      // The world asked at `soon` and the scene now awaits the same file: without the promotion
+      // the scene waits behind every queued prefetch.
+      if (!existing.loaded && PRIORITY_ORDER[priority] < PRIORITY_ORDER[existing.priority]) {
+        existing.priority = priority;
+        if (existing.url !== undefined) assetCache.promote(existing.url, priority);
+      }
+      return existing.promise as Promise<T>;
+    }
     requested += 1;
     // The size is only knowable once the manifest lands, so this load's weight joins the
     // denominator a tick later than its count. Recorded here rather than inside the load chain
@@ -1149,9 +1166,15 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       disposed: false,
       kind: kind as AssetKind,
       loaded: false,
+      priority,
       promise: Promise.resolve()
         .then(() => resolveCandidates(path))
-        .then((candidates) => loadFirst(path, candidates, (url) => load(url, priority))),
+        .then((candidates) =>
+          loadFirst(path, candidates, (url) => {
+            entry.url = url;
+            return load(url, entry.priority);
+          }),
+        ),
       released: false,
     };
     entry.promise = entry.promise.then((value) => {
@@ -1232,11 +1255,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     }
     const targets: { bytes?: number; url: string }[] = [];
     const addOutput = (output: unknown, bytes: unknown): void => {
-      if (typeof output !== "string") return;
-      targets.push({
-        url: resolvePath(basePath, output),
-        ...(typeof bytes === "number" ? { bytes } : {}),
-      });
+      // An unsized file cannot be kept on disk, so prefetching it would only waste the link.
+      if (typeof output !== "string" || !isSize(bytes)) return;
+      targets.push({ bytes, url: resolvePath(basePath, output) });
     };
     for (const path of paths) {
       let urls: readonly string[];
@@ -1608,6 +1629,11 @@ function isDisposable(value: unknown): value is IDisposableResource & object {
 
 function isTexture(value: unknown): value is Texture {
   return value instanceof Texture || (isRecord(value) && value.isTexture === true);
+}
+
+/** A byte count the manifest recorded: the disk cache keeps only a file with one. */
+function isSize(bytes: unknown): bytes is number {
+  return typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetCache } from "../src/asset-cache.js";
+import { createAssetLoader } from "../src/assets.js";
 import { FakeCacheStorage } from "./fixtures/fake-cache.js";
 
 interface IGate {
@@ -96,6 +97,52 @@ describe("asset fetch priority", () => {
     gated.gates.get("idle-promote")?.release();
     gated.gates.get("target-promote")?.release();
     await Promise.all([idle, soon, now]);
+  });
+
+  it("should promote a queued request when a loader the framework does not wrap asks for it", async () => {
+    stub();
+    const gated = gatedFetch();
+    vi.stubGlobal("fetch", gated.fetch);
+    const cache = createAssetCache({ concurrency: 1, retryDelaysMs: [0] });
+    cache.setManifest([{ bytes: 1, url: "bridge-target" }]);
+
+    const idle = cache.fetchBytes("bridge-idle", "idle");
+    const soon = cache.fetchBytes("bridge-target", "soon", 1);
+    const viaLoader = fetch("bridge-target");
+
+    await vi.waitFor(() => expect(gated.order).toEqual(["bridge-idle", "bridge-target"]));
+    gated.gates.get("bridge-idle")?.release();
+    gated.gates.get("bridge-target")?.release();
+    await Promise.all([idle, soon, viaLoader]);
+    cache.dispose();
+  });
+
+  it("should promote a model a scene awaits that the world already asked for at soon", async () => {
+    stub();
+    const gated = gatedFetch();
+    const manifest = {
+      entries: {
+        "hero.glb": { bytes: 1, kind: "model", output: "hero.aaaa.glb" },
+        "rock.png": { bytes: 1, kind: "texture", output: "rock.bbbb.png" },
+      },
+      version: 1,
+    };
+    vi.stubGlobal("fetch", (url: string) =>
+      url.endsWith("m.json") ? Promise.resolve(Response.json(manifest)) : gated.fetch(url),
+    );
+    vi.stubGlobal("Image", class {});
+    vi.stubGlobal("createImageBitmap", async () => ({ height: 1, width: 1 }) as ImageBitmap);
+    const assets = createAssetLoader({ manifest: "m.json" });
+
+    const texture = assets.texture("rock.png");
+    await vi.waitFor(() => expect(gated.order).toEqual(["rock.bbbb.png"]));
+    const world = assets.model("hero.glb", { priority: "soon" }).catch(() => undefined);
+    const scene = assets.model("hero.glb").catch(() => undefined);
+
+    await vi.waitFor(() => expect(gated.order).toEqual(["rock.bbbb.png", "hero.aaaa.glb"]));
+    gated.gates.get("rock.bbbb.png")?.release();
+    gated.gates.get("hero.aaaa.glb")?.release();
+    await Promise.all([texture.catch(() => undefined), world, scene]);
   });
 
   it("should stop the fill when the cache is cleared", async () => {

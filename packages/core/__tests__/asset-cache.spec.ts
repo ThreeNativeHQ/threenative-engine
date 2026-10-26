@@ -5,7 +5,7 @@ import { FakeCacheStorage, fakeKey, seedEntry } from "./fixtures/fake-cache.js";
 
 function stubStorage(
   quotaBytes?: number,
-  extra: { failPuts?: number; openError?: boolean } = {},
+  extra: { failPuts?: number; openError?: boolean; putDelayMs?: number } = {},
 ): FakeCacheStorage {
   const storage = new FakeCacheStorage({ quotaBytes, ...extra });
   vi.stubGlobal("caches", storage);
@@ -188,6 +188,21 @@ describe("asset cache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const viaLoader = await fetch("shared.aaaa.ktx2");
+
+    expect(new Uint8Array(await viaLoader.arrayBuffer())).toHaveLength(4);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    cache.dispose();
+  });
+
+  it("should serve a loader the framework does not wrap from disk while the prefetch write still lands", async () => {
+    stubStorage(undefined, { putDelayMs: 50 });
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array(4)));
+    vi.stubGlobal("fetch", fetchMock);
+    const cache = createAssetCache({ retryDelaysMs: [0] });
+    cache.setManifest([{ bytes: 4, url: "shared.cccc.ktx2" }]);
+    await cache.fetchBytes("shared.cccc.ktx2", "soon", 4);
+
+    const viaLoader = await fetch("shared.cccc.ktx2");
 
     expect(new Uint8Array(await viaLoader.arrayBuffer())).toHaveLength(4);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -442,6 +457,18 @@ describe("asset loader disk cache", () => {
     expect(progress).toMatchObject({ requested: 0, settled: 0 });
   });
 
+  it("should share one cache between two urls of the same page", async () => {
+    const storage = stubStorage();
+    vi.stubGlobal("fetch", assetFetch());
+    stubBitmap();
+    vi.stubGlobal("location", { href: "http://localhost/", pathname: "/" });
+    await createAssetLoader({ manifest: "m.json" }).prefetch(["rock.png"]);
+    vi.stubGlobal("location", { href: "http://localhost/index.html", pathname: "/index.html" });
+    await createAssetLoader({ manifest: "m.json" }).prefetch(["rock.png"]);
+
+    expect([...storage.caches.keys()]).toHaveLength(1);
+  });
+
   it("should fill the rest of the release after the reveal", async () => {
     stubStorage();
     const fetchMock = assetFetch();
@@ -453,6 +480,34 @@ describe("asset loader disk cache", () => {
 
     await vi.waitFor(() => expect(assets.cache.bytesOnDisk).toBe(8));
     expect(assets.cache).toMatchObject({ bytesTotal: 8, filling: false });
+  });
+
+  it("should not download a file the manifest records no size for, since the disk cannot keep it", async () => {
+    stubStorage();
+    const unsized = {
+      entries: {
+        "rock.glb": {
+          bytes: 4,
+          kind: "model",
+          output: "rock.aaaa.glb",
+          sharedImages: [{ output: "shared/rock.dddd.ktx2" }],
+        },
+        "loose.png": { kind: "texture", output: "loose.eeee.png" },
+      },
+      version: 1,
+    };
+    const fetchMock = vi.fn(async (url: string | URL | RequestInfo) =>
+      String(url).endsWith("m.json") ? Response.json(unsized) : new Response(new Uint8Array(4)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const assets = createAssetLoader({ manifest: "m.json" });
+
+    await assets.prefetch(["rock.glb"]);
+    assets.startBackgroundFill();
+    await vi.waitFor(() => expect(assets.cache).toMatchObject({ bytesOnDisk: 4, filling: false }));
+
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls.filter((url) => url.includes("dddd") || url.includes("eeee"))).toEqual([]);
   });
 
   it("should not fill when the browser reports saveData", async () => {

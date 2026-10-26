@@ -17,6 +17,8 @@ export interface IFakeCacheOptions {
   readonly failPuts?: number;
   /** Reject every `cache.open`, as a browser with storage blocked does. */
   readonly openError?: boolean;
+  /** Hold each `put` this long before it lands, as a real disk write does. */
+  readonly putDelayMs?: number;
 }
 
 export class FakeCache {
@@ -42,6 +44,8 @@ export class FakeCache {
 
   async put(url: string, response: Response): Promise<void> {
     this.#puts += 1;
+    const wait = this.#options.putDelayMs ?? 0;
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     const failPuts = this.#options.failPuts ?? 0;
     if (this.#puts <= failPuts) {
       throw Object.assign(new Error("quota"), { name: "QuotaExceededError" });

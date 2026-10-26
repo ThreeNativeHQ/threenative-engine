@@ -1,7 +1,7 @@
 # PRD-744 — Startup reports the bytes it awaits that the spawn camera does not show
 
 **Status:** DONE
-**Priority:** P1 — all boxes are open: an agent told "your assets are big" defers content the spawn camera sees (Wildwood revealed a bare valley, `trees=1 ferns=0`, then froze 2-4 s in play), and no engine signal separates that mistake from the right fix
+**Priority:** P1 — closed. Every box is ticked; the filed rationale was that an agent told "your assets are big" deferred content the spawn camera sees, and no engine signal separated that mistake from the right fix.
 **Complexity:** 5 (MEDIUM) — 6–10 files (2), new measurement module (+2), crosses core and playtest builds (+2) → 6; risk override: none
 **Owner:** João (decisions), agent (implementation)
 **Depends on:** None. Builds on the `ctx.assets` byte ledger (`progress.requestedBytes`) and the startup readiness gate already on `develop`. PRD-743 (PR #572, `ctx.assets.prefetch`) names the fix text but is not required.
@@ -87,7 +87,7 @@ fix text asks the author to check it. Instanced meshes built from the model's ow
 
 ## Acceptance Criteria
 
-- [x] AC-1 [local]: A reveal that awaited one visible model and one large out-of-view model logs a `console.warn` `TN_STARTUP_OFFSCREEN_BYTES` naming the large file; the clean variant logs no warning. — proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — 8 passed through `defineGame`; the `reveal` tests warn on the far-behind variant and print nothing on the clean one.
+- [x] AC-1 [local]: A reveal that awaited one visible model and one large out-of-view model logs a `console.warn` `TN_STARTUP_OFFSCREEN_BYTES` naming the large file; the clean variant logs no warning. — proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — 10 passed through `defineGame`; the `reveal` tests warn on the far-behind variant and print nothing on the clean one.
 - [x] AC-2 [local]: The playtest report carries the same measurement as a warning diagnostic, and `assert.startup.maxOffscreenBytes` fails the offscreen fixture and passes the clean one, in a browser run. — proof: the `examples/startup-offscreen` scenarios run with the commands in Phase 3 — evidence under the Phase 3 browser box (hardware nvidia adapter; offscreen variant exit 1, clean exit 0, warning-only scenario exit 0 with the warning).
 
 ## Blocked on
@@ -132,7 +132,7 @@ None.
 
 - [x] Loader records `kind` and `bytes` per settled path and stamps mesh geometry, so an instanced batch keeps provenance. proof: `pnpm exec vitest run packages/core/__tests__/assets.spec.ts packages/core/__tests__/startup-offscreen-bytes.spec.ts` — 2 files, 99 passed.
 - [x] A model's bytes include the shared images and lightmaps its load downloads, and the report counts each file url once, visible first. proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — PASS, 10/10. Red first: the two new tests failed before the fix. Found on Wildwood (2026-10-26): `awaitedBytes` read 13,252,245 B, which is the primary files only, while the reveal moved 50,748,558 B. Shared KTX2 images were 32,044,820 B of the 45,646,614 B detail tier. An HDRI read by `RGBELoader` outside `ctx.assets` stays uncounted.
-- [x] The measurement separates visible, `outside-view`, `hidden`, `not-placed` and unattributed bytes, and the warn/inform rule holds on both fixtures. proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — 8 passed (measurement cases: split, quiet, inform-only, instanced, textures/unsized).
+- [x] The measurement separates visible, `outside-view`, `hidden`, `not-placed` and unattributed bytes, and the warn/inform rule holds on both fixtures. proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — 10 passed (measurement cases: split, quiet, inform-only, instanced, textures/unsized).
 - [x] The reveal prints `TN_STARTUP_OFFSCREEN_BYTES` once and the playtest bridge publishes `startup.offscreenBytes`. proof: `pnpm exec vitest run packages/core/__tests__/startup-offscreen-bytes.spec.ts` — the `reveal` tests boot `defineGame` with `playtest()` and read `bridge.ready().startup.offscreenBytes`; with the measurement call removed both fail (control), restored green.
 
 **Verification:** `pnpm --filter @threenative/core typecheck` (exit 0) and the three proofs above.

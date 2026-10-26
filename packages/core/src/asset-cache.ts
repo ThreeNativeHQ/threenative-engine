@@ -48,6 +48,8 @@ export interface IAssetCache {
   readonly report: IAssetCacheReport;
   /** Bytes for `url`, from disk when present and from the network otherwise. */
   fetchBytes(url: string, priority?: AssetPriority, expectedBytes?: number): Promise<ArrayBuffer>;
+  /** Raise a download still in flight to `priority`. A url with no download in flight is a no-op. */
+  promote(url: string, priority: AssetPriority): void;
   /** Warm the disk with these files. Resolves when every request settles. */
   prefetch(entries: readonly IAssetCacheEntry[]): Promise<void>;
   /** Name the release and the files it publishes. Called once, when the manifest lands. */
@@ -68,7 +70,8 @@ const ACCESS_HEADER = "x-tn-access";
 /** How often a read refreshes an entry's access stamp. Unreal purges at the same granularity. */
 const ACCESS_REFRESH_MS = 3_600_000;
 
-const PRIORITY_ORDER: Record<AssetPriority, number> = { now: 0, soon: 1, idle: 2 };
+/** Lower is more urgent. */
+export const PRIORITY_ORDER: Record<AssetPriority, number> = { now: 0, soon: 1, idle: 2 };
 
 type CacheStorageLike = {
   delete(name: string): Promise<boolean>;
@@ -125,7 +128,8 @@ function delay(ms: number): Promise<void> {
 }
 
 /** Cache keys are compared as absolute urls; a `Request.url` always is one. */
-function canonicalUrl(url: string): string {
+/** The absolute url the Cache API stores `url` under. */
+export function canonicalUrl(url: string): string {
   try {
     const base = (globalThis as { location?: { href?: string } }).location?.href;
     return new URL(url, base ?? "http://localhost/").href;
@@ -538,14 +542,17 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       const expected = known.get(key);
       if (method.toUpperCase() !== "GET" || expected === undefined) return original(input, init);
       // A core download for the same url is already in flight: wait for it instead of fetching
-      // the same bytes a second time.
-      const pending = requests.get(key);
-      if (pending !== undefined) {
-        const buffer = await pending.promise;
+      // the same bytes a second time. The loader asking is on the frame's path, so a queued
+      // `soon` or `idle` download is raised to `now` rather than left behind the queue.
+      if (requests.has(key)) {
+        const buffer = await fetchBytes(url, "now", expected);
         return new Response(buffer, {
           headers: { [BYTES_HEADER]: String(buffer.byteLength) },
         });
       }
+      // A download that settled before its disk write landed: the read after the write is a hit.
+      const pendingWrite = writes.get(key);
+      if (pendingWrite !== undefined) await pendingWrite;
       try {
         const cache = await storage.open(name);
         const hit = await cache.match(url);
@@ -593,8 +600,10 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
           void copy
             .arrayBuffer()
             .then((buffer) => {
-              if (buffer.byteLength === expected) return store(cache, url, buffer, cacheGeneration);
-              return undefined;
+              if (buffer.byteLength !== expected) return undefined;
+              // This session read it, so a later quota eviction must not take it.
+              touched.add(key);
+              return store(cache, url, buffer, cacheGeneration);
             })
             .catch(() => undefined);
         } catch {
@@ -645,6 +654,9 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       };
     },
     fetchBytes,
+    promote: (url, priority) => {
+      if (requests.has(canonicalUrl(url))) void fetchBytes(url, priority).catch(() => undefined);
+    },
     prefetch: async (targets) => prefetch(targets, "soon"),
     setManifest: (manifestEntries) => {
       if (cacheName !== undefined) return;
