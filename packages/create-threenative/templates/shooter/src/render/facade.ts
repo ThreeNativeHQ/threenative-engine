@@ -17,10 +17,10 @@
 //     alternating palette entries.
 //  2. Determinism: every placement is driven by `hash(seed)`, never
 //     `Math.random()`, so a replay renders identically.
-//  3. Budget: facade detail multiplies by ~50 lane faces. Every piece is
-//     accumulated into a `FacadeBatch` and merged into ONE mesh per material at
-//     the end, so the whole town's joinery costs tens of draw calls rather than
-//     the ~900 individual meshes it would otherwise be.
+//  3. Budget: facade detail multiplies by ~50 lane faces. Every piece is a
+//     mesh in the town group, and `buildTown` merges the whole town into ONE
+//     mesh per material at the end, so the whole town's joinery costs tens of
+//     draw calls rather than the ~900 individual meshes it would otherwise be.
 //  4. Dressing never gets a collider. The batch's meshes go into `hittable`
 //     (a bullet stops on a door, as before) but no `TownCollider` is emitted
 //     for any of it — a proud window sill must never be something a player
@@ -35,7 +35,6 @@ import {
   type BufferGeometry,
   CylinderGeometry,
   ExtrudeGeometry,
-  Float32BufferAttribute,
   type Group,
   type Material,
   Matrix4,
@@ -45,7 +44,6 @@ import {
   Shape,
   ShapeGeometry,
 } from "three";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { worldGridUVs } from "./materials.js";
 import { roundedBox } from "./shapes.js";
 import type { TownCollider } from "./town.js";
@@ -161,73 +159,38 @@ function createFacadeMaterials(materials: TownMaterials): FacadeMaterials {
 }
 
 /**
- * Accumulates every facade piece by material and merges each bucket into a
- * single mesh. ~900 small meshes collapse into ~30 draw calls; the cost is that
- * a merged mesh is town-wide and so never frustum-culled, which is the right
- * trade at this triangle count — draw calls are the budget here, not triangles.
+ * Every facade piece is its own mesh until `buildTown` merges the whole town
+ * per material (`collapseTown`): ~900 small meshes cost a few dozen draw calls.
+ * Each piece is already in world space by `put`, so `worldGridUVs` is honest
+ * here: one grid tile is one metre on every wall, trim and shutter in the town,
+ * however the face was authored and however big the building is.
  */
 class FacadeBatch {
-  private readonly solid = new Map<Material, BufferGeometry[]>();
-  private readonly loose = new Map<Material, BufferGeometry[]>();
+  readonly #group: Group;
+  readonly #hittable: Mesh[];
+
+  constructor(group: Group, hittable: Mesh[]) {
+    this.#group = group;
+    this.#hittable = hittable;
+  }
 
   /** `hit` puts the piece in the raycast set: doors stop bullets, trim does not. */
   push(material: Material, geometry: BufferGeometry, hit: boolean): void {
-    const bucket = hit ? this.solid : this.loose;
-    const existing = bucket.get(material);
-    if (existing === undefined) bucket.set(material, [geometry]);
-    else existing.push(geometry);
+    const mesh = new Mesh(worldGridUVs(geometry), material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    this.#group.add(mesh);
+    if (hit) this.#hittable.push(mesh);
   }
-
-  flush(group: Group, hittable: Mesh[]): void {
-    for (const [material, geometries] of this.solid) {
-      const mesh = merge(material, geometries, "facade-solid");
-      if (mesh === undefined) continue;
-      group.add(mesh);
-      hittable.push(mesh);
-    }
-    for (const [material, geometries] of this.loose) {
-      const mesh = merge(material, geometries, "facade-trim");
-      if (mesh === undefined) continue;
-      group.add(mesh);
-    }
-    this.solid.clear();
-    this.loose.clear();
-  }
-}
-
-function merge(
-  material: Material,
-  geometries: readonly BufferGeometry[],
-  name: string,
-): Mesh | undefined {
-  if (geometries.length === 0) return undefined;
-  // The grid is world-projected, and every piece in this bucket has already been transformed
-  // into world space by `put`, so the merged result is where `worldGridUVs` can be honest:
-  // one grid tile is one metre on every wall, trim and shutter in the town, however the face
-  // was authored and however big the building is.
-  const geometry = worldGridUVs(mergeGeometries(geometries as BufferGeometry[], false));
-  for (const source of geometries) source.dispose();
-  const mesh = new Mesh(geometry, material);
-  mesh.name = name;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
 }
 
 /**
- * Merging demands identical attribute sets, and the sources disagree:
- * `roundedBox` deletes its UVs, `ExtrudeGeometry` comes out non-indexed. Bring
- * everything to the same shape — UV-carrying and non-indexed — before it goes
- * into a bucket. The UVs are placeholders: `worldGridUVs` rewrites them from world
- * position once the whole bucket is merged.
+ * A piece of our own to transform: `roundedBox` hands back a cached geometry
+ * shared with every other caller. `worldGridUVs` writes the UVs once the piece
+ * is placed.
  */
 function normalised(source: BufferGeometry): BufferGeometry {
-  const geometry = source.clone();
-  if (!geometry.hasAttribute("uv")) {
-    const count = geometry.getAttribute("position").count;
-    geometry.setAttribute("uv", new Float32BufferAttribute(new Float32Array(count * 2), 2));
-  }
-  return geometry.index === null ? geometry : geometry.toNonIndexed();
+  return source.clone();
 }
 
 export type Facade = {
@@ -254,7 +217,7 @@ export function createFacade(
     colliders,
     materials,
     extra: createFacadeMaterials(materials),
-    batch: new FacadeBatch(),
+    batch: new FacadeBatch(group, hittable),
     blocks,
   };
 }
@@ -302,11 +265,6 @@ export function visibleFaces(facade: Facade, spec: FacadeSpec, declared: readonl
     if (buried < (to - from) * 0.6) faces.push(face);
   }
   return faces;
-}
-
-/** Merge everything collected so far. Call once, at the end of `buildTown`. */
-export function finishFacade(facade: Facade): void {
-  facade.batch.flush(facade.group, facade.hittable);
 }
 
 // ---------------------------------------------------------------------------
