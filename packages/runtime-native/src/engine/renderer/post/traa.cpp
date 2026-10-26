@@ -196,6 +196,8 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
         let radius = 1.51 - 0.21 * (max(upscale.x, upscale.y) - 1);
         var sum = vec4<f32>(0);
         var weights = 0.0;
+        var spread1 = vec4<f32>(0);
+        var spread2 = vec4<f32>(0);
         for (var y = -1; y <= 1; y++) {
             for (var x = -1; x <= 1; x++) {
                 let samplePosition = centre + vec2<f32>(f32(x), f32(y));
@@ -208,14 +210,24 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
                 let color = textureLoad(beauty, pixel, 0);
                 sum += color * weight;
                 weights += weight;
+                let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
+                spread1 += neighborhood; spread2 += neighborhood * neighborhood;
                 if (highClamp && ((x == 0 && y == 0) || dot(distance, distance) < radius * radius)) {
-                    let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
                     low = min(low, neighborhood);
                     high = max(high, neighborhood);
                 }
             }
         }
         current = sum / weights;
+        // UE 5.8.3 TemporalAA.usf:1715-1770 variance box (mean +/- 1.25 sigma, widened to the filtered sample) where
+        // a mover is near: the sample-distance box spans both sides of a moving rim and keeps the colour it uncovered.
+        if (dynamicNeighborhood) {
+            let mean = spread1 / 9;
+            let sigma = sqrt(abs(spread2 / 9 - mean * mean)) * 1.25;
+            let filtered = vec4(rgbToNeighborhood * current.rgb, current.a);
+            low = min(mean - sigma, filtered);
+            high = max(mean + sigma, filtered);
+        }
     } else {
         current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
     }
@@ -244,7 +256,7 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     var clipped = old;
     if (highClamp) {
         let historyColor = vec4(rgbToNeighborhood * old.rgb, old.a);
-        let bounded = clamp(historyColor, low, high);
+        let bounded = clipAABB(vec4(0, 0, 0, clamp(old.a, low.a, high.a)), historyColor, low, high);
         if (any(bounded != historyColor)) { clipped = vec4(neighborhoodToRgb * bounded.rgb, bounded.a); }
     } else {
         let mean = moment1 / 9;
