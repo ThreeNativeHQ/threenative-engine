@@ -2,22 +2,63 @@
   "name": "capsize-is-a-loss",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "label": "capsize", "press": "KeyC", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "observe-loss", "waitTicks": 10, "release": true }
+    {
+      "kind": "input",
+      "label": "capsize",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "observe-loss",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after-the-loss",
+      "waitTicks": 120,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
       {
         "id": "state",
         "path": "status",
         "equals": "lost",
         "changed": true,
-        "atSteps": [{ "label": "observe-loss", "equals": "lost" }]
+        "atSteps": [
+          {
+            "label": "observe-loss",
+            "equals": "lost"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "elapsed",
+        "lte": 1.1,
+        "allowTrivial": "The ship capsized on the first step (the clock reads 1.0 s at the baseline); two seconds later the HUD clock still reads the moment the passage ended."
+      }
+    ],
+    "hud": [
+      {
+        "id": "outcome",
+        "equals": "capsized",
+        "allowTrivial": "A capsize is the loss this run forces, and the panel names it."
       }
     ]
   }
