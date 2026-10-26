@@ -27,11 +27,11 @@ export function setupLighting(
   renderer.shadowMap.type = PCFSoftShadowMap;
 
   // Sky above, floor bounce below, both cold and both very quiet.
-  scene.add(new HemisphereLight(0x33456a, 0x171d29, 0.6));
+  scene.add(new HemisphereLight(0x5a7cc0, 0x26324a, 1.1));
 
   // The key. Warm, high, and from the lantern side, so crate tops catch a little of the same
   // colour the plaster does and the shadows all fall the same way.
-  const key = new DirectionalLight(0xf4e8da, 0.8);
+  const key = new DirectionalLight(0xffe2c0, 1.8);
   key.position.set(-7, 15, 5);
   key.castShadow = true;
   const size = mobile ? 1024 : 2048;
@@ -54,7 +54,7 @@ export function setupLighting(
   // The rim: cold, low and shadowless, from the far corner the lanterns never reach. A crate's
   // shadowed side is otherwise the same black as the floor it stands on, and the pile stops
   // reading as forty separate boxes.
-  const rim = new DirectionalLight(0x5f7fb0, 0.24);
+  const rim = new DirectionalLight(0x6f9aea, 0.7);
   rim.position.set(9, 5, -7);
   scene.add(rim);
 

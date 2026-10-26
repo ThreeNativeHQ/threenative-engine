@@ -113,7 +113,9 @@ export function createTownMaterials(): TownMaterials {
     // prop colour: the one saturated thing in the palette, and the only
     // geometry a player can mistake for cover.
     crate: propMaterial,
-    deckWood: tinted(structureMaterial, palette.structure, 0.75),
+    // The structure map already carries `palette.structure`; tinting by it again squared the albedo
+    // (0.032 against the intended 0.178), so every deck underside read as black.
+    deckWood: tinted(structureMaterial, 0xffffff, 0.75),
     barrel: propMaterial,
     palmTrunk: tinted(structureMaterial, palette.structure, 0.9),
     frond: new MeshStandardMaterial({ color: 0x4a803c, roughness: 0.78, side: DoubleSide }),

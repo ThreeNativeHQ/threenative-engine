@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TEMPLATE_ROOT, allTemplates } from "../../../test-support/templates.js";
 
 /**
@@ -54,14 +54,9 @@ const VENDORED_RENDER_FILES = [
  * tracking its pending visual migration; remove each entry only after IMPROVEMENT.
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
-  "action-rpg": "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  puzzle: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  shooter: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  "tower-defense":
-    "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
 };
 
 /** Runtime names imported from `@threenative/core` in one file. */
@@ -194,6 +189,130 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       });
       expect(preset.tonemapMode, `minimal/${tier} tonemapMode`).toBe("filmic");
       expect(preset.autoExposureEnabled, `minimal/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "shooter/%s follows the core preset with its three named exposure overrides",
+    async (tier) => {
+      const quality = (await import(pathToFileURL(renderFile("shooter", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("shooter", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        key: 0.14,
+        maxStops: 0.5,
+        minStops: -2,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+      });
+      expect(preset.tonemapMode, `shooter/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `shooter/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "tower-defense/%s follows the core preset with its two named exposure overrides",
+    async (tier) => {
+      const quality = (await import(
+        pathToFileURL(renderFile("tower-defense", "quality.ts")).href
+      )) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(
+        pathToFileURL(renderFile("tower-defense", "exposure.ts")).href
+      )) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.3,
+        minStops: -1,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+      });
+      expect(preset.tonemapMode, `tower-defense/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `tower-defense/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "action-rpg/%s follows the core preset with its named exposure and cost overrides",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(
+        pathToFileURL(renderFile("action-rpg", "quality.ts")).href
+      )) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(
+        pathToFileURL(renderFile("action-rpg", "exposure.ts")).href
+      )) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.3,
+        minStops: -2,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        finalGatherMethod: "none",
+        ssgiEnabled: false,
+        ssrEnabled: false,
+      });
+      expect(preset.tonemapMode, `action-rpg/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `action-rpg/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "puzzle/%s follows the core preset with its named exposure and cost overrides",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(pathToFileURL(renderFile("puzzle", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("puzzle", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.5,
+        minStops: -2,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        finalGatherMethod: "none",
+        ssgiEnabled: false,
+        ssrEnabled: false,
+        motionBlurEnabled: false,
+        gtaoResolutionScale: 0.5,
+        localExposureEnabled: false,
+        unrealBloomEnabled: false,
+        bloomRadius: 0.42,
+        bloomStrength: 0.5,
+        bloomThreshold: 0.85,
+      });
+      expect(preset.tonemapMode, `puzzle/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `puzzle/${tier} metered exposure`).toBe(true);
     },
   );
 });

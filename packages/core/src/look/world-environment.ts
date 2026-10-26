@@ -1477,10 +1477,12 @@ export class WorldEnvironment {
             });
             return base.add(traced.mul(trace.weight(rough().g)));
           }
+          // Level 0: three's march samples the normal inside its loop, and FXC (D3D12) cannot compile an
+          // implicit-gradient sample in a dynamic loop ("X3511: unable to unroll loop"). The target has no mips.
           const reflections = ssr(
             base,
             depth(),
-            normal() as ReturnType<typeof normal> & Parameters<typeof ssr>[2],
+            normal().level(float(0)) as ReturnType<typeof normal> & Parameters<typeof ssr>[2],
             {
               camera: view,
               metalnessNode: metal().r,

@@ -182,8 +182,16 @@ export interface IRendererLike {
   warmUpSettled?(): void;
   /** Marks a repeatable streamed warm-up boundary for the next first draw. */
   warmUpScopeSettled?(label: string, target?: Object3D): void;
-  /** Performs one covered output-pipeline render without marking first present. */
-  warmUpWorldPass?(scene: Object3D, camera: Camera, targetScene?: Object3D): void;
+  /**
+   * Performs one covered output-pipeline render without marking first present. `afterDraw` runs in
+   * the same task as every draw it makes, the frame gate's retries included, to repaint a cover.
+   */
+  warmUpWorldPass?(
+    scene: Object3D,
+    camera: Camera,
+    targetScene?: Object3D,
+    afterDraw?: () => void,
+  ): void | Promise<void>;
   /**
    * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
    *
@@ -956,8 +964,13 @@ function wrapRenderer(
         // no async cache still returns synchronously, exactly as before.
         return asyncPipelines?.settled();
       };
-      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> =>
-        drawPastFrameGate(raw, () => drawOnce(scene, camera, targetScene));
+      return (
+        scene: Object3D,
+        camera: Camera,
+        targetScene?: Object3D,
+        afterDraw?: () => void,
+      ): void | Promise<void> =>
+        drawPastFrameGate(raw, () => drawOnce(scene, camera, targetScene), undefined, afterDraw);
     },
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
@@ -1552,15 +1565,19 @@ export function rendererEnvironmentBake(raw: unknown): boolean {
  * a draw while two frames are still on the GPU, and a declined draw compiles nothing: on Lantern Vale
  * the startup pass was declined, so the TRAA, aux and post pipelines (92) compiled synchronously
  * 1.1 s after the reveal and stalled the queue for 2.3 s. A renderer with no gate, or one that took
- * the first draw, returns that draw's result unchanged.
+ * the first draw, returns that draw's result unchanged. `afterDraw` runs straight after every draw,
+ * in its task: a retry presents on its own, and a cover painted only after the declined first call
+ * left Hop Garden's world showing through it for one frame.
  */
 export function drawPastFrameGate(
   raw: unknown,
   draw: () => void | Promise<void>,
   waitMs = FRAME_GATE_WAIT_MS,
+  afterDraw?: () => void,
 ): void | Promise<void> {
   const before = rendererFrameGateSkips(raw);
   const first = draw();
+  afterDraw?.();
   if (before === undefined || rendererFrameGateSkips(raw) === before) return first;
   const now = (): number => globalThis.performance?.now() ?? Date.now();
   return (async () => {
@@ -1571,6 +1588,7 @@ export function drawPastFrameGate(
       await new Promise((resolve) => setTimeout(resolve, 16));
       const skips = rendererFrameGateSkips(raw);
       const drawn = draw();
+      afterDraw?.();
       if (rendererFrameGateSkips(raw) === skips) return drawn;
       await drawn;
     }

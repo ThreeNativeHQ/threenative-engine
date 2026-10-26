@@ -249,6 +249,7 @@ export interface IWarmUpRenderer {
     scene: Object3D,
     camera: Camera,
     targetScene?: Object3D,
+    afterDraw?: () => void,
   ) => void | Promise<void>;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
@@ -316,7 +317,22 @@ export async function prepareSceneEnvironment(
       "TN_PMREM_ASYNC_PREPARER_UNAVAILABLE: patched Three.js has no PMREM cache preparer.",
     );
   }
-  return prepare.call(PMREMNode, raw, environment);
+  // False at the deadline, as the native preparer does; the bake keeps running. Unbounded, an Action
+  // RPG restart on 2-CPU SwiftShader waited the whole sky bake (about 30 s) with no frame drawn.
+  const prepared = prepare.call(PMREMNode, raw, environment);
+  const remaining = deadlineMs - (globalThis.performance?.now() ?? Date.now());
+  if (!Number.isFinite(remaining)) return prepared;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      prepared,
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), Math.max(0, remaining));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const DEFAULT_SLICE_SIZE = 24;
@@ -832,14 +848,18 @@ async function renderWarmPasses(
   enabled: boolean,
   includeHidden: boolean,
   targetScene?: Object3D,
+  afterCoveredDraw?: () => void,
 ): Promise<IWarmPassRender | undefined> {
   const coveredWorldPass = renderer.warmUpWorldPass;
   const render =
     coveredWorldPass === undefined
       ? renderer.render === undefined
         ? undefined
-        : () => renderer.render?.(scene, camera)
-      : () => coveredWorldPass(scene, camera, targetScene);
+        : () => {
+            renderer.render?.(scene, camera);
+            afterCoveredDraw?.();
+          }
+      : () => coveredWorldPass(scene, camera, targetScene, afterCoveredDraw);
   if (render === undefined) return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
@@ -1204,6 +1224,7 @@ export async function warmUpScene(
         options.renderPasses !== false,
         options.includeHidden === true,
         options.targetScene,
+        options.afterCoveredDraw,
       );
     } catch (error) {
       passError = error;

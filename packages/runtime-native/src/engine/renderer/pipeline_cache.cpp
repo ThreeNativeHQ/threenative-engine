@@ -335,8 +335,12 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     depth.format = target.depth;
     depth.depthWriteEnabled = target.depthWrite ? WGPU_OPTIONAL_BOOL_TRUE : WGPU_OPTIONAL_BOOL_FALSE;
     depth.depthCompare = target.depthCompare;
-    depth.depthBias = target.depthBias;
-    depth.depthBiasSlopeScale = target.depthBiasSlopeScale;
+    // WebGPU takes a depth bias on triangles only: a line or point pipeline with one is refused, and
+    // the 4x aux pass biased the shooter's tracer lines that way.
+    const bool triangles = target.topology == WGPUPrimitiveTopology_TriangleList ||
+                           target.topology == WGPUPrimitiveTopology_TriangleStrip;
+    depth.depthBias = triangles ? target.depthBias : 0;
+    depth.depthBiasSlopeScale = triangles ? target.depthBiasSlopeScale : 0;
     if (target.depth != WGPUTextureFormat_Undefined) desc.depthStencil = &depth;
     WGPUColorTargetState color = {};
     color.format = target.color;

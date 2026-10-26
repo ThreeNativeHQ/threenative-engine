@@ -64,7 +64,7 @@ draw again on every frame. The compute dispatches also create 30 to 43 bind grou
 
 ## Acceptance criteria
 
-- [ ] Hop Garden at tier high holds or beats the baseline's steady frame rate on a real display (no Xvfb frame cap). proof: the lead's paired fps run, `wasm-before` against `wasm-after`
+- [x] Hop Garden at tier high holds or beats the baseline's steady frame rate on a real display (no Xvfb frame cap). proof: the lead's paired fps run, `wasm-before` against `wasm-after` — Debian laptop real display `:1` (59.88 Hz, Intel gen-12lp), 1920x1080, 40 s warm-up then a 45 s window (2.4-3.1k rAF frames), idle player, 5 interleaved pairs per mode (2026-10-25). Capped: AFTER >= BEFORE in 4 of 5 pairs (deltas +0.29, +1.24, -0.04, +0.45, +3.09 fps), median 56.28 -> 56.71 fps, median frame 17.77 -> 17.63 ms, p95 33.4 -> 33.3 ms. Uncapped (`--disable-frame-rate-limit --disable-gpu-vsync`): AFTER faster in 5 of 5 (+1.5 to +1.9 fps), median 67.60 -> 69.29 fps, frame 14.79 -> 14.43 ms. BEFORE is 247ccd7f9 with this PRD's 7 commits reverted (9b0272431, 04d02865d, 82ac43780, 0f7c741df, 4f91ddcc5, 931ff1c6d, f8aa5e8e3), because the `9b0272431^` Wasm is web host ABI 1 and the facade needs ABI 3; Wasm sha256 4b11c250… vs f6005953…, marker strings confirm the arms differ. Caveats: rAF cadence, not GPU timestamps; the laptop ran at 80-93 °C.
 
 ## Decisions
 

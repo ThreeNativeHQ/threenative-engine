@@ -292,7 +292,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // boot-failure text both engines now show, so only puzzle's tree moves.
   // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
   // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
-  "action-rpg": "92f593cb14ccd5a26ddf35d6c56fcdfefff5799b44eebcb05beb3ba7be016fa0",
+  "action-rpg": "a7ca56232ecac96bb67992b1726a776edc02fb910a0846fb2e592d9f92c9b457",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -317,14 +317,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   kart: "c11da74bbdddb64da9c746a20f66dbd4249a779c6af377824daf9ea926134c10",
   minimal: "feb73967c52019009fe034bd20756e25e0906e37caf1bb05d984e271160cfe59",
   platformer: "d01108608d138acbbdf31e0df8dfca3f3bd9befc46513d89f5a1ebdecd3d68ed",
-  puzzle: "e7f9370513c60a8c50ab5a8392b857e35c658e745c493bbc5e6b6b27e8611013",
+  puzzle: "5467259ec11d5409c036a79a6d040925b667daa61ea5df03e80dc73dc9ba2618",
   racing: "7c19f159e3c593de2ab197f175bcc218ca8f1eb9851250b9c797bf79a59fa5e1",
   rain: "a9eef648d1fc75b519a759351bc969ad2b0327366a9271b85146eb70668ab7c0",
   rts: "5df9b5830c8d749f97530113fe63b1d2e74b37decf5e605c0e3c7fe435819d48",
   runner: "2d483f4c797a6e6dcdaae055dfab05a0c4ad498678aadffce38ac0dc8d74e1f8",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "f5aab39585f1d612e60cc2a1b27aca29e1e6932f693e694aad84be51c8491d55",
-  shooter: "5bbf94164445a91361b89e19c519a835f485d4f899591009eedf06cf342a056d",
+  shooter: "0a296e383f2c5e7280a81567e4d0828a5ff625c617afc4cecb7333eff1e15412",
   snow: "dedd4e1b27bfc9e9b4dd0a8701f7c66dfc59409213b5d488e7469e37ddfe1122",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
@@ -332,7 +332,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   starter: "a3ac52e9939c6f6e92ef3bb548736d5400d6225c9d502db25dff441f61a29e35",
-  "tower-defense": "afbd7c71d9420c2fdd31138ff9cca3f778082b68a8e81732b41cb33a0de46bc7",
+  "tower-defense": "87d031feee1168aaec8191574e7e9422d48c8886e10124305e47db5d98ba1884",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

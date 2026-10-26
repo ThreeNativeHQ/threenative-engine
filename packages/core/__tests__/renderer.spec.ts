@@ -1985,6 +1985,24 @@ describe("drawPastFrameGate", () => {
     expect(draws).toEqual([false, false, true]);
   });
 
+  it("repaints the cover straight after the retry that draws, not only after the declined draw", async () => {
+    // Hop Garden: the 16 ms retry drew the covered world pass in a task of its own, and the cover was
+    // repainted only after the declined first call, so one world frame showed through the cover.
+    const { raw, draws, draw } = gated(1);
+    const events: string[] = [];
+    await drawPastFrameGate(
+      raw,
+      () => {
+        draw();
+        events.push(draws.at(-1) === true ? "drew" : "declined");
+      },
+      undefined,
+      () => events.push("cover"),
+    );
+    expect(events.at(-1)).toBe("cover");
+    expect(events.indexOf("cover", events.indexOf("drew"))).toBe(events.indexOf("drew") + 1);
+  });
+
   it("returns the first draw's result unchanged when the renderer has no gate or takes it", () => {
     const { raw, draws, draw } = gated(0);
     expect(drawPastFrameGate(raw, draw)).toBeUndefined();
