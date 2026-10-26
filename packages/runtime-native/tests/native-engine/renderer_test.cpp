@@ -1996,6 +1996,122 @@ void traaResponsiveTransparent() {
     CHECK(full > 0.02 && upsampled >= full);
 }
 
+// A mover walking across ground that writes its own motion (wind grass: alpha-tested, dynamic). The ground it uncovers has
+// complete motion too, so a depth test skipped for complete motion keeps the mover's colour there, and the clip leaves a
+// speckled halo behind it (Hop Garden judge). Measured: the colour left behind the mover, against a non-temporal frame.
+void traaMoverOverDynamicGround() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    constexpr int frames = 30;
+    const auto ball = sphere(32, 16);
+    BarField field;
+    shader::StandardMaterial grass, body;
+    grass.color = {0.1, 0.5, 0.1};
+    body.color = {0.8, 0.3, 0.9};
+    DrawItem ground, mover;
+    ground.key = ground.id = 1; ground.kind = MaterialKind::Basic;
+    ground.positions = &field.positions; ground.indices = &field.indices; ground.material = &grass;
+    mover.key = mover.id = 2; mover.kind = MaterialKind::Basic;
+    mover.positions = &ball->positions; mover.indices = &ball->indices; mover.material = &body;
+    const auto place = [&](int frame) {
+        // The ground sways by a hair, so it writes complete dynamic motion as wind grass does.
+        const float sway = frame % 2 ? 2e-3f : 0.f;
+        ground.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, sway, 0, 0, 1};
+        mover.matrixWorld = {0.6f, 0, 0, 0, 0, 0.6f, 0, 0, 0, 0, 0.6f, 0, -1.5f + 0.06f * float(frame), 0, 0.5f, 1};
+    };
+    const auto run = [&](float scale, bool temporal) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        if (temporal) renderer.setPostGraph(temporalColour());
+        renderer.setRenderScale(scale);
+        for (int frame = temporal ? 0 : frames - 1; frame < frames; ++frame) {
+            place(frame);
+            const std::array<DrawItem, 2> items{ground, mover};
+            renderer.render({items.data(), items.size()}, ::camera(double(width) / height), LightState{}, {0, 0, 0, 1});
+        }
+        return read(renderer, events);
+    };
+    const auto now = run(1, false);
+    const auto halo = [&](float scale) {
+        const auto seen = run(scale, true);
+        CHECK(seen.size() == now.size() && now.size() == size_t{width} * height * 4);
+        if (seen.size() != now.size()) return -1.0;
+        double sum = 0;
+        for (int y = 2; y < int(height) - 2; ++y)
+            for (int x = 2; x < int(width) - 2; ++x) {
+                // Behind the mover only: ground now, with no mover pixel within two pixels.
+                bool near = false;
+                for (int dy = -2; dy <= 2; ++dy)
+                    for (int dx = -2; dx <= 2; ++dx) near = near || now[(size_t(y + dy) * width + x + dx) * 4 + 2] > 120;
+                const size_t i = (size_t(y) * width + x) * 4;
+                if (!near && now[i + 1] > 0) sum += std::max(0, int(seen[i + 2]) - int(now[i + 2]));  // the mover's blue
+            }
+        return sum;
+    };
+    const double full = halo(1), upsampled = halo(0.72f);
+    std::fprintf(stderr, "TN_TRAA_MOVER_HALO blue left behind: full %.0f, upsampled %.0f\n", full, upsampled);
+    CHECK(full >= 0 && upsampled >= 0);
+    CHECK(upsampled <= full * 1.5 + 50);
+}
+
+// Where history is ignored (the first frame here; in play the ground a walking enemy uncovers), UE 5.8.3 widens the current
+// frame's kernel to a whole input pixel (TemporalAA.usf:2203-2224), so the pixel shows the jittered input averaged, not
+// one raw sample: grass behind Hop Garden's enemies speckled. Measured: the first resolved frame's mean difference from a
+// 4x4-supersampled frame of slanted bars at 0.72: 45.05 with the fixed kernel, 38.95 widened.
+void traaIgnoredHistoryFilter() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    BarField field;
+    shader::StandardMaterial white;
+    white.color = {1, 1, 1};
+    DrawItem bars;
+    bars.key = bars.id = 1; bars.kind = MaterialKind::Basic;
+    bars.positions = &field.positions; bars.indices = &field.indices; bars.material = &white;
+    const float c = std::cos(0.35f), s = std::sin(0.35f);
+    bars.matrixWorld = {c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const auto camera = ::camera(double(width) / height);
+    std::vector<double> reference(size_t{width} * height, 0);
+    {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width * 4, height * 4);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        renderer.render({&bars, 1}, camera, LightState{}, {0, 0, 0, 1});
+        const auto big = read(renderer, events);
+        CHECK(big.size() == size_t{width} * height * 64);
+        if (big.size() != size_t{width} * height * 64) return;
+        for (uint32_t y = 0; y < height * 4; ++y)
+            for (uint32_t x = 0; x < width * 4; ++x)
+                reference[size_t(y / 4) * width + x / 4] += big[(size_t(y) * width * 4 + x) * 4] / 16.0;
+    }
+    const auto error = [&](float scale) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        renderer.setPostGraph(temporalColour());
+        renderer.setRenderScale(scale);
+        renderer.render({&bars, 1}, camera, LightState{}, {0, 0, 0, 1});
+        const auto pixels = read(renderer, events);
+        CHECK(pixels.size() == size_t{width} * height * 4);
+        if (pixels.size() != size_t{width} * height * 4) return -1.0;
+        double sum = 0;
+        for (size_t i = 0; i < size_t{width} * height; ++i) sum += std::abs(pixels[i * 4] - reference[i]);
+        return sum / (width * height);
+    };
+    const double upsampled = error(0.72f);
+    std::fprintf(stderr, "TN_TRAA_IGNORED_HISTORY first frame error from supersampled at 0.72: %.2f\n", upsampled);
+    CHECK(upsampled > 0 && upsampled < 42);
+}
+
 void traaRecedingMover() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2773,6 +2889,8 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_camera_pan", traaCameraPan},
              {"traa_rejection", traaRejection},
              {"traa_receding_mover", traaRecedingMover},
+             {"traa_ignored_history_filter", traaIgnoredHistoryFilter},
+             {"traa_mover_over_dynamic_ground", traaMoverOverDynamicGround},
              {"traa_responsive_transparent", traaResponsiveTransparent},
              {"traa_fast_pan_edges", traaFastPanEdges},
              {"output_screen_size", outputScreenSize},

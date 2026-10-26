@@ -236,6 +236,11 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         let centre = floor(currentUV * u.size);
         let upscale = outputSize / u.size;
         let radius = 1.51 - 0.21 * (max(upscale.x, upscale.y) - 1);
+        // UE 5.8.3 adaptive filtering (TemporalAA.usf:2203-2224, 1463-1478): the current frame's kernel widens to a whole
+        // input pixel where history is ignored and as the pixel moves, so a rejected or fast pixel shows the jittered
+        // input averaged, not its raw noise (grass behind a walking enemy speckled).
+        var filterScale = select(0.0, 1.0, valid) - length((input.uv - historyUV) * outputSize) * max(upscale.x, upscale.y) * 0.1;
+        filterScale = max(filterScale, 1 / max(upscale.x, upscale.y));
         var sum = vec4<f32>(0);
         var weights = 0.0;
         var spread1 = vec4<f32>(0);
@@ -244,7 +249,7 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
             for (var x = -1; x <= 1; x++) {
                 let samplePosition = centre + vec2<f32>(f32(x), f32(y));
                 let distance = samplePosition + 0.5 - currentUV * u.size;
-                let delta = distance * upscale;
+                let delta = distance * upscale * filterScale;
                 let x2 = clamp(dot(delta, delta), 0.0, 1.0);
                 let weight = (0.905 * x2 - 1.9) * x2 + 1.0;
                 let sourcePixel = vec2<i32>(samplePosition);
