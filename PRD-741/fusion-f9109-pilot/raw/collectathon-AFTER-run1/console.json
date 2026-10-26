@@ -1,0 +1,482 @@
+[
+  {
+    "source": "browser-console",
+    "text": "TN_GPU_CLASS:{\"class\":\"discrete\",\"fields\":{\"architecture\":\"turing\",\"description\":\"\",\"device\":\"\",\"vendor\":\"nvidia\"},\"rule\":\"nvidia\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":1}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"the host renderer declined this scene (belowMeshFloor)\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":0,\"materialCheckStaleFrames\":0,\"path\":\"host\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_CANVAS_LAYER:{\"toneMapping\":\"none\",\"composite\":\"after the tone curve\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_STATIC_COLLIDERS:{\"count\":26}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_QUALITY_TIER medium mobile=false software=false source=platform",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RESOLUTION_SUBRECT {\"applied\":[],\"refused\":[{\"name\":\"autoExposure\",\"reason\":\"automatic exposure sampling is not supported\"}]}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"ambientOcclusion\"},{\"graphOutputChanged\":true,\"name\":\"ssr\"},{\"graphOutputChanged\":true,\"name\":\"traa\"},{\"graphOutputChanged\":false,\"name\":\"temporalDetailSource\"},{\"graphOutputChanged\":true,\"name\":\"bloom\"},{\"graphOutputChanged\":true,\"name\":\"temporalDetail\"},{\"graphOutputChanged\":true,\"name\":\"vignette\"}],\"dropped\":[],\"requested\":[\"ambientOcclusion\",\"ssr\",\"traa\",\"temporalDetailSource\",\"bloom\",\"temporalDetail\",\"vignette\"],\"source\":\"pinned\",\"stages\":[\"ambientOcclusion\",\"ssr\",\"traa\",\"temporalDetailSource\",\"bloom\",\"temporalDetail\",\"vignette\"],\"tier\":\"medium\",\"velocity\":{\"provisioned\":true,\"required\":true,\"source\":\"mrt\"}},\"marker\":\"TN_RENDER_CHAIN\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_WORLD_ENVIRONMENT:{\"denoise\":true,\"exposure\":1,\"finalGatherMethod\":\"irradianceField\",\"localExposure\":true,\"marker\":\"TN_WORLD_ENVIRONMENT\",\"screenSpaceAA\":\"smaa\",\"temporalAA\":true,\"ssgiQuality\":\"medium\",\"ssgiResolutionScale\":0.5,\"ssrMaxSteps\":16,\"stages\":[{\"applied\":true,\"name\":\"ambientOcclusion\"},{\"applied\":false,\"name\":\"antialias\",\"reason\":\"traa resolves the edges\"},{\"applied\":true,\"name\":\"bloom\"},{\"applied\":false,\"name\":\"godRays\",\"reason\":\"godraysEnabled is false\"},{\"applied\":false,\"name\":\"kuwahara\",\"reason\":\"kuwaharaEnabled is false\"},{\"applied\":false,\"name\":\"motionBlur\",\"reason\":\"motionBlurEnabled is false\"},{\"applied\":false,\"name\":\"outline\",\"reason\":\"outlineEnabled is false\"},{\"applied\":false,\"name\":\"sharpen\",\"reason\":\"sharpenEnabled is false\"},{\"applied\":false,\"name\":\"ssgi\",\"reason\":\"ssgiEnabled is false\"},{\"applied\":true,\"name\":\"ssr\"},{\"applied\":false,\"name\":\"temporalAA\",\"reason\":\"temporalAA is false\"},{\"applied\":true,\"name\":\"vignette\"},{\"applied\":false,\"name\":\"watercolor\",\"reason\":\"watercolorEnabled is false\"}],\"tonemapMode\":\"filmic\",\"unrealBloom\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_PROJECTION:{\"projecting\":true,\"reasonCode\":\"hostProjected\",\"sourceRenderables\":356,\"resultDrawCandidates\":356,\"batches\":21,\"instancedBatches\":17,\"materialBatches\":4,\"skinnedBatches\":0,\"projectedObjects\":216,\"exactObjects\":140,\"exact\":{\"instanced\":73,\"renderOrder\":1,\"tooFewToBatch\":59,\"transparent\":7},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":0,\"materialCheckStaleFrames\":0,\"path\":\"host\"}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDERER: TN_TRAA_VELOCITY_SKIPPED: unsupported vertex/coverage; camera motion only",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDERER: TN_POST_NORMAL_SKIPPED: transparent draws write no normal (depth-derived there)",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDERER: TN_TRAA_MSAA_OFF: temporal AA replaces 4x multisampling, so the scene draws single-sampled",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_ALPHA_ANTIALIASING:{\"applied\":true,\"marker\":\"TN_ALPHA_ANTIALIASING\",\"materials\":1,\"reason\":\"\",\"sampleCount\":4}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_STARTUP_WARMUP:{\"compiled\":1,\"pipelines\":356,\"candidates\":356,\"attempted\":1,\"observed\":{\"created\":0,\"failed\":0,\"pending\":0,\"uniquePrograms\":0,\"uniquePipelines\":0,\"status\":\"unavailable\"},\"slices\":1,\"elapsedMs\":451,\"unsupported\":false,\"abandoned\":0,\"timedOut\":false,\"computeCompiled\":20,\"computeAbandoned\":0,\"computeUnsupported\":false,\"computeTimedOut\":false,\"passes\":[\"main\",\"shadow\"],\"passPipelines\":0,\"cullingForced\":433,\"visibilityForced\":0,\"cache\":\"disabled\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PHYSICS_INTERPOLATION:{\"enabled\":true,\"overrideSource\":\"default\",\"trackedObjects\":29}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDER_CHAIN:{\"applied\":{\"contributions\":[{\"graphOutputChanged\":true,\"name\":\"ambientOcclusion\"},{\"graphOutputChanged\":true,\"name\":\"ssr\"},{\"graphOutputChanged\":true,\"name\":\"traa\"},{\"graphOutputChanged\":false,\"name\":\"temporalDetailSource\"},{\"graphOutputChanged\":true,\"name\":\"bloom\"},{\"graphOutputChanged\":true,\"name\":\"temporalDetail\"},{\"graphOutputChanged\":true,\"name\":\"vignette\"}],\"dropped\":[],\"requested\":[\"ambientOcclusion\",\"ssr\",\"traa\",\"temporalDetailSource\",\"bloom\",\"temporalDetail\",\"vignette\"],\"source\":\"pinned\",\"stages\":[\"ambientOcclusion\",\"ssr\",\"traa\",\"temporalDetailSource\",\"bloom\",\"temporalDetail\",\"vignette\"],\"tier\":\"medium\",\"velocity\":{\"provisioned\":true,\"required\":true,\"source\":\"mrt\"},\"stageSizes\":{\"traa\":{\"input\":[1382,778],\"output\":[1920,1080]}}},\"marker\":\"TN_RENDER_CHAIN\"}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1489482820034027,\"exposureStops\":1.273185133934021,\"targetStops\":1.273185133934021,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_RENDERER: TN_TRAA_VELOCITY_SKIPPED: changed vertex data; camera motion only",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14837630093097687,\"exposureStops\":1.2768603563308716,\"targetStops\":1.2787359952926636,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14744509756565094,\"exposureStops\":1.2833046913146973,\"targetStops\":1.2878187894821167,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14718827605247498,\"exposureStops\":1.2880464792251587,\"targetStops\":1.2903341054916382,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14742140471935272,\"exposureStops\":1.2895222902297974,\"targetStops\":1.2880507707595825,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14816778898239136,\"exposureStops\":1.2868280410766602,\"targetStops\":1.2807649374008179,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1486818939447403,\"exposureStops\":1.2832279205322266,\"targetStops\":1.2757676839828491,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1488867998123169,\"exposureStops\":1.279900074005127,\"targetStops\":1.2737809419631958,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14895613491535187,\"exposureStops\":1.2769172191619873,\"targetStops\":1.2731090784072876,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14937931299209595,\"exposureStops\":1.2742589712142944,\"targetStops\":1.2690163850784302,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1494404524564743,\"exposureStops\":1.2723349332809448,\"targetStops\":1.2684260606765747,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14914697408676147,\"exposureStops\":1.2718456983566284,\"targetStops\":1.2712620496749878,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14919857680797577,\"exposureStops\":1.2714154720306396,\"targetStops\":1.2707628011703491,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14934870600700378,\"exposureStops\":1.2705661058425903,\"targetStops\":1.2693120241165161,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14901894330978394,\"exposureStops\":1.271173357963562,\"targetStops\":1.2725008726119995,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1483008861541748,\"exposureStops\":1.276327133178711,\"targetStops\":1.27946937084198,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1480797678232193,\"exposureStops\":1.280198335647583,\"targetStops\":1.281622052192688,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14828860759735107,\"exposureStops\":1.2814304828643799,\"targetStops\":1.2795888185501099,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14844359457492828,\"exposureStops\":1.2805739641189575,\"targetStops\":1.2780817747116089,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14903002977371216,\"exposureStops\":1.2781680822372437,\"targetStops\":1.2723935842514038,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14919140934944153,\"exposureStops\":1.2762819528579712,\"targetStops\":1.2708321809768677,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14916536211967468,\"exposureStops\":1.2743059396743774,\"targetStops\":1.271084189414978,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1493588089942932,\"exposureStops\":1.2719613313674927,\"targetStops\":1.2692142724990845,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14976683259010315,\"exposureStops\":1.2697346210479736,\"targetStops\":1.2652784585952759,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1497313231229782,\"exposureStops\":1.26828932762146,\"targetStops\":1.2656205892562866,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1493997424840927,\"exposureStops\":1.2692631483078003,\"targetStops\":1.268818974494934,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1487821787595749,\"exposureStops\":1.2739888429641724,\"targetStops\":1.2747949361801147,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14825193583965302,\"exposureStops\":1.2787353992462158,\"targetStops\":1.279945731163025,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14789792895317078,\"exposureStops\":1.2818421125411987,\"targetStops\":1.2833949327468872,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14845973253250122,\"exposureStops\":1.2808942794799805,\"targetStops\":1.27792489528656,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":5,\"longestMs\":1662,\"afterFirstFrameMs\":1662},\"fps\":16.9,\"frame\":{\"max\":78.2,\"mean\":4.52,\"p50\":2.8,\"p95\":10,\"p99\":27.9,\"samples\":388},\"frames\":388,\"simulatedSeconds\":5,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":1662.6,\"mean\":54.65,\"p50\":58.9,\"p95\":108.3,\"p99\":178.3,\"samples\":387},\"overlay\":{\"max\":27.8,\"mean\":0.18,\"p50\":0,\"p95\":0.2,\"p99\":2.8,\"samples\":388},\"render\":{\"max\":65.2,\"mean\":3.38,\"p50\":1.5,\"p95\":8.5,\"p99\":11.6,\"samples\":388},\"residual\":{\"max\":2.2,\"mean\":0.07,\"p50\":0.1,\"p95\":0.2,\"p99\":0.3,\"samples\":388},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":388},\"update\":{\"max\":77.9,\"mean\":0.88,\"p50\":0.8,\"p95\":1.5,\"p99\":2.1,\"samples\":388}},\"presented\":{\"max\":1849.9,\"mean\":59.17,\"p50\":50.1,\"p95\":114.8,\"p99\":191.2,\"samples\":387},\"shares\":{\"hostGap\":0.924,\"overlay\":0.003,\"render\":0.057,\"residual\":0.001,\"ui\":0,\"update\":0.015},\"substeps\":{\"max\":60,\"mean\":0.77,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":388},\"passes\":{\"main\":{\"draws\":{\"max\":249,\"mean\":165.7,\"p50\":249,\"p95\":249,\"p99\":249,\"samples\":266},\"frames\":266,\"triangles\":{\"max\":253384,\"mean\":168605.15,\"p50\":253384,\"p95\":253384,\"p99\":253384,\"samples\":266}},\"nested\":{\"draws\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":1024},\"frames\":5133,\"triangles\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":1024}}},\"gpu\":{\"max\":35.24,\"mean\":16.32,\"p50\":11.37,\"p95\":29.86,\"p99\":35.24,\"samples\":88},\"gpuStale\":178,\"renderSkips\":94,\"gpuMs\":16.32,\"gpuFrames\":{\"first\":0,\"last\":382},\"gpuAgeFrames\":5,\"targetFps\":60,\"targetSource\":\"fallback\",\"surface\":{\"atFloor\":false,\"compiling\":true,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionSubrect\":false,\"resolutionScale\":0.72,\"sampleCount\":4,\"scaleSource\":\"pinned\"},\"counters\":{\"simulationTick\":300},\"window\":1}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":0,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":356,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":0,\"exemptShadowCasters\":70,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":5},\"drawsPlanned\":161,\"exact\":{\"instanced\":73,\"renderOrder\":1,\"tooFewToBatch\":59,\"transparent\":7},\"exactObjects\":140,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":438},\"path\":\"host\",\"projecting\":true,\"reasonCode\":\"hostProjected\",\"sourceRenderables\":356,\"timings\":{\"compileMs\":0,\"reconcileMs\":16.000000059604645,\"lastReconcileMs\":0.09999999403953552,\"maxReconcileMs\":1.9000000059604645},\"window\":1}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.148697167634964,\"exposureStops\":1.2788679599761963,\"targetStops\":1.275619626045227,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14913034439086914,\"exposureStops\":1.276107907295227,\"targetStops\":1.2714229822158813,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14901641011238098,\"exposureStops\":1.27415931224823,\"targetStops\":1.272525429725647,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14915570616722107,\"exposureStops\":1.273277997970581,\"targetStops\":1.2711774110794067,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.148729607462883,\"exposureStops\":1.2746766805648804,\"targetStops\":1.275304913520813,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14914631843566895,\"exposureStops\":1.2735756635665894,\"targetStops\":1.2712682485580444,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14958813786506653,\"exposureStops\":1.2720413208007812,\"targetStops\":1.2670007944107056,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14978009462356567,\"exposureStops\":1.269917368888855,\"targetStops\":1.2651506662368774,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14947634935379028,\"exposureStops\":1.2690911293029785,\"targetStops\":1.268079400062561,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14873425662517548,\"exposureStops\":1.2733962535858154,\"targetStops\":1.2752598524093628,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14822275936603546,\"exposureStops\":1.2779074907302856,\"targetStops\":1.2802296876907349,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14795029163360596,\"exposureStops\":1.2808924913406372,\"targetStops\":1.2828842401504517,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14830490946769714,\"exposureStops\":1.2818864583969116,\"targetStops\":1.2794302701950073,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14866012334823608,\"exposureStops\":1.2802274227142334,\"targetStops\":1.275978922843933,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14906096458435059,\"exposureStops\":1.2780427932739258,\"targetStops\":1.2720941305160522,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14916199445724487,\"exposureStops\":1.275634765625,\"targetStops\":1.2711166143417358,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14937005937099457,\"exposureStops\":1.2737056016921997,\"targetStops\":1.2691057920455933,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1494179517030716,\"exposureStops\":1.2720787525177002,\"targetStops\":1.2686432600021362,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14926958084106445,\"exposureStops\":1.2711563110351562,\"targetStops\":1.2700763940811157,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14896787703037262,\"exposureStops\":1.2714192867279053,\"targetStops\":1.2729953527450562,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14871317148208618,\"exposureStops\":1.274417757987976,\"targetStops\":1.2754641771316528,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14752532541751862,\"exposureStops\":1.2819433212280273,\"targetStops\":1.2870341539382935,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14688143134117126,\"exposureStops\":1.2899292707443237,\"targetStops\":1.2933448553085327,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14793196320533752,\"exposureStops\":1.2887341976165771,\"targetStops\":1.2830628156661987,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14834648370742798,\"exposureStops\":1.2844231128692627,\"targetStops\":1.279025912284851,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14877170324325562,\"exposureStops\":1.280784249305725,\"targetStops\":1.274896502494812,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14911222457885742,\"exposureStops\":1.2773295640945435,\"targetStops\":1.271598219871521,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14872504770755768,\"exposureStops\":1.2755063772201538,\"targetStops\":1.2753490209579468,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14872288703918457,\"exposureStops\":1.275202989578247,\"targetStops\":1.2753700017929077,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14891719818115234,\"exposureStops\":1.2753329277038574,\"targetStops\":1.2734862565994263,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14908604323863983,\"exposureStops\":1.274505376815796,\"targetStops\":1.2718514204025269,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14840221405029297,\"exposureStops\":1.274999976158142,\"targetStops\":1.2784839868545532,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14797228574752808,\"exposureStops\":1.2797050476074219,\"targetStops\":1.2826696634292603,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14718154072761536,\"exposureStops\":1.2857834100723267,\"targetStops\":1.2904001474380493,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14739012718200684,\"exposureStops\":1.2892143726348877,\"targetStops\":1.288356900215149,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14747250080108643,\"exposureStops\":1.2900829315185547,\"targetStops\":1.2875508069992065,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1475306898355484,\"exposureStops\":1.2889641523361206,\"targetStops\":1.2869817018508911,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_FRAME_BUDGET:{\"longTasks\":{\"available\":true,\"count\":5,\"longestMs\":1662,\"afterFirstFrameMs\":1662},\"fps\":14.73,\"frame\":{\"max\":31.7,\"mean\":6.47,\"p50\":6.3,\"p95\":12.6,\"p99\":19.5,\"samples\":300},\"frames\":300,\"simulatedSeconds\":5,\"hitches\":0,\"phases\":{\"hostGap\":{\"max\":144.9,\"mean\":61.41,\"p50\":69.1,\"p95\":106.8,\"p99\":123,\"samples\":300},\"overlay\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"render\":{\"max\":30,\"mean\":5.35,\"p50\":5.4,\"p95\":10.2,\"p99\":15.8,\"samples\":300},\"residual\":{\"max\":0.5,\"mean\":0.07,\"p50\":0.1,\"p95\":0.2,\"p99\":0.3,\"samples\":300},\"ui\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":300},\"update\":{\"max\":7.1,\"mean\":1.06,\"p50\":0.9,\"p95\":1.7,\"p99\":3.3,\"samples\":300}},\"presented\":{\"max\":157.4,\"mean\":67.89,\"p50\":75.6,\"p95\":117.9,\"p99\":134.9,\"samples\":300},\"shares\":{\"hostGap\":0.905,\"overlay\":0,\"render\":0.079,\"residual\":0.001,\"ui\":0,\"update\":0.016},\"substeps\":{\"max\":1,\"mean\":1,\"p50\":1,\"p95\":1,\"p99\":1,\"samples\":300},\"passes\":{\"main\":{\"draws\":{\"max\":249,\"mean\":183.14,\"p50\":249,\"p95\":249,\"p99\":249,\"samples\":300},\"frames\":300,\"triangles\":{\"max\":254876,\"mean\":186711.33,\"p50\":253384,\"p95\":253636,\"p99\":254596,\"samples\":300}},\"nested\":{\"draws\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":1024},\"frames\":6409,\"triangles\":{\"max\":0,\"mean\":0,\"p50\":0,\"p95\":0,\"p99\":0,\"samples\":1024}}},\"gpu\":{\"max\":31.03,\"mean\":17.09,\"p50\":11.42,\"p95\":27.64,\"p99\":30.08,\"samples\":108},\"gpuStale\":192,\"renderSkips\":79,\"gpuMs\":17.09,\"gpuFrames\":{\"first\":386,\"last\":683},\"gpuAgeFrames\":4,\"targetFps\":60,\"targetSource\":\"display\",\"overTarget\":{\"frameMs\":16.67,\"gpu\":40,\"render\":3},\"surface\":{\"atFloor\":false,\"compiling\":false,\"drawingBufferHeight\":1080,\"drawingBufferWidth\":1920,\"resolutionSubrect\":false,\"resolutionScale\":0.72,\"sampleCount\":4,\"scaleSource\":\"pinned\"},\"counters\":{\"simulationTick\":600},\"window\":2}",
+    "type": "log"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_PROJECTION:{\"drawsActual\":0,\"cull\":{\"enabled\":true,\"cameraResolved\":true,\"thresholdPixels\":0.5,\"considered\":356,\"culled\":0,\"exemptCameraAttached\":0,\"exemptMarked\":0,\"exemptShadowCasters\":70,\"exemptWithoutBounds\":0,\"exemptDynamicBounds\":0,\"exemptFrustumCulled\":5},\"drawsPlanned\":161,\"exact\":{\"instanced\":73,\"renderOrder\":1,\"tooFewToBatch\":59,\"transparent\":7},\"exactObjects\":140,\"matrixWorld\":{\"mode\":\"visible\",\"visited\":438},\"path\":\"host\",\"projecting\":true,\"reasonCode\":\"hostProjected\",\"sourceRenderables\":356,\"timings\":{\"compileMs\":0,\"reconcileMs\":33.600000113248825,\"lastReconcileMs\":0,\"maxReconcileMs\":1.9000000059604645},\"window\":2}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14814940094947815,\"exposureStops\":1.2865140438079834,\"targetStops\":1.2809439897537231,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14833885431289673,\"exposureStops\":1.2839710712432861,\"targetStops\":1.2791000604629517,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14851617813110352,\"exposureStops\":1.2823983430862427,\"targetStops\":1.2773765325546265,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1482909619808197,\"exposureStops\":1.2811566591262817,\"targetStops\":1.2795659303665161,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.1488243192434311,\"exposureStops\":1.278964877128601,\"targetStops\":1.2743865251541138,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14924503862857819,\"exposureStops\":1.2754563093185425,\"targetStops\":1.2703136205673218,\"settled\":true}",
+    "type": "info"
+  },
+  {
+    "source": "browser-console",
+    "text": "TN_AUTO_EXPOSURE:{\"measured\":true,\"applied\":true,\"luminance\":0.14936625957489014,\"exposureStops\":1.2722947597503662,\"targetStops\":1.2691422700881958,\"settled\":true}",
+    "type": "info"
+  }
+]

@@ -1,0 +1,1230 @@
+{
+  "freezeId": "alias-1e3c8ff0a-pilot",
+  "pngSha256": "f3cb816bba99d9da8211f81383bd59b6f551eae65b568e3fcabf82235ccc9ef7",
+  "snapshot": {
+    "clock": {
+      "mode": "fixed-step",
+      "tick": 660
+    },
+    "entities": [
+      {
+        "bounds": {
+          "height": 258.330617658274,
+          "width": 130.4569292152616,
+          "x": 894.7715353923692,
+          "y": 668.204853352568
+        },
+        "id": "player",
+        "transform": {
+          "position": [
+            0,
+            0.8100999593734741,
+            14
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "visible": true
+      }
+    ],
+    "gameplay": {
+      "animation": {},
+      "contacts": [],
+      "states": {},
+      "tags": {
+        "player": {
+          "count": 1
+        },
+        "coin": {
+          "count": 40
+        },
+        "gem": {
+          "count": 8
+        },
+        "seed": {
+          "count": 2
+        },
+        "walker": {
+          "count": 9
+        }
+      },
+      "transitions": [
+        {
+          "from": "fall",
+          "path": "state.action",
+          "tick": 2,
+          "to": "idle"
+        },
+        {
+          "from": false,
+          "path": "state.grounded",
+          "tick": 2,
+          "to": true
+        },
+        {
+          "from": 0,
+          "path": "state.landings",
+          "tick": 2,
+          "to": 1
+        }
+      ],
+      "audio": {
+        "cues": {},
+        "paused": 0,
+        "pooled": 0,
+        "queued": 0,
+        "recentCues": [],
+        "unsupported": [],
+        "voices": 0
+      },
+      "world": {
+        "seed": 6402,
+        "runtime": {
+          "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+          "core": "0.3.6",
+          "randomState": 6402,
+          "rapier": "0.19.3",
+          "step": 0.016666666666666666
+        }
+      }
+    },
+    "performance": {
+      "drawCalls": 245,
+      "triangles": 254909
+    },
+    "renderChain": {
+      "contributions": [
+        {
+          "graphOutputChanged": true,
+          "name": "ambientOcclusion"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "ssr"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "traa"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "sharpen"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "bloom"
+        },
+        {
+          "graphOutputChanged": true,
+          "name": "vignette"
+        }
+      ],
+      "dropped": [],
+      "requested": [
+        "ambientOcclusion",
+        "ssr",
+        "traa",
+        "sharpen",
+        "bloom",
+        "vignette"
+      ],
+      "source": "pinned",
+      "stages": [
+        "ambientOcclusion",
+        "ssr",
+        "traa",
+        "sharpen",
+        "bloom",
+        "vignette"
+      ],
+      "tier": "medium",
+      "velocity": {
+        "provisioned": true,
+        "required": true,
+        "source": "mrt"
+      },
+      "stageSizes": {
+        "traa": {
+          "input": [
+            1382,
+            778
+          ],
+          "output": [
+            1920,
+            1080
+          ]
+        }
+      }
+    },
+    "resources": {
+      "state": {
+        "action": "idle",
+        "checkpoint": 0,
+        "coins": 0,
+        "defeated": 0,
+        "gemTotal": 8,
+        "gems": 0,
+        "grounded": true,
+        "hudFaded": false,
+        "landings": 1,
+        "paused": false,
+        "respawns": 0,
+        "seedTotal": 3,
+        "seeds": 0,
+        "toast": "",
+        "uiReady": true,
+        "wallHits": 0,
+        "wedges": 8,
+        "loaded": true
+      },
+      "GameState": {
+        "action": "idle",
+        "checkpoint": 0,
+        "coins": 0,
+        "defeated": 0,
+        "gemTotal": 8,
+        "gems": 0,
+        "grounded": true,
+        "hudFaded": false,
+        "landings": 1,
+        "paused": false,
+        "respawns": 0,
+        "seedTotal": 3,
+        "seeds": 0,
+        "toast": "",
+        "uiReady": true,
+        "wallHits": 0,
+        "wedges": 8,
+        "loaded": true
+      },
+      "assets": {
+        "tex-birch-bark": {
+          "webp": {
+            "url": "tex-birch-bark.6f747149.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-sand-normal": {
+          "webp": {
+            "url": "tex-sand-normal.7d454d39.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-planks-normal": {
+          "webp": {
+            "url": "tex-planks-normal.7385b2f9.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-sand": {
+          "webp": {
+            "url": "tex-sand.00614774.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-bark-normal": {
+          "webp": {
+            "url": "tex-bark-normal.cda9ac42.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-planks": {
+          "webp": {
+            "url": "tex-planks.e921fe06.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-bark": {
+          "webp": {
+            "url": "tex-bark.886e1653.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-stone-wall": {
+          "webp": {
+            "url": "tex-stone-wall.23503328.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-rock": {
+          "webp": {
+            "url": "tex-rock.9fe28243.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-grass": {
+          "webp": {
+            "url": "tex-grass.8331daea.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-stone-wall-normal": {
+          "webp": {
+            "url": "tex-stone-wall-normal.d2f41342.webp",
+            "via": "manifest"
+          }
+        },
+        "tex-rock-normal": {
+          "webp": {
+            "url": "tex-rock-normal.de1aa88b.webp",
+            "via": "manifest"
+          }
+        }
+      },
+      "__threenativeFrameCounts": {
+        "updates": 660,
+        "renders": 624
+      }
+    },
+    "scene": {
+      "background": "DataTexture",
+      "camera": {
+        "far": 2000,
+        "forward": [
+          0,
+          -0.14263084339857812,
+          -0.9897759557149338
+        ],
+        "fov": 60,
+        "near": 0.1,
+        "position": [
+          0,
+          4.741199004918534,
+          22.54311876274197
+        ],
+        "type": "PerspectiveCamera"
+      },
+      "fog": {
+        "color": "#c2def2",
+        "density": 0.0031,
+        "type": "exponential"
+      },
+      "lights": [
+        {
+          "color": "#ffcf9e",
+          "intensity": 6,
+          "type": "DirectionalLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshStandardNodeMaterial": 18,
+        "MeshStandardMaterial": 39,
+        "MeshBasicMaterial": 5,
+        "SpriteNodeMaterial": 4
+      },
+      "objects": 438,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          800,
+          70.52985382080078,
+          800
+        ],
+        "min": [
+          -800,
+          -10,
+          -800
+        ]
+      }
+    },
+    "components": {
+      "course": {
+        "crowded": 0,
+        "floating": 0,
+        "castleParts": 8,
+        "grassTufts": 9560,
+        "levelShare": 0.33732800710164224,
+        "pathPebbles": 662,
+        "reliefMetres": 10.730078473687172,
+        "signposts": 1,
+        "steepShare": 0.08122503328894808
+      },
+      "player": {
+        "action": "idle",
+        "chain": 0,
+        "apex": {},
+        "counts": {},
+        "distance": {},
+        "groundY": 0.010099959373474077,
+        "grounded": true,
+        "landings": 1,
+        "ledgeGrabs": 0,
+        "pounds": 0,
+        "position": [
+          0,
+          0.8100999593734741,
+          14
+        ],
+        "sideflipFacingError": 0,
+        "speed": 0,
+        "stride": {
+          "clipGroundSpeed": 0,
+          "groundSpeed": 0,
+          "inPlace": true,
+          "overridden": false,
+          "rate": 1,
+          "synced": false,
+          "clip": "idle",
+          "footRatio": 1,
+          "skate": 0,
+          "plantedTime": 0,
+          "inBand": true
+        },
+        "takeoffSpeed": {},
+        "velocity": [
+          0,
+          0,
+          0
+        ],
+        "wallHits": 0,
+        "wallKickRise": 0,
+        "wallKicks": 0,
+        "yaw": 0,
+        "tags": [
+          "player"
+        ]
+      },
+      "coin.0": {
+        "kind": "coin",
+        "position": [
+          -1,
+          1.0316906225661713,
+          10
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.1": {
+        "kind": "coin",
+        "position": [
+          -1.6,
+          0.9608037848674672,
+          8
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.2": {
+        "kind": "coin",
+        "position": [
+          -2.2,
+          0.903609312796747,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.3": {
+        "kind": "coin",
+        "position": [
+          -2.8,
+          0.880086880943606,
+          4
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.4": {
+        "kind": "coin",
+        "position": [
+          -3.4,
+          0.8984535514989602,
+          2
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.5": {
+        "kind": "coin",
+        "position": [
+          -4,
+          0.9522933180253949,
+          0
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.6": {
+        "kind": "coin",
+        "position": [
+          -4.6,
+          1.022798401095417,
+          -2
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.7": {
+        "kind": "coin",
+        "position": [
+          -5.2,
+          1.0853393467486925,
+          -4
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.8": {
+        "kind": "coin",
+        "position": [
+          -5.8,
+          1.1180688033542274,
+          -6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.9": {
+        "kind": "coin",
+        "position": [
+          -6.3999999999999995,
+          1.1095534300873302,
+          -8
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.10": {
+        "kind": "coin",
+        "position": [
+          36.44444444444444,
+          2.295975383434927,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.11": {
+        "kind": "coin",
+        "position": [
+          37.388888888888886,
+          3.3550189054516597,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.12": {
+        "kind": "coin",
+        "position": [
+          38.333333333333336,
+          4.08477975186982,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.13": {
+        "kind": "coin",
+        "position": [
+          39.27777777777778,
+          4.3863502751095425,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.14": {
+        "kind": "coin",
+        "position": [
+          40.22222222222222,
+          4.278879376603441,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.15": {
+        "kind": "coin",
+        "position": [
+          41.166666666666664,
+          3.8513114626459592,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.16": {
+        "kind": "coin",
+        "position": [
+          42.111111111111114,
+          3.1887748200277137,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.17": {
+        "kind": "coin",
+        "position": [
+          43.05555555555556,
+          2.33454141282062,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.18": {
+        "kind": "coin",
+        "position": [
+          -24.5,
+          1.113556010522478,
+          18
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.19": {
+        "kind": "coin",
+        "position": [
+          -25.168440519687685,
+          1.1131610671383312,
+          20.057248383023655
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.20": {
+        "kind": "coin",
+        "position": [
+          -26.918440519687685,
+          0.9405368575281038,
+          21.328697807033038
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.21": {
+        "kind": "coin",
+        "position": [
+          -29.081559480312315,
+          0.9467226601936427,
+          21.328697807033038
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.22": {
+        "kind": "coin",
+        "position": [
+          -30.831559480312315,
+          1.1152991044803549,
+          20.057248383023655
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.23": {
+        "kind": "coin",
+        "position": [
+          -31.5,
+          1.1110977618793414,
+          18
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.24": {
+        "kind": "coin",
+        "position": [
+          -30.831559480312315,
+          1.1152991044803549,
+          15.942751616976345
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.25": {
+        "kind": "coin",
+        "position": [
+          -29.081559480312315,
+          0.9467226601936427,
+          14.671302192966962
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.26": {
+        "kind": "coin",
+        "position": [
+          -26.918440519687685,
+          0.9405368575281038,
+          14.671302192966962
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.27": {
+        "kind": "coin",
+        "position": [
+          -25.168440519687685,
+          1.1131610671383312,
+          15.942751616976343
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.28": {
+        "kind": "coin",
+        "position": [
+          2,
+          0.9849597248683926,
+          -26
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.29": {
+        "kind": "coin",
+        "position": [
+          3.2,
+          0.8835873119551291,
+          -26
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.30": {
+        "kind": "coin",
+        "position": [
+          4.4,
+          0.9306741946665418,
+          -26
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.31": {
+        "kind": "coin",
+        "position": [
+          5.6,
+          1.0661712017490328,
+          -26
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.32": {
+        "kind": "coin",
+        "position": [
+          6.8,
+          1.1172811014870634,
+          -26
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.33": {
+        "kind": "coin",
+        "position": [
+          8,
+          1.018824231405773,
+          -26
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.34": {
+        "kind": "coin",
+        "position": [
+          -5.800000000000001,
+          3.6180688033542276,
+          -22
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.35": {
+        "kind": "coin",
+        "position": [
+          -9.899999999999999,
+          3.41458575891568,
+          -14.898591688967604
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.36": {
+        "kind": "coin",
+        "position": [
+          -18.099999999999998,
+          3.6082606200507397,
+          -14.898591688967603
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.37": {
+        "kind": "coin",
+        "position": [
+          -22.2,
+          3.395410907310352,
+          -22
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.38": {
+        "kind": "coin",
+        "position": [
+          -18.1,
+          3.6082606200507397,
+          -29.101408311032394
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "coin.39": {
+        "kind": "coin",
+        "position": [
+          -9.899999999999999,
+          3.41458575891568,
+          -29.101408311032394
+        ],
+        "taken": false,
+        "tags": [
+          "coin"
+        ]
+      },
+      "gem.0": {
+        "kind": "gem",
+        "position": [
+          48,
+          1.0991388106435733,
+          4
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "gem.1": {
+        "kind": "gem",
+        "position": [
+          52,
+          1.216723349876274,
+          8
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "gem.2": {
+        "kind": "gem",
+        "position": [
+          50,
+          1.3010915283872657,
+          6
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "gem.3": {
+        "kind": "gem",
+        "position": [
+          -28,
+          8.080051167635018,
+          18
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "gem.4": {
+        "kind": "gem",
+        "position": [
+          -32,
+          8.775751996544706,
+          18
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "gem.5": {
+        "kind": "gem",
+        "position": [
+          -9,
+          6.080880874343529,
+          -22
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "gem.6": {
+        "kind": "gem",
+        "position": [
+          -20,
+          4.2139859045820955,
+          4
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "gem.7": {
+        "kind": "gem",
+        "position": [
+          -6,
+          1.319975148017121,
+          28
+        ],
+        "taken": false,
+        "tags": [
+          "gem"
+        ]
+      },
+      "seed.shaft": {
+        "kind": "seed",
+        "position": [
+          15,
+          12.336329298669945,
+          -26
+        ],
+        "taken": false,
+        "tags": [
+          "seed"
+        ]
+      },
+      "seed.summit": {
+        "kind": "seed",
+        "position": [
+          -14,
+          9.880127498946239,
+          -22
+        ],
+        "taken": false,
+        "tags": [
+          "seed"
+        ]
+      },
+      "walker.0": {
+        "alive": true,
+        "attacks": 0,
+        "kind": "bumblet",
+        "position": [
+          4.070161815256437,
+          0.0366444132000132,
+          0.4113804194580849
+        ],
+        "telegraphs": 0,
+        "tags": [
+          "walker"
+        ]
+      },
+      "walker.1": {
+        "alive": true,
+        "attacks": 0,
+        "kind": "bumblet",
+        "position": [
+          -6.175972839795345,
+          0.03845534011215686,
+          -5.7090677311947715
+        ],
+        "telegraphs": 0,
+        "tags": [
+          "walker"
+        ]
+      },
+      "walker.2": {
+        "alive": true,
+        "attacks": 0,
+        "kind": "bumblet",
+        "position": [
+          -10.540193529332168,
+          2.5267348955005864,
+          -12.970972484372913
+        ],
+        "telegraphs": 0,
+        "tags": [
+          "walker"
+        ]
+      },
+      "walker.3": {
+        "alive": true,
+        "attacks": 0,
+        "kind": "bumblet",
+        "position": [
+          47.79979678683029,
+          0.04534462829379053,
+          5.1862096828694275
+        ],
+        "telegraphs": 0,
+        "tags": [
+          "walker"
+        ]
+      },
+      "walker.4": {
+        "alive": true,
+        "attacks": 0,
+        "kind": "bumblet",
+        "position": [
+          -12.892838329971347,
+          0.1651525118893113,
+          9.66529931093738
+        ],
+        "telegraphs": 0,
+        "tags": [
+          "walker"
+        ]
+      },
+      "hopper.0": {
+        "alive": true,
+        "attacks": 7,
+        "kind": "hopper",
+        "position": [
+          18.023783981376788,
+          6.935370518064423,
+          16.536021988280712
+        ],
+        "telegraphs": 7,
+        "tags": [
+          "walker"
+        ]
+      },
+      "hopper.1": {
+        "alive": true,
+        "attacks": 7,
+        "kind": "hopper",
+        "position": [
+          25.706400031036413,
+          3.7008944285868846,
+          -13.771118376941377
+        ],
+        "telegraphs": 7,
+        "tags": [
+          "walker"
+        ]
+      },
+      "thornback.0": {
+        "alive": true,
+        "attacks": 0,
+        "kind": "thornback",
+        "position": [
+          -32.04526729892293,
+          -0.7708046279996286,
+          -3.4105238409783367
+        ],
+        "telegraphs": 0,
+        "tags": [
+          "walker"
+        ]
+      },
+      "thornback.1": {
+        "alive": true,
+        "attacks": 0,
+        "kind": "thornback",
+        "position": [
+          14.662288288231377,
+          5.366199983478304,
+          24.153518622671594
+        ],
+        "telegraphs": 0,
+        "tags": [
+          "walker"
+        ]
+      },
+      "camera-rig": {
+        "closest": 9,
+        "cuts": 0,
+        "distance": 9,
+        "elevation": 0.32,
+        "peakElevation": 0.32,
+        "pulledIn": false,
+        "tilt": 0.32,
+        "yaw": 0,
+        "rayClear": true
+      },
+      "effects": {
+        "dust": 24,
+        "fired": {
+          "run": 0,
+          "skid": 0,
+          "takeoff": 0,
+          "landing": 1,
+          "pound": 0,
+          "poundRing": 0,
+          "debris": 0,
+          "ledge": 0,
+          "poof": 0,
+          "wallKick": 0,
+          "kickStars": 0,
+          "trail": 0,
+          "streak": 0,
+          "coin": 0,
+          "gem": 0,
+          "seed": 0,
+          "glint": 62,
+          "pollen": 75
+        },
+        "flash": 0,
+        "pollen": 225,
+        "sparkle": 62
+      },
+      "hud": {
+        "covered": 0,
+        "under": 0
+      }
+    },
+    "physicsSteps": 660,
+    "pipelineCensus": {
+      "version": 1,
+      "complete": false,
+      "overflowed": false,
+      "unsupported": true,
+      "limit": 512,
+      "clock": {
+        "originMs": 655.1999999880791,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:Object"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.6"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=turing|vendor=nvidia",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 85.60000002384186,
+        "eventsSettled": 0
+      },
+      "warmUpSettled": {
+        "boundaryMs": 6595.100000023842,
+        "eventsSettled": 0,
+        "nodeBuilds": 0,
+        "renderPipelineCreations": 0
+      },
+      "counts": {
+        "lookups": 0,
+        "creations": 0,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 0,
+        "uniquePipelines": 0,
+        "recordedEvents": 0,
+        "droppedEvents": 0,
+        "nodeBuilds": 0
+      },
+      "events": [],
+      "incompleteReasons": [
+        "backend creation observation unavailable",
+        "device creation observation unavailable",
+        "no pipeline creations observed"
+      ]
+    }
+  },
+  "adapter": {
+    "architecture": "turing",
+    "vendor": "nvidia",
+    "features": "bgra8unorm-storage,chromium-experimental-multi-draw-indirect,chromium-experimental-subgroup-matrix,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-bc,texture-compression-bc-sliced-3d,texture-formats-tier1,texture-formats-tier2,timestamp-query",
+    "limit.maxBindGroups": "4",
+    "limit.maxTextureDimension2D": "16384",
+    "limit.maxStorageBufferBindingSize": "2147483644"
+  },
+  "arm": "AFTER",
+  "scale": 0.72,
+  "run": 1,
+  "animationPhase": "unknown: steady_clock GPU animation is not frozen; player and camera transforms matched",
+  "sourceCommit": "1e3c8ff0a33fc2476ffc684de8bb02371c7b6cb6",
+  "cohortIdentity": "a3397cb5ac80391120e274aa1f238c76a183663494c4956986bfd87f1c1d8d1d"
+}

@@ -1,0 +1,36 @@
+{
+  "display": {
+    "kind": "private-xvfb",
+    "screen": "2560x1440x24"
+  },
+  "startup": {
+    "rule": "sustained-frames",
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "warmup": {
+        "attempted": 1,
+        "candidates": 356,
+        "observed": {
+          "created": 0,
+          "failed": 0,
+          "pending": 0,
+          "uniquePrograms": 0,
+          "uniquePipelines": 0,
+          "status": "unavailable"
+        },
+        "status": "unavailable"
+      },
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 657.5999999940395,
+        "enteredMs": 2736.0999999940395,
+        "compileSettledMs": 9021.59999999404,
+        "frameworkReadyMs": 9758.40000000596,
+        "readyMs": 9758.5
+      }
+    }
+  },
+  "softwareAllowed": false,
+  "timingEvidence": "not-qualified"
+}
