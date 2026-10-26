@@ -22,7 +22,7 @@ import { FOX_FEEL, Fox, type GameCtx } from "../entities/Fox.js";
 import { Pickup } from "../entities/Pickup.js";
 import { Walker, type WalkerKind } from "../entities/Walker.js";
 import { Checkpoints } from "../level/Checkpoints.js";
-import { buildStage, makeRng } from "../level/Stage.js";
+import { STAGE_SPAWN, buildStage, makeRng } from "../level/Stage.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { followCamera, setupCamera } from "../render/camera.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
@@ -105,6 +105,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #sky: Texture | undefined;
   #skyEnvironment: Texture | undefined;
   #walkers: Walker[] = [];
+  #fox: Fox | undefined;
 
   /**
    * The sky gradient and the walkers are both built here, and the walkers are registered here
@@ -119,7 +120,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override async load(ctx: GameCtx): Promise<void> {
     // Registered before the first `await`, because that is the whole window a scenario's
     // `setup.place` has to find them in: the bridge applies setup between `load()` starting and
-    // `enter()` running, and anything after an await is too late.
+    // `enter()` running, and anything after an await is too late. The fox too, so a scenario can
+    // start it anywhere on the route (`setup.spawn` or `setup.place` on `player`).
+    this.#fox = ctx.entities.add("player", new Fox(ctx, STAGE_SPAWN.clone()));
     for (const [kind, x, y, z, from, to, speed] of WALKERS) {
       const walker = new Walker(kind, x, { from, speed, to, y, z });
       ctx.add(walker.mesh);
@@ -195,8 +198,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     clouds.build({ name: "clouds", parent: ctx.scene });
 
     // ------------------------------------------------------------------ actors
-    const fox = new Fox(ctx, stage.spawn);
-    ctx.entities.add("player", fox);
+    const fox = this.#fox;
+    if (fox === undefined) throw new Error("Play.enter ran before load() created the fox.");
     const checkpoints = new Checkpoints(stage.checkpoints, 3);
     const pickups: Pickup[] = [];
     const effects: ((dt: number) => boolean)[] = [];
@@ -243,15 +246,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let stars = 0;
     let defeated = 0;
     let elapsed = 0;
+    // The world's clock: the run clock (`elapsed`, the HUD's time) stops at the flag, but the
+    // flag's sway, the walkers' hop, the pickups' spin, the blink and the toasts keep running.
+    let clock = 0;
     let toastUntil = 0;
     let finished = false;
     const state = ctx.state.getState();
-    const spawn = stage.spawn.clone();
-    if (Number.isFinite(state.playerX)) spawn.x = state.playerX;
+    // Where load() or a scenario's setup left the fox; a `goto` keeps the run's last x.
+    const spawn = fox.mesh.position.clone();
+    if (Number.isFinite(state.playerX) && state.playerX !== Play.initialState.playerX)
+      spawn.x = state.playerX;
     fox.teleport(spawn);
     const toast = (text: string, seconds = 1.6): void => {
       ctx.state.set({ toast: text });
-      toastUntil = elapsed + seconds;
+      toastUntil = clock + seconds;
     };
     const statePatch: Partial<GameState> = {};
 
@@ -288,11 +296,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
       checkpoints.update(dt);
-      fox.setVisible(checkpoints.blinks(elapsed));
-      for (const walker of walkers) walker.update(dt, elapsed);
+      fox.setVisible(checkpoints.blinks(clock));
+      for (const walker of walkers) walker.update(dt, clock);
 
       for (const pickup of pickups) {
-        pickup.update(dt, elapsed);
+        pickup.update(dt, clock);
         if (pickup.taken) continue;
         if (pickup.mesh.position.distanceToSquared(fox.centre) >= pickup.reach ** 2) continue;
         pickup.take();
@@ -345,11 +353,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         toast("LEVEL CLEAR!", 6);
       }
       if (!finished) elapsed += dt;
-      if (toastUntil !== 0 && elapsed > toastUntil) {
+      clock += dt;
+      if (toastUntil !== 0 && clock > toastUntil) {
         toastUntil = 0;
         frameCtx.state.set({ toast: "" });
       }
-      stage.update(dt, elapsed);
+      stage.update(dt, clock);
       for (let i = effects.length - 1; i >= 0; i -= 1) {
         const effect = effects[i];
         if (effect?.(dt) === true) effects.splice(i, 1);
