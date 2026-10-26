@@ -1953,6 +1953,15 @@ void traaResponsiveTransparent() {
     overlay.positions = &ball->positions; overlay.indices = &ball->indices; overlay.material = &glow;
     overlay.transparent = true; overlay.blending = 2; overlay.depthWrite = false;
     overlay.matrixWorld = {1.2f, 0, 0, 0, 0, 1.2f, 0, 0, 0, 0, 1.2f, 0, 0, 0, 0.5f, 1};
+    // Mapped, as a sprite's puff is: its fragment group is chosen after the motion plan, and the mark must bind it.
+    BufferStore uvs(Scalar::F32, ball->positions.count() / 3 * 2);
+    overlay.uvs = &uvs;
+    auto map = std::make_shared<DataTexture>();
+    map->width = map->height = 1;
+    map->generateMipmaps = false;
+    map->data = {255, 255, 255, 255};
+    map->needsUpdate();
+    overlay.map = map.get();
     const std::array<DrawItem, 2> items{bars, overlay};
     const auto frames = [&](float scale, std::initializer_list<std::pair<int, float>> steps) {
         EventQueue events;

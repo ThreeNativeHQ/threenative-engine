@@ -3402,6 +3402,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
+    // Transparent draws replayed into the motion target, appended once their bind groups are chosen.
+    std::vector<std::pair<size_t, WGPURenderPipeline>> responsiveDraws;
     if (traa_) {
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
@@ -3426,9 +3428,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 target.depthWrite = false;
                 const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
                 if (!pipeline) throw std::runtime_error("TN_TRAA_RESPONSIVE_PIPELINE_REFUSED");
-                Planned responsive = draw;
-                responsive.pipeline = pipeline;
-                velocityPlan.push_back(responsive);
+                responsiveDraws.emplace_back(size_t(&draw - plan.data()), pipeline);
                 continue;
             }
             if (unsupported) { skip("unsupported vertex/coverage"); continue; }
@@ -3895,6 +3895,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                                     lutView_, lutSampler_, map->view, map->sampler)).first->second;
         }
     const uint64_t groupsChosenAt = groupEpoch_;
+    for (const auto& [index, pipeline] : responsiveDraws) {
+        Planned responsive = plan[index];
+        responsive.pipeline = pipeline;
+        velocityPlan.push_back(responsive);
+    }
 
     planAux();
 
