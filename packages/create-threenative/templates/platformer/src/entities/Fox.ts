@@ -61,6 +61,8 @@ export class Fox {
   coyoteJumps = 0;
   dashes = 0;
   jumps = 0;
+  /** The widest leg swing, in radians, on any step the fox stood still on the ground. */
+  standingSwing = 0;
   state: FoxState = "idle";
   #facing = 1;
   #coyote = 0;
@@ -153,6 +155,8 @@ export class Fox {
       speed: Math.hypot(this.body.velocity.x, this.body.velocity.z),
       vy: this.body.velocity.y,
     });
+    if (this.body.grounded && Math.hypot(this.body.velocity.x, this.body.velocity.z) < 0.05)
+      this.standingSwing = Math.max(this.standingSwing, Math.abs(this.rig.legSwing));
   }
 
   /** The stomp bounce: one jump, and no coyote window for the frames it spends rising. */
@@ -185,6 +189,7 @@ export class Fox {
       jumps: this.jumps,
       position: this.mesh.position.toArray(),
       speed: Math.hypot(this.body.velocity.x, this.body.velocity.z),
+      standingSwing: this.standingSwing,
       state: this.state,
       velocity: this.body.velocity.toArray(),
     };

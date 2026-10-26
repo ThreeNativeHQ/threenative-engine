@@ -34,6 +34,8 @@ export interface IFoxPose {
 
 export interface IFox {
   readonly group: Group;
+  /** The left leg's swing off vertical, in radians, as of the last `update`. */
+  readonly legSwing: number;
   update(pose: IFoxPose): void;
 }
 function part(geometry: BufferGeometry, material: Material, x = 0, y = 0, z = 0): Mesh {
@@ -155,14 +157,21 @@ export function createFox(): IFox {
   root.add(blob);
 
   let time = 0;
+  // The run cycle's phase, advanced by how fast the fox moves: standing still, the legs stand
+  // still, and a change of speed changes the rate without jumping the phase.
+  let cycle = 0;
   return {
     group: root,
+    get legSwing() {
+      return limbs.legL.rotation.z;
+    },
     update(pose: IFoxPose): void {
       time += pose.dt;
       const run = Math.min(1, pose.speed / 7);
-      const cycle = time * (6 + run * 9);
+      const moving = Math.min(1, pose.speed / 0.6);
+      cycle += pose.dt * (6 + run * 9) * moving;
       if (pose.grounded) {
-        const swing = Math.sin(cycle) * (0.35 + run * 0.75);
+        const swing = Math.sin(cycle) * (0.35 + run * 0.75) * moving;
         limbs.legL.rotation.z = swing;
         limbs.legR.rotation.z = -swing;
         limbs.armL.rotation.z = -swing * 0.85;
