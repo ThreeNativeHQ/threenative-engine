@@ -54,7 +54,6 @@ const VENDORED_RENDER_FILES = [
  * tracking its pending visual migration; remove each entry only after IMPROVEMENT.
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
-  puzzle: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
@@ -278,6 +277,42 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       });
       expect(preset.tonemapMode, `action-rpg/${tier} tonemapMode`).toBe("filmic");
       expect(preset.autoExposureEnabled, `action-rpg/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "puzzle/%s follows the core preset with its named exposure and cost overrides",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(pathToFileURL(renderFile("puzzle", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("puzzle", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.5,
+        minStops: -2,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        finalGatherMethod: "none",
+        ssgiEnabled: false,
+        ssrEnabled: false,
+        motionBlurEnabled: false,
+        gtaoResolutionScale: 0.5,
+        localExposureEnabled: false,
+        unrealBloomEnabled: false,
+        bloomRadius: 0.42,
+        bloomStrength: 0.5,
+        bloomThreshold: 0.85,
+      });
+      expect(preset.tonemapMode, `puzzle/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `puzzle/${tier} metered exposure`).toBe(true);
     },
   );
 });

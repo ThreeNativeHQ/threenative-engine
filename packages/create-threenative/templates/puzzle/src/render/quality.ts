@@ -39,130 +39,43 @@ import type { QualityTier } from "@threenative/core";
  */
 export const resolveQualityTier = qualityTiers.resolve;
 
-const legacyDefaults: IWorldEnvironmentOptions = {
-  // PRD-723: preserve the vendored look until this kit earns IMPROVEMENT. Cost: unmeasured.
-  autoExposureEnabled: false,
-  // Bloom cost: unmeasured; preserve the vendored stage until this kit is judged.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.7,
-  bloomThreshold: 0.2,
-  exposure: 1,
-  finalGatherMethod: "none",
-  gtaoEnabled: false,
-  gtaoRadius: 0.25,
-  gtaoSamples: 16,
-  gtaoDistanceExponent: 1,
-  gtaoDistanceFalloff: 1,
-  gtaoIndirectOnly: false,
-  localExposureEnabled: false,
-  motionBlurEnabled: false,
-  ssgiEnabled: false,
-  ssgiRadius: 12,
-  ssgiResolutionScale: 0.5,
-  ssrEnabled: false,
-  ssrResolutionScale: 0.5,
-  temporalAA: false,
-  tonemapMode: "aces",
-  unrealBloomEnabled: false,
-  vignetteAmount: 0,
-};
-
-const shared: IWorldEnvironmentOptions = {
-  // ~4.6 ms in the ablation named above, at that scene's own strength.
-  bloomEnabled: true,
-  bloomRadius: 0.42,
-  bloomStrength: 0.5,
-  // High, on purpose: the lantern flames and the seal plate clear it and nothing lit does.
-  bloomThreshold: 0.85,
-  autoExposureEnabled: false,
-  exposure: 1.06,
-  tonemapMode: "aces",
-  vignetteAmount: 0.34,
-};
-
 /**
- * What a desktop gets.
- *
- * Contact occlusion, because a pile of forty crates is nothing but contacts, and a sharpen pass,
- * because RCAS is what puts the edge back on the plank braces the occlusion pass softens.
+ * The stages and strengths a tier turns on: the core preset, this game's exposure policy and the
+ * named cost override from the header: no final gather, no SSGI, no SSR. Forty-five simulated bodies
+ * are already the frame's budget, and one bounce off a flagstone floor adds nothing the lanterns do
+ * not already put there. The core stack's motion blur, full-resolution occlusion, local exposure and
+ * Unreal bloom each added a few milliseconds to the performance scenario on an RTX 2080 and took its
+ * GPU p95 past 16.7 ms; all four are off, and the kit's own bloom keeps the lantern glow. Remove an
+ * override and read `TN_FRAME_BUDGET` when the room gets cheaper.
  */
-const high: IWorldEnvironmentOptions = {
-  ...shared,
-  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
-  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
-  temporalAA: true,
-  // Contact scale, in metres. A crate is 0.92 m, so half a metre gathers the crease where two
-  // crates meet and the shadow where one meets the floor, and no further.
-  // unmeasured in that ablation — it is not one of the five stages it measured.
-  gtaoEnabled: true,
-  gtaoRadius: 0.5,
-  gtaoResolutionScale: 0.5,
-  gtaoSamples: 12,
-  gtaoScale: 1.25,
-  // unmeasured in that ablation, as with GTAO. RCAS is a radius: 0.95 is nearly full sharpening.
-  sharpenEnabled: true,
-  sharpenStrength: 0.95,
-};
-
-/** A machine between the two: the same look with a cheaper occlusion gather. */
-const medium: IWorldEnvironmentOptions = {
-  ...shared,
-  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
-  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
-  temporalAA: true,
-  // The chain's own quality tier: without it the renderer keeps its `high` default at this tier.
-  renderChainTier: "medium",
-  bloomRadius: 0.38,
-  bloomStrength: 0.56,
-  bloomThreshold: 0.84,
-  exposure: 1.05,
-  // unmeasured, as at `high`; this tier is the same gather at fewer samples.
-  gtaoEnabled: true,
-  gtaoRadius: 0.45,
-  gtaoResolutionScale: 0.4,
-  gtaoSamples: 8,
-  gtaoScale: 1.2,
-  sharpenEnabled: false,
-  vignetteAmount: 0.3,
-};
-
-/**
- * What a phone gets: bloom and a vignette, no screen-space gather at all. The occlusion is the
- * first thing to go — forty simulated bodies are already the frame's budget on a phone.
- */
-const low: IWorldEnvironmentOptions = {
-  // The chain's own quality tier, separate from which stages this preset enables: without it
-  // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
-  // paid for the high chain's denoise and slice counts.
-  renderChainTier: "low",
-  // ~4.6 ms in the ablation named above, at that scene's own strength.
-  bloomEnabled: true,
-  bloomRadius: 0.32,
-  bloomStrength: 0.48,
-  bloomThreshold: 0.86,
-  exposure: 1.04,
-  gtaoEnabled: false,
-  sharpenEnabled: false,
-  vignetteAmount: 0.28,
-};
-
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
-
-/** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  const preset = QUALITY_PRESETS[tier as QualityTier];
-  if (preset === undefined) {
-    throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
-    );
-  }
+  console.info(
+    `TN_RENDER_CHAIN_COST_OVERRIDE ${JSON.stringify({
+      reason:
+        "Puzzle: forty-five simulated bodies are the frame budget; the core gather, motion blur, full-resolution occlusion, local exposure and Unreal bloom took the performance scenario past 16.7 ms GPU p95",
+      finalGatherMethod: "none",
+      ssgiEnabled: false,
+      ssrEnabled: false,
+      motionBlurEnabled: false,
+      gtaoResolutionScale: 0.5,
+      localExposureEnabled: false,
+      unrealBloomEnabled: false,
+    })}`,
+  );
   return {
     ...coreQualityPreset(tier),
-    ...legacyDefaults,
-    ...preset,
     exposurePolicy: exposureSettings,
-    samples: preset.samples ?? 4,
+    finalGatherMethod: "none",
+    ssgiEnabled: false,
+    ssrEnabled: false,
+    motionBlurEnabled: false,
+    gtaoResolutionScale: 0.5,
+    localExposureEnabled: false,
+    // The kit's own bloom: a high threshold, so only the lantern flames and the seal plate glow.
+    unrealBloomEnabled: false,
+    bloomRadius: 0.42,
+    bloomStrength: 0.5,
+    bloomThreshold: 0.85,
   };
 }
 
