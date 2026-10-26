@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TEMPLATE_ROOT, allTemplates } from "../../../test-support/templates.js";
 
 /**
@@ -54,7 +54,6 @@ const VENDORED_RENDER_FILES = [
  * tracking its pending visual migration; remove each entry only after IMPROVEMENT.
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
-  "action-rpg": "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   puzzle: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
@@ -246,6 +245,39 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       });
       expect(preset.tonemapMode, `tower-defense/${tier} tonemapMode`).toBe("filmic");
       expect(preset.autoExposureEnabled, `tower-defense/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "action-rpg/%s follows the core preset with its named exposure and cost overrides",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(
+        pathToFileURL(renderFile("action-rpg", "quality.ts")).href
+      )) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(
+        pathToFileURL(renderFile("action-rpg", "exposure.ts")).href
+      )) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.3,
+        minStops: -2,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        finalGatherMethod: "none",
+        ssgiEnabled: false,
+        ssrEnabled: false,
+      });
+      expect(preset.tonemapMode, `action-rpg/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `action-rpg/${tier} metered exposure`).toBe(true);
     },
   );
 });
