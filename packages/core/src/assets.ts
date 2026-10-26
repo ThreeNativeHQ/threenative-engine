@@ -115,6 +115,12 @@ export interface ICompressedTextureSupport {
 export type AssetSource = "manifest" | "source";
 
 /** Where one settled load's bytes actually came from. */
+/** One downloaded file of a load, with the size the manifest records for it. */
+export interface IResolvedFile {
+  readonly bytes: number;
+  readonly url: string;
+}
+
 export interface IResolvedAsset {
   /**
    * The manifest's size for this path, set once the load settled and the manifest named one.
@@ -122,6 +128,12 @@ export interface IResolvedAsset {
    * without a size, so absent means unknown and never zero.
    */
   readonly bytes?: number;
+  /**
+   * Every sized file the load downloaded: its own output first, then the shared images and
+   * lightmaps the manifest lists for it. Set with `bytes`. Two models that share an image list
+   * the same url, so a byte total dedupes by url.
+   */
+  readonly files?: readonly IResolvedFile[];
   /** What the load was asked for; set once the load settled. */
   readonly kind?: AssetKind;
   readonly url: string;
@@ -1087,6 +1099,25 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     return typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
   };
 
+  /** The shared images and lightmaps a path's load downloads beside its own file, with sizes. */
+  const auxiliaryOf = async (path: string): Promise<IResolvedFile[]> => {
+    if (isExternalAssetPath(path)) return [];
+    const entry = (await manifestOnce())?.entries[path];
+    if (!isRecord(entry)) return [];
+    const files: IResolvedFile[] = [];
+    for (const key of ["sharedImages", "lightmaps"] as const) {
+      const outputs = entry[key];
+      if (!Array.isArray(outputs)) continue;
+      for (const output of outputs) {
+        if (!isRecord(output) || typeof output.output !== "string") continue;
+        const bytes = output.bytes;
+        if (typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0)
+          files.push({ bytes, url: resolvePath(basePath, output.output) });
+      }
+    }
+    return files;
+  };
+
   const cached = <T>(
     kind: string,
     path: string,
@@ -1101,9 +1132,11 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     // denominator a tick later than its count. Recorded here rather than inside the load chain
     // so a load that fails still contributes the same weight to both sides of the ratio.
     let weight = 0;
-    const weighed = bytesOf(path).then(
-      (bytes) => {
+    let auxiliary: readonly IResolvedFile[] = [];
+    const weighed = Promise.all([bytesOf(path), auxiliaryOf(path)]).then(
+      ([bytes, files]) => {
         weight = bytes;
+        auxiliary = files;
         requestedBytes += bytes;
       },
       () => undefined,
@@ -1141,7 +1174,11 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // Only a load that resolved has a record; a rejected one has no bytes to attribute.
         const record = resolvedAssets.get(path);
         if (record !== undefined && weight > 0)
-          resolvedAssets.set(path, { ...record, bytes: weight });
+          resolvedAssets.set(path, {
+            ...record,
+            bytes: weight,
+            files: [{ bytes: weight, url: record.url }, ...auxiliary],
+          });
       });
       if (traceStart !== 0) {
         console.log(

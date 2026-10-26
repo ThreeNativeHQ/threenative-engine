@@ -102,20 +102,37 @@ export function measureStartupOffscreenBytes(
   let unattributedBytes = 0;
   let unsizedFiles = 0;
   const offscreen: IStartupOffscreenFile[] = [];
-  for (const [path, asset] of resolved) {
-    const bytes = asset.bytes ?? 0;
-    if (bytes <= 0) {
-      unsizedFiles += 1;
-      continue;
+  // A load downloads its own file plus the shared images and lightmaps it names, and two models
+  // can share an image. Each url counts once: models in view first, so a file any visible model
+  // needs is visible, then textures and audio, then the models the camera does not show.
+  const counted = new Set<string>();
+  const take = (asset: IResolvedAsset): number => {
+    let bytes = 0;
+    for (const file of asset.files ?? [{ bytes: asset.bytes ?? 0, url: asset.url }]) {
+      if (counted.has(file.url)) continue;
+      counted.add(file.url);
+      bytes += file.bytes;
     }
     awaitedBytes += bytes;
+    return bytes;
+  };
+  const sized = [...resolved].filter(([, asset]) => {
+    if ((asset.bytes ?? 0) > 0) return true;
+    unsizedFiles += 1;
+    return false;
+  });
+  const rank = ([path, asset]: [string, IResolvedAsset]): number =>
+    asset.kind !== "model" ? 1 : objects.get(path)?.shown === true ? 0 : 2;
+  sized.sort((a, b) => rank(a) - rank(b));
+  for (const [path, asset] of sized) {
+    const bytes = take(asset);
     if (asset.kind !== "model") {
       unattributedBytes += bytes;
       continue;
     }
     const holder = objects.get(path);
     if (holder?.shown === true) visibleBytes += bytes;
-    else
+    else if (bytes > 0)
       offscreen.push({
         bytes,
         path,

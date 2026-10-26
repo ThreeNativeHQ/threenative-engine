@@ -179,6 +179,79 @@ describe("loader provenance for the off-screen measurement", () => {
     expect(assets.resolved.get("tree.glb")).toMatchObject({ bytes: 70_000, kind: "model" });
     expect((root.children[0] as Mesh).geometry.userData[GEOMETRY_ASSET_KEY]).toBe("tree.glb");
   });
+
+  it("should record the shared images a model load downloads beside its own file", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              version: 1,
+              entries: {
+                "tree.glb": {
+                  output: "tree.a1.glb",
+                  kind: "model",
+                  bytes: 70_000,
+                  passes: [],
+                  sharedImages: [{ output: "bark.b2.ktx2", bytes: 900_000 }],
+                },
+              },
+            }),
+          ),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/assets", model: async () => placed("", 0) });
+
+    await assets.model<Group>("tree.glb");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(assets.resolved.get("tree.glb")?.files).toEqual([
+      { bytes: 70_000, url: "/assets/tree.a1.glb" },
+      { bytes: 900_000, url: "/assets/bark.b2.ktx2" },
+    ]);
+  });
+
+  it("should count a shared image once, as visible when a model in view uses it", () => {
+    const scene = new Group();
+    scene.add(placed("near.glb", -10));
+    scene.add(placed("behind.glb", 50));
+    scene.updateMatrixWorld(true);
+    const shared = { bytes: 50_000, url: "/bark.ktx2" };
+    const resolved = new Map<string, IResolvedAsset>([
+      [
+        "near.glb",
+        {
+          bytes: 1_000,
+          files: [{ bytes: 1_000, url: "/near.glb" }, shared],
+          kind: "model",
+          url: "/near.glb",
+          via: "manifest",
+        },
+      ],
+      [
+        "behind.glb",
+        {
+          bytes: 2_000,
+          files: [
+            { bytes: 2_000, url: "/behind.glb" },
+            shared,
+            { bytes: 30_000, url: "/leaf.ktx2" },
+          ],
+          kind: "model",
+          url: "/behind.glb",
+          via: "manifest",
+        },
+      ],
+    ]);
+
+    const report = measureStartupOffscreenBytes(resolved, scene, spawnCamera());
+
+    expect(report.awaitedBytes).toBe(83_000);
+    expect(report.visibleBytes).toBe(51_000);
+    expect(report.offscreenBytes).toBe(32_000);
+    expect(report.top).toEqual([{ bytes: 32_000, path: "behind.glb", reason: "outside-view" }]);
+  });
 });
 
 describe("the reveal", () => {
