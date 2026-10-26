@@ -272,6 +272,9 @@ StandardPrograms buildDepth(const VertexVariant& variant);
  */
 StandardPrograms buildMaskedDepth(const VertexVariant& variant);
 
+/** The colour pass's local vertex position (morph, skin, instancing, positionNode), vec4 with w = 1, built into `v`. */
+ExprId localPosition(Program& v, const VertexVariant& variant);
+
 /** Link authored and engine varyings from the local vertex, shared by mesh and sprite builders. */
 void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal = kInvalid);
 
