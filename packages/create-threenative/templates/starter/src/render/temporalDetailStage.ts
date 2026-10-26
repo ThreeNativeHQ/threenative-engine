@@ -13,8 +13,12 @@ import {
 } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 
-/** This game's reconstruction detail. Zero disables it; full-resolution frames stay unchanged. */
-export const temporalDetail = { strength: 1 };
+/**
+ * This game's reconstruction detail. Zero (UE 5.8.3 Scene.cpp:547, Sharpen 0) disables it; a positive strength
+ * sharpens upsampled frames and also lifts the reduced raster's stair-steps. Full-resolution frames stay unchanged.
+ */
+export const temporalDetail = { strength: 0 };
+const defaultStrength = temporalDetail.strength;
 let reportedStrength: number | undefined;
 
 /** Match WorldEnvironment's owned temporal eligibility; an authored TRAA supplies its own provider. */
@@ -37,7 +41,7 @@ export function temporalDetailStages(): [ChainStage, ChainStage] {
   const strength = temporalDetail.strength;
   if (!Number.isFinite(strength) || strength < 0)
     throw new Error("temporalDetail.strength must be finite and nonnegative.");
-  if (strength !== 1 && strength !== reportedStrength)
+  if (strength !== defaultStrength && strength !== reportedStrength)
     console.info(`TN_TEMPORAL_DETAIL strength=${strength} source=override`);
   reportedStrength = strength;
   let colour: TextureNode | undefined;
