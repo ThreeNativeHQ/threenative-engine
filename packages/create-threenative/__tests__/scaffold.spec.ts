@@ -325,7 +325,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "ac58cb2f1d94350034a65bafb3a1342b74321907498c0efe26aac774f4aef7ee",
   // Recomputed 2026-10-26 (PRD-746): the town merges through mergeByMaterial, palms through InstancedBatch.
-  shooter: "c8b6eddcf9fca3296a08cad5982346a5c3963fc724b512b11a5646656925fdbe",
+  shooter: "72d96403e8b58e7108d06ec04c8123cd1fdbf52dce4fdbba36bf645f4b36eeed",
   snow: "fac9211670fda9559467ee53e287254517f4775791b989f4a81a5ec4158c3334",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
