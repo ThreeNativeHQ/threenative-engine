@@ -759,14 +759,17 @@ void traaCameraVelocity() {
 // frame's palette or instance matrices (Unreal's previous bone and instance transforms). Without it the pixels read as
 // incomplete dynamic motion, upsampling rejects their history and the 0.72 input grid shows on every animated edge (the kits
 // build their characters from instanced parts). One bone, or the one instance, slides the sphere 0.02 along x per frame
-// under a still camera.
-void traaSlidingVelocity(bool instanced) {
+// under a still camera. An alpha-tested material (the kits' wind grass and leaves) draws velocity too: the velocity pass's
+// equal depth test keeps only the fragments the main pass kept (UE 5.8.3 writes velocity for masked materials).
+void traaSlidingVelocity(bool instanced, bool alphaTested = false, bool discarded = false) {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     CHECK(rendersPixels(context));
     if (!rendersPixels(context)) return;
     const auto ball = sphere(32, 16);
     shader::StandardMaterial material;
+    if (alphaTested) material.alphaTest = 0.4f;
+    if (discarded) material.opacity = 0.2f;  // every fragment fails the alpha test: the background keeps its velocity
     const std::size_t vertices = ball->positions.count() / 3;
     BufferStore skinIndices(Scalar::U16, vertices * 4), skinWeights(Scalar::F32, vertices * 4);
     const std::vector<uint16_t> indices(vertices * 4, 0);
@@ -812,14 +815,15 @@ void traaSlidingVelocity(bool instanced) {
         if (texels[texel * 4] > 0.0075f && texels[texel * 4] < 0.0115f && std::abs(texels[texel * 4 + 1]) < 1e-3f) ++moving;
         else ++wrong;
     }
-    std::fprintf(stderr, "TN_TRAA_SLIDING_VELOCITY instanced=%d moving=%zu wrong=%zu noted=%d\n", int(instanced), moving, wrong,
-                 int(noted));
+    std::fprintf(stderr, "TN_TRAA_SLIDING_VELOCITY instanced=%d alphaTested=%d moving=%zu wrong=%zu noted=%d\n", int(instanced),
+                 int(alphaTested), moving, wrong, int(noted));
     CHECK(!noted);
-    CHECK(moving > 50 && wrong == 0);
+    CHECK(discarded ? moving == 0 && wrong == 0 : moving > 50 && wrong == 0);
     std::filesystem::remove_all(directory);
 }
 void traaSkinnedVelocity() { traaSlidingVelocity(false); }
 void traaInstancedVelocity() { traaSlidingVelocity(true); }
+void traaAlphaTestedVelocity() { traaSlidingVelocity(true, true); traaSlidingVelocity(true, true, true); }
 
 // The shape a template gives the engine: the temporal effect is the colour convertToTexture hands the stages, and a stage
 // samples the velocity target the temporal pass draws. The effect has to be found inside the render texture (a TRAA the
@@ -2540,6 +2544,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_camera_velocity", traaCameraVelocity},
              {"traa_skinned_velocity", traaSkinnedVelocity},
              {"traa_instanced_velocity", traaInstancedVelocity},
+             {"traa_alpha_tested_velocity", traaAlphaTestedVelocity},
              {"traa_deformation_velocity", traaDeformationVelocity},
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},

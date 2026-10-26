@@ -3402,9 +3402,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
             const auto& variant = draw.program->variant;
+            // Alpha-tested and alpha-hashed draws need no coverage test here: the equal depth test keeps only the
+            // fragments the main pass kept (UE 5.8.3 writes velocity for masked materials).
             const bool unsupported = item.morphGeometry || item.sprite || item.background ||
-                item.positionNode || item.nodes.vertexNode || item.transparent || item.material->alphaTest > 0 ||
-                item.material->alphaHash;
+                item.positionNode || item.nodes.vertexNode || item.transparent;
             const auto skip = [&](const char* reason) {
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
                     "; camera motion only";
