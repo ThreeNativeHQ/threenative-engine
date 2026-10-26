@@ -3033,6 +3033,25 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
+    const auto colourTarget = [&](const DrawItem& item, const Program& program) {
+        // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
+        const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
+        // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
+        const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
+        PipelineTarget target{sceneFormat_, WGPUTextureFormat_Depth32Float, cull, blend,
+                              item.depthWrite};
+        target.colorWrite = item.colorWrite;
+        target.sampleCount = sampleCount_;
+        target.layout = program.pipelineLayout;
+        if (item.background) target.depthCompare = WGPUCompareFunction_Always;
+        target.depthBias = item.depthBias;
+        target.depthBiasSlopeScale = item.depthBiasSlopeScale;
+        target.frontFace = item.frontFace();
+        target.skinIndex = skinIndexFormat(item);
+        target.instanceStepMask = instanceStepMask(program.vertex, item);
+        lineTopology(target, item);
+        return target;
+    };
     frameUniforms_.clear();
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
@@ -3061,22 +3080,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (item.instanceCount == 0) continue;  // three draws nothing for count 0
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals && !item.flatShading) || !item.material) continue;
-        // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
-        const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
-        // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
-        const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
-        PipelineTarget target{sceneFormat_, WGPUTextureFormat_Depth32Float, cull, blend,
-                              item.depthWrite};
-        target.colorWrite = item.colorWrite;
-        target.sampleCount = sampleCount_;
-        target.layout = program.pipelineLayout;
-        if (item.background) target.depthCompare = WGPUCompareFunction_Always;
-        target.depthBias = item.depthBias;
-        target.depthBiasSlopeScale = item.depthBiasSlopeScale;
-        target.frontFace = item.frontFace();
-        target.skinIndex = skinIndexFormat(item);
-        target.instanceStepMask = instanceStepMask(program.vertex, item);
-        lineTopology(target, item);
+        const PipelineTarget target = colourTarget(item, program);
         if (compilation) {
             compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
             plan.push_back({&item, &program, nullptr, 0, 0});
@@ -3411,6 +3415,22 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     "; camera motion only";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
             };
+            // UE 5.8.3 Responsive AA (TemporalAA.usf:2277-2278): a transparent draw carries no motion of its own, so
+            // upsampled history under it keeps the glow it leaves (a firefly over a hero). Its own program, replayed
+            // into the motion target, scales the motion alpha by 1 - alpha: the resolve marks covered pixels
+            // responsive. Full resolution reads no mark.
+            if (item.transparent && item.colorWrite && inputWidth_ != width_ && draw.pipeline) {
+                PipelineTarget target = colourTarget(item, *draw.program);
+                target.color = WGPUTextureFormat_RGBA16Float;
+                target.blend = 4;
+                target.depthWrite = false;
+                const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
+                if (!pipeline) throw std::runtime_error("TN_TRAA_RESPONSIVE_PIPELINE_REFUSED");
+                Planned responsive = draw;
+                responsive.pipeline = pipeline;
+                velocityPlan.push_back(responsive);
+                continue;
+            }
             if (unsupported) { skip("unsupported vertex/coverage"); continue; }
             const std::string key = "traa-velocity|" + variant.key();
             if (!programs_.count(key)) {

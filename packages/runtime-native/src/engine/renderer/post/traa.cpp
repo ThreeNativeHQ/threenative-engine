@@ -127,7 +127,7 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
 }
 const rgbToNeighborhood = mat3x3<f32>(vec3<f32>(1,2,-1), vec3<f32>(2,0,2), vec3<f32>(1,-2,-1));
 const neighborhoodToRgb = mat3x3<f32>(vec3<f32>(.25), vec3<f32>(.25,0,-.25), vec3<f32>(-.25,.25,-.25));
-struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
+struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: vec2<f32> }
 // UE 5.8.3's five-tap Catmull-Rom history fetch (TextureSampling.ush:120-157, TemporalAA.usf:1868-1877): a bilinear fetch
 // blurs the history at every fractional offset, so a fast pan softens it until the raw input wins.
 fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
@@ -203,6 +203,23 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         }
     }
     let highClamp = upsampling;
+    // UE 5.8.3 Responsive AA (TemporalAA.usf:2277-2278), FSR2's reactive mask: a transparent draw has no motion of its
+    // own and marks the motion alpha instead. Under it the resolve takes a quarter of the new frame. Its glow stays in
+    // the history after it moves on, and the static clamp, wide on textured ground, keeps it: the mark decays in the
+    // history mask over eight frames, and marked pixels clip like pixels near a mover.
+    var responsive = false;
+    var overlay = 0.0;
+    if (upsampling) {
+        // The 3x3 footprint, as the complete-motion test reads it: a transparent rim spans the closest texel's neighbours.
+        let origin = vec2<f32>(texel) + 0.25;
+        let a00 = textureGather(3, velocity, linearSampler, origin / u.size);
+        let a10 = textureGather(3, velocity, linearSampler, (origin + vec2(1,0)) / u.size);
+        let a01 = textureGather(3, velocity, linearSampler, (origin + vec2(0,1)) / u.size);
+        let a11 = textureGather(3, velocity, linearSampler, (origin + vec2(1,1)) / u.size);
+        responsive = any(min(min(a00, a10), min(a01, a11)) < vec4(0.5));
+        overlay = select(max(textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).g - 0.125, 0.0), 1.0, responsive);
+        dynamicNeighborhood = dynamicNeighborhood || overlay > 0;
+    }
     let oldDynamic = upsampling && textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
     let departed = !dynamicNeighborhood && oldDynamic && disocclusion;
     let valid = u.historyValid != 0 && validUV && (edge || !disocclusion) && !departed;
@@ -269,6 +286,7 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         currentWeight += (1 - weight.x * weight.y) / 0.75 * 0.25;
     }
     if (upsampling && !completeMotion) { currentWeight = max(currentWeight, 0.25); }
+    if (responsive) { currentWeight = max(currentWeight, 0.25); }
     currentWeight = select(1.0, clamp(currentWeight + motion, 0.0, 1.0), valid);
     let gamma = mix(0.5, 1.0, (1 - motion) * (1 - motion));
     var offsets = array<vec2<i32>, 8>(vec2(-1,-1), vec2(-1,1), vec2(1,-1), vec2(1,1),
@@ -311,7 +329,7 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
     let luminance = vec3(0.2126, 0.7152, 0.0722);
     let historyWeight = (1 - currentWeight) / (dot(compressedHistory.rgb, luminance) + 1);
     currentWeight /= dot(compressedCurrent.rgb, luminance) + 1;
-    return Resolved((current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001), select(0.f, 1.f, dynamic || (valid && oldDynamic)));
+    return Resolved((current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001), vec2(select(0.f, 1.f, dynamic || (valid && oldDynamic)), overlay));
 }
 )WGSL"; }
 
@@ -363,7 +381,7 @@ TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
     setupShaderModuleWGSL(&moduleDesc, &wgsl, traaResolveWgsl());
     auto module = wgpuDeviceCreateShaderModule(device_, &moduleDesc);
     WGPUColorTargetState color{}; color.format = WGPUTextureFormat_RGBA16Float; color.writeMask = WGPUColorWriteMask_All;
-    WGPUColorTargetState colors[2] = {color, color}; colors[1].format = WGPUTextureFormat_R8Unorm;
+    WGPUColorTargetState colors[2] = {color, color}; colors[1].format = WGPUTextureFormat_RG8Unorm;
     WGPUFragmentState fragment{}; fragment.module = module; WGPU_SET_ENTRY_POINT(fragment, "fs");
     fragment.targetCount = 2; fragment.targets = colors;
     WGPURenderPipelineDescriptor pipeline{};
@@ -435,8 +453,8 @@ void TraaPass::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uin
                      WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
         return wgpuDeviceCreateTexture(device_, &desc);
     };
-    dynamic_ = texture(WGPUTextureFormat_R8Unorm, true); dynamicView_ = view(dynamic_);
-    historyDynamic_ = texture(WGPUTextureFormat_R8Unorm, true); historyDynamicView_ = view(historyDynamic_);
+    dynamic_ = texture(WGPUTextureFormat_RG8Unorm, true); dynamicView_ = view(dynamic_);
+    historyDynamic_ = texture(WGPUTextureFormat_RG8Unorm, true); historyDynamicView_ = view(historyDynamic_);
     historyColor_ = texture(WGPUTextureFormat_RGBA16Float, true); historyView_ = view(historyColor_);
     resolve_ = texture(WGPUTextureFormat_RGBA16Float, true); resolveView_ = view(resolve_);
     velocity_ = texture(WGPUTextureFormat_RGBA16Float, false); velocityView_ = view(velocity_);
@@ -448,7 +466,7 @@ void TraaPass::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uin
     const auto beauty = graph_.external("beauty", hdr), z = graph_.external("depth", depth);
     const auto motion = graph_.external("velocity", hdr), old = graph_.external("traa-history", outputHdr);
     const auto oldZ = graph_.external("traa-previous-depth", depth), result = graph_.external("traa-resolve", outputHdr);
-    const graph::TextureDesc mask{outputWidth, outputHeight, WGPUTextureFormat_R8Unorm, WGPUTextureUsage_TextureBinding};
+    const graph::TextureDesc mask{outputWidth, outputHeight, WGPUTextureFormat_RG8Unorm, WGPUTextureUsage_TextureBinding};
     const auto oldMask = graph_.external("traa-history-dynamic", mask), currentMask = graph_.external("traa-dynamic", mask);
     graph_.pass("traa-velocity", graph::PassKind::Render, {{z}}, {motion});
     graph_.pass("traa-resolve", graph::PassKind::Render, {{beauty}, {z}, {motion}, {old}, {oldZ}, {oldMask}}, {result, currentMask});

@@ -1929,6 +1929,64 @@ void traaRejection() {
 // the surface it moved away reads as disoccluded on every pixel, every frame: upsampling then draws the mover from one
 // jittered 0.72 input (stair-stepped and blocky karts). UE 5.8.3's TemporalAA keeps a moving pixel's history and lets the
 // neighbourhood clip reject it (TemporalAA.usf:1715-1770), so the upsampled resolve skips the depth test on a moving pixel.
+// A transparent draw (a firefly: additive, no depth, no motion of its own) whose glow fades. The old glow sits inside the
+// wide box of the high-contrast ground under it, so the clamp leaves the history alone and only the current weight moves
+// it; upsampled, the old glow stayed as pale blocks and speckle (Lantern Vale judge). UE 5.8.3 Responsive AA
+// (TemporalAA.usf:2277-2278) gives covered pixels a quarter of the new frame. Measured: the share of the fade the first
+// frame shows on the dark gaps between the bars, which must not lag the full-resolution resolve: 0.021 against 0.074
+// before the mark, 0.091 after.
+void traaResponsiveTransparent() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    BarField field;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial white, glow;
+    white.color = {0.8, 0.8, 0.8};
+    DrawItem bars, overlay;
+    bars.key = bars.id = 1; bars.kind = MaterialKind::Basic;
+    bars.positions = &field.positions; bars.indices = &field.indices; bars.material = &white;
+    bars.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    overlay.key = overlay.id = 2; overlay.kind = MaterialKind::Basic;
+    overlay.positions = &ball->positions; overlay.indices = &ball->indices; overlay.material = &glow;
+    overlay.transparent = true; overlay.blending = 2; overlay.depthWrite = false;
+    overlay.matrixWorld = {1.2f, 0, 0, 0, 0, 1.2f, 0, 0, 0, 0, 1.2f, 0, 0, 0, 0.5f, 1};
+    const std::array<DrawItem, 2> items{bars, overlay};
+    const auto frames = [&](float scale, std::initializer_list<std::pair<int, float>> steps) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        renderer.setPostGraph(temporalColour());
+        renderer.setRenderScale(scale);
+        for (const auto& [count, level] : steps) {
+            glow.color = {level, level, level};
+            for (int i = 0; i < count; ++i)
+                renderer.render({items.data(), items.size()}, ::camera(double(width) / height), LightState{}, {0, 0, 0, 1});
+        }
+        return read(renderer, events);
+    };
+    const auto share = [&](float scale) {
+        const auto low = frames(scale, {{40, 0.05f}}), stepped = frames(scale, {{40, 0.25f}, {1, 0.05f}});
+        const auto high = frames(scale, {{40, 0.25f}});
+        double moved = 0, full = 0;
+        for (uint32_t y = height / 2 - 6; y < height / 2 + 6; ++y)
+            for (uint32_t x = width / 2 - 8; x < width / 2 + 8; ++x) {
+                const size_t i = (size_t(y) * width + x) * 4;
+                if (high[i] - low[i] < 20 || low[i] > 120) continue;  // the dark gaps the glow lifts
+                moved += high[i] - stepped[i];
+                full += high[i] - low[i];
+            }
+        return full > 0 ? moved / full : -1.0;
+    };
+    const double full = share(1), upsampled = share(0.72f);
+    std::fprintf(stderr, "TN_TRAA_RESPONSIVE first-frame share of a transparent step: full %.3f, upsampled %.3f\n", full, upsampled);
+    CHECK(full >= 0 && upsampled >= 0);
+    CHECK(full > 0.02 && upsampled >= full);
+}
+
 void traaRecedingMover() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2706,6 +2764,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_camera_pan", traaCameraPan},
              {"traa_rejection", traaRejection},
              {"traa_receding_mover", traaRecedingMover},
+             {"traa_responsive_transparent", traaResponsiveTransparent},
              {"traa_fast_pan_edges", traaFastPanEdges},
              {"output_screen_size", outputScreenSize},
 #if defined(MYSTRAL_WEBGPU_DAWN)
