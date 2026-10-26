@@ -30,17 +30,6 @@ When an `@threenative/*` API is broken, missing, or does not do what you need, r
 - `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
 - Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above. Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template pins `engine: "threejs"` in `threenative.config.ts` because the native engine does not bind some of its imports yet. The pin keeps upstream Three.js on web and the legacy host on desktop. A native build names each unbound import with `TN_NATIVE_ENGINE_UNBOUND`. Android and iOS use the legacy host.
 
-## Large assets download before the player needs them
-
-A web game downloads its compiled assets on demand and keeps them on disk between visits. Await
-`ctx.assets.prefetch(["next-level.glb", "boss.png"])` before `ctx.goto("next-level")`, so the next
-scene reads from disk instead of a cold fetch. The idle fill downloads the rest of the release
-after the reveal. Await everything the spawn camera sees before the reveal, and `prefetch` only
-what is out of view: a reveal before the visible content loads shows a half-built world. Two named overrides on `defineGame`'s `assets`: `cache: false` turns the disk
-cache off and `backgroundFill: false` turns the fill off; `ctx.assets.cache` reports both plus
-`hits`, `misses`, `bytesOnDisk` and `bytesTotal`. Native hosts read installed files and resolve
-`prefetch` at once.
-
 ## Commands and map
 
 ```sh
@@ -84,7 +73,7 @@ is deterministic only when `defineGame({ seed })` is configured.
 cancel and an axis-rolled limb is caught where a bone-direction check reads zero.
 `clipTrackBindings` names tracks that bind nothing (`<bone>.undefined`, which plays the bind pose),
 `clipBoneCoverage` names bones the clip does not drive, which keep the previous clip's pose, and
-`boneContact` reports in metres whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches in 8 ms slices so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement. Gate the loading curtain on a measured readiness with `ctx.startup.hold(label, () => ready)`: core polls it every rendered frame, so it settles without a physics step.
+`boneContact` reports in metres whether a bone reaches its prop. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches in 8 ms slices so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement. Gate the loading curtain on a measured readiness with `ctx.startup.hold(label, () => ready)`: core polls it every rendered frame, so it settles without a physics step. Assets download on demand and stay on disk between web visits: await everything the spawn camera sees before the reveal, and `await ctx.assets.prefetch(["next-level.glb"])` before `ctx.goto` only for what is out of view (a reveal before the visible content loads shows a half-built world); the idle fill downloads the rest after the reveal. Overrides on `defineGame`'s `assets`: `cache: false`, `backgroundFill: false`, both reported on `ctx.assets.cache`; native hosts read installed files.
 
 `updateRate: "auto"` is the default and follows measured camera policy; `updateRate: 1` is full evaluation, another positive safe integer names a frame interval, and `updateRateReport` shows the effective rate, override status and latest evaluation; one-shots/fades, public mixer listeners/speed overrides, root-motion `AnimationComposer`, automatic camera-ray targets and camera-parented rigs stay full-rate.
 ## Budget real time for the look — see `node_modules/create-threenative/agent-docs/references/dream-loop.md`
