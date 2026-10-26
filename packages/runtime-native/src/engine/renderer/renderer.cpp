@@ -4323,6 +4323,13 @@ void Renderer::encodeFrame(FrameJob& job) {
                 << ",\"input\":[" << extent[0] << ',' << extent[1] << "],\"output\":["
                 << extent[2] << ',' << extent[3] << "],\"passes\":[";
             std::map<std::pair<std::shared_ptr<VirtualShadowCosts>, int>, double> levelCosts;
+            // Begin offsets let a trace measure the frame's GPU span and any overlap the sum counts twice.
+            uint64_t first = UINT64_MAX;
+            for (size_t i = 0; i < segments.size(); ++i) {
+                uint64_t begin;
+                std::memcpy(&begin, bytes.data() + i * 16, sizeof begin);
+                if (begin) first = std::min(first, begin);
+            }
             for (size_t i = 0; i < segments.size(); ++i) {
                 uint64_t ns[2];
                 std::memcpy(ns, bytes.data() + i * 16, sizeof ns);
@@ -4333,7 +4340,7 @@ void Renderer::encodeFrame(FrameJob& job) {
                     << ",\"name\":" << std::quoted(passInfo[i].name)
                     << ",\"segment\":" << unsigned(segments[i])
                     << ",\"width\":" << passInfo[i].width << ",\"height\":" << passInfo[i].height
-                    << ",\"ms\":" << ms << '}';
+                    << ",\"begin\":" << double(ns[0] - first) / 1e6 << ",\"ms\":" << ms << '}';
                 if (const auto query = shadowQueries.find(i); query != shadowQueries.end())
                     if (const auto costs = query->second.first.lock()) levelCosts[{costs, query->second.second}] += ms;
             }
