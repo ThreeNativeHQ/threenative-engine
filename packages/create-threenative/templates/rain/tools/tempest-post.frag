@@ -41,5 +41,5 @@ void main(){
  col=pow(max(col,vec3(0.)),vec3(1.015,1.,.975));
  float vign=1.-.28*pow(length((uv-.5)*vec2(1.05,1.)),1.65);col*=vign;
  col+=(hash(gl_FragCoord.xy+floor(uTime*24.))-.5)*.005+dropHighlight;
- fragColor=vec4(clamp(col,0.,1.),1.);
+ fragColor=vec4(max(col,vec3(0.)),1.); // no upper clamp: the engine's filmic curve rolls the highlights off after this pass
 }

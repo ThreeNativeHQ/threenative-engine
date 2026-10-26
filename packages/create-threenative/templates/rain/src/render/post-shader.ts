@@ -168,5 +168,7 @@ export const tempestPost = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
       .add(dropHighlight),
   );
 
-  return vec4(clamp(col, 0, 1), 1);
+  // No upper clamp: the engine's filmic curve rolls the highlights off after this pass, and a clamp at 1
+  // would cap every highlight at the curve's value for 1.0 (about 228 of 255).
+  return vec4(max(col, vec3(0)), 1);
 });
