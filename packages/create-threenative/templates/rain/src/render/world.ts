@@ -9,15 +9,18 @@
 //
 // Conventions: one world unit is one metre, +x is out to sea, -z runs down the coast.
 import {
+  type Camera,
   DoubleSide,
   Mesh,
+  OrthographicCamera,
   type PerspectiveCamera,
   PlaneGeometry,
-  type Scene,
+  Scene,
   Vector3,
 } from "three";
 import { cameraFar, cameraNear, clamp, float, positionGeometry, uv, vec4 } from "three/tsl";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import type { Node } from "three/webgpu";
+import { MeshBasicNodeMaterial, PassNode } from "three/webgpu";
 import type { QualityName, Weather } from "../state.js";
 import { type ICloudPass, createCloudPass } from "./clouds.js";
 import { setupLighting } from "./lighting.js";
@@ -25,12 +28,19 @@ import { setupMaterials } from "./materials.js";
 import { studyTier } from "./quality.js";
 import { setupSky } from "./sky.js";
 import {
+  baseTable,
+  heightTable,
+  setBase,
+  setHeight,
   tempestWorld,
   uAspect,
+  uBaseGrid,
   uCam,
   uFlash,
   uFog,
   uForward,
+  uHeightGrid,
+  uHeightMargin,
   uRain,
   uReflect,
   uRight,
@@ -40,6 +50,54 @@ import {
   uUp,
   uWet,
 } from "./world-shader.js";
+
+// terrain() is the march's costliest call and it never changes, so it is cached every frame in two
+// small passes the coast samples instead (see `hillHeight` and `cellBase` in tempest-world.frag).
+// The grids follow the camera and reach as far as the march does (1850 m).
+/** Texels per side of the cached heightmap, and the metres it spans: 3.6 m between samples. */
+const HEIGHT_TEXELS = 1024;
+const HEIGHT_SPAN = 3700;
+/**
+ * Metres added to a cached height so it bounds terrain() from above. Between its texels the cache
+ * reads at most 2.61 m below the true height (18,000,000 random points at 3.6 m, half-float storage,
+ * the road cut and the coast step included), so 4 m keeps every hit on the exact surface.
+ */
+const HEIGHT_MARGIN = 4;
+/** Tree cells per side of the base table: 360 cells of 10.5 m, 1890 m each way. */
+const BASE_CELLS = 360;
+/** The tree grid of `treeCell` in tempest-world.frag: 10.5 m cells offset by (2, 1) m. */
+const CELL_SIZE = 10.5;
+
+/** A pass whose target keeps one size, whatever the drawing buffer is: a table, not a picture. */
+class TablePass extends PassNode {
+  side = 1;
+  override setSize(): void {
+    super.setSize(this.side ?? 1, this.side ?? 1);
+  }
+}
+
+function tablePass(fragment: Node, side: number): { pass: TablePass; dispose(): void } {
+  const scene = new Scene();
+  const camera: Camera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const geometry = new PlaneGeometry(2, 2);
+  const material = new MeshBasicNodeMaterial();
+  material.side = DoubleSide;
+  material.vertexNode = vec4(positionGeometry.xy, 0, 1);
+  material.fragmentNode = fragment;
+  const quad = new Mesh(geometry, material);
+  quad.frustumCulled = false;
+  scene.add(quad);
+  const pass = new TablePass(PassNode.COLOR, scene, camera, { depthBuffer: false, samples: 0 });
+  pass.side = side;
+  return {
+    pass,
+    dispose(): void {
+      pass.dispose();
+      geometry.dispose();
+      material.dispose();
+    },
+  };
+}
 
 export interface IWeatherWorldOptions {
   /** Absolute seconds, so the weather phase does not depend on how the frame was scheduled. */
@@ -74,6 +132,13 @@ export function createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWe
   setupSky(scene);
   setupLighting();
   setupMaterials();
+
+  // Bound before the coast's graph is built, the same order as the cloud pass and for the same reason.
+  const heights = tablePass(heightTable(uv()), HEIGHT_TEXELS);
+  setHeight(heights.pass.getTextureNode());
+  const bases = tablePass(baseTable(uv()), BASE_CELLS);
+  setBase(bases.pass.getTextureNode());
+  uHeightMargin.value = HEIGHT_MARGIN;
 
   const world = tempestWorld(uv());
   // The shader's own depth is a curve fitted to the source's camera; the closed form is reversible,
@@ -116,6 +181,8 @@ export function createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWe
       geometry.dispose();
       material.dispose();
       clouds.dispose();
+      heights.dispose();
+      bases.dispose();
     },
     update({ elapsed, flash, quality, strike, weather }): void {
       // The camera basis the shader raymarches from: the same three axes the renderer draws with,
@@ -130,6 +197,19 @@ export function createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWe
       uAspect.value = camera.aspect;
       uTan.value = Math.tan((camera.fov * Math.PI) / 360);
       uTime.value = elapsed;
+      // Both caches centre on the camera, snapped to their own grid so a cached value stays put.
+      const step = HEIGHT_SPAN / HEIGHT_TEXELS;
+      uHeightGrid.value.set(
+        Math.floor(camera.position.x / step) * step - HEIGHT_SPAN / 2,
+        Math.floor(camera.position.z / step) * step - HEIGHT_SPAN / 2,
+        HEIGHT_SPAN,
+        HEIGHT_SPAN,
+      );
+      uBaseGrid.value.set(
+        Math.floor((camera.position.x + 2) / CELL_SIZE) - BASE_CELLS / 2,
+        Math.floor((camera.position.z + 1) / CELL_SIZE) - BASE_CELLS / 2,
+        BASE_CELLS,
+      );
 
       uRain.value = weather.rain;
       uFog.value = weather.fog;

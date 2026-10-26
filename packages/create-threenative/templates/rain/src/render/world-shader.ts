@@ -7,7 +7,7 @@
 // The shader is the coast: terrain, road, sea, the rail and cabin on it, wet reflections and the
 // fog that closes the distance. It is raymarched, so it is one full-screen quad and one function
 // call — see src/render/world.ts for the uniforms and the camera basis it expects.
-import { DataTexture, Vector3 } from "three";
+import { DataTexture, Vector3, Vector4 } from "three";
 import {
   Break,
   Fn,
@@ -78,6 +78,21 @@ export function setSky(value: TextureNode): void {
   uSky = value;
 }
 export const uReflect = uniform(0, "int").setGroup(frameGroup);
+const uHeightPlaceholder = new DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+uHeightPlaceholder.needsUpdate = true;
+export let uHeight: TextureNode = texture(uHeightPlaceholder).setGroup(frameGroup);
+export function setHeight(value: TextureNode): void {
+  uHeight = value;
+}
+export const uHeightGrid = uniform(new Vector4(), "vec4").setGroup(frameGroup);
+export const uHeightMargin = uniform(0, "float").setGroup(frameGroup);
+const uBasePlaceholder = new DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+uBasePlaceholder.needsUpdate = true;
+export let uBase: TextureNode = texture(uBasePlaceholder).setGroup(frameGroup);
+export function setBase(value: TextureNode): void {
+  uBase = value;
+}
+export const uBaseGrid = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 
 // Three.js Transpiler r185
 
@@ -254,115 +269,197 @@ export const treeBase = /*@__PURE__*/ Fn(([cell]: [Node<"vec2">]) => {
 // The march reads a hill only where it rises above 1 m, else the -3.5 floor. Each hill's weight times
 // its largest height (the noises stay below 1) bounds it, so a point no hill can lift past 1 m skips
 // terrain()'s five noises and gets the same floor it would have.
+// terrain() is static, so src/render/world.ts caches it every frame in two small passes: `uHeight` holds
+// it on a camera-centred grid, and `uBase` holds every nearby tree cell's base. A cached height is
+// only an estimate between its texels, so it stands in for terrain() only as an upper bound,
+// `uHeightMargin` above the sample: a point that bound puts under 1 m gets the floor, a point more
+// than 2 m above it steps as if the hill reached the bound (a shorter step, never through the
+// ground), and any point nearer the ground calls terrain() itself, so every hit and every normal
+// still lands on the exact surface. Only the 148-step coast trace reads the bound (`bounded`): the
+// 36-step reflection march would run out of steps on the shorter ones and reflect sky for hillside.
 
-export const hillHeight = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
-  const di = p.sub(vec2(94, -205)).div(vec2(39, 48)).toVar();
-  const h = float(-3.5).toVar();
+export const heightBound = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
+  const g = p.sub(uHeightGrid.xy).div(uHeightGrid.zw).toVar();
+  const bound = float(1e4).toVar();
 
   If(
-    smoothstep(13, 155, p.x.negate())
-      .mul(183)
-      .greaterThan(1)
-      .or(smoothstep(280, 670, p.y.negate()).mul(223).greaterThan(1))
-      .or(smoothstep(190, 430, p.x).mul(125).greaterThan(1))
-      .or(exp(dot(di, di).negate()).mul(28).greaterThan(1)),
+    g.x
+      .greaterThan(0.002)
+      .and(g.y.greaterThan(0.002))
+      .and(g.x.lessThan(0.998))
+      .and(g.y.lessThan(0.998)),
     () => {
-      const g = terrain(p).toVar();
-
-      If(g.greaterThan(1), () => {
-        h.assign(g);
-      });
+      bound.assign(uHeight.sample(vec2(g.x, g.y.oneMinus())).r.add(uHeightMargin));
     },
   );
 
-  return h;
+  return bound;
 });
 
-export const sceneAt = /*@__PURE__*/ Fn(([p, th]: [Node<"vec3">, Node<"float">]) => {
-  const res = vec2(p.y.sub(hillHeight(p.xz)).mul(0.58), 1).toVar();
+export const hillHeight = /*@__PURE__*/ Fn(
+  ([p, y, bounded]: [Node<"vec2">, Node<"float">, Node<"float">]) => {
+    const di = p.sub(vec2(94, -205)).div(vec2(39, 48)).toVar();
+    const h = float(-3.5).toVar();
+
+    If(
+      smoothstep(13, 155, p.x.negate())
+        .mul(183)
+        .greaterThan(1)
+        .or(smoothstep(280, 670, p.y.negate()).mul(223).greaterThan(1))
+        .or(smoothstep(190, 430, p.x).mul(125).greaterThan(1))
+        .or(exp(dot(di, di).negate()).mul(28).greaterThan(1)),
+      () => {
+        const bound = select(bounded.greaterThan(0.5), heightBound(p), 1e4).toVar();
+
+        If(bound.greaterThan(1), () => {
+          If(y.sub(bound).greaterThan(2), () => {
+            h.assign(bound);
+          }).Else(() => {
+            const g = terrain(p).toVar();
+
+            If(g.greaterThan(1), () => {
+              h.assign(g);
+            });
+          });
+        });
+      },
+    );
+
+    return h;
+  },
+);
+
+// One texel per tree cell, centred on the camera's cell: r + g is the base (split so a half-float
+// target keeps it to a tenth of a millimetre) and b is 1 where the cell grows a tree.
+
+export const baseTable = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
+  const th = treeBase(uBaseGrid.xy.add(floor(vUv.mul(uBaseGrid.z)))).toVar();
+  const hi = floor(th.mul(4)).div(4).toVar();
+  const res = vec4(0, 0, 0, 1).toVar();
 
   If(th.lessThan(1e3), () => {
-    const cell = treeCell(p.xz).toVar();
-    const seed = hash12(cell.add(17)).toVar();
-    const tc = treeCentre(cell).toVar();
-    const q = p.sub(vec3(tc.x, th, tc.y)).toVar();
-    const ht = add(6, seed.mul(13)).toVar();
-    const cy = clamp(q.y.div(ht), 0, 1).toVar();
-    const angle = atan(q.z, q.x).toVar();
-    const tier = add(0.77, mul(0.23, sin(q.y.mul(3.5).add(seed.mul(13))))).toVar();
-    const r = sub(1, cy)
-      .mul(add(2, seed.mul(1.45)))
-      .mul(tier)
-      .toVar();
-    r.mulAssign(
-      add(0.88, mul(0.12, sin(angle.mul(9).add(q.y.mul(2.7))))).add(
-        mul(0.07, sin(angle.mul(19).sub(q.y.mul(6)))),
-      ),
-    );
-    const needle = noise2(q.xz.mul(6).add(q.y.mul(2)))
-      .sub(0.5)
-      .mul(0.18)
-      .mul(sub(1, cy))
-      .toVar();
-    const d = max(length(q.xz).sub(r).add(needle), max(sub(0.8, q.y), q.y.sub(ht)))
-      .mul(0.67)
-      .toVar();
-    res.assign(choose(res, vec2(d, 2)));
-    res.assign(
-      choose(
-        res,
-        vec2(
-          max(length(q.xz).sub(mul(0.13, sub(1, cy.mul(0.65)))), max(q.y.negate(), q.y.sub(ht))),
-          3,
-        ),
-      ),
-    );
+    res.assign(vec4(hi, th.sub(hi), 1, 1));
   });
-
-  // Repeating steel luminaires, including their angled neck and illuminated undersides.
-
-  const k = clamp(floor(p.z.negate().sub(10).div(38).add(0.5)), 0, 5).toVar();
-  const z = float(-10).sub(k.mul(38)).toVar();
-  const x = roadCenter(z).sub(6.35).toVar();
-  const q = p.sub(vec3(x, 0, z)).toVar();
-  const pole = capsule(q, vec3(0, 0, 0), vec3(0, 7.65, 0), 0.075).toVar();
-  pole.assign(min(pole, capsule(q, vec3(0, 7.6, 0), vec3(1.6, 8.05, 0), 0.065)));
-  pole.assign(min(pole, capsule(q, vec3(1.6, 8.05, 0), vec3(2.5, 8.05, 0), 0.055)));
-  pole.assign(min(pole, sdBox(q.sub(vec3(2.43, 8, 0)), vec3(0.4, 0.1, 0.23))));
-  res.assign(choose(res, vec2(pole, 4)));
-  res.assign(choose(res, vec2(sdBox(q.sub(vec3(2.45, 7.885, 0)), vec3(0.32, 0.021, 0.175)), 6)));
-
-  // Guardrail on the water side, stopping before the distant curve.
-
-  If(p.z.lessThan(28).and(p.z.greaterThan(-176)), () => {
-    const rx = roadCenter(p.z).add(6.3).toVar();
-    const rail = sdBox(vec3(p.x.sub(rx), p.y.sub(0.84), 0), vec3(0.065, 0.13, 1000)).toVar();
-    const postZ = floor(p.z.div(5).add(0.5)).mul(5).toVar();
-    rail.assign(
-      min(
-        rail,
-        sdBox(p.sub(vec3(roadCenter(postZ).add(6.3), 0.45, postZ)), vec3(0.055, 0.45, 0.055)),
-      ),
-    );
-    res.assign(choose(res, vec2(rail, 4)));
-  });
-
-  // Small roadside field station, with a lit window and antenna.
-
-  const b = p.sub(vec3(-17, 1.85, -73)).toVar();
-  const cabin = sdBox(b, vec3(3.3, 1.85, 2.65)).toVar();
-  res.assign(choose(res, vec2(cabin, 9)));
-  res.assign(choose(res, vec2(sdBox(p.sub(vec3(-17, 3.85, -73)), vec3(3.6, 0.14, 2.9)), 4)));
-  res.assign(
-    choose(res, vec2(sdBox(p.sub(vec3(-17.8, 2.1, -70.325)), vec3(0.84, 0.48, 0.028)), 6)),
-  );
-  res.assign(choose(res, vec2(capsule(p, vec3(-19, 3.9, -74), vec3(-19, 13, -74), 0.045), 4)));
 
   return res;
 });
 
+export const heightTable = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
+  return vec4(terrain(uHeightGrid.xy.add(vUv.mul(uHeightGrid.zw))), 0, 0, 1);
+});
+
+export const cellBase = /*@__PURE__*/ Fn(([cell]: [Node<"vec2">]) => {
+  const k = cell.sub(uBaseGrid.xy).toVar();
+  const th = float(1e4).toVar();
+
+  If(
+    k.x
+      .greaterThanEqual(0)
+      .and(k.y.greaterThanEqual(0))
+      .and(k.x.lessThan(uBaseGrid.z))
+      .and(k.y.lessThan(uBaseGrid.z)),
+    () => {
+      const bu = k.add(0.5).div(uBaseGrid.z).toVar();
+      const v = uBase.sample(vec2(bu.x, bu.y.oneMinus())).toVar();
+
+      If(v.b.greaterThan(0.5), () => {
+        th.assign(v.r.add(v.g));
+      });
+    },
+  ).Else(() => {
+    th.assign(treeBase(cell));
+  });
+
+  return th;
+});
+
+export const sceneAt = /*@__PURE__*/ Fn(
+  ([p, th, bounded]: [Node<"vec3">, Node<"float">, Node<"float">]) => {
+    const res = vec2(p.y.sub(hillHeight(p.xz, p.y, bounded)).mul(0.58), 1).toVar();
+
+    If(th.lessThan(1e3), () => {
+      const cell = treeCell(p.xz).toVar();
+      const seed = hash12(cell.add(17)).toVar();
+      const tc = treeCentre(cell).toVar();
+      const q = p.sub(vec3(tc.x, th, tc.y)).toVar();
+      const ht = add(6, seed.mul(13)).toVar();
+      const cy = clamp(q.y.div(ht), 0, 1).toVar();
+      const angle = atan(q.z, q.x).toVar();
+      const tier = add(0.77, mul(0.23, sin(q.y.mul(3.5).add(seed.mul(13))))).toVar();
+      const r = sub(1, cy)
+        .mul(add(2, seed.mul(1.45)))
+        .mul(tier)
+        .toVar();
+      r.mulAssign(
+        add(0.88, mul(0.12, sin(angle.mul(9).add(q.y.mul(2.7))))).add(
+          mul(0.07, sin(angle.mul(19).sub(q.y.mul(6)))),
+        ),
+      );
+      const needle = noise2(q.xz.mul(6).add(q.y.mul(2)))
+        .sub(0.5)
+        .mul(0.18)
+        .mul(sub(1, cy))
+        .toVar();
+      const d = max(length(q.xz).sub(r).add(needle), max(sub(0.8, q.y), q.y.sub(ht)))
+        .mul(0.67)
+        .toVar();
+      res.assign(choose(res, vec2(d, 2)));
+      res.assign(
+        choose(
+          res,
+          vec2(
+            max(length(q.xz).sub(mul(0.13, sub(1, cy.mul(0.65)))), max(q.y.negate(), q.y.sub(ht))),
+            3,
+          ),
+        ),
+      );
+    });
+
+    // Repeating steel luminaires, including their angled neck and illuminated undersides.
+
+    const k = clamp(floor(p.z.negate().sub(10).div(38).add(0.5)), 0, 5).toVar();
+    const z = float(-10).sub(k.mul(38)).toVar();
+    const x = roadCenter(z).sub(6.35).toVar();
+    const q = p.sub(vec3(x, 0, z)).toVar();
+    const pole = capsule(q, vec3(0, 0, 0), vec3(0, 7.65, 0), 0.075).toVar();
+    pole.assign(min(pole, capsule(q, vec3(0, 7.6, 0), vec3(1.6, 8.05, 0), 0.065)));
+    pole.assign(min(pole, capsule(q, vec3(1.6, 8.05, 0), vec3(2.5, 8.05, 0), 0.055)));
+    pole.assign(min(pole, sdBox(q.sub(vec3(2.43, 8, 0)), vec3(0.4, 0.1, 0.23))));
+    res.assign(choose(res, vec2(pole, 4)));
+    res.assign(choose(res, vec2(sdBox(q.sub(vec3(2.45, 7.885, 0)), vec3(0.32, 0.021, 0.175)), 6)));
+
+    // Guardrail on the water side, stopping before the distant curve.
+
+    If(p.z.lessThan(28).and(p.z.greaterThan(-176)), () => {
+      const rx = roadCenter(p.z).add(6.3).toVar();
+      const rail = sdBox(vec3(p.x.sub(rx), p.y.sub(0.84), 0), vec3(0.065, 0.13, 1000)).toVar();
+      const postZ = floor(p.z.div(5).add(0.5)).mul(5).toVar();
+      rail.assign(
+        min(
+          rail,
+          sdBox(p.sub(vec3(roadCenter(postZ).add(6.3), 0.45, postZ)), vec3(0.055, 0.45, 0.055)),
+        ),
+      );
+      res.assign(choose(res, vec2(rail, 4)));
+    });
+
+    // Small roadside field station, with a lit window and antenna.
+
+    const b = p.sub(vec3(-17, 1.85, -73)).toVar();
+    const cabin = sdBox(b, vec3(3.3, 1.85, 2.65)).toVar();
+    res.assign(choose(res, vec2(cabin, 9)));
+    res.assign(choose(res, vec2(sdBox(p.sub(vec3(-17, 3.85, -73)), vec3(3.6, 0.14, 2.9)), 4)));
+    res.assign(
+      choose(res, vec2(sdBox(p.sub(vec3(-17.8, 2.1, -70.325)), vec3(0.84, 0.48, 0.028)), 6)),
+    );
+    res.assign(choose(res, vec2(capsule(p, vec3(-19, 3.9, -74), vec3(-19, 13, -74), 0.045), 4)));
+
+    return res;
+  },
+);
+
 export const sceneMap = /*@__PURE__*/ Fn(([p]: [Node<"vec3">]) => {
-  return sceneAt(p, treeBase(treeCell(p.xz)));
+  return sceneAt(p, cellBase(treeCell(p.xz)), 0);
 });
 
 export const trace = /*@__PURE__*/ Fn(
@@ -381,11 +478,11 @@ export const trace = /*@__PURE__*/ Fn(
       const cell = treeCell(p.xz).toVar();
 
       If(cell.x.notEqual(lastCell.x).or(cell.y.notEqual(lastCell.y)), () => {
-        th.assign(treeBase(cell));
+        th.assign(cellBase(cell));
         lastCell.assign(cell);
       });
 
-      const d = sceneAt(p, th).toVar();
+      const d = sceneAt(p, th, 1).toVar();
       const eps = max(0.007, t.mul(0.00048)).toVar();
 
       If(d.x.lessThan(eps), () => {
@@ -414,10 +511,10 @@ export const tapScene = /*@__PURE__*/ Fn(
     const th = hitBase.toVar();
 
     If(c.x.notEqual(hitCell.x).or(c.y.notEqual(hitCell.y)), () => {
-      th.assign(treeBase(c));
+      th.assign(cellBase(c));
     });
 
-    return sceneAt(q, th).x;
+    return sceneAt(q, th, 0).x;
   },
 );
 
@@ -425,7 +522,7 @@ export const getNormal = /*@__PURE__*/ Fn(([p, t]: [Node<"vec3">, Node<"float">]
   const e = max(0.008, t.mul(0.00032)).toVar();
   const k = vec2(1, -1).mul(0.5773).toVar();
   const hc = treeCell(p.xz).toVar();
-  const hb = treeBase(hc).toVar();
+  const hb = cellBase(hc).toVar();
 
   return normalize(
     k.xyy
@@ -591,11 +688,11 @@ export const reflected = /*@__PURE__*/ Fn(
         const cell = treeCell(q.xz).toVar();
 
         If(cell.x.notEqual(lastCell.x).or(cell.y.notEqual(lastCell.y)), () => {
-          th.assign(treeBase(cell));
+          th.assign(cellBase(cell));
           lastCell.assign(cell);
         });
 
-        const d = sceneAt(q, th).toVar();
+        const d = sceneAt(q, th, 0).toVar();
 
         If(d.x.lessThan(max(0.03, t.mul(0.0016))), () => {
           If(d.y.greaterThan(5.5).and(d.y.lessThan(6.5)), () => {

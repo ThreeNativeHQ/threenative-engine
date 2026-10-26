@@ -52,14 +52,56 @@ float treeBase(vec2 cell){
 // The march reads a hill only where it rises above 1 m, else the -3.5 floor. Each hill's weight times
 // its largest height (the noises stay below 1) bounds it, so a point no hill can lift past 1 m skips
 // terrain()'s five noises and gets the same floor it would have.
-float hillHeight(vec2 p){
+// terrain() is static, so src/render/world.ts caches it every frame in two small passes: `uHeight` holds
+// it on a camera-centred grid, and `uBase` holds every nearby tree cell's base. A cached height is
+// only an estimate between its texels, so it stands in for terrain() only as an upper bound,
+// `uHeightMargin` above the sample: a point that bound puts under 1 m gets the floor, a point more
+// than 2 m above it steps as if the hill reached the bound (a shorter step, never through the
+// ground), and any point nearer the ground calls terrain() itself, so every hit and every normal
+// still lands on the exact surface. Only the 148-step coast trace reads the bound (`bounded`): the
+// 36-step reflection march would run out of steps on the shorter ones and reflect sky for hillside.
+uniform sampler2D uHeight;
+uniform vec4 uHeightGrid;
+uniform float uHeightMargin;
+uniform sampler2D uBase;
+uniform vec3 uBaseGrid;
+float heightBound(vec2 p){
+ vec2 g=(p-uHeightGrid.xy)/uHeightGrid.zw;
+ float bound=1e4;
+ if(g.x>.002&&g.y>.002&&g.x<.998&&g.y<.998)bound=texture(uHeight,g).r+uHeightMargin;
+ return bound;
+}
+float hillHeight(vec2 p,float y,float bounded){
  vec2 di=(p-vec2(94.,-205.))/vec2(39.,48.);
  float h=-3.5;
- if(smoothstep(13.,155.,-p.x)*183.>1.||smoothstep(280.,670.,-p.y)*223.>1.||smoothstep(190.,430.,p.x)*125.>1.||exp(-dot(di,di))*28.>1.){float g=terrain(p);if(g>1.)h=g;}
+ if(smoothstep(13.,155.,-p.x)*183.>1.||smoothstep(280.,670.,-p.y)*223.>1.||smoothstep(190.,430.,p.x)*125.>1.||exp(-dot(di,di))*28.>1.){
+  float bound=bounded>.5?heightBound(p):1e4;
+  if(bound>1.){
+   if(y-bound>2.)h=bound;
+   else{float g=terrain(p);if(g>1.)h=g;}
+  }
+ }
  return h;
 }
-vec2 sceneAt(vec3 p,float th){
- vec2 res=vec2((p.y-hillHeight(p.xz))*.58,1.);
+// One texel per tree cell, centred on the camera's cell: r + g is the base (split so a half-float
+// target keeps it to a tenth of a millimetre) and b is 1 where the cell grows a tree.
+vec4 baseTable(vec2 vUv){
+ float th=treeBase(uBaseGrid.xy+floor(vUv*uBaseGrid.z));
+ float hi=floor(th*4.)/4.;
+ vec4 res=vec4(0.,0.,0.,1.);
+ if(th<1e3)res=vec4(hi,th-hi,1.,1.);
+ return res;
+}
+vec4 heightTable(vec2 vUv){return vec4(terrain(uHeightGrid.xy+vUv*uHeightGrid.zw),0.,0.,1.);}
+float cellBase(vec2 cell){
+ vec2 k=cell-uBaseGrid.xy;
+ float th=1e4;
+ if(k.x>=0.&&k.y>=0.&&k.x<uBaseGrid.z&&k.y<uBaseGrid.z){vec2 bu=(k+.5)/uBaseGrid.z;vec4 v=texture(uBase,bu);if(v.b>.5)th=v.r+v.g;}
+ else th=treeBase(cell);
+ return th;
+}
+vec2 sceneAt(vec3 p,float th,float bounded){
+ vec2 res=vec2((p.y-hillHeight(p.xz,p.y,bounded))*.58,1.);
  if(th<1e3){
   vec2 cell=treeCell(p.xz);float seed=hash12(cell+17.);vec2 tc=treeCentre(cell);
   vec3 q=p-vec3(tc.x,th,tc.y);float ht=6.+seed*13.;
@@ -98,7 +140,7 @@ vec2 sceneAt(vec3 p,float th){
  res=choose(res,vec2(capsule(p,vec3(-19.,3.9,-74.),vec3(-19.,13.,-74.),.045),4.));
  return res;
 }
-vec2 sceneMap(vec3 p){return sceneAt(p,treeBase(treeCell(p.xz)));}
+vec2 sceneMap(vec3 p){return sceneAt(p,cellBase(treeCell(p.xz)),0.);}
 vec2 trace(vec3 ro,vec3 rd,float limit){
  float t=.25,mat=-1.;
  vec2 lastCell=vec2(1e9);float th=1e4;
@@ -106,8 +148,8 @@ vec2 trace(vec3 ro,vec3 rd,float limit){
   if(t>limit||t>1850.)break;
   vec3 p=ro+rd*t;
   vec2 cell=treeCell(p.xz);
-  if(cell.x!=lastCell.x||cell.y!=lastCell.y){th=treeBase(cell);lastCell=cell;}
-  vec2 d=sceneAt(p,th);
+  if(cell.x!=lastCell.x||cell.y!=lastCell.y){th=cellBase(cell);lastCell=cell;}
+  vec2 d=sceneAt(p,th,1.);
   float eps=max(.007,t*.00048);
   if(d.x<eps){mat=d.y;break;}
   float stepD=max(.05,d.x*.87);
@@ -117,8 +159,8 @@ vec2 trace(vec3 ro,vec3 rd,float limit){
  return vec2(t,mat);
 }
 // The scene at a normal tap: its cell's tree base is the hit's own unless the tap crossed a cell edge.
-float tapScene(vec3 q,vec2 hitCell,float hitBase){vec2 c=treeCell(q.xz);float th=hitBase;if(c.x!=hitCell.x||c.y!=hitCell.y)th=treeBase(c);return sceneAt(q,th).x;}
-vec3 getNormal(vec3 p,float t){float e=max(.008,t*.00032);vec2 k=vec2(1.,-1.)*.5773;vec2 hc=treeCell(p.xz);float hb=treeBase(hc);return normalize(k.xyy*tapScene(p+k.xyy*e,hc,hb)+k.yyx*tapScene(p+k.yyx*e,hc,hb)+k.yxy*tapScene(p+k.yxy*e,hc,hb)+k.xxx*tapScene(p+k.xxx*e,hc,hb));}
+float tapScene(vec3 q,vec2 hitCell,float hitBase){vec2 c=treeCell(q.xz);float th=hitBase;if(c.x!=hitCell.x||c.y!=hitCell.y)th=cellBase(c);return sceneAt(q,th,0.).x;}
+vec3 getNormal(vec3 p,float t){float e=max(.008,t*.00032);vec2 k=vec2(1.,-1.)*.5773;vec2 hc=treeCell(p.xz);float hb=cellBase(hc);return normalize(k.xyy*tapScene(p+k.xyy*e,hc,hb)+k.yyx*tapScene(p+k.yyx*e,hc,hb)+k.yxy*tapScene(p+k.yxy*e,hc,hb)+k.xxx*tapScene(p+k.xxx*e,hc,hb));}
 vec3 baseColor(vec3 p,float mat,vec3 n){
  float grit=noise2(p.xz*4.3+p.y)*.2+noise2(p.xz*31.)*.09;
  // One value, one return. The transpiler turns a GLSL early return into a JavaScript return that
@@ -168,8 +210,8 @@ vec3 reflected(vec3 p,vec3 rd,vec3 sky){
    if(t>280.)break;
    vec3 q=p+rd*t;
    vec2 cell=treeCell(q.xz);
-   if(cell.x!=lastCell.x||cell.y!=lastCell.y){th=treeBase(cell);lastCell=cell;}
-   vec2 d=sceneAt(q,th);
+   if(cell.x!=lastCell.x||cell.y!=lastCell.y){th=cellBase(cell);lastCell=cell;}
+   vec2 d=sceneAt(q,th,0.);
    if(d.x<max(.03,t*.0016)){
     if(d.y>5.5&&d.y<6.5)res=uLampGlow*.75;
     else res=mix(baseColor(q,d.y,vec3(0,1,0))*.7,hazeColor(rd),1.-exp(-t*(.0015+uFog*.004)));
