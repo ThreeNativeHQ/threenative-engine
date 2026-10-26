@@ -154,7 +154,10 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     let oldDepth = dot(u.depthNumerator, previousClip) / dot(u.depthDenominator, previousClip);
     let validUV = all(historyUV >= vec2(0)) && all(historyUV <= vec2(1));
     let edge = farthest - closest > u.edgeDepthDiff;
-    let disocclusion = closest - oldDepth > u.depthThreshold;
+    // The depth test reprojects the previous depth through the camera only, so a mover driving away reads as disoccluded on
+    // every pixel. Upsampled, a pixel with its own complete motion keeps its history and the neighbourhood clip rejects a
+    // wrong one (UE 5.8.3 TemporalAA.usf:1715-1770 has no depth test).
+    let disocclusion = closest - oldDepth > u.depthThreshold && !(upsampling && motionSample.z == 3);
     let dynamic = motionSample.z != 1;
     var dynamicNeighborhood = dynamic;
     var completeMotion = motionSample.z > 0.5;

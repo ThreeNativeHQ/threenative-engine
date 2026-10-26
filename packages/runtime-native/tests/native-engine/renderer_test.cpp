@@ -1924,6 +1924,57 @@ void traaRejection() {
     CHECK(worst(sliding, true) > 0.03 && worst(sliding, true) < 0.1);
 }
 
+// A mover that drives away from a still camera (an AI kart ahead of the player) keeps its own history when the frame is
+// upsampled. Its velocity places the history, but the depth test reprojects the previous depth through the camera only, so
+// the surface it moved away reads as disoccluded on every pixel, every frame: upsampling then draws the mover from one
+// jittered 0.72 input (stair-stepped and blocky karts). UE 5.8.3's TemporalAA keeps a moving pixel's history and lets the
+// neighbourhood clip reject it (TemporalAA.usf:1715-1770), so the upsampled resolve skips the depth test on a moving pixel.
+void traaRecedingMover() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    constexpr int frames = 40;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial white;
+    white.color = {1, 1, 1};
+    DrawItem item;
+    item.key = item.id = 1; item.kind = MaterialKind::Basic;
+    item.positions = &ball->positions; item.indices = &ball->indices; item.material = &white;
+    const auto run = [&](float per) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        renderer.setPostGraph(temporalColour());
+        renderer.setRenderScale(0.72f);
+        uint32_t worst = 0;
+        uint64_t last = 0;
+        for (int frame = 0; frame <= frames; ++frame) {
+            item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 2.5f - per * float(frame), 1};
+            renderer.render({&item, 1}, slidingCamera(double(width) / height, 0), LightState{}, {0, 0, 0, 1});
+            for (int wait = 0; wait < 20; ++wait) {
+                renderer.poll();
+                events.drain();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto& status = renderer.temporalStatus();
+            if (status.pixels != 0 && status.countedFrame != last) {
+                last = status.countedFrame;
+                worst = std::max(worst, status.rejected);
+            }
+        }
+        CHECK(last != 0);
+        return worst;
+    };
+    const uint32_t still = run(0), receding = run(0.2f);
+    std::fprintf(stderr, "TN_TRAA_RECEDING_MOVER still=%u receding=%u\n", still, receding);
+    CHECK(still == 0);
+    // Only the rim the shrinking sphere uncovers loses its history, not the sphere.
+    CHECK(receding < 60);
+}
+
 // The same field seen by a camera that slides: the history is read where the camera's own motion moved it, so the bars keep
 // their contrast. A history read at the wrong place blends neighbouring bars into grey. The measure is the spread of the red
 // channel (its standard deviation) once the camera has slid for 40 frames, over the spread with the camera still.
@@ -2585,6 +2636,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_ghosting", traaGhosting},
              {"traa_camera_pan", traaCameraPan},
              {"traa_rejection", traaRejection},
+             {"traa_receding_mover", traaRecedingMover},
              {"output_screen_size", outputScreenSize},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_velocity_footprint", traaVelocityFootprint},
