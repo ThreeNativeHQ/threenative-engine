@@ -1998,9 +1998,10 @@ void traaResponsiveTransparent() {
 
 // A purple mover walking over striped green ground that writes its own motion, as Hop Garden's enemies cross wind grass.
 // At 0.72 the sample-distance box spans both sides of the rim and holds the grey blend of the two colours, so a grey ring
-// and trail stay (the judge's speckled halo, open in PRD-741). Measured: saturation lost against the mover's hard footprint
-// and the bare ground's resolve at the same scale: full 6718, 0.72 20004. A box from the samples within one output pixel
-// (9855) stair-stepped thin blades (traa_swaying_blades); this guard holds the open defect from growing.
+// stays (the judge's halo in PRD-741). Where the neighbourhood holds two motions and two hues, the box comes from bilinear
+// taps within half an output pixel instead. Measured: saturation lost against the mover's hard footprint and the bare
+// ground's resolve at the same scale: full 6718, 0.72 sample-distance box 20324, taps 12814. A box from the nearest
+// samples within one output pixel (9855) stair-stepped thin blades (traa_swaying_blades).
 void traaMoverOverDynamicGround() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -2062,7 +2063,7 @@ void traaMoverOverDynamicGround() {
     const double full = halo(1), upsampled = halo(0.72f);
     std::fprintf(stderr, "TN_TRAA_MOVER_HALO saturation lost on the mover's rim: full %.0f, upsampled %.0f\n", full, upsampled);
     CHECK(full > 0 && upsampled > 0);
-    CHECK(upsampled < 22000);
+    CHECK(upsampled < 15000);
 }
 
 // Where history is ignored (the first frame here; in play the ground a walking enemy uncovers), UE 5.8.3 widens the current

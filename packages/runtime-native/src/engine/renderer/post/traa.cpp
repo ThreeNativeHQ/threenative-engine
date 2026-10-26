@@ -254,6 +254,10 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         var weights = 0.0;
         var spread1 = vec4<f32>(0);
         var spread2 = vec4<f32>(0);
+        var motionLow = vec2(1e30);
+        var motionHigh = vec2(-1e30);
+        var hueLow = vec2(1e30);
+        var hueHigh = vec2(-1e30);
         for (var y = -1; y <= 1; y++) {
             for (var x = -1; x <= 1; x++) {
                 let samplePosition = centre + vec2<f32>(f32(x), f32(y));
@@ -268,6 +272,10 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
                 weights += weight;
                 let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
                 spread1 += neighborhood; spread2 += neighborhood * neighborhood;
+                let sampleMotion = textureLoad(velocity, pixel, 0).xy;
+                motionLow = min(motionLow, sampleMotion); motionHigh = max(motionHigh, sampleMotion);
+                let hue = neighborhood.yz / max(neighborhood.x, 0.02);
+                hueLow = min(hueLow, hue); hueHigh = max(hueHigh, hue);
                 if (highClamp && ((x == 0 && y == 0) || dot(distance, distance) < radius * radius)) {
                     low = min(low, neighborhood);
                     rgbLow = min(rgbLow, color); rgbHigh = max(rgbHigh, color);
@@ -287,6 +295,25 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
             low = min(mean - sigma, filtered);
             high = max(mean + sigma, filtered);
         }
+        // Where surfaces moving apart meet (a grass blade across a walking enemy, the enemy's rim), the box holds the
+        // colours the input shows within half an output pixel: bilinear taps at the pixel's corners. Taps blend across
+        // a real edge, so its antialiased mix stays inside; a pixel whose taps all land on the body clips the grey that
+        // history diffused from a crossing blade. Nearest samples within one output pixel are too few at 0.72 and
+        // stair-step edges; grass swaying as one keeps the sample-distance box and the detail it rebuilds.
+        let motionEdge = length((motionHigh - motionLow) * vec2(0.5, -0.5) * outputSize) > 0.5 && length(hueHigh - hueLow) > 0.8;
+        let filtered = vec4(rgbToNeighborhood * current.rgb, current.a);
+        var tapLow = filtered;
+        var tapHigh = filtered;
+        var tapRgbLow = current;
+        var tapRgbHigh = current;
+        for (var k = 0; k < 4; k++) {
+            let corner = vec2(f32(k & 1) - 0.5, f32(k >> 1) - 0.5) / outputSize;
+            let color = textureSampleLevel(beauty, linearSampler, currentUV + corner, 0.0);
+            let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
+            tapLow = min(tapLow, neighborhood); tapHigh = max(tapHigh, neighborhood);
+            tapRgbLow = min(tapRgbLow, color); tapRgbHigh = max(tapRgbHigh, color);
+        }
+        if (dynamicNeighborhood && motionEdge) { low = tapLow; high = tapHigh; rgbLow = tapRgbLow; rgbHigh = tapRgbHigh; }
     } else {
         current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
     }
