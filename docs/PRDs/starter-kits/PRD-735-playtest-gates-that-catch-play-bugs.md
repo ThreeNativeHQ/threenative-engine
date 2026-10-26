@@ -95,6 +95,8 @@ exploration step, no sharpness metric and no procedural-rig slip measurement exi
 
 ## Decisions
 
+- 2026-10-26 (lead, PR #574, measured): the virtual-display branch of the frame bound is not a verdict on an NVIDIA desktop. On the runner's private Xvfb, Chrome draws only 6-12 frames/s (88-97% `renderSkips`; the Wasm frame gate waits on late work-done callbacks), so the RTX 2080 stays in P5 (645-795 MHz) and the honest per-pass GPU sum reads 2-3x high: Clover Cup judged GPU p95 5.3-19.4 ms over 5 identical quiet runs, shooter 24.7-49.5 ms, tower-defense 41.2, rts 31.0, Lantern Vale 27.5 (golden path). Spikes scale every pass by the same factor, so it is the clock, not a wait. Hardware `performance` verdicts therefore run on a real 60 Hz display (`TN_PLAYTEST_HOST_DISPLAY=1`). Follow-up, not in this PRD: report the drawn-frame rate and fail closed (or mark the lane throttled) when most loop frames draw nothing, so the virtual lane cannot pass or fail a kit on a throttled present path.
+
 - 2026-10-24 (playtest-gates): `controls` ships for Lantern Vale only, where the owner found the
   dead controls; Hop Garden's moves already have one scenario each, and Clover Cup's chase camera
   takes no mouse look, so it gets `explore` alone.
