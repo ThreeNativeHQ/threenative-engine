@@ -14,18 +14,18 @@
 [2Ktransforming...[32m✓[0m 115 modules transformed.
 rendering chunks...
 computing gzip size...
-[2mdist/[0m[36mnative-smoke.js  [0m[33;1m7,615.22 kB[0m[2m │ gzip: 1,912.81 kB[0m
+[2mdist/[0m[36mnative-smoke.js  [0m[33;1m7,621.16 kB[0m[2m │ gzip: 1,914.44 kB[0m
 
-[32m✓ built in 973ms[39m
-Verified native-smoke.js (7615227 bytes), one file with no imports
+[32m✓ built in 539ms[39m
+Verified native-smoke.js (7621164 bytes), one file with no imports
 
  RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743
 
 
  Test Files  2 passed (2)
       Tests  4 passed (4)
-   Start at  14:03:55
-   Duration  211ms (transform 72ms, setup 0ms, import 97ms, tests 64ms, environment 0ms)
+   Start at  19:36:12
+   Duration  211ms (transform 74ms, setup 0ms, import 96ms, tests 65ms, environment 0ms)
 
 
 > @threenative/runtime-native@0.3.6 native:verify:desktop /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native
@@ -87,9 +87,9 @@ RED (negative control): a NULL encoder into wgpuCommandEncoderBeginRenderPass ki
 [V8] Version: 13.1.201.22
 [V8] Engine created successfully
 TN_COLD_START:{"segment":"compile_begin","atMs":0.000}
-TN_COLD_START:{"segment":"compile_complete","atMs":6.618}
-TN_COLD_START:{"segment":"execute_begin","atMs":6.632}
-TN_COLD_START:{"segment":"execute_complete","atMs":6.827}
+TN_COLD_START:{"segment":"compile_complete","atMs":2.888}
+TN_COLD_START:{"segment":"execute_begin","atMs":2.893}
+TN_COLD_START:{"segment":"execute_complete","atMs":3.038}
 PASS a NULL handle throws into V8 rather than returning undefined and letting the caller continue
 PASS the thrown message names the operation, not just an address
 PASS the thrown message carries the TN_WGPU_NULL_HANDLE marker a logcat filter finds
@@ -183,7 +183,7 @@ native lifecycle policy contract passed
 
 desktop stability proof passed: backgrounding pauses the loop and foregrounding resumes it
 desktop core gate: SDL video driver x11
-desktop core gate passed: 300 frames, 1280x720, /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-core-2026-10-25.png
+desktop core gate passed: 300 frames, 1280x720, /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-core-2026-10-26.png
 desktop physics actuation bindings proof passed
 desktop physics playtest proof passed: 14 assertions
 desktop physics query proof passed: {"clearHitCount":0,"maskedHitCount":0,"pointCount":1,"pointMaskedHitCount":0,"pointMissCount":0,"rayDistance":2,"rayNormal":[0,1,0],"rayPosition":[0,0,1],"shapeCount":1,"shapeMaskedHitCount":0,"shapeMissCount":0}
@@ -256,7 +256,7 @@ native contract lane passed: 51 of 51 targets
 > pnpm --workspace-root exec tsx scripts/generate-assertion-validators.ts --check && tsup --config tsup.config.ts && publint
 
 assertion validators: 31 kinds are current
-[34mCLI[39m Building entry: src/capture.ts, src/index.ts, src/protocol.ts, src/three/index.ts, src/runner/cli.ts, src/runner/index.ts
+[34mCLI[39m Building entry: src/capture.ts, src/index.ts, src/protocol.ts, src/runner/cli.ts, src/runner/index.ts, src/three/index.ts
 [34mCLI[39m Using tsconfig: tsconfig.json
 [34mCLI[39m tsup v8.5.1
 [34mCLI[39m Using tsup config: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/playtest/tsup.config.ts
@@ -267,22 +267,22 @@ assertion validators: 31 kinds are current
 "createHash" is imported from external module "crypto" but never used in "dist/runner/index.js".
 [34mDTS[39m Build start
 [32mESM[39m [1mdist/capture.js      [22m[32m6.99 KB[39m
-[32mESM[39m [1mdist/three/index.js  [22m[32m58.25 KB[39m
 [32mESM[39m [1mdist/protocol.js     [22m[32m2.12 KB[39m
-[32mESM[39m [1mdist/index.js        [22m[32m471.66 KB[39m
-[32mESM[39m [1mdist/runner/index.js [22m[32m857.93 KB[39m
-[32mESM[39m [1mdist/runner/cli.js   [22m[32m1017.85 KB[39m
-[32mESM[39m ⚡️ Build success in 1303ms
-[32mDTS[39m ⚡️ Build success in 6559ms
+[32mESM[39m [1mdist/three/index.js  [22m[32m58.25 KB[39m
+[32mESM[39m [1mdist/index.js        [22m[32m474.50 KB[39m
+[32mESM[39m [1mdist/runner/index.js [22m[32m860.78 KB[39m
+[32mESM[39m [1mdist/runner/cli.js   [22m[32m1021.70 KB[39m
+[32mESM[39m ⚡️ Build success in 1375ms
+[32mDTS[39m ⚡️ Build success in 6805ms
 [32mDTS[39m [1mdist/capture.d.ts              [22m[32m3.58 KB[39m
 [32mDTS[39m [1mdist/index.d.ts                [22m[32m5.97 KB[39m
 [32mDTS[39m [1mdist/runner/cli.d.ts           [22m[32m2.84 KB[39m
-[32mDTS[39m [1mdist/runner/index.d.ts         [22m[32m33.82 KB[39m
+[32mDTS[39m [1mdist/runner/index.d.ts         [22m[32m34.28 KB[39m
 [32mDTS[39m [1mdist/three/index.d.ts          [22m[32m10.79 KB[39m
-[32mDTS[39m [1mdist/protocol.d.ts             [22m[32m26.73 KB[39m
-[32mDTS[39m [1mdist/shared-BcXE6N7R.d.ts      [22m[32m20.10 KB[39m
-[32mDTS[39m [1mdist/diagnostics-icfq1Ewq.d.ts [22m[32m35.32 KB[39m
-[32mDTS[39m [1mdist/schema-base-Bt3FkeY3.d.ts [22m[32m30.68 KB[39m
+[32mDTS[39m [1mdist/protocol.d.ts             [22m[32m27.58 KB[39m
+[32mDTS[39m [1mdist/shared-B8pP7oBq.d.ts      [22m[32m20.10 KB[39m
+[32mDTS[39m [1mdist/diagnostics-BFrbJXLg.d.ts [22m[32m35.41 KB[39m
+[32mDTS[39m [1mdist/schema-base-ipEjmstl.d.ts [22m[32m30.90 KB[39m
 Running [1mpublint v0.3.22[22m for [1m@threenative/playtest[22m...
 Packing files with `pnpm pack`...
 Linting...
@@ -300,7 +300,7 @@ The XKEYBOARD keymap compiler (xkbcomp) reports:
 >                   Using last definition for conflicting fields
 Errors from xkbcomp are not fatal to the X server
 desktop loading playtest proof passed: 222720 startup loading pixels, 0 settled loading pixels
-desktop loading proof artifacts: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-loading-2026-10-25T21-04-56-660Z
+desktop loading proof artifacts: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-loading-2026-10-26T02-37-11-757Z
 _XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
 _XSERVTransMakeAllCOTSServerListeners: server already running
 _XSERVTransSocketUNIXCreateListener: ...SocketCreateListener() failed
@@ -313,23 +313,24 @@ The XKEYBOARD keymap compiler (xkbcomp) reports:
 > Warning:          Symbol map for key <FK24> redefined
 >                   Using last definition for conflicting fields
 Errors from xkbcomp are not fatal to the X server
-The XKEYBOARD keymap compiler (xkbcomp) reports:
-> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
->                   Using F23, ignoring XF86TouchpadOff
-> Warning:          Symbol map for key <FK23> redefined
->                   Using last definition for conflicting fields
-> Warning:          Symbol map for key <FK24> redefined
->                   Using last definition for conflicting fields
-Errors from xkbcomp are not fatal to the X server
-desktop UI frame gate passed on the in-frame contract: overlay attached after 1 report(s), 2 hit region(s), 20500 ms of page-startup window, game frame 743 -> 1063, ui phase p95 0.03 ms under 2 ms
+desktop UI frame gate passed on the in-frame contract: overlay attached after 1 report(s), 2 hit region(s), 20500 ms of page-startup window, game frame 743 -> 1063, ui phase p95 0.04 ms under 2 ms
 desktop UI frame gate: page frame 1280x720, counter 1, uploads 1; 72519 #7fffd4 pixel(s) in the game's own 1280x720 frame
-desktop UI frame proof artifacts: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-ui-frame-2026-10-25T21-05-41-879Z
+desktop UI frame proof artifacts: /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native/artifacts/desktop-ui-frame-2026-10-26T02-37-57-146Z
+The XKEYBOARD keymap compiler (xkbcomp) reports:
+> Warning:          Multiple symbols for level 1/group 1 on key <FK23>
+>                   Using F23, ignoring XF86TouchpadOff
+> Warning:          Symbol map for key <FK23> redefined
+>                   Using last definition for conflicting fields
+> Warning:          Symbol map for key <FK24> redefined
+>                   Using last definition for conflicting fields
+Errors from xkbcomp are not fatal to the X server
 
  RUN  v4.1.10 /home/joao/projects/threenative/threenative-engine/.claude/worktrees/prd-743/packages/runtime-native
 
 
  Test Files  1 passed (1)
       Tests  9 passed (9)
-   Start at  14:06:13
-   Duration  1.69s (transform 22ms, setup 0ms, import 33ms, tests 1.56s, environment 0ms)
+   Start at  19:38:28
+   Duration  2.25s (transform 24ms, setup 0ms, import 35ms, tests 2.12s, environment 0ms)
 
+EXIT 0

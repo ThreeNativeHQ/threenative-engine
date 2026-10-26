@@ -1,0 +1,23 @@
+{
+  "first": {
+    "adapter": "nvidia turing",
+    "errors": [
+      "Manifest: Line: 1, column: 1, Syntax error.",
+      "Manifest: Line: 1, column: 1, Syntax error."
+    ],
+    "label": "first",
+    "reveal": "TN_VALLEY_REVEAL generation=1 trees=2341 ferns=7600",
+    "revealMs": 39745.10000002384
+  },
+  "second": {
+    "adapter": "nvidia turing",
+    "errors": [
+      "Manifest: Line: 1, column: 1, Syntax error.",
+      "Manifest: Line: 1, column: 1, Syntax error."
+    ],
+    "label": "second",
+    "reveal": "TN_VALLEY_REVEAL generation=1 trees=2341 ferns=7600",
+    "revealMs": 8568.800000011921
+  },
+  "url": "http://localhost:5202/"
+}

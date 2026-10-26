@@ -1,0 +1,139 @@
+--- prd743-before/src/scenes/Valley.ts	2026-09-05 20:32:26.034936359 -0700
++++ prd743-after/src/scenes/Valley.ts	2026-10-25 17:54:45.294415488 -0700
+@@ -1,4 +1,5 @@
+ import {
++  type IAssetPrefetchProgress,
+   type IAssetLoader,
+   type ICtx,
+   Scene,
+@@ -44,7 +45,11 @@
+ import { type ILandmarkMaps, createBannerMaterial, createMaterials } from "../render/materials.js";
+ import { preparePost, setupPost } from "../render/postprocessing.js";
+ import { setupSkyHdri } from "../render/sky-hdri.js";
+-import { spawnWildwoodAnimals, type IWildwoodAnimals } from "../entities/animals/spawnWildwoodAnimals.js";
++import {
++  spawnWildwoodAnimals,
++  WILDWOOD_ANIMAL_MODELS,
++  type IWildwoodAnimals,
++} from "../entities/animals/spawnWildwoodAnimals.js";
+ import {
+   type ITerrainMaps,
+   LAKE,
+@@ -309,6 +314,8 @@
+    */
+   #trunks: readonly Vector3[] = [];
+   #detailSettled: Promise<void> | undefined;
++  /** The detail tier's download, started in `load` behind the critical files. */
++  #detailWarm: Promise<IAssetPrefetchProgress> | undefined;
+   #settleDetail: (() => void) | undefined;
+   #detailProgress = 0;
+ 
+@@ -382,6 +389,8 @@
+     // 45 s is the budget: long enough for a cold cache on this valley's ~70 GLBs, short enough
+     // that a tier which never settles costs seconds rather than a game that never starts. When it
+     // expires the player gets the critical world — thinner, and playable.
++    // PRD-743: the curtain still waits for the wood the spawn camera sees. A reveal on the
++    // critical tier alone showed a bare valley and then froze for seconds while the tier built.
+     ctx.startup.hold("wildwood:detail-tier", this.#detailSettled, 45_000);
+ 
+     // This synchronous game-owned view exists before the first `ctx.assets` request below.
+@@ -427,8 +436,12 @@
+     // The packaged proof asset. It earns its place on the trailhead waymarker rather than parked
+     // in the scene as a debug object, and the console marker below is what the desktop asset gate
+     // greps for — keep both.
++    // PRD-743: the curtain waits for the detail tier, so its bytes start downloading now, behind
++    // the critical files. A `now` request holds new `soon` starts, so the critical tier keeps the
++    // link first; the detail download then runs while the critical tier builds and compiles,
++    // which is time the link was idle before.
+     try {
+-      const [texture, model, ground, criticalTree] = await Promise.all([
++      const critical = Promise.all([
+         generation.critical.texture("native-proof.png"),
+         generation.critical.model<{ scene: Group }>("native-proof.glb"),
+         groundPromise,
+@@ -436,6 +449,10 @@
+           .model<{ scene: Group }>(`${FAB}/${CRITICAL_TREE}.glb`)
+           .then((tree) => extractTreeSpecies(CRITICAL_TREE, tree)),
+       ]);
++      const detailPaths = detailAssetPaths();
++      console.info(`TN_VALLEY_DETAIL_PREFETCH generation=${String(id)} files=${String(detailPaths.length)}`);
++      this.#detailWarm = ctx.assets.prefetch(detailPaths);
++      const [texture, model, ground, criticalTree] = await critical;
+       this.#ground = ground;
+       this.#criticalTree = criticalTree;
+       if (controls.animalsCritical) {
+@@ -629,6 +646,14 @@
+       console.info(
+         `TN_VALLEY_BUILT generation=${String(generation.id)} trees=1 ferns=0 grass=0 boulders=0 terrain=${String(terrain.triangles)}`,
+       );
++      // The tier starts at once and does not wait for the whole prefetch: each `model()` joins the
++      // in-flight download of its file at `now`, so a file parses the moment its bytes land.
++      void this.#detailWarm?.then((progress) => {
++        console.info(
++          `TN_VALLEY_DETAIL_PREFETCHED generation=${String(generation.id)} settled=${String(progress.settled)} requested=${String(progress.requested)} bytes=${String(progress.settledBytes)}`,
++        );
++        console.info(`TN_VALLEY_ASSET_CACHE ${JSON.stringify(ctx.assets.cache)}`);
++      });
+       void this.#loadDetail(ctx, generation, startupControls());
+     });
+ 
+@@ -984,6 +1009,24 @@
+         },
+       );
+       if (attachment.stopped || !live()) throw new StaleGenerationError(generation.id);
++      // The environment is attached, but its texture and the materials that sample it compile on
++      // the next rendered frames. Publish the settled counts only after the compile count has been
++      // stable for three frames, so a capture (or a player) never reads the dark frame between
++      // "detail loaded" and "environment lit". Bounded: a stuck compile cannot hold the state.
++      await new Promise<void>((resolve) => {
++        const started = performance.now();
++        let last = ctx.renderer.compileCount ?? 0;
++        let stable = 0;
++        const tick = (): void => {
++          const count = ctx.renderer.compileCount ?? 0;
++          stable = count === last ? stable + 1 : 0;
++          last = count;
++          if (stable >= 3 || performance.now() - started > 10_000) resolve();
++          else requestAnimationFrame(tick);
++        };
++        requestAnimationFrame(tick);
++      });
++      if (!live()) throw new StaleGenerationError(generation.id);
+       ctx.state.set({
+         boulderCount: foliage.boulderCount,
+         fernCount: foliage.fernCount,
+@@ -1104,6 +1147,34 @@
+ }
+ 
+ /**
++ * Every logical path the detail tier reads, in the order it starts. Built from the same constants
++ * the loaders use, so a species added to a niche is prefetched without a second list to update.
++ */
++function detailAssetPaths(): readonly string[] {
++  const paths = new Set<string>();
++  for (const niche of Object.values(FLORA)) {
++    for (const name of niche) paths.add(`${FAB}/${name}.glb`);
++  }
++  for (const name of LANDMARK_STONE.boughs) paths.add(`${FAB}/${name}.glb`);
++  for (const name of LANDMARK_STONE.stumps) paths.add(`${FAB}/${name}.glb`);
++  for (const file of [
++    "cliffrocks_diffuse.jpg",
++    "cliffrocks_normal.jpg",
++    "dead_tree_trunk_diffuse.jpg",
++    "dead_tree_trunk_normal.jpg",
++  ]) {
++    paths.add(`landscape/${file}`);
++  }
++  for (const model of WILDWOOD_ANIMAL_MODELS) {
++    paths.add(`fab/${ANIMAL_LISTING}/ue/Models/${model}`);
++  }
++  // The environment is a manifest texture read by RGBELoader, not `ctx.assets`; prefetching it
++  // lets the cache bridge serve it, so the deferred tier asks the network for nothing.
++  paths.add("hdri/kloofendal_48d_2k.hdr");
++  return [...paths];
++}
++
++/**
+  * Load every imported flora species, by niche.
+  *
+  * The GLB materials arrive as plain `MeshStandardMaterial`s; the maps and alpha thresholds travel

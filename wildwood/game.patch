@@ -1,0 +1,22 @@
+--- prd743-before/src/game.ts	2026-09-01 09:33:34.108051343 -0700
++++ prd743-after/src/game.ts	2026-10-25 14:28:12.834054376 -0700
+@@ -7,6 +7,11 @@
+ import { Valley } from "./scenes/Valley.js";
+ import type { GameState } from "./state.js";
+ 
++// `?nofill` is the harness seam that isolates prefetch from the post-reveal fill: a probe that
++// wants to count the deferred tier's own requests runs with it, and gameplay never sets it.
++const noFill =
++  typeof location !== "undefined" && new URLSearchParams(location.search).has("nofill");
++
+ // game.state is the single store: the fixed-step loop writes it, and React/playtests read it.
+ const game = defineGame<GameState, IPhysicsContext>({
+   input: {
+@@ -51,6 +56,7 @@
+     webgl2Factory: (canvas, options) =>
+       new WebGPURenderer({ canvas, forceWebGL: true, ...options }),
+   },
++  assets: { backgroundFill: !noFill },
+   scenes: { valley: Valley },
+   seed: 90210,
+   start: "valley",
