@@ -232,6 +232,7 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
     var high = vec4(-1e30);
     var rgbLow = vec4(1e30);
     var rgbHigh = vec4(-1e30);
+    var pixelWeight = 1.0;
     if (upsampling) {
         let centre = floor(currentUV * u.size);
         let upscale = outputSize / u.size;
@@ -241,6 +242,14 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         // input averaged, not its raw noise (grass behind a walking enemy speckled).
         var filterScale = select(0.0, 1.0, valid) - length((input.uv - historyUV) * outputSize) * max(upscale.x, upscale.y) * 0.1;
         filterScale = max(filterScale, 1 / max(upscale.x, upscale.y));
+        // UE 5.8.3 ComputePixelWeigth (TemporalAA.usf:1492-1523, 1687-1688, 2255): the output pixel takes the new frame in
+        // proportion to its nearest input sample's kernel weight, u^2 r(u^2 |dKO|^2), so it accumulates the samples that land
+        // on it, as full resolution does. A fixed weight blends the interpolated frame into every pixel: a purple enemy over
+        // green grass smeared into a grey, speckled rim two pixels wide.
+        let dKO = currentUV * u.size - (centre + 0.5);
+        let u2 = max(upscale.x, upscale.y) * max(upscale.x, upscale.y) * filterScale * filterScale;
+        let k2 = clamp(u2 * dot(dKO, dKO), 0.0, 1.0);
+        pixelWeight = u2 * ((0.905 * k2 - 1.9) * k2 + 1.0);
         var sum = vec4<f32>(0);
         var weights = 0.0;
         var spread1 = vec4<f32>(0);
@@ -290,6 +299,7 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         let weight = max(phase, 1 - phase);
         currentWeight += (1 - weight.x * weight.y) / 0.75 * 0.25;
     }
+    if (upsampling) { currentWeight *= pixelWeight; }
     if (upsampling && !completeMotion) { currentWeight = max(currentWeight, 0.25); }
     if (responsive) { currentWeight = max(currentWeight, 0.25); }
     currentWeight = select(1.0, clamp(currentWeight + motion, 0.0, 1.0), valid);
