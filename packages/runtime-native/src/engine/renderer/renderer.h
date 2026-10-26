@@ -1119,8 +1119,6 @@ private:
         Program* program = nullptr;
         std::vector<uint64_t> buffers;
         std::size_t instanceHash = 0;  // the instance matrices' contents: an instance moved since last frame when it differs
-        uint32_t stillFrames = UINT32_MAX;  // frames since the draw last moved; UINT32_MAX until it first moves
-        uint32_t longestHold = 0;           // the longest still run it has moved again after
         std::vector<uint8_t> uniforms;
     };
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.

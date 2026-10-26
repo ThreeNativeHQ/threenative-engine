@@ -3468,22 +3468,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             putNodes(frameUniforms_, offset, velocity.vertex, item.nodes, frameTime_, frameDelta_, lights);
             const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
             const bool instancesMoved = item.instanceMatrices && (!previous || previous->instanceHash != current.instanceHash);
-            const bool moved = previousModel != item.matrixWorld || item.nodes.positionNode || item.boneMatrices || instancesMoved;
-            // A mover animated at the fixed tick holds still on frames no tick lands on. Drawn static there, the resolve
-            // reads its dynamic history as departed (UE 5.8.3 TemporalAA.usf:2175-2190) and resets it, so the input grid
-            // shows on it every few frames. It stays dynamic, with zero motion, for as long as the longest still run it has
-            // moved again after. ponytail: runs past kMaxHold count as stops, so a mover that rests for good pays at most
-            // kMaxHold frames of velocity draws and one history reset, as in UE.
-            constexpr uint32_t kMaxHold = 30;
-            if (previous) {
-                const uint32_t still = previous->stillFrames;
-                current.longestHold = previous->longestHold;
-                if (moved && still != UINT32_MAX && still <= kMaxHold) current.longestHold = std::max(current.longestHold, still);
-                current.stillFrames = moved ? 0 : still == UINT32_MAX ? still : still + 1;
-            } else if (moved) {
-                current.stillFrames = 0;
-            }
-            const std::array<double, 1> dynamic{moved || current.stillFrames <= current.longestHold ? 1.0 : 0.0};
+            const std::array<double, 1> dynamic{
+                previousModel != item.matrixWorld || item.nodes.positionNode || item.boneMatrices || instancesMoved ? 1.0 : 0.0};
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, previousModel);

@@ -821,50 +821,6 @@ void traaSlidingVelocity(bool instanced) {
 void traaSkinnedVelocity() { traaSlidingVelocity(false); }
 void traaInstancedVelocity() { traaSlidingVelocity(true); }
 
-// A mover animated at the fixed tick holds still on the frames no tick lands on. Drawn static there, the resolve reads its
-// dynamic history as departed and resets it, so at 0.72 the input grid shows on the character every few frames. A draw
-// that moves every other frame stays dynamic (zero motion) on the still frame between moves.
-void traaIntermittentVelocity() {
-    mystral::webgpu::Context context;
-    CHECK(context.initializeHeadless());
-    CHECK(rendersPixels(context));
-    if (!rendersPixels(context)) return;
-    const auto ball = sphere(32, 16);
-    shader::StandardMaterial material;
-    const auto directory = std::filesystem::current_path() /
-        ("traa-intermittent-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    constexpr uint32_t width = 32, height = 24;
-    EventQueue events;
-    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
-    renderer.setSize(width, height);
-    renderer.setOutput(OutputState{});
-    renderer.setTraa(TraaOptions{});
-    auto* pass = renderer.traaDebugPass();
-    pass->enableDebugDump();
-    DrawItem item;
-    item.key = item.id = 1; item.kind = MaterialKind::Basic;
-    item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
-    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-    for (int frame = 0; frame <= 21; ++frame) {
-        item.matrixWorld[12] = 0.02 * double(frame / 2);  // moves on even frames, holds on odd ones
-        renderer.render({&item, 1}, slidingCamera(double(width) / height, 0), LightState{}, {0, 0, 0, 1});
-        tn::fixture::finishTraaDump(*pass, context.getInstance(), directory);
-    }
-    std::ifstream file(directory / "frame-21-velocity.bin", std::ios::binary);
-    CHECK(file.good());
-    std::vector<float> texels(size_t{width} * height * 4);
-    file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
-    size_t held = 0, moving = 0;
-    for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
-        if (texels[texel * 4 + 2] != 3) continue;
-        if (std::abs(texels[texel * 4]) < 1e-4f && std::abs(texels[texel * 4 + 1]) < 1e-4f) ++held;
-        else ++moving;
-    }
-    std::fprintf(stderr, "TN_TRAA_INTERMITTENT_VELOCITY held=%zu moving=%zu\n", held, moving);
-    CHECK(held > 50 && moving == 0);
-    std::filesystem::remove_all(directory);
-}
-
 // The shape a template gives the engine: the temporal effect is the colour convertToTexture hands the stages, and a stage
 // samples the velocity target the temporal pass draws. The effect has to be found inside the render texture (a TRAA the
 // engine never saw leaves the camera unjittered and the velocity undrawn) and a stage's `velocity` input has to be bound.
@@ -2531,7 +2487,6 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_camera_velocity", traaCameraVelocity},
              {"traa_skinned_velocity", traaSkinnedVelocity},
              {"traa_instanced_velocity", traaInstancedVelocity},
-             {"traa_intermittent_velocity", traaIntermittentVelocity},
              {"traa_deformation_velocity", traaDeformationVelocity},
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},
