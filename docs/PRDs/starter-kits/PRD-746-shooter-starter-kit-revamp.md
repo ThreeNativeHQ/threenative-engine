@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-746 — The shooter starter kit uses the engine it ships with
 
-**Status:** OPEN — planned 2026-10-26
+**Status:** PARTIAL — Phase 2 town merge landed; Phase 1 (engine velocity) in progress
 **Priority:** P1 — the owner called the shooter "an important starter kit" and saw a smeared weapon on 2026-10-26
 **Complexity:** 5 (MEDIUM) — one engine fix in `packages/runtime-native` (+2), the shooter kit's render and scene source (+2), its playtest budgets (+1)
 **Owner:** João
@@ -61,10 +61,8 @@ Each box records draws, triangles and CPU/GPU p95 of `performance.playtest.json`
 claim comes from a 60 Hz real display or is marked unverified.
 
 
-- [ ] The town merges through `mergeByMaterial` (clone `templates/platformer/src/scenes/Play.ts:394-415`) instead of the hand-rolled merge, and the unmerged solids join it. proof: draw count before and after.
-- [ ] The built town is `markStatic`, with `invalidateStatic` wherever a breakable or a decal writes into it. proof: a playtest scenario that breaks a crate and still passes.
-- [ ] Palms draw through `InstancedBatch` (clone `templates/runner/src/track.ts:68`). proof: draws and a judge frame.
-- [ ] `performance.playtest.json` bounds sit at the measured numbers plus a stated margin and carry `maxFrameMsP95`. proof: the scenario passes on the PR head.
+- [x] The town merges through `mergeByMaterial` (clone `templates/platformer/src/scenes/Play.ts:394-415`) instead of the hand-rolled merge, and the unmerged solids join it. proof: draw count before and after. Done 2026-10-26 (8b72dd182 + 1b311ba5a, from lane-shooter): `collapseTown` in `src/townBatch.ts`, called from `Play.ts` after `buildTown` (render source stays portable); solids, crates, barrels, decks, posts and the van join the merge, grouped by hittable, shadow flags and surface; the rocking boat stays out. Draws 375/432 -> 178/209 (2 runs each, headed WebGPU nvidia/turing, Xvfb), triangles 424.7k -> 426.9k (merged meshes are culled as one), CPU p95 14.5/14.8 -> 11.0/11.7 ms. Fresh Opus judge NEUTRAL on 7 poses, 2 runs per arm (`~/Downloads/pr574-prd746-shooter/`).
+- [ ] `performance.playtest.json` bounds sit at the measured numbers plus a stated margin. proof: the scenario passes on the PR head. Partial 2026-10-26 (0521fe7c4, 271b6af81): `maxDrawCalls` 1300 -> 320 (measured 184-276 across 5 runs, the maximum rises with host load), `maxTriangles` 500000 -> 470000 (measured 426k). The frame bound is the harness default 16.7 ms (`template.spec.ts:287` forbids a per-kit pin). Open: `maxFrameMsP95` reads GPU 25 ms on desktop Xvfb before and after (P5 clocks), so the pass needs a 60 Hz real display.
 
 ### Phase 3 — The look
 
@@ -78,6 +76,9 @@ claim comes from a 60 Hz real display or is marked unverified.
 - [ ] `TN_TEMPLATE_ONLY=shooter pnpm test:templates` passes and the scaffold hash is re-pinned. proof: the run on the PR head.
 
 ## Decisions
+
+- 2026-10-26 (lead, measured): `markStatic` on the town is dropped. Three alternating pairs gave CPU p95 11.4/11.4/14.5 ms with it against 11.2/11.2/11.8 without, so no gain; `?tnRenderListValidate=1` showed 0 divergences over 660 frames while it was on.
+- 2026-10-26 (lead, measured): palms stay on `InstancedMesh`. `InstancedBatch` was neutral (same draws and triangles) and calling it from `src/render/palm.ts` breaks the render portability check (`scripts/check-core-boundary.ts`); reverted in 390696886.
 
 - 2026-10-26: world streaming and virtual shadow maps stay out (see Context). Revisit when the map
   grows past one fitted shadow map (about 200 m).
