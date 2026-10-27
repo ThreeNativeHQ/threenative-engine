@@ -50,6 +50,58 @@
           }
         ]
       }
+    },
+    {
+      "id": 2,
+      "at": "2026-10-27T04:11:59.495Z",
+      "decision": "iteration",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [
+        "a4d5345ef: a cost bound failed beside foreign GPU processes names them and says rerun",
+        "42cbf971c + c5bc052e7: the scaffold's last line says start the agent in the project, and engine.mjs answers one engine tool call from the command line"
+      ],
+      "notes": "Cold build on tarballs built after row 1's fixes; same prompt and isolation as row 1 (claude -p, --setting-sources project, claudeMdExcludes). The agent changed no code: src/ is byte-identical to the kit. Gates rerun by the recorder: 22/22 green, performance gate cost p95 10.03 ms (GPU 10.03, CPU 6.5, 26 GPU samples) vs 16.7 ms on the stock high tier, load 14 with 3 foreign GPU processes. K2 presented p95 17.5 ms is the runner's private Xvfb cadence (the gate reports it as not gated), so it reads over budget whatever the game costs; the gate's cost p95 met the budget. Visual: fresh Opus judge CLOSE vs the reference, NEUTRAL vs row 1; wall-kick hides the hero behind the wall (both rows). K4 carried from row 1: Hero.ts unchanged.",
+      "metrics": {
+        "k1Tokens": 44483,
+        "k1WallMin": 7,
+        "k1Turns": 15,
+        "k2ScenarioPct": 100,
+        "k2PresentedP95Ms": 17.5,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": false,
+        "k2Visual": "CLOSE",
+        "k3Friction": 2,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 1,
+        "retries": 1
+      },
+      "retro": {
+        "worked": [
+          "`create-threenative --genre mario` picked the collectathon kit on the first call (L7)",
+          "no code edit: the agent ran check, build and all 22 playtests and stopped (15 turns, 6.6 min)",
+          "row 1's fixes landed: no performance chase; the scaffold line named the engine call (the agent needed no search)"
+        ],
+        "failed": [],
+        "frictions": [
+          {
+            "text": "--scenario with a quoted shell brace list failed TN_PLAYTEST_SCENARIO_UNREADABLE; the agent reran the whole suite (fixed in bac933cdc)",
+            "transcriptLine": 42
+          },
+          {
+            "text": "45 KB CLAUDE.md + AGENTS.md pair read, then AGENTS.md again (row 1's friction 3 recurred; fixed in 59d741907)",
+            "transcriptLine": 11
+          },
+          {
+            "text": "the kit AGENTS.md asks for a design plan and approval before changes; under a no-questions prompt the agent had to decide to skip it",
+            "transcriptLine": 86
+          }
+        ]
+      }
     }
   ]
 }
