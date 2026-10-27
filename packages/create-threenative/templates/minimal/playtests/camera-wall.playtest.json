@@ -6,8 +6,20 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "label": "walk-to-the-south-wall", "press": "ArrowDown", "holdTicks": 420, "release": true },
-    { "kind": "wait", "label": "against-the-wall", "waitTicks": 60, "release": true, "screenshot": "against-the-wall" }
+    {
+      "kind": "input",
+      "label": "walk-to-the-south-wall",
+      "press": "ArrowDown",
+      "holdTicks": 420,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "against-the-wall",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "against-the-wall"
+    }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },

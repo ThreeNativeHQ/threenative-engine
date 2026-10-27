@@ -1,18 +1,9 @@
 {
   "action-rpg": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "KeyF",
-        "KeyE",
-        "ShiftLeft"
-      ]
+      "actions": ["KeyF", "KeyE", "ShiftLeft"]
     },
     "restart": {
       "key": "KeyR",
@@ -61,27 +52,12 @@
   },
   "adventure": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "KeyJ",
-        "Space",
-        "ShiftLeft",
-        "KeyQ",
-        "Tab",
-        "KeyE"
-      ],
+      "actions": ["KeyJ", "Space", "ShiftLeft", "KeyQ", "Tab", "KeyE"],
       "pointer": true
     },
-    "feet": [
-      "footL",
-      "footR"
-    ],
+    "feet": ["footL", "footR"],
     "optOut": {
       "restart-resets": "a lost heart respawns at a checkpoint; there is no run to restart",
       "action-clip-completes": "slash and roll are procedural states with no clip; combat.playtest.json bounds the slash contact",
@@ -90,24 +66,12 @@
   },
   "collectathon": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "Space",
-        "ShiftLeft",
-        "KeyJ"
-      ],
+      "actions": ["Space", "ShiftLeft", "KeyJ"],
       "pointer": true
     },
-    "feet": [
-      "footL",
-      "footR"
-    ],
+    "feet": ["footL", "footR"],
     "optOut": {
       "restart-resets": "a lost heart respawns at a checkpoint; there is no run to restart",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
@@ -116,12 +80,7 @@
   },
   "kart": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "start": [
       {
         "label": "go",
@@ -135,10 +94,7 @@
       }
     ],
     "explore": {
-      "actions": [
-        "Space",
-        "KeyE"
-      ],
+      "actions": ["Space", "KeyE"],
       "pointer": true
     },
     "restart": {
@@ -164,12 +120,7 @@
   },
   "minimal": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "optOut": {
       "restart-resets": "no failure or end state to retry; the sandbox runs until the player leaves",
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
@@ -179,17 +130,9 @@
   },
   "platformer": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "Space",
-        "ShiftLeft"
-      ]
+      "actions": ["Space", "ShiftLeft"]
     },
     "restart": {
       "key": "KeyR",
@@ -219,12 +162,7 @@
   },
   "puzzle": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "restart": {
       "key": "KeyR",
       "resets": [
@@ -253,17 +191,9 @@
   },
   "racing": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "Space",
-        "ShiftLeft"
-      ]
+      "actions": ["Space", "ShiftLeft"]
     },
     "restart": {
       "key": "KeyR",
@@ -293,18 +223,9 @@
   },
   "rain": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "KeyE",
-        "KeyQ",
-        "ShiftLeft"
-      ],
+      "actions": ["KeyE", "KeyQ", "ShiftLeft"],
       "pointer": true
     },
     "optOut": {
@@ -316,21 +237,9 @@
   },
   "rts": {
     "subject": "camera.main",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "Space",
-        "KeyM",
-        "KeyH",
-        "KeyX",
-        "F2",
-        "Escape"
-      ],
+      "actions": ["Space", "KeyM", "KeyH", "KeyX", "F2", "Escape"],
       "pointer": true
     },
     "optOut": {
@@ -343,19 +252,11 @@
   },
   "runner": {
     "subject": "player",
-    "move": [
-      "KeyA",
-      "KeyD"
-    ],
+    "move": ["KeyA", "KeyD"],
     "explore": {
-      "actions": [
-        "Space"
-      ]
+      "actions": ["Space"]
     },
-    "feet": [
-      "ball_l",
-      "ball_r"
-    ],
+    "feet": ["ball_l", "ball_r"],
     "restart": {
       "key": "KeyR",
       "resets": [
@@ -383,12 +284,7 @@
   },
   "sailing": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "restart": {
       "key": "KeyR",
       "resets": [
@@ -417,20 +313,9 @@
   },
   "shooter": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "Space",
-        "KeyR",
-        "ShiftLeft",
-        "KeyF",
-        "ControlLeft"
-      ],
+      "actions": ["Space", "KeyR", "ShiftLeft", "KeyF", "ControlLeft"],
       "pointer": true
     },
     "restart": {
@@ -461,12 +346,7 @@
   },
   "snow": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "start": [
       {
         "kind": "input",
@@ -477,12 +357,7 @@
       }
     ],
     "explore": {
-      "actions": [
-        "ShiftLeft",
-        "KeyF",
-        "KeyG",
-        "KeyB"
-      ],
+      "actions": ["ShiftLeft", "KeyF", "KeyG", "KeyB"],
       "pointer": true
     },
     "optOut": {
@@ -494,18 +369,9 @@
   },
   "starter": {
     "subject": "player",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "explore": {
-      "actions": [
-        "Space",
-        "ShiftLeft",
-        "KeyG"
-      ]
+      "actions": ["Space", "ShiftLeft", "KeyG"]
     },
     "restart": {
       "key": "KeyR",
@@ -535,12 +401,7 @@
   },
   "tower-defense": {
     "subject": "camera.main",
-    "move": [
-      "KeyW",
-      "KeyA",
-      "KeyS",
-      "KeyD"
-    ],
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "start": [
       {
         "kind": "input",
@@ -551,17 +412,7 @@
       }
     ],
     "explore": {
-      "actions": [
-        "Digit1",
-        "Digit2",
-        "Digit3",
-        "Digit4",
-        "Space",
-        "KeyU",
-        "KeyX",
-        "KeyF",
-        "KeyG"
-      ],
+      "actions": ["Digit1", "Digit2", "Digit3", "Digit4", "Space", "KeyU", "KeyX", "KeyF", "KeyG"],
       "pointer": true
     },
     "restart": {

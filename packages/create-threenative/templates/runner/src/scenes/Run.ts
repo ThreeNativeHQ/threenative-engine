@@ -24,10 +24,10 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
+import { OBSTACLE_SIZE } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
-import { OBSTACLE_SIZE } from "../render/shapes.js";
 import { Track } from "../track.js";
 
 export type GameCtx = ICtx<GameState, RunnerPhysics>;

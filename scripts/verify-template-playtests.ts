@@ -4,7 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createProject, templateRoot } from "../packages/create-threenative/src/index.js";
-import { assertKitContractPassed, formatKitContractMatrix, runKitContract } from "./kit-contract.js";
+import {
+  assertKitContractPassed,
+  formatKitContractMatrix,
+  runKitContract,
+} from "./kit-contract.js";
 import { TEMPLATE_NAMES, inspectAllTemplates, packageLocalFramework } from "./visual-gate.js";
 
 /**
@@ -344,7 +348,9 @@ async function main(): Promise<void> {
     if (only !== undefined) {
       // The contract also covers the two kits golden-path boots, so those names are valid too.
       const known = process.env.TN_KIT_CONTRACT === "0" ? TEMPLATE_PLAYTEST_NAMES : TEMPLATE_NAMES;
-      const unknown = only.filter((name) => !known.includes(name as (typeof TEMPLATE_NAMES)[number]));
+      const unknown = only.filter(
+        (name) => !known.includes(name as (typeof TEMPLATE_NAMES)[number]),
+      );
       if (unknown.length > 0)
         throw new Error(`TN_TEMPLATE_ONLY names no such template: ${unknown.join(", ")}`);
     }
@@ -369,7 +375,10 @@ async function main(): Promise<void> {
       const results = await runKitContract(only ?? TEMPLATE_NAMES, root, packageSources, {}, rows);
       console.info(formatKitContractMatrix(results));
       if (ordinaryError === undefined) assertKitContractPassed(results);
-      else console.error(`kit contract failures: ${results.filter(({ status }) => status === "fail").length}`);
+      else
+        console.error(
+          `kit contract failures: ${results.filter(({ status }) => status === "fail").length}`,
+        );
     }
     if (ordinaryError !== undefined) throw ordinaryError;
   } finally {

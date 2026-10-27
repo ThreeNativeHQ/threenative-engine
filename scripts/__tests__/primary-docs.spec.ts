@@ -254,7 +254,7 @@ describe("primary documentation agrees with the shipped surfaces", () => {
     expect(
       scenarioCount,
       "platformer scenario count changed; update the Charter with the tree",
-    ).toBe(16);
+    ).toBe(19);
 
     const charter = await readRepoFile(path.join("docs", "architecture", "CHARTER.md"));
     const start = charter.indexOf("### 10a. Performance");

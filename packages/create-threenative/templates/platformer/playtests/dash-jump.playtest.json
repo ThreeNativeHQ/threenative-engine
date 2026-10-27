@@ -7,8 +7,20 @@
   "subject": "player",
   "steps": [
     { "kind": "input", "label": "run", "press": "ArrowRight", "holdTicks": 10, "release": false },
-    { "kind": "input", "label": "dash", "press": ["ArrowRight", "ShiftLeft"], "holdTicks": 4, "release": false },
-    { "kind": "input", "label": "jump-mid-dash", "press": ["ArrowRight", "Space"], "holdTicks": 6, "release": true },
+    {
+      "kind": "input",
+      "label": "dash",
+      "press": ["ArrowRight", "ShiftLeft"],
+      "holdTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "jump-mid-dash",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 6,
+      "release": true
+    },
     { "kind": "wait", "label": "airborne", "waitTicks": 40, "release": true }
   ],
   "assert": {

@@ -26,7 +26,11 @@ export interface IKitContractResult {
 
 export interface IKitContractDependencies {
   readonly entries?: Readonly<Record<string, IKitContractEntry>>;
-  readonly runScenario?: (kit: string, target: string, scenarioPath: string) => Promise<IScenarioOutcome>;
+  readonly runScenario?: (
+    kit: string,
+    target: string,
+    scenarioPath: string,
+  ) => Promise<IScenarioOutcome>;
   readonly scaffold?: (kit: string, target: string) => Promise<void>;
 }
 
@@ -37,7 +41,9 @@ export interface IScenarioOutcome {
 
 const CONTRACT_FILE = path.resolve(templateRoot(), "..", "template-playtests", "contract.json");
 
-export async function loadKitContract(file: string = CONTRACT_FILE): Promise<Record<string, IKitContractEntry>> {
+export async function loadKitContract(
+  file: string = CONTRACT_FILE,
+): Promise<Record<string, IKitContractEntry>> {
   return JSON.parse(await readFile(file, "utf8")) as Record<string, IKitContractEntry>;
 }
 
@@ -55,20 +61,32 @@ export async function runKitContract(
   const entries = dependencies.entries ?? (await loadKitContract());
   const plan = planKitContract(entries, kits);
   const unknown = (rows ?? []).filter((row) => !KIT_CONTRACT_ROW_IDS.includes(row));
-  if (unknown.length > 0) throw new Error(`TN_KIT_CONTRACT_ROWS names no such row: ${unknown.join(", ")}`);
+  if (unknown.length > 0)
+    throw new Error(`TN_KIT_CONTRACT_ROWS names no such row: ${unknown.join(", ")}`);
   const results: IKitContractResult[] = [];
   for (const kit of kits) {
-    const verdicts = plan.filter((verdict) => verdict.kit === kit && (rows === undefined || rows.includes(verdict.row)));
+    const verdicts = plan.filter(
+      (verdict) => verdict.kit === kit && (rows === undefined || rows.includes(verdict.row)),
+    );
     for (const verdict of verdicts) {
-      if (verdict.kind === "opt-out") results.push({ detail: verdict.reason, kit, row: verdict.row, status: "opt-out" });
+      if (verdict.kind === "opt-out")
+        results.push({ detail: verdict.reason, kit, row: verdict.row, status: "opt-out" });
     }
-    const runs = verdicts.filter((verdict): verdict is Extract<KitContractVerdict, { kind: "run" }> => verdict.kind === "run");
+    const runs = verdicts.filter(
+      (verdict): verdict is Extract<KitContractVerdict, { kind: "run" }> => verdict.kind === "run",
+    );
     if (runs.length === 0) continue;
     const target = path.join(root, kit);
     try {
       await (dependencies.scaffold ?? scaffoldKit(packageSources))(kit, target);
     } catch (error) {
-      for (const run of runs) results.push({ detail: `scaffold failed: ${errorDetail(error)}`, kit, row: run.row, status: "fail" });
+      for (const run of runs)
+        results.push({
+          detail: `scaffold failed: ${errorDetail(error)}`,
+          kit,
+          row: run.row,
+          status: "fail",
+        });
       continue;
     }
     const directory = path.join(target, "playtests", "contract");
@@ -78,7 +96,12 @@ export async function runKitContract(
       await writeFile(scenarioPath, JSON.stringify(run.scenario, null, 2));
       try {
         const outcome = await (dependencies.runScenario ?? runScenario)(kit, target, scenarioPath);
-        results.push({ ...(outcome.detail === undefined ? {} : { detail: outcome.detail }), kit, row: run.row, status: outcome.pass ? "pass" : "fail" });
+        results.push({
+          ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+          kit,
+          row: run.row,
+          status: outcome.pass ? "pass" : "fail",
+        });
       } catch (error) {
         results.push({ detail: errorDetail(error), kit, row: run.row, status: "fail" });
       }
@@ -100,7 +123,11 @@ function scaffoldKit(packageSources: Readonly<Record<string, string>>) {
 }
 
 /** One scenario, one browser run: a failure then names its row, and a runner error cannot hide the others. */
-async function runScenario(_kit: string, target: string, scenarioPath: string): Promise<IScenarioOutcome> {
+async function runScenario(
+  _kit: string,
+  target: string,
+  scenarioPath: string,
+): Promise<IScenarioOutcome> {
   const built = await access(path.join(target, "dist")).then(
     () => true,
     () => false,
@@ -136,7 +163,10 @@ export function summarizeReport(stdout: string, stderr: string): string | undefi
       };
       const failed = (report.assertions ?? []).filter(({ pass }) => !pass).map(({ id }) => id);
       const codes = [...new Set((report.diagnostics ?? []).map(({ code }) => code))];
-      const parts = [failed.length > 0 ? `failed ${failed.join(", ")}` : "", codes.length > 0 ? codes.join(" ") : ""];
+      const parts = [
+        failed.length > 0 ? `failed ${failed.join(", ")}` : "",
+        codes.length > 0 ? codes.join(" ") : "",
+      ];
       const text = parts.filter((part) => part !== "").join("; ");
       if (text !== "") return text;
     } catch {
@@ -149,7 +179,11 @@ export function summarizeReport(stdout: string, stderr: string): string | undefi
 
 export function formatKitContractMatrix(results: readonly IKitContractResult[]): string {
   const kits = [...new Set(results.map(({ kit }) => kit))];
-  const symbol: Record<KitContractStatus, string> = { fail: "FAIL", "opt-out": "opt-out", pass: "ok" };
+  const symbol: Record<KitContractStatus, string> = {
+    fail: "FAIL",
+    "opt-out": "opt-out",
+    pass: "ok",
+  };
   const lines = [`kit contract: ${KIT_CONTRACT_ROW_IDS.join(" | ")}`];
   for (const kit of kits) {
     const cells = KIT_CONTRACT_ROW_IDS.map((row) => {
@@ -166,7 +200,9 @@ export function formatKitContractMatrix(results: readonly IKitContractResult[]):
 export function assertKitContractPassed(results: readonly IKitContractResult[]): void {
   const failed = results.filter(({ status }) => status === "fail");
   if (failed.length > 0)
-    throw new Error(`TN_KIT_CONTRACT_FAILED: ${failed.map(({ kit, row }) => `${kit}/${row}`).join(", ")}`);
+    throw new Error(
+      `TN_KIT_CONTRACT_FAILED: ${failed.map(({ kit, row }) => `${kit}/${row}`).join(", ")}`,
+    );
 }
 
 interface IExecResult {
@@ -175,16 +211,29 @@ interface IExecResult {
   readonly stdout: string;
 }
 
-function exec(command: string, args: readonly string[], cwd: string, capture = false): Promise<IExecResult> {
+function exec(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  capture = false,
+): Promise<IExecResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, [...args], { cwd, stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit" });
+    const child = spawn(command, [...args], {
+      cwd,
+      stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
+    });
     let stdout = "";
     let stderr = "";
-    child.stdout?.on("data", (chunk) => (stdout += String(chunk)));
-    child.stderr?.on("data", (chunk) => (stderr += String(chunk)));
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
     child.once("error", reject);
     child.once("exit", (code) => {
-      if (!capture && code !== 0) reject(new Error(`${command} ${args.join(" ")} exited ${code ?? "unknown"}.`));
+      if (!capture && code !== 0)
+        reject(new Error(`${command} ${args.join(" ")} exited ${code ?? "unknown"}.`));
       else resolve({ code: code ?? 1, stderr, stdout });
     });
   });

@@ -37,19 +37,14 @@
     {
       "kind": "input",
       "label": "over-line",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 150,
       "release": false
     },
     {
       "kind": "input",
       "label": "autopilot-on",
-      "press": [
-        "KeyW",
-        "KeyP"
-      ],
+      "press": ["KeyW", "KeyP"],
       "holdTicks": 2,
       "release": true
     },
@@ -66,18 +61,14 @@
     {
       "kind": "input",
       "label": "autopilot-off",
-      "press": [
-        "KeyP"
-      ],
+      "press": ["KeyP"],
       "holdTicks": 2,
       "release": true
     },
     {
       "kind": "input",
       "label": "reverse",
-      "press": [
-        "KeyS"
-      ],
+      "press": ["KeyS"],
       "holdTicks": 60,
       "release": false
     },
@@ -101,9 +92,7 @@
     {
       "kind": "input",
       "label": "forward",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 60,
       "release": false
     },
