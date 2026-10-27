@@ -435,8 +435,10 @@ inline double structureStamp(Object3D& root) {
  * One frame's projection decision for `scene`, as a fresh SceneRenderProjection reconcile makes it.
  * `skinnedVerdictsOnly` records a per-object verdict for rigs alone: the renderer asks no other object, and
  * a verdict per cube costs a map node apiece. Every count and reason is the same either way.
+ * `drawnOnly` leaves hidden subtrees out, as the renderer draws none of them: core's auto batch keeps
+ * 8,300 hidden sources in the shooter town, and grouping them cost 25 ms every rescan.
  */
-inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdictsOnly = false) {
+inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdictsOnly = false, bool drawnOnly = false) {
     using namespace detail;
     Decision d;
     std::string blocked;
@@ -465,6 +467,7 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
     while (!stack.empty()) {
         Object3D* object = stack.back();
         stack.pop_back();
+        if (drawnOnly && !object->visible()) continue;
         if (skinnedVerdictsOnly && object->skipsGpuJointSubtree()) {
             ++Object3D::gpuProjectionVisits_;
             continue;

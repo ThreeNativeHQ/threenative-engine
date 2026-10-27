@@ -1002,7 +1002,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         for (std::size_t i = 0; !due && i < batchRigs_.size(); ++i)
             due = projection::detail::rigLaneKey(*batchRigs_[i].first) != batchRigs_[i].second;
         if (due) {
-            batchDecision_ = projection::decide(scene, 200, true);
+            batchDecision_ = projection::decide(scene, 200, true, true);
             ++batchDecisions_;
             batchScene_ = &scene;
             batchHierarchy_ = Object3D::hierarchyVersion();

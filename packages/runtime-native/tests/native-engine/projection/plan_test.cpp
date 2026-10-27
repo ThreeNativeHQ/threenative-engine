@@ -144,6 +144,41 @@ int memberWhoseGeometryMovesLeaves() {
     return failures;
 }
 
+// The renderer decides on what it draws: core's auto batch hides the sources it merged (8,300 in the
+// shooter town), and grouping them on every rescan cost 25 ms. A hidden subtree or mesh counts for
+// nothing; the visible part decides exactly as it would alone.
+int hiddenSubtreesAreNoDraws() {
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto drawn = std::make_shared<Scene>();
+    auto alone = std::make_shared<Scene>();
+    std::vector<std::shared_ptr<Object3D>> keep;
+    for (int i = 0; i < 40; ++i)
+        for (Scene* scene : {drawn.get(), alone.get()}) {
+            keep.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+            scene->add(*keep.back());
+        }
+    auto hidden = std::make_shared<Group>();
+    hidden->setVisible(false);
+    drawn->add(*hidden);
+    for (int i = 0; i < 300; ++i) {
+        keep.push_back(std::make_shared<Mesh>(makeSphereGeometry(0.5, 8, 6), material));
+        hidden->add(*keep.back());
+    }
+    auto lone = std::make_shared<Mesh>(makeSphereGeometry(0.5, 8, 6), material);
+    lone->setVisible(false);
+    drawn->add(*lone);
+    drawn->updateMatrixWorld(true);
+    alone->updateMatrixWorld(true);
+    ++projection::detail::uniformEpoch();
+    const projection::Decision d = projection::decide(*drawn, 8, true, true);
+    const projection::Decision expected = projection::decide(*alone, 8, true);
+    const bool same = d.sourceRenderables == 40 && d.sourceRenderables == expected.sourceRenderables &&
+                      d.projecting == expected.projecting && d.projectedObjects == expected.projectedObjects &&
+                      d.instancedBatches == expected.instancedBatches && d.exact == expected.exact;
+    if (!same) std::printf("  hidden subtrees: %d sources counted, %d expected\n", d.sourceRenderables, expected.sourceRenderables);
+    return same ? 0 : 1;
+}
+
 } // namespace
 
 int main() {
@@ -225,7 +260,8 @@ int main() {
     }
     std::printf("projection plan: %d scenes, %d differ\n", scenes, differ);
     const int moved = memberWhoseGeometryMovesLeaves();
-    if (scenes == 0 || differ != 0 || moved != 0) {
+    const int hidden = hiddenSubtreesAreNoDraws();
+    if (scenes == 0 || differ != 0 || moved != 0 || hidden != 0) {
         std::printf("FAIL\n");
         return 1;
     }
