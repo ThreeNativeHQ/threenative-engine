@@ -509,7 +509,8 @@
         "@threenative/ui#UiLayer": "export function UiLayer( { … }",
         "@threenative/ui#useGameState": "export function useGameState<TState extends Record<string, unknown>, TPhysics, TSelected>( game: IGame<TState, TPhysics>, selector: GameSelector<TState, TSelected>, ): TSelected;",
         "@threenative/ui#useUiIntent": "export function useUiIntent(): (intent: string, payload?: unknown) => void { … }",
-        "@threenative/ui#useUiState": "export function useUiState<TState extends object>(): TState | undefined;"
+        "@threenative/ui#useUiState": "export function useUiState<TState extends object>(): TState | undefined;",
+        "@threenative/ui#useUiStateDuringStartup": "export function useUiStateDuringStartup<TState extends object>(options: { … }"
       }
     },
     "create-threenative": {
