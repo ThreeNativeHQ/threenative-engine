@@ -116,6 +116,14 @@ export function createVaultRoom(): IVaultRoom {
       : { x: span.sign * (VAULT.halfX + VAULT.wallThickness / 2), z: 0 };
     const size = (width: number, depth: number) => (alongX ? [width, depth] : [depth, width]);
 
+    // The wall nearest the lens is cut down to a kerb. The camera looks over it, so a full wall
+    // stands between the lens and the warden (a small figure, chest at about 0.45 m) whenever she
+    // walks along it, and it hides any crate shoved against it: `camera-sees-subject` found that.
+    // The portrait loses only the band of plaster along the bottom of the frame.
+    const nearest = span.axis === "z" && span.sign === 1;
+    const plasterHeight = nearest ? 0.34 : 1.14;
+    const railHeight = nearest ? 0 : 0.34;
+
     const [plinthW, plinthD] = size(span.length, VAULT.wallThickness);
     const plinth = block(plinthW as number, 0.46, plinthD as number, wallBaseMaterial, {
       radius: 0.06,
@@ -124,16 +132,18 @@ export function createVaultRoom(): IVaultRoom {
     root.add(plinth);
 
     const [plasterW, plasterD] = size(span.length, VAULT.wallThickness * 0.86);
-    const plaster = block(plasterW as number, 1.14, plasterD as number, wallMaterial, {
+    const plaster = block(plasterW as number, plasterHeight, plasterD as number, wallMaterial, {
       radius: 0.05,
     });
-    plaster.position.set(centre.x, 1.03, centre.z);
+    plaster.position.set(centre.x, 0.46 + plasterHeight / 2, centre.z);
     root.add(plaster);
 
-    const [railW, railD] = size(span.length, VAULT.wallThickness * 1.16);
-    const rail = block(railW as number, 0.34, railD as number, timberMaterial, { radius: 0.07 });
-    rail.position.set(centre.x, 1.77, centre.z);
-    root.add(rail);
+    if (railHeight > 0) {
+      const [railW, railD] = size(span.length, VAULT.wallThickness * 1.16);
+      const rail = block(railW as number, railHeight, railD as number, timberMaterial, { radius: 0.07 });
+      rail.position.set(centre.x, 0.46 + plasterHeight + railHeight / 2, centre.z);
+      root.add(rail);
+    }
 
     solids.push({
       depth: alongX ? VAULT.wallThickness : outerZ * 2,

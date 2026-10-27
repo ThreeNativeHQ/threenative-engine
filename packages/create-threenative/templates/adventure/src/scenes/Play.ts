@@ -13,6 +13,7 @@ import {
   type Group,
   type InstancedMesh,
   MathUtils,
+  type Object3D,
   type PerspectiveCamera,
   Vector3,
 } from "three";
@@ -410,12 +411,31 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.add(vessel);
 
     // The camera arm and the sun read the solved body, so they run after physics has moved it.
+    // Drawn solids the physics world does not hold whole (a giant's roots and limbs, a boulder): the
+    // arm stops in front of them too, so the lens never ends up inside one.
+    const lens: Object3D[] = [];
+    ctx.scene.traverse((object) => {
+      if (object.userData.lens === true) lens.push(object);
+    });
+    const lensDirection = new Vector3();
     const rig = setupCamera(
       camera,
-      (from, to) =>
-        from.distanceToSquared(to) < 1e-8
-          ? undefined
-          : ctx.physics.directSpaceState.intersectRay({ collisionMask: LAYER.world, from, to }),
+      (from, to) => {
+        if (from.distanceToSquared(to) < 1e-8) return undefined;
+        const world = ctx.physics.directSpaceState.intersectRay({
+          collisionMask: LAYER.world,
+          from,
+          to,
+        });
+        const far = world?.distance ?? from.distanceTo(to);
+        const drawn = ctx.raycast({
+          direction: lensDirection.subVectors(to, from).normalize(),
+          far,
+          origin: from,
+          targets: lens,
+        });
+        return drawn === undefined ? world : { distance: drawn.distance, normal: { y: 0 } };
+      },
       // Outdoors the lens stays over the vale's ground; the Hollow's rooms are flat and roofed.
       (x, z) => (indoors ? Number.NEGATIVE_INFINITY : valeHeight(x, z)),
     );

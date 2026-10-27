@@ -24,7 +24,7 @@ import { Walker, type WalkerKind } from "../entities/Walker.js";
 import { Checkpoints } from "../level/Checkpoints.js";
 import { STAGE_SPAWN, buildStage, makeRng } from "../level/Stage.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import { followCamera, setupCamera } from "../render/camera.js";
+import { type LensObstruction, followCamera, setupCamera } from "../render/camera.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -265,8 +265,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     // The camera and the sun both read the solved body, so they run in `afterPhysics` where the
     // physics step has already moved it and this frame has not drawn yet.
+    const lensObstruction: LensObstruction = (origin, direction, far) =>
+      ctx.raycast({ direction, far, origin, targets: stage.group })?.distance;
     afterPhysics(ctx, (dt) => {
-      followCamera(camera, fox.mesh.position, fox.body.velocity.x, dt);
+      followCamera(camera, fox.mesh.position, fox.body.velocity.x, dt, lensObstruction);
       lighting.follow(fox.mesh.position);
     });
 
