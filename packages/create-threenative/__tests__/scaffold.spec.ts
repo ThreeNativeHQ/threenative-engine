@@ -28,7 +28,10 @@ import {
   discoverKitManifests,
   discoverTemplateNames,
   parseArgs,
+  projectMcpServers,
+  referenceDigest,
   scaffoldCompletionMessage,
+  scaffoldNextSteps,
 } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -596,6 +599,104 @@ describe("create-threenative", () => {
       );
       expect(source).toContain("scaffoldCompletionMessage(discoverKitManifests())");
       expect(source).not.toContain("Templates: minimal (smallest)");
+      // Kit-loop rows 1-6 (PRD-750): a cold agent scaffolds from its session folder, so the host
+      // never loads the game's .mcp.json (a probe that wrote it mid-session got NO_TOOL) and five
+      // builds made zero engine calls. The last line hands it every server through mcp/call.mjs.
+      const servers = [
+        "threenative-assets",
+        "threenative-sculpt",
+        "threenative-engine",
+        "threenative-blender",
+      ];
+      const next = scaffoldNextSteps("/w/mario64", true, servers);
+      expect(next).toMatch(/\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u);
+      expect(next).toContain(`.mcp.json (${servers.join(", ")})`);
+      expect(next).toContain(
+        "`node /w/mario64/node_modules/@threenative/core/mcp/call.mjs <server>` lists its tools",
+      );
+      expect(next).toContain(
+        "node /w/mario64/node_modules/@threenative/core/mcp/call.mjs threenative-engine engine_search_capabilities",
+      );
+      expect(next).toMatch(
+        /Read AGENTS\.md once; CLAUDE\.md is its copy, and the skills it names are \.claude\/skills/u,
+      );
+      expect(scaffoldNextSteps("/w/mario64", false)).toMatch(/pnpm install[\s\S]*\.mcp\.json/u);
+      expect(projectMcpServers(root)).toEqual([]);
+      // Sandboxes 4-6 (2026-10-27): no reference call even with a ready command, and a printed title
+      // list was read and none opened. The scaffold runs the search and prints the pinned sources.
+      const calls: string[][] = [];
+      const hit = (id: string, kind: string) => ({
+        game: "sm64",
+        id,
+        kind,
+        name: id,
+        summary: `${id} summary`,
+        title: "Super Mario 64",
+      });
+      const detail = (id: string) =>
+        id === "a"
+          ? {
+              repo: "https://github.com/n64decomp/sm64",
+              sha: "9921382a68",
+              node: {
+                purpose: "Mario actions",
+                functions: [
+                  { name: "set_mario_action", path: "src/game/mario.c", lines: [979, 1013] },
+                ],
+              },
+              children: [{ id: "wall-kick" }],
+            }
+          : {
+              repo: "https://github.com/n64decomp/sm64",
+              sha: "9921382a68",
+              card: {
+                behavior: `${id} behavior`,
+                constants: [
+                  {
+                    name: "kick speed",
+                    value: 24,
+                    unit: "units/frame",
+                    source: "src/game/mario_actions_airborne.c:12",
+                  },
+                ],
+                sources: [{ path: "src/game/mario_actions_airborne.c", line: 40 }],
+              },
+            };
+      const digest = referenceDigest("/w/mario64", "mario", (args) => {
+        calls.push(args);
+        if (args[1] === "engine_reference_detail")
+          return JSON.stringify(detail(JSON.parse(args[2] ?? "{}").id));
+        return JSON.stringify({
+          results: [hit("a", "node"), ...["b", "c", "d", "e", "f"].map((id) => hit(id, "card"))],
+        });
+      });
+      const engine = "/w/mario64/node_modules/@threenative/core/mcp/engine.mjs";
+      expect(calls).toEqual([
+        [engine, "engine_search_references", '{"situation":"mario"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"a","kind":"node"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"b","kind":"card"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"c","kind":"card"}'],
+      ]);
+      expect(digest).toContain('Mechanics references for "mario"');
+      expect(digest).toContain(
+        "- Super Mario 64 / a: a summary\n  https://github.com/n64decomp/sm64@9921382: Mario actions\n  set_mario_action src/game/mario.c:979\n  children: wall-kick\n",
+      );
+      expect(digest).toContain(
+        "- Super Mario 64 / b: b summary\n  https://github.com/n64decomp/sm64@9921382: b behavior\n  kick speed = 24 units/frame (src/game/mario_actions_airborne.c:12)\n  sources: src/game/mario_actions_airborne.c:40\n",
+      );
+      expect(digest).toContain("- Super Mario 64 / d: d summary\n- Super Mario 64 / e:");
+      expect(digest).not.toContain("- Super Mario 64 / f:");
+      expect(digest).toContain(
+        `node /w/mario64/node_modules/@threenative/core/mcp/call.mjs threenative-engine engine_search_references '{"situation":"<mechanic>"}'`,
+      );
+      expect(
+        referenceDigest("/w/mario64", "mario", () => {
+          throw new Error("TN_REFERENCES_OFFLINE: fetch failed\nstack");
+        }),
+      ).toBe("References unavailable: TN_REFERENCES_OFFLINE: fetch failed\n");
+      expect(referenceDigest("/w/x", "zzz", () => '{"results":[]}')).toBe(
+        'No mechanics references match "zzz".\n',
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }
