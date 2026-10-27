@@ -85,7 +85,8 @@ export class PlaytestBridgeError extends Error {
 
 export interface IPlaytestBridgeClient {
   /** `render: true` draws a world frame per tick; the default advances without drawing. Browser bridges only. */
-  advance(ticks: number, options?: { render?: boolean }): Promise<void>;
+  /** Resolves with the ticks the game reported running, which a live clock can put above `ticks`. */
+  advance(ticks: number, options?: { render?: boolean }): Promise<number | undefined>;
   applySetup(request: IPlaytestSetupRequest): Promise<void>;
   close(): Promise<void>;
   drainEvents(limit?: number): Promise<import("../protocol.js").JsonValue[]>;
@@ -233,7 +234,8 @@ export async function connectPlaytestBridgeTransport(
   return {
     advance: async (ticks, options) => {
       // Scaled by the work requested, not fixed. See PLAYTEST_ADVANCE_TICK_BUDGET_MS.
-      await transport.call("advance", ticks, advanceTimeoutMs(ticks), options);
+      const result = await transport.call<{ ticks?: unknown } | undefined>("advance", ticks, advanceTimeoutMs(ticks), options);
+      return typeof result?.ticks === "number" ? result.ticks : undefined;
     },
     applySetup: async (request) => {
       assertBoundedPayload(request);
