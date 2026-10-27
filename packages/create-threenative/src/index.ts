@@ -125,7 +125,7 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * hand let one fall a revision behind without anything failing. A file belongs here only when a
  * kit editing it would be a mistake rather than a choice.
  */
-export const SHARED_RENDER_SOURCES: readonly string[] = [];
+export const SHARED_RENDER_SOURCES: readonly string[] = ["src/render/kitExposure.ts"];
 
 export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {
   const name = path.basename(relativePath);

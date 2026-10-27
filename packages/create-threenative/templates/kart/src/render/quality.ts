@@ -4,8 +4,9 @@
 // tone curve, metered auto exposure, local exposure, Unreal's bloom and vignette, contact
 // occlusion and temporal anti-aliasing on `high`. The engine's `qualityPreset(tier)` is that look
 // per tier; this file's `qualityPreset` only adds what this game changes on top of it, each change with its reason and its
-// cost. It starts empty on purpose: no tone curve, exposure or meter is pinned here, so the game
-// looks like the engine default until you decide otherwise.
+// cost. It starts empty on purpose: no tone curve or exposure is pinned here, so the game looks
+// like the engine default until you decide otherwise. The meter is the starter kits' shared one
+// (`kitExposure.ts`: core's Unreal meter at 0 EV).
 //
 // Tiers: `high` (a desktop GPU, Unreal's Epic), `medium` (integrated GPUs and high-end phones)
 // and `low` (other phones and software adapters). A budget breach drops `renderChainTier`, never
@@ -16,6 +17,7 @@ import {
   qualityPreset as engineQualityPreset,
   qualityTiers,
 } from "@threenative/core";
+import { kitExposureSettings } from "./kitExposure.js";
 
 export type { QualityTier };
 
@@ -47,5 +49,5 @@ export function resolveQualityTier(
 
 /** The engine's look for `tier`, with this game's overrides on top. */
 export function qualityPreset(tier: QualityTier): IWorldEnvironmentOptions {
-  return { ...engineQualityPreset(tier), ...OVERRIDES[tier] };
+  return { ...engineQualityPreset(tier), exposurePolicy: kitExposureSettings, ...OVERRIDES[tier] };
 }
