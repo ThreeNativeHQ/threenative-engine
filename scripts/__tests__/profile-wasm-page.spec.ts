@@ -47,6 +47,8 @@ vi.mock("@playwright/test", () => ({
         evaluate: async (fn: (() => unknown) | string) => {
           if (typeof fn === "string") return state.presented.shift() ?? 0;
           if (fn.toString().includes("requestAdapter")) return "hardware";
+          if (fn.toString().includes("getCurrentTexture"))
+            return Array.from({ length: 300 }, () => 10);
           if (fn.toString().includes("requestAnimationFrame"))
             return Array.from({ length: 600 }, (_, i) => (i === 599 ? 40 : 10));
           vi.stubGlobal("performance", {
@@ -113,6 +115,20 @@ describe("profile:wasm-page scorecard", () => {
     const worker = await measure("http://test", options(["--url", "http://test"]));
     expect(worker.gameThread).toBe("worker");
     expect(worker.frame.p50).toBe(20);
+  });
+  it("times presented frames by the game's getCurrentTexture calls, the same divisor in both arms (PRD-752)", async () => {
+    // A worker's requestAnimationFrame does not follow what the game presents.
+    const game = {
+      evaluate: async (fn: (() => unknown) | string) =>
+        typeof fn === "string"
+          ? "object"
+          : fn.toString().includes("getCurrentTexture")
+            ? Array.from({ length: 300 }, () => 16)
+            : Array.from({ length: 600 }, () => 0.1),
+    };
+    state.workers = [game];
+    const run = await measure("http://test", options(["--url", "http://test"]));
+    expect(run.presented.p50).toBe(16);
   });
   it.each(["wasmMemoryBytes", "jsHeapUsedBytes"])(
     "fails closed when %s is unavailable",

@@ -171,8 +171,10 @@ const FRAME_SAMPLES = 601;
  */
 async function gameThread(page: Page) {
   for (const worker of page.workers()) {
-    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform")) === "object")
-      return { kind: "worker" as const, realm: worker };
+    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform")) !== "object") continue;
+    // The page's init script shims tsx's `__name`; a worker gets no init script.
+    await worker.evaluate("globalThis.__name = (fn) => fn;");
+    return { kind: "worker" as const, realm: worker };
   }
   return { kind: "page" as const, realm: page };
 }
@@ -191,6 +193,50 @@ async function frames(realm: Pick<Page, "evaluate">) {
         requestAnimationFrame(step);
       }),
     FRAME_SAMPLES,
+  );
+  return frameStats(intervals);
+}
+
+const PRESENTED_SAMPLES = 301;
+
+/**
+ * Intervals between the frames the game presents: one `getCurrentTexture` call each, on either back
+ * end (the `gpuCalls` divisor). Unlike requestAnimationFrame it follows the game in a worker too.
+ */
+async function presented(realm: Pick<Page, "evaluate">) {
+  const intervals = await realm.evaluate(
+    (count) =>
+      new Promise<number[]>((resolve, reject) => {
+        const proto = (
+          globalThis as {
+            GPUCanvasContext?: { prototype: { getCurrentTexture(...args: unknown[]): unknown } };
+          }
+        ).GPUCanvasContext?.prototype;
+        if (proto === undefined) {
+          reject(
+            new Error("TN_PROFILE_NO_WEBGPU_CANVAS: the game's thread has no GPUCanvasContext"),
+          );
+          return;
+        }
+        const original = proto.getCurrentTexture;
+        const times: number[] = [];
+        const restore = setTimeout(() => {
+          proto.getCurrentTexture = original;
+          reject(
+            new Error(`TN_PROFILE_PRESENTED_TIMEOUT: ${times.length} of ${count} frames in 60 s`),
+          );
+        }, 60_000);
+        proto.getCurrentTexture = function (this: unknown, ...args: unknown[]) {
+          times.push(performance.now());
+          if (times.length === count) {
+            proto.getCurrentTexture = original;
+            clearTimeout(restore);
+            resolve(times.slice(1).map((x, i) => x - (times[i] as number)));
+          }
+          return original.apply(this, args);
+        };
+      }),
+    PRESENTED_SAMPLES,
   );
   return frameStats(intervals);
 }
@@ -424,6 +470,7 @@ export async function measure(url: string, o: IOptions) {
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
     const thread = await gameThread(page);
     const frame = await frames(thread.realm);
+    const presentedFrame = await presented(thread.realm);
     if (o.saveProfile !== undefined) mkdirSync(o.saveProfile, { recursive: true });
     const saveAs =
       o.saveProfile === undefined
@@ -458,6 +505,7 @@ export async function measure(url: string, o: IOptions) {
       startupMs,
       gameThread: thread.kind,
       frame,
+      presented: presentedFrame,
       profile,
       ...(census ? { calls: census } : {}),
       ...(gpu ? { gpu } : {}),
