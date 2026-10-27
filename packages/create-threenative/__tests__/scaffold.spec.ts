@@ -308,7 +308,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "0b70574e614229527b336ee6d1475bf32a9654e87faf280c914111d9c028f604",
+  collectathon: "06609ef0dcae09aca28853044b1e460a1f26c35cf8610c28d4c8621dad9189c9",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -316,14 +316,15 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // sailing and starter ship the shared kitExposure.ts meter (0 EV).
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
-  adventure: "7785d6566f92274c761020b09e32d9aa514b721979cd05e383e7c43e59f2183b",
+  // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
+  adventure: "dcc5df44789579c4442d73a3b317803b4a9e8a745dea4e2fb0dc7c7153e9ecc6",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "10af477d1a520fdc1ce9303d488a9218177360231d7082a2093e3d397310e23c",
   minimal: "772a616dca234349aa4f555678bb9b0493f679c22c1a65388a3954ab6e26a042",
   platformer: "7df262eb519137cd5cfbcd3cb210549a52c637fb94e2ebc3aaf0975bc66f50e3",
   puzzle: "2c8d1a41dae19b90cddb7e1037178ca2f91c7fe9fdd5fe72b24a9334bf72ba3a",
   racing: "2b1c4913ad3c60fd9e6a08d74c1edcc7646a6711c09b6742b60b78dbae9ee839",
-  rain: "d8dcb340b1fca72196c5224fde3e3f68a57ae2ed3e478ecc042094167abce27d",
+  rain: "453965d590003d04e928fb6274454fb58fe0c1f9124c8438aecf161686d5ce75",
   rts: "152fdfb0fbf75055b98b184f040f819b0661c74056cfa78dea6e32142733f434",
   runner: "dcabe5962307f070fd387390e68df03a599400c90302068edc38d49c7bec60c4",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.

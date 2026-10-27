@@ -123,6 +123,7 @@
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
     "optOut": {
       "restart-resets": "no failure or end state to retry; the sandbox runs until the player leaves",
+      "hud-clean": "no DOM HUD: the first frame is the scene alone, so there is no text to audit; add a DOM HUD to join this row",
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
