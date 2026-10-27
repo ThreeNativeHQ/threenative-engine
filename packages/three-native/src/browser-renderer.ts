@@ -32,7 +32,8 @@ type HostCall =
   | "_tnw_web_render_target"
   | "_tnw_web_read_target"
   | "_tnw_web_read_target_take"
-  | "_tnw_web_capture_face";
+  | "_tnw_web_capture_face"
+  | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
   readonly specialHTMLTargets: Record<string, unknown>;
@@ -48,7 +49,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 4;
+export const WEB_HOST_ABI = 5;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";

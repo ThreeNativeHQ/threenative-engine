@@ -43,6 +43,18 @@ describe("web engine stamp", () => {
     expect(() => assertEngineStampCurrent(root)).not.toThrow();
   });
 
+  it("checks the threaded module's own stamp", () => {
+    const root = tree();
+    writeEngineStamp(root);
+    writeFileSync(join(root, "build/web/tn-native-engine-web-threads.wasm"), "\0asm");
+    expect(() => assertEngineStampCurrent(root)).toThrow("TN_PACK_WEB_ENGINE_UNSTAMPED");
+    writeEngineStamp(root, "tn-native-engine-web-threads");
+    expect(() => assertEngineStampCurrent(root)).not.toThrow();
+    writeFileSync(join(root, "src/engine/renderer/plan.h"), "int decide(int contentClass);\n");
+    writeEngineStamp(root);
+    expect(() => assertEngineStampCurrent(root)).toThrow(/TN_PACK_WEB_ENGINE_STALE: build\/web\/tn-native-engine-web-threads/u);
+  });
+
   it("ignores the V8 player, which the web module does not compile", () => {
     const root = tree();
     const before = engineSourceHash(root);

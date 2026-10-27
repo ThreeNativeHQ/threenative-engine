@@ -6,6 +6,7 @@
 
 #include "engine/scene/object3d.h"
 
+#include "engine/foundation/job_pool.h"
 #include "engine/foundation/uuid.h"
 
 #include <algorithm>
@@ -691,7 +692,7 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 }  // namespace
 
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
-    lastWorldEvaluation_ = ++matrixEvaluations_;
+    lastWorldEvaluation_ = walkStamp_ != 0 ? walkStamp_ : ++matrixEvaluations_;
     materializeLocalTransform();
     // Escaped aliases can change without a revision; auto-world ownership recomposes eagerly.
     const auto* tracking = ownTransformTracking();
@@ -759,9 +760,8 @@ void Object3D::updateMatrixWorld(bool force) {
     for (Object3D* child : children) child->updateMatrixWorld(force);
 }
 
-uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
-    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return 1; }
-    uint32_t visited = 1;
+int Object3D::visitMatrixWorldVisible(bool force, bool prune) {
+    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return -1; }
     // Nothing here can draw, so its own compose waits for the frame it shows, as core's MatrixWorldPass
     // does. Remembered even when clean: its local or an ancestor's transform can change while it is hidden.
     // A camera renders from its world matrix whatever its flag, and a rig's bones pose a visible mesh.
@@ -774,16 +774,56 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
         }
         if (holdsBones_ == 0) {
             worldStale_ = true;
-            return visited;
+            return -1;
         }
     }
     bool childForce = updateMatrixWorldSelf(force || worldStale_);
     afterMatrixWorld();
     if (worldStale_) childForce = true;
     worldStale_ = false;
-    if (isStatic && !matrixWorldAutoUpdate) return visited;
-    for (Object3D* child : children) visited += child->updateMatrixWorldVisible(childForce, prune);
+    if (isStatic && !matrixWorldAutoUpdate) return -1;
+    return childForce ? 1 : 0;
+}
+
+uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
+    const int childForce = visitMatrixWorldVisible(force, prune);
+    uint32_t visited = 1;
+    if (childForce >= 0)
+        for (Object3D* child : children) visited += child->updateMatrixWorldVisible(childForce == 1, prune);
     return visited;
+}
+
+uint32_t Object3D::updateMatrixWorldVisibleJobs(bool force, bool prune) {
+    JobPool& pool = JobPool::shared();
+    if (pool.workers() == 0 || JobPool::inJob() || poseObserver != nullptr || walkNodes_ < kParallelWalkNodes)
+        return walkNodes_ = updateMatrixWorldVisible(force, prune);
+    struct Item { Object3D* node; bool force; };
+    // The caller's scratch: a job names it through this reference, never through the thread_local.
+    static thread_local std::vector<Item> scratch;
+    std::vector<Item>& frontier = scratch;
+    frontier.clear();
+    frontier.push_back({this, force});
+    // Breadth-first, so the jobs left in front are the shallow, larger subtrees: they start first.
+    const std::size_t target = 8 * (std::size_t(pool.workers()) + 1);
+    std::size_t head = 0;
+    uint32_t visited = 0;
+    while (head < frontier.size() && frontier.size() - head < target) {
+        const Item item = frontier[head++];
+        ++visited;
+        const int childForce = item.node->visitMatrixWorldVisible(item.force, prune);
+        if (childForce >= 0)
+            for (Object3D* child : item.node->children) frontier.push_back({child, childForce == 1});
+    }
+    // Every node a job composes takes one stamp, later than any the frontier took: "evaluated since" holds.
+    const uint64_t stamp = ++matrixEvaluations_;
+    std::atomic<uint32_t> jobVisits{0};
+    pool.forEach(uint32_t(frontier.size() - head), [&](uint32_t i) {
+        const Item& item = frontier[head + i];
+        walkStamp_ = stamp;
+        jobVisits.fetch_add(item.node->updateMatrixWorldVisible(item.force, prune), std::memory_order_relaxed);
+        walkStamp_ = 0;
+    });
+    return walkNodes_ = visited + jobVisits.load(std::memory_order_relaxed);
 }
 
 void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool force) {

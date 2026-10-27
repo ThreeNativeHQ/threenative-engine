@@ -659,7 +659,7 @@ void registerObject3D(ClassBinding& b) {
     // `__tnUpdateMatrixWorld(force, prune)` answers the nodes it visited; with `prune` (core's "visible" mode) a
     // hidden subtree waits for the frame it shows (Object3D::updateMatrixWorldVisible).
     b.methods["__tnUpdateMatrixWorld"] = [](void* self, const Args& a, Store&) {
-        return Value::of(double(as<Object3D>(self)->updateMatrixWorldVisible(boolean(a, 0, false), boolean(a, 1, false))));
+        return Value::of(double(as<Object3D>(self)->updateMatrixWorldVisibleJobs(boolean(a, 0, false), boolean(a, 1, false))));
     };
     // Read current world values without leasing the source's live transform view.
     b.methods["__tnCopyMatrixWorld"] = [](void* self, const Args& a, Store& store) {

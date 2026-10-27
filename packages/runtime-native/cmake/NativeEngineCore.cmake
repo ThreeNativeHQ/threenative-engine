@@ -11,6 +11,13 @@
 option(TN_ENGINE_SANITIZE "Build the native engine targets under ASan and UBSan" OFF)
 option(TN_ENGINE_TSAN "Build the native engine targets under ThreadSanitizer (a separate build: TSan excludes ASan)" OFF)
 option(TN_ENGINE_FUZZ "Build the native engine libFuzzer targets (clang only)" OFF)
+# PRD-752 phase 4: the threaded web engine (`wasm-threads` preset), which a cross-origin-isolated page
+# loads instead of the single-thread one. Every object takes -pthread: shared memory needs atomics in all.
+option(TN_WEB_THREADS "Wasm: build tn-native-engine-web-threads (-pthread, shared memory, the job pool's workers)" OFF)
+if(EMSCRIPTEN AND TN_WEB_THREADS)
+    add_compile_options(-pthread)
+    add_link_options(-pthread)
+endif()
 function(tn_native_engine_target target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
     if(EMSCRIPTEN)
@@ -52,6 +59,7 @@ add_library(tn_engine_foundation STATIC
     src/engine/foundation/buffers.cpp
     src/engine/foundation/reachability.cpp
     src/engine/foundation/members.cpp
+    src/engine/foundation/job_pool.cpp
     src/engine/foundation/math/Vector.cpp
     src/engine/foundation/math/Matrix.cpp
     src/engine/foundation/math/Quaternion.cpp
@@ -60,6 +68,11 @@ add_library(tn_engine_foundation STATIC
     src/engine/foundation/math/Primitives.cpp
     src/engine/foundation/math/ieee754.cpp)
 tn_native_engine_target(tn_engine_foundation)
+if(NOT EMSCRIPTEN)
+    # The job pool's workers (foundation/job_pool.h); the threaded web build passes -pthread instead.
+    find_package(Threads REQUIRED)
+    target_link_libraries(tn_engine_foundation PUBLIC Threads::Threads)
+endif()
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Scene graph, transforms and cameras (PRD-508 phases 1-2): Object3D, the node classes and the two
@@ -814,6 +827,12 @@ tn_native_engine_test(tn-native-engine-static-transform-test tests/native-engine
 target_link_libraries(tn-native-engine-static-transform-test PRIVATE tn_engine_scene)
 target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene)
 
+# PRD-752 phase 4: the job pool runs each item once, and the matrix walk on it is the one-thread walk, bit for bit.
+tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
+    native_engine_job_pool=for_each_once
+    native_engine_matrix_walk_jobs=matrix_walk_jobs)
+target_link_libraries(tn-native-engine-job-pool-test PRIVATE tn_engine_scene)
+
 # The engine's JSON reader and writer (header-only), against JSON.parse, JSON.stringify and
 # Number::toString.
 tn_native_engine_test(tn-native-engine-json-test tests/native-engine/json/json_test.cpp
@@ -978,21 +997,34 @@ if(EMSCRIPTEN)
     # The module names the sources it was built from, and `prepack` refuses a stale one
     # (scripts/web-engine-stamp.mjs): a pack after an engine commit shipped the older Wasm.
     find_program(TN_NODE_EXECUTABLE node REQUIRED NO_CMAKE_FIND_ROOT_PATH)
-    add_custom_command(TARGET tn-native-engine-web POST_BUILD
-        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write
-        VERBATIM)
-    # The module speaks this tree's facade's web host ABI and refuses any other (scripts/web-host-abi.mjs):
-    # an older facade on a newer module drew every frame without post (39295d1f3).
-    add_custom_command(TARGET tn-native-engine-web POST_BUILD
-        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-host-abi.mjs
-        VERBATIM)
+    if(TN_WEB_THREADS)
+        # The job pool's workers (foundation/job_pool.h) come from emscripten's pthread pool, loaded with the
+        # module so no job waits on a worker to start: the same min(hardware threads - 1, 3) as
+        # JobPool::defaultWorkers. The node ABI check below cannot start this glue (no `node` environment);
+        # the stamp ties it to the same sources as the single-thread module, which that check runs on.
+        set_target_properties(tn-native-engine-web PROPERTIES OUTPUT_NAME tn-native-engine-web-threads)
+        target_link_options(tn-native-engine-web PRIVATE
+            "-sPTHREAD_POOL_SIZE=Math.min(3,Math.max(0,(navigator.hardwareConcurrency||1)-1))")
+        add_custom_command(TARGET tn-native-engine-web POST_BUILD
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write tn-native-engine-web-threads
+            VERBATIM)
+    else()
+        add_custom_command(TARGET tn-native-engine-web POST_BUILD
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write
+            VERBATIM)
+        # The module speaks this tree's facade's web host ABI and refuses any other (scripts/web-host-abi.mjs):
+        # an older facade on a newer module drew every frame without post (39295d1f3).
+        add_custom_command(TARGET tn-native-engine-web POST_BUILD
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-host-abi.mjs
+            VERBATIM)
+    endif()
     target_link_options(tn-native-engine-web PRIVATE -Os --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
         # The whole 32-bit address space: a game the size of Midway (161 MB of GLBs, decoded on the
         # engine side) ran past emscripten's 2 GB default maximum and failed with std::bad_alloc.
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
         # reads `document` while the module loads.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 
