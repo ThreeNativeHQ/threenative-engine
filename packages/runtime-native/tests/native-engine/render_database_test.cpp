@@ -995,6 +995,96 @@ void instanceCounts() {
     }
 }
 
+// Packed frame storage is uploaded once for the bytes it holds: a frame that repeats the same
+// instance matrices on the same buffer copies nothing, and a frame that moves one instance copies
+// the whole packed block once. Count and layout stay fixed, so only the bytes decide.
+void unchangedFrameStorage() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    camera.position.set(0, 0, 20);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    material->roughness = 0.6;
+    constexpr uint32_t count = 8, capacity = 1024;  // room to grow the destination later
+    auto mesh = std::make_shared<InstancedMesh>(makeBoxGeometry(), material, capacity);
+    mesh->count = count;
+    mesh->frustumCulled = false;
+    for (uint32_t i = 0; i < capacity; ++i) {
+        Matrix4 placement;
+        placement.makeTranslation(double(i % 4) * 2.0 - 3.0, double(i / 4) * 2.0 - 1.0, 0);
+        mesh->setMatrixAt(i, placement);
+    }
+    mesh->instanceMatrix->setNeedsUpdate();
+    scene.add(*mesh);
+    DirectionalLight light{Color().setHex(0xffffff), 3};  // no shadows: one plain instanced draw
+    light.position.set(3, 5, 8);
+    scene.add(light);
+    // One skinned draw on the CPU palette path: its flat palette is a storage too, and an untracked
+    // bone keeps the rig out of GPU joints, so a moved bone changes bytes in `boneMatrices`.
+    auto skinGeometry = makeBoxGeometry();
+    const uint64_t skinVertices = skinGeometry->attributes.at("position")->count();
+    skinGeometry->setAttribute("skinIndex",
+        BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(skinVertices * 4, 0), 4));
+    std::vector<double> skinWeights(skinVertices * 4, 0);
+    for (std::size_t i = 0; i < skinVertices; ++i) skinWeights[i * 4] = 1;
+    skinGeometry->setAttribute("skinWeight", BufferAttribute::fromFloats(skinWeights, 4));
+    auto rig = std::make_shared<SkinnedMesh>(skinGeometry, std::make_shared<Material>(MaterialType::Standard));
+    auto root = std::make_shared<Object3D>();
+    auto bone = std::make_shared<Bone>();
+    bone->position.set(0.3, 0.5, 0);
+    root->add(*rig);
+    root->add(*bone);
+    scene.add(*root);
+    root->updateMatrixWorld(true);
+    rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+    RenderDatabase database;
+    const auto frameUpload = [&] {
+        const uint64_t before = renderer.gpu().queueWriteBytes();
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        return renderer.gpu().queueWriteBytes() - before;
+    };
+    for (int warm = 0; warm < 4; ++warm) {  // capacity, storage buffers and pipelines ready
+        frameUpload();
+        renderer.poll();
+        events.drain();
+    }
+    const uint64_t unchanged = frameUpload();  // same bytes, same destination
+    renderer.poll();
+    events.drain();
+    Matrix4 moved;
+    moved.makeTranslation(6, 0, 0);
+    mesh->setMatrixAt(0, moved);
+    mesh->instanceMatrix->setNeedsUpdate();
+    const uint64_t changed = frameUpload();
+    const uint64_t packed = uint64_t{count} * 20 * sizeof(float);  // matrix, colour and pad, per instance
+    const uint64_t steadyMoved = frameUpload();
+    mesh->count = capacity - 24;  // 1000 instances: the packed range grows past the 64 KiB buffer
+    const uint64_t grown = frameUpload();
+    const uint64_t grownPacked = uint64_t{capacity - 24} * 20 * sizeof(float);
+    const uint64_t steadyGrown = frameUpload();
+    bone->rotation.z = 0.4;  // palette bytes change, with the same bones and base
+    const uint64_t palette = frameUpload();
+    const uint64_t paletteBytes = 16 * sizeof(float);  // one bone's 4x4, packed as floats
+    std::printf("frame storage upload: unchanged %llu, changed %llu (block %llu), grown %llu (block %llu), "
+                "moved palette %llu (block %llu)\n",
+                static_cast<unsigned long long>(unchanged), static_cast<unsigned long long>(changed),
+                static_cast<unsigned long long>(packed), static_cast<unsigned long long>(grown),
+                static_cast<unsigned long long>(grownPacked), static_cast<unsigned long long>(palette),
+                static_cast<unsigned long long>(paletteBytes));
+    CHECK(changed == unchanged + packed);
+    CHECK(steadyMoved == unchanged);
+    CHECK(grown == steadyMoved + grownPacked);
+    CHECK(steadyGrown == unchanged);
+    CHECK(palette == steadyGrown + paletteBytes);
+}
+
 // The flat lane's compact fast path (RenderDatabase::projectCompact) must decide exactly what the
 // general project() decides. The same population, flat and then made non-flat by one parented
 // object, must give the same draws: hidden, other-layer, transparent, mirrored, callback and
@@ -5967,7 +6057,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

@@ -255,6 +255,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
         native_engine_gpu_joint_production=gpu_joint_production
+        native_engine_unchanged_frame_storage=unchanged_frame_storage
         native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups

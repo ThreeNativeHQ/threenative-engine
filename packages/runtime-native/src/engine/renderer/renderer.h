@@ -1124,6 +1124,12 @@ private:
         std::vector<float> data;
         Handle buffer;
         uint64_t capacity = 0;
+        // The bytes last queued for this buffer at this offset: a frame that repeats them copies
+        // nothing. Bytes are exact (a hash could collide and hide a signed-zero/NaN change), and the
+        // buffer identity catches a reallocation whose old contents are gone.
+        std::vector<uint8_t> uploaded;
+        Handle uploadedBuffer;
+        uint64_t uploadedPrefix = 0;
     };
     struct ProbeTexture {
         WGPUTexture texture = nullptr;

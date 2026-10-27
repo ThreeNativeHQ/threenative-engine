@@ -3605,9 +3605,26 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             storage.capacity = std::max<uint64_t>((prefix + storage.data.size() * 4) * 2, 64 * 1024);
             jointBufferMoved = jointBufferMoved || (name == "boneMatrices" && jointPrefix);
             storage.buffer = gpu_.createBuffer(storage.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+            storage.uploaded.clear();
+            storage.uploadedBuffer = Handle{};
             rebuildGroups();
         }
-        if (!storage.data.empty()) gpu_.writeBuffer(storage.buffer, prefix, storage.data.data(), storage.data.size() * 4);
+        if (storage.data.empty()) continue;
+        const uint64_t bytes = storage.data.size() * 4;
+        const auto* source = reinterpret_cast<const uint8_t*>(storage.data.data());
+        const Handle& target = storage.buffer;
+        const bool sameBuffer = storage.uploadedBuffer.type == target.type &&
+                                storage.uploadedBuffer.context == target.context &&
+                                storage.uploadedBuffer.index == target.index &&
+                                storage.uploadedBuffer.generation == target.generation;
+        if (sameBuffer && storage.uploadedPrefix == prefix && storage.uploaded.size() == bytes &&
+            std::memcmp(storage.uploaded.data(), source, bytes) == 0)
+            continue;
+        if (gpu_.writeBuffer(target, prefix, storage.data.data(), bytes) == GpuStatus::Ok) {
+            storage.uploaded.assign(source, source + bytes);
+            storage.uploadedBuffer = target;
+            storage.uploadedPrefix = prefix;
+        }
     }
 
     if (jointPrefix && !compilation) {
