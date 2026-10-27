@@ -23,6 +23,7 @@ const inputs = {
   "gates.json": {
     scenarios: { total: 4, green: 3 },
     presentedP95Ms: 15.2,
+    costP95Ms: 10.1,
     budgetMs: 16.7,
     visualVerdict: "CLOSE",
   },
@@ -52,6 +53,7 @@ describe("kit-loop", () => {
       k1Turns: 41,
       k2ScenarioPct: 75,
       k2PresentedP95Ms: 15.2,
+      k2CostP95Ms: 10.1,
       k2BudgetMs: 16.7,
       k2BudgetMet: true,
       k2Visual: "CLOSE",
@@ -70,6 +72,8 @@ describe("kit-loop", () => {
     }
     const noUsage = coldBuild({ "transcript.json": { num_turns: 3, duration_ms: 1 } });
     expect(() => measureDir(noUsage)).toThrow(/usage/u);
+    const { costP95Ms: _, ...noCost } = inputs["gates.json"];
+    expect(() => measureDir(coldBuild({ "gates.json": noCost }))).toThrow(/costP95Ms/u);
     const badGrade = coldBuild({ "play-grade.json": { grade: 0 } });
     expect(() => measureDir(badGrade)).toThrow(/grade/u);
     const badVerdict = coldBuild({ "gates.json": { ...inputs["gates.json"], visualVerdict: "" } });
@@ -134,11 +138,14 @@ describe("kit-loop", () => {
     const green = {
       scenarios: { total: 4, green: 4 },
       presentedP95Ms: 15.2,
+      costP95Ms: 10.1,
       budgetMs: 16.7,
       visualVerdict: "CLOSE",
     };
     expect(k2Pill(green)).toBe("met");
-    expect(k2Pill({ ...green, presentedP95Ms: 17.5 })).toBe("open");
+    // Owner delegated (2026-10-26): the budget is the gate's cost p95; presented p95 on Xvfb is cadence.
+    expect(k2Pill({ ...green, presentedP95Ms: 17.5 })).toBe("met");
+    expect(k2Pill({ ...green, costP95Ms: 17.27 })).toBe("open");
     expect(k2Pill({ ...green, visualVerdict: "FAR" })).toBe("open");
   });
 });

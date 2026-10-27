@@ -64,7 +64,7 @@ Each one is a field of every ledger row. Iteration 1 sets the baseline; targets 
 | KPI | Definition | Source | Target by the last iteration |
 | --- | --- | --- | --- |
 | K1 cold-build cost | tokens (input + output + cache writes), wall minutes and turns, from the prompt to the first build whose gates pass | cold transcript (`claude -p --output-format json` usage) | -40% tokens vs baseline |
-| K2 first-build quality | share of kit playtest scenarios green on the first cold build with no human edit; `TN_FRAME_BUDGET` presented p95 within budget; visual judge verdict against the reference image | playtest exit codes, `TN_FRAME_BUDGET`, judge | 100% scenarios, budget met, judge CLOSE or better |
+| K2 first-build quality | share of kit playtest scenarios green on the first cold build with no human edit; the performance gate's cost p95 within budget; visual judge verdict against the reference image | playtest exit codes, `performance.maxFrameMsP95` cost p95, judge | 100% scenarios, budget met, judge CLOSE or better |
 | K3 friction count | capability-search misses + hand-written duplicates of an installed system + wrong-API errors + retries of the same failing command | `score-build-experience` rows and the cold transcript | -50% vs baseline |
 | K4 AI play grade | a fresh Opus judge plays the cold build (free play with real input, then the scenario captures) and grades feel and mechanics 1–5 against the reference cards | judge report | 4 or higher |
 
@@ -97,7 +97,6 @@ KPI baseline while PRD-735 scouts the next references.
 ## Blocked on
 
 - Rows 4..N (the author step) need the PRD-749 kit base on `pr563-followup` (PRD-749 Phase 3, the #574 lane).
-- The K2 budget on the runner's Xvfb reads display cadence: the owner picks the gate's cost p95 or a real-display presented p95 (AC-5 note).
 
 ## Acceptance Criteria
 
@@ -115,6 +114,7 @@ See the phase boxes. Each box names its proof.
 
 - 2026-10-26 (owner): an iteration is an in-repo author step plus a cold sandbox build; both transcripts are inspected.
 - 2026-10-26 (owner): fix scope is the whole authoring layer; new engine systems stay out.
+- 2026-10-26 (owner delegated: "do whatever you want"): K2's frame budget is the performance gate's own cost p95 (`performance.maxFrameMsP95` `cost.p95`), not `TN_FRAME_BUDGET` presented p95. On the runner's private Xvfb, presented p95 is display cadence (17.5 ms with a game that costs 10.03 ms), and the gate itself reports it as not gated. Rows keep presented p95 for information; rows 1–3 were recomputed from their saved inputs (row 1 stays over at 17.27 ms).
 - 2026-10-26 (owner): KPIs are K1–K4 above; the play grade comes from an AI judge, not the owner.
 - 2026-10-26 (owner): a ranked mix of revamps and new kits; PRD-735 (references at scale) lands before the loop runs past row 1.
 - 2026-10-26 (owner): one epic PR for the loop and every kit; it merges at the release.
@@ -148,6 +148,6 @@ See the phase boxes. Each box names its proof.
 
 - [ ] AC-5 [local]: each later iteration lands its top retro fixes before its author step, and its ledger row names them. proof: ledger rows 2..N, the fix commits
   - Open (2026-10-26): row 2 is recorded and names row 1's fixes (a4d5345ef: a failed cost bound names the foreign GPU processes and says rerun; 42cbf971c + c5bc052e7: start the agent in the project, or call `engine.mjs <tool> '<json>'`). Row 2 against row 1: K1 44,483 vs 97,840 tokens (−55%), 15 vs 37 turns, 7 vs 19 min; K2 22/22 vs 21/22, judge CLOSE both (fresh Opus judge: NEUTRAL row 2 vs row 1); K3 2 vs 7; K4 4 both (Hero.ts unchanged). The row 2 agent changed no code and did not chase performance; the gate rerun by the recorder passed at cost p95 10.03 ms. Row 2's retro fixes landed for row 3: `--scenario` takes a brace list (bac933cdc, red-green `bridgeClient.spec.ts`) and the scaffold line says CLAUDE.md copies AGENTS.md (59d741907, red-green `scaffold.spec.ts`). Row 3 names row 2's fixes and confirms them (AGENTS.md read without its CLAUDE.md copy, one glob run for 22 playtests): K1 47,107 (+6% vs row 2, AGENTS.md read twice because its 22 KB overflowed one tool result with other output), K2 22/22 + CLOSE (NEUTRAL vs row 2), K3 0, K4 4. The remaining frictions are kit-layer (the kit `AGENTS.md` size, no win state at three Sunseeds, the wall-kick camera that hides the hero, the K4 movement gaps), so rows 4..N wait for the PRD-749 kit base and the author step. The box stays open while rows 4..N run.
-  - K2 budget on the runner's Xvfb: `k2BudgetMet` reads `TN_FRAME_BUDGET` presented p95, which on the private Xvfb is display cadence (17.5 ms with a 10.03 ms game; the gate calls it "not gated"), so K2 cannot meet its budget there. Owner decision: judge the gate's cost p95, or measure presented p95 on a real display. Until then rows record presented p95 and name the cost p95 in their notes.
+  - K2 budget: decided 2026-10-26 (see Decisions); rows 2 and 3 meet it at cost p95 10.03 and 12.59 ms, row 1 is over at 17.27 ms.
 - [ ] AC-6 [local]: the loop stops by the rule: the list is done, or two rows in a row gain under 5% on all of K1–K4. proof: the ledger, the stop line in this PRD
 - [ ] AC-7 [local]: K1–K4 meet their targets at the last row, or the gap per KPI is recorded with its cause. proof: dashboard kit-loop tab, the last ledger row

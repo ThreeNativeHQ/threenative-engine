@@ -7,7 +7,7 @@
 //
 // A cold-build dir holds five files, each required (a missing one fails closed, never a zero):
 //   transcript.json  the cold agent's `claude -p --output-format json` result (K1: usage, duration_ms, num_turns)
-//   gates.json       { scenarios: { total, green }, presentedP95Ms, budgetMs, visualVerdict }  (K2)
+//   gates.json       { scenarios: { total, green }, presentedP95Ms, costP95Ms, budgetMs, visualVerdict }  (K2)
 //   friction.json    { searchMisses, duplicates, wrongApi, retries } from score-build-experience (K3)
 //   play-grade.json  { grade: 1..5, judge } from the fresh Opus play judge (K4)
 //   retro.json       { worked: [..], failed: [..], frictions: [{ text, transcriptLine }] } (top 3)
@@ -110,6 +110,9 @@ export function measureDir(dir) {
   const total = count(gates.scenarios?.total, "gates.scenarios.total", { min: 1 });
   const green = count(gates.scenarios?.green, "gates.scenarios.green", { max: total });
   const p95 = count(gates.presentedP95Ms, "gates.presentedP95Ms");
+  // The budget is the performance gate's own cost p95 (owner, 2026-10-26): presented p95 on the
+  // runner's private Xvfb is display cadence, about 17.5 ms whatever the game costs.
+  const cost = count(gates.costP95Ms, "gates.costP95Ms");
   const budget = count(gates.budgetMs, "gates.budgetMs", { min: Number.MIN_VALUE });
   if (typeof gates.visualVerdict !== "string" || gates.visualVerdict === "")
     throw new Error("gates.visualVerdict must name the judge verdict");
@@ -133,8 +136,9 @@ export function measureDir(dir) {
       k1Turns: count(transcript.num_turns, "transcript.num_turns"),
       k2ScenarioPct: Math.round((green / total) * 100),
       k2PresentedP95Ms: p95,
+      k2CostP95Ms: cost,
       k2BudgetMs: budget,
-      k2BudgetMet: p95 <= budget,
+      k2BudgetMet: cost <= budget,
       k2Visual: gates.visualVerdict,
       k3Friction: Object.values(parts).reduce((sum, value) => sum + value, 0),
       k4Grade: count(grade.grade, "play-grade.json grade", { min: 1, max: 5 }),
@@ -183,7 +187,7 @@ export function renderHtml(ledger, now = new Date()) {
   const history = rows
     .map(
       (row) =>
-        `<tr><td>#${row.id}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.kit)}<br><small>${esc(row.reference)} · ${esc(row.decision)}</small></td><td class="n">${esc(row.metrics.k1Tokens)}<br><small>${esc(row.metrics.k1WallMin)} min · ${esc(row.metrics.k1Turns)} turns</small></td><td class="n">${esc(row.metrics.k2ScenarioPct)}%<br><small>p95 ${esc(row.metrics.k2PresentedP95Ms)}/${esc(row.metrics.k2BudgetMs)} ms ${row.metrics.k2BudgetMet ? "met" : "over"} · ${esc(row.metrics.k2Visual)}${VISUAL_OK.has(row.metrics.k2Visual) ? "" : " (below CLOSE)"}</small></td><td class="n">${esc(row.metrics.k3Friction)}</td><td class="n">${esc(row.metrics.k4Grade)}/5</td><td><b>Worked</b>${list(row.retro.worked)}<b>Failed</b>${list(row.retro.failed)}<b>Top frictions</b>${list(row.retro.frictions.map((f) => `${f.text} (transcript line ${f.transcriptLine})`))}${row.fixes.length ? `<b>Fixes landed before it</b>${list(row.fixes)}` : ""}</td></tr>`,
+        `<tr><td>#${row.id}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.kit)}<br><small>${esc(row.reference)} · ${esc(row.decision)}</small></td><td class="n">${esc(row.metrics.k1Tokens)}<br><small>${esc(row.metrics.k1WallMin)} min · ${esc(row.metrics.k1Turns)} turns</small></td><td class="n">${esc(row.metrics.k2ScenarioPct)}%<br><small>cost p95 ${esc(row.metrics.k2CostP95Ms ?? "n/a")}/${esc(row.metrics.k2BudgetMs)} ms ${row.metrics.k2BudgetMet ? "met" : "over"} (presented ${esc(row.metrics.k2PresentedP95Ms)}) · ${esc(row.metrics.k2Visual)}${VISUAL_OK.has(row.metrics.k2Visual) ? "" : " (below CLOSE)"}</small></td><td class="n">${esc(row.metrics.k3Friction)}</td><td class="n">${esc(row.metrics.k4Grade)}/5</td><td><b>Worked</b>${list(row.retro.worked)}<b>Failed</b>${list(row.retro.failed)}<b>Top frictions</b>${list(row.retro.frictions.map((f) => `${f.text} (transcript line ${f.transcriptLine})`))}${row.fixes.length ? `<b>Fixes landed before it</b>${list(row.fixes)}` : ""}</td></tr>`,
     )
     .join("");
   const header =
