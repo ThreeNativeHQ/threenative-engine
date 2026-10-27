@@ -28,5 +28,7 @@ e2e871f1feac6fa0f7dc4d372f30d3cb586a8f72:packages/core/__tests__/warmup-default.
 
 # Verified 2026-10-11: PRD-595's slash-separated CellPrewarm counter names are prose, not a credential.
 0c2f9e4b57382d980ef98424f6ac03b86e1d785b:docs/PRDs/strata-terrain-hardening/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:63
-# Verified 2026-10-27: PRD-750 scripts/kit-loop.mjs line 45 is the KPI field id `key: "k2ScenarioPct"`, an identifier, not a credential. The commit is on #575's branch; the full-history scan reads every fetched ref, so it reddens every full run.
+# Verified 2026-10-27: PRD-750 scripts/kit-loop.mjs line 45 is a KPI field id string (k2ScenarioPct), not a credential. The commit is on #575's branch; the full-history scan reads every fetched ref.
 f799f51aba375ce12df5eb43db2a7c69b65d96ae:scripts/kit-loop.mjs:generic-api-key:45
+# Verified 2026-10-27: line 31 of the commit below is the earlier wording of the comment above (it quoted the same field id), not a credential.
+0fd2f4d574d82305373434bc8cf1c00600b3a36e:.gitleaksignore:generic-api-key:31
