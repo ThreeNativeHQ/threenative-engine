@@ -2,6 +2,7 @@ import {
   AnimationClip,
   AnimationMixer,
   Bone,
+  Frustum,
   Group,
   LoopOnce,
   Mesh,
@@ -9,7 +10,9 @@ import {
   NumberKeyframeTrack,
   Object3D,
   PerspectiveCamera,
+  Ray,
   Scene,
+  Sphere,
   SphereGeometry,
   VectorKeyframeTrack,
 } from "three";
@@ -957,6 +960,13 @@ describe("AnimationPlayer update rate", () => {
       const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
       const cull = new RenderCameraCull();
       const walks = vi.spyOn(rig.root, "traverseVisible");
+      // On the web engine these are engine objects, one boundary call per use.
+      const math = [
+        vi.spyOn(Ray.prototype, "intersectsSphere"),
+        vi.spyOn(Frustum.prototype, "intersectsSphere"),
+        vi.spyOn(Frustum.prototype, "containsPoint"),
+        vi.spyOn(Sphere.prototype, "set"),
+      ];
       const rates: number[] = [];
       const step = () => {
         scene.updateMatrixWorld(true);
@@ -984,7 +994,9 @@ describe("AnimationPlayer update rate", () => {
         Reflect.deleteProperty(Object3D.prototype, "__hierarchyRevision");
         Reflect.deleteProperty(Object3D.prototype, "__tnVisibleInWorld");
       }
-      return { rates, walks: walks.mock.calls.length, cost: { ...cost } };
+      const mathCalls = math.reduce((sum, spy) => sum + spy.mock.calls.length, 0);
+      for (const spy of math) spy.mockRestore();
+      return { rates, walks: walks.mock.calls.length, cost: { ...cost }, mathCalls };
     };
     const plain = run(false);
     const native = run(true);
@@ -994,6 +1006,7 @@ describe("AnimationPlayer update rate", () => {
     // The engine-cost bag a kit's playtest bounds: one rig map for the run, no rig walk.
     expect(plain.cost).toEqual({ cullRigRebuilds: 7, cullRigWalks: plain.walks });
     expect(native.cost).toEqual({ cullRigRebuilds: 1 });
+    expect([plain.mathCalls, native.mathCalls]).toEqual([0, 0]);
   });
 
   it("passes the named override through SkeletalMesh3D", () => {
