@@ -102,6 +102,54 @@
           }
         ]
       }
+    },
+    {
+      "id": 3,
+      "at": "2026-10-27T04:28:26.532Z",
+      "decision": "iteration",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [
+        "bac933cdc: --scenario takes a shell brace list",
+        "59d741907: the scaffold's last line says CLAUDE.md copies AGENTS.md, read one"
+      ],
+      "notes": "Cold build on tarballs built after row 2's fixes; same prompt and isolation. The agent read AGENTS.md only (no CLAUDE.md), ran all 22 playtests in one glob run, and added a win toast on the third Sunseed (src/scenes/Play.ts:389,393; the kit has no win state). Gates rerun by the recorder: 22/22 green, performance gate cost p95 12.59 ms (GPU 12.59, CPU 6.6, 22 GPU samples) vs 16.7 ms, load 7 with 4 foreign GPU processes; presented p95 17.6 ms is Xvfb cadence (see the PRD K2 note). Visual: fresh Opus judge CLOSE vs the reference, NEUTRAL vs row 2; wall-kick hides the hero (all rows). K1 +6% vs row 2: AGENTS.md (22 KB) with package.json and a file list overflowed one 30 KB tool result and was read again. K4 carried: Hero.ts unchanged.",
+      "metrics": {
+        "k1Tokens": 47107,
+        "k1WallMin": 8,
+        "k1Turns": 17,
+        "k2ScenarioPct": 100,
+        "k2PresentedP95Ms": 17.6,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": false,
+        "k2Visual": "CLOSE",
+        "k3Friction": 0,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 0
+      },
+      "retro": {
+        "worked": [
+          "picked the collectathon kit on the first call (L7, --template collectathon)",
+          "read AGENTS.md only, not the CLAUDE.md copy (row 2 fix 59d741907)",
+          "one --scenario glob run for all 22 playtests, no retry (row 2 fix bac933cdc not needed: no brace list)"
+        ],
+        "failed": [],
+        "frictions": [
+          {
+            "text": "the kit's 22 KB AGENTS.md plus package.json and a file list overflowed one 30 KB tool result, so AGENTS.md was read a second time (PRD-749 kit lane: trim the kit AGENTS.md)",
+            "transcriptLine": 11
+          },
+          {
+            "text": "kit gap: the third Sunseed shows only 'SUNSEED!' with no win state; the agent added a win toast (Play.ts:389,393)",
+            "transcriptLine": 74
+          }
+        ]
+      }
     }
   ]
 }

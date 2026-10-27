@@ -94,6 +94,11 @@ not a row here. The reference for each row is a candidate until PRD-735 lands it
 Row 1 runs first on purpose: its reference already exists, so it calibrates the loop and sets the
 KPI baseline while PRD-735 scouts the next references.
 
+## Blocked on
+
+- Rows 4..N (the author step) need the PRD-749 kit base on `pr563-followup` (PRD-749 Phase 3, the #574 lane).
+- The K2 budget on the runner's Xvfb reads display cadence: the owner picks the gate's cost p95 or a real-display presented p95 (AC-5 note).
+
 ## Acceptance Criteria
 
 See the phase boxes. Each box names its proof.
@@ -128,13 +133,13 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 2: Iteration 1 — calibration on row 1 (3D platformer)
 
-**Status:** PARTIAL — baseline row 1 recorded; AC-3 waits for the PRD-749 kit base, AC-4 for a quiet-host performance run
+**Status:** PARTIAL — AC-4 done (ledger rows 1–3); AC-3 waits for the PRD-749 kit base
 **Files:** the row-1 kit PRD, the collectathon kit, the ledger row.
 
 - [ ] AC-3 [local]: the author step revamps the collectathon kit on the kit base, with SM64 card citations, and its own kit PRD is green. proof: the kit PRD's gates
   - Open (2026-10-26): the kit base is not on `pr563-followup`; only PRD-749 Phase 1 (the kit contract, `9d1a848a0`) landed. On collectathon the contract reads `explore-clean` ok, `camera-sees-subject` FAIL (`TN_PLAYTEST_SIGHT_LINE_BLOCKED`), `hud-clean` FAIL (`TN_PLAYTEST_HUD_CONTRAST`), `no-hitch` ok, `foot-slip` ok, three rows opted out. Both reds belong to PRD-749's per-kit red list (its rule: fix in the base, an engine node or a contract row), so this step waits for PRD-749 Phases 2–3.
-- [ ] AC-4 [local]: a cold sandbox agent prompted "make me a game like Super Mario 64" picks the collectathon kit and reaches a gate-green build; the ledger holds the baseline row with K1–K4 and the retro lists. proof: `pnpm kit:loop record <sandbox dir>`, ledger row 1
-  - Open (2026-10-26): ledger row 1 is recorded as the baseline on today's kit (no revamp): K1 97,840 tokens, 37 turns, 19 min; K2 21/22 scenarios (95%), presented p95 17.7 ms against 16.7 ms, judge CLOSE; K3 7; K4 4 (fresh Opus judge, evidence-based). The cold agent picked the kit with `--genre mario` on its first call, but the build is not gate-green: the performance gate failed on a loaded host (load 12–30, two foreign Playwright GPU processes), and the agent cut the high tier's look to chase it. The box stays open until one quiet-host run of the performance gate (declared in advance, one run) settles it. Isolation: `claude -p --setting-sources project` plus `claudeMdExcludes` for the global CLAUDE.md; an earlier run that read it is discarded.
+- [x] AC-4 [local]: a cold sandbox agent prompted "make me a game like Super Mario 64" picks the collectathon kit and reaches a gate-green build; the ledger holds the baseline row with K1–K4 and the retro lists. proof: `pnpm kit:loop record <sandbox dir>`, ledger row 1
+  - Done (2026-10-26): ledger row 1 holds the baseline with K1–K4 and the retro lists (K1 97,840 tokens, K2 21/22 + CLOSE, K3 7, K4 4; its performance gate was red on a loaded host). Rows 2 and 3 are cold builds with the same prompt and isolation that picked the collectathon kit on their first call and reached gate-green builds, rerun by the recorder: 22/22 scenarios each, performance gate cost p95 10.03 ms (row 2) and 12.59 ms (row 3) against 16.7 ms. The predeclared quiet-host rerun of row 1 is withdrawn: the host never got quiet in 2 h, and rows 2–3 settle the gate-green claim on the same kit at the high tier.
 
 #### Phase 3: Iterations 2..N to the stop rule
 
@@ -142,7 +147,7 @@ See the phase boxes. Each box names its proof.
 **Files:** one kit PRD per row, the authoring-layer fixes each retro names, the ledger.
 
 - [ ] AC-5 [local]: each later iteration lands its top retro fixes before its author step, and its ledger row names them. proof: ledger rows 2..N, the fix commits
-  - Open (2026-10-26): row 2 is recorded and names row 1's fixes (a4d5345ef: a failed cost bound names the foreign GPU processes and says rerun; 42cbf971c + c5bc052e7: start the agent in the project, or call `engine.mjs <tool> '<json>'`). Row 2 against row 1: K1 44,483 vs 97,840 tokens (−55%), 15 vs 37 turns, 7 vs 19 min; K2 22/22 vs 21/22, judge CLOSE both (fresh Opus judge: NEUTRAL row 2 vs row 1); K3 2 vs 7; K4 4 both (Hero.ts unchanged). The row 2 agent changed no code and did not chase performance; the gate rerun by the recorder passed at cost p95 10.03 ms. Row 2's retro fixes landed for row 3: `--scenario` takes a brace list (bac933cdc, red-green `bridgeClient.spec.ts`) and the scaffold line says CLAUDE.md copies AGENTS.md (59d741907, red-green `scaffold.spec.ts`). The box stays open while rows 3..N run.
+  - Open (2026-10-26): row 2 is recorded and names row 1's fixes (a4d5345ef: a failed cost bound names the foreign GPU processes and says rerun; 42cbf971c + c5bc052e7: start the agent in the project, or call `engine.mjs <tool> '<json>'`). Row 2 against row 1: K1 44,483 vs 97,840 tokens (−55%), 15 vs 37 turns, 7 vs 19 min; K2 22/22 vs 21/22, judge CLOSE both (fresh Opus judge: NEUTRAL row 2 vs row 1); K3 2 vs 7; K4 4 both (Hero.ts unchanged). The row 2 agent changed no code and did not chase performance; the gate rerun by the recorder passed at cost p95 10.03 ms. Row 2's retro fixes landed for row 3: `--scenario` takes a brace list (bac933cdc, red-green `bridgeClient.spec.ts`) and the scaffold line says CLAUDE.md copies AGENTS.md (59d741907, red-green `scaffold.spec.ts`). Row 3 names row 2's fixes and confirms them (AGENTS.md read without its CLAUDE.md copy, one glob run for 22 playtests): K1 47,107 (+6% vs row 2, AGENTS.md read twice because its 22 KB overflowed one tool result with other output), K2 22/22 + CLOSE (NEUTRAL vs row 2), K3 0, K4 4. The remaining frictions are kit-layer (the kit `AGENTS.md` size, no win state at three Sunseeds, the wall-kick camera that hides the hero, the K4 movement gaps), so rows 4..N wait for the PRD-749 kit base and the author step. The box stays open while rows 4..N run.
   - K2 budget on the runner's Xvfb: `k2BudgetMet` reads `TN_FRAME_BUDGET` presented p95, which on the private Xvfb is display cadence (17.5 ms with a 10.03 ms game; the gate calls it "not gated"), so K2 cannot meet its budget there. Owner decision: judge the gate's cost p95, or measure presented p95 on a real display. Until then rows record presented p95 and name the cost p95 in their notes.
 - [ ] AC-6 [local]: the loop stops by the rule: the list is done, or two rows in a row gain under 5% on all of K1–K4. proof: the ledger, the stop line in this PRD
 - [ ] AC-7 [local]: K1–K4 meet their targets at the last row, or the gap per KPI is recorded with its cause. proof: dashboard kit-loop tab, the last ledger row
