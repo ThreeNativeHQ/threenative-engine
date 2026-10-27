@@ -74,6 +74,13 @@
         "gte": 0,
         "allowTrivial": "A negative age means the GPU height copy never landed, so nothing downstream of it can be trusted."
       }
+    ],
+    "hud": [
+      {
+        "id": "outcome",
+        "equals": "out of wind",
+        "allowTrivial": "The wind ran out with the ship upright: the panel says so instead of calling it a capsize."
+      }
     ]
   }
 }

@@ -29,6 +29,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     helm: { left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"] },
     /** The sheets, on their own axis: full sail is full sail whatever the helm is doing. */
     sheets: { down: ["ArrowDown", "KeyS"], up: ["ArrowUp", "KeyW"] },
+    // The loss path `playtests/fail.playtest.json` drives; deliberately not in the players' hint.
     capsize: { keys: ["KeyC"] },
     restart: { keys: ["KeyR"] },
   },
