@@ -831,6 +831,46 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  it("evaluates a stride-synced walk every frame in the 32-128 px band, so the planted foot holds", () => {
+    // A held pose rides on a moving body: the planted foot slides by the body's travel each held
+    // frame. The action RPG hero, about 60 px tall, ran its jog at half rate and slid 0.5 m per metre.
+    const body = new Group();
+    const root = new Group();
+    body.add(root);
+    root.add(new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial()));
+    const walk = new AnimationClip("walk", 2, [
+      new VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 0, 0, 2]),
+    ]);
+    const idle = new AnimationClip("idle", 1, [
+      new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1]),
+    ]);
+    const rig = new AnimationPlayer({ root, clips: [walk, idle], strideRoot: body });
+    const scene = new Scene();
+    scene.add(body);
+    body.position.set(2, 0, -20);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    const cull = new RenderCameraCull();
+    const frame = (move: number) => {
+      body.position.z -= move;
+      scene.updateMatrixWorld(true);
+      cull.apply(scene, camera, 720);
+      cull.restore();
+      rig.update(1 / 60);
+    };
+    rig.play("idle");
+    for (let tick = 0; tick < 8; tick += 1) frame(0);
+    expect(rig.updateRateReport.rate, "a still idle keeps the band rate").toBe(2);
+    rig.play("walk");
+    for (let tick = 0; tick < 8; tick += 1) frame(1 / 60);
+    expect(rig.stride.synced).toBe(true);
+    const updates = vi.spyOn(rig.mixer, "update");
+    for (let tick = 0; tick < 8; tick += 1) frame(1 / 60);
+    expect(rig.updateRateReport.rate).toBe(1);
+    expect(updates.mock.calls.length).toBe(8);
+    cull.dispose();
+    rig.dispose();
+  });
+
   it("integrates changing stride rates without applying the last rate to skipped time", () => {
     const create = (updateRate: number) => {
       const body = new Group();

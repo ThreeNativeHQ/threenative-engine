@@ -21,8 +21,9 @@ export function setupLighting(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  // Warm white, matched by eye to the photographed midday sun against its own sky.
-  const key = new DirectionalLight(0xfff0dc, 5.5);
+  // Warm white, matched by eye to the photographed midday sun against its own sky (owner
+  // 2026-10-26 prefers this 7b546d6 neutral look to the warmer 0xfff0dc at 5.5).
+  const key = new DirectionalLight(0xfff1e0, 4.5);
   key.name = "key-light";
   key.position.copy(SUN_DIRECTION).multiplyScalar(40);
   // A directional light aims at its target, and the default target sits on the world origin — six

@@ -345,6 +345,35 @@ describe("AnimationPlayer", () => {
     expect(root.position.x).toBeCloseTo(0.25);
   });
 
+  it("plays a one-shot at the requested speed and returns to the authored rate on the next play", () => {
+    const root = new Object3D();
+    const clip = new AnimationClip("roll", 1, [
+      new NumberKeyframeTrack(".position[x]", [0, 1], [0, 1]),
+    ]);
+    const player = new AnimationPlayer({ clips: [clip], root });
+
+    // Godot's `play(name, blend, speed)`: a 1.47 s roll fits a 0.5 s dodge without a cut.
+    player.play("roll", { mode: "once", speed: 2 });
+    player.update(0.25);
+    expect(root.position.x).toBeCloseTo(0.5);
+    player.update(0.3);
+    expect(player.finished).toBe(true);
+    expect(root.position.x).toBeCloseTo(1);
+
+    player.play("roll", { mode: "once" });
+    player.update(0.25);
+    expect(root.position.x).toBeCloseTo(0.25);
+  });
+
+  it("rejects a play speed that is not a positive finite number", () => {
+    const root = new Object3D();
+    const clip = new AnimationClip("roll", 1, []);
+    const player = new AnimationPlayer({ clips: [clip], root });
+    for (const speed of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => player.play("roll", { mode: "once", speed })).toThrow(/speed/);
+    }
+  });
+
   it("defaults a finished one-shot replay to looping", () => {
     const root = new Object3D();
     const clip = new AnimationClip("clip", 1, [

@@ -1,5 +1,5 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
-import { Vector3 } from "three";
+import { MathUtils, type Object3D, Vector3 } from "three";
 import { createSword } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
@@ -25,10 +25,16 @@ const DODGE_SPEED = 9;
 /** Capsule for a 1.8 m figure: 0.38 m half-height plus a 0.34 m radius at each end. */
 const HALF_HEIGHT = 0.38;
 const RADIUS = 0.34;
-/** How long a swing, a cast and a roll keep the legs from taking over the clip. */
-const SWING = 0.45;
+/**
+ * How long a swing, a cast and a roll keep the legs from taking over the clip. The swing holds
+ * through the follow-through of `Sword_Attack` (1.53 s); a new swing waits for it. The roll holds
+ * long enough to play the whole `Roll` clip inside it.
+ */
+const SWING = 0.8;
+/** When the blade crosses the front of the figure in `Sword_Attack`: the hand peaks at 0.40 s. */
+const SWING_CONTACT = 0.4;
 const CAST = 0.7;
-const ROLL = 0.5;
+const ROLL = 0.7;
 const DODGE_COOLDOWN = 1;
 const REACH = 0.9;
 
@@ -37,10 +43,15 @@ export class Player extends Fighter {
   readonly maxHealth = 100;
   health: number;
   dead = false;
-  equippedItem = "";
   #bodyDisposed = false;
+  #equippedItem = "";
+  #sword: Object3D;
+  /** The landing half of the swing in progress: damage waits for the blade, not the key. */
+  #swing: { remaining: number; land: () => void } | undefined;
   #dodgeCooldown = 0;
   #dodgeRemaining = 0;
+  #rollDirection = new Vector3();
+  #rollDirectionChosen = false;
   #forward = new Vector3();
   #origin = new Vector3();
   #onDamage: (amount: number) => void;
@@ -54,7 +65,10 @@ export class Player extends Fighter {
     onDamage: (amount: number) => void,
     onDeath: () => void,
   ) {
-    super(ctx, model, CLIPS, { halfExtent: HALF_HEIGHT + RADIUS, weapon: createSword() });
+    const sword = createSword();
+    super(ctx, model, CLIPS, { halfExtent: HALF_HEIGHT + RADIUS, weapon: sword });
+    this.#sword = sword;
+    this.equippedItem = "";
     this.health = Math.max(0, Math.min(this.maxHealth, health));
     this.mesh.position.copy(spawn);
     this.#onDamage = onDamage;
@@ -82,18 +96,51 @@ export class Player extends Fighter {
     }
     this.#dodgeCooldown = Math.max(0, this.#dodgeCooldown - dt);
     this.#dodgeRemaining = Math.max(0, this.#dodgeRemaining - dt);
+    if (this.#dodgeRemaining > 0 && !this.#rollDirectionChosen) {
+      this.#rollDirectionChosen = true;
+      this.#rollDirection.set(move.x, 0, -move.y);
+      if (this.#rollDirection.lengthSq() > 0.01) this.#rollDirection.normalize();
+      else this.facingVector(this.#rollDirection);
+      this.figure.rotation.y = Math.atan2(this.#rollDirection.x, this.#rollDirection.z);
+    }
     const speed =
       this.#dodgeRemaining > 0 ? DODGE_SPEED * (this.#dodgeRemaining / ROLL) : MOVE_SPEED;
-    this.body.velocity.set(move.x * speed, 0, -move.y * speed);
+    if (this.#dodgeRemaining > 0)
+      this.body.velocity.copy(this.#rollDirection).multiplyScalar(speed);
+    else this.body.velocity.set(move.x * speed, 0, -move.y * speed);
     this.body.moveAndSlide(dt);
     this.conventions.applyGrounding(0, dt);
     const heading = this.busy ? undefined : Math.atan2(this.body.velocity.x, this.body.velocity.z);
     this.animateRig(dt, heading, Math.hypot(this.body.velocity.x, this.body.velocity.z));
+    const swing = this.#swing;
+    if (swing === undefined) return;
+    swing.remaining -= dt;
+    if (swing.remaining > 0) return;
+    this.#swing = undefined;
+    // A cast or a roll that took the clip over took the blade with it.
+    if (this.action === "attack") swing.land();
   }
 
-  /** The swing, the cast and the roll: three inputs, three clips, one state machine. */
-  strike(): void {
+  /** The hand holds the blade only while a weapon is equipped, so the figure and the HUD agree. */
+  get equippedItem(): string {
+    return this.#equippedItem;
+  }
+
+  set equippedItem(itemId: string) {
+    this.#equippedItem = itemId;
+    this.#sword.visible = itemId !== "";
+  }
+
+  /**
+   * The swing, the cast and the roll: three inputs, three clips, one state machine. `land` runs
+   * when the blade reaches the front of the figure; a press during a swing is ignored, so the
+   * clip and the hits it deals stay one to one.
+   */
+  strike(land: () => void): boolean {
+    if (this.dead || (this.action === "attack" && this.busy)) return false;
     this.play("attack", { fade: 0.05, hold: SWING });
+    this.#swing = { land, remaining: SWING_CONTACT };
+    return true;
   }
 
   cast(): void {
@@ -104,7 +151,8 @@ export class Player extends Fighter {
     if (this.busy || this.#dodgeCooldown > 0) return false;
     this.#dodgeCooldown = DODGE_COOLDOWN;
     this.#dodgeRemaining = ROLL;
-    this.play("dodge", { fade: 0.05, hold: ROLL });
+    this.#rollDirectionChosen = false;
+    this.play("dodge", { fade: 0.05, hold: ROLL, fit: true });
     return true;
   }
 
@@ -147,12 +195,17 @@ export class Player extends Fighter {
       action: this.action,
       dead: this.dead,
       equippedItem: this.equippedItem,
+      facingDegrees:
+        Math.round(
+          MathUtils.radToDeg(MathUtils.euclideanModulo(this.figure.rotation.y, Math.PI * 2)),
+        ) % 360,
       groundClearance: this.conventions.groundSnap.clearance,
       health: this.health,
       normaliseFactor: this.conventions.normaliseFactor,
       position: this.mesh.position.toArray(),
       skeletonBones: this.conventions.boneNames,
       weaponBone: this.conventions.attachedBone,
+      weaponVisible: this.#sword.visible,
     };
   }
 
