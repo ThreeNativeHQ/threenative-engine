@@ -388,7 +388,7 @@
       "gtaoEnabled": true,
       "gtaoRadius": 0.35,
       "localExposureEnabled": true,
-      "motionBlurEnabled": true
+      "motionBlurEnabled": false
     }
   },
   "snow": {

@@ -219,6 +219,7 @@ describe("PRD-723 phase 1 kit look defaults", () => {
         gtaoRadius: 0.35,
         gtaoSamples: 16,
         samples: 4,
+        motionBlurEnabled: false,
       });
       const tiers: Record<string, Record<string, unknown>> = {
         high: {},

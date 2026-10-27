@@ -69,6 +69,14 @@ export const neutralLook: IWorldEnvironmentOptions = {
   gtaoSamples: 16,
   // 4x MSAA under the chain on every tier.
   samples: 4,
+  // No motion blur, on any tier. Core's is Unreal's (UE 5.8.3: Engine/Source/Runtime/Engine/
+  // Private/Scene.cpp:646-648, amount 0.5, 5 % cap, 30 fps target), and Unreal scales it by the
+  // frame time (Renderer/Private/SceneVisibility.cpp:5650-5658): on a 144 Hz display a moderate
+  // mouse turn smears the whole frame to the cap, and aiming is reading that frame. The hands and
+  // rifle are skinned, and the engine gives a skinned draw the camera's motion, so they smeared
+  // like the far wall; Unreal keeps them sharp with first-person velocity
+  // (Engine/Shaders/Private/VelocityShader.usf:74-82). `motionBlurEnabled: true` brings it back.
+  motionBlurEnabled: false,
 };
 
 /** The 7b546d6 per-tier values: half the occlusion directions on medium, none of it on a phone. */

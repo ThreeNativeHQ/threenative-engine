@@ -20,7 +20,7 @@ import {
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { BreakableField } from "../entities/Breakables.js";
 import { Enemy } from "../entities/Enemy.js";
-import { FpsPlayer } from "../entities/FpsPlayer.js";
+import { FpsPlayer, WALK_SPEED } from "../entities/FpsPlayer.js";
 import { MAGAZINE, RESERVE, Rifle } from "../entities/Rifle.js";
 import { Target } from "../entities/Target.js";
 import { TouchControls } from "../entities/TouchControls.js";
@@ -807,10 +807,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       player.touch = touch.update(frameCtx);
       player.update(frameCtx, dt, !rifle.reloading);
-      const moveVector = frameCtx.input.vector("move");
       const aimRay = player.aimRay();
       rifle.converge(aimRay.origin, aimRay.direction);
-      rifle.update(dt, player.aiming, Math.min(1, Math.hypot(moveVector.x, moveVector.y)));
+      // The bob and the walk clip follow the body's speed, which eases in and out, not the keys.
+      rifle.update(dt, player.aiming, Math.min(1, player.speed / WALK_SPEED));
       // Held, not tapped. The trigger is polled every frame and `Rifle` decides which of those
       // frames sends a round, so a held button fires at the weapon's cyclic rate instead of asking
       // the player to produce ten clicks a second by hand.
