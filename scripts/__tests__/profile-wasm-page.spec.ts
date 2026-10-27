@@ -65,7 +65,9 @@ vi.mock("@playwright/test", () => ({
 }));
 
 // Importing the command must not launch a profile.
-const { cpuWork, frameStats, measure, options } = await import("../profile-wasm-page.js");
+const { cpuWork, frameStats, measure, options, startCpuLoad } = await import(
+  "../profile-wasm-page.js"
+);
 afterEach(() => {
   state.load = 2;
   state.memory = {};
@@ -153,6 +155,26 @@ describe("profile:wasm-page startup, input and CPU work", () => {
       saveProfile: "/tmp/p",
     });
     expect(options(["--url", "u"]).saveProfile).toBeUndefined();
+  });
+
+  it("parses --load as a count of busy processes and refuses a bad count", () => {
+    expect(options(["--url", "u", "--load", "6"]).load).toBe(6);
+    expect(options(["--url", "u"]).load).toBe(0);
+    for (const bad of ["-1", "1.5", "x"])
+      expect(() => options(["--url", "u", "--load", bad])).toThrow("--load");
+  });
+
+  it("starts the busy processes, keeps them alive and stops them", async () => {
+    const load = startCpuLoad(2);
+    expect(load.pids).toHaveLength(2);
+    for (const pid of load.pids) expect(() => process.kill(pid, 0)).not.toThrow();
+    await load.stop();
+    for (const pid of load.pids) expect(() => process.kill(pid, 0)).toThrow();
+  });
+
+  it("stamps the stated load on the run", async () => {
+    const run = await measure("http://test", options(["--url", "http://test", "--load", "1"]));
+    expect(run.cpuLoad).toEqual({ processes: 1 });
   });
 
   it("clicks in order before the warm-up, stamps startup, and reports CPU work per frame", async () => {

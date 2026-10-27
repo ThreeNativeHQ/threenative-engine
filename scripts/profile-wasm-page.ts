@@ -1,5 +1,5 @@
 /**
- * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--memory] [--json]`
+ * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--calls] [--memory] [--json]`
  *
  * Profiles a running game page the way a Wasm-engine performance question needs: frame time from
  * requestAnimationFrame, a Chrome CPU profile grouped into engine Wasm, JavaScript and WebGPU calls
@@ -7,12 +7,14 @@
  * (three-native's opt-in census, `__tnCallCounts`), and with `--gpu-calls` the WebGPU API calls per
  * frame on both pages (render passes, draws, bind groups, buffer writes). `--control` runs a second page, the same game on
  * three.js, through the same measurement, so the verdict is a ratio on one lane, never an absolute.
+ * `--load <n>` keeps `n` busy-loop processes alive for the whole page run: the stated CPU load.
  *
  * It refuses a software WebGPU adapter (`--allow-software` overrides) and needs a display: run it as
  * `sh scripts/xvfb.sh pnpm profile:wasm-page -- ...`. Wasm function names need a module linked with
  * `--profiling-funcs`; without it the Wasm rows are numbered. Diagnose with it; the steady-state
  * counter gates (render_database_test steady_state, wasm-engine-boot's renderer scenario) hold a fix.
  */
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -40,6 +42,8 @@ interface IOptions {
   clicks: string[];
   /** Directory that receives each page's raw Chrome .cpuprofile, named by the page's port. */
   saveProfile?: string;
+  /** Busy-loop processes kept running for the whole page run: the stated CPU load. */
+  load: number;
 }
 
 export function options(argv: readonly string[]): IOptions {
@@ -50,12 +54,15 @@ export function options(argv: readonly string[]): IOptions {
   const url = value("url");
   if (url === undefined)
     throw new Error(
-      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--memory] [--json]",
+      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--calls] [--memory] [--json]",
     );
   const seconds = Number(value("seconds") ?? 5);
   const warmupMs = Number(value("warmup-ms") ?? 12000);
   if (!(seconds > 0) || !(warmupMs >= 0))
     throw new Error("--seconds and --warmup-ms must be positive numbers");
+  const load = Number(value("load") ?? 0);
+  if (!(Number.isInteger(load) && load >= 0))
+    throw new Error("--load must be a whole number of processes, 0 or more");
   const control = value("control");
   return {
     url,
@@ -71,6 +78,7 @@ export function options(argv: readonly string[]): IOptions {
     ...(value("save-profile") === undefined
       ? {}
       : { saveProfile: value("save-profile") as string }),
+    load,
     clicks: argv.flatMap((arg, i) => {
       if (arg !== "--click") return [];
       const selector = argv[i + 1];
@@ -78,6 +86,27 @@ export function options(argv: readonly string[]): IOptions {
         throw new Error("--click needs a selector");
       return [selector];
     }),
+  };
+}
+
+export function startCpuLoad(processes: number): { pids: number[]; stop(): Promise<void> } {
+  const children = Array.from({ length: processes }, () =>
+    spawn(process.execPath, ["-e", "for(;;){}"], { stdio: "ignore" }),
+  );
+  return {
+    pids: children.map((child) => child.pid as number),
+    async stop() {
+      await Promise.all(
+        children.map(
+          (child) =>
+            new Promise<void>((resolve) => {
+              if (child.exitCode !== null || child.signalCode !== null) return resolve();
+              child.once("exit", () => resolve());
+              child.kill("SIGKILL");
+            }),
+        ),
+      );
+    },
   };
 }
 
@@ -343,6 +372,8 @@ export async function measure(url: string, o: IOptions) {
     headless: false,
     args: [...WEBGPU_BROWSER_ARGS, ...PERFORMANCE_BROWSER_ARGS],
   });
+  // Started after the launch, so a launch failure leaves no busy process behind.
+  const cpuLoad = startCpuLoad(o.load);
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const errors: string[] = [];
@@ -406,6 +437,7 @@ export async function measure(url: string, o: IOptions) {
     return {
       url,
       hostLoad,
+      cpuLoad: { processes: o.load },
       ...(memory ? { memory: parseWebMetrics({ memory }).memory } : {}),
       adapter,
       startupMs,
@@ -415,6 +447,7 @@ export async function measure(url: string, o: IOptions) {
       ...(gpu ? { gpu } : {}),
     };
   } finally {
+    await cpuLoad.stop();
     await browser.close();
   }
 }
@@ -424,6 +457,7 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   console.log(
     `host load ${r.hostLoad.load1} on ${r.hostLoad.cores} cores, absolutes ${r.hostLoad.absolutes}`,
   );
+  console.log(`cpu load ${r.cpuLoad.processes} busy processes`);
   if (r.memory)
     console.log(
       `memory: Wasm ${r.memory.wasmMemoryBytes} bytes, JS heap used ${r.memory.jsHeapUsedBytes} bytes`,
