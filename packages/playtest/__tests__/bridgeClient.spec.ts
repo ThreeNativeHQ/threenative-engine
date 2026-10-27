@@ -58,6 +58,10 @@ test("scenario flags accumulate and expand a project glob in sorted order", asyn
     projectPath,
   );
   expect(hyphenatedGlob.scenarioPaths).toEqual(["playtests/terminal-menu.playtest.json"]);
+
+  // Kit-loop row 2 (PRD-750): a cold agent quoted a shell brace list and got SCENARIO_UNREADABLE.
+  const braces = parseStandalonePlaytestArgs(["--scenario", "playtests/{b,terminal-*}.playtest.json"], projectPath);
+  expect(braces.scenarioPaths).toEqual(["playtests/b.playtest.json", "playtests/terminal-menu.playtest.json"]);
 });
 
 test("a scenario glob that matches nothing fails closed", async () => {

@@ -1,7 +1,8 @@
-# Campaign state and HTML dashboard
+# Campaign state and the dashboard tab
 
-Generate this on invocation, not when installing the skill. The HTML is the developer's view of
-one machine-readable campaign record, not a second manually maintained evidence report.
+Create this on invocation, not when installing the skill. The developer's view is one tab of the
+single KPI hub, `pnpm dashboard` (`scripts/perf-live.ts`, PRD-751), reading one machine-readable
+campaign record. Do not generate a per-campaign HTML page or a second evidence report.
 
 ## Files and updates
 
@@ -9,22 +10,21 @@ Use `<primary>/artifacts/native-performance-loop/<campaign-id>/` with:
 
 - `results.json`: versioned contract, environment identities, workloads, baselines, incumbent,
   experiment history, status, heartbeat, limits and next hypothesis.
-- `index.html`: an offline, self-contained dashboard generated from `results.json`.
 - `raw/<experiment-id>/`: existing harness output, exit codes, sample data, profiles, screenshots,
   candidate patch/commit reference, build identities and exact reproduction commands.
 
-Reuse a suitable existing report renderer if present. Otherwise generate a small HTML file with
-inline CSS, embedded data and minimal browser JavaScript; save the small renderer alongside the
-campaign only if needed to regenerate it reliably. No web framework, backend, CDN or new dependency.
-It must open with `file://` without fetching JSON. Write JSON and HTML via temporary siblings and
-atomic replacement, preserving the last readable snapshot if generation fails.
+Reuse an existing hub tab when its reader fits the record (the Shadows vs Unreal tab reads a
+campaign `results.json`). Otherwise add one: a small reader beside `scripts/shadow-perf/dashboard.ts`
+that reads `results.json`, writes nothing and fails closed (missing = `pending`, malformed =
+`invalid`), plus one `TABS` row and one route in `scripts/perf-live.ts`, with a test in
+`scripts/__tests__/perf-live.spec.ts`. No web framework, CDN or new dependency. Write
+`results.json` via a temporary sibling and atomic replacement, preserving the last readable record.
 
-Create the dashboard before the first benchmark, showing “baseline pending,” never sample wins.
-Refresh after each state transition and decision. During long commands, publish a timestamp and
-heartbeat at least every 60 seconds using the existing gate status where available. The HTML must
-show its snapshot time; when an old snapshot is open, say “reload for current progress” instead of
-pretending it is live. If serving locally is already supported, optional refresh must preserve
-filters. A stale heartbeat is “stale / check process,” never proof the worker is still active.
+Add the tab before the first benchmark, showing “baseline pending,” never sample wins. Update the
+record after each state transition and decision. During long commands, publish a timestamp and
+heartbeat at least every 60 seconds using the existing gate status where available. The tab shows
+the record's update time. A stale heartbeat is “stale / check process,” never proof the worker is
+still active.
 
 Escape benchmark names, descriptions, commands and log content as text. If embedding JSON in an
 HTML script element, escape `<` as `\u003c` so data cannot terminate the script. Use textContent for
@@ -73,8 +73,8 @@ FPS derived from percentiles or average several games into an unqualified perfor
 
 ## Verify and resume
 
-Before handing off an HTML snapshot, open it in a browser when a browser tool is available. Check
-that it opens offline, shows actual recorded values, distinguishes missing/provisional data, and
+Before handing off, open the tab in `pnpm dashboard` in a browser when a browser tool is available.
+Check that it shows actual recorded values, distinguishes missing/provisional data, and
 that filters, keyboard controls and evidence links work. A renderer with non-trivial logic needs
 one small runnable check covering metric direction, missing values and unsafe text. If no browser
 is available, check generated structure and links and mark visual inspection unverified.
@@ -82,5 +82,5 @@ is available, check generated structure and links and mark visual inspection unv
 On resume, load the contract and history, verify ownership and process state, and reconcile the
 worktree with the recorded incumbent before editing. Check executable/workload/environment hashes;
 if any comparison dimension changed, create a new series and baseline instead of connecting its
-points to the old curve. Preserve all previous decisions. Link to this dashboard in the PRD/PR and
+points to the old curve. Preserve all previous decisions. Link to this tab in the PRD/PR and
 final response rather than copying its experiment log into another report.

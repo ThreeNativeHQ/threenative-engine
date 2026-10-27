@@ -172,7 +172,7 @@ The boxes are under the execution phases. Phase 1 holds AC-1 and AC-2 (done). Ph
 | Animation off the critical path | `AnimationPlayer.update` → C++ mixer step and jobs | per-rig `mixer.update` calls and JS stride on native | AC-17 |
 | Engine JS in C++ | `three-native/src/audio.ts`, `core/src/ui-state.ts`, `core/src/ui-bridge.ts`, player shim `core-three.mjs`, `three-native/src/object-surface.ts` | JS pose sync, per-publish validation, per-read crossings | AC-18 |
 | HUD under one frame | WebKit overlay snapshot mailbox → frame blend | — | AC-5 |
-| Final-tier result | `pnpm perf:live` hero | R5 hero becomes the cheap-tier row | AC-19 |
+| Final-tier result | `pnpm dashboard` hero | R5 hero becomes the cheap-tier row | AC-19 |
 
 ## Decisions
 

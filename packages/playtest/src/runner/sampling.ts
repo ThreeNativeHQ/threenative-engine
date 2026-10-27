@@ -863,7 +863,7 @@ export async function sampleHudAudit(page: Page): Promise<{ items: IPlaytestHudA
       if (element.closest("script, style, canvas, noscript") !== null) continue;
       let ownText = "";
       for (const node of element.childNodes) {
-        if (node.nodeType === Node.TEXT_NODE) ownText += node.textContent ?? "";
+        if (node.nodeType === 3 /* Node.TEXT_NODE; the global is browser-only */) ownText += node.textContent ?? "";
       }
       const text = ownText.replace(/\s+/gu, " ").trim();
       if (text === "") continue;

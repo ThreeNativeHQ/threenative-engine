@@ -89,7 +89,7 @@ export interface IReferenceGame {
 }
 
 const DEFAULT_REFERENCES_URL =
-  "https://github.com/jonit-dev/threenative-game-refs/releases/latest/download/";
+  "https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp/releases/latest/download/";
 const FETCH_TIMEOUT_MS = 5_000;
 const GAME_FETCH_TIMEOUT_MS = 30_000;
 const ID = /^[a-z0-9][a-z0-9-]*$/u;
@@ -198,7 +198,20 @@ export function validateReferenceIndex(value: unknown, where = "index"): IRefere
   const index = record(value, where, ["version", "games", "stubs"]);
   if (index.version !== 1) fail(`${where}.version`, "expected 1");
   const games = list(index.games, `${where}.games`, (entry, at) => {
-    const game = record(entry, at, ["id", "title", "platform", "repo", "tier"]);
+    // `kind`, `rating`, `genre` and `subgenre` are editorial catalog fields the data repository
+    // publishes and search never reads; a new catalog field is one name here and one schema change
+    // there, never a rejection of the whole release.
+    const game = record(entry, at, [
+      "id",
+      "title",
+      "platform",
+      "repo",
+      "tier",
+      "kind",
+      "rating",
+      "genre",
+      "subgenre",
+    ]);
     if (game.tier !== 1 && game.tier !== 2) fail(`${at}.tier`, "expected 1 or 2");
     return {
       id: id(game.id, `${at}.id`),
@@ -509,7 +522,7 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\"'\"'")}'`;
 }
 
-const CONTRIBUTION_REPO = "jonit-dev/threenative-game-refs";
+const CONTRIBUTION_REPO = "ThreeNativeHQ/threenative-reverse-engineer-mcp";
 
 /**
  * Saves what an agent mapped in a game it explored, merged by id over its earlier save, and

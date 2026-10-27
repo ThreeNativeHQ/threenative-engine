@@ -72,6 +72,8 @@ export interface ICapabilitySearchResult {
 export interface ICapabilitySearchResponse {
   /** Present when the request names a genre or game a starter kit covers; it leads the response. */
   readonly starterKits?: readonly IStarterKitResult[];
+  /** Present when the request asks to reverse engineer a game: the tools that read its pinned decomp. */
+  readonly referenceTools?: readonly string[];
   /** "starterKit": a kit matched but no engine capability did; scaffold the kit, then search its gaps. */
   readonly verdict: "matched" | "none" | "starterKit";
   readonly results: readonly ICapabilitySearchResult[];
@@ -721,7 +723,7 @@ export function searchCapabilities(
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
   const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
-  const response = searchMechanics(situation, manifest, scope);
+  const response = withReferenceTools(situation, searchMechanics(situation, manifest, scope));
   if (starterKits.length === 0) return response;
   // The kit leads the response; the mechanics it does not cover follow unchanged.
   return {
@@ -733,6 +735,23 @@ export function searchCapabilities(
           verdict: "starterKit" as const,
         }
       : {}),
+  };
+}
+
+const REVERSE_ENGINEER = /\breverse[\s-]?engineer|\bdecomp|\bdisassembl/iu;
+const REFERENCE_TOOLS = [
+  "engine_search_references",
+  "engine_reference_detail",
+  "engine_save_reference",
+];
+
+/** A reverse-engineer request leads with the reference tools (PRD-735); the mechanics follow unchanged. */
+function withReferenceTools(situation: string, response: ICapabilitySearchResponse) {
+  if (!REVERSE_ENGINEER.test(situation)) return response;
+  return {
+    referenceTools: REFERENCE_TOOLS,
+    ...response,
+    guidance: `Reverse engineer the game with engine_search_references, then engine_reference_detail for its pinned cards. ${response.guidance}`,
   };
 }
 
@@ -872,7 +891,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
   {
     name: "engine_search_references",
     description:
-      "Search mechanic cards and repository map nodes from classic games. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
+      "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
     annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -884,7 +903,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
   {
     name: "engine_reference_detail",
     description:
-      "Read a game's pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
+      "Reverse engineer a game: read its pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
     annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -900,7 +919,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
   {
     name: "engine_save_reference",
     description:
-      "Validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused.",
+      "Save what you reverse engineer: validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused.",
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -1194,7 +1213,41 @@ export async function handleLine(line: string, manifestFile: string): Promise<st
   }
 }
 
+/**
+ * One tool call from the command line: `engine.mjs <tool> '<json arguments>'` prints the tool's
+ * text and exits 0, or names the error and exits 1. A session started outside the project never
+ * loads its `.mcp.json`, and this is how it still searches (PRD-750 kit-loop row 1).
+ */
+export async function runCli(
+  argv: readonly string[],
+  manifestFile = defaultManifestPath(),
+  io: { stderr: (text: string) => void; stdout: (text: string) => void } = {
+    stderr: (text: string) => void process.stderr.write(text),
+    stdout: (text: string) => void process.stdout.write(text),
+  },
+): Promise<number> {
+  const [name, json = "{}"] = argv;
+  try {
+    const result = await handleToolCall(
+      { arguments: JSON.parse(json) as unknown, name },
+      manifestFile,
+    );
+    io.stdout(`${result.content[0].text}\n`);
+    return 0;
+  } catch (error) {
+    io.stderr(`${name}: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+}
+
 export function runServer(manifestFile = defaultManifestPath()): void {
+  const tool = process.argv[2];
+  if (tool?.startsWith("engine_") === true) {
+    void runCli(process.argv.slice(2), manifestFile).then((code) => {
+      process.exitCode = code;
+    });
+    return;
+  }
   // Load before accepting requests. A missing manifest is a startup failure, never an empty tool
   // response that an authoring agent could mistake for the engine having no capabilities.
   loadCapabilityManifest(manifestFile);
