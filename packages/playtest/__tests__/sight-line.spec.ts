@@ -1,4 +1,4 @@
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
+import { AdditiveBlending, BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
 import { describe, expect, it } from "vitest";
 
 import { evaluateRichPlaytestAssertions } from "../src/index.js";
@@ -45,6 +45,34 @@ describe("observeSightLine", () => {
     hidden.visible = false;
     const invisible = world(hidden);
     expect(observeSightLine(invisible.scene, invisible.camera, invisible.subject).blocked).toBe(false);
+  });
+
+  it("does not count a cutout or an effect volume as a wall, and still counts a solid one", () => {
+    const stand = (name: string, tune: (mesh: Mesh) => void) => {
+      const mesh = box(name, [6, 6, 0.5], [0, 2, 2.5]);
+      tune(mesh);
+      const { camera, scene, subject } = world(mesh);
+      return observeSightLine(scene, camera, subject).blocked;
+    };
+    // Leaves and grass are alpha-tested quads: the ray meets the quad, the eye sees through the holes.
+    expect(stand("leaves", (mesh) => void ((mesh.material as MeshBasicMaterial).alphaTest = 0.4))).toBe(false);
+    // Light shafts, mist and glow draw over the scene without writing depth: nothing stands there.
+    const shafts = (mesh: Mesh) => {
+      const material = mesh.material as MeshBasicMaterial;
+      material.transparent = true;
+      material.depthWrite = false;
+      material.blending = AdditiveBlending;
+    };
+    expect(stand("shafts", shafts)).toBe(false);
+    // A transparent surface that still writes depth is glass or a fence rail; it keeps blocking.
+    expect(stand("pane", (mesh) => void ((mesh.material as MeshBasicMaterial).transparent = true))).toBe(true);
+  });
+
+  it("does not count a rope or a rail the ray crosses in a hand's width, but counts a wall of the same length", () => {
+    const rope = world(box("rope", [6, 0.07, 0.07], [0, 1.25, 2.5]));
+    expect(observeSightLine(rope.scene, rope.camera, rope.subject).blocked).toBe(false);
+    const wall = world(box("wall", [6, 0.07, 0.4], [0, 1.25, 2.5]));
+    expect(observeSightLine(wall.scene, wall.camera, wall.subject)).toMatchObject({ blocked: true, blockers: ["wall"] });
   });
 
   it("reports a camera that sits inside a solid", () => {

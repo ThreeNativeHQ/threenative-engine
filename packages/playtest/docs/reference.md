@@ -305,9 +305,11 @@ subject under 0.5 m, fewer than 4 planted tick pairs, or a target other than the
 `maxFootSlide` all fail closed with `no foot plant found: stride sync is off`
 (`TN_PLAYTEST_STRIDE_NO_FOOT_PLANT`).
 
-`assert.sightLine: { maxBlockedRatio, entity? }` watches the camera instead: every sample casts a ray
-from the camera's world position to the subject's world bounds centre and reports whether solid
-geometry is in the way. `maxBlockedRatio` (0..1) is the share of samples that may be blocked, and
+`assert.sightLine: { maxBlockedRatio, entity? }` watches the camera instead: every sample casts nine rays
+(a three by three grid across the view) from the camera's world position into the subject's world bounds and
+reports the subject hidden when more than half of them meet solid geometry, so a rope or a pole across
+the chest does not count. A cutout (`alphaTest`), a transparent surface that writes no depth and a mostly
+transparent surface are not solid. `maxBlockedRatio` (0..1) is the share of samples that may be blocked, and
 `entity` defaults to the scenario subject. A blocked sample names the five nearest blockers; a run
 over the share fails `TN_PLAYTEST_SIGHT_LINE_BLOCKED`. The check runs on the browser target only and
 fails `TN_PLAYTEST_SIGHT_LINE_UNOBSERVED` when it sampled nothing.
