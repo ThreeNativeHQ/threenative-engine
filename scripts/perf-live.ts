@@ -54,7 +54,8 @@ export interface IRow {
 const args = process.argv.slice(2);
 const flag = (name: string): string[] =>
   args.flatMap((a, i) => (a === name && args[i + 1] ? [args[i + 1] as string] : []));
-const port = Number(flag("--port")[0] ?? 8765);
+// 8765 is Token Furnace on the owner machine; the hub takes its own port.
+const port = Number(flag("--port")[0] ?? 4751);
 const roots = flag("--root").length
   ? flag("--root")
   : [path.join(process.cwd(), "artifacts", "engine-load-test", "prd-573")];

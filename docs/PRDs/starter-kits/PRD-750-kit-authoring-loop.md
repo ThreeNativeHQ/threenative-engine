@@ -128,11 +128,13 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 2: Iteration 1 — calibration on row 1 (3D platformer)
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — baseline row 1 recorded; AC-3 waits for the PRD-749 kit base, AC-4 for a quiet-host performance run
 **Files:** the row-1 kit PRD, the collectathon kit, the ledger row.
 
 - [ ] AC-3 [local]: the author step revamps the collectathon kit on the kit base, with SM64 card citations, and its own kit PRD is green. proof: the kit PRD's gates
+  - Open (2026-10-26): the kit base is not on `pr563-followup`; only PRD-749 Phase 1 (the kit contract, `9d1a848a0`) landed. On collectathon the contract reads `explore-clean` ok, `camera-sees-subject` FAIL (`TN_PLAYTEST_SIGHT_LINE_BLOCKED`), `hud-clean` FAIL (`TN_PLAYTEST_HUD_CONTRAST`), `no-hitch` ok, `foot-slip` ok, three rows opted out. Both reds belong to PRD-749's per-kit red list (its rule: fix in the base, an engine node or a contract row), so this step waits for PRD-749 Phases 2–3.
 - [ ] AC-4 [local]: a cold sandbox agent prompted "make me a game like Super Mario 64" picks the collectathon kit and reaches a gate-green build; the ledger holds the baseline row with K1–K4 and the retro lists. proof: `pnpm kit:loop record <sandbox dir>`, ledger row 1
+  - Open (2026-10-26): ledger row 1 is recorded as the baseline on today's kit (no revamp): K1 97,840 tokens, 37 turns, 19 min; K2 21/22 scenarios (95%), presented p95 17.7 ms against 16.7 ms, judge CLOSE; K3 7; K4 4 (fresh Opus judge, evidence-based). The cold agent picked the kit with `--genre mario` on its first call, but the build is not gate-green: the performance gate failed on a loaded host (load 12–30, two foreign Playwright GPU processes), and the agent cut the high tier's look to chase it. The box stays open until one quiet-host run of the performance gate (declared in advance, one run) settles it. Isolation: `claude -p --setting-sources project` plus `claudeMdExcludes` for the global CLAUDE.md; an earlier run that read it is discarded.
 
 #### Phase 3: Iterations 2..N to the stop rule
 

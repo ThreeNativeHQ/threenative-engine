@@ -1,4 +1,55 @@
 {
   "schemaVersion": 1,
-  "iterations": []
+  "iterations": [
+    {
+      "id": 1,
+      "at": "2026-10-27T03:37:30.259Z",
+      "decision": "baseline",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [],
+      "notes": "baseline on the post-merge collectathon kit (no revamp; PRD-749 kit base not landed). Cold prompt: 'Make me a game like Super Mario 64 with ThreeNative (the create-threenative command is installed). I will not answer questions; finish when it is playable.' claude -p opus-5-5, global CLAUDE.md excluded. K1 to the first result. Perf gate on a loaded host (load 12-30): cost p95 17.27 ms.",
+      "metrics": {
+        "k1Tokens": 97840,
+        "k1WallMin": 19,
+        "k1Turns": 37,
+        "k2ScenarioPct": 95,
+        "k2PresentedP95Ms": 17.7,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": false,
+        "k2Visual": "CLOSE",
+        "k3Friction": 7,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 1,
+        "retries": 6
+      },
+      "retro": {
+        "worked": [
+          "`create-threenative --genre mario` picked the collectathon kit on the first call (L7)",
+          "21 of 22 kit scenarios green with no gameplay edit"
+        ],
+        "failed": [
+          "performance gate red (cost p95 17.27 ms vs 16.7 ms) on a loaded host; the agent cut the high tier's look to chase it"
+        ],
+        "frictions": [
+          {
+            "text": "perf gate red under host GPU contention: ~25 turns of quality cuts; the capture lock said 'no competing runner detected' while two foreign Playwright GPU processes ran",
+            "transcriptLine": 46
+          },
+          {
+            "text": "engine MCP absent: .mcp.json is written after the session starts, so no capability search ran; the agent grepped agent-docs instead",
+            "transcriptLine": 154
+          },
+          {
+            "text": "45 KB CLAUDE.md + AGENTS.md mirror read twice before any work",
+            "transcriptLine": 11
+          }
+        ]
+      }
+    }
+  ]
 }
