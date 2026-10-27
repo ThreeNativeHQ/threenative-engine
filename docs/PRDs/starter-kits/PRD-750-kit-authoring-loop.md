@@ -120,6 +120,7 @@ See the phase boxes. Each box names its proof.
 - 2026-10-26 (owner): one epic PR for the loop and every kit; it merges at the release.
 - 2026-10-26 (owner): target-plus-plateau stop rule, autonomous, one ping per kit.
 - 2026-10-26 (agent): the retro lives in the ledger row, not in a file per iteration, so the dashboard shows it and nothing drifts.
+- 2026-10-27 (owner asked: "check if its being triggered properly"): the reference search did not fire on the authoring path. A cold session starts outside the game, so `.mcp.json` never loads (`mcp_servers: []`). Sandbox-4 (after #579) made 0 engine calls in 36. Sandbox-5 saw a ready `engine_search_references` command in the next-steps line and skipped it ("the kit is already a full SM64-style game"). So `create-threenative --genre <word>` now runs the search through the installed shim and prints the top 5 mechanics with a ready `engine_reference_detail` command (a50cb8a7b). Sandbox-6: the search fires and the agent reads the mechanics; it opened 0 of them, because the kit already covered the request. Probes, not ledger rows: rows 4..N wait for the kit base.
 
 ## Execution Phases
 
