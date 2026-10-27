@@ -245,16 +245,29 @@ export function serveWorkerGame(
 
       ui.attach(message.ui);
 
-      await game.start();
-
-      for (const name of MIRRORED_GLOBALS) {
-        const value = scope[name];
-        if (typeof value !== "object" || value === null) continue;
+      // Mirrored the moment the game installs one: with a runner announced, the playtest plugin
+      // holds start until the runner calls the bridge, so a mirror sent after start never arrives.
+      const mirror = (name: string, value: unknown): void => {
+        if (typeof value !== "object" || value === null) return;
         const methods = Object.keys(value).filter(
           (key) => typeof (value as Record<string, unknown>)[key] === "function",
         );
         post({ methods, name, type: "tn-worker-mirror" });
+      };
+      for (const name of MIRRORED_GLOBALS) {
+        let value = scope[name];
+        mirror(name, value);
+        Object.defineProperty(scope, name, {
+          configurable: true,
+          get: () => value,
+          set: (next: unknown) => {
+            value = next;
+            mirror(name, next);
+          },
+        });
       }
+
+      await game.start();
       post({ type: "tn-worker-started" });
     } catch (error) {
       post({

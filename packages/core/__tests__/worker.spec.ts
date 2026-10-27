@@ -303,6 +303,35 @@ describe("worker game host (PRD-752)", () => {
     handle.stop();
   });
 
+  it("mirrors the playtest bridge while start is still held for the runner to attach", async () => {
+    // With a runner announced, the playtest plugin holds the boot until the runner calls the
+    // bridge: a mirror sent only after start never reaches the page.
+    const { scope, worker } = link();
+    const { container, view } = page();
+    const game = {
+      start: () =>
+        new Promise<void>((resolve) => {
+          scope.__THREENATIVE_PLAYTEST_BRIDGE__ = {
+            describe: async () => {
+              resolve();
+              return { protocolVersion: 1 };
+            },
+          };
+        }),
+    };
+    serveWorkerGame(game, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    for (let wait = 0; wait < 20 && view.__THREENATIVE_PLAYTEST_BRIDGE__ === undefined; wait += 1)
+      await tick();
+    const bridge = view.__THREENATIVE_PLAYTEST_BRIDGE__ as { describe(): Promise<unknown> };
+    await expect(bridge.describe()).resolves.toEqual({ protocolVersion: 1 });
+    await handle.ready;
+    handle.stop();
+  });
+
   it("copies the harness's page globals into the worker before start", async () => {
     const { scope, worker } = link();
     const { container, view } = page();
