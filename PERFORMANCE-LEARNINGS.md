@@ -69,7 +69,15 @@ All levers are engine-layer, each with a spec that fails before the fix. Paired 
 | Kit backlight reads its controls once per render (12 kits) | `b430a9756` | 0.93 → 0.48 ms; the bridge cache now covers this class | KEEP |
 | Camera cull keeps its rig map while the hierarchy holds still | `4fb0c6f26` | cull 2.47-2.69 → 1.85-1.92 ms (laptop, uncapped) | KEEP |
 | Bridge cache: `children`/`parent` and JS-only properties read from JS; meter; lint | `b088dc46f` | crossings 3,190 → 1,810, p50 9.95 → 8.9 ms, p95 19.55 → 13.45 ms | KEEP |
+| Rapier: a fixed or sleeping body's pose is read once, not every step; forces cleared only on dynamic bodies | this commit | Rapier calls 2,260 → 240 a step (the 144 walls were 95%); `readVisibleTransforms` 93 → 8 µs, step 500 → 378 µs (node, shooter-shaped world); worker physics update 303-335 → 240-332 µs a step (desktop Xvfb, load 21-37, 3 pairs, noisy) | KEEP |
 | `kMaxFramesOnGpu` 2 → 3 | not built | absorbs ~40 ms GPU stalls at +1 frame of latency; stalls come from outside the engine | REJECT |
+
+Rapier export names lie: wasm-bindgen folds identical getters into one export, so `rawintegrationparameters_dt`,
+`rawkinematiccharactercontroller_offset` and `rawcollidershapecasthit_time_of_impact` (about 320 a step each) were
+`RawVector`/`RawRotation` `x`/`y`/`z` reads from `translation()`/`rotation()`. Resolve an export to its JS caller in
+`rapier_wasm3d.js` before naming a class. Left after the Rapier fix and closed below the 0.3 ms bar: character pose
+replay (about 66 calls, 7 µs a step) and the shooter enemies' per-step `teleport` of a hit-proxy `CharacterBody3D`
+(5 zero-motion controller moves, about 35 µs a step).
 
 Not causes, ruled out by counts: readback staging buffers (steady while skips swing), pipeline or shader creation
 (zero after the first frames), heap growth (floor 76.9 MB across 13 major GCs). Wasm threads were off (no `-pthread`,
