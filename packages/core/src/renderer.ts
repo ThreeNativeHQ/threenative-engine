@@ -28,6 +28,7 @@ import {
   type PipelineCensus,
   createPipelineCensus,
 } from "./pipeline-census.js";
+import { hostDocument, hostResizeObserver } from "./platform.js";
 import type { ITimestampQueryPool } from "./render-pass-budget.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
@@ -560,8 +561,9 @@ export function readCanvasSize(canvas: HTMLCanvasElement): readonly [number, num
 }
 
 export function observeCanvasResize(canvas: HTMLCanvasElement, resize: () => void): () => void {
-  if (typeof ResizeObserver !== "undefined") {
-    const observer = new ResizeObserver(resize);
+  const Observer = hostResizeObserver();
+  if (Observer !== undefined) {
+    const observer = new Observer(resize);
     observer.observe(canvas);
     return () => observer.disconnect();
   }
@@ -1835,6 +1837,15 @@ export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<
   }
 }
 
+function newPageCanvas(): HTMLCanvasElement {
+  const page = hostDocument();
+  if (page === undefined)
+    throw new Error(
+      "TN_RENDERER_NO_CANVAS: no canvas was given and this host has no document; pass options.canvas",
+    );
+  return page.createElement("canvas");
+}
+
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const gpuTimestampFrameInterval =
@@ -1854,7 +1865,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   if (!Number.isFinite(resolutionScale) || resolutionScale <= 0)
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
-  const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
+  const canvas = options.canvas ?? source?.createCanvas() ?? newPageCanvas();
   // An intrinsic canvas follows its width/height attributes. Scaling that buffer then changes
   // clientWidth, so ResizeObserver scales it again until it is one pixel. Own the layout only
   // for the browser canvas we created; supplied canvases and platform surfaces own theirs.

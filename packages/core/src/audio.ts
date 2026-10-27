@@ -1,4 +1,5 @@
 import { AudioListener, Object3D, PositionalAudio, Audio as ThreeAudio, type Vector3 } from "three";
+import { hostWindow } from "./platform.js";
 
 /**
  * Bus-level dynamics compression, every value the game's.
@@ -255,7 +256,7 @@ export class AudioBus {
     this.#camera = options.camera;
     this.listener = options.listener ?? new AudioListener();
     if (options.compressor !== undefined) this.#installCompressor(options.compressor);
-    const source = options.source ?? (() => (typeof window === "undefined" ? undefined : window));
+    const source = options.source ?? (() => hostWindow());
     this.#gestureTarget = options.gestureTarget ?? source();
     this.setCamera(options.camera);
     this.#gesture = () => {

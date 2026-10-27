@@ -132,7 +132,9 @@ export function cpuWork(profile: ICpuProfile, frames: number) {
     wallUs += delta;
     if (!idle.has(id)) busyUs += delta;
   });
-  return { busyMsPerFrame: busyUs / 1000 / frames, frames, wallMs: wallUs / 1000 };
+  // The share of the profile window the main thread was busy: the worker KPI (PRD-752).
+  const busyPercent = wallUs > 0 ? (100 * busyUs) / wallUs : 0;
+  return { busyMsPerFrame: busyUs / 1000 / frames, busyPercent, frames, wallMs: wallUs / 1000 };
 }
 
 /**
@@ -467,7 +469,7 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   );
   if (r.profile.work)
     console.log(
-      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame (thread CPU ${r.profile.work.threadMsPerFrame.toFixed(2)} ms) over ${r.profile.work.frames} frames`,
+      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame, main thread ${r.profile.work.busyPercent.toFixed(0)}% busy (thread CPU ${r.profile.work.threadMsPerFrame.toFixed(2)} ms) over ${r.profile.work.frames} frames`,
     );
   console.log(
     `cpu (${r.profile.samples} samples): ${r.profile.groups.map((g) => `${g.name} ${g.percent}%`).join(", ")}`,

@@ -7,6 +7,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { hostDocument, hostWindow } from "./platform.js";
 import { type IRendererLike, observeCanvasResize, readCanvasSize } from "./renderer.js";
 
 export interface IViewportSize {
@@ -198,9 +199,11 @@ function nativeInsets(): IViewportInsets | undefined {
 }
 
 function browserInsets(): IViewportInsets | undefined {
-  if (typeof document === "undefined" || typeof window === "undefined") return undefined;
-  if (typeof window.getComputedStyle !== "function") return undefined;
-  const probe = document.createElement("div");
+  const page = hostDocument();
+  const view = hostWindow();
+  if (page === undefined || view === undefined) return undefined;
+  if (typeof view.getComputedStyle !== "function") return undefined;
+  const probe = page.createElement("div");
   probe.style.cssText = [
     "position:fixed",
     "inset:0",
@@ -215,10 +218,10 @@ function browserInsets(): IViewportInsets | undefined {
   // computed padding to the empty string, which parses to zero — four zeroes indistinguishable
   // from a device that genuinely has no insets, reported as `measured`. The full-drawable
   // fallback is the honest answer when there was no measurement to take.
-  const body = document.body;
+  const body = page.body;
   if (body === null || body === undefined) return undefined;
   body.appendChild(probe);
-  const style = window.getComputedStyle(probe);
+  const style = view.getComputedStyle(probe);
   const value = {
     bottom: Number.parseFloat(style.paddingBottom) || 0,
     left: Number.parseFloat(style.paddingLeft) || 0,

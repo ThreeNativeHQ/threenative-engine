@@ -119,7 +119,12 @@ describe("profile:wasm-page startup, input and CPU work", () => {
       samples: [1, 2, 2, 1],
       timeDeltas: [1000, 1000, 1000, 1000],
     };
-    expect(cpuWork(profile, 2)).toEqual({ busyMsPerFrame: 1, frames: 2, wallMs: 4 });
+    expect(cpuWork(profile, 2)).toEqual({
+      busyMsPerFrame: 1,
+      busyPercent: 50,
+      frames: 2,
+      wallMs: 4,
+    });
     expect(() => cpuWork(profile, 0)).toThrow("TN_PROFILE_CPU_WORK_NO_FRAMES");
     expect(() => cpuWork({ ...profile, timeDeltas: [1] }, 2)).toThrow("TN_PROFILE_CPU_WORK_DELTAS");
   });

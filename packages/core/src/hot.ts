@@ -2,6 +2,7 @@
 
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { IGame } from "./game.js";
+import { hostDocument, hostWindow } from "./platform.js";
 export interface IHotDiagnostics {
   readonly reloads: number;
   readonly entities: number;
@@ -56,8 +57,9 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
       // the game boots at its start scene, which is what it would have done anyway.
     }
   }
-  if (isDev && typeof window !== "undefined") {
-    const host = window as unknown as Record<string, unknown> &
+  const page = hostWindow();
+  if (isDev && page !== undefined) {
+    const host = page as unknown as Record<string, unknown> &
       Partial<Record<"__THREENATIVE__", Record<string, unknown> & { hot?: () => IHotDiagnostics }>>;
     host.__THREENATIVE__ = {
       ...host.__THREENATIVE__,
@@ -115,7 +117,7 @@ function diagnostics<TState extends Record<string, unknown>, TPhysics>(
     reloads,
     entities: ctx === undefined ? 0 : Object.keys(ctx.entities.snapshot()).length,
     sceneObjects,
-    canvases: typeof document === "undefined" ? 0 : document.querySelectorAll("canvas").length,
+    canvases: hostDocument()?.querySelectorAll("canvas").length ?? 0,
     audio: audioRuntimeSnapshot(),
     physics: typeof physics?.numBodies === "function" ? physics.numBodies() : null,
   };

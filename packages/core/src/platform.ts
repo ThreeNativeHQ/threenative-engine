@@ -208,3 +208,18 @@ export function isMobile(): boolean {
 export function isTouchscreenAvailable(): boolean {
   return getPlatform().maxTouchPoints > 0;
 }
+
+/** The page's `window`, or undefined in a worker or on a host without one. Core reads it only here (PRD-752). */
+export function hostWindow(): (Window & typeof globalThis) | undefined {
+  return typeof window === "undefined" ? undefined : window;
+}
+
+/** The page's `document`, or undefined in a worker or on a host without one. */
+export function hostDocument(): Document | undefined {
+  return typeof document === "undefined" ? undefined : document;
+}
+
+/** `ResizeObserver`, or undefined where the host has none. */
+export function hostResizeObserver(): typeof ResizeObserver | undefined {
+  return typeof ResizeObserver === "undefined" ? undefined : ResizeObserver;
+}

@@ -33,7 +33,7 @@ import { MatrixWorldPass } from "./matrix-world.js";
 import { updateModelLods } from "./model-lod.js";
 import { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
-import { getPlatform } from "./platform.js";
+import { getPlatform, hostDocument, hostWindow } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { FrameCounters, counterDeviceOf } from "./profiling/FrameCounters.js";
 import {
@@ -1104,22 +1104,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#renderer = renderer;
     const canvas = renderer.domElement;
     const platform = this.#config.platform;
+    const page = hostDocument();
     if (platform !== undefined) platform.mountCanvas(canvas, this.#config.container);
     else if (
       this.#config.container !== undefined &&
       canvas.parentElement !== this.#config.container
     )
       this.#config.container.append(canvas);
-    else if (canvas.parentElement === null && typeof document !== "undefined")
-      document.body.append(canvas);
+    else if (canvas.parentElement === null && page !== undefined) page.body.append(canvas);
 
     const inputTarget =
       this.#config.inputTarget ??
-      (platform === undefined
-        ? typeof window === "undefined"
-          ? canvas
-          : window
-        : (platform.inputTarget ?? canvas));
+      (platform === undefined ? (hostWindow() ?? canvas) : (platform.inputTarget ?? canvas));
     this.#input = new InputMap(
       this.#config.input,
       inputTarget,
@@ -1555,12 +1551,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#entities = entities;
     this.#scheduler = scheduler;
     this.#afterPhysicsPhase = afterPhysicsPhase;
-    const devToolsHost =
-      platform === undefined
-        ? typeof window === "undefined"
-          ? undefined
-          : window
-        : platform.devToolsHost;
+    const devToolsHost = platform === undefined ? hostWindow() : platform.devToolsHost;
     this.#cleanup.push(
       installDevTools(
         entities,
