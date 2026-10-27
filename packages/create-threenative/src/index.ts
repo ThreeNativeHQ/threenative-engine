@@ -55,6 +55,8 @@ export interface IScaffoldOptions {
   packageSources?: PackageSources;
   target: string;
   template?: ScaffoldTemplate;
+  /** The `--genre` word the user asked with; the next-steps line searches references for it. */
+  genre?: string;
 }
 
 export interface IScaffoldResult {
@@ -351,12 +353,20 @@ export function scaffoldCompletionMessage(
 
 /**
  * The scaffold's last line. The engine MCP reaches an agent only through the project's `.mcp.json`,
- * which a session started in another folder never loads (PRD-750 kit-loop row 1).
+ * which a session started in another folder never loads (PRD-750 kit-loop row 1). A game named
+ * through `--genre` opens with its reference search: a cold agent that read only the hint made no
+ * engine call (sandbox-4).
  */
-export function scaffoldNextSteps(target: string, installed: boolean): string {
-  const agent = `start your coding agent in ${target} so it loads the engine MCP from .mcp.json; a session started elsewhere calls a tool with node ${target}/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities '{"situation":"<words>"}'`;
+export function scaffoldNextSteps(target: string, installed: boolean, genre?: string): string {
+  const engine = `node ${target}/node_modules/@threenative/core/mcp/engine.mjs`;
+  const agent = `start your coding agent in ${target} so it loads the engine MCP from .mcp.json; a session started elsewhere calls a tool with ${engine} engine_search_capabilities '{"situation":"<words>"}'`;
+  const situation = JSON.stringify({ situation: genre }).replaceAll("'", "'\\''");
+  const references =
+    genre === undefined
+      ? ""
+      : `first run ${engine} engine_search_references '${situation}' and borrow the mechanics it returns (engine_reference_detail opens one); then `;
   return installed
-    ? `Next: ${agent}. Read AGENTS.md once; CLAUDE.md is its copy. pnpm dev plays the game; pnpm test proves it.\n`
+    ? `Next: ${references}${agent}. Read AGENTS.md once; CLAUDE.md is its copy. pnpm dev plays the game; pnpm test proves it.\n`
     : `Skipped install (--no-install). Run pnpm install in ${target}, then ${agent}.\n`;
 }
 
@@ -907,6 +917,7 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
     target,
     ...(Object.keys(packageSources).length === 0 ? {} : { packageSources }),
     ...(resolvedTemplate === undefined ? {} : { template: resolvedTemplate }),
+    ...(genre === undefined ? {} : { genre }),
   };
 }
 
@@ -924,10 +935,11 @@ async function main(): Promise<void> {
     process.stdout.write(cliHelp());
     return;
   }
-  const result = await createProject(parseArgs(argv));
+  const options = parseArgs(argv);
+  const result = await createProject(options);
   process.stdout.write(`Created ${result.template} project at ${result.target}\n`);
   process.stdout.write(scaffoldCompletionMessage(discoverKitManifests()));
-  process.stdout.write(scaffoldNextSteps(result.target, result.installed));
+  process.stdout.write(scaffoldNextSteps(result.target, result.installed, options.genre));
 }
 
 // `realpathSync`, not `path.resolve`. A package manager installs a `bin` as a symlink, so the

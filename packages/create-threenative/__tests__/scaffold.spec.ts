@@ -601,6 +601,14 @@ describe("create-threenative", () => {
       expect(scaffoldNextSteps("/w/mario64", true)).toContain(
         "node /w/mario64/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities",
       );
+      // Sandbox-4 (2026-10-27) read this line and AGENTS.md, then made no engine call: a game named
+      // through --genre gets its reference search as the first, ready-to-run step.
+      const named = scaffoldNextSteps("/w/mario64", true, "mario");
+      expect(named).toMatch(
+        /^Next: first run node \/w\/mario64\/node_modules\/@threenative\/core\/mcp\/engine\.mjs engine_search_references '\{"situation":"mario"\}'/u,
+      );
+      expect(scaffoldNextSteps("/w/x", true, "it's")).toContain(`'{"situation":"it'\\''s"}'`);
+      expect(scaffoldNextSteps("/w/mario64", true)).not.toContain("engine_search_references");
       // Rows 1 and 2 read the 45 KB CLAUDE.md + AGENTS.md pair, then AGENTS.md again.
       expect(scaffoldNextSteps("/w/mario64", true)).toMatch(
         /Read AGENTS\.md once; CLAUDE\.md is its copy/u,
