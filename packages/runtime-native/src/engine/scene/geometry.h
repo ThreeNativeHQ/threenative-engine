@@ -129,6 +129,7 @@ struct DrawRange {
 };
 
 struct GeometryContentClass;  // engine/renderer/projection/plan.h
+struct TriangleBVH;  // engine/scene/raycaster.cpp
 
 /** three's BufferGeometry: attributes, index, groups, bounds and the mutation methods on them. */
 class BufferGeometry {
@@ -149,6 +150,7 @@ public:
     DrawRange drawRange;
     std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Sphere> boundingSphere;
+    std::shared_ptr<TriangleBVH> raycastBVH;
     std::map<std::string, std::string> parameters;  // already-JSON values, keyed by parameter name
     std::string name;
     std::string uuid = generateUuid();  // three's: unique per geometry

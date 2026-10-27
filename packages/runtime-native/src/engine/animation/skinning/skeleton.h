@@ -128,6 +128,7 @@ class SkinnedMesh : public Mesh {
     void updateMatrixWorld(bool force = false) override;
     void afterMatrixWorld() override;
     Vector3& getVertexPosition(uint64_t index, Vector3& target) const override;
+    [[nodiscard]] bool posesVertices() const override { return true; }
     Vector3& applyBoneTransform(uint64_t index, Vector3& target) const;
     void computeBoundingBox();
     std::shared_ptr<Box3> boundingBox;

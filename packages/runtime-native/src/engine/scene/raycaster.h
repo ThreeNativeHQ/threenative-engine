@@ -25,11 +25,16 @@ struct Intersection {
     /** A Line hit: the segment's first vertex index; its face, faceIndex and barycoord are null. */
     std::optional<uint64_t> index;
 };
+// CPU-test diagnostics; the counter is local to the calling thread.
+uint64_t raycastTrianglesTested();
+void resetRaycastTrianglesTested();
+
 class Raycaster {
 public:
     Raycaster(const Vector3& origin = {}, const Vector3& direction = {0, 0, -1}, double near = 0,
               double far = std::numeric_limits<double>::infinity()) : ray(origin, direction), near(near), far(far) {}
     Ray ray;
+    bool meshBruteForceForTesting = false; // Oracle uses the same triangle hit code.
     double near = 0, far = std::numeric_limits<double>::infinity();
     double lineThreshold = 1;  // three's params.Line.threshold
     Camera* camera = nullptr;
