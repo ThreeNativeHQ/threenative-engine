@@ -697,7 +697,7 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * the post graph (13), the frames it has begun (14), 1 when the next resolve has history (15), and the last
  * sub-pixel jitter in pixels, x (16) and y (17). Then the samples the scene draws with (18): 1 while the temporal pass
  * replaces the multisampling the renderer asked for.
- * The temporal pass's counted frame follows the lamp fields, 30 to 33.
+ * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
@@ -751,6 +751,10 @@ extern "C" double tnw_web_frame(int field) {
         case 37: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
         case 38: return renderer->width();
         case 39: return renderer->height();
+        // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
+        // 41: the bytes of per-draw uniforms it uploaded.
+        case 40: return double(renderer->lastFrame().keptShadowMaps);
+        case 41: return double(renderer->lastFrame().uniformBytes);
         default: return 0;
     }
 }

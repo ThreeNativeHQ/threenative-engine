@@ -370,6 +370,8 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
       if (field === 27) return 15; // every shadow draw
       if (field === 28) return 1024; // the smallest footprint-sized lamp map
       if (field === 29) return 2048; // and the largest
+      if (field === 40) return 1; // maps kept from the last frame
+      if (field === 41) return 4096; // per-draw uniform bytes uploaded
       return 0;
     });
     const renderer = new Renderer({ canvas, trackTimestamp: true }) as {
@@ -387,7 +389,9 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
       lampGpuMs: -1,
       lampMapMin: 1024,
       lampMapMax: 2048,
+      keptMaps: 1,
     });
+    expect((renderer.info.engine as unknown as { uniformBytes: number }).uniformBytes).toBe(4096);
     gpuSamples = 1;
     renderer.render(scene, camera);
     expect(renderer.info.engine.shadows).toMatchObject({ sunGpuMs: 0.25, lampGpuMs: 0.5 });

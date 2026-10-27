@@ -3314,6 +3314,11 @@ void gpuTimerSplitsLampShadows() {
     box.position.set(1.5, 1, 0);
     box.setCastShadow(true);
     scene.add(box);
+    // A caster beyond the spot's range that moves: the sun's map redraws while the lamp's stays cached.
+    Mesh far{makeBoxGeometry(0.2, 0.2, 0.2), white};
+    far.position.set(-4, 0.3, -2.5);  // 6.6 m from the spot (range 6), inside the sun's shadow camera
+    far.setCastShadow(true);
+    scene.add(far);
     RenderDatabase database;
     database.shadowMapEnabled = true;
     renderer.setGpuTimer(true);
@@ -3336,6 +3341,7 @@ void gpuTimerSplitsLampShadows() {
     std::printf("lamp gpu: first frame sun %.4f ms, lamps %.4f ms (%u maps)\n", first[0], first[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
     CHECK(renderer.lastFrame().lampRedraws == 1);
     CHECK(first[0] > 0 && first[kGpuLampShadowSegment] > 0);
+    far.position.x = -4.1;
     const auto cached = timed();
     std::printf("lamp gpu: cached frame sun %.4f ms, lamps %.4f ms (%u maps)\n", cached[0], cached[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
     CHECK(renderer.lastFrame().lampRedraws == 0);
@@ -4707,6 +4713,88 @@ void cachedLampHasNoUniformUpload() {
     const auto [resizedCached, resizedBaseline] = framePair();
     CHECK(renderer.lastFrame().shadowDraws == 0);
     CHECK(resizedCached == resizedBaseline);
+}
+
+void sunCache() {
+    // An ordinary sun map is kept like a lamp's while nothing it draws changed: no shadow draw is encoded and
+    // none of their uniforms is uploaded, and the kept map shades the frame the same. A caster or the light moving redraws it.
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    box.position.set(0, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto frame = [&] {
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        return renderer.lastFrame().shadowDraws;
+    };
+    const auto pixels = [&] {
+        std::vector<uint8_t> out;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) out = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(out.size() == size_t{96} * 96 * 4);
+        return out;
+    };
+    const uint64_t first = frame();
+    const uint64_t drawnBytes = renderer.lastFrame().uniformBytes;
+    CHECK(first > 0 && renderer.lastFrame().keptShadowMaps == 0);
+    const std::vector<uint8_t> fresh = pixels();
+    uint64_t still = 0;
+    for (int i = 0; i < 60; ++i) still += frame();
+    std::printf("sun cache: first %llu draws %llu uniform bytes, 60 still frames %llu draws %llu bytes, %u kept\n",
+                (unsigned long long)first, (unsigned long long)drawnBytes, (unsigned long long)still,
+                (unsigned long long)renderer.lastFrame().uniformBytes, renderer.lastFrame().keptShadowMaps);
+    CHECK(still == 0);
+    CHECK(renderer.lastFrame().keptShadowMaps == 1);
+    CHECK(renderer.lastFrame().uniformBytes < drawnBytes);
+    const std::vector<uint8_t> kept = pixels();
+    int differ = 0;
+    for (size_t k = 0; k < kept.size(); ++k) differ += std::abs(int(kept[k]) - int(fresh[k])) > 2;
+    std::printf("sun cache: kept map differs on %d channels\n", differ);
+    CHECK(differ == 0);
+    box.position.x = 0.5;
+    const uint64_t moved = frame();
+    std::printf("sun cache: caster moved %llu\n", (unsigned long long)moved);
+    CHECK(moved > 0 && renderer.lastFrame().keptShadowMaps == 0);
+    const std::vector<uint8_t> shifted = pixels();
+    differ = 0;
+    for (size_t k = 0; k < shifted.size(); ++k) differ += std::abs(int(shifted[k]) - int(fresh[k])) > 2;
+    CHECK(differ > 0);  // the shadow followed the box
+    CHECK(frame() == 0);
+    // The mirror position flips the signs of the view's x terms in pairs, which a word-wise FNV signature cancelled.
+    sun.position.set(-2, 8, 1);
+    const uint64_t lit = frame();
+    std::printf("sun cache: light moved to its mirror image %llu\n", (unsigned long long)lit);
+    CHECK(lit > 0);
+    CHECK(frame() == 0);
 }
 
 void lampAtlas() {
@@ -6215,7 +6303,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

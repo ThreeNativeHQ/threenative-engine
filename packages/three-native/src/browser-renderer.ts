@@ -206,6 +206,7 @@ export function defineWebRenderer(
         // lamp maps redrawn and their draws, every shadow draw (the sun's are the rest), and the GPU
         // milliseconds of each part in the sample `render.timestamp` reports, -1 until one resolves.
         // `lampMapMin` and `lampMapMax` are the edges of the lamp maps the engine sized from their footprint.
+        // `keptMaps` counts the maps (sun or lamp) kept from the last frame because nothing they draw changed.
         shadows: {
           lampRedraws: 0,
           lampDraws: 0,
@@ -214,7 +215,10 @@ export function defineWebRenderer(
           lampGpuMs: -1,
           lampMapMin: 0,
           lampMapMax: 0,
+          keptMaps: 0,
         },
+        // The bytes of per-draw uniforms the last frame uploaded.
+        uniformBytes: 0,
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -519,6 +523,8 @@ export function defineWebRenderer(
       shadows.shadowDraws = module._tnw_web_frame(27);
       shadows.lampMapMin = module._tnw_web_frame(28);
       shadows.lampMapMax = module._tnw_web_frame(29);
+      shadows.keptMaps = module._tnw_web_frame(40);
+      this.info.engine.uniformBytes = module._tnw_web_frame(41);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         this.#gpuSamples = gpuSamples;

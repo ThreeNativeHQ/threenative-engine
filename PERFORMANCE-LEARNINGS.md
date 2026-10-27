@@ -75,6 +75,7 @@ All levers are engine-layer, each with a spec that fails before the fix. Paired 
 | Camera cull caches each rig part's visible chain | not kept | laptop, 2 valid pairs: cull 0.81/0.79 unchanged; the profile's 0.68 ms `visibleInWorld` was misattribution | REJECT (tie) |
 | AutoBatch guard compares in C++, a whole lap a frame | not kept | guard still fills its 0.5 ms budget (0.58-0.65 ms, C++ costs ~70 ns a source in cache misses); staleness 40 → 1-3 frames, mean tie | REJECT (tie) |
 | AutoBatch guard compares in C++, one lap per settle window (3 frames) | this row's commit | laptop: guard 0.60-0.62 → 0.18-0.23 ms in 6/6 runs; mean 5 of 6 valid pairs −0.27 to −0.98 ms; staleness 18-75 → 3 frames | KEEP |
+| The sun's ordinary shadow map is kept while nothing it draws changed, as lamps were (render lane); its signature hashes each word through a finalizer | this commit | laptop Iris Xe, 3 pairs, load 6.5-9.2, 97-99 °C: GPU 27.2/29.2/28.5 → 25.9/26.0/28.4 ms, drawn fps 32.8/30.2/30.6 → 34.2/32.9/30.3, main pass span 1.93/2.04/1.99 → 1.93/1.87/1.81 ms; shooter shadow draws 46 → 0 per frame, direct WebGPU state calls about 250 → 30, uploads 230 → 196 KB; visual judge NEUTRAL | KEEP |
 | `kMaxFramesOnGpu` 2 → 3 | not built | absorbs ~40 ms GPU stalls at +1 frame of latency; stalls come from outside the engine | REJECT |
 
 Rapier export names lie: wasm-bindgen folds identical getters into one export, so `rawintegrationparameters_dt`,
@@ -85,6 +86,16 @@ replay (about 66 calls, 7 µs a step) and the shooter enemies' per-step `telepor
 (5 zero-motion controller moves, about 35 µs a step). Ceiling: the laptop split after the fix is character
 controller 76-188 µs, `world.step` 77-99 µs and JS glue about 150 µs a step, so no physics bucket reaches 0.3 ms a
 frame at one step a frame.
+
+Renderer classes counted on the shooter (render lane, 2026-10-27; a JS probe on every WebGPU call, desktop, and a
+named-Wasm worker profile at load 15-21): 36 passes per frame, 24 of them post targets that core's bloom and local
+exposure nodes draw one `render()` each (0.58 ms of engine CPU, 0.45 ms of JS); the sun's 4096² map redrew 46 casters
+every frame although 238 of 240 frames left it unchanged (fixed above); uniforms 33 writes, 230 KB, 0.09 ms, and every
+draw's slice changes with the view matrix, so a dirty-range upload saves nothing until view-dependent values leave the
+per-draw block; render bundles are replayed while the scene holds still and re-recorded while the camera moves
+(about 190 draws), 0.05 ms. Not taken, each under 0.3 ms: one command encoder for all target renders (about 0.07 ms),
+a per-stage list of the fields `putNodes` can write (about 0.1 ms of its 0.14 ms). The renderer's whole C++ share is
+about 1.7 ms of a 4.9 ms worker frame; the next class is the pass count of the post chain, which the look nodes own.
 
 Not causes, ruled out by counts: readback staging buffers (steady while skips swing), pipeline or shader creation
 (zero after the first frames), heap growth (floor 76.9 MB across 13 major GCs). Wasm threads were off (no `-pthread`,

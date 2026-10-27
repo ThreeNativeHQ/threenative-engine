@@ -630,6 +630,10 @@ public:
         /** The scene passes drawn for post targets besides colour and velocity (PRD-740: one, however many it writes),
          *  and the draws they and the velocity pass recorded this frame: zero while their cached bundles hold. */
         uint32_t auxPasses = 0, auxRecorded = 0;
+        /** The shadow maps (sun or lamp, not virtual) kept from the last frame because nothing they draw changed: their
+         *  draws are neither encoded nor uploaded. And the bytes of per-draw uniforms the frame uploaded. */
+        uint32_t keptShadowMaps = 0;
+        uint64_t uniformBytes = 0;
     };
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
@@ -943,7 +947,7 @@ private:
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
-    std::map<std::size_t, uint64_t> lampSignatures_;
+    std::map<std::size_t, uint64_t> mapSignatures_;
     /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
     struct LampMotion { uint64_t pose = 0; int64_t movedAt = 0; };
     std::map<std::size_t, LampMotion> lampMotion_;
