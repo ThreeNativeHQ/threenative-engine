@@ -174,7 +174,11 @@ function browserPlatform(source: unknown): Readonly<IPlatformInfo> {
 
 function globalPlatformSource(): IPlatformDetectionSource {
   const globals = globalThis as Record<string, unknown>;
-  return { native: globals.__THREENATIVE_NATIVE__, navigator: globals.navigator };
+  // In a worker the host copied the page's navigator: a WorkerNavigator has no maxTouchPoints.
+  return {
+    native: globals.__THREENATIVE_NATIVE__,
+    navigator: globals.__tnPageNavigator ?? globals.navigator,
+  };
 }
 
 /** Internal source seam for unit tests; it is intentionally not a root package export. */

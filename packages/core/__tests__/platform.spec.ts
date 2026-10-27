@@ -135,6 +135,30 @@ describe("platform detection", () => {
   });
 });
 
+describe("platform detection in a worker (PRD-752)", () => {
+  it("reads the page's navigator the worker host copied, not the worker's own", () => {
+    // A WorkerNavigator has no maxTouchPoints, so a phone running the worker page read as
+    // touchless and the starter never built its touch controls.
+    vi.stubGlobal("navigator", { platform: "Linux x86_64", userAgent: "Mozilla/5.0 (X11; Linux)" });
+    vi.stubGlobal("__tnPageNavigator", {
+      maxTouchPoints: 5,
+      platform: "Linux armv8l",
+      userAgent: "Mozilla/5.0 (Linux; Android 14)",
+      userAgentData: { mobile: true, platform: "Android" },
+    });
+    try {
+      expect(detectPlatform()).toEqual({
+        formFactor: "mobile",
+        maxTouchPoints: 5,
+        os: "android",
+        runtime: "web",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("host gesture target (PRD-752)", () => {
   it("is the page window, else the input target a worker host installed", () => {
     // AudioBus waits for a gesture before it plays. A worker has no window, so without the
