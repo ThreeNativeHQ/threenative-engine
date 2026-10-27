@@ -1,0 +1,450 @@
+/**
+ * The worker game host (PRD-752): the page keeps the DOM, the canvas and the input, while the
+ * unchanged portable game runs in a dedicated worker on an OffscreenCanvas.
+ *
+ * A worker cannot reach `window`, `document` or `ResizeObserver`, so the page forwards what the
+ * game would have read, one plain message at a time. The canvas frame and the UI bridge travel on
+ * their own ports: the game's start is slow, and a HUD that mounts first must not wait for it.
+ */
+
+import type { IGamePlatformSource } from "./game.js";
+import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
+
+/** The realm `serveWorkerGame` runs in. Narrowed, because a test cannot build a real worker scope. */
+export type WorkerScope = EventTarget &
+  Record<string, unknown> & {
+    postMessage(data: unknown): void;
+  };
+
+interface IWorkerInitMessage {
+  type: "tn-worker-init";
+  canvas: OffscreenCanvas;
+  width: number;
+  height: number;
+  dpr: number;
+  pageUrl: string;
+  globals: Record<string, string | number | boolean>;
+  ui: MessagePort;
+}
+
+interface IWorkerResizeMessage {
+  type: "tn-worker-resize";
+  width: number;
+  height: number;
+  dpr: number;
+}
+
+interface IWorkerEventMessage {
+  type: "tn-worker-event";
+  target: "window" | "canvas";
+  event: Record<string, unknown>;
+}
+
+interface IWorkerRpcMessage {
+  type: "tn-worker-rpc";
+  id: number;
+  name: string;
+  method: string;
+  args: unknown[];
+}
+
+type WorkerInbound =
+  | IWorkerInitMessage
+  | IWorkerResizeMessage
+  | IWorkerEventMessage
+  | IWorkerRpcMessage;
+
+type WorkerOutbound =
+  | { type: "tn-worker-ready" }
+  | { type: "tn-worker-mirror"; name: string; methods: string[] }
+  | { type: "tn-worker-started" }
+  | { type: "tn-worker-failed"; message: string }
+  | { type: "tn-worker-rpc-result"; id: number; result?: unknown; error?: string };
+
+type PageOutbound = WorkerInbound;
+
+interface IPendingCall {
+  resolve(value: unknown): void;
+  reject(error: Error): void;
+}
+
+/** Debug surfaces the playtest harness drives from the page; they exist inside the worker only. */
+const MIRRORED_GLOBALS = ["__THREENATIVE_PLAYTEST_BRIDGE__", "__THREENATIVE__"] as const;
+
+/** The fields an input event carries across the boundary. `type` rides along as the event's name. */
+const EVENT_FIELDS = [
+  "type",
+  "key",
+  "code",
+  "repeat",
+  "altKey",
+  "ctrlKey",
+  "metaKey",
+  "shiftKey",
+  "button",
+  "buttons",
+  "movementX",
+  "movementY",
+  "pointerId",
+  "pointerType",
+  "isPrimary",
+  "pressure",
+  "deltaX",
+  "deltaY",
+  "deltaZ",
+  "deltaMode",
+  "clientX",
+  "clientY",
+] as const;
+
+const WINDOW_EVENTS = ["keydown", "keyup", "mousemove", "wheel", "blur"] as const;
+const CANVAS_EVENTS = [
+  "pointerdown",
+  "pointermove",
+  "pointerup",
+  "pointercancel",
+  "click",
+] as const;
+
+/**
+ * Runs inside the worker: wire the page's messages to the unchanged portable game.
+ *
+ * Call it last in the worker entry, after the game module evaluated: it posts the ready message
+ * the page waits for before it sends the canvas.
+ * @situation run the game loop in a web worker so a busy page cannot stall its frames
+ * @example serveWorkerGame(game);
+ */
+export function serveWorkerGame(
+  game: { start(): Promise<void> },
+  scope: WorkerScope = globalThis as unknown as WorkerScope,
+): void {
+  const inputTarget = new EventTarget();
+  const observers = new Set<() => void>();
+  const size = { dpr: 1, height: 1, width: 1 };
+  let canvas: OffscreenCanvas | undefined;
+
+  const post = (message: WorkerOutbound): void => scope.postMessage(message);
+
+  const initialise = async (message: IWorkerInitMessage): Promise<void> => {
+    try {
+      canvas = message.canvas;
+      size.width = message.width;
+      size.height = message.height;
+      size.dpr = message.dpr;
+      scope.devicePixelRatio = message.dpr;
+      for (const [key, value] of Object.entries(message.globals)) scope[key] = value;
+
+      // A worker resolves relative URLs against its own script, so the page's URL is the base.
+      const pageUrl = message.pageUrl;
+      const resolve = (input: RequestInfo | URL): RequestInfo | URL =>
+        typeof input === "string" || input instanceof URL ? new URL(input, pageUrl) : input;
+      const originalFetch = scope.fetch as typeof fetch;
+      scope.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+        originalFetch(resolve(input), init)) as typeof fetch;
+      const OriginalRequest = scope.Request as typeof Request;
+      scope.Request = class extends OriginalRequest {
+        constructor(input: RequestInfo | URL, init?: RequestInit) {
+          super(resolve(input), init);
+        }
+      };
+
+      const observe = (_target: HTMLCanvasElement, resize: () => void): (() => void) => {
+        observers.add(resize);
+        return () => {
+          observers.delete(resize);
+        };
+      };
+      const platform: IGamePlatformSource = {
+        input: () => [],
+        inputTarget,
+        mountCanvas: () => undefined,
+        renderer: {
+          createCanvas: () => message.canvas as unknown as HTMLCanvasElement,
+          hasWebGPU: () => "gpu" in navigator,
+          observeResize: observe,
+          readSize: () => [size.width, size.height],
+        },
+        unmountCanvas: () => undefined,
+        viewport: {
+          observeResize: observe,
+          readSize: () => ({
+            aspect: size.width / size.height,
+            height: size.height,
+            width: size.width,
+          }),
+        },
+      };
+      scope.__tnGamePlatform = platform;
+
+      const ui = message.ui;
+      scope.__tnUiPost = (frame: string) => ui.postMessage(frame);
+      ui.onmessage = (event: MessageEvent) =>
+        (scope.__tnUiGameReceive as ((frame: unknown) => void) | undefined)?.(event.data);
+      scope.__tnUiOverlayAttached = () => true;
+
+      await game.start();
+
+      for (const name of MIRRORED_GLOBALS) {
+        const value = scope[name];
+        if (typeof value !== "object" || value === null) continue;
+        const methods = Object.keys(value).filter(
+          (key) => typeof (value as Record<string, unknown>)[key] === "function",
+        );
+        post({ methods, name, type: "tn-worker-mirror" });
+      }
+      post({ type: "tn-worker-started" });
+    } catch (error) {
+      post({
+        message: error instanceof Error ? error.message : String(error),
+        type: "tn-worker-failed",
+      });
+    }
+  };
+
+  const dispatchForwarded = (message: IWorkerEventMessage): void => {
+    const forwarded = new Event(String(message.event.type), { cancelable: true });
+    for (const [key, value] of Object.entries(message.event)) {
+      Object.defineProperty(forwarded, key, { enumerable: true, value });
+    }
+    if (message.target === "window") inputTarget.dispatchEvent(forwarded);
+    else canvas?.dispatchEvent(forwarded);
+  };
+
+  const handleRpc = async (message: IWorkerRpcMessage): Promise<void> => {
+    const id = message.id;
+    try {
+      const receiver = scope[message.name] as
+        | Record<string, (...args: unknown[]) => unknown>
+        | undefined;
+      const method = receiver?.[message.method];
+      if (typeof method !== "function") {
+        throw new Error(
+          `TN_WORKER_RPC_UNKNOWN: '${message.name}.${message.method}' is not a function.`,
+        );
+      }
+      const result = await method.apply(receiver, message.args);
+      post({ id, result, type: "tn-worker-rpc-result" });
+    } catch (error) {
+      post({
+        error: error instanceof Error ? error.message : String(error),
+        id,
+        type: "tn-worker-rpc-result",
+      });
+    }
+  };
+
+  const onMessage = (event: Event): void => {
+    const message = (event as MessageEvent).data as WorkerInbound;
+    switch (message.type) {
+      case "tn-worker-init":
+        void initialise(message);
+        break;
+      case "tn-worker-resize":
+        size.width = message.width;
+        size.height = message.height;
+        size.dpr = message.dpr;
+        scope.devicePixelRatio = message.dpr;
+        for (const observer of [...observers]) observer();
+        break;
+      case "tn-worker-event":
+        dispatchForwarded(message);
+        break;
+      case "tn-worker-rpc":
+        void handleRpc(message);
+        break;
+    }
+  };
+
+  scope.addEventListener("message", onMessage);
+  post({ type: "tn-worker-ready" });
+}
+
+/**
+ * Runs on the page: own the canvas and the DOM, and feed the worker game.
+ *
+ * Call it before the UI mounts: the HUD's bridge host globals exist from this call on.
+ * @situation host a worker-run game's canvas, input and HUD on the page
+ * @example const handle = startWorkerGame(new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }), root);
+ */
+export function startWorkerGame(
+  worker: Worker,
+  container: HTMLElement,
+): { ready: Promise<void>; stop(): void } {
+  const documentHost = hostDocument();
+  const windowHost = hostWindow();
+  if (documentHost === undefined || windowHost === undefined) {
+    throw new Error("TN_WORKER_HOST_REQUIRED: startWorkerGame runs on a page.");
+  }
+  const page = windowHost as unknown as Record<string, unknown>;
+
+  const canvas = documentHost.createElement("canvas");
+  canvas.style.cssText = "display:block;width:100%;height:100%;touch-action:none";
+  container.append(canvas);
+  const offscreen = canvas.transferControlToOffscreen();
+  const { port1: uiPort, port2: gamePort } = new MessageChannel();
+
+  let stopped = false;
+  let nextRpcId = 0;
+  const pending = new Map<number, IPendingCall>();
+  const installed = new Set<string>();
+  const listeners: Array<[EventTarget, string, EventListener]> = [];
+
+  const send = (message: PageOutbound, transfer?: Transferable[]): void => {
+    if (stopped) return;
+    if (transfer === undefined) worker.postMessage(message);
+    else worker.postMessage(message, transfer);
+  };
+
+  const postResize = (): void => {
+    send({
+      dpr: windowHost.devicePixelRatio,
+      height: canvas.clientHeight,
+      type: "tn-worker-resize",
+      width: canvas.clientWidth,
+    });
+  };
+
+  const listen = (target: EventTarget, type: string, listener: EventListener): void => {
+    target.addEventListener(type, listener);
+    listeners.push([target, type, listener]);
+  };
+
+  const eventFields = (event: Event): Record<string, unknown> => {
+    const source = event as unknown as Record<string, unknown>;
+    const fields: Record<string, unknown> = {};
+    for (const field of EVENT_FIELDS) {
+      if (field in event) fields[field] = source[field];
+    }
+    return fields;
+  };
+
+  const forward = (event: Event, target: "window" | "canvas"): void => {
+    if (stopped) return;
+    const fields = eventFields(event);
+    // The worker draws on the canvas, so its pointer coordinates must be canvas-relative.
+    if (target === "canvas" || event.type === "wheel") {
+      const rect = canvas.getBoundingClientRect();
+      const { clientX, clientY } = fields;
+      if (typeof clientX === "number") fields.clientX = clientX - rect.left;
+      if (typeof clientY === "number") fields.clientY = clientY - rect.top;
+    }
+    send({ event: fields, target, type: "tn-worker-event" });
+  };
+
+  for (const type of WINDOW_EVENTS) listen(windowHost, type, (event) => forward(event, "window"));
+  for (const type of CANVAS_EVENTS) listen(canvas, type, (event) => forward(event, "canvas"));
+  listen(canvas, "contextmenu", (event) => event.preventDefault());
+
+  const ResizeObserverCtor = hostResizeObserver();
+  const observer =
+    ResizeObserverCtor === undefined ? undefined : new ResizeObserverCtor(() => postResize());
+  observer?.observe(canvas);
+
+  const pageGlobals = (): Record<string, string | number | boolean> => {
+    const globals: Record<string, string | number | boolean> = {};
+    for (const key of Object.keys(page)) {
+      if (!key.startsWith("__THREENATIVE_")) continue;
+      const value = page[key];
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        globals[key] = value;
+      }
+    }
+    return globals;
+  };
+
+  // The UI mounts before the game is ready, so its host globals exist from the first call.
+  page.tnHost = { postMessage: (frame: string) => uiPort.postMessage(frame) };
+  page.__tnUiOverlayAttached = () => true;
+  installed.add("tnHost");
+  installed.add("__tnUiOverlayAttached");
+  uiPort.onmessage = (event: MessageEvent) => {
+    const receive = page.__tnUiReceive;
+    if (typeof receive === "function") (receive as (frame: unknown) => void)(event.data);
+  };
+
+  let resolveReady: () => void = () => undefined;
+  let rejectReady: (error: Error) => void = () => undefined;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+
+  const installMirror = (name: string, methods: string[]): void => {
+    const host: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
+    for (const method of methods) {
+      host[method] = (...args: unknown[]) => {
+        if (stopped) {
+          return Promise.reject(new Error("TN_WORKER_STOPPED: the worker game stopped."));
+        }
+        const id = nextRpcId++;
+        return new Promise<unknown>((resolve, reject) => {
+          pending.set(id, { reject, resolve });
+          send({ args, id, method, name, type: "tn-worker-rpc" });
+        });
+      };
+    }
+    page[name] = host;
+    installed.add(name);
+  };
+
+  const onWorkerMessage = (event: Event): void => {
+    if (stopped) return;
+    const message = (event as MessageEvent).data as WorkerOutbound;
+    switch (message.type) {
+      case "tn-worker-ready":
+        send(
+          {
+            canvas: offscreen,
+            dpr: windowHost.devicePixelRatio ?? 1,
+            globals: pageGlobals(),
+            height: canvas.clientHeight,
+            pageUrl: windowHost.location.href,
+            type: "tn-worker-init",
+            ui: gamePort,
+            width: canvas.clientWidth,
+          },
+          [offscreen, gamePort],
+        );
+        break;
+      case "tn-worker-mirror":
+        installMirror(message.name, message.methods);
+        break;
+      case "tn-worker-started":
+        resolveReady();
+        break;
+      case "tn-worker-failed":
+        rejectReady(new Error(message.message));
+        break;
+      case "tn-worker-rpc-result": {
+        const call = pending.get(message.id);
+        if (call === undefined) break;
+        pending.delete(message.id);
+        if (message.error === undefined) call.resolve(message.result);
+        else call.reject(new Error(message.error));
+        break;
+      }
+    }
+  };
+
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    for (const [target, type, listener] of listeners) target.removeEventListener(type, listener);
+    listeners.length = 0;
+    observer?.disconnect();
+    worker.removeEventListener("message", onWorkerMessage);
+    for (const call of pending.values()) {
+      call.reject(new Error("TN_WORKER_STOPPED: the worker game stopped."));
+    }
+    pending.clear();
+    uiPort.onmessage = null;
+    uiPort.close();
+    gamePort.close();
+    for (const key of installed) delete page[key];
+    installed.clear();
+    worker.terminate();
+  };
+
+  worker.addEventListener("message", onWorkerMessage);
+  return { ready, stop };
+}
