@@ -732,6 +732,14 @@ extern "C" double tnw_web_frame(int field) {
         case 31: return double(renderer->temporalStatus().clamped);
         case 32: return double(renderer->temporalStatus().pixels);
         case 33: return double(renderer->temporalStatus().countedFrame);
+        // PRD-754, 36 to 40 (34 and 35 are taken on lane/pr574-render): the draws the main pass recorded into its bundle,
+        // why its key moved (Renderer::RecordCause), the draws the aux and velocity passes recorded, the ms spent
+        // recording bundles, and the ms spent encoding the shadow passes directly. Zero while every bundle holds.
+        case 36: return double(renderer->lastFrame().mainRecorded);
+        case 37: return double(renderer->lastFrame().recordCause);
+        case 38: return double(renderer->lastFrame().auxRecorded);
+        case 39: return renderer->lastFrame().recordMs;
+        case 40: return renderer->lastFrame().shadowEncodeMs;
         default: return 0;
     }
 }

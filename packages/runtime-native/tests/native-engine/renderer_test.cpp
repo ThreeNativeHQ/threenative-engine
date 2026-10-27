@@ -1846,6 +1846,64 @@ void emissivePass(bool requirePixels) {
     }
 }
 
+// PRD-754: the main pass's bundle key follows the opaque draw order, which follows each origin's depth (three's
+// painterSortStable). A camera turn that swaps two boxes' depths re-records the bundle for its order, names that
+// cause, and a held pose records nothing. Renderer::recordCause tells order, offsets and count apart.
+void cameraTurnRecords() {
+    using R = Renderer;
+    const std::vector<uint64_t> one(6 + 6 * 6, 0);
+    std::vector<uint64_t> ab(one), ba(one);
+    ab.insert(ab.end(), one.begin(), one.end()); ab[0] = 1; ab.push_back(0);
+    ba.insert(ba.end(), one.begin(), one.end()); ba[42] = 1; ba.push_back(0);
+    std::vector<uint64_t> offsets(ab); offsets[3] = 256;
+    std::vector<uint64_t> fewer(one); fewer.push_back(0);
+    CHECK(R::recordCause(ab, ab) == R::RecordNone);
+    CHECK(R::recordCause(ab, ba) == R::RecordOrder);
+    CHECK(R::recordCause(ab, offsets) == R::RecordOffset);
+    CHECK(R::recordCause(ab, fewer) == R::RecordCount);
+    CHECK(R::recordCause({}, ab) == R::RecordOther);
+
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    // Two geometries: draws that share a program and geometry swap without moving the key, since uniform slots follow
+    // plan order and a slot's contents are rewritten each frame. Two materials: one batch would hold both in one draw.
+    const std::array geometries = {plane(1, 1), plane(1, 2)};
+    std::array<shader::StandardMaterial, 2> materials;
+    materials[1].color = {1, 0, 0};
+    std::array<DrawItem, 2> items;
+    const double x[2] = {-2, 2}, z[2] = {0, -0.5};
+    for (int i = 0; i < 2; ++i) {
+        items[i].key = items[i].id = uint64_t(i + 1);
+        items[i].kind = MaterialKind::Basic;
+        items[i].positions = &geometries[i]->positions; items[i].indices = &geometries[i]->indices;
+        items[i].material = &materials[i];
+        items[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x[i], 0, z[i], 1};
+    }
+    // camera(1) at z = 4 turned by `yaw` about y: at 30 degrees the right box (farther ahead) is the nearer one.
+    const auto turned = [](double yaw) {
+        CameraState c = camera(1);
+        const double cs = std::cos(yaw), sn = std::sin(yaw);
+        c.matrixWorld = {cs, 0, -sn, 0, 0, 1, 0, 0, sn, 0, cs, 0, 0, 0, 4, 1};
+        c.matrixWorldInverse = {cs, 0, sn, 0, 0, 1, 0, 0, -sn, 0, cs, 0, 4 * sn, 0, -4 * cs, 1};
+        return c;
+    };
+    const auto frame = [&](double yaw) { renderer.render(std::span<const DrawItem>(items), turned(yaw), LightState{}, {0, 0, 0, 1}); };
+    for (int i = 0; i < 3; ++i) frame(0);
+    CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+    frame(30 * kPi / 180);
+    std::printf("camera turn: %u main draw(s) recorded, cause %u, %.4f ms recording\n", renderer.lastFrame().mainRecorded,
+                unsigned(renderer.lastFrame().recordCause), renderer.lastFrame().recordMs);
+    CHECK(renderer.lastFrame().mainRecorded == 2 && renderer.lastFrame().recordCause == R::RecordOrder);
+    frame(30 * kPi / 180);
+    CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+}
+
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }
 
@@ -1995,7 +2053,7 @@ void auxTargetsAlphaTested() {
 
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

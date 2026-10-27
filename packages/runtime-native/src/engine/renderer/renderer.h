@@ -624,7 +624,16 @@ public:
         /** The scene passes drawn for post targets besides colour and velocity (PRD-740: one, however many it writes),
          *  and the draws they and the velocity pass recorded this frame: zero while their cached bundles hold. */
         uint32_t auxPasses = 0, auxRecorded = 0;
+        /** PRD-754: the draws the main pass recorded into its bundle this frame (zero while it holds), why its key
+         *  moved (RecordCause), and the wall ms spent recording bundles and encoding the shadow passes directly. */
+        uint32_t mainRecorded = 0;
+        uint8_t recordCause = 0;
+        double recordMs = 0, shadowEncodeMs = 0;
     };
+    /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
+     *  another draw count, anything else (a first record included). */
+    enum RecordCause : uint8_t { RecordNone, RecordOrder, RecordOffset, RecordCount, RecordOther };
+    static RecordCause recordCause(const std::vector<uint64_t>& was, const std::vector<uint64_t>& now);
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
     /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */

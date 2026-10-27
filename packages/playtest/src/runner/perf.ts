@@ -36,6 +36,8 @@ export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET:";
  */
 export const PROJECTION_MARKER = "TN_PROJECTION:";
 export const HOST_GAP_MARKER = "TN_HOST_GAP:";
+/** The native engine player's per-frame sample; its pass-recording fields need `TN_RENDER_PREPARE_SPLIT=1`. */
+export const PLAYER_FRAME_MARKER = "TN_PLAYER_FRAME:";
 export const HITCH_MARKER = "TN_FRAME_HITCH:";
 
 /**
@@ -537,7 +539,78 @@ export interface IProjectionWindowJson {
   readonly window: number;
 }
 
+/** The `TN_PLAYER_FRAME` fields the pass-recording summary reads (PRD-754). */
+export interface IPlayerFrameJson {
+  readonly cpuFrameMs?: number;
+  readonly gameJsMs?: number;
+  readonly renderPrepareMs?: number;
+  readonly renderEncodeMs?: number;
+  readonly mainRecorded?: number;
+  readonly recordCause?: number;
+  readonly auxRecorded?: number;
+  readonly shadowDraws?: number;
+  readonly recordMs?: number;
+  readonly shadowEncodeMs?: number;
+}
+
+/**
+ * What the native passes recorded or encoded directly over a run (PRD-754): bundle rebuilds by why their key
+ * moved, the draws recorded, and the frame's CPU split into the JS, render-prepare and render-encode stages, the
+ * rest named as `otherMs`. Means are per frame.
+ */
+export interface IPassRecordingSummary {
+  readonly frames: number;
+  readonly cpuFrameMs: number;
+  readonly stagesMs: { readonly gameJs: number; readonly renderPrepare: number; readonly renderEncode: number; readonly other: number };
+  readonly rebuilds: { readonly order: number; readonly offset: number; readonly count: number; readonly other: number };
+  readonly mainRecordedDraws: number;
+  readonly auxRecordedDraws: number;
+  readonly shadowDraws: number;
+  readonly recordMs: number;
+  readonly shadowEncodeMs: number;
+}
+
+/** Renderer::RecordCause, in its order: 0 none, 1 order, 2 offset, 3 count, 4 other. */
+const RECORD_CAUSES = ["order", "offset", "count", "other"] as const;
+
+export function summarizePassRecording(frames: readonly IPlayerFrameJson[]): IPassRecordingSummary | undefined {
+  const recorded = frames.filter((frame) => frame.recordCause !== undefined);
+  if (recorded.length === 0) return undefined;
+  const mean = (read: (frame: IPlayerFrameJson) => number | undefined): number =>
+    recorded.reduce((sum, frame) => {
+      const value = read(frame);
+      if (value === undefined || !Number.isFinite(value)) {
+        throw new Error(`TN_PERF_MARKER_MALFORMED: a ${PLAYER_FRAME_MARKER.slice(0, -1)} line with recordCause lacks a stage field`);
+      }
+      return sum + value;
+    }, 0) / recorded.length;
+  const rebuilds = { order: 0, offset: 0, count: 0, other: 0 };
+  for (const frame of recorded) {
+    const cause = frame.recordCause ?? 0;
+    if (!Number.isInteger(cause) || cause < 0 || cause > RECORD_CAUSES.length) {
+      throw new Error(`TN_PERF_MARKER_MALFORMED: recordCause ${cause} is not a Renderer::RecordCause`);
+    }
+    if (cause > 0) rebuilds[RECORD_CAUSES[cause - 1] as keyof typeof rebuilds] += 1;
+  }
+  const cpuFrameMs = mean((frame) => frame.cpuFrameMs);
+  const gameJs = mean((frame) => frame.gameJsMs);
+  const renderPrepare = mean((frame) => frame.renderPrepareMs);
+  const renderEncode = mean((frame) => frame.renderEncodeMs);
+  return {
+    frames: recorded.length,
+    cpuFrameMs,
+    stagesMs: { gameJs, renderPrepare, renderEncode, other: cpuFrameMs - gameJs - renderPrepare - renderEncode },
+    rebuilds,
+    mainRecordedDraws: recorded.reduce((sum, frame) => sum + (frame.mainRecorded ?? 0), 0),
+    auxRecordedDraws: recorded.reduce((sum, frame) => sum + (frame.auxRecorded ?? 0), 0),
+    shadowDraws: mean((frame) => frame.shadowDraws),
+    recordMs: mean((frame) => frame.recordMs),
+    shadowEncodeMs: mean((frame) => frame.shadowEncodeMs),
+  };
+}
+
 export interface IPerfMarkerParse {
+  readonly passRecording?: IPassRecordingSummary;
   readonly budgets: readonly IFrameBudgetWindowJson[];
   readonly hitches: readonly IHitchWindowJson[];
   readonly presentGaps: readonly IPresentGapJson[];
@@ -591,6 +664,7 @@ export interface IPerfReport {
   readonly presentMode: string | undefined;
   readonly presents: readonly IPresentsTickJson[];
   readonly projections: readonly IProjectionWindowJson[];
+  readonly passRecording?: IPassRecordingSummary;
   readonly slowPhases: readonly ISlowPhaseJson[];
   readonly soak?: ISoakVerdict;
   readonly source: string;
@@ -666,8 +740,11 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
   const projections: IProjectionWindowJson[] = [];
   const projectionPayloads = new Set<string>();
   let presentMode: string | undefined;
+  const playerFrames: IPlayerFrameJson[] = [];
   const pipelineEvents = parsePipelineEventMarkers(text);
   for (const line of text.split("\n")) {
+    const playerFrame = parseMarkerLine<IPlayerFrameJson>(line, PLAYER_FRAME_MARKER);
+    if (playerFrame !== undefined) playerFrames.push(playerFrame);
     const budget = parseMarkerLine<IFrameBudgetWindowJson>(line, FRAME_BUDGET_MARKER);
     if (budget !== undefined) {
       // Android mirrors console output through MystralStdio and MystralJS. One measured window is
@@ -721,10 +798,12 @@ export function parsePerformanceMarkers(text: string): IPerfMarkerParse {
     const mode = PRESENT_MODE_PATTERN.exec(line);
     if (mode?.[1] !== undefined) presentMode = mode[1];
   }
+  const passRecording = summarizePassRecording(playerFrames);
   return {
     budgets,
     hitches,
     hostGaps,
+    ...(passRecording === undefined ? {} : { passRecording }),
     pipelineEvents,
     pipelineCaches: parsePipelineCacheObservations(text),
     presentGaps,
@@ -895,6 +974,7 @@ export function assessPerfMarkers(
     presentMode: parse.presentMode,
     slowPhases: parse.slowPhases,
     projections: parse.projections,
+    ...(parse.passRecording === undefined ? {} : { passRecording: parse.passRecording }),
     source,
     violations,
   };
@@ -1454,6 +1534,7 @@ export function formatPerfReport(report: IPerfReport): string {
   }
   lines.push(...formatDrawSources(report.budgets));
   lines.push(...formatProjection(report.projections));
+  if (report.passRecording !== undefined) lines.push(...formatPassRecording(report.passRecording));
   const lastGap = report.hostGaps.at(-1);
   if (lastGap !== undefined) {
     lines.push(`host gap segments (${lastGap.frames}-frame window, p50 ms):`);
@@ -1593,6 +1674,21 @@ function formatDrawSources(windows: readonly IFrameBudgetWindowJson[]): string[]
  * sees no projection section must not conclude the exact lane was empty, which is how an
  * unmeasured lane comes to be described as a measured zero.
  */
+function formatPassRecording(summary: IPassRecordingSummary): string[] {
+  const { stagesMs: stages, rebuilds } = summary;
+  const covered = stages.gameJs + stages.renderPrepare + stages.renderEncode;
+  return [
+    `pass recording (${summary.frames} frames, mean ms per frame): frame CPU ${summary.cpuFrameMs.toFixed(3)} = ` +
+      `game JS ${stages.gameJs.toFixed(3)} + render prepare ${stages.renderPrepare.toFixed(3)} + ` +
+      `render encode ${stages.renderEncode.toFixed(3)} + other ${stages.other.toFixed(3)} ` +
+      `(the three stages cover ${summary.cpuFrameMs > 0 ? ((100 * covered) / summary.cpuFrameMs).toFixed(1) : "0.0"}%)`,
+    `  main bundle rebuilds: ${rebuilds.order} order, ${rebuilds.offset} uniform offset, ${rebuilds.count} visible count, ` +
+      `${rebuilds.other} other; ${summary.mainRecordedDraws} main and ${summary.auxRecordedDraws} aux/velocity draws recorded`,
+    `  recording ${summary.recordMs.toFixed(3)} ms, shadow direct encode ${summary.shadowEncodeMs.toFixed(3)} ms ` +
+      `(${summary.shadowDraws.toFixed(1)} shadow draws)`,
+  ];
+}
+
 function formatProjection(windows: readonly IProjectionWindowJson[]): string[] {
   const last = windows.at(-1);
   if (last === undefined) {
