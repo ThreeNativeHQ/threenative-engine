@@ -55,7 +55,10 @@ describe("observeSightLine", () => {
       return observeSightLine(scene, camera, subject).blocked;
     };
     // Leaves and grass are alpha-tested quads: the ray meets the quad, the eye sees through the holes.
-    expect(stand("leaves", (mesh) => void ((mesh.material as MeshBasicMaterial).alphaTest = 0.4))).toBe(false);
+    const leaves = (mesh: Mesh) => {
+      (mesh.material as MeshBasicMaterial).alphaTest = 0.4;
+    };
+    expect(stand("leaves", leaves)).toBe(false);
     // Light shafts, mist and glow draw over the scene without writing depth: nothing stands there.
     const shafts = (mesh: Mesh) => {
       const material = mesh.material as MeshBasicMaterial;
@@ -65,7 +68,10 @@ describe("observeSightLine", () => {
     };
     expect(stand("shafts", shafts)).toBe(false);
     // A transparent surface that still writes depth is glass or a fence rail; it keeps blocking.
-    expect(stand("pane", (mesh) => void ((mesh.material as MeshBasicMaterial).transparent = true))).toBe(true);
+    const pane = (mesh: Mesh) => {
+      (mesh.material as MeshBasicMaterial).transparent = true;
+    };
+    expect(stand("pane", pane)).toBe(true);
   });
 
   it("does not count a rope or a rail the ray crosses in a hand's width, but counts a wall of the same length", () => {
@@ -73,6 +79,9 @@ describe("observeSightLine", () => {
     expect(observeSightLine(rope.scene, rope.camera, rope.subject).blocked).toBe(false);
     const wall = world(box("wall", [6, 0.07, 0.4], [0, 1.25, 2.5]));
     expect(observeSightLine(wall.scene, wall.camera, wall.subject)).toMatchObject({ blocked: true, blockers: ["wall"] });
+    // A thin panel is crossed in under a hand's width too, but it is a wall: it is wide both ways.
+    const panel = world(box("panel", [6, 6, 0.08], [0, 2, 2.5]));
+    expect(observeSightLine(panel.scene, panel.camera, panel.subject)).toMatchObject({ blocked: true, blockers: ["panel"] });
   });
 
   it("reports a camera that sits inside a solid", () => {

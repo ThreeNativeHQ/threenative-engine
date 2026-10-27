@@ -6,6 +6,8 @@ const MAX_BLOCKERS = 5;
 const EPSILON_M = 0.05;
 /** A solid the ray crosses in less than this is a rope, a wire or a rail: the eye sees past it. */
 const SLIVER_M = 0.15;
+/** A rope or a rail is thin in two axes; a panel thin in one axis is still a wall. */
+const SLIVER_SECTION_M = 0.3;
 /** Two hits this close are one surface met on a shared triangle edge, not an entry and an exit. */
 const SAME_SURFACE_M = 1e-4;
 
@@ -37,6 +39,18 @@ function fadesAway(material: Material | Material[]): boolean {
   );
 }
 
+/** True when the mesh's own shape, at its world scale, is under {@link SLIVER_SECTION_M} on two axes. */
+function thinInTwoAxes(object: Object3D): boolean {
+  const geometry = (object as Mesh).geometry;
+  if (geometry === undefined) return false;
+  if (geometry.boundingBox === null) geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox;
+  if (bounds === null) return false;
+  const size = bounds.getSize(new Vector3()).multiply(object.getWorldScale(new Vector3()));
+  const [, middle = 0] = [Math.abs(size.x), Math.abs(size.y), Math.abs(size.z)].sort((a, b) => a - b);
+  return middle < SLIVER_SECTION_M;
+}
+
 /**
  * The hits that stand in the way. The ray is double sided, so a closed solid reports an entry and an
  * exit; a pair under {@link SLIVER_M} apart is a sliver, and a sliver does not hide anyone. A surface
@@ -51,10 +65,15 @@ function standingInTheWay(hits: readonly Intersection<Object3D>[], distance: num
   }
   const walls: Intersection<Object3D>[] = [];
   for (let index = 0; index < surfaces.length; index += 1) {
-    const entry = surfaces[index]!;
-    if (!(entry.distance < distance - EPSILON_M)) break;
+    const entry = surfaces[index];
+    if (entry === undefined || !(entry.distance < distance - EPSILON_M)) break;
     const exit = surfaces[index + 1];
-    if (exit !== undefined && exit.object === entry.object && exit.distance - entry.distance < SLIVER_M) {
+    if (
+      exit !== undefined &&
+      exit.object === entry.object &&
+      exit.distance - entry.distance < SLIVER_M &&
+      thinInTwoAxes(entry.object)
+    ) {
       index += 1;
       continue;
     }
@@ -66,8 +85,8 @@ function standingInTheWay(hits: readonly Intersection<Object3D>[], distance: num
 /**
  * Casts one ray from the camera's world position to the subject's world bounds centre and reports
  * the solid meshes in the way. The subject's own subtree never blocks its own sight line, and a
- * hidden node, a points cloud, a line, a sprite, a cutout, a sliver (a rope or a rail the ray crosses
- * in under 15 cm) or a mostly transparent surface is not a wall.
+ * hidden node, a points cloud, a line, a sprite, a cutout, a sliver (a rope or a rail, thin in two axes, the ray
+ * crosses in under 15 cm) or a mostly transparent surface is not a wall.
  *
  * A camera inside a solid must report blocked, but a front-side mesh ignores the back face the ray
  * leaves through. Candidates are raycast as double sided for the duration of this one cast, then
