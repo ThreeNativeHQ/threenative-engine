@@ -482,6 +482,41 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(secondary).toHaveBeenCalledTimes(1);
   });
 
+  it("names a device lost while the frame gate declines, on backend.device.lost as three's backend does", async () => {
+    // Hosted CI's SwiftShader lost the device with two frames still on the GPU: the gate declined every
+    // later frame, no draw ever returned a status, and nothing named the loss (73 of 73 frames skipped).
+    let hostState = 1;
+    const { Renderer, canvas, scene, camera, module } = host(
+      (field) => (field === 11 ? 1 : 0),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => hostState,
+    );
+    Reflect.set(module, "UTF8ToString", () => "TN_WASM_DEVICE_LOST: GPU connection lost");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const renderer = new Renderer({ canvas }) as {
+      backend: { device?: { lost: Promise<{ reason: string; message: string }> } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    hostState = 2;
+    for (let frame = 0; frame < 5; frame += 1) renderer.render(scene, camera);
+    await expect(renderer.backend.device?.lost).resolves.toEqual({
+      reason: "unknown",
+      message: "TN_WASM_DEVICE_LOST: GPU connection lost",
+    });
+    const named = errors.mock.calls.filter((call) =>
+      String(call[0]).startsWith("TN_WASM_RENDERER_LOST"),
+    );
+    expect(named).toHaveLength(1);
+    errors.mockRestore();
+  });
+
   it("draws renderOverlay as the host's overlay, so the canvas layer skips the world's post and temporal state", async () => {
     // Through render(), core's loading screen ran the world renderer's post chain and temporal step: the world
     // came back ghosted and blurred after the cover lifted (Lantern Vale, Hop Garden).

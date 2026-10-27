@@ -151,10 +151,23 @@ describe("launch diagnostics", () => {
 
     resetLaunchFailures();
     failures.length = 0;
-    watchDeviceLoss({ lost: Promise.resolve({ message: "bye", reason: "destroyed" }) });
+    watchDeviceLoss({ lost: Promise.resolve({ message: "bye", reason: "destroyed" }) }, () => true);
     await Promise.resolve();
     await Promise.resolve();
     expect(failures).toEqual([]);
+
+    // Headless Chromium on SwiftShader destroys the device at the first present while the game runs:
+    // `destroyed` is the game's own shutdown only when the game shut down.
+    resetLaunchFailures();
+    watchDeviceLoss(
+      { lost: Promise.resolve({ message: "Device was destroyed.", reason: "destroyed" }) },
+      () => false,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.message).toContain("(destroyed): Device was destroyed.");
+    failures.length = 0;
     watchDeviceLoss(undefined);
 
     // A host stub that settles its own placeholder promise carries neither reason nor message.

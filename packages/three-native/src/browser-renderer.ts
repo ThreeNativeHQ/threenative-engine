@@ -257,7 +257,10 @@ export function defineWebRenderer(
       trackTimestamp: boolean;
       getTimestampFrames(type: string): number[];
       pipelineCompiles(): number;
+      /** Resolves as three's GPUDevice.lost does once the host loses its device; core reports it (TN_DEVICE_LOST). */
+      readonly device: { readonly lost: Promise<{ reason: string; message: string }> };
     };
+    #deviceLost: (info: { reason: string; message: string }) => void = () => undefined;
     #pixelRatio = 1;
     #width: number;
     #height: number;
@@ -310,6 +313,11 @@ export function defineWebRenderer(
         trackTimestamp: Boolean(parameters.trackTimestamp ?? true),
         getTimestampFrames: timestampFrames,
         pipelineCompiles: () => module._tnw_web_frame(2),
+        device: {
+          lost: new Promise((resolve) => {
+            this.#deviceLost = resolve;
+          }),
+        },
       };
     }
 
@@ -463,6 +471,9 @@ export function defineWebRenderer(
       // Measured on Lantern Vale: every cover over a drawn frame was refused, so the loading screen
       // flickered black for the whole environment bake and then showed the unfinished world.
       if (!this.#frameOpen && module._tnw_web_frame(11) === 1) {
+        // A lost device leaves its frames on the GPU for good, so the gate declines every later frame
+        // and no draw ever returns a status: name the loss here, where the frame poll just ran.
+        if (this.#noticeLost()) return;
         // Counted, never hidden: the loop's render phase for this frame is near zero, and a meter that
         // averages it with drawn frames reads cheaper than the work that was done (core's `renderSkips`).
         this.info.engine.frameGateSkips += 1;
@@ -615,15 +626,25 @@ export function defineWebRenderer(
      * page error per frame. A refusal that leaves the host running (a render target's) still throws each time.
      */
     #drawStatus(status: number): void {
-      if (status !== 0 && !this.#lost && module._tnw_web_poll() === FAILED) {
-        this.#lost = true;
-        // The throw below is the only other report, and a warm-up or a frame hook may swallow it: every
-        // later render() returns without drawing, so the console must name the loss once, here.
-        console.error(
-          `TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. ${module.UTF8ToString(module._tnw_web_error())}`,
-        );
-      }
+      if (status !== 0) this.#noticeLost();
       check(status);
+    }
+
+    /**
+     * True once the host is Failed for good. The first time, the console names it: the throw from a draw
+     * is the only other report, and a warm-up or a frame hook may swallow it. A lost device also resolves
+     * `backend.device.lost`; another host failure (an uncaptured error) is not a lost device.
+     */
+    #noticeLost(): boolean {
+      if (this.#lost || module._tnw_web_poll() !== FAILED) return this.#lost;
+      this.#lost = true;
+      const message = module.UTF8ToString(module._tnw_web_error());
+      console.error(
+        `TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. ${message}`,
+      );
+      if (message.startsWith("TN_WASM_DEVICE_LOST"))
+        this.#deviceLost({ reason: "unknown", message });
+      return true;
     }
 
     /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */
@@ -810,7 +831,13 @@ export function defineWebRenderer(
         module._tnw_web_poll();
         const status = module._tnw_web_read_target_take(id, out, size);
         if (status === 1) return module.HEAPU8.slice(out, out + size);
-        if (status < 0) throw new Error("TN_WASM_READ_TARGET: the read failed");
+        // A read the lost device dropped says so, so the caller's report is read as that one loss.
+        if (status < 0)
+          throw new Error(
+            module._tnw_web_poll() === FAILED
+              ? `TN_WASM_READ_TARGET: the read failed: ${module.UTF8ToString(module._tnw_web_error())}`
+              : "TN_WASM_READ_TARGET: the read failed",
+          );
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     } finally {

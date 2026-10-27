@@ -1360,6 +1360,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           backend?: { device?: { lost?: Promise<{ reason?: string; message?: string }> } };
         }
       ).backend?.device,
+      () => this.#aborted || this.#renderer !== renderer,
     );
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
     // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
