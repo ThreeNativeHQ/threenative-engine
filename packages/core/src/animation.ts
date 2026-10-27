@@ -58,6 +58,7 @@ export interface IAnimationPlayerOptions {
   readonly strideRoot?: Object3D;
   /**
    * Evaluate by measured screen size by default; a positive integer names a frame interval.
+   * A stride-synced walk at 32 px or more evaluates every frame.
    * Public mixer listeners/speed overrides stay full-rate; action speed interpolations do until settled.
    */
   readonly updateRate?: "auto" | number;
@@ -731,7 +732,13 @@ export class AnimationPlayer {
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
     if (state.source === undefined) return 1;
-    return state.frame === state.source.animationFrame ? state.rate : 8;
+    // A held pose rides on a moving body, so a stride-synced walk in the 32-128 px band evaluates
+    // every frame, or its planted foot slides by the body's travel; smaller rigs keep the band rate.
+    return state.frame === state.source.animationFrame
+      ? state.rate === 2 && this.#strideSynced && this.#strideGroundSpeed >= STRIDE_SPEED_FLOOR
+        ? 1
+        : state.rate
+      : 8;
   }
 
   #observeTimeScaleInterpolation(action: AnimationAction): void {
