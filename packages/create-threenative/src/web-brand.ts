@@ -12,20 +12,46 @@ export interface IWebBrandVitePlugin {
   load(id: string): Promise<string | null>;
   configResolved(config: { readonly root: string }): Promise<void>;
   transformIndexHtml(html: string): string;
-  configureServer(server: {
-    readonly middlewares: {
-      use(
-        handler: (
-          req: { url?: string },
-          res: { setHeader(key: string, value: string): void; end(body: string): void },
-          next: () => void,
-        ) => void,
-      ): void;
-    };
-  }): void;
+  configureServer(server: IMiddlewareServer): void;
+  configurePreviewServer(server: IMiddlewareServer): void;
   generateBundle(this: {
     emitFile(asset: { fileName: string; source: string; type: "asset" }): void;
   }): void;
+}
+
+type Middleware = (
+  req: { url?: string },
+  res: { setHeader(key: string, value: string): void; end(body: string): void },
+  next: () => void,
+) => void;
+
+interface IMiddlewareServer {
+  readonly middlewares: { use(handler: Middleware): void };
+}
+
+/**
+ * Cross-origin isolation (PRD-752 phase 4): the threaded web engine runs on shared memory, which a
+ * browser gives only to a page served with both headers. Every asset a kit loads is same-origin, so
+ * `require-corp` blocks nothing; a game that loads cross-origin assets without CORP headers switches
+ * to `credentialless`. A host that cannot set headers serves the game single-threaded, unchanged.
+ */
+export const ISOLATION_HEADERS: Readonly<Record<string, string>> = {
+  "Cross-Origin-Embedder-Policy": "require-corp",
+  "Cross-Origin-Opener-Policy": "same-origin",
+};
+
+/** `?tnIsolation=0` serves a page without the headers: the single-thread arm of an A/B on one build. */
+export const isolationMiddleware: Middleware = (req, res, next) => {
+  if (!/[?&]tnIsolation=0(?:&|$)/u.test(req.url ?? ""))
+    for (const [key, value] of Object.entries(ISOLATION_HEADERS)) res.setHeader(key, value);
+  next();
+};
+
+/** The same headers for a static host that reads a `_headers` file (Netlify, Cloudflare Pages). */
+export function renderIsolationHeaders(): string {
+  return `/*\n${Object.entries(ISOLATION_HEADERS)
+    .map(([key, value]) => `  ${key}: ${value}\n`)
+    .join("")}`;
 }
 
 function htmlAttribute(value: string): string {
@@ -172,12 +198,16 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     // Every page links the manifest, and only a build emits it: in dev Vite would answer the link
     // with index.html, which the browser reports as a manifest syntax error on each load.
     configureServer(server) {
+      if (config?.engine === "threenative") server.middlewares.use(isolationMiddleware);
       server.middlewares.use((req, res, next) => {
         if (req.url?.split("?")[0] !== "/manifest.webmanifest" || config === undefined)
           return next();
         res.setHeader("Content-Type", "application/manifest+json");
         res.end(renderWebManifest(root, config));
       });
+    },
+    configurePreviewServer(server) {
+      if (config?.engine === "threenative") server.middlewares.use(isolationMiddleware);
     },
     generateBundle() {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
@@ -186,6 +216,8 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
         source: renderWebManifest(root, config),
         type: "asset",
       });
+      if (config.engine === "threenative")
+        this.emitFile({ fileName: "_headers", source: renderIsolationHeaders(), type: "asset" });
     },
   };
 }
