@@ -37,6 +37,7 @@ import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { markEngineRenderHook } from "../src/engine-render-hook.js";
 import { ProjectionMirror } from "../src/projection-apply.js";
+import { formatProjectionWindow } from "../src/projection-marker.js";
 import { hasMorphAttributes } from "../src/projection-plan.js";
 import {
   createProjectionScanWorkspace,
@@ -44,7 +45,6 @@ import {
   scanProjection,
 } from "../src/projection-plan.js";
 import * as projectionPlan from "../src/projection-plan.js";
-import { formatProjectionWindow } from "../src/projection-marker.js";
 import { readVelocityPreviousMatrices } from "../src/render/velocity.js";
 import { type IRenderProjectionReport, SceneRenderProjection } from "../src/renderProjection.js";
 
