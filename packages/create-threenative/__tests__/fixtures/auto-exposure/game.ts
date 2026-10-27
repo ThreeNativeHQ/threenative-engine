@@ -77,6 +77,13 @@ function createBacklit(
   };
 }
 
+/**
+ * The plain room sits this many stops over its first 0.01 level. At 2^0 the dark room's backdrop
+ * metered -10.07 log2, inside the black bucket the meter drops (PRD-747). One stop clears it; three
+ * would wash the unadapted bright frame of the fixed-exposure case to a blank white.
+ */
+const PLAIN_ROOM_BASE_STOPS = 1;
+
 /** Portable scene and engine loop. The browser entry only supplies controls and mounts the canvas. */
 export function createExposureFixture(options: IExposureFixtureOptions) {
   class ExposureRoom extends Scene {
@@ -118,7 +125,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         ctx.add(sun);
         ctx.add(fill);
         applyLight = () => {
-          const intensity = 0.01 * (bright ? 2 ** options.stops : 1);
+          const intensity = 0.01 * 2 ** (PLAIN_ROOM_BASE_STOPS + (bright ? options.stops : 0));
           sun.intensity = intensity * 3;
           fill.intensity = intensity;
           ctx.scene.background = new Color(0x445565).multiplyScalar(intensity);
@@ -128,7 +135,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           ctx,
           camera,
           options.backlit,
-          options.bright ? 3.896 : 0.0019189,
+          (options.bright ? 3.896 : 0.0019189) * 2 ** PLAIN_ROOM_BASE_STOPS,
         );
         disposeRoom = () => {
           backlit?.dispose();
