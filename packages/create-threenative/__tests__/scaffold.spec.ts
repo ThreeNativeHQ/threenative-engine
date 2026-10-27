@@ -320,7 +320,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "40cbf8678e99518926645d85e18f3b4bcd15d203acae0dee11370a279670b7fe",
   racing: "af1a4f9bfa7b72f4706840c4284231455f6fcba9331ff0c91a975427c9b59f07",
   rain: "dfc3521b5c75c2f426ddfc1696e80b4abe6f83c5be8a133a3120bb89b2d9c52a",
-  rts: "22059980238c7743d8251ebdd49eaffd49ae7f878a7904fb75a3a8be93582cf8",
+  // Recomputed 2026-10-26 (PRD-747 kits): pause, health, HUD column, minimap, A key, wheel and result fixes.
+  rts: "a78b5af154f5bacf5f2cc977e67d93c872acfa95e12451b988d0c072a5346d90",
   runner: "cda53296a601c2dac944f169afc60d94d3fa03f049f5a3eaf88889819f1ec55d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "ac58cb2f1d94350034a65bafb3a1342b74321907498c0efe26aac774f4aef7ee",
@@ -333,7 +334,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   starter: "603cce83c0b7da17f1ed2eba72e317f940840327e95081555191c22849041a73",
-  "tower-defense": "c2874bdeedfb61095c23374f4e9716aacedfc801e0966648b067bbf267b1cb11",
+  // Recomputed 2026-10-26 (PRD-747 kits): a pooled walker resets its chill tint (chill-tint scenario).
+  "tower-defense": "239bf163c648db08c411ae5396dbd08b5923b94218d0faf91e8ae9eb49ec131b",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
