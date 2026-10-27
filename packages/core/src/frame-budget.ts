@@ -266,6 +266,8 @@ export interface IFrameBudgetWindow {
       };
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
+  /** The web engine's job pool: `on (N)` workers, or `off (<reason>)`; absent off the Wasm engine. */
+  readonly threads?: string;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
   /** Fixed simulation ticks in this window multiplied by the loop's step, when supplied. */
@@ -1250,6 +1252,10 @@ export class FrameBudget {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
+      // The Wasm engine's job pool (PRD-752 phase 4), as its facade reports it: `on (N)` or `off (<reason>)`.
+      ...(typeof (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads === "string"
+        ? { threads: (globalThis as { __tnWebThreads?: string }).__tnWebThreads }
+        : {}),
       ...(this.#simulation === undefined
         ? {}
         : {

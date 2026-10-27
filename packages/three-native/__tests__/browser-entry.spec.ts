@@ -13,7 +13,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as audioBinding from "../src/audio.js";
 import * as backend from "../src/browser-backend.js";
-import { bindUpstreamExports, bindWebEngine, defineRenderPipeline } from "../src/browser-entry.js";
+import {
+  bindUpstreamExports,
+  bindWebEngine,
+  defineRenderPipeline,
+  webThreadsReport,
+} from "../src/browser-entry.js";
 import * as rendererBinding from "../src/browser-renderer.js";
 import * as tslBinding from "../src/browser-tsl.js";
 import { type ICatalog, loadCatalog } from "../src/catalog.js";
@@ -89,6 +94,19 @@ describe("bindUpstreamExports", () => {
         bound[name] === upstream[name],
     );
     expect({ missing, leaked }).toEqual({ missing: [], leaked: [] });
+  });
+});
+
+describe("webThreadsReport", () => {
+  it("names the job pool's workers on shared memory, and why there are none elsewhere", () => {
+    const shared = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+    const single = new WebAssembly.Memory({ initial: 1, maximum: 1 });
+    const pool = (workers: number) => ({ wasmMemory: shared, _tnw_web_threads: () => workers });
+    expect(webThreadsReport(pool(3), true)).toBe("on (3)");
+    expect(webThreadsReport(pool(0), true)).toBe("off (no spare hardware thread)");
+    expect(webThreadsReport({ wasmMemory: single }, false)).toBe("off (not cross-origin isolated)");
+    expect(webThreadsReport({ wasmMemory: single }, true)).toBe("off (single-thread engine build)");
+    expect(webThreadsReport({}, false)).toBe("off (not cross-origin isolated)");
   });
 });
 
