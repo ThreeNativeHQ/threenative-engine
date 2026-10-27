@@ -849,6 +849,53 @@ describe("the Wasm engine's WebGPURenderer across a hot update", () => {
   });
 });
 
+describe("the clear colour", () => {
+  it("converts a repeated number clear colour once, as every post pass resets it to 0", () => {
+    const { module, canvas } = host();
+    let made = 0;
+    class CountingColor {
+      r: number;
+      g: number;
+      b: number;
+      constructor(hex: number) {
+        made += 1;
+        this.r = ((hex >> 16) & 255) / 255;
+        this.g = ((hex >> 8) & 255) / 255;
+        this.b = (hex & 255) / 255;
+      }
+    }
+    const Renderer = defineWebRenderer(module, CountingColor as never);
+    const renderer = new Renderer({ canvas }) as {
+      setClearColor(color: unknown, alpha?: number): void;
+      getClearColor<T>(target: T): T;
+      getClearAlpha(): number;
+    };
+    const out = {
+      r: -1,
+      g: -1,
+      b: -1,
+      setRGB(r: number, g: number, b: number) {
+        Object.assign(this, { r, g, b });
+        return this;
+      },
+    };
+    const cost: Record<string, number> = {};
+    (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost = cost;
+    for (let index = 0; index < 3; index += 1) renderer.setClearColor(0, 1);
+    expect(made).toBe(1);
+    expect(cost).toEqual({ clearColorConversions: 1 });
+    renderer.setClearColor(0xff0000, 0.5);
+    expect(made).toBe(2);
+    expect(renderer.getClearColor(out)).toMatchObject({ r: 1, g: 0, b: 0 });
+    expect(renderer.getClearAlpha()).toBe(0.5);
+    renderer.setClearColor({ r: 0, g: 1, b: 0 }, 1);
+    expect(renderer.getClearColor(out)).toMatchObject({ r: 0, g: 1, b: 0 });
+    renderer.setClearColor(0xff0000, 1);
+    expect(made).toBe(2);
+    expect(renderer.getClearColor(out)).toMatchObject({ r: 1, g: 0, b: 0 });
+  });
+});
+
 describe("Wasm TempNode render lifecycle", () => {
   it("draws a subclass quad through the existing target path once per frame and restores state", async () => {
     let next = 0;

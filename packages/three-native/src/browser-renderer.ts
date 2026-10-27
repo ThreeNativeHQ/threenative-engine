@@ -262,6 +262,9 @@ export function defineWebRenderer(
     #width: number;
     #height: number;
     #clear: [number, number, number, number] = [0, 0, 0, 1];
+    /** The last number or string clear colour and its lanes: each is converted once. */
+    #clearKey: unknown = Symbol("unset");
+    #clearLanes: [number, number, number] = [0, 0, 0];
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
@@ -399,10 +402,24 @@ export function defineWebRenderer(
     }
 
     setClearColor(color: unknown, alpha = 1): void {
-      const value = (
-        typeof color === "object" && color !== null ? color : new Color(color)
-      ) as IColorLike;
-      this.#clear = [value.r, value.g, value.b, alpha];
+      if (typeof color === "object" && color !== null) {
+        const value = color as IColorLike;
+        this.#clear = [value.r, value.g, value.b, alpha];
+        return;
+      }
+      // Every post pass resets the clear colour to 0 (RendererUtils), and an engine Color per call
+      // was a construction across the boundary each time.
+      if (!Object.is(color, this.#clearKey)) {
+        const value = new Color(color) as IColorLike;
+        this.#clearLanes = [value.r, value.g, value.b];
+        this.#clearKey = color;
+        const host = globalThis as { __tnEngineCost?: Record<string, number> };
+        host.__tnEngineCost ??= {};
+        host.__tnEngineCost.clearColorConversions =
+          (host.__tnEngineCost.clearColorConversions ?? 0) + 1;
+      }
+      const lanes = this.#clearLanes;
+      this.#clear = [lanes[0], lanes[1], lanes[2], alpha];
     }
 
     getClearColor<T extends IColorLike & { setRGB(r: number, g: number, b: number): T }>(
