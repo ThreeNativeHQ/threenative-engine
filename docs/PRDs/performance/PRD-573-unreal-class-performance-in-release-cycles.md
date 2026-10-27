@@ -292,6 +292,7 @@ Six hazards block a render thread: non-atomic `nextObjectId`/`hierarchyRevision`
 
 #### Phase v3.2: Recorded passes survive camera motion
 **Status:** NOT STARTED
+**Owned by [PRD-754](../Unreal/performance/PRD-754-a-camera-turn-re-records-no-pass.md)** (lane `lane/perf-stable-passes`, 2026-10-27). The boxes below stay as the summary; PRD-754 carries the proof.
 Today the bundle key (`renderer.cpp:2702-2722`) moves with depth order (`sortDraws`), plan-order uniform offsets and visible-count batch stores (`render_database.cpp:893`); shadow, normal and velocity passes encode directly (`renderer.cpp:2693,2784,2813`).
 - [ ] Rebuilds by cause and direct encodes by pass are counted, and shadow, normal and velocity passes replay bundles pixel-identically. proof: red-green `native_engine_batched_vs_unbatched`; `profile:wasm-page --gpu-calls` ratio below 1.0
 - [ ] State-first opaque order and a persistent uniform slot per record: a camera turn on an opaque scene rebuilds nothing, and the judge passes. proof: red-green `native_engine_batched_vs_unbatched`; a judge subagent; `--gpu-time` ratio at most 1.0
