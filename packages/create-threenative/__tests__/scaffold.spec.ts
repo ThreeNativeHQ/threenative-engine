@@ -331,7 +331,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-26 (PRD-746 look): the exposure policy keeps only the judged key override,
   // then the owner's 7b546d6 neutral look returns as named overrides. Recomputed 2026-10-26 for the
   // surfaces polish: eight bay-* textures (src/render/surface.ts) on the town's procedural geometry.
-  shooter: "c87db55d127f71f9bbc3504e9157c07eb39f59189ad81385fc2b76aab381278a",
+  shooter: "da92224b9c5abdb940ef2b8dce245e498a4714fd71b238027a0b5bc62b82375b",
   snow: "f0de635cde4223329bdacc303cdf01bda4f1f9f0083979911571f1e4a691dced",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts

@@ -112,6 +112,10 @@ export class Rifle {
   #lowered = 0;
 
   #animation: AnimationPlayer | undefined;
+  /** Clip seconds the playing clip advanced, and the game seconds that took, since it started. */
+  #handsClip: string | undefined;
+  #handsClipSeconds = 0;
+  #handsSeconds = 0;
   #clips: ReadonlySet<string>;
   #shootFor = 0;
   #camera: PerspectiveCamera;
@@ -436,7 +440,7 @@ export class Rifle {
     else if (this.#shootFor > 0) this.#play("Shoot", 0.02);
     else this.#play(gait.clip);
     this.#syncPlayback(gait);
-    this.#animation?.update(dt);
+    this.#advance(dt);
     this.decay(dt);
     // The sights drop while the magazine is out and come back up after.
     const wantLowered = this.reloading ? 1 : 0;
@@ -488,10 +492,30 @@ export class Rifle {
     this.group.quaternion.premultiply(correction);
   }
 
-  #handsRate(): number {
+  /** Advance the hands and measure how fast the playing clip actually ran, wraps included. */
+  #advance(dt: number): void {
     const animation = this.#animation;
-    if (animation?.current === undefined) return 1;
-    return animation.mixer.clipAction(animation.clip(animation.current)).getEffectiveTimeScale();
+    if (animation === undefined) return;
+    const name = animation.current;
+    const action =
+      name === undefined ? undefined : animation.mixer.clipAction(animation.clip(name));
+    const before = action?.time ?? 0;
+    animation.update(dt);
+    if (action === undefined || dt <= 0) return;
+    if (name !== this.#handsClip) {
+      this.#handsClip = name;
+      this.#handsClipSeconds = 0;
+      this.#handsSeconds = 0;
+    }
+    const duration = action.getClip().duration;
+    let advanced = action.time - before;
+    if (advanced < 0 && duration > 0) advanced += duration;
+    this.#handsClipSeconds += advanced;
+    this.#handsSeconds += dt;
+  }
+
+  #handsRate(): number {
+    return this.#handsSeconds > 0 ? this.#handsClipSeconds / this.#handsSeconds : 1;
   }
 
   debug(): {
@@ -515,8 +539,9 @@ export class Rifle {
       tipGapToGeometry: this.#flash.position.distanceTo(this.#geometryTipLocal),
       opticScreen: { x: (optic.x + 1) / 2, y: (1 - optic.y) / 2 },
       viewmodelLength: this.#viewmodelLength,
-      // The playing clip's effective rate. Above 1 is the hands sped past their authored cycle:
-      // stride sync once read the camera carrying them as walking and played them at 3x.
+      // Clip seconds per game second the playing clip actually ran since it started. Above 1 is
+      // the hands sped past their authored cycle: stride sync once read the camera carrying them
+      // as walking and played them at up to 3x.
       handsRate: this.#handsRate(),
     };
   }
