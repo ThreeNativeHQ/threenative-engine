@@ -46,6 +46,10 @@ export interface IAnimationPlayerOptions {
    * way. Set `false` to keep the authored rate; the measurement below stays live either way and
    * says that it was overridden. The convention re-times locomotion only: a `"once"` clip — a
    * death, a flinch — always plays at its authored rate.
+   *
+   * Left unset, a rig carried by a camera (first-person hands, a held weapon) keeps its authored
+   * rate: the camera moves it, and a mouse turn sweeps its root metres a second, which read as
+   * stride played the hands at the 3x ceiling. `stride.cameraCarried` reports it; `true` syncs anyway.
    */
   readonly strideSync?: boolean;
   /**
@@ -96,6 +100,8 @@ export interface IStrideReport {
   readonly synced: boolean;
   /** True when a rate was measured and deliberately not applied. */
   readonly overridden: boolean;
+  /** True when a camera carries the rig, so an unset `strideSync` keeps the authored rate. */
+  readonly cameraCarried: boolean;
   /**
    * True when the clip carries no root motion and its stride was read off the feet instead.
    *
@@ -127,6 +133,14 @@ const STRIDE_RATE_MAX = 3;
 const STRIDE_SPEED_FLOOR = 1e-4;
 /** A clip carrying less ground than this per second is not locomotion. */
 const CLIP_GROUND_FLOOR = 1e-3;
+
+/** True when `object` is a camera or sits under one: the camera moves it, not its own clip. */
+function cameraCarried(object: Object3D): boolean {
+  for (let node: Object3D | null = object; node !== null; node = node.parent) {
+    if ((node as { isCamera?: boolean }).isCamera === true) return true;
+  }
+  return false;
+}
 /** Poses taken across one cycle when reading an in-place clip's stride off its feet. */
 const PLANT_SAMPLES = 64;
 /** A contact bone is one that reaches this near the lowest point the rig visits. */
@@ -616,8 +630,9 @@ export class AnimationPlayer {
   #blendElapsed = 0;
   #blendStarts = new Map<string, number>();
   #preparation: RigPreparation | undefined;
-  #strideSync: boolean;
+  #strideSync: boolean | undefined;
   #strideRoot: Object3D;
+  #cameraCarried = false;
   #lastRootPosition = new Vector3();
   #hasLastRootPosition = false;
   /**
@@ -651,7 +666,7 @@ export class AnimationPlayer {
       this.#onFinished,
     );
     this.#preparation = options.preparation;
-    this.#strideSync = options.strideSync ?? true;
+    this.#strideSync = options.strideSync;
     this.#strideRoot = options.strideRoot ?? options.root;
     for (const clip of options.clips) {
       if (this.#actions.has(clip.name))
@@ -790,6 +805,7 @@ export class AnimationPlayer {
       clipGroundSpeed: measured?.groundSpeed ?? 0,
       groundSpeed: this.#strideGroundSpeed,
       inPlace: measured?.inPlace ?? this.#strideInPlace,
+      cameraCarried: this.#cameraCarried,
       overridden: this.#strideOverridden,
       rate: this.#strideRate,
       synced: this.#strideSynced,
@@ -910,12 +926,14 @@ export class AnimationPlayer {
       : 0;
     this.#lastRootPosition.copy(scratchWorld);
     this.#hasLastRootPosition = true;
+    this.#cameraCarried = cameraCarried(this.#strideRoot);
     if (name === undefined || action === undefined || dt <= 0) return;
+    const strideSync = this.#strideSync ?? !this.#cameraCarried;
     const measured = this.#measureOf(name);
     const clipGroundSpeed = measured.groundSpeed;
     const groundSpeed = moved / dt;
     // A dominant idle must not leave a contributing walk at its authored speed.
-    if (this.#blendTargets !== undefined && this.#strideSync && this.#mode === "loop")
+    if (this.#blendTargets !== undefined && strideSync && this.#mode === "loop")
       this.#syncBlendParticipants(groundSpeed);
     if (clipGroundSpeed < CLIP_GROUND_FLOOR) {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
@@ -942,12 +960,12 @@ export class AnimationPlayer {
     // re-timing it against a stationary body only slows the event down. A travelling death clip
     // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
     const applies =
-      this.#strideSync && this.#mode === "loop" && !this.#timeScaleInterpolations.has(action);
+      strideSync && this.#mode === "loop" && !this.#timeScaleInterpolations.has(action);
     if (applies) action.setEffectiveTimeScale(rate);
     this.#strideGroundSpeed = groundSpeed;
     this.#strideRate = rate;
     this.#strideSynced = applies;
-    this.#strideOverridden = !this.#strideSync;
+    this.#strideOverridden = !strideSync;
     this.#strideInPlace = measured.inPlace;
     this.#strideReportOnlyFor = !applies && this.#blendTargets === undefined ? name : undefined;
   }

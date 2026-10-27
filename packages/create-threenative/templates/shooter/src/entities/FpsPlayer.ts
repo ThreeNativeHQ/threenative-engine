@@ -23,7 +23,7 @@ type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 export const EYE_HEIGHT = scale.eyeHeight;
 export const WALK_SPEED = 5.6;
-const SPRINT_SPEED = 8.2;
+export const SPRINT_SPEED = 8.2;
 /** Crouched movement, and how far the eye drops. A crouch that only slows you reads as a bug. */
 const CROUCH_SPEED = 2.6;
 const CROUCH_EYE_DROP = scale.eyeHeight * 0.34;
@@ -77,6 +77,8 @@ export class FpsPlayer {
   distanceMoved = 0;
   aiming = false;
   crouching = false;
+  /** Shift, or a thumb on the stick rim, and neither aiming nor crouching. Read by the rifle. */
+  sprinting = false;
   /** This tick's thumb input, set by the scene before `update`. Undefined on desktop. */
   touch: TouchFrame | undefined;
   /**
@@ -203,6 +205,7 @@ export class FpsPlayer {
     // same two vetoes below apply to a thumb and to Shift alike.
     const sprintAsked = ctx.input.pressed("sprint") || touch?.sprint === true;
     const sprinting = sprintAsked && !this.aiming && !this.crouching;
+    this.sprinting = sprinting;
     // Crouch wins over sprint: holding both should not sprint at a crouch-walk's silhouette.
     const speed = this.crouching ? CROUCH_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
     // `vector().y` is +up; forward on this ground plane is -z.
