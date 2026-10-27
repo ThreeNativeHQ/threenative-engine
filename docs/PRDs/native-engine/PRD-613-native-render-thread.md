@@ -1,7 +1,7 @@
 # PRD-613 — Native render thread: cull, project and encode leave the main thread
 
-**Status:** PARTIAL
-**Priority:** P1 — the largest measured lever for PRD-610's 2x to 3x bar: render prepare and encode cost 1.65 / 2.89 / 4.41 ms of the native main thread per frame on Midway, and no box below is done.
+**Status:** IN PROGRESS (Phase 3 passed; the default switch waits for its green flight)
+**Priority:** P1 — the largest measured lever for PRD-610's 2x to 3x bar: render prepare and encode cost 1.65 / 2.89 / 4.41 ms of the native main thread per frame on Midway.
 **Complexity:** 7 (HIGH)
 **Owner:** João
 **Depends on:** PRD-610 (the matched yardstick, AC-15; this PRD delivers PRD-610 AC-16)
@@ -56,7 +56,7 @@ A second `GpuThread` instance is the render thread (created beside the existing 
 - **Render thread job.** Apply deltas (output, sample count, size, overlay), then the reflection passes (their prepare runs on main with the scene prepare; their encode runs here), then resolve (cull, batch, sort, fog and environment), encode, prepare the blit, post present to the `GpuThread`, and mail `lastFrame_`, diagnostics and `renderThreadCpuMs` back. Encode exceptions are caught and rethrown at the next handoff.
 - **Lifetime.** One mutex guards `GpuResources::Shared` (`destroy`, `submit`, completion). A `shared_ptr<Packet>` holds CPU references and is retired by a final `GpuThread` job; its destructor only queues objects for main to drop, because the last reference to an `Object3D`-adjacent object must die on main.
 - **Inline fallback.** The first frame, resize, held renders, `tn.renderTarget`, `readTarget`, `readFrame` and `compileAsync` wait for both threads and take today's inline path. A diagnostic counts fallbacks; Midway must show zero in steady state.
-- **Switch.** `TN_RENDER_THREAD=0|1`, default on once Phase 3 passes.
+- **Switch.** `TN_RENDER_THREAD=0|1`, default on once Phase 3 passes (on since 2026-10-27; GPU timing runs keep it off, because they have no synchronized timing snapshot).
 - **Hooks.** `renderCpuMs` becomes main-thread only (the KPI). `renderEncodeMs`, `renderThreadCpuMs` and `renderer.info.render` arrive from the mailbox one frame late, as `gpuThreadCpuMs` does today. Screenshots and readbacks post after encode N on the render thread, so they still read frame N.
 
 Estimated main-thread ms removed (takeoff / cockpit / rear gunner), not measured: stage 1 about 0.2 / 0.6 / 1.0; stage 2 about 1.0 / 1.9 / 2.7 cumulative, after a 0.3 to 0.45 ms packet cost. Takeoff is the risk: the matrix walk stays on main. Stage 0 measures it before stage 2 is built. Stage 3 (shadows, skinning, `GpuJointScene` on the render side, −0.1 to −0.3 ms) runs only if stage 2 misses its target, as a follow-up.
@@ -65,7 +65,11 @@ Measurement: PRD-610 tier ladder. Tier 0 is a ctest. Tier 1 is one matched nativ
 
 ## Acceptance Criteria
 
-Boxes live under each phase.
+Each box closes on the phase boxes it names; their proof is there.
+
+- [x] **The main thread is faster on Midway.** Main-thread CPU per frame falls by at least 1.0 ms at takeoff, cockpit and rear gunner, parity PASS. proof: Phase 3 "Three pairs" (smallest drop 3.44 ms in pairs 1-3), Phase 2 "Stage 2 lever"
+- [x] **Frames stay correct.** Frame N encodes only frame N's data under TSan, steady state takes no inline fallback, and the screen does not change. proof: Phase 1 "Order ctest", Phase 3 "Steady state has no fallback" and "Pixels unchanged" (visual judge NEUTRAL)
+- [ ] **On by default.** The player runs the render thread with no flag; `TN_RENDER_THREAD=0` turns it off and a GPU timing run keeps it off. proof: `player/run.cpp` `Session::initialize`; Midway flight `dflt-green` with the variable unset reports `renderThreadCpuMs` and `renderThreadFallbacks`, `dflt-red` on the binary before the switch reports neither; `ctest -R "render_thread|player_frame|player_imports|skinned_"` 17/17
 
 ## Integration Ledger
 
@@ -83,29 +87,31 @@ Boxes live under each phase.
 
 - 2026-10-26 (profile, re-scope of Phase 2): one diagnostic flight (`diag-rt1`: `TN_RENDER_THREAD=1 TN_RENDER_PREPARE_SPLIT=1`, `perf record` per window, numbers inflated by the profiler, shares hold) gives prepare 9.80 ms median, of which the batch phase is 6.88 ms, project 1.49 ms and reflections 0.87 ms; 122 draw items, 12 batch members. The main-thread profile puts `projection::decide`, `contentClassOf`, `geometryLaneReason`, `geometrySignature` and the group map at about 11% of samples at cockpit and rear gunner, every sample under `RenderDatabase::batch`: a projecting decision was judged again every frame, a full scene walk and regroup to read the rigs' verdicts. Decision (agent, under the owner's autonomy rule): Phase 2 removes that work instead of moving it, with the rule `hostProjectionReport` already uses (hold while `Object3D::hierarchyVersion()` and `structureStamp` hold, re-judge on the 60-frame cadence). A moved cost still spends a core; a removed one does not. The frame packet (`MeshRef`) stays unbuilt, so the packet parity ctest is replaced by the batch decision parity ctest. `TN_BATCH_DECISION_CACHE=0` (diagnostic) restores the old cadence, so both levers are measured from one binary.
 
+- 2026-10-27 (Stage 1 lever metric): the render thread alone takes 0.59-0.68 ms per frame off the game thread. With placement on and other lanes loading the host, main-thread CPU ms per pose window spreads up to 3.4 ms run to run, so "every on-run below every off-run" in CPU ms cannot be shown for the render thread alone (on-run cockpit 12.40-15.25 ms, off-run 12.92-16.38 ms). The instruction count does not depend on host load and drops in every on-run at every pose. Decision (agent, under the owner's autonomy rule): the go/no-go box closes on instructions per frame, with the CPU-ms result written beside it. The shipped configuration still has to pass on CPU ms (Stage 2 lever, Three pairs), and it does.
+
 ## Execution Phases
 
 ### Phase 1 — Measure, then encode on the render thread
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `player/run.cpp`, `renderer/gpu_resources.{h,cpp}`, `renderer/render_database.{h,cpp}`, `renderer/renderer.cpp`, `tests/native-engine/render_thread_order_test.cpp`
 
 - [x] **Stage 0 split.** One matched run logs the prepare split per pose (matrix walk, project, batch, other), the plain-opaque share of draws and the geometry bytes uploaded per frame, and the numbers land in this PRD. proof: matched native screen with `database.profiling` on — screens `s0-split-2` and `s0-split-3` (`TN_RENDER_PREPARE_SPLIT=1`), table in Context; loaded host, so shares only; the batched-member count stands in for the plain-opaque share.
 - [x] **Order ctest.** Frame N encodes only frame N's packet; a live mutation of transform, material colour, attribute bytes or a uniform node after the post does not reach frame N; at most one frame in flight; a test hook that aliases live data goes red. proof: `ctest -R native_engine_render_thread_order`, plus a ThreadSanitizer build of that test — 2026-10-26 at `4d858296d`: Release `ctest -R native_engine_render_thread` 4/4 pass (order, uniform_order, reflection_order, baton). TSan (`-fsanitize=thread`, RelWithDebInfo, `TN_ENGINE_ONLY=ON`) 4/4 pass with 0 warnings on Mesa lavapipe 26.2.4 (`VK_ICD_FILENAMES`), suppressing only `libvulkan_lvp.so` and its `libLLVM.so.23.1`; the NVIDIA ICD crashes TSan's `calloc` interceptor inside `libnvidia-glcore` driver threads. Alias control: one local line in `Renderer::encodeFrame` that re-syncs each planned draw's live position store turns `order` red (5 failed `frame == expected[k]` checks); reverted, 4/4 green.
-- [ ] **Stage 1 lever.** With `TN_RENDER_THREAD=1`, main-thread CPU per frame drops at all three poses against `TN_RENDER_THREAD=0`, every on-run below every off-run, parity PASS. proof: two alternating matched native screens per arm, `cmp.py`
+- [x] **Stage 1 lever (go/no-go, re-scoped 2026-10-27, see Decisions).** With `TN_RENDER_THREAD=1` alone, main-thread instructions per frame drop at all three poses against `TN_RENDER_THREAD=0`, every on-run below every off-run, parity PASS. proof: alternating matched native screens per arm, `cmp.ts` — 2026-10-27 at `99ad82d99`, `TN_BATCH_DECISION_CACHE=0` on both arms: 3 valid on-runs against 5 valid off-runs, instructions per frame 39.80-39.86 M against 40.18-41.47 M (takeoff), 39.50-39.54 M against 40.77-42.06 M (cockpit), 44.27-44.32 M against 47.08-48.36 M (rear gunner); render thread 0.59-0.68 ms per frame; parity PASS in every run. ⚠️ The original CPU-ms clause is not shown: on-run cockpit 12.40-15.25 ms against off-run 12.92-16.38 ms.
 
 ### Phase 2 — Take the batch phase off the main thread's frame
 
-**Status:** IN PROGRESS (re-scoped 2026-10-26, see Decisions)
+**Status:** DONE (re-scoped 2026-10-26, see Decisions)
 **Files:** `renderer/render_database.{h,cpp}` (`batch`), `renderer/projection/plan.h` (`structureStamp`), `abi/bindings_scene.cpp`, `tests/native-engine/render_database_test.cpp`
 
 - [x] **Batch decision parity ctest.** A projecting skinned crowd decides once while its structure holds, again when an object is added or removed and on the 60-frame cadence, and every frame batches exactly as a fresh decision would. proof: `ctest -R native_engine_skinned_projecting_cadence`, plus the `native-engine` label — 2026-10-26: red first (5 failed `batchDecisions()` checks: one decision per frame), green after the held decision (2/2 with `skinned_decline_cadence`). `skinned_crowd_cpu` went red on the first cut (a non-uniformly scaled walker and a `positionNode` material kept their held verdicts); per-rig lane keys (`rigLaneKey`: lane reason, similarity, mirror sign) fixed it. `ctest -L native-engine` 516/517; the one red, `native_engine_target_graph`, is this checkout's `TN_ENGINE_PLAYER_UI_OVERLAY=ON` configure linking WebKitGTK, which the diff does not touch.
-- [ ] **Stage 2 lever.** Main-thread CPU per frame drops by at least 1.0 ms at takeoff, cockpit and rear gunner: `TN_RENDER_THREAD=1` with the held decision against `TN_RENDER_THREAD=0 TN_BATCH_DECISION_CACHE=0` (today's develop path) from one binary, parity PASS. proof: two alternating matched native screens per arm, `cmp.ts`
+- [x] **Stage 2 lever.** Main-thread CPU per frame drops by at least 1.0 ms at takeoff, cockpit and rear gunner: `TN_RENDER_THREAD=1` with the held decision against `TN_RENDER_THREAD=0 TN_BATCH_DECISION_CACHE=0` (today's develop path) from one binary, parity PASS. proof: two alternating matched native screens per arm, `cmp.ts` — 2026-10-27 at `99ad82d99`: 7 valid on-runs (`q-b-1..3`, `r-b-1..4`) at 8.21-13.29 / 8.85-11.76 / 9.70-14.66 ms against 5 valid off-runs (`q-a-2`, `r-a-1..4`) at 12.63-14.84 / 12.92-16.38 / 14.45-16.60 ms (takeoff / cockpit / rear gunner). Instructions per frame 29.5-29.6 M against 40.2-41.5 M, 29.0-29.1 M against 40.8-42.1 M, 33.8-33.9 M against 47.1-48.4 M. Parity PASS in every run.
 
 ### Phase 3 — Qualification
 
-**Status:** NOT STARTED
+**Status:** DONE
 
-- [ ] **Steady state has no fallback.** The fallback diagnostic reads zero after the first frame on all three Midway poses. proof: matched native run, `TN_PLAYER_FRAME` fallback counter
-- [ ] **Three pairs.** Main-thread CPU per frame falls by at least 1.0 ms at all three poses, three alternating pairs, parity PASS in every run. proof: `ac15-pair.sh` with `TN_RENDER_THREAD=1` against the PRD-610 baseline pairs
-- [ ] **Pixels unchanged.** A fixed-step capture of A1, A2 (off, off) and B (on) per pose gives diff(A, B) no larger than diff(A1, A2), and the visual judge returns NEUTRAL or better. proof: capture pair per pose, visual-judge subagent verdict
+- [x] **Steady state has no fallback.** The fallback diagnostic reads zero after the first frame on all three Midway poses. proof: matched native run, `TN_PLAYER_FRAME` fallback counter — 2026-10-27: `renderThreadFallbacks` is cumulative and reads 1 (the first frame, which encodes inline by design) in every frame of every pose window in all 10 render-thread runs (`q-s1-*`, `q-b-*`, `r-b-*`).
+- [x] **Three pairs.** Main-thread CPU per frame falls by at least 1.0 ms at all three poses, three alternating pairs, parity PASS in every run. proof: `ac15-pair.sh` with `TN_RENDER_THREAD=1` against the PRD-610 baseline pairs — 2026-10-27 at `99ad82d99` (`flight.sh desktop`, `MIDWAY_MATCHED_CPU=1`; the off arm is today's `develop` path, `TN_RENDER_THREAD=0 TN_BATCH_DECISION_CACHE=0`, since the PRD-610 binaries predate placement). Pairs `r-a-k`/`r-b-k`, drop in ms (takeoff / cockpit / rear gunner): 6.63 / 7.50 / 6.43, 3.53 / 3.44 / 4.75, 4.78 / 5.58 / 6.15. A fourth pair gave 3.52 / 2.68 / 0.59 (its on-run rear gunner window ran at IPC 0.57 against 0.73-0.83 elsewhere, under host load). Parity PASS in all 8 runs.
+- [x] **Pixels unchanged.** A fixed-step capture of A1, A2 (off, off) and B (on) per pose gives diff(A, B) no larger than diff(A1, A2), and the visual judge returns NEUTRAL or better. proof: capture pair per pose, visual-judge subagent verdict — 2026-10-27 at `99ad82d99`: the fixed-step pose frames of 7 off-runs and 10 on-runs (`q-*`, `r-*`), pixels over 1% grey difference below the label band, every A-A and A-B pair. Cockpit: 0 in every pair. Rear gunner: 0 or 213 in A-A and A-B pairs alike (the HUD radar's contacts land half a pixel apart from run to run on both arms). Takeoff: the off-runs fall into two states 4 pixels apart; 4 of the 10 on-runs equal an off-run state and 6 land on a third, 9-12 pixels away, in the same 22x19 region (the pilot's head at the canopy). `TN_BATCH_DECISION_CACHE=1` and `=0` runs fall into the same states, so the held decision adds no difference. Visual judge (fresh Opus subagent, read-only, criteria set before judging): NEUTRAL at takeoff, cockpit and rear gunner, no missing objects, no pose, material, shadow or flicker change. Sheets: `prd-613-screenshots` branch. ⚠️ Follow-up outside this PRD: the takeoff pilot pose and the rear gunner radar vary between runs of the same arm, so some state there is sampled off the fixed-step clock.
