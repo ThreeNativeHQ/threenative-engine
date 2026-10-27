@@ -278,6 +278,7 @@ Today `getAsync` and a 2-worker pool exist (`pipeline_cache.cpp:191`, `.h:118`),
 **Status:** NOT STARTED
 The shooter kit's web CPU profile (2026-10-26, NVIDIA, no DevTools, 10 s) still spends 4-5% of the frame in the JS side of the Wasm bridge: `fromEngine`, `accessor.get`, `read`, `write`, `writeHandle`, `countCall` and `toEngine` in `web-engine-runtime.js`. The owner asked for this box after the crossing cuts in v1.
 - [ ] The JS bridge functions in `web-engine-runtime.js` take under 2% of sampled main-thread time on the shooter profile, with crossings per frame no higher. proof: `~/.cache/tmp-tn/pr574-shooter-feel/trace-tools/profile.mjs`-style CPU profile before and after on the same scaffold (two runs per arm), plus `native_engine_player_crossing_budget` unchanged
+- [ ] Measured case from PRD-748 (shooter, 2026-10-26, after the sibling-generation fix): `onRender` is about 340 ms/s, of which Wasm and WebGPU API about 150, JS-to-Wasm crossings (1600-2200 per frame, about 1 us each with the callee) 84, other glue 66 (`fromEngine` 21 from wrapping `__walk` arrays) and other JS 31. Bridge functions stay above 2%; the cuts are in PRD-748 Phase 2 (uniform callbacks per draw, `prepareAnimation`). proof: the profile in the box above after those land
 
 ## Cycle v3 — every core and the GPU scene
 
