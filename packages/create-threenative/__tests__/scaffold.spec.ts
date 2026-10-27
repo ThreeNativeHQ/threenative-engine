@@ -209,9 +209,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
-  // Recomputed 2026-10-26 (reference MCP hook): every template's AGENTS.md names classic-game
-  // mechanics references beside capability search in the authoring skill list, so all sixteen
-  // trees move. No other scaffold byte changed.
+// Recomputed 2026-10-26 (reference MCP hook): every template's AGENTS.md names classic-game
+// mechanics references beside capability search in the authoring skill list, so all sixteen
+// trees move. No other scaffold byte changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
   // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
