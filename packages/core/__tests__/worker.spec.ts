@@ -39,8 +39,22 @@ function page() {
     style: {} as Record<string, string>,
     transferControlToOffscreen: () => offscreen,
   });
-  const container = { append: vi.fn() };
+  const children: unknown[] = [];
+  const container = { append: vi.fn((child: unknown) => children.push(child)), children };
+  Object.assign(canvas, {
+    remove: () => {
+      const index = children.indexOf(canvas);
+      if (index >= 0) children.splice(index, 1);
+    },
+  });
+  let nextFrame = 0;
+  const frames = new Map<number, FrameRequestCallback>();
   const view = Object.assign(new EventTarget(), {
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    },
+    cancelAnimationFrame: (id: number) => frames.delete(id),
     devicePixelRatio: 2,
     location: { href: "http://127.0.0.1:5173/game/index.html?tnWorker=1" },
   }) as unknown as EventTarget & Record<string, unknown>;
@@ -57,7 +71,19 @@ function page() {
       disconnect() {}
     },
   );
-  return { canvas, container, offscreen, resize: () => resize?.(), view };
+  return {
+    canvas,
+    container,
+    offscreen,
+    resize: () => resize?.(),
+    view,
+    frame: () => {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback(0);
+    },
+    frames,
+  };
 }
 
 function keyEvent(type: string, code: string): Event {
@@ -69,6 +95,401 @@ afterEach(() => {
 });
 
 describe("worker game host (PRD-752)", () => {
+  it("forwards gamepad snapshots each connected frame and stops polling on disconnect or stop", async () => {
+    const { scope, worker, toWorker } = link();
+    const { container, view, frame, frames } = page();
+    const pad = {
+      id: "controller",
+      index: 1,
+      connected: true,
+      mapping: "standard",
+      timestamp: 10,
+      buttons: [{ pressed: true, value: 1, touched: true }],
+      axes: [0.5, -0.25],
+    };
+    let pads: (typeof pad | null)[] = [null, pad];
+    const getGamepads = vi.fn(() => pads);
+    view.navigator = { getGamepads };
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const platform = scope.__tnGamePlatform as IGamePlatformSource;
+    try {
+      getGamepads.mockClear();
+      frame();
+      await tick();
+      expect(platform.input()).toEqual([
+        null,
+        {
+          id: "controller",
+          index: 1,
+          connected: true,
+          mapping: "standard",
+          timestamp: 10,
+          buttons: [{ pressed: true, value: 1, touched: true }],
+          axes: [0.5, -0.25],
+        },
+      ]);
+      expect(getGamepads).toHaveBeenCalledTimes(1);
+      const button = pad.buttons[0];
+      if (button !== undefined) button.pressed = false;
+      pad.axes[0] = -1;
+      expect(platform.input()[1]?.buttons[0]?.pressed).toBe(true);
+      frame();
+      await tick();
+      expect(platform.input()[1]?.buttons[0]?.pressed).toBe(false);
+      pads = [null, null];
+      view.dispatchEvent(new Event("gamepaddisconnected"));
+      await tick();
+      expect(platform.input()).toEqual([null, null]);
+      expect(frames.size).toBe(0);
+      pads = [null, pad];
+      view.dispatchEvent(new Event("gamepadconnected"));
+      await tick();
+      expect(frames.size).toBe(1);
+      handle.stop();
+      const sent = toWorker.length;
+      frame();
+      view.dispatchEvent(new Event("gamepadconnected"));
+      expect(frames.size).toBe(0);
+      expect(toWorker).toHaveLength(sent);
+    } finally {
+      handle.stop();
+    }
+  });
+
+  it("bounds HUD snapshots while the page is stalled and preserves non-state frames", async () => {
+    const { scope, worker } = link();
+    const { container, view } = page();
+    const received = vi.fn();
+    const gameReceive = vi.fn();
+    view.__tnUiReceive = received;
+    scope.__tnUiGameReceive = gameReceive;
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const posts = vi.spyOn(MessagePort.prototype, "postMessage");
+    try {
+      const post = scope.__tnUiPost as (frame: string) => void;
+      for (let score = 0; score < 100; score++)
+        post(JSON.stringify({ type: "tn:state", state: { score } }));
+      post('{"type":"tn:notice","value":1}');
+      post('{"type":"tn:notice","value":2}');
+      post("opaque legacy frame");
+      const sentStates = posts.mock.calls.filter(
+        ([frame]) => typeof frame === "string" && frame.includes('"tn:state"'),
+      ).length;
+      await tick(30);
+      expect(sentStates).toBe(1);
+      expect(
+        received.mock.calls
+          .map(([frame]) => frame)
+          .filter((frame: string) => frame.includes('"tn:state"')),
+      ).toEqual([
+        '{"type":"tn:state","state":{"score":0}}',
+        '{"type":"tn:state","state":{"score":99}}',
+      ]);
+      expect(
+        received.mock.calls
+          .map(([frame]) => frame)
+          .filter((frame: string) => !frame.includes('"tn:state"')),
+      ).toEqual([
+        '{"type":"tn:notice","value":1}',
+        '{"type":"tn:notice","value":2}',
+        "opaque legacy frame",
+      ]);
+      expect(gameReceive).not.toHaveBeenCalled();
+    } finally {
+      posts.mockRestore();
+      handle.stop();
+    }
+  });
+
+  it.each(["pointermove", "mousemove"])(
+    "coalesces 100 %s events per frame and flushes motion before edges",
+    async (type) => {
+      const { scope, worker, toWorker } = link();
+      const { canvas, container, view, frame, frames } = page();
+      const bounds = vi.spyOn(canvas, "getBoundingClientRect");
+      serveWorkerGame({ start: async () => undefined }, scope);
+      const handle = startWorkerGame(
+        worker as unknown as Worker,
+        container as unknown as HTMLElement,
+      );
+      await handle.ready;
+      const moves = () => {
+        for (let i = 0; i < 100; i++)
+          (type === "pointermove" ? canvas : view).dispatchEvent(
+            Object.assign(new Event(type), {
+              pointerId: 1,
+              movementX: 1,
+              movementY: -2,
+              clientX: 10 + i,
+              clientY: 20 + i,
+            }),
+          );
+      };
+      const sent: unknown[] = [];
+      try {
+        moves();
+        const beforeFrame = toWorker.filter((message) => message.type === "tn-worker-event").length;
+        frame();
+        sent.push(...toWorker.filter((message) => message.type === "tn-worker-event"));
+        expect(beforeFrame).toBe(0);
+        expect(sent).toHaveLength(1);
+        expect(sent[0]).toMatchObject({
+          event: {
+            type,
+            movementX: 100,
+            movementY: -200,
+            clientX: type === "pointermove" ? 99 : 109,
+            clientY: type === "pointermove" ? 99 : 119,
+          },
+        });
+        expect(bounds.mock.calls.length).toBe(type === "pointermove" ? 1 : 0);
+        moves();
+        canvas.dispatchEvent(Object.assign(new Event("pointerdown"), { pointerId: 1 }));
+        expect(
+          toWorker.filter((message) => message.type === "tn-worker-event").slice(-2),
+        ).toMatchObject([
+          { event: { type, movementX: 100, movementY: -200 } },
+          { event: { type: "pointerdown" } },
+        ]);
+        moves();
+        handle.stop();
+        frame();
+        expect(frames.size).toBe(0);
+        expect(toWorker.filter((message) => message.type === "tn-worker-event")).toHaveLength(3);
+      } finally {
+        handle.stop();
+      }
+    },
+  );
+
+  it("keeps HUD wheel events out of the game, matching InputMap's target rule", async () => {
+    const { scope, worker } = link();
+    const { canvas, container, view } = page();
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const platform = scope.__tnGamePlatform as IGamePlatformSource;
+    const received: number[] = [];
+    platform.inputTarget?.addEventListener("wheel", (event) =>
+      received.push((event as WheelEvent).deltaY),
+    );
+    for (const [target, deltaY] of [
+      [{}, 10],
+      [canvas, 20],
+      [view, 30],
+    ] as const) {
+      const event = Object.assign(new Event("wheel"), { deltaY });
+      Object.defineProperty(event, "target", { value: target });
+      view.dispatchEvent(event);
+    }
+    await tick();
+    handle.stop();
+    expect(received).toEqual([20, 30]);
+  });
+
+  it("clamps a hidden canvas to one pixel at init and resize", async () => {
+    const { scope, worker } = link();
+    const { canvas, container, offscreen, resize } = page();
+    canvas.clientWidth = 0;
+    canvas.clientHeight = 0;
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const platform = scope.__tnGamePlatform as IGamePlatformSource;
+    const initial = platform.viewport.readSize(offscreen as HTMLCanvasElement);
+    canvas.clientWidth = 100;
+    resize();
+    await tick();
+    handle.stop();
+    expect(initial).toEqual({ width: 1, height: 1, aspect: 1 });
+    expect(platform.renderer.readSize(offscreen as HTMLCanvasElement)).toEqual([100, 1]);
+    expect(platform.viewport.readSize(offscreen as HTMLCanvasElement).aspect).toBe(100);
+  });
+
+  it("reports a pointerlockerror-only refusal to the worker and detaches on stop", async () => {
+    const { scope, worker } = link();
+    const { canvas, container, offscreen } = page();
+    Object.assign(canvas, { requestPointerLock: () => undefined });
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const changes: boolean[] = [];
+    offscreen.addEventListener("pointerlockchange", (event) =>
+      changes.push((event as Event & { captured: boolean }).captured),
+    );
+    (offscreen as unknown as HTMLCanvasElement).requestPointerLock();
+    await tick();
+    globalThis.document.dispatchEvent(new Event("pointerlockerror"));
+    await tick();
+    handle.stop();
+    globalThis.document.dispatchEvent(new Event("pointerlockerror"));
+    await tick();
+    expect(changes).toEqual([false]);
+  });
+
+  it.each(["pointerup", "pointercancel", "stop"])(
+    "captures drags outside the canvas and releases on %s",
+    async (end) => {
+      const { scope, worker } = link();
+      const { canvas, container, offscreen } = page();
+      const captured = new Set<number>();
+      Object.assign(canvas, {
+        setPointerCapture: (id: number) => captured.add(id),
+        releasePointerCapture: (id: number) => captured.delete(id),
+      });
+      serveWorkerGame({ start: async () => undefined }, scope);
+      const handle = startWorkerGame(
+        worker as unknown as Worker,
+        container as unknown as HTMLElement,
+      );
+      await handle.ready;
+      const received = vi.fn();
+      offscreen.addEventListener(end, received);
+      canvas.dispatchEvent(Object.assign(new Event("pointerdown"), { pointerId: 7 }));
+      const wasCaptured = captured.has(7);
+      if (end === "stop") handle.stop();
+      else {
+        // The browser retargets an outside release to the element holding pointer capture.
+        (captured.has(7) ? canvas : new EventTarget()).dispatchEvent(
+          Object.assign(new Event(end), { pointerId: 7 }),
+        );
+        await tick();
+        handle.stop();
+      }
+      expect(wasCaptured).toBe(true);
+      expect(captured.size).toBe(0);
+      if (end !== "stop") expect(received).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([true, false])(
+    "removes the canvas on stop and exits only its own pointer lock (%s)",
+    async (ownsLock) => {
+      const { scope, worker } = link();
+      const { canvas, container } = page();
+      const documentHost = globalThis.document;
+      const exitPointerLock = vi.fn();
+      Object.assign(documentHost, { pointerLockElement: ownsLock ? canvas : {}, exitPointerLock });
+      serveWorkerGame({ start: async () => undefined }, scope);
+      const handle = startWorkerGame(
+        worker as unknown as Worker,
+        container as unknown as HTMLElement,
+      );
+      await handle.ready;
+      handle.stop();
+      expect(container.children).toEqual([]);
+      expect(exitPointerLock).toHaveBeenCalledTimes(ownsLock ? 1 : 0);
+    },
+  );
+
+  it("resolves late bridge methods and live fields, including the runner's clock epoch", async () => {
+    const { scope, worker } = link();
+    const { container, view } = page();
+    const remote: Record<string, unknown> = { describe: () => ({}) };
+    serveWorkerGame(
+      {
+        start: async () => {
+          scope.__THREENATIVE_PLAYTEST_BRIDGE__ = remote;
+        },
+      },
+      scope,
+    );
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    let epoch = 0;
+    Object.defineProperty(remote, "_clockEpoch", { get: () => epoch });
+    remote._setClockMode = () => {
+      epoch += 1;
+      return { epoch };
+    };
+    remote.sample = () => ({ clock: { mode: "wall-clock" } });
+    const bridge = view.__THREENATIVE_PLAYTEST_BRIDGE__ as {
+      _clockEpoch: number;
+      _setClockMode(mode: string): Promise<unknown>;
+      sample(): Promise<unknown>;
+      $get(field: string): Promise<unknown>;
+    };
+    try {
+      expect(typeof bridge._setClockMode).toBe("function");
+      await expect(bridge._setClockMode("wall-clock")).resolves.toEqual({ epoch: 1 });
+      expect(bridge._clockEpoch).toBe(1);
+      await expect(bridge.$get("_clockEpoch")).resolves.toBe(1);
+      const before = bridge._clockEpoch;
+      epoch += 1;
+      await bridge.sample();
+      expect(before === bridge._clockEpoch).toBe(false);
+    } finally {
+      handle.stop();
+    }
+  });
+
+  it.each(["error", "messageerror", "stop"])(
+    "rejects ready and pending RPCs on %s and detaches listeners",
+    async (failure) => {
+      const { scope, worker, toWorker } = link();
+      const { container, view } = page();
+      serveWorkerGame(
+        {
+          start: () => {
+            scope.__THREENATIVE_PLAYTEST_BRIDGE__ = { wait: () => new Promise(() => {}) };
+            return new Promise(() => {});
+          },
+        },
+        scope,
+      );
+      const handle = startWorkerGame(
+        worker as unknown as Worker,
+        container as unknown as HTMLElement,
+      );
+      const errors: string[] = [];
+      void handle.ready.catch((error: Error) => errors.push(error.message));
+      await tick(20);
+      const bridge = view.__THREENATIVE_PLAYTEST_BRIDGE__ as { wait(): Promise<unknown> };
+      void bridge.wait().catch((error: Error) => errors.push(error.message));
+      await tick();
+      if (failure === "stop") handle.stop();
+      else
+        worker.dispatchEvent(Object.assign(new Event(failure), { message: "module load failed" }));
+      await tick();
+      const sent = toWorker.length;
+      worker.dispatchEvent(new MessageEvent("message", { data: { type: "tn-worker-ready" } }));
+      await tick();
+      handle.stop();
+      expect(errors).toEqual(
+        failure === "stop"
+          ? [
+              "TN_WORKER_STOPPED: the worker game stopped.",
+              "TN_WORKER_STOPPED: the worker game stopped.",
+            ]
+          : ["module load failed", "module load failed"],
+      );
+      expect(worker.terminate).toHaveBeenCalledTimes(1);
+      expect(toWorker).toHaveLength(sent);
+    },
+  );
+
   it("sends the canvas only after the worker reports ready", async () => {
     // A message sent while the worker module is still in its top-level await reaches no handler
     // and is lost, so the page waits for the worker's own ready message.
@@ -461,7 +882,7 @@ describe("worker game host (PRD-752)", () => {
     const { scope, worker } = link();
     const { container, view } = page();
     const created: unknown[] = [];
-    view.AudioContext = class {
+    view.AudioContext = class extends EventTarget {
       currentTime = 0;
       destination = {};
       listener = {};

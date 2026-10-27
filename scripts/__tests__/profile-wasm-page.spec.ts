@@ -47,6 +47,8 @@ vi.mock("@playwright/test", () => ({
         evaluate: async (fn: (() => unknown) | string) => {
           if (typeof fn === "string") return state.presented.shift() ?? 0;
           if (fn.toString().includes("requestAdapter")) return "hardware";
+          if (fn.toString().includes("__tnCallCounts")) return { perFrame: 0, top: [] };
+          if (fn.toString().includes("__tnGpuCounts")) return [];
           if (fn.toString().includes("getCurrentTexture"))
             return Array.from({ length: 300 }, () => 10);
           if (fn.toString().includes("requestAnimationFrame"))
@@ -130,6 +132,59 @@ describe("profile:wasm-page scorecard", () => {
     const run = await measure("http://test", options(["--url", "http://test"]));
     expect(run.presented.p50).toBe(16);
   });
+  it("reads engine census and memory from the game worker", async () => {
+    state.memory = { wasmMemoryBytes: 1, jsHeapUsedBytes: 2 };
+    state.workers = [
+      {
+        evaluate: async (fn) => {
+          if (typeof fn === "string") return "object";
+          if (fn.toString().includes("__tnCallCounts"))
+            return { perFrame: 12, top: [{ name: "Thing.draw", perFrame: 12 }] };
+          if (fn.toString().includes("__tnWasmMemoryBytes"))
+            return { wasmMemoryBytes: 65536, jsHeapUsedBytes: 1234 };
+          return Array.from({ length: 600 }, () => 16);
+        },
+      },
+    ];
+    const run = await measure(
+      "http://test",
+      options(["--url", "http://test", "--calls", "--memory"]),
+    );
+    expect(run.calls).toEqual({ perFrame: 12, top: [{ name: "Thing.draw", perFrame: 12 }] });
+    expect(run.memory).toEqual({ wasmMemoryBytes: 65536, jsHeapUsedBytes: 1234 });
+  });
+
+  it("reads GPU calls from the game worker's presentations", async () => {
+    state.workers = [
+      {
+        evaluate: async (fn) => {
+          if (typeof fn === "string") return "object";
+          if (fn.toString().includes("__tnGpuCounts"))
+            return [{ name: "GPUCanvasContext.getCurrentTexture", perFrame: 1 }];
+          return Array.from({ length: 600 }, () => 16);
+        },
+      },
+    ];
+    const run = await measure("http://test", options(["--url", "http://test", "--gpu-calls"]));
+    expect(run.gpu).toEqual([{ name: "GPUCanvasContext.getCurrentTexture", perFrame: 1 }]);
+  });
+
+  it("divides page CPU work by game worker presentations", async () => {
+    const presentations = [100, 120];
+    state.workers = [
+      {
+        evaluate: async (fn) => {
+          if (typeof fn === "string")
+            return fn === "globalThis.__tnPresented" ? presentations.shift() : "object";
+          return Array.from({ length: 600 }, () => 16);
+        },
+      },
+    ];
+    const run = await measure("http://test", options(["--url", "http://test", "--cpu-work"]));
+    expect(run.profile.work).toMatchObject({ frames: 20, busyMsPerFrame: 0.05, wallMs: 4 });
+    expect(run.profile.work?.threadMsPerFrame).toBeCloseTo(0.1, 6);
+  });
+
   it.each(["wasmMemoryBytes", "jsHeapUsedBytes"])(
     "fails closed when %s is unavailable",
     async (field) => {

@@ -9,6 +9,7 @@
 
 import type { IGamePlatformSource } from "./game.js";
 import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
+import { GAME_STATE_MESSAGE } from "./ui-bridge.js";
 import { createRemoteAudioContext, serveRemoteAudio } from "./worker-audio.js";
 
 /** The realm `serveWorkerGame` runs in. Narrowed, because a test cannot build a real worker scope. */
@@ -49,22 +50,36 @@ interface IWorkerRpcMessage {
   name: string;
   method: string;
   args: unknown[];
+  get?: boolean;
 }
+
+type WorkerGamepad = Pick<Gamepad, "id" | "index" | "connected" | "mapping" | "timestamp"> & {
+  axes: number[];
+  buttons: { pressed: boolean; value: number; touched: boolean }[];
+};
 
 type WorkerInbound =
   | IWorkerInitMessage
   | IWorkerResizeMessage
   | IWorkerEventMessage
-  | IWorkerRpcMessage;
+  | IWorkerRpcMessage
+  | { type: "tn-worker-gamepads"; gamepads: (WorkerGamepad | null)[] };
 
 type WorkerOutbound =
   | { type: "tn-worker-ready" }
-  | { type: "tn-worker-mirror"; name: string; methods: string[] }
+  | { type: "tn-worker-mirror"; name: string; epoch?: number }
   | { type: "tn-worker-started" }
   | { type: "tn-worker-failed"; message: string }
   | { type: "tn-worker-pointer-lock"; lock: boolean }
   | { type: "tn-worker-attribute"; name: string; value: string }
-  | { type: "tn-worker-rpc-result"; id: number; result?: unknown; error?: string };
+  | {
+      type: "tn-worker-rpc-result";
+      id: number;
+      name?: string;
+      epoch?: number;
+      result?: unknown;
+      error?: string;
+    };
 
 type PageOutbound = WorkerInbound;
 
@@ -111,6 +126,14 @@ const CANVAS_EVENTS = [
   "click",
 ] as const;
 
+// `serializeUiState` writes `{ type, state }` in that order, so a state frame starts with this. A
+// prefix test, not a parse: the page parses each frame once already, and that thread is the one to keep free.
+const STATE_FRAME_PREFIX = `{"type":${JSON.stringify(GAME_STATE_MESSAGE)},`;
+
+function isStateFrame(frame: unknown): frame is string {
+  return typeof frame === "string" && frame.startsWith(STATE_FRAME_PREFIX);
+}
+
 /**
  * The game end of the UI bridge, live before the page's port arrives.
  *
@@ -124,6 +147,14 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
   let port: MessagePort | undefined;
   const outbound: unknown[] = [];
   const inbound: unknown[] = [];
+  let snapshot: string | undefined;
+  let snapshotInFlight = false;
+  const flushSnapshot = (): void => {
+    if (port === undefined || snapshotInFlight || snapshot === undefined) return;
+    snapshotInFlight = true;
+    port.postMessage(snapshot);
+    snapshot = undefined;
+  };
   let receive = scope.__tnUiGameReceive as ((frame: unknown) => void) | undefined;
   Object.defineProperty(scope, "__tnUiGameReceive", {
     configurable: true,
@@ -134,7 +165,10 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
     },
   });
   scope.__tnUiPost = (frame: string) => {
-    if (port === undefined) outbound.push(frame);
+    if (isStateFrame(frame)) {
+      snapshot = frame;
+      flushSnapshot();
+    } else if (port === undefined) outbound.push(frame);
     else port.postMessage(frame);
   };
   scope.__tnUiOverlayAttached = () => true;
@@ -142,10 +176,16 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
     attach(next: MessagePort): void {
       port = next;
       next.onmessage = (event: MessageEvent) => {
+        if (event.data?.type === "tn-worker-ui-ack") {
+          snapshotInFlight = false;
+          flushSnapshot();
+          return;
+        }
         if (typeof receive === "function") receive(event.data);
         else inbound.push(event.data);
       };
       for (const frame of outbound.splice(0)) next.postMessage(frame);
+      flushSnapshot();
     },
   };
   scope.__tnWorkerUi = held;
@@ -173,6 +213,7 @@ export function serveWorkerGame(
   const observers = new Set<() => void>();
   const size = { dpr: 1, height: 1, width: 1 };
   let canvas: OffscreenCanvas | undefined;
+  let gamepads: (WorkerGamepad | null)[] = [];
 
   const post = (message: WorkerOutbound): void => scope.postMessage(message);
   const ui = holdUiBridge(scope);
@@ -216,7 +257,7 @@ export function serveWorkerGame(
         };
       };
       const platform: IGamePlatformSource = {
-        input: () => [],
+        input: () => gamepads,
         inputTarget,
         mountCanvas: () => undefined,
         renderer: {
@@ -253,10 +294,8 @@ export function serveWorkerGame(
       // holds start until the runner calls the bridge, so a mirror sent after start never arrives.
       const mirror = (name: string, value: unknown): void => {
         if (typeof value !== "object" || value === null) return;
-        const methods = Object.keys(value).filter(
-          (key) => typeof (value as Record<string, unknown>)[key] === "function",
-        );
-        post({ methods, name, type: "tn-worker-mirror" });
+        const epoch = (value as { _clockEpoch?: number })._clockEpoch;
+        post({ epoch, name, type: "tn-worker-mirror" });
       };
       for (const name of MIRRORED_GLOBALS) {
         let value = scope[name];
@@ -300,17 +339,23 @@ export function serveWorkerGame(
   const handleRpc = async (message: IWorkerRpcMessage): Promise<void> => {
     const id = message.id;
     try {
-      const receiver = scope[message.name] as
-        | Record<string, (...args: unknown[]) => unknown>
-        | undefined;
+      const receiver = scope[message.name] as Record<string, unknown> | undefined;
       const method = receiver?.[message.method];
-      if (typeof method !== "function") {
+      if (!message.get && typeof method !== "function") {
         throw new Error(
           `TN_WORKER_RPC_UNKNOWN: '${message.name}.${message.method}' is not a function.`,
         );
       }
-      const result = await method.apply(receiver, message.args);
-      post({ id, result, type: "tn-worker-rpc-result" });
+      const result = message.get
+        ? method
+        : await (method as (...args: unknown[]) => unknown).apply(receiver, message.args);
+      post({
+        id,
+        result,
+        name: message.name,
+        epoch: receiver?._clockEpoch as number | undefined,
+        type: "tn-worker-rpc-result",
+      });
     } catch (error) {
       post({
         error: error instanceof Error ? error.message : String(error),
@@ -338,6 +383,9 @@ export function serveWorkerGame(
         break;
       case "tn-worker-rpc":
         void handleRpc(message);
+        break;
+      case "tn-worker-gamepads":
+        gamepads = message.gamepads;
         break;
     }
   };
@@ -374,6 +422,7 @@ export function startWorkerGame(
   let nextRpcId = 0;
   const pending = new Map<number, IPendingCall>();
   const installed = new Set<string>();
+  const capturedPointers = new Set<number>();
   const listeners: Array<[EventTarget, string, EventListener]> = [];
 
   const send = (message: PageOutbound, transfer?: Transferable[]): void => {
@@ -385,9 +434,9 @@ export function startWorkerGame(
   const postResize = (): void => {
     send({
       dpr: windowHost.devicePixelRatio,
-      height: canvas.clientHeight,
+      height: Math.max(1, canvas.clientHeight),
       type: "tn-worker-resize",
-      width: canvas.clientWidth,
+      width: Math.max(1, canvas.clientWidth),
     });
   };
 
@@ -395,6 +444,35 @@ export function startWorkerGame(
     target.addEventListener(type, listener);
     listeners.push([target, type, listener]);
   };
+
+  let gamepadFrame: number | undefined;
+  const pollGamepads = (): void => {
+    if (gamepadFrame !== undefined) windowHost.cancelAnimationFrame(gamepadFrame);
+    gamepadFrame = undefined;
+    if (stopped) return;
+    const gamepads = Array.from(windowHost.navigator?.getGamepads?.() ?? [], (pad) =>
+      pad === null
+        ? null
+        : {
+            id: pad.id,
+            index: pad.index,
+            connected: pad.connected,
+            mapping: pad.mapping,
+            timestamp: pad.timestamp,
+            axes: Array.from(pad.axes),
+            buttons: Array.from(pad.buttons, ({ pressed, value, touched }) => ({
+              pressed,
+              value,
+              touched,
+            })),
+          },
+    );
+    send({ type: "tn-worker-gamepads", gamepads });
+    if (gamepads.some((pad) => pad?.connected))
+      gamepadFrame = windowHost.requestAnimationFrame(pollGamepads);
+  };
+  listen(windowHost, "gamepadconnected", pollGamepads);
+  listen(windowHost, "gamepaddisconnected", pollGamepads);
 
   const eventFields = (event: Event): Record<string, unknown> => {
     const source = event as unknown as Record<string, unknown>;
@@ -405,21 +483,77 @@ export function startWorkerGame(
     return fields;
   };
 
+  let motionFrame: number | undefined;
+  const motion = new Map<string, IWorkerEventMessage>();
+  const postEvent = (message: IWorkerEventMessage, rect?: DOMRect): void => {
+    const fields = message.event;
+    // The worker draws on the canvas, so its pointer coordinates must be canvas-relative.
+    if (message.target === "canvas" || fields.type === "wheel") {
+      const bounds = rect ?? canvas.getBoundingClientRect();
+      const { clientX, clientY } = fields;
+      if (typeof clientX === "number") fields.clientX = clientX - bounds.left;
+      if (typeof clientY === "number") fields.clientY = clientY - bounds.top;
+    }
+    send(message);
+  };
+  const flushMotion = (): void => {
+    if (motionFrame !== undefined) windowHost.cancelAnimationFrame(motionFrame);
+    motionFrame = undefined;
+    if (stopped) motion.clear();
+    if (motion.size === 0) return;
+    const rect = [...motion.values()].some((message) => message.target === "canvas")
+      ? canvas.getBoundingClientRect()
+      : undefined;
+    for (const message of motion.values()) postEvent(message, rect);
+    motion.clear();
+  };
   const forward = (event: Event, target: "window" | "canvas"): void => {
     if (stopped) return;
+    // Match InputMap: wheel events on DOM overlays belong to the HUD.
+    if (
+      event.type === "wheel" &&
+      event.target != null &&
+      event.target !== windowHost &&
+      event.target !== canvas
+    )
+      return;
     const fields = eventFields(event);
-    // The worker draws on the canvas, so its pointer coordinates must be canvas-relative.
-    if (target === "canvas" || event.type === "wheel") {
-      const rect = canvas.getBoundingClientRect();
-      const { clientX, clientY } = fields;
-      if (typeof clientX === "number") fields.clientX = clientX - rect.left;
-      if (typeof clientY === "number") fields.clientY = clientY - rect.top;
+    if (event.type === "pointermove" || event.type === "mousemove") {
+      const key = `${target}:${event.type}:${fields.pointerId ?? ""}`;
+      const previous = motion.get(key)?.event;
+      fields.movementX = Number(previous?.movementX ?? 0) + Number(fields.movementX ?? 0);
+      fields.movementY = Number(previous?.movementY ?? 0) + Number(fields.movementY ?? 0);
+      motion.set(key, { event: fields, target, type: "tn-worker-event" });
+      motionFrame ??= windowHost.requestAnimationFrame(flushMotion);
+      return;
     }
-    send({ event: fields, target, type: "tn-worker-event" });
+    flushMotion();
+    postEvent({ event: fields, target, type: "tn-worker-event" });
   };
 
   for (const type of WINDOW_EVENTS) listen(windowHost, type, (event) => forward(event, "window"));
-  for (const type of CANVAS_EVENTS) listen(canvas, type, (event) => forward(event, "canvas"));
+  const releasePointer = (id: number): void => {
+    if (!capturedPointers.delete(id)) return;
+    try {
+      canvas.releasePointerCapture?.(id);
+    } catch {
+      // The browser may already have released a cancelled pointer.
+    }
+  };
+  for (const type of CANVAS_EVENTS)
+    listen(canvas, type, (event) => {
+      const id = (event as PointerEvent).pointerId;
+      if (type === "pointerdown" && canvas.setPointerCapture !== undefined) {
+        try {
+          canvas.setPointerCapture(id);
+          capturedPointers.add(id);
+        } catch {
+          // Synthetic events have no active browser pointer to capture.
+        }
+      }
+      forward(event, "canvas");
+      if (type === "pointerup" || type === "pointercancel") releasePointer(id);
+    });
   listen(canvas, "contextmenu", (event) => event.preventDefault());
   const pageLock = documentHost as Document & { pointerLockElement?: Element | null };
   const sendLock = (captured: boolean): void =>
@@ -429,6 +563,7 @@ export function startWorkerGame(
       type: "tn-worker-event",
     });
   listen(pageLock, "pointerlockchange", () => sendLock(pageLock.pointerLockElement === canvas));
+  listen(pageLock, "pointerlockerror", () => sendLock(false));
   const pointerLock = (lock: boolean): void => {
     if (!lock) {
       pageLock.exitPointerLock?.();
@@ -480,7 +615,11 @@ export function startWorkerGame(
   installed.add("__tnUiOverlayAttached");
   uiPort.onmessage = (event: MessageEvent) => {
     const receive = page.__tnUiReceive;
-    if (typeof receive === "function") (receive as (frame: unknown) => void)(event.data);
+    try {
+      if (typeof receive === "function") (receive as (frame: unknown) => void)(event.data);
+    } finally {
+      if (isStateFrame(event.data)) uiPort.postMessage({ type: "tn-worker-ui-ack" });
+    }
   };
 
   let resolveReady: () => void = () => undefined;
@@ -490,21 +629,32 @@ export function startWorkerGame(
     rejectReady = reject;
   });
 
-  const installMirror = (name: string, methods: string[]): void => {
-    const host: Record<string, (...args: unknown[]) => Promise<unknown>> = {};
-    for (const method of methods) {
-      host[method] = (...args: unknown[]) => {
-        if (stopped) {
-          return Promise.reject(new Error("TN_WORKER_STOPPED: the worker game stopped."));
-        }
-        const id = nextRpcId++;
-        return new Promise<unknown>((resolve, reject) => {
-          pending.set(id, { reject, resolve });
-          send({ args, id, method, name, type: "tn-worker-rpc" });
-        });
-      };
-    }
-    page[name] = host;
+  const mirrorEpochs = new Map<string, number>();
+  const installMirror = (name: string, epoch = 0): void => {
+    mirrorEpochs.set(name, epoch);
+    const call = (method: string, args: unknown[], get = false): Promise<unknown> => {
+      if (stopped) {
+        return Promise.reject(new Error("TN_WORKER_STOPPED: the worker game stopped."));
+      }
+      const id = nextRpcId++;
+      return new Promise<unknown>((resolve, reject) => {
+        pending.set(id, { reject, resolve });
+        send({ args, get, id, method, name, type: "tn-worker-rpc" });
+      });
+    };
+    page[name] = new Proxy(
+      {},
+      {
+        get: (_target, method) => {
+          // Promise resolution probes "then"; the mirror itself is not a thenable.
+          if (typeof method !== "string" || method === "then") return undefined;
+          // The runner reads the epoch synchronously around sample(); each RPC refreshes it.
+          if (method === "_clockEpoch") return mirrorEpochs.get(name) ?? 0;
+          if (method === "$get") return (field: string) => call(field, [], true);
+          return (...args: unknown[]) => call(method, args);
+        },
+      },
+    );
     installed.add(name);
   };
 
@@ -513,11 +663,11 @@ export function startWorkerGame(
       canvas: offscreen,
       dpr: windowHost.devicePixelRatio ?? 1,
       globals: pageGlobals(),
-      height: canvas.clientHeight,
+      height: Math.max(1, canvas.clientHeight),
       pageUrl: windowHost.location.href,
       type: "tn-worker-init",
       ui: gamePort,
-      width: canvas.clientWidth,
+      width: Math.max(1, canvas.clientWidth),
     };
     const transfer: Transferable[] = [offscreen, gamePort];
     if (audioContext !== undefined && audioChannel !== undefined) {
@@ -529,6 +679,7 @@ export function startWorkerGame(
       transfer.push(audioChannel.port2);
     }
     send(init, transfer);
+    pollGamepads();
   };
 
   const onWorkerMessage = (event: Event): void => {
@@ -545,18 +696,20 @@ export function startWorkerGame(
         canvas.setAttribute(message.name, message.value);
         break;
       case "tn-worker-mirror":
-        installMirror(message.name, message.methods);
+        installMirror(message.name, message.epoch);
         break;
       case "tn-worker-started":
         resolveReady();
         break;
       case "tn-worker-failed":
-        rejectReady(new Error(message.message));
+        stop(new Error(message.message));
         break;
       case "tn-worker-rpc-result": {
         const call = pending.get(message.id);
         if (call === undefined) break;
         pending.delete(message.id);
+        if (message.name !== undefined && message.epoch !== undefined)
+          mirrorEpochs.set(message.name, message.epoch);
         if (message.error === undefined) call.resolve(message.result);
         else call.reject(new Error(message.error));
         break;
@@ -564,16 +717,19 @@ export function startWorkerGame(
     }
   };
 
-  const stop = (): void => {
+  const stop = (error = new Error("TN_WORKER_STOPPED: the worker game stopped.")): void => {
     if (stopped) return;
     stopped = true;
+    rejectReady(error);
+    if (gamepadFrame !== undefined) windowHost.cancelAnimationFrame(gamepadFrame);
+    flushMotion();
     for (const [target, type, listener] of listeners) target.removeEventListener(type, listener);
     listeners.length = 0;
     observer?.disconnect();
-    worker.removeEventListener("message", onWorkerMessage);
-    for (const call of pending.values()) {
-      call.reject(new Error("TN_WORKER_STOPPED: the worker game stopped."));
-    }
+    if (pageLock.pointerLockElement === canvas) pointerLock(false);
+    for (const id of capturedPointers) releasePointer(id);
+    canvas.remove();
+    for (const call of pending.values()) call.reject(error);
     pending.clear();
     uiPort.onmessage = null;
     uiPort.close();
@@ -585,6 +741,12 @@ export function startWorkerGame(
     worker.terminate();
   };
 
-  worker.addEventListener("message", onWorkerMessage);
+  listen(worker, "message", onWorkerMessage);
+  const onWorkerError = (event: Event): void => {
+    const message = (event as ErrorEvent).message;
+    stop(new Error(message || `TN_WORKER_FAILED: worker ${event.type}.`));
+  };
+  listen(worker, "error", onWorkerError);
+  listen(worker, "messageerror", onWorkerError);
   return { ready, stop };
 }

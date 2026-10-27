@@ -257,8 +257,14 @@ async function threadSeconds(cdp: CDPSession): Promise<number> {
   return found.value;
 }
 
-async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: string) {
-  const framesBefore = withWork ? await presentedFrames(page) : 0;
+async function cpu(
+  page: Page,
+  realm: Pick<Page, "evaluate">,
+  seconds: number,
+  withWork: boolean,
+  saveAs?: string,
+) {
+  const framesBefore = withWork ? await presentedFrames(realm) : 0;
   const cdp = await page.context().newCDPSession(page);
   if (withWork) await cdp.send("Performance.enable");
   const threadBefore = withWork ? await threadSeconds(cdp) : 0;
@@ -268,7 +274,7 @@ async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: stri
   await page.waitForTimeout(seconds * 1000);
   const { profile } = (await cdp.send("Profiler.stop")) as { profile: ICpuProfile };
   if (saveAs) writeFileSync(saveAs, JSON.stringify(profile));
-  const frames = withWork ? (await presentedFrames(page)) - framesBefore : 0;
+  const frames = withWork ? (await presentedFrames(realm)) - framesBefore : 0;
   const work = withWork
     ? {
         ...cpuWork(profile, frames),
@@ -323,17 +329,25 @@ async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: stri
   };
 }
 
-/** Counts every presented frame from page load; installed by --cpu-work (CPU_WORK_COUNTER). */
-const CPU_WORK_COUNTER = `(() => { globalThis.__tnPresented = 0;
-  const count = () => { globalThis.__tnPresented++; requestAnimationFrame(count); };
-  requestAnimationFrame(count); })();`;
+/** Counts game presentations, including capped loops and worker games (--cpu-work). */
+const CPU_WORK_COUNTER = `(() => {
+  globalThis.__tnPresented = 0;
+  const proto = globalThis.GPUCanvasContext?.prototype;
+  if (!proto) throw new Error("TN_PROFILE_NO_WEBGPU_CANVAS: no presentation counter available");
+  const original = proto.getCurrentTexture;
+  proto.getCurrentTexture = function (...args) {
+    const texture = original.apply(this, args);
+    globalThis.__tnPresented++;
+    return texture;
+  };
+})();`;
 
-async function presentedFrames(page: Page) {
-  return Number(await page.evaluate("globalThis.__tnPresented"));
+async function presentedFrames(realm: Pick<Page, "evaluate">) {
+  return Number(await realm.evaluate("globalThis.__tnPresented"));
 }
 
-async function calls(page: Page) {
-  return page.evaluate(
+async function calls(realm: Pick<Page, "evaluate">) {
+  return realm.evaluate(
     () =>
       new Promise<{ perFrame: number; top: { name: string; perFrame: number }[] }>(
         (resolve, reject) => {
@@ -402,8 +416,8 @@ const GPU_CENSUS = `(() => {
  * would credit the arm with the faster callback rate. The divisor is `getCurrentTexture`, which both
  * back ends call once per frame they present; the window runs until 120 such frames passed.
  */
-async function gpuCalls(page: Page) {
-  return page.evaluate(
+async function gpuCalls(realm: Pick<Page, "evaluate">) {
+  return realm.evaluate(
     () =>
       new Promise<{ name: string; perFrame: number }[]>((resolve) => {
         const g = globalThis as { __tnGpuCounts?: Map<string, number> };
@@ -469,6 +483,10 @@ export async function measure(url: string, o: IOptions) {
     const reading = readHostLoad();
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
     const thread = await gameThread(page);
+    if (thread.kind === "worker") {
+      if (o.gpuCalls) await thread.realm.evaluate(GPU_CENSUS);
+      if (o.cpuWork) await thread.realm.evaluate(CPU_WORK_COUNTER);
+    }
     const frame = await frames(thread.realm);
     const presentedFrame = await presented(thread.realm);
     if (o.saveProfile !== undefined) mkdirSync(o.saveProfile, { recursive: true });
@@ -476,11 +494,11 @@ export async function measure(url: string, o: IOptions) {
       o.saveProfile === undefined
         ? undefined
         : join(o.saveProfile, `${new URL(url).port}.cpuprofile`);
-    const profile = await cpu(page, o.seconds, o.cpuWork, saveAs);
-    const census = o.calls ? await calls(page) : undefined;
-    const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
+    const profile = await cpu(page, thread.realm, o.seconds, o.cpuWork, saveAs);
+    const census = o.calls ? await calls(thread.realm) : undefined;
+    const gpu = o.gpuCalls ? await gpuCalls(thread.realm) : undefined;
     const memory = o.memory
-      ? await page.evaluate(() => ({
+      ? await thread.realm.evaluate(() => ({
           jsHeapUsedBytes: (performance as { memory?: { usedJSHeapSize?: number } }).memory
             ?.usedJSHeapSize,
           wasmMemoryBytes: (
