@@ -1891,6 +1891,9 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       sampleCount: () => resolveSampleCount(raw),
     });
   let renderer: IRendererLike | undefined;
+  // Why WebGPU did not start, when it was tried: the boot failure must name it, or a fault in the
+  // WebGPU path (PRD-752: a DOM-only canvas call in a worker) reads as a device without WebGPU.
+  let webgpuFailure: string | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
@@ -1933,6 +1936,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // A facade and Wasm engine from two builds is an install fault, not a device without
       // WebGPU: falling back would report TN_NO_RENDERER and hide the fix.
       if (error instanceof Error && error.message.startsWith("TN_WASM_ABI_MISMATCH")) throw error;
+      webgpuFailure = error instanceof Error ? error.message : String(error);
       renderer = undefined;
     }
   }
@@ -1951,7 +1955,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // verbatim would show an internal "uncatalogued" code; a browser with no context throws
       // three's own message. Neither belongs in front of a player, so both become one named failure.
       throw new Error(
-        "TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.",
+        `TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.${webgpuFailure === undefined ? "" : ` WebGPU failed: ${webgpuFailure}`}`,
         { cause: error },
       );
     }

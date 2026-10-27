@@ -274,7 +274,8 @@ export function defineWebRenderer(
         (parameters.canvas as HTMLCanvasElement | undefined) ??
         document.createElement("canvas");
       // three's WebGPURenderer marks its canvas `three.js r<rev> webgpu`; tools read the backend there.
-      this.domElement.setAttribute("data-engine", "threenative wasm webgpu");
+      // A worker's OffscreenCanvas has no attributes (PRD-752).
+      this.domElement.setAttribute?.("data-engine", "threenative wasm webgpu");
       const samples = parameters.samples ?? (parameters.antialias ? 4 : 1);
       this.samples = Math.max(1, Number(samples));
       this.#width = this.domElement.width || 300;

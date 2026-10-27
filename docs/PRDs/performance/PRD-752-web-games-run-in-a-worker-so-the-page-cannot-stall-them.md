@@ -59,6 +59,15 @@ Clean CPU profile of the shooter kit (NVIDIA, no DevTools, 2026-10-26): frame me
 
   The starter load-0 runs followed the shooter load-24 runs, so their load1 is the lagging one-minute average, not live load. The loaded shooter reproduces the reported collapse.
 - 2026-10-26 (lead): **v5 KPIs**, set from that baseline, measured on the same lane at `--load 24`. Shooter: main thread busy at or below 48% (0.5x of 97%), p50 no worse than 18.6 ms, p95 at or below 116.3 ms with 58 ms (0.5x) as the target. Starter: main thread busy at or below 28% (0.5x of 55%), p50 no worse than 17.6 ms. A worker run that is not on this lane re-measures its own main-thread arm.
+- 2026-10-26 (lead): **phase 3 spike and design.** A scratch starter booted in a dedicated worker on a transferred `OffscreenCanvas`, on the Wasm engine (`TN_RENDERER` present, adapter "nvidia turing"). It drew the same frame as the main-thread arm. The spike found 6 gaps, each fixed at its own layer:
+  1. The Emscripten glue read `document` at load. Fix: `-sENVIRONMENT=web,worker` on `tn-native-engine-web`.
+  2. The Wasm renderer called `setAttribute` on its canvas, and an `OffscreenCanvas` has none. Fix: optional call in `browser-renderer.ts`.
+  3. Vite builds a worker bundle with `worker.plugins` only, so the worker got upstream three, and skin weights failed as `unorm32x4`. Fix: the web brand plugin also registers the engine resolver for workers, as ES output.
+  4. A message sent while the worker module is in its top-level await is dispatched before any handler exists, so it is lost. Fix: the worker posts `ready`, and the page sends the canvas after it.
+  5. A relative `fetch("sky.jpg")` or `new Request("grade.cube")` resolves against the worker script URL (`/assets/`). Fix: the worker host resolves relative URLs against the page URL.
+  6. A worker has no `AudioContext`. Fix: a Web Audio proxy. Each node is a handle, calls go over the port, and the page runs the real graph.
+
+  Core already has the seam: `defineGame({ platform })` (`IGamePlatformSource`: canvas, size, input target, gamepads). No production code supplied it before. Worker mode supplies it from the worker host. The starter's `GameUi` already talks to the game only through the UI bridge, so the page mounts `GameUi` and the game runs in `src/worker.ts`. The UI bridge host globals carry the HUD over the worker port. A swallowed WebGPU error also hid gap 3 behind `TN_NO_RENDERER`, so `TN_NO_RENDERER` now names the WebGPU cause.
 - 2026-10-26 (owner): scale-down rule. Bounded implementation slices go to a cheaper arm (`opencode-go/deepseek-v4.1-flash`, variant `max`, at most 2 arms). The lead designs, writes the red tests and reviews every diff.
 
 ### Phase 1: Loaded-host baseline
