@@ -207,6 +207,66 @@ describe("worker game host (PRD-752)", () => {
     handle.stop();
   });
 
+  it("holds a UI frame sent before the game connects, then delivers it", async () => {
+    // UiLayer announces itself at mount; the worker game connects its bridge partway through a
+    // slow start. A dropped ready intent leaves the HUD blank.
+    const { scope, worker } = link();
+    const { container, view } = page();
+    const gameReceive = vi.fn();
+    const game = {
+      start: async () => {
+        await tick(20);
+        scope.__tnUiGameReceive = gameReceive;
+      },
+    };
+    serveWorkerGame(game, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    (view.tnHost as { postMessage(frame: string): void }).postMessage('{"intent":"ready"}');
+    await handle.ready;
+    await tick();
+    expect(gameReceive).toHaveBeenCalledWith('{"intent":"ready"}');
+    handle.stop();
+  });
+
+  it("delivers game frames posted before the page's port arrived", async () => {
+    // The starter's `game.ui.onIntent` connects the bridge while game.ts evaluates, before init.
+    const { scope, worker } = link();
+    const { container, view } = page();
+    const uiReceive = vi.fn();
+    view.__tnUiReceive = uiReceive;
+    serveWorkerGame({ start: async () => undefined }, scope);
+    (scope.__tnUiPost as (frame: string) => void)('{"state":{"lives":3}}');
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    await tick();
+    expect(uiReceive).toHaveBeenCalledWith('{"state":{"lives":3}}');
+    handle.stop();
+  });
+
+  it("installs the UI host globals when it loads in a worker, before the game module runs", async () => {
+    vi.resetModules();
+    vi.stubGlobal("WorkerGlobalScope", class {});
+    try {
+      await import("../src/worker.js");
+      const scope = globalThis as Record<string, unknown>;
+      expect(typeof scope.__tnUiPost).toBe("function");
+      expect((scope.__tnUiOverlayAttached as () => boolean)()).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      const scope = globalThis as Record<string, unknown>;
+      scope.__tnUiPost = undefined;
+      scope.__tnUiOverlayAttached = undefined;
+      scope.__tnUiGameReceive = undefined;
+      scope.__tnWorkerUi = undefined;
+    }
+  });
+
   it("copies the harness's page globals into the worker before start", async () => {
     const { scope, worker } = link();
     const { container, view } = page();

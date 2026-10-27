@@ -110,6 +110,52 @@ const CANVAS_EVENTS = [
 ] as const;
 
 /**
+ * The game end of the UI bridge, live before the page's port arrives.
+ *
+ * A game module may connect its bridge while it evaluates (`game.ui.onIntent` at top level), and
+ * the bridge picks its transport once, at connect. So the host globals exist from the moment this
+ * module loads, frames each way wait in order, and `attach` joins them to the page's port.
+ */
+function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePort): void } {
+  const existing = scope.__tnWorkerUi as { attach(port: MessagePort): void } | undefined;
+  if (existing !== undefined) return existing;
+  let port: MessagePort | undefined;
+  const outbound: unknown[] = [];
+  const inbound: unknown[] = [];
+  let receive = scope.__tnUiGameReceive as ((frame: unknown) => void) | undefined;
+  Object.defineProperty(scope, "__tnUiGameReceive", {
+    configurable: true,
+    get: () => receive,
+    set: (value: ((frame: unknown) => void) | undefined) => {
+      receive = value;
+      if (typeof value === "function") for (const frame of inbound.splice(0)) value(frame);
+    },
+  });
+  scope.__tnUiPost = (frame: string) => {
+    if (port === undefined) outbound.push(frame);
+    else port.postMessage(frame);
+  };
+  scope.__tnUiOverlayAttached = () => true;
+  const held = {
+    attach(next: MessagePort): void {
+      port = next;
+      next.onmessage = (event: MessageEvent) => {
+        if (typeof receive === "function") receive(event.data);
+        else inbound.push(event.data);
+      };
+      for (const frame of outbound.splice(0)) next.postMessage(frame);
+    },
+  };
+  scope.__tnWorkerUi = held;
+  return held;
+}
+
+// In a dedicated worker, before the game module that imports this one after it evaluates.
+if (hostWindow() === undefined && "WorkerGlobalScope" in globalThis) {
+  holdUiBridge(globalThis as unknown as Record<string, unknown>);
+}
+
+/**
  * Runs inside the worker: wire the page's messages to the unchanged portable game.
  *
  * Call it last in the worker entry, after the game module evaluated: it posts the ready message
@@ -127,6 +173,7 @@ export function serveWorkerGame(
   let canvas: OffscreenCanvas | undefined;
 
   const post = (message: WorkerOutbound): void => scope.postMessage(message);
+  const ui = holdUiBridge(scope);
 
   const initialise = async (message: IWorkerInitMessage): Promise<void> => {
     try {
@@ -189,11 +236,7 @@ export function serveWorkerGame(
         };
       }
 
-      const ui = message.ui;
-      scope.__tnUiPost = (frame: string) => ui.postMessage(frame);
-      ui.onmessage = (event: MessageEvent) =>
-        (scope.__tnUiGameReceive as ((frame: unknown) => void) | undefined)?.(event.data);
-      scope.__tnUiOverlayAttached = () => true;
+      ui.attach(message.ui);
 
       await game.start();
 
