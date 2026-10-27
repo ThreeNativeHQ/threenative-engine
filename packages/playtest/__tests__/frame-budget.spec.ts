@@ -217,6 +217,18 @@ describe("a cost bound measured beside other GPU work", () => {
     expect(failed?.suggestion).toMatch(/rerun .* when they exit/u);
   });
 
+  it("does not call an unmeasured cost contended", () => {
+    const { diagnostics } = evaluatePerformanceAssertion(
+      { maxFrameMsP95: 16.7 },
+      frames(16.7, 3),
+      "perf.json",
+      { display: "virtual", foreignGpu: [4242] },
+    );
+    const failed = diagnostics.find(({ code }) => code === "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED");
+    expect(failed?.message).toMatch(/cannot be judged/u);
+    expect(failed?.suggestion).not.toMatch(/rerun/u);
+  });
+
   it("finds Chromium GPU processes that are not this run's descendants", () => {
     const proc = makeTempDirSync("foreign-gpu");
     const task = (pid: number, ppid: number, cmd: string) => {
@@ -226,9 +238,10 @@ describe("a cost bound measured beside other GPU work", () => {
     };
     task(100, 1, "node runner.js");
     task(101, 100, "chrome --type=browser");
-    task(102, 101, "chrome --type=gpu-process --use-angle");
-    task(200, 1, "chrome --type=browser");
-    task(201, 200, "chrome --type=gpu-process --use-angle");
+    task(102, 101, "/home/u/.cache/ms-playwright/chromium-1200/chrome --type=gpu-process --use-angle");
+    task(200, 1, "/home/u/.cache/ms-playwright/chromium-1200/chrome --type=browser");
+    task(201, 200, "/home/u/.cache/ms-playwright/chromium-1200/chrome --type=gpu-process --use-angle");
+    task(400, 1, "/usr/share/code/code --type=gpu-process");
     task(300, 1, "chrome --type=renderer");
     expect(foreignGpuProcesses(100, proc, "linux")).toEqual([201]);
     expect(foreignGpuProcesses(100, proc, "darwin")).toEqual([]);

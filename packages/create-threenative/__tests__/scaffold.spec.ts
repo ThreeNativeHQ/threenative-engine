@@ -597,7 +597,7 @@ describe("create-threenative", () => {
       );
       expect(scaffoldNextSteps("/w/mario64", false)).toMatch(/pnpm install[\s\S]*\.mcp\.json/u);
       expect(scaffoldNextSteps("/w/mario64", true)).toContain(
-        "node node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities",
+        "node /w/mario64/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities",
       );
       // Rows 1 and 2 read the 45 KB CLAUDE.md + AGENTS.md pair, then AGENTS.md again.
       expect(scaffoldNextSteps("/w/mario64", true)).toMatch(

@@ -18,7 +18,7 @@ export function frameDisplay(env: NodeJS.ProcessEnv = process.env, platform: str
 }
 
 /**
- * Chromium GPU processes on this host that this run did not start (Linux `/proc`; elsewhere none
+ * Playwright Chromium GPU processes on this host that this run did not start (Linux `/proc`; elsewhere none
  * are seen). Each one shares the GPU with the measured game, so a cost bound it fails is
  * contended: the number holds their load too. A process this run started descends from `ownPid`.
  */
@@ -45,7 +45,11 @@ export function foreignGpuProcesses(ownPid: number = process.pid, procRoot = "/p
     return false;
   };
   return readdirSync(procRoot)
-    .filter((entry) => /^\d+$/u.test(entry) && (read(entry, "cmdline") ?? "").split("\0").includes("--type=gpu-process"))
+    .filter((entry) => {
+      const argv = /^\d+$/u.test(entry) ? (read(entry, "cmdline") ?? "").split("\0") : [];
+      // Playwright's own Chromium only: an editor's or a desktop browser's GPU process idles here.
+      return argv.includes("--type=gpu-process") && (argv[0] ?? "").includes("ms-playwright");
+    })
     .map(Number)
     .filter((pid) => !ours(pid))
     .sort((a, b) => a - b);

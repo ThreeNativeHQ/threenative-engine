@@ -304,7 +304,7 @@ function emitFrameBound(
   });
   if (pass) return;
   const foreign = lane.foreignGpu ?? [];
-  const contended = !costPass && foreign.length > 0;
+  const contended = missing.length === 0 && !costPass && foreign.length > 0;
   const detail = missing.length > 0
     ? `cannot be judged: the run did not measure ${missing.join(" or ")}`
     : !costPass

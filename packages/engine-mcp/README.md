@@ -40,7 +40,7 @@ It does not send the contribution. Reference guardrail: mechanics and feel only,
 ## One call from the command line
 
 A session started outside the game folder never loads its `.mcp.json`. It calls a tool once
-instead: `node node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities
+instead: `node <game>/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities
 '{"situation":"triple jump"}'` prints the tool's answer and exits 0, or names the error and exits 1.
 
 ## Which manifest the server reads
