@@ -118,6 +118,7 @@ import {
   type IUiBridge,
   UI_DEV_METRICS_MESSAGE,
   UI_READY_INTENT,
+  UI_STARTUP_MESSAGE,
   connectUiBridge,
 } from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
@@ -775,6 +776,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #uiBridge: IUiBridge | undefined;
   #uiPublisher: IUiStatePublisher | undefined;
   #uiReady = false;
+  /** The loading cover has lifted and page UI may show state; see `UI_STARTUP_MESSAGE`. */
+  #uiRevealed = false;
   // Flipped only by a diagnostics consumer announcing itself; see enableRuntimeDiagnostics().
   #renderMetricsEnabled = false;
   // Depth-coupled output needs the scene hook before its pass; ordinary scenes retain the
@@ -852,10 +855,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#uiBridge = bridge;
     // The store already coalesces writes at flush. Deferring this again waits for the native
     // host's next microtask pump, after that frame's WebView event pump has already passed.
+    // Ahead of the first state, which `publishUiState` sends at once when a UI is already waiting.
+    if (bridge.hasPeer()) this.#postUiStartup();
     this.#uiPublisher = publishUiState(bridge, this.#state, { schedule: (flush) => flush() });
     onUiIntent(bridge, (intent) => {
       if (intent !== UI_READY_INTENT) return;
       this.#uiReady = true;
+      // Before the state: a UI that mounts after the reveal must learn the cover is gone, and one
+      // that mounts before it must learn to hide.
+      this.#postUiStartup();
       // Publish immediately: the UI has just rendered against nothing, and waiting for the store's
       // next change would leave a HUD showing its initial values for up to a tick.
       this.#uiPublisher?.publish();
@@ -863,7 +871,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     return bridge;
   }
 
+  #postUiStartup(): void {
+    this.#uiBridge?.post({
+      type: UI_STARTUP_MESSAGE,
+      phase: this.#uiRevealed ? "ready" : "covered",
+    });
+  }
+
   #disconnectUi(): void {
+    this.#uiRevealed = false;
     this.#uiPublisher?.stop();
     this.#uiPublisher = undefined;
     this.#uiReady = false;
@@ -2209,7 +2225,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const declined = skips !== undefined && skips > readinessGateSkips;
         if (skips !== undefined) readinessGateSkips = skips;
         if (!declined) startupReadiness.observe(frameMs);
-        if (stateHandOffFrames > 0 && !declined) stateHandOffFrames -= 1;
+        if (stateHandOffFrames > 0 && !declined) {
+          stateHandOffFrames -= 1;
+          // The frame the held state publishes again is the frame the cover is gone.
+          if (stateHandOffFrames === 0) {
+            this.#uiRevealed = true;
+            if (this.#uiBridge?.hasPeer()) this.#postUiStartup();
+          }
+        }
       },
       step: this.#config.step,
     });

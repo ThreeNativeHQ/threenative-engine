@@ -72,6 +72,13 @@ export const UI_INTENT_MESSAGE = "tn:intent";
  */
 export const UI_DEV_METRICS_MESSAGE = "tn:dev-metrics";
 /**
+ * The startup phase the game end publishes: `covered` while the loading cover is up, `ready` from
+ * the frame the cover lifts. The UI realm cannot read `ctx.startup`, so this is how `useUiState`
+ * knows to return `undefined` until the player can see the page. A game that never sends it (an
+ * older core) reads as uncovered.
+ */
+export const UI_STARTUP_MESSAGE = "tn:startup";
+/**
  * The intent the UI layer sends once, when its tree has rendered and its rectangles are published.
  *
  * Namespaced so it cannot collide with a game's own vocabulary, and framework-sent so a game does

@@ -147,6 +147,10 @@ export function UiLayer({ children }: { children: ReactNode }) {
  * The UI holds a mirror, never the game object: on every native target the game is in another
  * realm, and a HUD written against a live store would work on web and read nothing on a phone.
  * The mirror is fed at the store's published cadence, which is not the game loop.
+ *
+ * **Reads `undefined` while the loading cover is up**, so a HUD cannot draw over the loading bar
+ * and no game writes a `loaded` field to prevent it. A UI that draws its own loading screen reads
+ * through `useUiStateDuringStartup`.
  */
 export function useUiState<TState extends object>(): TState | undefined;
 export function useUiState<TState extends object, TSelected>(
@@ -155,12 +159,53 @@ export function useUiState<TState extends object, TSelected>(
 export function useUiState<TState extends object, TSelected>(
   selector?: (state: TState) => TSelected,
 ): TSelected | TState | undefined {
-  const { mirror } = useUiLayer("useUiState");
+  return useMirrorState("useUiState", true, selector);
+}
+
+const reportedOverrides = new Set<string>();
+
+/**
+ * The named override of `useUiState`'s loading-cover gate, for a UI that draws the loading screen
+ * itself (a staged overlay reading the startup progress the game publishes). It reads state while
+ * the cover is up. `reason` is required and reported once as `TN_UI_STARTUP_OVERRIDE <reason>`,
+ * so a HUD that merely skipped the gate shows up in the log.
+ */
+export function useUiStateDuringStartup<TState extends object>(options: {
+  readonly reason: string;
+}): TState | undefined;
+export function useUiStateDuringStartup<TState extends object, TSelected>(
+  options: { readonly reason: string },
+  selector: (state: TState) => TSelected,
+): TSelected | undefined;
+export function useUiStateDuringStartup<TState extends object, TSelected>(
+  options: { readonly reason: string },
+  selector?: (state: TState) => TSelected,
+): TSelected | TState | undefined {
+  const reason = options.reason;
+  if (typeof reason !== "string" || reason.trim().length === 0) {
+    throw new Error(
+      "TN_UI_STARTUP_OVERRIDE_REASON: useUiStateDuringStartup needs a non-empty reason.",
+    );
+  }
+  if (!reportedOverrides.has(reason)) {
+    reportedOverrides.add(reason);
+    console.info(`TN_UI_STARTUP_OVERRIDE ${reason}`);
+  }
+  return useMirrorState("useUiStateDuringStartup", false, selector);
+}
+
+function useMirrorState<TState extends object, TSelected>(
+  name: string,
+  hideWhileCovered: boolean,
+  selector?: (state: TState) => TSelected,
+): TSelected | TState | undefined {
+  const { mirror } = useUiLayer(name);
   const selectorRef = useRef(selector);
   selectorRef.current = selector;
   return useSyncExternalStore(
     (onChange) => mirror.subscribe(onChange),
     () => {
+      if (hideWhileCovered && mirror.covered()) return undefined;
       const state = mirror.get() as TState | undefined;
       if (state === undefined) return undefined;
       // No selector reads the whole snapshot, which is what a HUD that shows several fields
