@@ -474,7 +474,7 @@ private:
     bool visible_ = true;  // visible_, castShadow_, receiveShadow_: one block the ABI reads by offset (flags())
     bool castShadow_ = false;
     bool receiveShadow_ = false;
-    bool worldStale_ = false;  // hidden and skipped while its world matrix changed: force its subtree when shown
+    bool worldStale_ = false;  // hidden and skipped by the pruned walk: recompose it and force its subtree when shown
     int8_t holdsBones_ = -1;   // a Bone anywhere under this node: -1 not yet asked (a rig is built whole)
     int renderOrder_ = 0;
     Layers layers_;

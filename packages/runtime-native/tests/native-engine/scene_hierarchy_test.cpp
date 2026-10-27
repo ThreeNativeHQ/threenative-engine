@@ -11,6 +11,7 @@
 
 #include "engine/abi/bindings.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/scene/camera.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
@@ -1378,9 +1379,38 @@ void needs_update_setter() {
     CHECK(mesh->matrixWorld.elements[12] == 9 && !mesh->matrixWorldNeedsUpdate);
 }
 
+// core's "visible" walk leaves a hidden node where it stands, its own compose included: the shooter's 8,300
+// hidden auto-batch sources each composed a world matrix every frame (TN_PROJECTION 9,387 visits for ~150 draws).
+void pruned_walk() {
+    Object3D root, parent, hidden, leaf;
+    root.add(parent);
+    parent.add(hidden);
+    hidden.add(leaf);
+    root.updateMatrixWorldVisible(true, true);
+    hidden.setVisible(false);
+    root.updateMatrixWorldVisible(false, true);
+    parent.position.x = 3;
+    hidden.position.y = 2;
+    const auto before = Object3D::matrixEvaluations();
+    CHECK(root.updateMatrixWorldVisible(false, true) == 3);
+    CHECK(Object3D::matrixEvaluations() - before == 2);  // root and parent, not the hidden node
+    CHECK(hidden.matrixWorld.elements[12] == 0);  // where it stood
+    hidden.setVisible(true);
+    root.updateMatrixWorldVisible(false, true);
+    CHECK(hidden.matrixWorld.elements[12] == 3 && hidden.matrixWorld.elements[13] == 2);
+    CHECK(leaf.matrixWorld.elements[12] == 3 && leaf.matrixWorld.elements[13] == 2);
+    // A camera renders from its world matrix whatever its flag, so a hidden one is still walked.
+    PerspectiveCamera camera;
+    root.add(camera);
+    camera.setVisible(false);
+    camera.position.z = 5;
+    root.updateMatrixWorldVisible(false, true);
+    CHECK(camera.matrixWorld.elements[14] == 5 && camera.matrixWorldInverse.elements[14] == -5);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
+TN_TEST_MAIN({"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
              {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
              {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
              {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter})

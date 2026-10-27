@@ -758,10 +758,11 @@ void Object3D::updateMatrixWorld(bool force) {
 
 uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
     if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return 1; }
-    bool childForce = updateMatrixWorldSelf(force);
-    afterMatrixWorld();
     uint32_t visited = 1;
-    if (prune && !visible_) {
+    // Nothing here can draw, so its own compose waits for the frame it shows, as core's MatrixWorldPass
+    // does. Remembered even when clean: its local or an ancestor's transform can change while it is hidden.
+    // A camera renders from its world matrix whatever its flag, and a rig's bones pose a visible mesh.
+    if (prune && !visible_ && !isCamera()) {
         if (holdsBones_ < 0) {
             holdsBones_ = 0;
             traverse([](Object3D& node, void* found) {
@@ -769,10 +770,12 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
             }, &holdsBones_);
         }
         if (holdsBones_ == 0) {
-            worldStale_ = worldStale_ || childForce;
+            worldStale_ = true;
             return visited;
         }
     }
+    bool childForce = updateMatrixWorldSelf(force || worldStale_);
+    afterMatrixWorld();
     if (worldStale_) childForce = true;
     worldStale_ = false;
     if (isStatic && !matrixWorldAutoUpdate) return visited;
