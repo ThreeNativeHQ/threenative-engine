@@ -242,6 +242,35 @@ describe("AutoBatch", () => {
     expect(draws(scene)).toBe(2);
   });
 
+  it("reads a manual matrix once per guard stamp", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    const pieces = town(12, group);
+    group.updateMatrixWorld(true);
+    for (const piece of pieces) piece.matrixAutoUpdate = false;
+    const batch = new AutoBatch(scene, { settleFrames: 3, guard: "everyFrame" });
+    run(batch, 20);
+    const hidden = pieces[5] as Mesh;
+    expect(hidden.visible).toBe(false);
+    const elements = hidden.matrix.elements;
+    let reads = 0;
+    Object.defineProperty(hidden.matrix, "elements", {
+      configurable: true,
+      get: () => {
+        reads += 1;
+        return elements;
+      },
+    });
+    reads = 0;
+    batch.update();
+    expect(reads).toBe(1);
+    elements[12] = (elements[12] as number) + 2;
+    batch.update();
+    expect(hidden.visible).toBe(true);
+    expect(batch.census.restored).toBe(1);
+  });
+
   it("keeps a mesh a game entity holds out of the merge, and reports it", () => {
     const scene = new Scene();
     const group = new Group();
