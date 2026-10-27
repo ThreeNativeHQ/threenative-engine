@@ -9,6 +9,7 @@
 
 import type { IGamePlatformSource } from "./game.js";
 import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
+import { createRemoteAudioContext, serveRemoteAudio } from "./worker-audio.js";
 
 /** The realm `serveWorkerGame` runs in. Narrowed, because a test cannot build a real worker scope. */
 export type WorkerScope = EventTarget &
@@ -25,6 +26,8 @@ interface IWorkerInitMessage {
   pageUrl: string;
   globals: Record<string, string | number | boolean>;
   ui: MessagePort;
+  /** The page's AudioContext, served over its own port; absent where the page has none. */
+  audio?: { port: MessagePort; sampleRate: number; currentTime: number };
 }
 
 interface IWorkerResizeMessage {
@@ -176,6 +179,16 @@ export function serveWorkerGame(
       };
       scope.__tnGamePlatform = platform;
 
+      const audio = message.audio;
+      if (audio !== undefined) {
+        // Created on first use, so a silent game opens no page AudioContext traffic.
+        let remote: AudioContext | undefined;
+        scope.AudioContext = function RemoteAudioContext() {
+          remote ??= createRemoteAudioContext(audio.port, audio);
+          return remote;
+        };
+      }
+
       const ui = message.ui;
       scope.__tnUiPost = (frame: string) => ui.postMessage(frame);
       ui.onmessage = (event: MessageEvent) =>
@@ -207,7 +220,14 @@ export function serveWorkerGame(
       Object.defineProperty(forwarded, key, { enumerable: true, value });
     }
     if (message.target === "window") inputTarget.dispatchEvent(forwarded);
-    else canvas?.dispatchEvent(forwarded);
+    else {
+      canvas?.dispatchEvent(forwarded);
+      // On a page a canvas event bubbles to the window, where AudioBus waits for its gesture.
+      const bubbled = new Event(forwarded.type);
+      for (const [key, value] of Object.entries(message.event))
+        Object.defineProperty(bubbled, key, { enumerable: true, value });
+      inputTarget.dispatchEvent(bubbled);
+    }
   };
 
   const handleRpc = async (message: IWorkerRpcMessage): Promise<void> => {
@@ -335,6 +355,19 @@ export function startWorkerGame(
   for (const type of CANVAS_EVENTS) listen(canvas, type, (event) => forward(event, "canvas"));
   listen(canvas, "contextmenu", (event) => event.preventDefault());
 
+  // The worker's game plays through the page's own AudioContext, resumed by a page gesture.
+  const AudioContextCtor = page.AudioContext as (new () => AudioContext) | undefined;
+  const audioContext = AudioContextCtor === undefined ? undefined : new AudioContextCtor();
+  const audioChannel = audioContext === undefined ? undefined : new MessageChannel();
+  const stopAudio =
+    audioContext === undefined || audioChannel === undefined
+      ? undefined
+      : serveRemoteAudio(audioChannel.port1, audioContext);
+  if (audioContext !== undefined) {
+    const resume = (): void => void audioContext.resume?.().catch(() => undefined);
+    for (const type of ["keydown", "pointerdown", "touchstart"]) listen(windowHost, type, resume);
+  }
+
   const ResizeObserverCtor = hostResizeObserver();
   const observer =
     ResizeObserverCtor === undefined ? undefined : new ResizeObserverCtor(() => postResize());
@@ -387,24 +420,35 @@ export function startWorkerGame(
     installed.add(name);
   };
 
+  const sendInit = (): void => {
+    const init: IWorkerInitMessage = {
+      canvas: offscreen,
+      dpr: windowHost.devicePixelRatio ?? 1,
+      globals: pageGlobals(),
+      height: canvas.clientHeight,
+      pageUrl: windowHost.location.href,
+      type: "tn-worker-init",
+      ui: gamePort,
+      width: canvas.clientWidth,
+    };
+    const transfer: Transferable[] = [offscreen, gamePort];
+    if (audioContext !== undefined && audioChannel !== undefined) {
+      init.audio = {
+        currentTime: audioContext.currentTime,
+        port: audioChannel.port2,
+        sampleRate: audioContext.sampleRate,
+      };
+      transfer.push(audioChannel.port2);
+    }
+    send(init, transfer);
+  };
+
   const onWorkerMessage = (event: Event): void => {
     if (stopped) return;
     const message = (event as MessageEvent).data as WorkerOutbound;
     switch (message.type) {
       case "tn-worker-ready":
-        send(
-          {
-            canvas: offscreen,
-            dpr: windowHost.devicePixelRatio ?? 1,
-            globals: pageGlobals(),
-            height: canvas.clientHeight,
-            pageUrl: windowHost.location.href,
-            type: "tn-worker-init",
-            ui: gamePort,
-            width: canvas.clientWidth,
-          },
-          [offscreen, gamePort],
-        );
+        sendInit();
         break;
       case "tn-worker-mirror":
         installMirror(message.name, message.methods);
@@ -440,6 +484,8 @@ export function startWorkerGame(
     uiPort.onmessage = null;
     uiPort.close();
     gamePort.close();
+    stopAudio?.();
+    void audioContext?.close?.().catch(() => undefined);
     for (const key of installed) delete page[key];
     installed.clear();
     worker.terminate();

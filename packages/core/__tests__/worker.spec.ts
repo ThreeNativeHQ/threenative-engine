@@ -292,4 +292,59 @@ describe("worker game host (PRD-752)", () => {
     expect(worker.terminate).toHaveBeenCalledTimes(1);
     expect(toWorker.length).toBe(sent);
   });
+
+  it("lets a canvas gesture reach the input target too, as it bubbles to the window on a page", async () => {
+    // AudioBus unlocks on a pointerdown it hears on its gesture target, the input target here.
+    const { scope, worker } = link();
+    const { canvas, container } = page();
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const platform = scope.__tnGamePlatform as IGamePlatformSource;
+    const heard = vi.fn();
+    platform.inputTarget?.addEventListener("pointerdown", heard);
+    canvas.dispatchEvent(Object.assign(new Event("pointerdown"), { clientX: 10, clientY: 20 }));
+    await tick();
+    expect(heard).toHaveBeenCalledTimes(1);
+    handle.stop();
+  });
+
+  it("gives the worker an AudioContext that plays through the page's own", async () => {
+    // The Wasm engine's AudioListener asks `globalThis.AudioContext`; a worker has none.
+    const { scope, worker } = link();
+    const { container, view } = page();
+    const created: unknown[] = [];
+    view.AudioContext = class {
+      currentTime = 0;
+      destination = {};
+      listener = {};
+      sampleRate = 44_100;
+      state = "suspended";
+      createGain() {
+        const gain = { connect: vi.fn(), gain: { setTargetAtTime: vi.fn(), value: 1 } };
+        created.push(gain);
+        return gain;
+      }
+      resume = vi.fn(async () => undefined);
+    };
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const Context = scope.AudioContext as new () => AudioContext;
+    const context = new Context();
+    expect(context.sampleRate).toBe(44_100);
+    context.createGain().gain.setTargetAtTime(0.25, 0, 0.1);
+    await tick(20);
+    expect(created).toHaveLength(1);
+    expect(
+      (created[0] as { gain: { setTargetAtTime: ReturnType<typeof vi.fn> } }).gain.setTargetAtTime,
+    ).toHaveBeenCalledWith(0.25, 0, 0.1);
+    handle.stop();
+  });
 });
