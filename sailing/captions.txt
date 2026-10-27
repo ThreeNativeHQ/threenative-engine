@@ -1,0 +1,2 @@
+exposure-performance-BEFORE-vs-AFTER.png | IMPROVEMENT, small (fresh Opus judge, 2 runs per arm, nvidia/turing) | exposure meter drops Unreal's darkest histogram bucket (commit 4a8cb1cd4); no kit file changed, kit keeps its CURRENT look
+exposure-survives-BEFORE-vs-AFTER.png | NEUTRAL (fresh Opus judge, 2 runs per arm, nvidia/turing) | exposure meter drops Unreal's darkest histogram bucket (commit 4a8cb1cd4); no kit file changed, kit keeps its CURRENT look
