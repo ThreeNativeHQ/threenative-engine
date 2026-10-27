@@ -545,6 +545,26 @@ describe("threenative-engine-mcp", () => {
     });
   });
 
+  // Authoring-layer regression guard (PRD-750): every lookup word the shipped kits declare sends a
+  // cold "game like <word>" request to its own kit first, so a new kit cannot take another's word.
+  it("routes every shipped kit word to its own kit first", () => {
+    const { starterKits = [] } = JSON.parse(readFileSync(workspaceManifest, "utf8")) as {
+      starterKits?: { name: string; words: string[] }[];
+    };
+    expect(starterKits.length).toBeGreaterThan(0);
+    const misrouted = starterKits.flatMap(({ name, words }) =>
+      words
+        .map((word) => ({
+          first: searchCapabilities(`make me a game like ${word}`, workspaceManifest)
+            .starterKits?.[0]?.name,
+          word,
+        }))
+        .filter(({ first }) => first !== name)
+        .map(({ first, word }) => `${word} -> ${first ?? "no kit"} (want ${name})`),
+    );
+    expect(misrouted).toEqual([]);
+  });
+
   it("finds a cross-system set from a mechanically explicit complete request", () => {
     const results = searchResults(
       "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
