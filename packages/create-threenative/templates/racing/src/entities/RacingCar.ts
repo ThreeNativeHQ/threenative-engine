@@ -70,6 +70,11 @@ export class RacingCar {
     return this.car.speedMagnitude;
   }
 
+  /** Whether the engine is pushing this step: a stopped car with no throttle is parked, not stuck. */
+  get driving(): boolean {
+    return this.car.body.engineForce !== 0;
+  }
+
   get topSpeed(): number {
     return this.#topSpeed;
   }

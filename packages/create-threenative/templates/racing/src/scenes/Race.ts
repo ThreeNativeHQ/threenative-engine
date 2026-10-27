@@ -265,7 +265,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
       rival.update(dt);
-      sector.update(car.body.position, car.forward, dt, car.speed);
+      sector.update(car.body.position, car.forward, dt, car.speed, car.driving);
       if (sector.rescue(car)) {
         rescues += 1;
         rescuePositionError = quantize(

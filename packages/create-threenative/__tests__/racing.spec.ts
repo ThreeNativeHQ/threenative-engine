@@ -10,6 +10,7 @@ import { cameraBank, chaseCamera } from "../templates/racing/src/render/camera.j
 import { toon } from "../templates/racing/src/render/palette.js";
 import { rankRacers, routeProgress } from "../templates/racing/src/track/Ranking.js";
 import { TOTAL_LAPS, gridPosition, intersectRay } from "../templates/racing/src/track/Track.js";
+import { TrackSector } from "../templates/racing/src/track/TrackSector.js";
 import {
   CIRCUIT,
   GRID,
@@ -272,6 +273,21 @@ describe("racing route promotion", () => {
       { id: "rival", lap: rivalLap(lap + line / 2 - 1), position: rival },
     ]);
     expect(ranked.map(({ id }) => id)).toEqual(["player", "rival"]);
+  });
+
+  it("rescues a car that is driven and stuck, not one the player parked", () => {
+    // Four rescues end the race. Counting a parked car as stalled rescued it every 1.2 s, so a
+    // player who stopped on the road for five seconds was out of the race.
+    const stalled = (driving: boolean): boolean => {
+      const sector = new TrackSector({ intersectRay: () => ({ distance: 1 }), route: CIRCUIT });
+      const at = new Vector3();
+      const heading = new Vector3(1, 0, 0);
+      sector.update(at, heading, 1 / 60, 10);
+      for (let tick = 0; tick < 120; tick += 1) sector.update(at, heading, 1 / 60, 0, driving);
+      return sector.shouldRescue;
+    };
+    expect(stalled(true)).toBe(true);
+    expect(stalled(false)).toBe(false);
   });
 
   it("uses the direct-space ray query and only falls back without that API", () => {
