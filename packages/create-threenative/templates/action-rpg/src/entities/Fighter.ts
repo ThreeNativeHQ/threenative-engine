@@ -41,6 +41,7 @@ export abstract class Fighter {
   readonly conventions: IActionRpgConventions;
   #action = "";
   #actionRemaining = 0;
+  readonly #clipDuration = new Map<string, number>();
 
   protected constructor(
     ctx: GameCtx,
@@ -58,6 +59,7 @@ export abstract class Fighter {
     this.figure.scale.setScalar(options.scale ?? 1);
     this.figure.rotation.y = options.facing ?? Math.PI;
     this.mesh.add(this.figure);
+    for (const clip of model.animations) this.#clipDuration.set(clip.name, clip.duration);
     // Measured, not guessed: the figure sinks by the distance from its own origin to its lowest
     // posed point, so an asset authored feet-down and one authored mid-stride both land on the
     // floor. Measured before the body is placed, while the mesh is still at the origin.
@@ -78,14 +80,27 @@ export abstract class Fighter {
 
   /**
    * Start a clip. `hold` is how long a one-shot keeps the fighter out of its locomotion loop; the
-   * caller that owns the state machine decides when the action ends, not the clip.
+   * caller that owns the state machine decides when the action ends, not the clip. `fit` speeds
+   * the clip up so the whole clip plays inside `hold`.
    */
-  play(action: string, options: { readonly fade?: number; readonly hold?: number } = {}): void {
+  play(
+    action: string,
+    options: { readonly fade?: number; readonly fit?: boolean; readonly hold?: number } = {},
+  ): void {
     const clip = this.clips[action];
     if (clip === undefined) throw new Error(`Unknown fighter action '${action}'.`);
     this.#action = action;
     this.#actionRemaining = options.hold ?? 0;
-    this.character.play(clip, { fade: options.fade ?? 0.15, mode: "once" });
+    const duration = this.#clipDuration.get(clip) ?? 0;
+    const speed =
+      options.fit === true && this.#actionRemaining > 0 && duration > 0
+        ? duration / this.#actionRemaining
+        : undefined;
+    this.character.play(clip, {
+      fade: options.fade ?? 0.15,
+      mode: "once",
+      ...(speed === undefined ? {} : { speed }),
+    });
   }
 
   /** True while a one-shot is still holding; locomotion waits for it. */

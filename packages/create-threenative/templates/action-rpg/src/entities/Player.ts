@@ -1,5 +1,5 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
-import { type Object3D, Vector3 } from "three";
+import { MathUtils, type Object3D, Vector3 } from "three";
 import { createSword } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
@@ -27,13 +27,14 @@ const HALF_HEIGHT = 0.38;
 const RADIUS = 0.34;
 /**
  * How long a swing, a cast and a roll keep the legs from taking over the clip. The swing holds
- * through the follow-through of `Sword_Attack` (1.53 s); a new swing waits for it.
+ * through the follow-through of `Sword_Attack` (1.53 s); a new swing waits for it. The roll holds
+ * long enough to play the whole `Roll` clip inside it.
  */
 const SWING = 0.8;
 /** When the blade crosses the front of the figure in `Sword_Attack`: the hand peaks at 0.40 s. */
 const SWING_CONTACT = 0.4;
 const CAST = 0.7;
-const ROLL = 0.5;
+const ROLL = 0.7;
 const DODGE_COOLDOWN = 1;
 const REACH = 0.9;
 
@@ -49,6 +50,8 @@ export class Player extends Fighter {
   #swing: { remaining: number; land: () => void } | undefined;
   #dodgeCooldown = 0;
   #dodgeRemaining = 0;
+  #rollDirection = new Vector3();
+  #rollDirectionChosen = false;
   #forward = new Vector3();
   #origin = new Vector3();
   #onDamage: (amount: number) => void;
@@ -93,9 +96,18 @@ export class Player extends Fighter {
     }
     this.#dodgeCooldown = Math.max(0, this.#dodgeCooldown - dt);
     this.#dodgeRemaining = Math.max(0, this.#dodgeRemaining - dt);
+    if (this.#dodgeRemaining > 0 && !this.#rollDirectionChosen) {
+      this.#rollDirectionChosen = true;
+      this.#rollDirection.set(move.x, 0, -move.y);
+      if (this.#rollDirection.lengthSq() > 0.01) this.#rollDirection.normalize();
+      else this.facingVector(this.#rollDirection);
+      this.figure.rotation.y = Math.atan2(this.#rollDirection.x, this.#rollDirection.z);
+    }
     const speed =
       this.#dodgeRemaining > 0 ? DODGE_SPEED * (this.#dodgeRemaining / ROLL) : MOVE_SPEED;
-    this.body.velocity.set(move.x * speed, 0, -move.y * speed);
+    if (this.#dodgeRemaining > 0)
+      this.body.velocity.copy(this.#rollDirection).multiplyScalar(speed);
+    else this.body.velocity.set(move.x * speed, 0, -move.y * speed);
     this.body.moveAndSlide(dt);
     this.conventions.applyGrounding(0, dt);
     const heading = this.busy ? undefined : Math.atan2(this.body.velocity.x, this.body.velocity.z);
@@ -139,7 +151,8 @@ export class Player extends Fighter {
     if (this.busy || this.#dodgeCooldown > 0) return false;
     this.#dodgeCooldown = DODGE_COOLDOWN;
     this.#dodgeRemaining = ROLL;
-    this.play("dodge", { fade: 0.05, hold: ROLL });
+    this.#rollDirectionChosen = false;
+    this.play("dodge", { fade: 0.05, hold: ROLL, fit: true });
     return true;
   }
 
@@ -182,6 +195,10 @@ export class Player extends Fighter {
       action: this.action,
       dead: this.dead,
       equippedItem: this.equippedItem,
+      facingDegrees:
+        Math.round(
+          MathUtils.radToDeg(MathUtils.euclideanModulo(this.figure.rotation.y, Math.PI * 2)),
+        ) % 360,
       groundClearance: this.conventions.groundSnap.clearance,
       health: this.health,
       normaliseFactor: this.conventions.normaliseFactor,
