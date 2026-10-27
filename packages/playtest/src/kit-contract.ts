@@ -33,13 +33,13 @@ export interface IKitContractEntry {
 }
 
 export interface IKitContractAction {
-  /** Ticks to wait before the effect: the clip's contact window opens here. */
+  /** Ticks to wait before the effect: the clip's contact window opens here, at the speed the kit plays it. */
   readonly contactTicks?: number;
   readonly clip: string;
   /** Signal (a `signals` assertion name) the subject emits when the hit lands: none before `contactTicks`, one after. */
   readonly effect?: { readonly signal: string };
   readonly key: string;
-  /** Ticks the clip lasts at normal speed. */
+  /** Ticks the action keeps the subject busy in the kit: its hold, which a fitted clip fills, not the file's length. */
   readonly ticks: number;
 }
 
@@ -188,7 +188,14 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
           { kind: "wait", label: `${action.clip}-end`, release: true, waitTicks: action.ticks + 6 },
         ]),
         {
-          animation: entry.actions!.map((action) => ({ clip: action.clip, entered: true, entity: entry.subject, finished: true })),
+          // Each clip is judged at its own step: the last sample alone could only ever show the last action.
+          animation: entry.actions!.map((action) => ({
+            atStep: `${action.clip}-end`,
+            clip: action.clip,
+            entered: true,
+            entity: entry.subject,
+            finished: true,
+          })),
           diagnostics: DIAGNOSTICS,
         },
       ),

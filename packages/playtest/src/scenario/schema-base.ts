@@ -403,6 +403,8 @@ export interface IPlaytestEffectSpec {
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
   allowTrivial?: string;
+  /** Judge the animation report sampled after this labeled step, not the last one: one scenario then checks several clips. */
+  atStep?: string;
   clip?: string;
   entered?: boolean;
   entity?: string;

@@ -509,6 +509,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     fields: [
       { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
       { description: "Animation clip id or name.", name: "clip", type: "string" },
+      { description: "Labeled step whose animation report is judged; default is the last sample.", name: "atStep", type: "string" },
       { description: "Require entering the animation state.", name: "entered", type: "boolean" },
       { description: "Require animation advancement evidence.", name: "advancedFrames", type: "number" },
       { description: "Require the observed clip to report its completion state.", name: "finished", type: "boolean" },

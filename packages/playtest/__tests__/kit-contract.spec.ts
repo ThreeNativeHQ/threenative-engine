@@ -46,6 +46,12 @@ describe("kit contract", () => {
     expect(scenario.assert?.movement).toEqual({ entity: "player", pathLength: 1 });
   });
 
+  it("judges every declared action at the step that waits for its own clip", () => {
+    const row = planKitContract({ demo: FULL }, ["demo"]).find(({ row: id }) => id === "action-clip-completes");
+    const scenario = (row?.kind === "run" ? row.scenario : {}) as { assert?: { animation?: { atStep?: string; clip: string }[] } };
+    expect(scenario.assert?.animation?.map(({ atStep, clip }) => [clip, atStep])).toEqual([["swing", "swing-end"]]);
+  });
+
   it("reports an opt-out with its reason instead of dropping the row", () => {
     const plan = planKitContract({ demo: optOutOfDeclared() }, ["demo"]);
     const skipped = plan.filter(({ kind }) => kind === "opt-out");

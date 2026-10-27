@@ -379,6 +379,20 @@ test("scenario loading rejects an atSteps label that was never sampled", async (
   });
 });
 
+test("scenario loading rejects an animation atStep that was never sampled", async () => {
+  const directory = await makeTempDir("playtest-animation-missing-step-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { animation: [{ atStep: "missing", clip: "run", entity: "player" }] },
+    name: "missing-animation-step",
+    schemaVersion: 1,
+    steps: [{ label: "present", release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/names step label 'missing'/u) },
+  });
+});
+
 test("scenario loading preserves the framebuffer coverage contract", async () => {
   const directory = await makeTempDir("playtest-framebuffer-coverage-");
   const framebufferCoverage = {

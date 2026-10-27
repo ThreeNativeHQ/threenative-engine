@@ -1032,6 +1032,9 @@ export function validateStepLabels(
   for (const [index, assertion] of (assertions.tone ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.tone[${index}].atStep`);
   }
+  for (const [index, assertion] of (assertions.animation ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.animation[${index}].atStep`);
+  }
   for (const [index, assertion] of (assertions.footSlip ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.footSlip[${index}].atStep`);
     // The runner samples one set of feet per step; a second assertion there would never be measured.

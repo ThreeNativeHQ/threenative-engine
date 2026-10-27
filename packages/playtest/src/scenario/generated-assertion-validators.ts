@@ -202,6 +202,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
   "animation": Object.freeze({
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "clip": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "entered": (value: unknown) => typeof value === "boolean",
     "advancedFrames": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "finished": (value: unknown) => typeof value === "boolean",

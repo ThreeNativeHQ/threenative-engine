@@ -987,10 +987,11 @@ export function validateHudAuditAssertion(value: unknown, scenarioPath: string, 
 
 export function validateAnimationAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAnimationAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "clip", "entered", "entity", "finished", "maxFootSlide", "strideSynced"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "atStep", "clip", "entered", "entity", "finished", "maxFootSlide", "strideSynced"], scenarioPath, objectPath);
   return {
     ...present("advancedFrames", optionalNumber(record, "advancedFrames", scenarioPath, objectPath)),
     ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
     ...present("clip", optionalString(record, "clip", scenarioPath, objectPath)),
     ...present("entered", optionalBoolean(record, "entered", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),

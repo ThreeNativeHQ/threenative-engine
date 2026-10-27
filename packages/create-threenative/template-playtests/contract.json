@@ -29,8 +29,8 @@
       {
         "key": "KeyF",
         "clip": "Sword_Attack",
-        "ticks": 92,
-        "contactTicks": 24,
+        "ticks": 48,
+        "contactTicks": 13,
         "effect": {
           "signal": "attack"
         }
@@ -38,12 +38,12 @@
       {
         "key": "KeyE",
         "clip": "Spell_Simple_Shoot",
-        "ticks": 30
+        "ticks": 42
       },
       {
         "key": "ShiftLeft",
         "clip": "Roll",
-        "ticks": 88
+        "ticks": 42
       }
     ],
     "optOut": {

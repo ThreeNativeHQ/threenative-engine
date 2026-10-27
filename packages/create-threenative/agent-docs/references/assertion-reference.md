@@ -707,6 +707,7 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 | --- | --- | --- |
 | `entity` | string | no |
 | `clip` | string | no |
+| `atStep` | string | no |
 | `entered` | boolean | no |
 | `advancedFrames` | number | no |
 | `finished` | boolean | no |
