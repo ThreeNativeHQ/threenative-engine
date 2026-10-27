@@ -476,6 +476,12 @@ export interface IAnimationPlayOptions {
    * also keeps its authored rate — stride sync re-times locomotion, not events.
    */
   readonly mode?: "loop" | "once";
+  /**
+   * The playback rate of this play of a `"once"` clip, like Godot's `play(name, blend, speed)`.
+   * `1` (the default) is the authored rate; the next play without it returns to `1`. A looping clip
+   * keeps its stride-synced rate and ignores it.
+   */
+  readonly speed?: number;
 }
 
 type AnimationMode = "loop" | "once";
@@ -956,7 +962,7 @@ export class AnimationPlayer {
     }
   }
 
-  #playAction(action: AnimationAction, mode: AnimationMode, weight: number): void {
+  #playAction(action: AnimationAction, mode: AnimationMode, weight: number, speed: number): void {
     const once = mode === "once";
     action
       .reset()
@@ -964,29 +970,35 @@ export class AnimationPlayer {
       .setEffectiveWeight(weight)
       .play();
     action.clampWhenFinished = once;
+    if (once) action.setEffectiveTimeScale(speed);
   }
 
-  #replayCurrent(action: AnimationAction, mode: AnimationMode): void {
+  #replayCurrent(action: AnimationAction, mode: AnimationMode, speed: number): void {
     for (const entry of this.#fadeOut) entry.action.stop();
     this.#fadeOut = [];
     for (const other of this.#actions.values()) {
       if (other !== action) other.setEffectiveWeight(0).stop();
     }
-    this.#playAction(action, mode, 1);
+    this.#playAction(action, mode, 1, speed);
     this.#mode = mode;
     this.#finished = false;
     this.#advancedFrames = 0;
   }
 
-  #playCurrent(action: AnimationAction, requestedMode: AnimationMode | undefined): void {
+  #playCurrent(
+    action: AnimationAction,
+    requestedMode: AnimationMode | undefined,
+    speed: number,
+  ): void {
     const mode = requestedMode ?? "loop";
     if (!this.#finished && mode === this.#mode) return;
-    this.#replayCurrent(action, mode);
+    this.#replayCurrent(action, mode, speed);
   }
 
   #playNext(name: string, next: AnimationAction, options: IAnimationPlayOptions): void {
     const fade = Math.max(0, options.fade ?? 0);
     const once = options.mode === "once";
+    const speed = options.speed ?? 1;
     const from = fade > 0 && next.isScheduled() ? next.getEffectiveWeight() : 0;
     // A loop that is still visible keeps its gait; explicit one-shots and mode changes replay.
     const time = from > 0 && !once && next.loop === LoopRepeat ? next.time : 0;
@@ -1005,7 +1017,12 @@ export class AnimationPlayer {
       else action.setEffectiveWeight(0).stop();
     }
 
-    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? from : 1);
+    this.#playAction(
+      next,
+      once ? "once" : "loop",
+      fade > 0 && outgoing.length > 0 ? from : 1,
+      speed,
+    );
     next.time = time;
     if (outgoing.length === 0 || fade === 0) {
       for (const entry of outgoing) entry.action.setEffectiveWeight(0).stop();
@@ -1049,6 +1066,9 @@ export class AnimationPlayer {
   }
 
   #start(name: string, options: IAnimationPlayOptions): void {
+    const speed = options.speed ?? 1;
+    if (!(Number.isFinite(speed) && speed > 0))
+      throw new Error(`Animation play speed must be a positive finite number, got ${speed}.`);
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
     if (this.#current !== name || this.#finished || (options.mode ?? "loop") !== this.#mode)
@@ -1065,7 +1085,7 @@ export class AnimationPlayer {
         const keepPhase = this.#mode === "loop" && options.mode !== "once";
         this.#playNext(name, next, options);
         if (keepPhase) next.time = time;
-      } else this.#playCurrent(next, options.mode);
+      } else this.#playCurrent(next, options.mode, speed);
       return;
     }
     this.#playNext(name, next, options);
