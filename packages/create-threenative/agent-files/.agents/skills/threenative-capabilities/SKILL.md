@@ -10,6 +10,12 @@ game. Classify the user's intent using the current project and plan: starter cod
 make a new-game request an existing-game change. Ask if intent is ambiguous.
 Preserve the request's distinctive fantasy and infer concrete mechanics, not just a genre label.
 
+**Tools.** Every server named below is in this game's `.mcp.json`, and a host loads it only for a
+session started in this folder. A session started elsewhere (one that ran `create-threenative`)
+has none of them in its tool list: run `node node_modules/@threenative/core/mcp/call.mjs <server>
+<tool> '<json>'` from this folder, and `call.mjs <server>` lists that server's tools. A tool that
+is missing from your list never skips its step.
+
 ## New game
 
 Follow steps 1-8 in order; finish both discovery passes before planning. Record actual results,
