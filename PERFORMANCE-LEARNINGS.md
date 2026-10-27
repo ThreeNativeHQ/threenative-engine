@@ -171,6 +171,22 @@ no COOP/COEP); that lane is open.
   `summarize.py`.
 
 
+### 2026-10-27 — TSL object uniforms re-laned once per frame instead of once per render — HANDED OVER (smooth60's file)
+- Where: `packages/three-native/src/tsl-uniforms.ts`, `liveUniforms.sync` (smooth60 owns the file; patch
+  described in `~/.cache/tmp-tn/pr574-waste/patches/README.md`, not committed by this lane).
+- Ceiling: 50 render syncs a frame, 40 write attempts per sync = 2,000 a frame, and 99.6 % of them unchanged;
+  the per-attempt `uniformLanes()` array and compare is the cost, about 0.08-0.15 ms/frame.
+- Result (shooter, counter on, same wasm, 900 drawn frames): write attempts **2,000 -> 800 per frame**; the
+  remaining 700/frame are `onRenderUpdate` callbacks that run per render by design. CPU not measured: the
+  laptop was at its 97 °C admission ceiling with three other lanes' jobs, and the desktop stood at load 25-35,
+  so no qualified pair was possible for a lever under 1 % of the frame.
+- Cause: the object-uniform re-lane loop exists for in-place `Color`/vector edits, which a game can only make
+  between frames; the later passes of one frame compared the same lanes again.
+- Insight: it also changes when an in-place edit reaches a later pass of the same frame, so it needs a visual
+  judge before it ships — a counter win is not a verdict.
+- Artifact: `patches/tsl-uniforms-counters.patch` (the counter), `patches/README.md` (the fix), `probe3.log` /
+  `probe5.log` in the lane scratch.
+
 ### 2026-10-27 — Batching holds a projecting decision; render thread on by default — KEEP
 - Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), `RenderDatabase::batch`, `player/run.cpp`.
 - Result (Midway desktop, matched CPU, 3 alternating pairs): main-thread CPU per frame falls 3.4 to 7.5 ms per
