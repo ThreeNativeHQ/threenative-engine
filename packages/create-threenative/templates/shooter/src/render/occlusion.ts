@@ -49,9 +49,17 @@ export class BoxOccluders {
     return this.#boxes.length;
   }
 
-  /** True when nothing solid stands between `from` and `to`. */
-  clear(from: Vector3, to: Vector3): boolean {
+  /**
+   * True when nothing solid stands between `from` and `to`.
+   *
+   * With `into`, every crossed box is appended to it and the walk does not stop at the first
+   * one: the caller needs the whole set to narrow its exact test to the pieces standing there.
+   * A crossed box is conservative — the deck colliders span the open air beneath a walkway —
+   * so it is a candidate list, not the answer.
+   */
+  clear(from: Vector3, to: Vector3, into?: TownCollider[]): boolean {
     this.#tests += 1;
+    into?.splice(0, into.length);
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
@@ -97,9 +105,10 @@ export class BoxOccluders {
       if (tEnter > tExit) continue;
 
       // The segment enters this box before it ends: something solid is in the way.
-      return false;
+      if (into === undefined) return false;
+      into.push(box);
     }
-    return true;
+    return into === undefined || into.length === 0;
   }
 
   debug(): { boxes: number; tests: number } {
