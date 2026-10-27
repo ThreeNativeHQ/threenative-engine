@@ -789,7 +789,7 @@ describe("perf-live", () => {
         await readFile(new URL("../perf-live.html", import.meta.url), "utf8"),
         "/ci-speed",
       );
-      for (const href of ["/", "/midway", "/shadows", "/ci-speed", "/asset-perf"])
+      for (const href of ["/", "/midway", "/shadows", "/ci-speed", "/asset-perf", "/kit-loop"])
         expect(html).toContain(`href="${href}"`);
       expect(html).toContain('<a href="/ci-speed" aria-current="page">');
       expect(html.match(/<nav class="tabs">/gu)).toHaveLength(1);
@@ -803,6 +803,17 @@ describe("perf-live", () => {
       const asset = await ledgerTab("asset-perf", await ledgerFile(empty));
       expect(asset).toContain("<title>Asset pipeline performance</title>");
       expect(asset).toContain('fetch("/api/asset-perf"');
+    });
+
+    it("renders the kit-loop ledger as a tab (PRD-750)", async () => {
+      const kit = await ledgerTab(
+        "kit-loop",
+        await ledgerFile('{"schemaVersion":1,"iterations":[]}'),
+      );
+      expect(kit).toContain("<title>Kit authoring loop</title>");
+      expect(kit).toContain('<a href="/kit-loop" aria-current="page">Kit loop</a>');
+      expect(kit).toContain("Baseline pending");
+      expect(await ledgerTab("kit-loop", "/nonexistent/ledger.json")).toContain("pending");
     });
 
     it("fails closed: a missing ledger is pending, a malformed one is invalid", async () => {

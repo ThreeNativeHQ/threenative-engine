@@ -18,6 +18,7 @@
     "bench:engines:report": "tsx scripts/engine-load-test/cli.ts --compare",
     "bench:engines:monitor": "tsx scripts/engine-load-test/monitor.ts",
     "dashboard": "tsx scripts/perf-live.ts",
+    "kit:loop": "node scripts/kit-loop.mjs",
     "bench:scoreboard": "sh scripts/engine-load-test/scoreboard.sh",
     "budgets": "tsx scripts/workspace-packages.ts && tsx scripts/check-version-pins.ts && tsx scripts/check-native-shims.ts && tsx scripts/check-core-boundary.ts && tsx scripts/check-template-conventions.ts && tsx scripts/check-capability-docs.ts --census && pnpm caps:recall && tsx scripts/check-evidence-budget.ts && tsx scripts/vfx-niagara-coverage.ts && tsx scripts/check-budgets.ts && tsx scripts/generate-ctx-surface-table.ts --check && tsx scripts/generate-capability-reference.ts --check && tsx scripts/realism-effects-docs.ts --check && tsx scripts/realism-effects-conformance.ts && tsx scripts/realism-effects-matrix.ts && tsx scripts/detect-capability-duplicates.ts examples --strict && tsx scripts/check-template-quality.ts && tsx scripts/sync-mcp-configs.ts --check",
     "build": "tsx scripts/build-capability-manifest.ts && tsx scripts/generate-ctx-surface-table.ts && tsx scripts/generate-capability-reference.ts && tsx scripts/realism-effects-docs.ts && pnpm -r --if-present run build",

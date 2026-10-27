@@ -787,6 +787,7 @@ export const TABS = [
   ["/shadows", "Shadows vs Unreal"],
   ["/ci-speed", "CI speed"],
   ["/asset-perf", "Asset perf"],
+  ["/kit-loop", "Kit loop"],
 ] as const;
 
 const NAV_STYLE =
@@ -808,7 +809,11 @@ export function withNav(html: string, current: string): string {
 const LEDGER_TABS = {
   "ci-speed": { module: "./ci-speed-loop.mjs", ledger: "../docs/ci-speed/ledger.json" },
   "asset-perf": { module: "./asset-perf-loop.mjs", ledger: "../docs/asset-perf/ledger.json" },
+  "kit-loop": { module: "./kit-loop.mjs", ledger: "../docs/kit-loop/ledger.json" },
 } as const;
+
+const ledgerTabOf = (url = "") =>
+  Object.keys(LEDGER_TABS).find((tab) => url === `/${tab}` || url.startsWith(`/${tab}?`));
 
 /** One ledger tab, rendered on each load. Fails closed: missing = `pending`, malformed = `invalid`. */
 export async function ledgerTab(
@@ -877,12 +882,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       const { liveState } = await import(new URL("./asset-perf-loop.mjs", import.meta.url).href);
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(liveState()));
-    } else if (req.url?.startsWith("/ci-speed") || req.url?.startsWith("/asset-perf")) {
+    } else if (ledgerTabOf(req.url) !== undefined) {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
       });
-      res.end(await ledgerTab(req.url.startsWith("/ci-speed") ? "ci-speed" : "asset-perf"));
+      res.end(await ledgerTab(ledgerTabOf(req.url) as keyof typeof LEDGER_TABS));
     } else if (req.url?.startsWith("/api/points")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(pointsOf(await allRows())));

@@ -1,7 +1,7 @@
 # PRD-751 — One dashboard: `pnpm dashboard` holds every KPI tab
 
-**Status:** PARTIAL — Phase 1 done
-**Priority:** P2 — the kit-loop KPIs have no view yet and the native-performance-loop skill still asks for its own page (Phase 2 open)
+**Status:** DONE (2026-10-26)
+**Priority:** P2 — the owner could not see what the loops do from one place (done)
 **Complexity:** 2 (LOW) — 6–10 files +2; risk override: none
 **Owner:** João Paulo Furtado
 **Depends on:** None
@@ -62,8 +62,8 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 2: The kit-loop tab and the skill pointer
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `scripts/perf-live.ts` (kit-loop reader), `.agents/skills/native-performance-loop/references/dashboard.md`.
 
-- [ ] AC-4 [local]: the kit-loop tab plots K1–K4 per iteration against the PRD-750 baseline and targets. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts -t kit-loop`
-- [ ] AC-5 [local]: the native-performance-loop skill reference sends a campaign to a hub tab, not a new page. proof: `pnpm sync:agents --check`, `pnpm check:docs`
+- [x] AC-4 [local]: the kit-loop tab plots K1–K4 per iteration against the PRD-750 baseline and targets. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts -t kit-loop` — red (no `kit-loop` tab), then green; with `kit-loop.spec.ts` 34/34; headed capture of the live tab (empty ledger, 0 console errors) and of a 2-row fixture render on the PR (2026-10-26)
+- [x] AC-5 [local]: the native-performance-loop skill reference sends a campaign to a hub tab, not a new page. proof: `pnpm sync:agents --check`, `pnpm check:docs` — both exit 0; `index.html` no longer appears in the skill or its reference (2026-10-26)

@@ -1,7 +1,7 @@
 # PRD-750 — Kit authoring loop: build a genre kit, cold-build a game from it, learn, repeat
 
-**Status:** NOT STARTED
-**Priority:** P1 — "make me a game like X" is the primary workflow before the release, and no loop measures or improves it yet (all phases open)
+**Status:** PARTIAL — Phase 1 done
+**Priority:** P1 — "make me a game like X" is the primary workflow before the release; the measure step exists, but no iteration has run (Phases 2-3 open)
 **Complexity:** 3 (LOW) — 1–5 files +1, new module (the loop script) +2; risk override: none
 **Owner:** João Paulo Furtado
 **Depends on:** PRD-735 (reverse-engineer references at scale), PRD-749 (one kit base and a kit contract), PRD-751 (one dashboard)
@@ -120,11 +120,11 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 1: The ledger and the measure step
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `scripts/kit-loop.mjs` (new), `scripts/__tests__/kit-loop.spec.ts` (new), `docs/kit-loop/ledger.json` (new), `package.json` (`kit:loop`).
 
-- [ ] AC-1 [local]: `pnpm kit:loop record <dir>` turns a cold-build transcript and its gate outputs into one ledger row with K1–K4, and a missing input fails closed (no zero, no pass). proof: `pnpm exec vitest run scripts/__tests__/kit-loop.spec.ts`
-- [ ] AC-2 [local]: the PRD-751 dashboard shows the kit-loop tab with each KPI against its baseline and target. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts -t kit-loop`
+- [x] AC-1 [local]: `pnpm kit:loop record <dir>` turns a cold-build transcript and its gate outputs into one ledger row with K1–K4, and a missing input fails closed (no zero, no pass). proof: `pnpm exec vitest run scripts/__tests__/kit-loop.spec.ts` — red (module missing), then 4/4 green; `pnpm kit:loop record /nonexistent ...` exits 1 with `transcript.json is missing`; the dir contract (five files) is in the script header (2026-10-26)
+- [x] AC-2 [local]: the PRD-751 dashboard shows the kit-loop tab with each KPI against its baseline and target. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts -t kit-loop` — green, see PRD-751 AC-4 (2026-10-26)
 
 #### Phase 2: Iteration 1 — calibration on row 1 (3D platformer)
 
