@@ -65,7 +65,15 @@ export function createMaterialAssignments(scene: Scene, controls: IBacklightCont
     converted.delete(source);
   }
   function unsupported(material: Material): string | undefined {
-    if (!(material instanceof MeshStandardMaterial) || material.type !== "MeshStandardMaterial")
+    // A town surface (`surface.ts`) is a standard node material with no emission of its own, so it
+    // takes the same rim and fill: the copy keeps its colour and roughness nodes.
+    const surface =
+      (material as { isMeshStandardNodeMaterial?: boolean }).isMeshStandardNodeMaterial === true &&
+      (material as { emissiveNode?: unknown }).emissiveNode === null;
+    if (
+      !surface &&
+      (!(material instanceof MeshStandardMaterial) || material.type !== "MeshStandardMaterial")
+    )
       return "unsupported material type";
     if (
       material.onBeforeCompile !== Material.prototype.onBeforeCompile ||

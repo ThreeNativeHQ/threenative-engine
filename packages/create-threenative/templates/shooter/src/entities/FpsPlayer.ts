@@ -17,11 +17,12 @@ import {
 import { scale } from "../render/scale.js";
 import type { GameState } from "../state.js";
 import type { TouchFrame } from "./TouchControls.js";
+import { type IStairView, groundMove, stairView } from "./movement.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 export const EYE_HEIGHT = scale.eyeHeight;
-const WALK_SPEED = 5.6;
+export const WALK_SPEED = 5.6;
 const SPRINT_SPEED = 8.2;
 /** Crouched movement, and how far the eye drops. A crouch that only slows you reads as a bug. */
 const CROUCH_SPEED = 2.6;
@@ -86,8 +87,18 @@ export class FpsPlayer {
    * scenario that samples every few hundred frames still catches a single bad step.
    */
   cameraLagPeak = 0;
+  /**
+   * Fastest climb of the eye in one tick while on the ground, in metres. The body steps up a stair
+   * in a few ticks and then stops; an eye welded to it climbs in jolts. A peak, like the lag above.
+   */
+  viewRisePeak = 0;
   /** 0 standing, 1 fully folded; eased so the eye slides rather than teleports. */
   #crouch = 0;
+  /** The body height the eye shows, smoothed over stair steps; undefined until the first sync. */
+  #view: IStairView | undefined;
+  /** The smoothed height minus the body's, when the camera was last placed. */
+  #viewOffset = 0;
+  #tickDt = 0;
   /** Set by the scene: fired each time a stride completes, so footsteps keep pace with speed. */
   onFootstep: ((sprinting: boolean) => void) | undefined;
   #camera: PerspectiveCamera;
@@ -150,8 +161,16 @@ export class FpsPlayer {
 
   syncCamera(): void {
     const eye = this.eye;
+    const bodyY = this.mesh.position.y;
+    const before = this.#view?.y;
+    this.#view = stairView(this.#view, bodyY, this.body.grounded, this.#tickDt);
+    if (before !== undefined && this.body.grounded) {
+      this.viewRisePeak = Math.max(this.viewRisePeak, Math.abs(this.#view.y - before));
+    }
+    this.#viewOffset = this.#view.y - bodyY;
     applyFirstPerson(this.#camera, {
       ...eye,
+      y: eye.y + this.#viewOffset,
       yaw: this.look.yaw,
       pitch: this.look.pitch,
       shake: this.#shake,
@@ -160,7 +179,9 @@ export class FpsPlayer {
   }
 
   update(ctx: GameCtx, dt: number, canAim: boolean): void {
-    const renderedLag = Math.abs(this.#camera.position.y - this.eye.y);
+    this.#tickDt = dt;
+    // The stair offset is deliberate; what is left is the body moving after the camera was placed.
+    const renderedLag = Math.abs(this.#camera.position.y - this.eye.y - this.#viewOffset);
     if (renderedLag > this.cameraLagPeak) this.cameraLagPeak = renderedLag;
     const touch = this.touch;
     this.aiming = canAim && (ctx.input.pressed("aim") || touch?.aim === true);
@@ -189,15 +210,15 @@ export class FpsPlayer {
     const forwardZ = -Math.cos(this.look.yaw);
     const rightX = Math.cos(this.look.yaw);
     const rightZ = -Math.sin(this.look.yaw);
-    let vx = forwardX * move.y + rightX * move.x;
-    let vz = forwardZ * move.y + rightZ * move.x;
-    const length = Math.hypot(vx, vz);
+    let wishX = forwardX * move.y + rightX * move.x;
+    let wishZ = forwardZ * move.y + rightZ * move.x;
+    const length = Math.hypot(wishX, wishZ);
     if (length > 1e-4) {
-      vx = (vx / length) * speed;
-      vz = (vz / length) * speed;
+      wishX /= length;
+      wishZ /= length;
     } else {
-      vx = 0;
-      vz = 0;
+      wishX = 0;
+      wishZ = 0;
     }
     // The backend writes the solved transform after the step, so measuring the
     // mesh either side of `moveAndSlide` in one frame always reads zero. Compare
@@ -215,8 +236,9 @@ export class FpsPlayer {
     }
     this.#lastX = this.mesh.position.x;
     this.#lastZ = this.mesh.position.z;
-    this.body.velocity.x = vx;
-    this.body.velocity.z = vz;
+    // Friction, then acceleration toward the wished speed (see `movement.ts`): the body takes a
+    // tenth of a second to reach speed and about a third to stop, instead of one tick for both.
+    groundMove(this.body.velocity, wishX, wishZ, length > 1e-4 ? speed : 0, dt);
     this.body.moveAndSlide(dt);
 
     this.#shake = Math.max(0, this.#shake - dt * 3.2);
@@ -243,8 +265,15 @@ export class FpsPlayer {
     this.#shakePeak = Math.max(this.#shakePeak, this.#shake);
   }
 
+  /** Horizontal speed in m/s, the one the rifle's bob and clip follow. */
+  get speed(): number {
+    return Math.hypot(this.body.velocity.x, this.body.velocity.z);
+  }
+
   debug(): {
     cameraLagPeak: number;
+    viewRisePeak: number;
+    speed: number;
     crouching: number;
     health: number;
     position: number[];
@@ -259,6 +288,8 @@ export class FpsPlayer {
     const cameraDirection = this.#lastFiringCameraDirection;
     return {
       cameraLagPeak: this.cameraLagPeak,
+      viewRisePeak: this.viewRisePeak,
+      speed: this.speed,
       crouching: this.crouching ? 1 : 0,
       health: this.health,
       position: this.mesh.position.toArray(),

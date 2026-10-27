@@ -43,8 +43,56 @@ import type { QualityTier } from "@threenative/core";
  */
 export const resolveQualityTier = qualityTiers.resolve;
 
+/**
+ * Named overrides of core's Unreal look: the owner (2026-10-26) prefers the 7b546d6 neutral look,
+ * white plaster and grey ground with no yellow cast. `TN_WORLD_ENVIRONMENT` reports the tone curve,
+ * the exposure and the gather this runs; delete a line to take core's value back.
+ */
+export const neutralLook: IWorldEnvironmentOptions = {
+  // ACES at a fixed exposure: core's filmic curve and metered exposure read yellowish on this town.
+  tonemapMode: "aces",
+  autoExposureEnabled: false,
+  exposure: 0.62,
+  // The kit's bloom: a low threshold that lifts the sunlit whitewash a little.
+  bloomRadius: 0.5,
+  bloomStrength: 0.7,
+  bloomThreshold: 0.2,
+  // No screen-probe gather or reflections: the bounce off the sunlit ground tints the shade warm.
+  finalGatherMethod: "none",
+  ssgiEnabled: false,
+  ssrEnabled: false,
+  // The kit's contact occlusion: whole-frame, a 0.35 m reach, 16 directions (8 on medium).
+  gtaoDistanceExponent: 1,
+  gtaoDistanceFalloff: 1,
+  gtaoIndirectOnly: false,
+  gtaoRadius: 0.35,
+  gtaoSamples: 16,
+  // 4x MSAA under the chain on every tier.
+  samples: 4,
+  // No motion blur, on any tier. Core's is Unreal's (UE 5.8.3: Engine/Source/Runtime/Engine/
+  // Private/Scene.cpp:646-648, amount 0.5, 5 % cap, 30 fps target), and Unreal scales it by the
+  // frame time (Renderer/Private/SceneVisibility.cpp:5650-5658): on a 144 Hz display a moderate
+  // mouse turn smears the whole frame to the cap, and aiming is reading that frame. The hands and
+  // rifle are skinned, and the engine gives a skinned draw the camera's motion, so they smeared
+  // like the far wall; Unreal keeps them sharp with first-person velocity
+  // (Engine/Shaders/Private/VelocityShader.usf:74-82). `motionBlurEnabled: true` brings it back.
+  motionBlurEnabled: false,
+};
+
+/** The 7b546d6 per-tier values: half the occlusion directions on medium, none of it on a phone. */
+const neutralTiers: Readonly<Record<string, IWorldEnvironmentOptions>> = {
+  high: {},
+  medium: { gtaoSamples: 8 },
+  low: { gtaoEnabled: false, gtaoRadius: 0.25, motionBlurEnabled: false, temporalAA: false },
+};
+
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  return { ...coreQualityPreset(tier), exposurePolicy: exposureSettings };
+  return {
+    ...coreQualityPreset(tier),
+    ...neutralLook,
+    ...neutralTiers[tier],
+    exposurePolicy: exposureSettings,
+  };
 }
 
 /** First admitted material lane: high desktop hardware WebGPU in the browser only. */
