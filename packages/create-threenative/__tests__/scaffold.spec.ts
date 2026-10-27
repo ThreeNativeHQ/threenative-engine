@@ -22,6 +22,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
+  canonicalRenderSourcePath,
   cliHelp,
   createProject,
   discoverKitManifests,
@@ -309,13 +310,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "1636599b0c6c8626bfd121328d0515b1cb316c9c44d54d9d2459cb4bb5a296b5",
+  // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
+  // Recomputed 2026-10-27 on the merge of origin/develop (#577 native player, #579 reference search)
+  // into the PRD-741 lane: measured by this test on the merged tree, which is neither parent's tree.
+  collectathon: "a28ab9b6924ac96dc1fd1d97b61f6632e7ef87f8d6fda2d15153e30fcc45f1a9",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
-  adventure: "85ebb7ad3bc3d0acaec8060ce07fc0737a982083a2d9207d77d8b37252c895f3",
+  // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
+  adventure: "0e6815ab9edc724b4abcef00c8c74f3938e3c1a2e9a94f9f3a95b75b592786f7",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "86bdd012b014f5c48cfae83ecdc58676dc934a5db869d7b78084bf96c46c35a5",
+  // PRD-741: the kerb lies level with the road, closing the slot that showed grass under its edge.
+  kart: "f02e80e6ef8b23b7e2300c08f02142a8f5e82bf79ade6eeb84f3fd9b78b9c23c",
   minimal: "27410c7c37862bcf806108e49adadecc54e6b4b50a0d501fd888caf923e2b3e2",
   platformer: "5f9b28f6abe3fb03fdda135e7d34ce66afaa30065336b538914b853da6e57be3",
   puzzle: "d4b56cb86ea944742715641166311fec92c506e999b464eaf0714878b67ea130",
@@ -332,7 +338,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "fce494dcba52e872f47442496263a507d4cd3b3376f78befe460150de55c7d04",
+  // Recomputed 2026-10-27 on the merge of origin/develop into the PRD-741 lane.
+  starter: "223be23413159d7589208f89f6f22e76ae9faed6e92462a5fcff2061844690b9",
   "tower-defense": "6f25e3f22029e259ed91358e29f7a4bc20cfe7ca57132769efc0f7bbef696597",
 };
 
@@ -1833,4 +1840,39 @@ describe("create-threenative", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("authored temporal detail distribution", () => {
+  it("retains global shared assets for a custom template root", () => {
+    expect(canonicalRenderSourcePath("src/render/loading.ts", "/tmp/tn-absent-templates")).toBe(
+      path.resolve("packages/create-threenative/template-assets/loading.ts"),
+    );
+  });
+  it.each(["collectathon", "adventure", "kart"])(
+    "copies the canonical detail stage with a closed local import graph into %s",
+    async (template) => {
+      const parent = await makeTempDir("tn-temporal-detail-");
+      const target = path.join(parent, "game");
+      try {
+        await createProject({ target, template, install: false }, parent, TEMPLATE_ROOT);
+        const relative = "src/render/temporalDetailStage.ts";
+        const generated = await readFile(path.join(target, relative), "utf8");
+        expect(generated).toBe(
+          await readFile(path.join(TEMPLATE_ROOT, "starter", relative), "utf8"),
+        );
+        const post = await readFile(path.join(target, "src/render/postprocessing.ts"), "utf8");
+        expect(post).toContain('from "./temporalDetailStage.js"');
+        // The generated helper depends only on public Three/TSL plus an erased core type.
+        for (const match of generated.matchAll(/from ["'](\.[^"']+)["']/g)) {
+          const specifier = match[1];
+          if (specifier === undefined) throw new Error("Missing local import specifier capture");
+          expect(
+            existsSync(path.resolve(target, "src/render", specifier.replace(/\.js$/, ".ts"))),
+          ).toBe(true);
+        }
+      } finally {
+        await rm(parent, { recursive: true, force: true });
+      }
+    },
+  );
 });

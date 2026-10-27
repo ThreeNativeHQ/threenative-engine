@@ -22,6 +22,7 @@ import {
 import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
+import { temporalDetailRequested, temporalDetailStages } from "./temporalDetailStage.js";
 import type { FogMedium } from "./volumetricFog.js";
 
 interface IPostController {
@@ -96,15 +97,20 @@ export function setupPost(
     medium = environment.fog?.();
     const composed = medium;
     const settings = qualityPreset(policy.tier);
+    const detail = temporalDetailRequested(renderer, settings) ? temporalDetailStages() : [];
     const world = new WorldEnvironment({
       ...settings,
-      // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
-      // orders and reports them, and `quality.ts` decides whether each tier runs them. The kit's
-      // `traa` stage is offered beside them: a tier that lists `traa` in its `authoredStageNames`
-      // runs it in place of the chain's own temporal AA (`temporalAA`).
-      authoredStageNames: ["grade", "grain", ...(settings.authoredStageNames ?? [])],
+      // Game-owned grade/grain and authored TRAA follow quality.ts; WorldEnvironment orders them.
+      // Listing traa replaces the chain's temporalAA provider.
+      authoredStageNames: [
+        "grade",
+        "grain",
+        ...(settings.authoredStageNames ?? []),
+        ...detail.map(({ name }) => name),
+      ],
       authoredStages: (stage) => [
         ...gradeStages(gradePreset(policy.tier), table),
+        ...detail,
         ...temporalAAStages(stage, {
           onProvider: (provider) => {
             temporal = provider;

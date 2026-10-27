@@ -207,12 +207,11 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     const wear = 0.5 + 0.5 * Math.sin(i * 0.37 + c * 1.9) * Math.sin(i * 0.11 - c);
     return mixColour(C.asphalt, C.asphaltDark, wear * (c === 0 || c === 7 ? 1 : 0.6));
   });
-  // Kerbs in 2 m blocks; a hair above the road so the seam never flickers.
-  const kerbs = ribbon(
-    course,
-    [-k, -r, r, k],
-    (i, c) => (c === 1 ? undefined : Math.floor(i / 2) % 2 === 0 ? C.kerbRed : C.kerbWhite),
-    () => 0.01,
+  // Kerbs in 2 m blocks, level with the road: both ribbons take their edge corners from the same
+  // course.pointAt, so the seam is watertight and nothing overlaps to flicker. A lifted kerb opens a
+  // slot under its edge that shows the grass below as a sub-pixel green line.
+  const kerbs = ribbon(course, [-k, -r, r, k], (i, c) =>
+    c === 1 ? undefined : Math.floor(i / 2) % 2 === 0 ? C.kerbRed : C.kerbWhite,
   );
   // The grass shoulder out past the wall, then a skirt down to the terrain, so a dip in the road
   // (the creek, the cut under the bridge) never leaves the ribbon's edge hanging in the air.

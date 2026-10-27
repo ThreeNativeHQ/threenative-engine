@@ -74,7 +74,31 @@
   {
     "date": "2026-10-24",
     "done": 378,
-    "total": 1078,
+    "total": 1085,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 83
+  },
+  {
+    "date": "2026-10-25",
+    "done": 383,
+    "total": 1085,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 83
+  },
+  {
+    "date": "2026-10-26",
+    "done": 384,
+    "total": 1085,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 83
+  },
+  {
+    "date": "2026-10-27",
+    "done": 388,
+    "total": 1088,
     "lookDone": 138,
     "lookTotal": 489,
     "open": 82

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "engine/shader/ir.h"
+#include "engine/shader/output.h"
 #include "engine/renderer/probes/schedule.h"
 #include "engine/shader/position_node.h"
 
@@ -271,6 +272,10 @@ StandardPrograms buildDepth(const VertexVariant& variant);
  * "alphaTest", "opaque", "uvTransform"; binding "map" when variant.map.
  */
 StandardPrograms buildMaskedDepth(const VertexVariant& variant);
+
+/** Velocity for the same local vertex deformation as the colour pass. Previous uniforms are submitted-frame snapshots. */
+inline constexpr const char* previousDeformationUniformPrefix = "traaPrevious_";
+OutputPrograms velocityPrograms(const VertexVariant& variant);
 
 /** Link authored and engine varyings from the local vertex, shared by mesh and sprite builders. */
 void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal = kInvalid);

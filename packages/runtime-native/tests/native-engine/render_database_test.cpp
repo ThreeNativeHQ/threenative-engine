@@ -1096,7 +1096,7 @@ void invariantScope() {
     std::size_t colour = 0, velocity = 0;
     for (const auto& [key, source] : renderer.programVertexSources()) {
         const bool before = std::any_of(plain.begin(), plain.end(), [&](const auto& p) { return p.first == key; });
-        if (key == "traa-velocity") { ++velocity; CHECK(flagged(source)); }
+        if (key.starts_with("traa-velocity|")) { ++velocity; CHECK(flagged(source)); }
         else if (key.rfind("depth|", 0) == 0) CHECK(!flagged(source));  // the shadow depth program shares its stage with nothing, TRAA or not
         else if (before) CHECK(!flagged(source));                         // built by the plain frame, untouched
         else { ++colour; CHECK(flagged(source)); }
@@ -1818,6 +1818,66 @@ void deferredTargetSamplesPostRttNode() {
     const int hi = frame(0.75f), lo = frame(0.25f);
     CHECK(std::abs(hi - 191) <= 1);
     CHECK(std::abs(lo - 64) <= 1);
+    CHECK(renderer.diagnostics().empty());
+}
+
+// The same read of convertToTexture(traa(...)) over a texture the graph drew: the node is the resolve's own output,
+// "native_traa_<n>", which the kart's bloom samples in its first downsample. Bound once with the program, it kept the
+// fallback view and the bloom flickered between two colours at full resolution.
+void targetSamplesLateTraaOutput() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const auto live = g::uniform("nodeLive", shader::Type::vec(4), {0.25f, 0.5f, 0.25f, 1});
+    auto composite = std::make_shared<g::NodeData>();  // the texture the graph drew under the resolve
+    composite->kind = g::Kind::RenderTexture;
+    composite->type = shader::Type::vec(4);
+    composite->name = "native_rtt_8";
+    composite->args = {live, g::uv()};
+    auto effect = std::make_shared<g::PostEffect>();
+    effect->kind = "TRAANode";
+    effect->output = "native_traa_9";
+    effect->inputs = {composite, g::texture("depth", g::uv()), g::texture("velocity", g::uv())};
+    effect->parameters = {{"depthThreshold", {0.0005f}}, {"edgeDepthDiff", {0.001f}}, {"maxVelocityLength", {128}},
+                          {"useSubpixelCorrection", {1}}};
+    auto resolved = std::make_shared<g::NodeData>(*g::texture(effect->output, g::uv()));  // tsl_call's convertToTexture
+    resolved->otherwise = {g::effectNode(effect)};
+    const auto side = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    Scene inner;
+    OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
+    innerCamera.position.z = 5;
+    innerCamera.updateMatrixWorld();
+    auto sampling = std::make_shared<Material>(MaterialType::Basic, true);
+    sampling->rawNodeMaterial = true;
+    sampling->nodes.fragmentNode = resolved;
+    Mesh plane(makePlaneGeometry(2, 2), sampling);
+    inner.add(plane);
+    inner.updateMatrixWorld(true);
+    // As a game does: the bloom's targets draw before the post graph that holds the resolve exists.
+    CHECK(renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false).empty());
+    renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+    renderer.setPostGraph(g::add(g::objectTexture(side->texture, "nodeSampledSide", g::uv()), g::mul(resolved, g::float_(0))));
+    // The resolve settles on a still input over a few frames; the target reads the frame before (it draws first).
+    const auto frame = [&](float value, size_t size) {
+        g::setUniformValues(live, {value, 0.5f, 0.25f, 1});
+        for (int settle = 0; settle < 6; ++settle) {
+            CHECK(renderToTarget(renderer, *side, inner, innerCamera, {0, 0, 0, 1}, false).empty());
+            renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+        }
+        const auto bytes = read(renderer, events);
+        CHECK(bytes.size() == size * size * 4);
+        return bytes.size() == size * size * 4 ? int(bytes[(size / 2 * size + size / 2) * 4]) : -1;
+    };
+    const int hi = frame(0.75f, 64);
+    renderer.setSize(48, 48);  // the resolve's output is allocated again
+    const int lo = frame(0.25f, 48);
+    std::fprintf(stderr, "TN_DEBUG late resolve read by the target: %d (0.75), %d (0.25 after a resize)\n", hi, lo);
+    CHECK(std::abs(hi - 191) <= 2);
+    CHECK(std::abs(lo - 64) <= 2);
     CHECK(renderer.diagnostics().empty());
 }
 
@@ -3215,8 +3275,8 @@ void gpuTimerCoversOffscreen() {
         }
         CHECK(renderer.gpuSamples() == before + 1);
         CHECK(renderer.gpuSourceFrame() == (deferred ? 42 : 41));
-        // Each renderer encodes a scene and an output pass, including the offscreen sibling.
-        CHECK(renderer.gpuTimestampPasses() == 4);
+        // Raw targets expose the scene directly; only the main renderer encodes an output pass.
+        CHECK(renderer.gpuTimestampPasses() == 3);
         CHECK(renderer.lastGpuMs() > 0);
         const auto segments = renderer.lastGpuSegments();
         CHECK(segments[1] > 0 && segments[2] > 0 && segments[3] > 0);
@@ -5962,7 +6022,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

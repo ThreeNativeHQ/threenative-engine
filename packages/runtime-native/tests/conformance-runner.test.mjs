@@ -611,6 +611,20 @@ test("a scene that throws on the owned player is reported at once, not after the
   expect(Date.now() - started).toBeLessThan(5_000);
 });
 
+test("native frame failures reject even when the ready or completion marker is already present", async () => {
+  const child = { exitCode: null, signalCode: null };
+  for (const marker of ["TN_CONFORMANCE_READY:row", "TN_CONFORMANCE_UPSAMPLE_300_FRAMES"]) {
+    const output = { error: null, stdout: marker, stderr: "[Playtest] TN_V8_FRAME_FAILED: Error: temporal dimensions were never observed" };
+    await expect(waitForNativeMarker(child, output, marker, 1)).rejects.toThrow(/TN_V8_FRAME_FAILED/u);
+  }
+});
+
+test("a missing native completion observation times out instead of accepting startup readiness", async () => {
+  const child = { exitCode: null, signalCode: null };
+  const output = { error: null, stdout: "TN_CONFORMANCE_READY:row", stderr: "" };
+  await expect(waitForNativeMarker(child, output, "TN_CONFORMANCE_UPSAMPLE_300_FRAMES", 1)).rejects.toThrow(/timed out/u);
+});
+
 test("the owned web lane refuses to bundle without the Wasm engine", async () => {
   await expect(bundleOwnedWeb("entry.js", "out.js", "/nonexistent/tn-native-engine-web.mjs")).rejects.toThrow(
     /TN_WASM_ENGINE_MISSING/u,

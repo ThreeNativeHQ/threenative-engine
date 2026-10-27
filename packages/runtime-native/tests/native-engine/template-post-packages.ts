@@ -1,7 +1,14 @@
 /** PRD-526: execute the authored templates, export real r185 nodes, then compile in C++. */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
@@ -23,6 +30,7 @@ import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { float, texture, texture3D, uniform, vec2 } from "three/tsl";
 import { TempNode } from "three/webgpu";
 import { type IRenderChainOptions, RenderChain } from "../../../core/src/render/chain.js";
+import { createProject } from "../../../create-threenative/src/index.js";
 import { exportTslGraph } from "../../scripts/tsl-export.js";
 import { functionFixtures } from "./tsl-function-fixtures.js";
 
@@ -357,8 +365,16 @@ Object.defineProperty(GTAONode.prototype, "reachPx", {
   },
 });
 for (const name of names) {
+  // Compile the same complete authored source tree a user receives, including canonical shared files.
+  const generated = path.join(directory, "generated", name);
+  await createProject({ target: generated, template: name, install: false }, directory, templates);
+  symlinkSync(
+    path.join(root, "packages/create-threenative/node_modules"),
+    path.join(generated, "node_modules"),
+    "dir",
+  );
   const authored = await import(
-    pathToFileURL(path.join(templates, name, "src/render/postprocessing.ts")).href
+    pathToFileURL(path.join(generated, "src/render/postprocessing.ts")).href
   );
   for (const tier of ["high", "medium", "low"] as const) {
     const label = `${name}-${tier}`;
@@ -401,7 +417,7 @@ for (const name of names) {
     let controller: { dispose(): void } | undefined;
     // `FileLoader` fetches a URL relative to a page; read the template's `public/` file instead.
     FileLoader.prototype.load = function load(url, onLoad) {
-      const text = readFileSync(path.join(templates, name, "public", url), "utf8");
+      const text = readFileSync(path.join(generated, "public", url), "utf8");
       queueMicrotask(() => onLoad?.(text));
     };
     try {
@@ -416,7 +432,7 @@ for (const name of names) {
         // postprocessing.ts:44 calls WorldEnvironment.apply; worldEnvironment.ts:480-483
         // returns before building a pass when no stages/baseColour/auto-exposure run.
         const quality = await import(
-          pathToFileURL(path.join(templates, name, "src/render/quality.ts")).href
+          pathToFileURL(path.join(generated, "src/render/quality.ts")).href
         );
         const preset = quality.qualityPreset(tier);
         if (

@@ -2,6 +2,32 @@ import { describe, expect, it } from "vitest";
 import { localExposureSizes } from "../src/look/local-exposure.js";
 
 describe("local exposure pass sizes", () => {
+  it.each([
+    [1920, 1080, 1],
+    [1922, 1081, 2],
+    [1, 1080, 8],
+    [1, 1, 1],
+    [3, 5, 3],
+  ])(
+    "fits conservative cell-row ranges into the existing luminance target at %ix%i",
+    (width, height, stride) => {
+      const sizes = localExposureSizes(width, height);
+      expect(sizes.rangeStride).toBe(stride);
+      const logicalRows = sizes.cells[0] * sizes.half[1];
+      const capacity = sizes.blur[0] * sizes.blur[1];
+      expect(Math.ceil(logicalRows / sizes.rangeStride)).toBeLessThanOrEqual(capacity);
+      if (sizes.rangeStride > 1)
+        expect(Math.ceil(logicalRows / (sizes.rangeStride - 1))).toBeGreaterThan(capacity);
+      for (let row = 0; row < logicalRows; row++) {
+        const slot = Math.floor(row / sizes.rangeStride);
+        const x = slot % sizes.blur[0];
+        const y = Math.floor(slot / sizes.blur[0]);
+        expect(y).toBeLessThan(sizes.blur[1]);
+        expect(y * sizes.blur[0] + x).toBe(slot);
+      }
+    },
+  );
+
   it("blurs the luminance at a sixteenth of the view, as Unreal's downsample chain mip 4 does", () => {
     const sizes = localExposureSizes(1920, 1080);
     expect(sizes.half).toEqual([960, 540]);

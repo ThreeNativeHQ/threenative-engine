@@ -3,6 +3,7 @@
 #include "engine/shader/wgsl.h"
 #include "engine/shader/package.h"
 #include "engine/shader/graph/post_effects.h"
+#include "engine/shader/tsl/tsl.h"
 
 #include <bit>
 #include <cmath>
@@ -340,7 +341,63 @@ void albedoOutput() {
 
 void emissiveOutput() { albedoOutput(); }
 
+void velocityDeformation() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.instanced = true;
+    const auto time = g::uniform("time", Type::f32());
+    const auto delta = g::uniform("deltaTime", Type::f32());
+    const auto strength = g::uniform("windStrength", Type::f32(), {0.4});
+    const auto scale = g::materialInput("windScale", Type::f32());
+    variant.nodes.positionNode = g::add(g::positionLocal(), g::mul(g::attribute("normal", Type::vec(3)),
+        g::mul(g::sin(g::add(time, delta)), g::mul(strength, scale))));
+    const auto key = g::key(variant.nodes.positionNode);
+    const auto values = g::uniforms(variant.nodes.positionNode);
+    const auto originalStrength = strength->values;
+    const auto velocity = velocityPrograms(variant);
+    const auto colour = buildBasic(variant);
+    const auto vs = buildStage(velocity.vertex, 0), fs = buildStage(velocity.fragment, 1);
+    CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+    stagesAgree(velocity.fragment, vs.wgsl.code, fs.wgsl.code);
+    const auto output = [](const Program& p, const std::string& name) {
+        const auto text = p.dump();
+        const auto start = text.find("output " + name + " = ");
+        return start == std::string::npos ? std::string{} : text.substr(start, text.find('\n', start) - start);
+    };
+    CHECK(output(velocity.vertex, "position") == output(colour.vertex, "position"));
+    const auto current = output(velocity.vertex, "currentClip");
+    const auto previous = output(velocity.vertex, "previousClip");
+    CHECK(current.find("uniform:unjitteredProjection") != std::string::npos);
+    CHECK(previous.find("uniform:previousProjection") != std::string::npos);
+    for (const auto* name : {"time", "deltaTime", "windStrength", "windScale"}) {
+        CHECK(current.find(std::string("uniform:") + name) != std::string::npos);
+        CHECK(current.find(std::string(previousDeformationUniformPrefix) + name) == std::string::npos);
+        CHECK(previous.find(std::string("uniform:") + previousDeformationUniformPrefix + name) != std::string::npos);
+        CHECK(previous.find(std::string("uniform:") + name) == std::string::npos);
+    }
+    for (int column = 0; column < 4; ++column)
+        CHECK(vs.wgsl.code.find("a_instanceMatrix" + std::to_string(column)) != std::string::npos);
+    CHECK(vs.wgsl.code.find("a_normal") != std::string::npos);
+    CHECK(fs.wgsl.code.find("currentClip") != std::string::npos &&
+          fs.wgsl.code.find("previousClip") != std::string::npos);
+    CHECK(g::key(variant.nodes.positionNode) == key && g::uniforms(variant.nodes.positionNode) == values);
+    CHECK(strength->values == originalStrength);
+    const auto rigid = velocityPrograms(VertexVariant{});
+    CHECK(rigid.vertex.ok());
+    const auto rigidStage = buildStage(rigid.vertex, 0);
+    CHECK(rigidStage.attributes.size() == 1 && rigidStage.attributes[0].name == "position");
+    // Only the explicit namespace replaces a graph uniform; material overrides keep their existing fallback.
+    Program controls(Stage::Vertex);
+    tn::engine::shader::tsl::Build scope(controls);
+    const auto one = controls.constant(1.f), two = controls.constant(2.f);
+    CHECK(g::lower(time, controls, {{"time", two}}) != two);
+    CHECK(g::lower(time, controls, {{"uniform:time", two}}) == two);
+    CHECK(g::lower(scale, controls, {{"material:windScale", one}}) == one);
+    CHECK(g::lower(scale, controls, {{"material:windScale", one}, {"uniform:windScale", two}}) == two);
+}
+
 void nodes() {
+    velocityDeformation();
     namespace g = tn::engine::shader::graph;
     VertexVariant variant;
     variant.map = true;

@@ -117,21 +117,18 @@ export function stampLoadingSource(canonical: string, template: string): string 
   return canonical.replace(canonicalBlock, templateBlock);
 }
 
-/**
- * Render sources every kit copies verbatim and no kit is expected to edit.
- *
- * `src/render/` is a floor the game rewrites, and almost all of it is a per-kit look. The
- * render-chain plumbing is not: it is the same 600 lines in every kit, and keeping seven copies by
- * hand let one fall a revision behind without anything failing. A file belongs here only when a
- * kit editing it would be a mistake rather than a choice.
- */
-export const SHARED_RENDER_SOURCES: readonly string[] = [];
+/** Canonical generated render source. Each game owns and may rewrite its installed copy. */
+export const SHARED_RENDER_SOURCES: readonly string[] = ["src/render/temporalDetailStage.ts"];
 
 export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {
   const name = path.basename(relativePath);
   const local = path.resolve(root, "..", "template-assets", name);
   if (existsSync(local)) return local;
-  return path.resolve(templateRoot(), "..", "template-assets", name);
+  const starter = path.resolve(root, "starter", relativePath);
+  if (existsSync(starter)) return starter;
+  const shared = path.resolve(templateRoot(), "..", "template-assets", name);
+  if (existsSync(shared)) return shared;
+  return path.resolve(templateRoot(), "starter", relativePath);
 }
 
 /** Re-copies every shared render source into each kit that ships it. */
@@ -767,6 +764,9 @@ export async function createProject(
   try {
     const source = path.join(root, template);
     await cp(source, target, { recursive: true, errorOnExist: true });
+    if (["starter", "collectathon", "adventure", "kart"].includes(template))
+      for (const relative of SHARED_RENDER_SOURCES)
+        await cp(canonicalRenderSourcePath(relative, root), path.join(target, relative));
     await copyTemplateIcon(target, root);
     await copySharedAssets(target, root);
     await copyQualityConfig(target, root);

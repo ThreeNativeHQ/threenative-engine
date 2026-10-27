@@ -57,6 +57,7 @@ const runtimeRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
 const runnerPath = fileURLToPath(import.meta.url);
 const NATIVE_TEMPORAL_LABELS = Object.freeze(["frame-zero", "settled", "next"]);
+const NATIVE_FRAME_FAILURE = /TN_V8_FRAME_FAILED:[^\n]*/u;
 
 export function temporalCaptureLabel(test) {
   const label = test?.temporal?.capture ?? "next";
@@ -237,6 +238,9 @@ export function validateRegistry(registry) {
     ) {
       errors.push(`${label}: implemented row must reference an existing scene`);
     }
+    if (entry?.completionMarker !== undefined &&
+        (typeof entry.completionMarker !== "string" || entry.completionMarker.trim() === ""))
+      errors.push(`${label}: completionMarker must be a nonempty string`);
     for (const metric of ["pixelMismatchRatio", "perceptualDeltaE"]) {
       const value = entry?.tolerance?.[metric];
       if (!Number.isFinite(value) || value < 0) {
@@ -547,7 +551,14 @@ export function makeEntry(test, target, port, entryRoot) {
 console.info(${JSON.stringify(`TN_MULTITOUCH_PROOF_PASS:${test.id}`)});`
     : "";
   const waitForSubmittedWork = "if (state?.renderer?.backend?.device?.queue?.onSubmittedWorkDone) await state.renderer.backend.device.queue.onSubmittedWorkDone();";
-  const finalCapture = `${waitForSubmittedWork}
+  const completionWait = test.completionMarker === undefined ? "" : `
+const completionDeadline = Date.now() + 60000;
+while (globalThis.__TN_CONFORMANCE_COMPLETION__ !== ${JSON.stringify(test.completionMarker)}) {
+  if (Date.now() > completionDeadline) throw new Error('TN_CONFORMANCE_COMPLETION_MISSING:${test.id}');
+  await new Promise(requestAnimationFrame);
+}`;
+  const finalCapture = `${completionWait}
+${waitForSubmittedWork}
 const response = await fetch('/__tn_conformance__/complete/${encodeURIComponent(test.id)}', { method: 'POST' });
 if (!response.ok) throw new Error('compositor capture failed: ' + response.status + ' ' + await response.text());`;
   const browserCapture = test.temporal
@@ -1093,6 +1104,8 @@ function writeNativeScreenshotRequest(mailboxRoot, screenshot) {
 export async function waitForNativeMarker(child, output, marker, timeoutMs, failMarker = null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
+    const failure = `${output.stdout}\n${output.stderr}`.match(NATIVE_FRAME_FAILURE);
+    if (failure) throw new Error(`Native scene failed before ${marker}: ${failure[0]}`);
     if (output.stdout.includes(marker) || output.stderr.includes(marker)) return;
     if (failMarker !== null) {
       const text = `${output.stdout}\n${output.stderr}`;
@@ -1355,8 +1368,12 @@ async function runDesktopOwned(test, bundlePath, result, player, captureRoot) {
     // asked, so the settle below drew no frame and the capture was the first one (a post chain whose
     // passes fill on later frames read as missing). Attach on the wall clock, as a game runs.
     await attachNativeWallClock(child, mailboxRoot, 30_000);
-    // Frames the scene needs to settle: the legacy lane waits for frame `nativeFrames` (300).
-    await wait(Number(process.env.TN_PARITY_OWNED_SETTLE_MS ?? 3_000));
+    // A proof marker follows the fixture's actual rendered-frame observation, not startup or elapsed time.
+    if (test.completionMarker !== undefined)
+      await waitForNativeMarker(child, output, test.completionMarker,
+        Number(process.env.TN_PARITY_OWNED_READY_MS ?? 120_000));
+    else
+      await wait(Number(process.env.TN_PARITY_OWNED_SETTLE_MS ?? 3_000));
     writeNativeScreenshotRequest(mailboxRoot, screenshot);
     await waitForNativeScreenshot(child, screenshot, 60_000);
     const combined = `${output.stdout}\n${output.stderr}`;
@@ -1364,7 +1381,7 @@ async function runDesktopOwned(test, bundlePath, result, player, captureRoot) {
     result.gpuValidationErrors.push(...gpuErrors);
     const inspection = inspectCapture(readFileSync(screenshot));
     result.native = {
-      completed: gpuErrors.length === 0 && !/TypeError|ReferenceError|SyntaxError/iu.test(combined),
+      completed: gpuErrors.length === 0 && !NATIVE_FRAME_FAILURE.test(combined) && !/TypeError|ReferenceError|SyntaxError/iu.test(combined),
       engine: "threenative",
       exitCode: null,
       screenshot,
@@ -1462,7 +1479,7 @@ async function runDesktop(test, bundlePath, result, runtime, captureRoot, assets
     const combined = `${proc.stdout || ""}\n${proc.stderr || ""}`;
     const hasScreenshot = existsSync(screenshot);
     result.native = {
-      completed: proc.status === 0 && hasScreenshot,
+      completed: proc.status === 0 && hasScreenshot && !NATIVE_FRAME_FAILURE.test(combined),
       exitCode: proc.status,
       screenshot: hasScreenshot ? screenshot : null,
       stdout: (proc.stdout || "").slice(-4000),

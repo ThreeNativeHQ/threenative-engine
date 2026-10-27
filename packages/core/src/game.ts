@@ -1579,24 +1579,25 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     let heldTargetFps = initialTarget.targetFps;
     // Frame-share budgets elsewhere (the world's adaptive LOD) read the target, not the last frame.
     renderer.noteTargetFps?.(initialTarget.targetFps);
-    const scaler =
-      renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
+    const automaticScale = renderer.surface().scaleSource === "auto";
+    const createScaler = () =>
+      automaticScale && heldTargetFps > 0
         ? new ResolutionScaler({
             // Phones keep the device ladder; a desktop stops before its bottom, where a picture
             // with nothing reconstructing it stops being a faster frame and becomes a blur.
             minScale: resolvePlatformResolutionFloor(getPlatform().os),
             // The adapter family picks the first rung; the first eligible window still decides.
             start:
-              renderer.gpuClass === undefined
+              renderer.temporalUpscaleStartScale?.() ??
+              (renderer.gpuClass === undefined
                 ? undefined
-                : RESOLUTION_SCALER.startScaleByGpuClass[renderer.gpuClass.class],
-            targetFps: initialTarget.targetFps,
-            // No floor lift from motion data: consuming velocity is not upscaling. Three's TRAA
-            // accumulates at the canvas's own size, so lifting the floor for it let a forest frame
-            // fall to 0.23 (442x248 on a 1920x1080 canvas). Only a stage that reconstructs a
-            // display-resolution frame may pass `temporalUpscale`, and none ships today.
+                : RESOLUTION_SCALER.startScaleByGpuClass[renderer.gpuClass.class]),
+            targetFps: heldTargetFps,
+            temporalUpscale: () => renderer.temporalUpscale?.() === true,
           })
         : undefined;
+    let scaler = createScaler();
+    let temporalStartApplied = renderer.temporalUpscale?.() === true;
     // A class that starts below the ceiling must draw there from the first frame; the scaler only
     // reports a scale, and nothing else would apply it until a window steps.
     if (scaler !== undefined && scaler.scale !== 1)
@@ -2013,6 +2014,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                   ? {}
                   : { backend: rendererBackendIdentity(renderer.raw) as string }),
               });
+            }
+            // Scene.enter installs the chain after the scaler is created; choose its tier before its first draw.
+            if (!temporalStartApplied && scaler !== undefined && renderer.temporalUpscale?.()) {
+              scaler = createScaler();
+              temporalStartApplied = true;
+              if (scaler !== undefined)
+                renderer.setResolutionScale(scaler.scale, scaler.scaleSource);
             }
             renderer.render(renderRoot, camera);
             renders += 1;

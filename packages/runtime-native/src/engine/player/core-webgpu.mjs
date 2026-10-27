@@ -79,6 +79,13 @@ function drawSecondaryPasses(renderer) {
 export class WebGPURenderer {
   // The native scene pass draws to the player-owned surface, not a retained frame target.
   supportsRetainedTargetSubrect = false;
+  renderScale = 1;
+  get temporalUpscale() { return globalThis.tn.renderInfo().temporalUpscale === true; }
+  setRenderScale(scale) {
+    if (!Number.isFinite(scale) || scale < 0.25 || scale > 1)
+      throw new Error("renderScale must be finite and between 0.25 and 1.");
+    this.renderScale = scale;
+  }
   constructor({ canvas, antialias = false } = {}) {
     this.domElement = canvas;
     this.samples = antialias ? 4 : 0;

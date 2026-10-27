@@ -24,6 +24,7 @@ function testCanvas(): HTMLCanvasElement {
 async function startOn(
   info: Record<string, string> | undefined,
   render: Record<string, unknown> = {},
+  temporalUpscale = false,
 ): Promise<{ gpuClass?: string; scale: number; scaleSource: string }> {
   const canvas = testCanvas();
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
@@ -50,6 +51,8 @@ async function startOn(
         init: async () => undefined,
         render: () => undefined,
         setSize: () => undefined,
+        temporalUpscale,
+        setRenderScale: () => undefined,
       }),
     },
     scenes: { test: Empty },
@@ -76,6 +79,17 @@ async function startOn(
 }
 
 describe("the first rung comes from the adapter family", () => {
+  it.each([
+    [
+      "integrated",
+      { architecture: "gen-12lp", description: "", device: "", vendor: "intel" },
+      0.72,
+    ],
+    ["discrete", { architecture: "turing", description: "", device: "", vendor: "nvidia" }, 0.85],
+  ])("starts owned temporal upsampling at the %s tier's rung", async (gpuClass, info, scale) => {
+    expect(await startOn(info, {}, true)).toEqual({ gpuClass, scale, scaleSource: "auto" });
+  });
+
   it("names only mobile-low in the start table", () => {
     expect(RESOLUTION_SCALER.startScaleByGpuClass).toEqual({ "mobile-low": 0.85 });
   });
@@ -103,10 +117,11 @@ describe("the first rung comes from the adapter family", () => {
     expect(await startOn(undefined)).toEqual({ scale: 1, scaleSource: "auto" });
   });
 
-  it("never overrules a pinned scale", async () => {
+  it.each([false, true])("keeps a pinned scale with temporal upsampling %s", async (temporal) => {
     const result = await startOn(
       { architecture: "bifrost", description: "Mali-G52 MC2", device: "", vendor: "arm" },
       { resolutionScale: 1 },
+      temporal,
     );
     expect(result).toEqual({ gpuClass: "mobile-low", scale: 1, scaleSource: "pinned" });
   });

@@ -48,7 +48,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 3;
+export const WEB_HOST_ABI = 4;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -146,6 +146,15 @@ export function defineWebRenderer(
     readonly isWebGPURenderer = true;
     /** The native scene pass draws to the surface; there is no frame RenderTarget to retain. */
     readonly supportsRetainedTargetSubrect = false;
+    renderScale = 1;
+    get temporalUpscale(): boolean {
+      return module._tnw_web_frame(34) === 1;
+    }
+    setRenderScale(scale: number): void {
+      if (!Number.isFinite(scale) || scale < 0.25 || scale > 1)
+        throw new Error("renderScale must be finite and between 0.25 and 1.");
+      this.renderScale = scale;
+    }
     readonly domElement: HTMLCanvasElement;
     readonly info = {
       autoReset: true,
@@ -181,6 +190,11 @@ export function defineWebRenderer(
           clamped: 0,
           pixels: 0,
           countedFrame: 0,
+          inputWidth: 0,
+          inputHeight: 0,
+          outputWidth: 0,
+          outputHeight: 0,
+          jitterLength: 0,
         },
         // The samples the scene draws with. `samples` above is what was asked for; 1 here while the temporal pass runs.
         samples: 1,
@@ -512,14 +526,26 @@ export function defineWebRenderer(
       temporal.clamped = module._tnw_web_frame(31);
       temporal.pixels = module._tnw_web_frame(32);
       temporal.countedFrame = module._tnw_web_frame(33);
+      temporal.inputWidth = module._tnw_web_frame(35);
+      temporal.inputHeight = module._tnw_web_frame(36);
+      temporal.jitterLength = module._tnw_web_frame(37);
+      temporal.outputWidth = module._tnw_web_frame(38);
+      temporal.outputHeight = module._tnw_web_frame(39);
       engine.samples = module._tnw_web_frame(18);
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */
     #applyState(): void {
-      const { toneMapping, toneMappingExposure, outputColorSpace, shadowMap, samples } = this;
+      const {
+        toneMapping,
+        toneMappingExposure,
+        outputColorSpace,
+        shadowMap,
+        samples,
+        renderScale,
+      } = this;
       this.library.apply(toneMapping);
-      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}`;
+      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}|${renderScale}`;
       if (key === this.#state) return;
       const space = string(String(outputColorSpace));
       try {
@@ -531,6 +557,7 @@ export function defineWebRenderer(
             shadowMap.enabled ? 1 : 0,
             shadowMap.type,
             samples,
+            renderScale,
           ),
         );
       } finally {
