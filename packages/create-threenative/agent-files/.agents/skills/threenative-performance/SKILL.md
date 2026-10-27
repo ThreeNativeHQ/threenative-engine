@@ -15,6 +15,7 @@ output, never measurement.
 the display period: move draws and objects, not settings. `npx threenative doctor` and
 `DEV_MODE=true` repeat it; `TN_FRAME_SPANS=1` splits that phase.
 Largest static win: three skips binding updates when nothing changed; not writing a transform saved 7.35 ms on 1,561 objects, `markStatic(root)` 0.009 ms.
+A slow pattern in your own code that no check caught (a scene walk or a property poll every frame) is a gap in the harness: fix your code, then report it with the `file-engine-bug` skill, so the engine, the playtest or the `pnpm check` lint rejects it in every game.
 
 ## Use the shipped defaults
 
