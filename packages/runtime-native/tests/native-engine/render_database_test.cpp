@@ -4560,6 +4560,95 @@ void lampCache() {
     CHECK(renderer.lastFrame().lampShadowDraws > 0 && renderer.lastFrame().lampShadowDraws < both);
 }
 
+// PRD-650: a lamp whose map is cached must not pack or upload its casters' uniform slices. One
+// shadow-only caster under a still spot light is compared with an empty control renderer of the
+// same output state: the cached frame uploads the control's bytes and draws no shadow.
+void cachedLampHasNoUniformUpload() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    Renderer control(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    const auto configure = [](Renderer& r) {
+        r.setSize(96, 96);
+        r.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    };
+    configure(renderer);
+    configure(control);
+    CameraState camera;
+    const double near = 0.1, far = 10, cz = -far / (far - near), d = -far * near / (far - near);
+    camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -6, 1};
+    camera.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 6, 1};
+    camera.projectionMatrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, cz, -1, 0, 0, d, 0};
+    shader::StandardMaterial material;
+    BufferStore positions(Scalar::F32, 9);
+    const float triangle[] = {-1, -1, 0.5f, 1, -1, 0.5f, 0, 1, 0.5f};
+    positions.write(0, triangle, sizeof triangle);
+    DrawItem caster;
+    caster.key = caster.id = 1;
+    caster.positions = &positions;
+    caster.material = &material;
+    caster.mainPass = false;
+    caster.castShadow = true;
+    caster.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const std::span<const DrawItem> items(&caster, 1);
+    LightState lights;
+    DirectLight spot;
+    spot.id = 1;
+    spot.kind = DirectLight::Kind::Spot;
+    spot.position = {0, 3, 0};
+    spot.direction = {0, 1, 0};
+    spot.coneCos = 0.5;
+    spot.penumbraCos = 0.4;
+    DirectLight::Shadow shadow;
+    shadow.width = shadow.height = 256;  // the game's fixed size, so the footprint rule leaves it alone
+    shadow.view = camera.matrixWorldInverse;
+    shadow.projection = camera.projectionMatrix;
+    shadow.matrix = camera.matrixWorldInverse;
+    shadow.near = near;
+    shadow.far = far;
+    shadow.layersMask = 1;
+    spot.shadow = shadow;
+    lights.direct.push_back(spot);
+    const std::array<double, 4> clear{0.05, 0.06, 0.08, 1};
+    const auto framePair = [&] {
+        const auto upload = [&](Renderer& r, std::span<const DrawItem> draws) {
+            const uint64_t before = r.gpu().queueWriteBytes();
+            r.render(draws, camera, lights, clear);
+            return r.gpu().queueWriteBytes() - before;
+        };
+        const uint64_t bytes = upload(renderer, items), baseline = upload(control, {});
+        renderer.poll();
+        control.poll();
+        events.drain();
+        return std::pair{bytes, baseline};
+    };
+    for (int warm = 0; warm < 4; ++warm) framePair();
+    const auto [cached, baseline] = framePair();
+    std::printf("cached lamp upload: caster %llu bytes, empty control %llu bytes, %u shadow draws\n",
+                static_cast<unsigned long long>(cached), static_cast<unsigned long long>(baseline),
+                renderer.lastFrame().shadowDraws);
+    CHECK(renderer.lastFrame().shadowDraws == 0);
+    CHECK(cached == baseline);
+    // The signature still redraws on a changed material cut and on a resized map, and caches again.
+    material.alphaTest = 0.5f;
+    const auto cut = framePair().first;
+    std::printf("cached lamp upload: changed cut %llu bytes, %u shadow draws\n",
+                static_cast<unsigned long long>(cut), renderer.lastFrame().shadowDraws);
+    CHECK(renderer.lastFrame().shadowDraws > 0);
+    const auto [cutCached, cutBaseline] = framePair();
+    CHECK(renderer.lastFrame().shadowDraws == 0);
+    CHECK(cutCached == cutBaseline);
+    lights.direct[0].shadow->width = lights.direct[0].shadow->height = 128;
+    const auto resized = framePair().first;
+    std::printf("cached lamp upload: resized map %llu bytes, %u shadow draws\n",
+                static_cast<unsigned long long>(resized), renderer.lastFrame().shadowDraws);
+    CHECK(renderer.lastFrame().shadowDraws > 0);
+    const auto [resizedCached, resizedBaseline] = framePair();
+    CHECK(renderer.lastFrame().shadowDraws == 0);
+    CHECK(resizedCached == resizedBaseline);
+}
+
 void lampAtlas() {
     // PRD-650 Phase 1: Unreal's local-light rule picks the map from the pixel footprint.
     using shadows::LampDemand;
@@ -6066,7 +6155,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

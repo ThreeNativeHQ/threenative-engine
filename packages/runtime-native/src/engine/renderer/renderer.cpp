@@ -439,6 +439,7 @@ struct Renderer::Planned {
     Program* program;
     WGPURenderPipeline pipeline;
     uint32_t vertexOffset, fragmentOffset;
+    double instanceBase = 0;  // a shadow draw's slice in the packed instance storage
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
 };
@@ -449,6 +450,8 @@ struct Renderer::ShadowPass {
     int virtualLevel = -1;
     bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
+    // The camera this pass draws through, kept so the retained draws pack after the lamp cache decides.
+    Matrix view{}, projection{};
     std::vector<Planned> draws;
 };
 
@@ -3198,6 +3201,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
         ShadowPass& pass = shadowPasses.emplace_back();
         pass.lamp = lamp; pass.virtualLight = i;
+        pass.view = view;
+        pass.projection = page ? page->projection.elements : shadow.projection;
         pass.target = compilation ? nullptr : virtualMap ? virtualIt->second.map.view : shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
         if (page) {
             const auto& atlas = virtualIt->second.atlas;
@@ -3307,60 +3312,77 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
-            const uint64_t v = frameUniforms_.size();
-            const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
-            frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
-            if (masked || variant.alphaHash) {
-                const shader::StandardMaterial& m = *item.material;
-                const auto* fs = program.fragmentSlots;
-                put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
-                put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
-                put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{0.0});
-                if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
-            }
-            put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
-            if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{instanceBases.at(drawn)});
-            put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
-            put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], page ? page->projection.elements : shadow.projection);
-            // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
-            // positionNode) read that camera here: its world matrix is the view's inverse.
-            Matrix4 shadowCamera;
-            shadowCamera.elements = view;
-            shadowCamera.invert();
-            const std::array<double, 3> shadowPosition{shadowCamera.elements[12], shadowCamera.elements[13], shadowCamera.elements[14]};
-            put(frameUniforms_, v, program.vertexSlots[kCameraWorldMatrix], shadowCamera.elements);
-            put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
-            put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
-            putSkin(v, program.vertexSlots, item);
-            putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
-            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>((masked || variant.alphaHash) ? f : 0)});
+            pass.draws.push_back({&item, &program, pipeline, 0, 0,
+                                  item.instanceMatrices ? instanceBases.at(drawn) : 0.0});  // packed below, after the lamp cache decides
         }
         }
         // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
         // and each caster's matrix, geometry and cut. A GPU-deformed caster changes every frame.
-        if (!lamp) continue;
-        uint64_t h = 0xcbf29ce484222325ull;
-        const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
-        const auto mixMatrix = [&](const Matrix& m) { for (double e : m) mix(std::bit_cast<uint64_t>(e)); };
-        const auto mixStore = [&](const BufferStore* b) { mix(reinterpret_cast<uintptr_t>(b)); if (b) { mix(b->version()); mix(b->epoch()); } };  // three uploads on needsUpdate, not on a write
-        bool animated = false;
-        mixMatrix(shadow.projection);
-        if (shadow.cube) for (const Matrix& m : shadow.faceViews) mixMatrix(m); else mixMatrix(shadow.view);
-        mix(mapExtent(i)[0]); mix(mapExtent(i)[1]);
+        if (lamp) {
+            uint64_t h = 0xcbf29ce484222325ull;
+            const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
+            const auto mixMatrix = [&](const Matrix& m) { for (double e : m) mix(std::bit_cast<uint64_t>(e)); };
+            const auto mixStore = [&](const BufferStore* b) { mix(reinterpret_cast<uintptr_t>(b)); if (b) { mix(b->version()); mix(b->epoch()); } };  // three uploads on needsUpdate, not on a write
+            bool animated = false;
+            mixMatrix(shadow.projection);
+            if (shadow.cube) for (const Matrix& m : shadow.faceViews) mixMatrix(m); else mixMatrix(shadow.view);
+            mix(mapExtent(i)[0]); mix(mapExtent(i)[1]);
+            for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
+                mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
+                for (const Planned& p : shadowPasses[k].draws) {
+                    const DrawItem& item = *p.item;
+                    animated |= item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                    mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
+                    mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
+                    mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map));
+                    mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+                }
+            }
+            uint64_t& last = lampSignatures_[i];
+            if (!animated && last == h) {
+                shadowPasses.erase(shadowPasses.begin() + std::ptrdiff_t(firstPass), shadowPasses.end());
+                continue;  // a cache hit packs and uploads nothing for this lamp
+            }
+            last = animated ? 0 : h;
+        }
+        // Pack only the passes that run: a cached lamp's casters never allocate, fill or upload a slice.
         for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
-            mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
-            for (const Planned& p : shadowPasses[k].draws) {
-                const DrawItem& item = *p.item;
-                animated |= item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
-                mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
-                mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
-                mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map));
-                mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+            ShadowPass& kept = shadowPasses[k];
+            for (Planned& planned : kept.draws) {
+                const DrawItem& item = *planned.item;
+                Program& program = *planned.program;
+                const bool masked = item.material->alphaTest > 0;
+                const bool fragmentBlock = masked || variantOf(item).alphaHash;
+                const uint64_t v = frameUniforms_.size();
+                const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
+                frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
+                if (fragmentBlock) {
+                    const shader::StandardMaterial& m = *item.material;
+                    const auto* fs = program.fragmentSlots;
+                    put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
+                    put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
+                    put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{0.0});
+                    if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
+                }
+                put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
+                if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{planned.instanceBase});
+                put(frameUniforms_, v, program.vertexSlots[kViewMatrix], kept.view);
+                put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], kept.projection);
+                // r185 draws a caster through the shadow camera, so TSL's camera accessors (a billboard's
+                // positionNode) read that camera here: its world matrix is the view's inverse.
+                Matrix4 shadowCamera;
+                shadowCamera.elements = kept.view;
+                shadowCamera.invert();
+                const std::array<double, 3> shadowPosition{shadowCamera.elements[12], shadowCamera.elements[13], shadowCamera.elements[14]};
+                put(frameUniforms_, v, program.vertexSlots[kCameraWorldMatrix], shadowCamera.elements);
+                put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
+                put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], kept.projection);
+                putSkin(v, program.vertexSlots, item);
+                putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
+                planned.vertexOffset = static_cast<uint32_t>(v);
+                planned.fragmentOffset = static_cast<uint32_t>(fragmentBlock ? f : 0);
             }
         }
-        uint64_t& last = lampSignatures_[i];
-        if (!animated && last == h) shadowPasses.erase(shadowPasses.begin() + std::ptrdiff_t(firstPass), shadowPasses.end());
-        else last = animated ? 0 : h;
     }
 
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
