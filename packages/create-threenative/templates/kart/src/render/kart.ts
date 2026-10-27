@@ -136,6 +136,8 @@ function bodyGeometry(livery: ILivery) {
 
 export class KartModel {
   readonly root = new Group();
+  /** The kart's own box in the root's frame, measured once here while the root is still identity. */
+  readonly bounds = new Box3();
   readonly #rear: Mesh;
   readonly #fronts: readonly Group[];
   readonly #frontWheels: readonly Mesh[];
@@ -191,7 +193,8 @@ export class KartModel {
       return glow;
     });
     // The tumble's lift is measured from the kart itself, not the hidden flame and glows.
-    const bounds = new Box3().setFromObject(body);
+    const bounds = this.bounds;
+    bounds.setFromObject(body);
     bounds.expandByObject(this.#rear);
     for (const pivot of fronts) bounds.expandByObject(pivot);
     this.#halfLength = Math.max(-bounds.min.z, bounds.max.z);

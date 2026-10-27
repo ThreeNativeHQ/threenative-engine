@@ -7,7 +7,7 @@ import {
   isTouchscreenAvailable,
   qualityTiers,
 } from "@threenative/core";
-import { Box3, type DataTexture, Euler, type PerspectiveCamera, Vector3 } from "three";
+import { type DataTexture, Euler, type PerspectiveCamera, Vector3 } from "three";
 import { Driver } from "../entities/Driver.js";
 import { CourseItem, ITEM_FEEL, ItemSlot, drawItem } from "../entities/Items.js";
 import { type IKartInput, Kart, idleInput } from "../entities/Kart.js";
@@ -29,6 +29,8 @@ import { RACE, Racer, rank } from "../track/Race.js";
 
 export type GameCtx = ICtx<GameState>;
 
+/** One corner of a kart's box at a time, for the sink meter; reused so a step allocates nothing. */
+const scratchCorner = new Vector3();
 /** Seconds from the scene's start to GO: "READY", then the three lamps. */
 const GO_AT = RACE.ready + RACE.light * RACE.lights;
 /** A kart's bump footprint, metres: an ellipse this long and this wide around its centre (the model is 2.15 m by 1.4 m). */
@@ -131,7 +133,6 @@ export class Race extends Scene<GameState> {
   #items: CourseItem[] = [];
   #boxes: ItemBoxes | undefined;
   #post: ReturnType<typeof setupPost> | undefined;
-  readonly #box = new Box3();
 
   /**
    * Everything a scenario can place is built and registered here: `setup.place` is applied after
@@ -165,6 +166,9 @@ export class Race extends Scene<GameState> {
       const model = new KartModel(livery);
       model.update(kart, 0, 0);
       ctx.add(model.root);
+      // Draw the model between fixed ticks, as the camera already is: a model that only steps
+      // stands a whole tick in front of the smoothed chase camera and snaps back every render.
+      ctx.interpolate(model.root);
       const entrant: IEntrant = {
         boxes: 0,
         driver: new Driver(kart, slot % 2 === 0 ? -3 : 3, 0.5 + (i % 4) * 0.04),
@@ -749,23 +753,24 @@ export class Race extends Scene<GameState> {
         }
       }
       // The rendered model's lowest point against the road under the kart: a hit must not sink it.
-      // Hidden effect meshes do not count, and one Box3 is reused, so a frame allocates nothing.
-      // Only a kart in a spin or a tumble is measured: the walk visits every vertex, and a kart on
-      // its wheels cannot dip below its own road contact.
+      // The kart's own box (measured once, in the root's frame) is placed by the root's matrix, so
+      // a step reads 8 corners, not every vertex: the vertex walk cost 105 ms a step and hung the
+      // race on every hit (owner trace, 2026-10-26). A corner sits at or below the mesh it bounds,
+      // so this reads a sink no smaller than the real one. Only a spun or tumbled kart is measured.
       for (const entrant of field) {
         const { kart, model } = entrant;
         if (!kart.hit) continue;
-        model.root.updateWorldMatrix(true, true);
-        this.#box.makeEmpty();
-        model.root.traverseVisible((object) => {
-          if ((object as { geometry?: unknown }).geometry !== undefined)
-            this.#box.expandByObject(object, true);
-        });
+        model.root.updateWorldMatrix(true, false);
+        const { min, max } = model.bounds;
+        let lowest = Number.POSITIVE_INFINITY;
+        for (let corner = 0; corner < 8; corner += 1) {
+          scratchCorner
+            .set(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z)
+            .applyMatrix4(model.root.matrixWorld);
+          lowest = Math.min(lowest, scratchCorner.y);
+        }
         const road = course.heightAt(kart.index, kart.x, kart.z);
-        entrant.lowestPointBelowRoad = Math.max(
-          entrant.lowestPointBelowRoad,
-          road - this.#box.min.y,
-        );
+        entrant.lowestPointBelowRoad = Math.max(entrant.lowestPointBelowRoad, road - lowest);
       }
       boxes.update(elapsed, (i) => (boxReady[i] ?? 0) <= elapsed, dt, camera.position);
       rig.update(player.kart, dt);
