@@ -313,17 +313,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
   adventure: "df21f0d88fa88177edfb1070c19857b6a7c55034fc70392d405a44092e80ab27",
+  // Recomputed 2026-10-26 (PRD-747 kits): kart, puzzle, racing, runner and sailing play fixes
+  // (their src/, playtests/ and HUD text), measured by this test on a clean committed tree.
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "028a13659ff063ff678ef9587869c29621343ee8954ae842045a58f5b09efb87",
+  kart: "86b8d1c72acf87c9c34a0f6ca498ed480af84e9546223553734b7ae758a3bfcc",
   minimal: "2786d7eee1ba93183585b2a9a20ea370c7d98cad4543cbd07849b5145c17d49e",
   platformer: "c26471c971cb8c50b631056f00d023ccf415fa1ec12eb2102b164fb6f84ce33a",
-  puzzle: "40cbf8678e99518926645d85e18f3b4bcd15d203acae0dee11370a279670b7fe",
-  racing: "af1a4f9bfa7b72f4706840c4284231455f6fcba9331ff0c91a975427c9b59f07",
+  puzzle: "ed8204b07e2c2b49a7b122b31e286933919139f86ec6bf87721f97e8bca7cad3",
+  racing: "944e02cac888cb2206bd899921515bf1a83a2a2dc7c132df4fd0a1d3fc6d8963",
   rain: "dfc3521b5c75c2f426ddfc1696e80b4abe6f83c5be8a133a3120bb89b2d9c52a",
   rts: "22059980238c7743d8251ebdd49eaffd49ae7f878a7904fb75a3a8be93582cf8",
-  runner: "cda53296a601c2dac944f169afc60d94d3fa03f049f5a3eaf88889819f1ec55d",
+  runner: "3af572936263e53f724fa05857569072ca2f1f4005c14db69056b537de7af060",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "ac58cb2f1d94350034a65bafb3a1342b74321907498c0efe26aac774f4aef7ee",
+  sailing: "4ab318b3ef282297ce92380fb5c2e799b05649723bcd02abe973aae09c6706d6",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
   shooter: "9fa985dc606e5b8504b6a3a319910e1279fae150f844ef179510128dd763edf3",
   snow: "fac9211670fda9559467ee53e287254517f4775791b989f4a81a5ec4158c3334",
