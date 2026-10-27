@@ -1178,7 +1178,30 @@ async function handleLine(line2, manifestFile) {
     return jsonRpcError(request.id, -32e3, message);
   }
 }
+async function runCli(argv, manifestFile = defaultManifestPath(), io = {
+  stderr: (text2) => void process.stderr.write(text2),
+  stdout: (text2) => void process.stdout.write(text2)
+}) {
+  const [name, json = "{}"] = argv;
+  try {
+    const result = await handleToolCall({ arguments: JSON.parse(json), name }, manifestFile);
+    io.stdout(`${result.content[0].text}
+`);
+    return 0;
+  } catch (error) {
+    io.stderr(`${name}: ${error instanceof Error ? error.message : String(error)}
+`);
+    return 1;
+  }
+}
 function runServer(manifestFile = defaultManifestPath()) {
+  const tool = process.argv[2];
+  if (tool?.startsWith("engine_") === true) {
+    void runCli(process.argv.slice(2), manifestFile).then((code) => {
+      process.exitCode = code;
+    });
+    return;
+  }
   loadCapabilityManifest(manifestFile);
   const input = createInterface({ input: process.stdin });
   void loadReferenceIndex().catch((error) => process.stderr.write(`${String(error)}
@@ -1200,4 +1223,4 @@ if (entryPath !== void 0 && realpathSync(path2.resolve(entryPath)) === realpathS
   }
 }
 
-export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilityDetails, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };
+export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilityDetails, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runCli, runServer, searchCapabilities, toolDefinitions };

@@ -596,6 +596,9 @@ describe("create-threenative", () => {
         /\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u,
       );
       expect(scaffoldNextSteps("/w/mario64", false)).toMatch(/pnpm install[\s\S]*\.mcp\.json/u);
+      expect(scaffoldNextSteps("/w/mario64", true)).toContain(
+        "node node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities",
+      );
       expect(source).not.toContain("Templates: minimal (smallest)");
     } finally {
       await rm(root, { force: true, recursive: true });

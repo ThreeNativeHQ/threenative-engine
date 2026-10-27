@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
-import { handleLine } from "../src/index.js";
+import { handleLine, runCli } from "../src/index.js";
 
 const manifestFile = path.resolve("packages/create-threenative/capabilities.json");
 
@@ -318,5 +318,27 @@ describe("threenative-engine-mcp stdio contract", async () => {
       manifestFile,
     );
     expect(() => readFileSync(logFile, "utf8")).toThrow();
+  });
+
+  // Kit-loop row 1 (PRD-750): a session started outside the project never loads .mcp.json, so the
+  // same tools answer one call from the command line.
+  it("answers one tool call from the command line, and fails closed on a bad call", async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const io = {
+      stderr: (text: string) => err.push(text),
+      stdout: (text: string) => out.push(text),
+    };
+    expect(
+      await runCli(
+        ["engine_search_capabilities", '{"situation":"make me a game like mario"}'],
+        manifestFile,
+        io,
+      ),
+    ).toBe(0);
+    expect(JSON.parse(out.join("")).starterKits?.[0]?.name).toBe("collectathon");
+    expect(await runCli(["engine_search_capabilities", "{not json"], manifestFile, io)).toBe(1);
+    expect(await runCli(["engine_no_such_tool", "{}"], manifestFile, io)).toBe(1);
+    expect(err.join("")).toMatch(/engine_no_such_tool/u);
   });
 });

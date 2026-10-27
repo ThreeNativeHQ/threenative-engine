@@ -1213,7 +1213,41 @@ export async function handleLine(line: string, manifestFile: string): Promise<st
   }
 }
 
+/**
+ * One tool call from the command line: `engine.mjs <tool> '<json arguments>'` prints the tool's
+ * text and exits 0, or names the error and exits 1. A session started outside the project never
+ * loads its `.mcp.json`, and this is how it still searches (PRD-750 kit-loop row 1).
+ */
+export async function runCli(
+  argv: readonly string[],
+  manifestFile = defaultManifestPath(),
+  io = {
+    stderr: (text: string) => void process.stderr.write(text),
+    stdout: (text: string) => void process.stdout.write(text),
+  },
+): Promise<number> {
+  const [name, json = "{}"] = argv;
+  try {
+    const result = await handleToolCall(
+      { arguments: JSON.parse(json) as unknown, name },
+      manifestFile,
+    );
+    io.stdout(`${result.content[0].text}\n`);
+    return 0;
+  } catch (error) {
+    io.stderr(`${name}: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+}
+
 export function runServer(manifestFile = defaultManifestPath()): void {
+  const tool = process.argv[2];
+  if (tool?.startsWith("engine_") === true) {
+    void runCli(process.argv.slice(2), manifestFile).then((code) => {
+      process.exitCode = code;
+    });
+    return;
+  }
   // Load before accepting requests. A missing manifest is a startup failure, never an empty tool
   // response that an authoring agent could mistake for the engine having no capabilities.
   loadCapabilityManifest(manifestFile);
