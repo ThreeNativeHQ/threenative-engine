@@ -47,6 +47,22 @@ describe("frame budget render skips", () => {
     expect(windows.map((window) => window.renderSkips)).toEqual([2, undefined]);
   });
 
+  it("reports drawn frames and their interval beside the loop's, which it leaves as it was", () => {
+    // The shooter on the web, 2026-10-27: 270 getCurrentTexture presents against 293 rAF ticks in one
+    // window, while presented p95 read 16.8 ms. The window line must show the frames the player lost.
+    const budget = new FrameBudget({ report: () => {}, reportEvery: 1000 });
+    drive(budget, [false, true, false, true, false, true, false]);
+    const window = budget.window();
+    expect(window.renderSkips).toBe(3);
+    expect(window.drawnFrames).toBe(4);
+    expect(window.drawn.samples).toBe(3);
+    expect(window.drawn.p50).toBeCloseTo(33.4, 5);
+    expect(window.drawnFps).toBeCloseTo(29.94, 1);
+    expect(window.presented.samples).toBe(6);
+    expect(window.presented.p50).toBeCloseTo(16.7, 5);
+    expect(window.fps).toBeCloseTo(59.88, 1);
+  });
+
   it("refuses a skip reported outside a frame", () => {
     const budget = new FrameBudget({ report: () => {}, reportEvery: 10 });
     expect(() => budget.addRenderSkip()).toThrow("outside a frame");

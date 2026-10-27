@@ -294,6 +294,16 @@ export interface IFrameBudgetWindow {
   readonly presentedFps?: number;
   /** Interval between loop frames — the honest frame period where the loop presents every frame. */
   readonly presented: IFrameBudgetSummary;
+  /**
+   * Interval between frames the renderer drew. A declined frame (`renderSkips`) adds its time to the
+   * next drawn frame's interval, because the display showed the previous image for both. Reported
+   * beside `presented`, which gates keep reading; on the web this is what the player saw.
+   */
+  readonly drawn: IFrameBudgetSummary;
+  /** Loop frames the renderer drew: `frames - renderSkips`. */
+  readonly drawnFrames: number;
+  /** Derived from the mean `drawn` interval: drawn frames per second. */
+  readonly drawnFps: number;
   /** Duration of the frame callback itself, entry to exit. */
   readonly frame: IFrameBudgetSummary;
   /** Fixed simulation steps executed in the callback. */
@@ -629,6 +639,8 @@ export class FrameBudget {
     | undefined;
   #scratch: Float64Array;
   #presented: Ring;
+  #drawn: Ring;
+  #drawnInWindow = 0;
   #frame: Ring;
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
@@ -677,6 +689,9 @@ export class FrameBudget {
   #hostGap = 0;
   #presentedDelta = 0;
   #lastTimestamp: number | undefined;
+  #frameTimestamp = 0;
+  /** The last drawn frame's timestamp; a declined frame leaves it, so the next drawn interval spans it. */
+  #lastDrawnTimestamp: number | undefined;
   #lastFrameEnd: number | undefined;
   #framesInWindow = 0;
   #hitchesInWindow = 0;
@@ -725,6 +740,7 @@ export class FrameBudget {
     }
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
+    this.#drawn = new Ring(capacity);
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
     this.#gpu = new Ring(capacity);
@@ -804,6 +820,7 @@ export class FrameBudget {
     this.#presentedDelta =
       this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
     this.#lastTimestamp = timestampMs;
+    this.#frameTimestamp = timestampMs;
   }
 
   /** The boundary between the fixed-step simulation and everything the render phase does. */
@@ -1016,8 +1033,17 @@ export class FrameBudget {
 
     this.#countPresents();
 
+    const drawn = !this.#renderSkippedThisFrame;
+    const drawnDelta =
+      drawn && this.#lastDrawnTimestamp !== undefined
+        ? Math.max(0, this.#frameTimestamp - this.#lastDrawnTimestamp)
+        : 0;
+    if (drawn) this.#lastDrawnTimestamp = this.#frameTimestamp;
+
     const isHitch = this.#presentedDelta >= this.hitchMs;
     if (isHitch) {
+      // The gap is excluded, so the next drawn interval must not start before it.
+      if (!drawn) this.#lastDrawnTimestamp = undefined;
       this.#passesThisFrame.length = 0;
       this.#hitchesInWindow += 1;
       this.#report(
@@ -1049,6 +1075,8 @@ export class FrameBudget {
     // The first frame has no predecessor, so it has neither an interval nor a host gap; pushing a
     // zero there would drag every percentile toward a frame that never happened.
     if (this.#presentedDelta > 0) this.#presented.push(this.#presentedDelta);
+    if (drawnDelta > 0) this.#drawn.push(drawnDelta);
+    if (drawn) this.#drawnInWindow += 1;
     if (this.#hostGap > 0) this.#phaseRings.hostGap.push(this.#hostGap);
     this.#phaseRings.update.push(update);
     this.#phaseRings.render.push(this.#renderMs);
@@ -1113,6 +1141,7 @@ export class FrameBudget {
   /** Reads the window in progress without disturbing it. */
   window(): IFrameBudgetWindow {
     const presented = this.#presented.summarize(this.#scratch);
+    const drawn = this.#drawn.summarize(this.#scratch);
     const phases = {
       hostGap: this.#phaseRings.hostGap.summarize(this.#scratch),
       overlay: this.#phaseRings.overlay.summarize(this.#scratch),
@@ -1231,6 +1260,9 @@ export class FrameBudget {
       hitches: this.#hitchesInWindow,
       phases,
       presented,
+      drawn,
+      drawnFrames: this.#drawnInWindow,
+      drawnFps: drawn.mean === 0 ? 0 : round(1_000 / drawn.mean),
       ...(presentCounted ? { presents: this.#presentsInWindow } : {}),
       ...(presentCounted && this.#presentsInWindow > 0 && windowSpanMs > 0
         ? { presentedFps: round((this.#presentsInWindow * 1_000) / windowSpanMs) }
@@ -1336,6 +1368,8 @@ export class FrameBudget {
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
     this.#windowIndex += 1;
     this.#presented.reset();
+    this.#drawn.reset();
+    this.#drawnInWindow = 0;
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
