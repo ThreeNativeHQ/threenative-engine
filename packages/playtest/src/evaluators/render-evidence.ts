@@ -241,6 +241,8 @@ export interface IFrameLane {
   readonly gpuP95?: number;
   /** The timestamp samples that GPU p95 rests on; absent when its window did not count them. */
   readonly gpuSamples?: number;
+  /** Other GPU processes on the host during the run (`foreignGpuProcesses`); a cost they share is contended. */
+  readonly foreignGpu?: readonly number[];
 }
 
 /** `DEFAULT_HITCH_MS` in the engine's frame budget: the present gap from which a frame is a hitch. */
@@ -301,10 +303,12 @@ function emitFrameBound(
     pass,
   });
   if (pass) return;
+  const foreign = lane.foreignGpu ?? [];
+  const contended = !costPass && foreign.length > 0;
   const detail = missing.length > 0
     ? `cannot be judged: the run did not measure ${missing.join(" or ")}`
     : !costPass
-      ? `cost p95 ${round(costP95)} ms (CPU ${round(cpuP95)}, GPU ${round(lane.gpuP95)}) is over ${ceiling} ms`
+      ? `cost p95 ${round(costP95)} ms (CPU ${round(cpuP95)}, GPU ${round(lane.gpuP95)}) is over ${ceiling} ms${contended ? ` while ${foreign.length} other GPU process${foreign.length === 1 ? "" : "es"} ran (${foreign.join(", ")})` : ""}`
       : `rAF interval p95 ${round(intervalP95)} ms on a real display is over ${ceiling} ms`;
   const fewSamples = missing.length === 0 && costPass && thinGpu;
   diagnostics.push({
@@ -315,6 +319,8 @@ function emitFrameBound(
     sourcePath,
     suggestion: fewSamples
       ? "Keep the scene moving through the judged window (hold a move input or loop a route): the engine skips static frames and takes no GPU sample on them."
+      : contended
+      ? "Other GPU work shared this measurement, so the cost holds its load too: rerun this scenario when they exit, before you change the game. A contended number is not the game's cost, so do not trade its look to pass it."
       : missing.length > 0
       ? "Keep the engine frame budget installed and run on an adapter with timestamp queries: an unmeasured cost is not a zero."
       : "Read the TN_FRAME_BUDGET marker for this run: it names which frame phase or GPU pass owns the time.",

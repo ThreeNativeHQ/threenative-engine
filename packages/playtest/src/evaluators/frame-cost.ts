@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { hostDisplayRequested } from "../runner/captureEnvironment.js";
 
 const FRAME_BUDGET = "TN_FRAME_BUDGET:";
@@ -12,6 +15,40 @@ export type FrameDisplay = "real" | "virtual";
  */
 export function frameDisplay(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): FrameDisplay {
   return platform === "linux" && !hostDisplayRequested(env) ? "virtual" : "real";
+}
+
+/**
+ * Chromium GPU processes on this host that this run did not start (Linux `/proc`; elsewhere none
+ * are seen). Each one shares the GPU with the measured game, so a cost bound it fails is
+ * contended: the number holds their load too. A process this run started descends from `ownPid`.
+ */
+export function foreignGpuProcesses(ownPid: number = process.pid, procRoot = "/proc", platform: string = process.platform): readonly number[] {
+  if (platform !== "linux") return [];
+  const read = (pid: string, file: string): string | undefined => {
+    try {
+      return readFileSync(join(procRoot, pid, file), "utf8");
+    } catch {
+      return undefined; // the process exited between the listing and the read
+    }
+  };
+  const parentOf = (pid: number): number | undefined => {
+    const stat = read(String(pid), "stat");
+    // `pid (comm) state ppid ...`; comm may hold spaces, so split after its closing parenthesis.
+    const ppid = stat === undefined ? undefined : Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
+    return ppid === undefined || !Number.isSafeInteger(ppid) ? undefined : ppid;
+  };
+  const ours = (pid: number): boolean => {
+    for (let current: number | undefined = pid, hops = 0; current !== undefined && current > 1 && hops < 64; hops++) {
+      if (current === ownPid) return true;
+      current = parentOf(current);
+    }
+    return false;
+  };
+  return readdirSync(procRoot)
+    .filter((entry) => /^\d+$/u.test(entry) && (read(entry, "cmdline") ?? "").split("\0").includes("--type=gpu-process"))
+    .map(Number)
+    .filter((pid) => !ours(pid))
+    .sort((a, b) => a - b);
 }
 
 /**

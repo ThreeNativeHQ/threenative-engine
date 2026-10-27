@@ -1,7 +1,12 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { evaluateRichPlaytestAssertions } from "../src/index.js";
+import { foreignGpuProcesses } from "../src/evaluators/frame-cost.js";
+import { evaluatePerformanceAssertion } from "../src/evaluators/render-evidence.js";
 import { validatePlaytestScenario } from "../src/scenario.js";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import type { IPlaytestCaptureProvenance, IPlaytestReport } from "../src/report.js";
 
 const RTX_2080 = { architecture: "turing", description: "NVIDIA", device: "NVIDIA GeForce RTX 2080", vendor: "nvidia" };
@@ -196,5 +201,36 @@ describe("frame bound by display", () => {
     const { frame, messages } = evaluate({ maxDrawCalls: 600 }, bare, RTX_2080, 3);
     expect(frame?.pass).toBe(false);
     expect(messages.join(" ")).toMatch(/did not measure the CPU frame split/u);
+  });
+});
+
+describe("a cost bound measured beside other GPU work", () => {
+  it("names the other GPU processes and says to rerun, not to cut the game", () => {
+    const { diagnostics } = evaluatePerformanceAssertion(
+      { maxFrameMsP95: 16.7 },
+      frames(16.7, 3),
+      "perf.json",
+      { display: "virtual", foreignGpu: [4242, 4343], gpuP95: 20, gpuSamples: 8 },
+    );
+    const failed = diagnostics.find(({ code }) => code === "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED");
+    expect(failed?.message).toMatch(/while 2 other GPU processes ran \(4242, 4343\)/u);
+    expect(failed?.suggestion).toMatch(/rerun .* when they exit/u);
+  });
+
+  it("finds Chromium GPU processes that are not this run's descendants", () => {
+    const proc = makeTempDirSync("foreign-gpu");
+    const task = (pid: number, ppid: number, cmd: string) => {
+      mkdirSync(path.join(proc, String(pid)));
+      writeFileSync(path.join(proc, String(pid), "cmdline"), cmd.split(" ").join("\0"));
+      writeFileSync(path.join(proc, String(pid), "stat"), `${pid} (chrome) S ${ppid} 0 0`);
+    };
+    task(100, 1, "node runner.js");
+    task(101, 100, "chrome --type=browser");
+    task(102, 101, "chrome --type=gpu-process --use-angle");
+    task(200, 1, "chrome --type=browser");
+    task(201, 200, "chrome --type=gpu-process --use-angle");
+    task(300, 1, "chrome --type=renderer");
+    expect(foreignGpuProcesses(100, proc, "linux")).toEqual([201]);
+    expect(foreignGpuProcesses(100, proc, "darwin")).toEqual([]);
   });
 });
