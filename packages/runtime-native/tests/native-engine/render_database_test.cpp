@@ -3219,8 +3219,9 @@ void gpuTimerCoversOffscreen() {
         }
         CHECK(renderer.gpuSamples() == before + 1);
         CHECK(renderer.gpuSourceFrame() == (deferred ? 42 : 41));
-        // Each renderer encodes a scene and an output pass, including the offscreen sibling.
-        CHECK(renderer.gpuTimestampPasses() == 4);
+        // Two scene passes and one output pass: the offscreen sibling's image is read through its
+        // scene colour, so it records no output pass of its own (a0ecc6f0d).
+        CHECK(renderer.gpuTimestampPasses() == 3);
         CHECK(renderer.lastGpuMs() > 0);
         const auto segments = renderer.lastGpuSegments();
         CHECK(segments[1] > 0 && segments[2] > 0 && segments[3] > 0);
