@@ -96,6 +96,21 @@ no COOP/COEP); that lane is open.
   clipAction exemption) took 825 and 340 crossings; the next candidates are each under 40 per frame.
 - Knob: `__THREENATIVE_BRIDGE_CACHE__ = false` turns the whole cache off for a paired A/B in one code state.
 
+### 2026-10-27 — A scratch object's death leaves the hierarchy counter alone (native engine) — KEEP
+- Where: `runtime-native/src/engine/scene/object3d.cpp` `Object3D::~Object3D`, PRD-748.
+- Cause: the destructor moved `hierarchyVersion` on every destruction, and `InstancedMesh::raycast` builds a stack
+  `Mesh` per call. Each ray at an InstancedMesh dropped every cache keyed on the counter: the bridge's `children`
+  cache, render_database's shadow lights and batch decision, projected_cull's node list. Adventure's camera arm casts
+  at its `lens` instanced meshes each tick: one counted-tick census frame made 136,264 crossings (27,540 each of
+  `children`, `updateMatrixWorld`, `intersectObject`).
+- Result: only a linked object's death (a parent or children) moves the counter. `native_engine_scene_unlinked_destruction`
+  red on the old destructor (2 CHECKs), green after; ctest -L native-engine 215/215. Adventure engine-cost probe,
+  SwiftShader, one drawn frame per tick, moving windows: redundant reads 112 -> 6 per frame, crossings 746/938 ->
+  503/665 per frame. Web Wasm 4,146,125 bytes.
+- Insight: a global "anything changed" counter is only as good as its rarest bump. Next: core's ScenePicker still
+  crosses twice per target object per ray (`updateMatrixWorld`, `intersectObject`, 108 each a frame on adventure); one
+  engine call for the target set would remove that class.
+
 ### 2026-10-27 — Interned engine refs per slot index (`keyOf`) — REJECT
 - Where: `createWasmRuntime` `keyOf`, three-native; candidate not committed.
 - Result: real Wasm microbench, a `parent` read with the cache off, 4/4 alternating pairs faster: 946/918/1,293/987 →

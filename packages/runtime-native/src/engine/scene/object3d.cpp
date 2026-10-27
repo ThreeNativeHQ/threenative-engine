@@ -488,7 +488,9 @@ void Object3D::lookAt(double x, double y, double z) {
 // ------------------------------------------------------------------------------ hierarchy
 
 Object3D::~Object3D() {
-    ++hierarchyRevision;
+    // Only a linked object's death changes a children list. A scratch object (InstancedMesh::raycast
+    // builds a Mesh per ray) left the counter alone, or every cache keyed on it dropped once per ray.
+    if (parent != nullptr || !children.empty()) ++hierarchyRevision;
     for (Object3D* child : children) child->parent = nullptr;  // owned children die after this body
     if (parent != nullptr) {
         auto& siblings = parent->children;
