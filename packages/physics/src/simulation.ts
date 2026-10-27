@@ -1361,6 +1361,7 @@ export function createWebPhysicsSimulation(
       // seam is a fixed-step force — an off-centre one adds a torque — so clear both after every
       // step to keep web and native actuation aligned.
       for (const entry of bodies.values()) {
+        if (entry.type !== "dynamic") continue;
         entry.body.resetForces(true);
         entry.body.resetTorques(true);
       }

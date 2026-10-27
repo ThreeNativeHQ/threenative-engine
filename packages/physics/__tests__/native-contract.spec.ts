@@ -609,6 +609,42 @@ describe("native physics contract", () => {
     expect(() => web.readBodySleepStates(new Float32Array(0))).toThrow(/disposed/i);
   });
 
+  it("skips force resets for non-dynamic bodies", async () => {
+    await RAPIER.init();
+    const web = createWebPhysicsSimulation({
+      eventQueue: new RAPIER.EventQueue(true),
+      rapier: RAPIER,
+      version: RAPIER.version(),
+      world: new RAPIER.World({ x: 0, y: -9.81, z: 0 }),
+    });
+    const fixed = web.createBody(bodyOptions("fixed"));
+    const kinematic = web.createBody(bodyOptions("kinematic"));
+    const character = web.createBody({ ...bodyOptions("fixed"), type: "character" });
+    const dynamic = web.createBody(bodyOptions("dynamic"));
+    const sensor = web.createBody({
+      ...bodyOptions("dynamic"),
+      sensor: true,
+      shape: CollisionShape3D.sphere(0.5).setSensor(true).descriptor,
+    });
+    const resets = [fixed, kinematic, character, dynamic, sensor].map(({ body }) => {
+      const raw = body.raw as RAPIER.RigidBody;
+      return { forces: vi.spyOn(raw, "resetForces"), torques: vi.spyOn(raw, "resetTorques") };
+    });
+
+    web.step(1 / 60);
+
+    for (const [index, reset] of resets.entries()) {
+      if (index < 3) {
+        expect(reset.forces).not.toHaveBeenCalled();
+        expect(reset.torques).not.toHaveBeenCalled();
+      } else {
+        expect(reset.forces).toHaveBeenCalledOnce();
+        expect(reset.torques).toHaveBeenCalledOnce();
+      }
+    }
+    web.dispose();
+  });
+
   it("rejects oversized maxResults before reaching native allocations", () => {
     const intersectShape = vi.fn(() => []);
     const intersectPoint = vi.fn(() => []);
