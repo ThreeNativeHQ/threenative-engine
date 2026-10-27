@@ -1029,7 +1029,7 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
-      - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
+      - run: sh scripts/xvfb.sh pnpm exec playwright test --config=benchmark.playwright.config.ts
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on
