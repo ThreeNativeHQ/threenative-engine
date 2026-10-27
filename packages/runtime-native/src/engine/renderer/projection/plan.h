@@ -12,6 +12,8 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -72,6 +74,54 @@ struct Decision {
 
 // isSimilarityTransform comes from the skinned palette (engine/animation/skinning/palette.h).
 using tn::engine::isSimilarityTransform;
+
+/**
+ * PRD-753 sizing: each caller's full-scene walks, the nodes they visit and what sent them. Always counted
+ * (an add per walk); `TN_PROJECTION_WALKS=1` (or a build with that definition, for the web Wasm) prints one
+ * `TN_PROJECTION_WALKS {json}` line per 1,000 calls of a caller and starts its next window.
+ */
+struct WalkCounters {
+    enum Trigger { Hierarchy, Cadence, MinMeshes, Structure, Scene, Rig, kTriggers };
+    uint64_t calls = 0, stampWalks = 0, stampNodes = 0, decideWalks = 0, decideNodes = 0;
+    uint64_t stampBy[kTriggers] = {}, decideBy[kTriggers] = {};
+};
+enum class WalkCaller { HostReport, RenderDatabase };
+inline WalkCounters& walkCounters(WalkCaller caller) {
+    static WalkCounters counters[2];
+    return counters[int(caller)];
+}
+/** Every node structureStamp or decide visits, process-wide: a caller's walk is the difference across it. */
+inline uint64_t& walkedNodes() {
+    static uint64_t nodes = 0;
+    return nodes;
+}
+inline bool walksReported() {
+#ifdef TN_PROJECTION_WALKS
+    return true;
+#else
+    static const bool on = [] { const char* flag = std::getenv("TN_PROJECTION_WALKS"); return flag && std::strcmp(flag, "0") != 0; }();
+    return on;
+#endif
+}
+/** Counts one call of `caller`; every 1,000th prints the window when reporting is on, then clears it. */
+inline void countWalkCall(WalkCaller caller) {
+    WalkCounters& c = walkCounters(caller);
+    if (++c.calls < 1000 || !walksReported()) return;
+    static const char* names[] = {"hierarchy", "cadence", "minMeshes", "structure", "scene", "rig"};
+    std::string by[2];
+    for (int k = 0; k < 2; ++k) {
+        const uint64_t* counts = k == 0 ? c.stampBy : c.decideBy;
+        for (int t = 0; t < WalkCounters::kTriggers; ++t)
+            if (counts[t]) by[k] += (by[k].empty() ? "\"" : ",\"") + std::string(names[t]) + "\":" + std::to_string(counts[t]);
+    }
+    std::printf("TN_PROJECTION_WALKS {\"caller\":\"%s\",\"frames\":%llu,\"stampWalks\":%llu,\"stampNodes\":%llu,"
+                "\"decideWalks\":%llu,\"decideNodes\":%llu,\"stampBy\":{%s},\"decideBy\":{%s}}\n",
+                caller == WalkCaller::HostReport ? "hostReport" : "renderDatabase", (unsigned long long)c.calls,
+                (unsigned long long)c.stampWalks, (unsigned long long)c.stampNodes, (unsigned long long)c.decideWalks,
+                (unsigned long long)c.decideNodes, by[0].c_str(), by[1].c_str());
+    std::fflush(stdout);
+    c = WalkCounters{};
+}
 
 namespace detail {
 
@@ -414,6 +464,7 @@ inline double structureStamp(Object3D& root) {
     while (!stack.empty()) {
         const Object3D* object = stack.back();
         stack.pop_back();
+        ++walkedNodes();
         const auto* mesh = dynamic_cast<const Mesh*>(object);
         mix(object->id() * 2 + (object->visible() ? 1 : 0));
         if (mesh != nullptr) {
@@ -467,6 +518,7 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
     while (!stack.empty()) {
         Object3D* object = stack.back();
         stack.pop_back();
+        ++walkedNodes();
         if (drawnOnly && !object->visible()) continue;
         if (skinnedVerdictsOnly && object->skipsGpuJointSubtree()) {
             ++Object3D::gpuProjectionVisits_;

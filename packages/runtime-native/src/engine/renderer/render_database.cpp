@@ -993,20 +993,42 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     static const projection::Decision none;
     const projection::Decision* decision = &none;
     if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig && !item.gpuJoints; })) {
-        bool due = ++framesSinceDeclineScan_ >= kDeclineRescanFrames || &scene != batchScene_;
+        using Walks = projection::WalkCounters;
+        Walks& walks = projection::walkCounters(projection::WalkCaller::RenderDatabase);
+        uint64_t& nodes = projection::walkedNodes();
+        const bool cadence = ++framesSinceDeclineScan_ >= kDeclineRescanFrames;
+        bool due = cadence || &scene != batchScene_;
+        Walks::Trigger trigger = cadence ? Walks::Cadence : Walks::Scene;
         if (!due && batchDecision_.projecting && Object3D::hierarchyVersion() != batchHierarchy_) {
             batchHierarchy_ = Object3D::hierarchyVersion();
+            const uint64_t before = nodes;
             due = projection::structureStamp(scene) != batchStamp_;
+            ++walks.stampWalks;
+            walks.stampNodes += nodes - before;
+            ++walks.stampBy[Walks::Hierarchy];
+            trigger = Walks::Structure;
         }
         // The structure held, so every rig is alive: a rig that scaled, mirrored or changed material leaves now.
-        for (std::size_t i = 0; !due && i < batchRigs_.size(); ++i)
+        for (std::size_t i = 0; !due && i < batchRigs_.size(); ++i) {
             due = projection::detail::rigLaneKey(*batchRigs_[i].first) != batchRigs_[i].second;
+            trigger = Walks::Rig;
+        }
         if (due) {
+            uint64_t before = nodes;
             batchDecision_ = projection::decide(scene, 200, true, true);
+            ++walks.decideWalks;
+            walks.decideNodes += nodes - before;
+            ++walks.decideBy[trigger];
             ++batchDecisions_;
             batchScene_ = &scene;
             batchHierarchy_ = Object3D::hierarchyVersion();
+            before = nodes;
             batchStamp_ = batchDecision_.projecting ? projection::structureStamp(scene) : -1;
+            if (batchDecision_.projecting) {
+                ++walks.stampWalks;
+                walks.stampNodes += nodes - before;
+                ++walks.stampBy[trigger];
+            }
             batchRigs_.clear();
             if (batchDecision_.projecting)
                 for (const auto& [object, lane] : batchDecision_.verdict)
@@ -1017,6 +1039,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             framesSinceDeclineScan_ = batchDecision_.sourceRenderables == 0 || (!held && batchDecision_.projecting) ? kDeclineRescanFrames : 0;
         }
         decision = &batchDecision_;
+        projection::countWalkCall(projection::WalkCaller::RenderDatabase);
     }
     skinnedPalettes_.clear();
     batchGroupsList_.clear();

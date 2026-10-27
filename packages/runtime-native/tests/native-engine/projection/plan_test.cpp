@@ -179,6 +179,33 @@ int hiddenSubtreesAreNoDraws() {
     return same ? 0 : 1;
 }
 
+// PRD-753 sizing: the walk counter sees every node a structure stamp or a decision visits, and a hidden
+// subtree the renderer's decision skips is not counted as visited past its root.
+int walkCounterCountsNodes() {
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto scene = std::make_shared<Scene>();
+    std::vector<std::shared_ptr<Object3D>> keep;
+    auto group = std::make_shared<Group>();
+    scene->add(*group);
+    for (int i = 0; i < 1000; ++i) {
+        keep.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+        (i % 2 ? *group : static_cast<Object3D&>(*scene)).add(*keep.back());
+    }
+    uint64_t& nodes = projection::walkedNodes();
+    const uint64_t start = nodes;
+    projection::structureStamp(*scene);
+    const uint64_t stamp = nodes - start;
+    projection::decide(*scene, 8);
+    const uint64_t decided = nodes - start - stamp;
+    group->setVisible(false);
+    projection::decide(*scene, 8, true, true);
+    const uint64_t drawn = nodes - start - stamp - decided;
+    const bool ok = stamp == 1001 && decided == 1001 && drawn == 501;
+    if (!ok) std::printf("  walk counter: stamp %llu decide %llu drawn %llu, expected 1001 1001 501\n",
+                         (unsigned long long)stamp, (unsigned long long)decided, (unsigned long long)drawn);
+    return ok ? 0 : 1;
+}
+
 } // namespace
 
 int main() {
@@ -261,7 +288,8 @@ int main() {
     std::printf("projection plan: %d scenes, %d differ\n", scenes, differ);
     const int moved = memberWhoseGeometryMovesLeaves();
     const int hidden = hiddenSubtreesAreNoDraws();
-    if (scenes == 0 || differ != 0 || moved != 0 || hidden != 0) {
+    const int walks = walkCounterCountsNodes();
+    if (scenes == 0 || differ != 0 || moved != 0 || hidden != 0 || walks != 0) {
         std::printf("FAIL\n");
         return 1;
     }
