@@ -448,9 +448,12 @@ export class RenderCameraCull {
     } else {
       if (camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
       this.#camera = camera;
-      this.#cameraParts.clear();
-      camera.traverse(this.#collectCameraPart);
-      this.#cameraParts.delete(camera);
+      if (engine === undefined) {
+        // The engine finds what hangs from the camera itself; this set serves only the JS walk.
+        this.#cameraParts.clear();
+        camera.traverse(this.#collectCameraPart);
+        this.#cameraParts.delete(camera);
+      }
       this.#scale = viewportHeight / (2 * Math.tan((perspective.fov * Math.PI) / 360));
     }
     if (engine !== undefined) {

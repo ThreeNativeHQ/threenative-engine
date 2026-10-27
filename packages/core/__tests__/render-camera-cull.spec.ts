@@ -436,8 +436,11 @@ describe("render camera cull", () => {
     const matrix = view.projectionMatrix;
     const projection = vi.fn(() => matrix);
     Object.defineProperty(view, "projectionMatrix", { get: projection });
+    const traverse = vi.spyOn(view, "traverse");
     const cull = new RenderCameraCull();
     cull.apply(root, view, 720);
+    // The engine knows what hangs from the camera: collecting it here is a crossing per child, per frame.
+    expect(traverse).not.toHaveBeenCalled();
     // The JS frustum and camera position serve only the JS walk (asserted before the argument
     // match below, whose deep compare reads every camera property).
     expect(projection).not.toHaveBeenCalled();
