@@ -296,7 +296,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // the sailing and snow core-look migrations on top of the on-demand asset loader.
   // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
   // to its clip; platformer binds R to restart.
-  "action-rpg": "97d50dcb9c1d56157152b572eaec1774b14f254f765f77a4a164f01ee421bb71",
+  "action-rpg": "19eb39976669a4264c838b4cfc714118d46c13d51623ec8c3bba7a784d3018df",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -319,12 +319,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "66f885599f0a92837d0879747dabff74f13c665aa9f3b056f92cc8fbb89f9c30",
+  adventure: "518a8dc9cd3b1fcefdad4f14cbff4b194014bcf69cb5c02505e3200ff5140d3a",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "4d0884a98ccfe97c0aeaaf6a64ed62b195154666123444539acf56ba5563963e",
   minimal: "e157e66fdf5e14761655fb39ef95af1fd005df68a6e8ecc6cb1159c0d501d227",
-  platformer: "29be2ca6ac4f331879d22c9c23413016182e489fa0d027ea26f2d5c15879185f",
-  puzzle: "40aeabf6ed77b2dc644acf0a71360ef2bc976d018a99f43523894179f7b9eaef",
+  platformer: "eb877b382d0640788a438392e747f5da51a941a9e8711f665d42985f7ee7ca94",
+  puzzle: "0c9ca72fb08525eb35b7b96d09466fa21d3f798ec95d1e02105257cbf852b935",
   racing: "e1aacca0748b6a219d7573eedd228c9d1e0d5a67c1372dc8851117f635e03f2f",
   rain: "6e86e9dc5e1a413f84cd46977b5bef9c181fedd6e9c38ec15e288fed7a5061a3",
   rts: "44917927d738f4c2e56a1fb6972d5d3514592839f4df9fb80abc9c3b0624364f",
@@ -339,7 +339,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "09313c615c2ea0840a91118691cf6b5c4f462795c3be7fc92c006c227995cd64",
+  starter: "90d6c89fcf6cae3e7bcf5f5b1bfbb9a9bb85cd1b04dc57130623d44d85cc13fd",
   "tower-defense": "798dae4422ea48da95629e6e3de73a95facce66d022ccb776424cf952ff7f4d7",
 };
 
