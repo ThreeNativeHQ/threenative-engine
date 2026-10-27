@@ -93,6 +93,11 @@ export function Hud() {
         >
           <ItemIcon item={state.item} />
         </svg>
+        {/* The key that uses the item in hand: without it a held item looked like it did nothing.
+            A touch screen has its own item pad, so only a fine pointer shows the keys. */}
+        {state.item !== "" && state.item !== "rolling" ? (
+          <div className="hidden pb-1 text-center text-xs text-dim pointer-fine:block">E / X</div>
+        ) : null}
       </div>
       {/* A dark halo keeps the place legible over the kart's flames and sparks. */}
       <div className="absolute bottom-4 left-5 italic leading-none drop-shadow-[0_0_3px_rgba(0,0,0,0.85)]">

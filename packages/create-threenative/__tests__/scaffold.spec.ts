@@ -316,7 +316,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // sailing and starter ship the shared kitExposure.ts meter (0 EV).
   adventure: "1927eab0e7dbb6fc26ffca8cfdbf93d4b072ec83104a4da15c89b8e184965135",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "066e54e311bdb8317527bddb9daa0b87af72a36ca75cbee7dfad367f366b2fc1",
+  kart: "771c1d2d019d8a9973dd8626dca8a5c8a64eb1c60df6a2678a88a51b9892f3ce",
   minimal: "772a616dca234349aa4f555678bb9b0493f679c22c1a65388a3954ab6e26a042",
   platformer: "7df262eb519137cd5cfbcd3cb210549a52c637fb94e2ebc3aaf0975bc66f50e3",
   puzzle: "2c8d1a41dae19b90cddb7e1037178ca2f91c7fe9fdd5fe72b24a9334bf72ba3a",

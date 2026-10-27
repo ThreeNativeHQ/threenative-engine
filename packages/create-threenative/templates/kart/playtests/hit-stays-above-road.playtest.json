@@ -1,0 +1,92 @@
+{
+  "name": "kart-hit-stays-above-road",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 14.64,
+          "y": -1.5,
+          "z": -5.14
+        },
+        "facing": {
+          "yaw": 1.9095
+        }
+      },
+      {
+        "entity": "acorn.0",
+        "at": {
+          "x": -7.46,
+          "y": -1.5,
+          "z": -1.62
+        },
+        "facing": {
+          "yaw": -1.4133
+        }
+      },
+      {
+        "entity": "burr.0",
+        "at": {
+          "x": 3.31,
+          "y": -1.5,
+          "z": -1.16
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "into-the-hits",
+      "press": ["KeyW"],
+      "holdTicks": 480,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "tumbles",
+        "equals": 1,
+        "allowTrivial": "The acorn aimed down the straight hit the player once."
+      },
+      {
+        "entity": "player",
+        "component": "spins",
+        "equals": 1,
+        "allowTrivial": "The burr on the straight spun the player out once after the tumble."
+      },
+      {
+        "entity": "player",
+        "component": "lowestPointBelowRoad",
+        "lte": 0.05,
+        "allowTrivial": "The rendered kart's lowest point stays within five centimetres of the road through a burr spin and an acorn tumble; the wheels touching the road give about zero."
+      }
+    ]
+  }
+}

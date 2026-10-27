@@ -29,6 +29,8 @@ import { RACE, Racer, rank } from "../track/Race.js";
 
 export type GameCtx = ICtx<GameState>;
 
+/** One corner of a kart's box at a time, for the sink meter; reused so a step allocates nothing. */
+const scratchCorner = new Vector3();
 /** Seconds from the scene's start to GO: "READY", then the three lamps. */
 const GO_AT = RACE.ready + RACE.light * RACE.lights;
 /** A kart's bump footprint, metres: an ellipse this long and this wide around its centre (the model is 2.15 m by 1.4 m). */
@@ -77,6 +79,8 @@ interface IEntrant {
   wallClock: number;
   /** Every item this kart used, in order, for the scenarios. */
   used: string[];
+  /** Worst depth, metres, the model's world box reached below the road under the kart this run. */
+  lowestPointBelowRoad: number;
   readonly shake: IShake;
 }
 
@@ -162,10 +166,14 @@ export class Race extends Scene<GameState> {
       const model = new KartModel(livery);
       model.update(kart, 0, 0);
       ctx.add(model.root);
+      // Draw the model between fixed ticks, as the camera already is: a model that only steps
+      // stands a whole tick in front of the smoothed chase camera and snaps back every render.
+      ctx.interpolate(model.root);
       const entrant: IEntrant = {
         boxes: 0,
         driver: new Driver(kart, slot % 2 === 0 ? -3 : 3, 0.5 + (i % 4) * 0.04),
         kart,
+        lowestPointBelowRoad: 0,
         model,
         name: player ? "player" : `cpu.${i}`,
         onPad: false,
@@ -219,6 +227,7 @@ export class Race extends Scene<GameState> {
           itemDraws: entrant.slot.draws,
           lap: entrant.racer.lap,
           lateral: kart.lateral,
+          lowestPointBelowRoad: entrant.lowestPointBelowRoad,
           longestAir: kart.longestAir,
           maxLateral: kart.maxLateral,
           maxJump: entrant.racer.maxJump,
@@ -742,6 +751,26 @@ export class Race extends Scene<GameState> {
           entrant.wallClock = 0.15;
           burst("wall", { x: kart.x, y: kart.y + 0.5, z: kart.z });
         }
+      }
+      // The rendered model's lowest point against the road under the kart: a hit must not sink it.
+      // The kart's own box (measured once, in the root's frame) is placed by the root's matrix, so
+      // a step reads 8 corners, not every vertex: the vertex walk cost 105 ms a step and hung the
+      // race on every hit (owner trace, 2026-10-26). A corner sits at or below the mesh it bounds,
+      // so this reads a sink no smaller than the real one. Only a spun or tumbled kart is measured.
+      for (const entrant of field) {
+        const { kart, model } = entrant;
+        if (!kart.hit) continue;
+        model.root.updateWorldMatrix(true, false);
+        const { min, max } = model.bounds;
+        let lowest = Number.POSITIVE_INFINITY;
+        for (let corner = 0; corner < 8; corner += 1) {
+          scratchCorner
+            .set(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z)
+            .applyMatrix4(model.root.matrixWorld);
+          lowest = Math.min(lowest, scratchCorner.y);
+        }
+        const road = course.heightAt(kart.index, kart.x, kart.z);
+        entrant.lowestPointBelowRoad = Math.max(entrant.lowestPointBelowRoad, road - lowest);
       }
       boxes.update(elapsed, (i) => (boxReady[i] ?? 0) <= elapsed, dt, camera.position);
       rig.update(player.kart, dt);
