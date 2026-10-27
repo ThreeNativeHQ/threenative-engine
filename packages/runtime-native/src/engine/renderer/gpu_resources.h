@@ -174,15 +174,25 @@ private:
     // The render thread submits and destroys while the game thread drains completions (PRD-613):
     // `mutex` guards the serials and the pending list; collect() runs with it held.
     struct Shared {
+        struct IdleStaging {
+            WGPUBuffer buffer;
+            uint64_t size;
+        };
         std::shared_ptr<GpuThread> thread;
         mutable std::mutex mutex;
         uint64_t submitted = 0;
         uint64_t completed = 0;
         std::vector<PendingDestroy> pending;
+        // Completed readback leases wait here, by exact size, until the next read of that size.
+        std::mutex stagingMutex;
+        std::vector<IdleStaging> idleStaging;
+        ~Shared();
         void collect();
     };
 
     static void release(Record& record);
+    static void recycleStaging(const std::shared_ptr<Shared>& shared, WGPUBuffer staging, uint64_t size);
+    WGPUBuffer leaseStaging(uint64_t size);
     static void complete(const std::shared_ptr<void>& owner, uint64_t serial);
     bool waitingMayRead(WGPUBuffer buffer) const;
     uint64_t submit(WGPUCommandBuffer commands, bool batch, std::vector<WGPUBuffer>* reads);

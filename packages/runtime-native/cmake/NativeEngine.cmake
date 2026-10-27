@@ -86,8 +86,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_async_only=async_only
         native_engine_gpu_thread_ordering=gpu_thread_ordering
         native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu
-        native_engine_gpu_batched_submits=batched_submits)
+        native_engine_gpu_batched_submits=batched_submits
+        native_engine_gpu_readback_reuses_staging=readback_reuses_staging)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
+        # Counts staging allocations and forces one map failure without a seam in GpuResources.
+        target_compile_definitions(tn-native-engine-gpu-resources-test PRIVATE TN_TEST_BUFFER_WRAP TN_TEST_MAP_WRAP)
+        target_link_options(tn-native-engine-gpu-resources-test PRIVATE
+            "-Wl,--wrap=wgpuDeviceCreateBuffer" "-Wl,--wrap=wgpuBufferMapAsync")
+    endif()
     # A real window, so the ctest runs it under the repository's private Xvfb with SDL's dummy audio.
     add_executable(tn-native-engine-presentation-test EXCLUDE_FROM_ALL tests/native-engine/presentation_test.cpp)
     target_link_libraries(tn-native-engine-presentation-test PRIVATE tn_engine_renderer tn_host_services ${SDL3_STATIC_TARGET})
