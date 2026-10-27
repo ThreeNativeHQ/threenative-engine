@@ -356,7 +356,7 @@ export function scaffoldCompletionMessage(
 export function scaffoldNextSteps(target: string, installed: boolean): string {
   const agent = `start your coding agent in ${target} so it loads the engine MCP from .mcp.json; a session started elsewhere calls a tool with node node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities '{"situation":"<words>"}'`;
   return installed
-    ? `Next: ${agent}. pnpm dev plays the game; pnpm test proves it.\n`
+    ? `Next: ${agent}. Read AGENTS.md once; CLAUDE.md is its copy. pnpm dev plays the game; pnpm test proves it.\n`
     : `Skipped install (--no-install). Run pnpm install in ${target}, then ${agent}.\n`;
 }
 
