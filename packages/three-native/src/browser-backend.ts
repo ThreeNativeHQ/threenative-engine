@@ -2376,7 +2376,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     try {
       return work();
     } finally {
-      for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      while (allocations.length > mark) abi._free(allocations.pop() as number);
       arenaTop = top;
     }
   };
