@@ -22,6 +22,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
+  canonicalRenderSourcePath,
   cliHelp,
   createProject,
   discoverKitManifests,
@@ -310,7 +311,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "ebb791b9feb853cc2c5a129de33bafa5250e125b1311ffc81e398e9896622f38",
+  collectathon: "6c6c88eb1b1d78c5442c51327ffc69ca58eb3cf37021e84bcf518ddb898605fe",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -319,9 +320,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "f3dbaa887150a4ccb283ddb9a007e59f6d0cad4c84f871b39a8923158474bfcf",
+  adventure: "0e0bbb5df3f02c98395d98f826cbd57031ff4888070c1957b6aac282b292b8db",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "57c31d8593c2096229241fb28a50b429d952827f3cfd1d17ec68bfc4c1f0f19f",
+  kart: "7712f28cfe3da1e9d526c4b21eabc35521952bdf7402ef140d75985117a87ac0",
   minimal: "51a6dcb9d4f85cb9aa5f5d122a3bbcb3d82a1435439c73357dc35fc1bf6c925f",
   platformer: "1cfcc191a13da0b6c6c7cead9546bdba8dcae0a69e7114ef6081cfb75b8731c8",
   puzzle: "6f442b8bb7ad83c38e0e23095e572308b00041e04aa97cf09c8ccbcb71d7b13c",
@@ -339,7 +340,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "bcdeccb8c5c03661d430e2a63487fafbe327b83f69edc59ce609ad2b64642ddf",
+  starter: "146d20bed4a975bd53752f86762887f578ad3d917208f23b5e4a5af8f3bdb5e9",
   "tower-defense": "ccd47f7e725fc25226520729e759e3a627118b1cad65c4bc76543fe564290c95",
 };
 
@@ -1840,4 +1841,39 @@ describe("create-threenative", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("authored temporal detail distribution", () => {
+  it("retains global shared assets for a custom template root", () => {
+    expect(canonicalRenderSourcePath("src/render/loading.ts", "/tmp/tn-absent-templates")).toBe(
+      path.resolve("packages/create-threenative/template-assets/loading.ts"),
+    );
+  });
+  it.each(["collectathon", "adventure", "kart"])(
+    "copies the canonical detail stage with a closed local import graph into %s",
+    async (template) => {
+      const parent = await makeTempDir("tn-temporal-detail-");
+      const target = path.join(parent, "game");
+      try {
+        await createProject({ target, template, install: false }, parent, TEMPLATE_ROOT);
+        const relative = "src/render/temporalDetailStage.ts";
+        const generated = await readFile(path.join(target, relative), "utf8");
+        expect(generated).toBe(
+          await readFile(path.join(TEMPLATE_ROOT, "starter", relative), "utf8"),
+        );
+        const post = await readFile(path.join(target, "src/render/postprocessing.ts"), "utf8");
+        expect(post).toContain('from "./temporalDetailStage.js"');
+        // The generated helper depends only on public Three/TSL plus an erased core type.
+        for (const match of generated.matchAll(/from ["'](\.[^"']+)["']/g)) {
+          const specifier = match[1];
+          if (specifier === undefined) throw new Error("Missing local import specifier capture");
+          expect(
+            existsSync(path.resolve(target, "src/render", specifier.replace(/\.js$/, ".ts"))),
+          ).toBe(true);
+        }
+      } finally {
+        await rm(parent, { recursive: true, force: true });
+      }
+    },
+  );
 });

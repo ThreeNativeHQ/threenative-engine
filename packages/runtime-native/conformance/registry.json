@@ -75,6 +75,23 @@
   ],
   "tests": [
     {
+      "id": "temporal-aa-upsampled",
+      "title": "owned TRAA reconstructs a display frame from a 0.72-scale scene",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa-upsampled.js",
+      "captureFrames": 300,
+      "completionMarker": "TN_CONFORMANCE_UPSAMPLE_300_FRAMES",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "temporal-aa",
       "title": "full-resolution temporal AA with object motion history",
       "category": "rendering",
@@ -252,6 +269,35 @@
       "desktopGate": true,
       "required": true,
       "reason": "Core's AutoExposureNode (a luminance reduction chain, a histogram and a ping-pong adaptation texture, all live render targets whose textures swap every frame) on one frame, on the host as well as the browser. Every kit that takes core's look builds it, so a host that cannot take a boolean uniform or a render target texture swap leaves those kits unable to start (TN_TSL uniform, then TN_NATIVE_TEXTURE_VALUE_TYPE). The frame is half near black and half bright, so the metered exposure lands far from the seed of 1 and a host that never measures cannot match the browser reference. reset() adopts the first measured target, so the settled value does not depend on the frame clock. Measured 2026-10-24 on the RTX 2080 desktop lane (Chrome reference with upstream three, and the V8 engine player on the owned engine, both on the same adapter): 0 pixels differ and the mean deltaE is 0. The tolerance stays at 0.06 and 9.0 because no software adapter was measured."
+    },
+    {
+      "id": "auto-exposure-upsampled",
+      "title": "Auto exposure meters the actual scene texture before temporal upsampling",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/auto-exposure-upsampled.js",
+      "owner": "PRD-732",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "Core's AutoExposureNode (a luminance reduction chain, a histogram and a ping-pong adaptation texture, all live render targets whose textures swap every frame) on one frame, on the host as well as the browser. Every kit that takes core's look builds it, so a host that cannot take a boolean uniform or a render target texture swap leaves those kits unable to start (TN_TSL uniform, then TN_NATIVE_TEXTURE_VALUE_TYPE). The frame is half near black and half bright, so the metered exposure lands far from the seed of 1 and a host that never measures cannot match the browser reference. reset() adopts the first measured target, so the settled value does not depend on the frame clock. Measured 2026-10-24 on the RTX 2080 desktop lane (Chrome reference with upstream three, and the V8 engine player on the owned engine, both on the same adapter): 0 pixels differ and the mean deltaE is 0. The tolerance stays at 0.06 and 9.0 because no software adapter was measured.",
+      "captureFrames": 300
     },
     {
       "id": "filmic-tonemap",
@@ -660,6 +706,22 @@
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "texture-sample-bias",
+      "title": "authored texture bias selects derivative-relative mip levels",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/texture-sample-bias.js",
+      "captureFrames": 30,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
       "required": true
     },
     {
@@ -2064,6 +2126,22 @@
       "scene": "conformance/scenes/shared/realistic-ocean.js",
       "tolerance": { "pixelMismatchRatio": 0.1, "perceptualDeltaE": 9.0 },
       "androidReadyTimeoutMs": 120000,
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "local-exposure-histogram",
+      "title": "actual local-exposure histogram matches independent original per-bin CPU reduction",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/local-exposure-histogram.js",
+      "captureFrames": 2,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3
+      },
       "desktopGate": true,
       "required": true
     }

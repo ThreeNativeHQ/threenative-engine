@@ -69,9 +69,17 @@ export function observedFixedStepSeconds(
  * Fixed-step ticks advance the simulation, not the renderer. The owned engine skips a frame while
  * an environment bakes or two frames are still on the GPU (a drawn world interleaves them with
  * zero-draw samples), and it draws only the pipelines that are ready. On a slow software adapter
- * the pose tick can therefore arrive before one world frame has drawn. The world is drawn once at
- * least `min` of the newest `frames` samples each draw at least half of the busiest sample in the
- * series, and that busiest sample drew more than the single pass of an empty frame.
+ * the pose tick can therefore arrive before one world frame has drawn. The world is drawn once the
+ * newest sample is one of at least `min` of the newest `frames` samples that each draw at least
+ * half of the busiest sample in the series, and that busiest sample drew more than the single pass
+ * of an empty frame.
+ *
+ * The newest sample must itself be a drawn one, because the screenshot composites what the engine
+ * last presented: stopping on a skipped frame photographs the frame before it. 2026-10-27 - a merge
+ * shifted the skip phase and collectathon scored 0.322 against the 0.12 threshold, on an exposure
+ * that had not adapted and a tutorial hint that had not faded yet, while both of its parents scored
+ * 0.035 with the same look. The condition below is what tells a stale photograph from a divergent
+ * render; it does not move the threshold.
  */
 export function worldDrawn(
   series: readonly { drawCalls?: number }[],
@@ -80,7 +88,12 @@ export function worldDrawn(
 ): boolean {
   const draws = series.map(({ drawCalls }) => (typeof drawCalls === "number" ? drawCalls : 0));
   const peak = Math.max(0, ...draws);
-  return peak > 1 && draws.slice(-frames).filter((count) => count * 2 >= peak).length >= min;
+  const newest = draws.at(-1) ?? 0;
+  return (
+    peak > 1 &&
+    newest * 2 >= peak &&
+    draws.slice(-frames).filter((count) => count * 2 >= peak).length >= min
+  );
 }
 
 /** Holds until the renderer has drawn the world (see `worldDrawn`), or fails closed after `timeoutMs`. */

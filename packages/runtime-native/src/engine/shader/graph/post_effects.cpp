@@ -1,3 +1,4 @@
+#include "engine/shader/wgsl_strip.h"
 #include "post_effects.h"
 #include "engine/scene/material.h"
 #include "render_texture_pass.h"
@@ -72,7 +73,7 @@ std::string scalarSampler(Node input, const std::string& name, const std::string
 
 // r185 PostProcessingUtils.getViewPosition/getScreenPosition/getNormalFromDepth. The nine
 // integer depth loads and second-order discontinuity choice are preserved (no derivative proxy).
-const char* kGeometry = R"WGSL(
+TN_WGSL_STRIPPED(kGeometry, R"WGSL(
 fn viewPosition(coord: vec2<f32>, depth: f32) -> vec3<f32> {
     let clip = vec4<f32>(vec2<f32>(coord.x, 1.0-coord.y)*2.0-1.0, depth, 1.0);
     let view = u._cameraProjectionMatrixInverse * clip;
@@ -95,11 +96,11 @@ fn normalFromDepth(coord: vec2<f32>) -> vec3<f32> {
         ce-viewPosition(coord+vec2<f32>(0,1.0/size.y),b1),db<dt);
     return normalize(cross(dx,dy));
 }
-)WGSL";
+)WGSL");
 
 // SSRNode r185's non-stochastic march. RGB is already weighted reflected radiance; alpha is
 // hit distance (not coverage). The game adds this texture to beauty, without another alpha blend.
-const char* kSsr = R"WGSL(
+TN_WGSL_STRIPPED(kSsr, R"WGSL(
 fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     let clip = u._cameraProjectionMatrix*vec4<f32>(view,1.0);
     let coord = clip.xy/clip.w*0.5+0.5;
@@ -175,7 +176,7 @@ fn rayZ(s: f32, start: f32, end: f32, perspective: bool) -> f32 {
     let worldDelta = (u._cameraWorldMatrix*vec4<f32>(point-position,0.0)).xyz;
     return max(vec4<f32>(color,length(worldDelta)),vec4<f32>(0.0));
 }
-)WGSL";
+)WGSL");
 
 // Every blur level samples the original reflection, with spread=level; level zero is unblurred.
 const char* kSsrBlur = R"WGSL(
@@ -216,7 +217,7 @@ fn sampleMip(coord: vec2<f32>, level: i32) -> vec4<f32> {
 // (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:2665). The same switch takes
 // Unreal's step jitter (LumenScreenSpaceBentNormal.usf:355) and foreground reject, fraction .3 and power 1
 // (LumenScreenSpaceBentNormal.cpp:121-129, usf:271), in place of the metre `thickness` cutoff.
-const char* kGtao = R"WGSL(
+TN_WGSL_STRIPPED(kGtao, R"WGSL(
 fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     let clip = u._cameraProjectionMatrix*vec4<f32>(view,1.0);
     let coord = clip.xy/clip.w*0.5+0.5;
@@ -282,10 +283,10 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     // GTAO's RedFormat render target samples as (r,0,0,1).
     return vec4<f32>(ao,0,0,1);
 }
-)WGSL";
+)WGSL");
 
 // r185 DenoiseNode.setup, including its exact noise channel expression and rotation matrix.
-const char* kDenoise = R"WGSL(
+TN_WGSL_STRIPPED(kDenoise, R"WGSL(
 fn luma(color: vec3<f32>) -> f32 { return dot(color,vec3<f32>(0.2126,0.7152,0.0722)); }
 fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coord: vec2<f32>, neighborNormal: vec3<f32>) -> vec4<f32> {
     let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
@@ -327,9 +328,9 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     if (totalWeight>0.0) { denoised /= totalWeight; }
     return vec4<f32>(denoised,texel.a);
 }
-)WGSL";
+)WGSL");
 
-const char* kSmaaEdges = R"WGSL(
+TN_WGSL_STRIPPED(kSmaaEdges, R"WGSL(
 fn colorDelta(a: vec3<f32>, b: vec3<f32>) -> f32 { let t=abs(a-b); return max(max(t.r,t.g),t.b); }
 @fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
     let inv = 1.0/vec2<f32>(textureDimensions(t_input));
@@ -348,11 +349,11 @@ fn colorDelta(a: vec3<f32>, b: vec3<f32>) -> f32 { let t=abs(a-b); return max(ma
     edges *= step(vec2<f32>(0.5*maxDelta),delta.xy);
     return vec4<f32>(edges,0,0);
 }
-)WGSL";
+)WGSL");
 
 // r185 SMAA searches preserve pseudo gather offsets, 8 two-pixel steps, search correction,
 // crossing edges, quadratic area compression and zero subsample indices (SMAA 1x).
-const char* kSmaaWeights = R"WGSL(
+TN_WGSL_STRIPPED(kSmaaWeights, R"WGSL(
 fn searchLength(e: vec2<f32>, bias: f32) -> f32 {
     return 255.0*textureSampleLevel(t_search,smp_search,vec2<f32>(bias+e.r*0.5,e.g),0.0).r;
 }
@@ -421,8 +422,8 @@ fn searchY(start: vec2<f32>, end: f32, direction: f32, inv: vec2<f32>) -> f32 {
     }
     return weights;
 }
-)WGSL";
-const char* kSmaaBlend = R"WGSL(
+)WGSL");
+TN_WGSL_STRIPPED(kSmaaBlend, R"WGSL(
 @fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
     let inv = 1.0/vec2<f32>(textureDimensions(t_weights));
     let current = textureSampleLevel(t_weights,smp_weights,coord,0.0);
@@ -436,7 +437,7 @@ const char* kSmaaBlend = R"WGSL(
     let s = select(abs(offset.y),abs(offset.x),abs(offset.x)>abs(offset.y));
     return mix(c,opposite,s);
 }
-)WGSL";
+)WGSL");
 
 StageModule vertex() { return buildStage(buildOutput(std::nullopt, false).vertex); }
 PostPass rawPass(const PostEffect& effect, std::string output, const char* body,

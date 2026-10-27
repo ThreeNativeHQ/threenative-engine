@@ -11,6 +11,7 @@ import {
   smoothstep,
   type texture,
   textureLoad,
+  textureSize,
   vec2,
   vec4,
 } from "three/tsl";
@@ -37,14 +38,19 @@ export function reduceExposure(
   meter?: Meter,
 ): Node<"vec4"> {
   return Fn(() => {
+    // TextureSizeNode omits typed TSL extensions; retain its checked Node base before narrowing.
+    const measuredSize: Node = meter === undefined ? size : textureSize(input);
+    const sourceSize = meter === undefined ? size : vec2(measuredSize as Node<"uvec2">);
     const sum = vec2(0).toVar();
     const origin = screenCoordinate.xy.floor().mul(4);
     for (let y = 0; y < 4; y++)
       for (let x = 0; x < 4; x++) {
         const pixel = origin.add(vec2(x, y));
-        If(pixel.x.lessThan(size.x).and(pixel.y.lessThan(size.y)), () => {
+        If(pixel.x.lessThan(sourceSize.x).and(pixel.y.lessThan(sourceSize.y)), () => {
           const colour = textureLoad(input, ivec2(pixel));
-          sum.addAssign(meter === undefined ? colour.rg : meter(colour, pixel.add(0.5).div(size)));
+          sum.addAssign(
+            meter === undefined ? colour.rg : meter(colour, pixel.add(0.5).div(sourceSize)),
+          );
         });
       }
     return vec4(sum.div(16), 0, 1);

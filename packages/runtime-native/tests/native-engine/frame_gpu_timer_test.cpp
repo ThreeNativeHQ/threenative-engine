@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/renderer/frame_gpu_timer.h"
+#include <string_view>
 
 // A pass outside a frame (texture mips, a compute dispatch) takes a slot in the shared stream, and only
 // the next owner frame clears it. Midway's load ran 1199 render passes in one gap, so two such gaps without
@@ -13,9 +14,28 @@ struct Writes {
     uint32_t beginningOfPassWriteIndex = 0, endOfPassWriteIndex = 0;
 };
 
+void traceRetainsPassExtentOnlyWhenRequested() {
+    tn::engine::FrameGpuTimer timer;
+    Writes writes;
+    CHECK(timer.attach(writes, 1));
+    CHECK(timer.passes.empty());
+    timer.segments.clear();
+    timer.trace = true;
+    CHECK(timer.attach(writes, 1, {"scene", 1382, 778}));
+    CHECK(timer.passes.size() == 1);
+    CHECK(timer.passes[0].width == 1382 && timer.passes[0].height == 778);
+    CHECK(timer.passes[0].name == std::string_view("scene"));
+    timer.segments.clear();
+    timer.passes.clear();
+    CHECK(timer.attach(writes, 3, {"output", 1920, 1080}));
+    CHECK(writes.beginningOfPassWriteIndex == 0 && timer.passes.size() == 1);
+    CHECK(timer.passes[0].width == 1920 && timer.passes[0].height == 1080);
+}
+
 void fullStreamRefusesTheSampleAndDoesNotThrow() {
     tn::engine::FrameGpuTimer timer;
     timer.enabled = true;
+    timer.trace = true;
     bool threw = false;
     uint32_t attached = 0;
     try {
@@ -33,6 +53,7 @@ void fullStreamRefusesTheSampleAndDoesNotThrow() {
     CHECK(!threw);
     CHECK(attached == tn::engine::FrameGpuTimer::maxPasses);
     CHECK(timer.segments.size() == tn::engine::FrameGpuTimer::maxPasses);
+    CHECK(timer.passes.size() == tn::engine::FrameGpuTimer::maxPasses);
     CHECK(timer.failed);
 }
 
@@ -55,5 +76,6 @@ void ownerFrameEndRestoresTiming() {
 
 }  // namespace
 
-TN_TEST_MAIN({"full_stream", fullStreamRefusesTheSampleAndDoesNotThrow},
+TN_TEST_MAIN({"trace_extents", traceRetainsPassExtentOnlyWhenRequested},
+             {"full_stream", fullStreamRefusesTheSampleAndDoesNotThrow},
              {"owner_frame_restores", ownerFrameEndRestoresTiming})

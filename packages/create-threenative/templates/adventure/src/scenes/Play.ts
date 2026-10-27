@@ -52,7 +52,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createCompanion, createHeartVessel } from "../render/props.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
-import { loadSurfaces, untexturedSurfaces } from "../render/surface.js";
+import { loadSurfaces, untexturedSurfaces, updateSurfaceSampling } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { Checkpoint, GameState } from "../state.js";
 
@@ -209,6 +209,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       this.#sky === undefined
     )
       throw new Error("Play.enter ran before load() built the world.");
+    ctx.beforeRender(() => {
+      updateSurfaceSampling(
+        ctx.renderer.temporalUpscale?.() === true ? ctx.renderer.surface().resolutionScale : 1,
+      );
+    });
     // `userData.solid` marks exactly the meshes that block (`level/Vale.ts`, `level/Hollow.ts`).
     // The Hollow's roof starts at 5 m, so the default 4.5 m reachable ceiling is raised to keep it.
     for (const root of [vale.group, hollow.group])

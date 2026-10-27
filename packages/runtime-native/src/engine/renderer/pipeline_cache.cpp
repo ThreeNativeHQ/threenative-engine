@@ -344,7 +344,7 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     if (target.depth != WGPUTextureFormat_Undefined) desc.depthStencil = &depth;
     WGPUColorTargetState color = {};
     color.format = target.color;
-    color.writeMask = target.colorWrite ? WGPUColorWriteMask_All : WGPUColorWriteMask_None;
+    color.writeMask = !target.colorWrite ? WGPUColorWriteMask_None : target.blend == 4 ? WGPUColorWriteMask_Alpha : WGPUColorWriteMask_All;
     // WebGPUPipelineUtils._getBlending without premultiplied alpha: NormalBlending, or AdditiveBlending;
     // 3 is premultiplied "over", a UI overlay's frame whose colour already carries its alpha.
     const WGPUBlendFactor dst = target.blend == 2 ? WGPUBlendFactor_One : WGPUBlendFactor_OneMinusSrcAlpha;
@@ -352,6 +352,8 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     WGPUBlendState blend = {};
     blend.color = {WGPUBlendOperation_Add, src, dst};
     blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, dst};
+    // 4 scales the destination by 1 - alpha and adds nothing: a transparent draw's responsive mark in the motion flag.
+    if (target.blend == 4) blend.color = blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_OneMinusSrcAlpha};
     if (target.blend) color.blend = &blend;
     std::array<WGPUColorTargetState, 1 + std::tuple_size_v<decltype(target.moreColors)>> colors{color};
     size_t colorCount = target.color != WGPUTextureFormat_Undefined ? 1 : 0;

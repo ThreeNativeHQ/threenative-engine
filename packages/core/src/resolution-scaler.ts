@@ -268,6 +268,7 @@ export class ResolutionScaler {
   /** The lowest rung this platform may take; the whole ladder's last index when it states none. */
   readonly #minIndex: number;
   readonly #temporalUpscale: (() => boolean) | undefined;
+  #hadTemporalUpscale = false;
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
   #cooldown = 0;
@@ -344,7 +345,10 @@ export class ResolutionScaler {
    * as the render chain reconstructs the frame from the pixels it is being asked to surrender.
    */
   get #limitIndex(): number {
-    return this.#temporalUpscale?.() === true ? RESOLUTION_SCALER.rungs.length - 1 : this.#minIndex;
+    // UE 5.8.3 SceneView.h:2280: temporal upsampling admits fractions >= 0.25.
+    return this.#temporalUpscale?.() === true
+      ? RESOLUTION_SCALER.rungs.indexOf(0.27)
+      : this.#minIndex;
   }
 
   get scaleSource(): Exclude<ScaleSource, "pinned"> {
@@ -382,6 +386,15 @@ export class ResolutionScaler {
 
   #observeWindow(observed: IScalerWindow): number | undefined {
     const window = drawnWindow(observed);
+    const temporal = this.#temporalUpscale?.() === true;
+    const removed = this.#hadTemporalUpscale && !temporal;
+    this.#hadTemporalUpscale = temporal;
+    if (removed && this.scale < (RESOLUTION_SCALER.rungs[this.#minIndex] ?? 0.23)) {
+      // Losing the reconstructor restores the platform floor even during cooldown or an automatic pin.
+      this.#scaleSource = "auto";
+      this.#pinWindows = 0;
+      return this.#step(this.#minIndex - this.#index, false);
+    }
     this.#windowIndex += 1;
     const frames = window.frames;
     this.#continuousFrames +=

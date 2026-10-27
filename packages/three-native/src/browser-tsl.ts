@@ -120,6 +120,7 @@ const FUNCTIONS = [
   "uvec2",
   "storageTexture",
   "textureLoad",
+  "textureSize",
   "reflect",
   "dFdx",
   "dFdy",
@@ -317,6 +318,7 @@ const METHODS = [
   "flipZ",
   "flipW",
   "level",
+  "bias",
   "transformDirection",
   "radians",
   "degrees",
@@ -446,7 +448,10 @@ export function defineTsl(
       return { kind: "handle", ref: engineRef(value) as IEngineRef };
     if (
       index === 0 &&
-      (name === "texture" || name === "textureLoad" || name === "textureValue") &&
+      (name === "texture" ||
+        name === "textureLoad" ||
+        name === "textureSize" ||
+        name === "textureValue") &&
       typeof value === "object"
     )
       return { kind: "named", text: String((value as { name?: unknown } | null)?.name ?? "") };

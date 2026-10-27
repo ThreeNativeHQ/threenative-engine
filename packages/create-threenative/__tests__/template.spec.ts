@@ -483,6 +483,13 @@ describe("template contracts", () => {
           // tonemap.ts exports the same curve on plain numbers (`filmicToneMap` and its steps) for unit
           // tests and capture scripts, which are not template sources. Only the install call is integration.
           if (path.basename(file) === "tonemap.ts" && name !== "installFilmicToneMapping") continue;
+          // The authored strength override is consumed by its factory; the callable factory below
+          // must still be called from another render module.
+          if (path.basename(file) === "temporalDetailStage.ts" && name === "temporalDetail") {
+            expect(callable).toBe(false);
+            expect(source).toMatch(/\bconst\s+\w+\s*=\s*temporalDetail\.strength\b/u);
+            continue;
+          }
           const caller = sources.some(
             ([candidate, candidateSource]) =>
               candidate !== file &&

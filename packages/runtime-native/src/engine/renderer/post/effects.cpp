@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <set>
 
 namespace tn::engine {
 namespace {
@@ -200,20 +201,49 @@ void PostEffects::clearTargets() {
     for (auto& pass : passes_)
         pass.rendered = false;
 }
-void PostEffects::resize(uint32_t width, uint32_t height) {
-    if (width == width_ && height == height_)
+std::array<uint32_t, 2> PostEffects::targetSize(const std::string& name) const {
+    const auto texture = targets_.at(name).texture;
+    return {wgpuTextureGetWidth(texture), wgpuTextureGetHeight(texture)};
+}
+
+void PostEffects::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uint32_t outputHeight,
+                         bool sceneResolved) {
+    if (!outputWidth) outputWidth = width;
+    if (!outputHeight) outputHeight = height;
+    if (width == width_ && height == height_ && outputWidth == outputWidth_ && outputHeight == outputHeight_ &&
+        sceneResolved == sceneResolved_)
         return;
     clearTargets();
     width_ = width;
     height_ = height;
-    for (const auto& pass : passes_) {
+    outputWidth_ = outputWidth;
+    outputHeight_ = outputHeight;
+    sceneResolved_ = sceneResolved;
+    std::set<std::string> displayInputs;
+    if (sceneResolved) displayInputs.insert("scene");
+    // Serialized passes can arrive out of dependency order; propagate the resolve's extent before allocating.
+    for (size_t iteration = 0; iteration < passes_.size(); ++iteration) {
+        bool changed = false;
+        for (const auto& pass : passes_) {
+            const bool display = pass.source.host == "traa" ||
+                std::any_of(pass.source.reads.begin(), pass.source.reads.end(), [&](const auto& read) {
+                    return displayInputs.contains(read.second);
+                });
+            if (display) changed |= displayInputs.insert(pass.source.output).second;
+        }
+        if (!changed) break;
+    }
+    for (auto& pass : passes_) {
+        pass.displaySized = displayInputs.contains(pass.source.output);
+        const auto baseWidth = pass.displaySized ? outputWidth : width;
+        const auto baseHeight = pass.displaySized ? outputHeight : height;
         auto& target = targets_[pass.source.output];
         const auto rounding = pass.source.floorSize ? 0.0f : 0.5f;
         target.width = std::max(
-            1u, uint32_t(std::floor((pass.source.width ? pass.source.width : width) * pass.source.resolutionScale +
+            1u, uint32_t(std::floor((pass.source.width ? pass.source.width : baseWidth) * pass.source.resolutionScale +
                                     rounding)));
         target.height = std::max(
-            1u, uint32_t(std::floor((pass.source.height ? pass.source.height : height) * pass.source.resolutionScale +
+            1u, uint32_t(std::floor((pass.source.height ? pass.source.height : baseHeight) * pass.source.resolutionScale +
                                     rounding)));
         target.width = std::max(1u, target.width >> pass.source.mipLevel);
         target.height = std::max(1u, target.height >> pass.source.mipLevel);
@@ -260,8 +290,8 @@ bool PostEffects::syncScales() {
                 if ((r.minFilter != 1003 && r.minFilter != 1006) || (r.magFilter != 1003 && r.magFilter != 1006))
                     throw std::runtime_error("TN_NATIVE_RTT_FILTER: expected NearestFilter or LinearFilter");
                 if (r.width == 0 && (r.autoUpdate || r.textureNeedsUpdate) &&
-                    (r.target->width != std::max(1u, uint32_t(std::floor(width_ * r.scale))) ||
-                     r.target->height != std::max(1u, uint32_t(std::floor(height_ * r.scale)))))
+                    (r.target->width != std::max(1u, uint32_t(std::floor((pass.displaySized ? outputWidth_ : width_) * r.scale))) ||
+                     r.target->height != std::max(1u, uint32_t(std::floor((pass.displaySized ? outputHeight_ : height_) * r.scale)))))
                     changed = true;
 
                 if (const auto current = targets_.find(pass.source.output);
@@ -293,7 +323,7 @@ bool PostEffects::syncScales() {
         return filtersChanged;
     const uint32_t width = width_, height = height_;
     width_ = height_ = 0;
-    resize(width, height);
+    resize(width, height, outputWidth_, outputHeight_, sceneResolved_);
     return true;
 }
 bool PostEffects::target(const std::string& name, WGPUTextureView view) {
@@ -409,7 +439,8 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
     for (const auto& [name, image] : images_)
         resources[name] = graph.external(name, {image.width, image.height, uint32_t(WGPUTextureFormat_RGBA8Unorm),
                                                 uint32_t(WGPUTextureUsage_TextureBinding)});
-    resources["scene"] = graph.external("scene", desc);
+    resources["scene"] = graph.external("scene", {sceneResolved_ ? outputWidth_ : width_,
+                                                    sceneResolved_ ? outputHeight_ : height_, desc.format, desc.usage});
     resources["depth"] = graph.external("depth", {width_, height_, uint32_t(WGPUTextureFormat_Depth32Float),
                                                   uint32_t(WGPUTextureUsage_TextureBinding)});
     for (const auto& [name, view] : inputs_)
@@ -534,7 +565,11 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
         WGPURenderPassDescriptor passDesc{};
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &color;
-        const auto render = beginTimedRenderPass(encoder, &passDesc, pass.source.stage == shader::graph::kStageScreenSpaceGi ? kGpuGiSegment : 2);
+        std::array<uint32_t, 2> extent{};
+        if (auto* timer = FrameGpuTimer::current; timer && timer->trace) extent = targetSize(pass.source.output);
+        const auto render = beginTimedRenderPass(encoder, &passDesc,
+            pass.source.stage == shader::graph::kStageScreenSpaceGi ? kGpuGiSegment : 2,
+            {"post", extent[0], extent[1]});
         if (pass.source.visible) {
             wgpuRenderPassEncoderSetPipeline(render, pass.pipeline);
             wgpuRenderPassEncoderSetBindGroup(render, 0, group, 0, nullptr);
