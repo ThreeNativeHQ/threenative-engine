@@ -58,7 +58,7 @@ it("slows the clip while the body eases in, never below a walk's read", () => {
 });
 
 it("leaves the procedural bob to the idle clip alone", () => {
-  const gait = locomotion(0, false, DURATIONS);
+  const gait = locomotion(0, false);
   expect(gait.clip).toBe("Idle");
   expect(gait.bobScale).toBe(1);
 });
