@@ -1287,7 +1287,12 @@ export class AnimationPlayer {
     // A full-rate tick with no held time advances through the mixer's own actions; only deferred
     // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
     // costs every full-rate rig every frame.
-    if (!this.#evaluated || this.#pendingDt !== 0 || rate !== 1) {
+    if (
+      !this.#evaluated ||
+      this.#pendingDt !== 0 ||
+      this.#pendingActionTimes.size !== 0 ||
+      rate !== 1
+    ) {
       for (const action of this.#actions.values()) {
         if (!action.isScheduled()) continue;
         const time = action.paused ? 0 : action.timeScale * elapsed;

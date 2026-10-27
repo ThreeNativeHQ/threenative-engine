@@ -461,6 +461,26 @@ describe("AnimationPlayer update rate", () => {
     candidate.dispose();
   });
 
+  it("a zero-dt held tick before a switch to rate 1 does not freeze the next tick", () => {
+    const baseline = player(1);
+    const candidate = player(8);
+    for (const dt of [0, 0]) {
+      baseline.update(dt);
+      candidate.update(dt);
+    }
+    candidate.updateRate = 1;
+    for (let frame = 0; frame < 3; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+      expect(candidate.mixer.clipAction(candidate.clip("clip1")).time).toBeCloseTo(
+        baseline.mixer.clipAction(baseline.clip("clip1")).time,
+        10,
+      );
+    }
+    baseline.dispose();
+    candidate.dispose();
+  });
+
   it("does not scan inactive clips at full rate", () => {
     const clips = Array.from(
       { length: 64 },
