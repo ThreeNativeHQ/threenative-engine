@@ -488,8 +488,15 @@ export class Rifle {
     this.group.quaternion.premultiply(correction);
   }
 
+  #handsRate(): number {
+    const animation = this.#animation;
+    if (animation?.current === undefined) return 1;
+    return animation.mixer.clipAction(animation.clip(animation.current)).getEffectiveTimeScale();
+  }
+
   debug(): {
     barrelAxisErrorDeg: number;
+    handsRate: number;
     flashOpacity: number;
     muzzleLocal: number[];
     tipGapToGeometry: number;
@@ -508,6 +515,9 @@ export class Rifle {
       tipGapToGeometry: this.#flash.position.distanceTo(this.#geometryTipLocal),
       opticScreen: { x: (optic.x + 1) / 2, y: (1 - optic.y) / 2 },
       viewmodelLength: this.#viewmodelLength,
+      // The playing clip's effective rate. Above 1 is the hands sped past their authored cycle:
+      // stride sync once read the camera carrying them as walking and played them at 3x.
+      handsRate: this.#handsRate(),
     };
   }
 

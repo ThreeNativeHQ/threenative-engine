@@ -1,0 +1,47 @@
+{
+  "name": "hands-authored-rate",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "rifle",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "stand",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 60,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "rifle",
+        "component": "handsRate",
+        "lte": 1,
+        "allowTrivial": "The hands' Walk clip plays at its authored rate or slower while the body eases in. The defect: core stride sync read the camera carrying the viewmodel (5.6 m/s against the clip's 0.017 m/s of hand sway) as walking and played the hands at its 3x ceiling, which the owner saw as a seizure; it read 3 here before the fix."
+      },
+      {
+        "entity": "player",
+        "component": "speed",
+        "gte": 3,
+        "allowTrivial": "Proves the body is walking, so the rate above was read under the motion that triggered the defect."
+      }
+    ]
+  }
+}
