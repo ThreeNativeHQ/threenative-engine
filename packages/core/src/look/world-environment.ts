@@ -493,6 +493,46 @@ export type ChainStage = {
  * here, is what lets every stage below be written and *checked* as vec4-in, vec4-out instead of
  * asserting its way through each expression. The wrapper adds no node to the graph.
  */
+/**
+ * three's `smaa` where no `Image` exists. Its SMAANode builds the area and search lookup textures with
+ * `new Image()` from data URIs, so in a worker (a game on `engine: "threejs"` drawing off the page) the
+ * stage threw "Image is not defined" and the frame was drawn without antialiasing. There the node gets
+ * an unloaded stand-in, which three draws as it draws an image still loading, and each texture takes the
+ * decoded ImageBitmap when it arrives. Where `Image` exists this is `smaa` itself.
+ */
+export function workerSafeSmaa(node: Parameters<typeof smaa>[0]): ReturnType<typeof smaa> {
+  if (Reflect.get(globalThis, "Image") !== undefined) return smaa(node);
+  Reflect.set(
+    globalThis,
+    "Image",
+    class {
+      src = "";
+      onload: (() => void) | null = null;
+    },
+  );
+  let effect: ReturnType<typeof smaa>;
+  try {
+    effect = smaa(node);
+  } finally {
+    Reflect.deleteProperty(globalThis, "Image");
+  }
+  const lookups = effect as unknown as { _areaTexture?: Texture; _searchTexture?: Texture };
+  for (const lookup of [lookups._areaTexture, lookups._searchTexture]) {
+    const src = (lookup?.image as { src?: unknown } | undefined)?.src;
+    if (lookup === undefined || typeof src !== "string" || src === "") continue;
+    void fetch(src)
+      .then((response) => response.blob())
+      .then((blob) =>
+        createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }),
+      )
+      .then((bitmap) => {
+        lookup.image = bitmap;
+        lookup.needsUpdate = true;
+      });
+  }
+  return effect;
+}
+
 function stage(definition: {
   readonly name: ChainStage["name"];
   readonly supportsResolutionSubrect?: boolean;
@@ -1688,7 +1728,7 @@ export class WorldEnvironment {
             : vec4(colour.rgb.div(peak.add(1)), colour.a);
           const texture = convertToTexture(squeezed);
           sample(texture);
-          const effect = options.screenSpaceAA === "fxaa" ? fxaa(texture) : smaa(texture);
+          const effect = options.screenSpaceAA === "fxaa" ? fxaa(texture) : workerSafeSmaa(texture);
           if (resolutionSubrect && options.screenSpaceAA !== "fxaa") {
             const retained = effect as typeof effect & {
               setSize(w: number, h: number): void;
