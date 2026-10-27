@@ -28,6 +28,7 @@ import {
   discoverTemplateNames,
   parseArgs,
   scaffoldCompletionMessage,
+  scaffoldNextSteps,
 } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -589,6 +590,12 @@ describe("create-threenative", () => {
         "utf8",
       );
       expect(source).toContain("scaffoldCompletionMessage(discoverKitManifests())");
+      // Kit-loop row 1 (PRD-750): a cold agent scaffolded from its session folder, never got the
+      // engine MCP that .mcp.json wires, and searched no capability. The last line says so.
+      expect(scaffoldNextSteps("/w/mario64", true)).toMatch(
+        /\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u,
+      );
+      expect(scaffoldNextSteps("/w/mario64", false)).toMatch(/pnpm install[\s\S]*\.mcp\.json/u);
       expect(source).not.toContain("Templates: minimal (smallest)");
     } finally {
       await rm(root, { force: true, recursive: true });

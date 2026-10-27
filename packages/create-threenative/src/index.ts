@@ -349,6 +349,17 @@ export function scaffoldCompletionMessage(
   return `Templates: ${names}. Choose with --template <name>.\n`;
 }
 
+/**
+ * The scaffold's last line. The engine MCP reaches an agent only through the project's `.mcp.json`,
+ * which a session started in another folder never loads (PRD-750 kit-loop row 1).
+ */
+export function scaffoldNextSteps(target: string, installed: boolean): string {
+  const agent = `start your coding agent in ${target} so it loads the engine MCP from .mcp.json (a session started elsewhere has no engine_search_capabilities)`;
+  return installed
+    ? `Next: ${agent}. pnpm dev plays the game; pnpm test proves it.\n`
+    : `Skipped install (--no-install). Run pnpm install in ${target}, then ${agent}.\n`;
+}
+
 export function cliHelp(): string {
   const manifests = discoverKitManifests();
   return `${[
@@ -916,9 +927,7 @@ async function main(): Promise<void> {
   const result = await createProject(parseArgs(argv));
   process.stdout.write(`Created ${result.template} project at ${result.target}\n`);
   process.stdout.write(scaffoldCompletionMessage(discoverKitManifests()));
-  if (!result.installed)
-    process.stdout.write("Skipped install (--no-install). Run pnpm install, then pnpm dev.\n");
-  else process.stdout.write("Next: cd into the project and run pnpm dev.\n");
+  process.stdout.write(scaffoldNextSteps(result.target, result.installed));
 }
 
 // `realpathSync`, not `path.resolve`. A package manager installs a `bin` as a symlink, so the
