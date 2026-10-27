@@ -28,6 +28,7 @@ import {
   discoverTemplateNames,
   parseArgs,
   scaffoldCompletionMessage,
+  referenceDigest,
   scaffoldNextSteps,
 } from "../src/index.js";
 
@@ -601,19 +602,48 @@ describe("create-threenative", () => {
       expect(scaffoldNextSteps("/w/mario64", true)).toContain(
         "node /w/mario64/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities",
       );
-      // Sandbox-4 (2026-10-27) read this line and AGENTS.md, then made no engine call: a game named
-      // through --genre gets its reference search as the first, ready-to-run step.
-      const named = scaffoldNextSteps("/w/mario64", true, "mario");
-      expect(named).toMatch(
-        /^Next: first run node \/w\/mario64\/node_modules\/@threenative\/core\/mcp\/engine\.mjs engine_search_references '\{"situation":"mario"\}'/u,
-      );
-      expect(scaffoldNextSteps("/w/x", true, "it's")).toContain(`'{"situation":"it'\\''s"}'`);
-      expect(scaffoldNextSteps("/w/mario64", true)).not.toContain("engine_search_references");
       // Rows 1 and 2 read the 45 KB CLAUDE.md + AGENTS.md pair, then AGENTS.md again.
       expect(scaffoldNextSteps("/w/mario64", true)).toMatch(
         /Read AGENTS\.md once; CLAUDE\.md is its copy/u,
       );
       expect(source).not.toContain("Templates: minimal (smallest)");
+      // Sandboxes 4 and 5 (2026-10-27) made no reference call, even with a ready command in the
+      // Next line ("the kit is already a full SM64-style game"): the scaffold runs the search for
+      // the --genre word and prints what it found.
+      const calls: string[][] = [];
+      const hit = (id: string, name: string) => ({
+        game: "sm64",
+        id,
+        kind: "node",
+        name,
+        summary: `${name} summary`,
+        title: "Super Mario 64",
+      });
+      const digest = referenceDigest("/w/mario64", "mario", (args) => {
+        calls.push(args);
+        return JSON.stringify({ results: ["a", "b", "c", "d", "e", "f"].map((id) => hit(id, id)) });
+      });
+      expect(calls).toEqual([
+        [
+          "/w/mario64/node_modules/@threenative/core/mcp/engine.mjs",
+          "engine_search_references",
+          '{"situation":"mario"}',
+        ],
+      ]);
+      expect(digest).toContain('Mechanics references for "mario"');
+      expect(digest).toContain("- Super Mario 64 / a: a summary");
+      expect(digest).not.toContain("- Super Mario 64 / f:");
+      expect(digest).toContain(
+        `node /w/mario64/node_modules/@threenative/core/mcp/engine.mjs engine_reference_detail '{"game":"sm64","id":"a","kind":"node"}'`,
+      );
+      expect(
+        referenceDigest("/w/mario64", "mario", () => {
+          throw new Error("TN_REFERENCES_OFFLINE: fetch failed\nstack");
+        }),
+      ).toBe("References unavailable: TN_REFERENCES_OFFLINE: fetch failed\n");
+      expect(referenceDigest("/w/x", "zzz", () => '{"results":[]}')).toBe(
+        'No mechanics references match "zzz".\n',
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

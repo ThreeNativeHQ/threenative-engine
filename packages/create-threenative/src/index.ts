@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -353,21 +353,55 @@ export function scaffoldCompletionMessage(
 
 /**
  * The scaffold's last line. The engine MCP reaches an agent only through the project's `.mcp.json`,
- * which a session started in another folder never loads (PRD-750 kit-loop row 1). A game named
- * through `--genre` opens with its reference search: a cold agent that read only the hint made no
- * engine call (sandbox-4).
+ * which a session started in another folder never loads (PRD-750 kit-loop row 1).
  */
-export function scaffoldNextSteps(target: string, installed: boolean, genre?: string): string {
-  const engine = `node ${target}/node_modules/@threenative/core/mcp/engine.mjs`;
-  const agent = `start your coding agent in ${target} so it loads the engine MCP from .mcp.json; a session started elsewhere calls a tool with ${engine} engine_search_capabilities '{"situation":"<words>"}'`;
-  const situation = JSON.stringify({ situation: genre }).replaceAll("'", "'\\''");
-  const references =
-    genre === undefined
-      ? ""
-      : `first run ${engine} engine_search_references '${situation}' and borrow the mechanics it returns (engine_reference_detail opens one); then `;
+export function scaffoldNextSteps(target: string, installed: boolean): string {
+  const agent = `start your coding agent in ${target} so it loads the engine MCP from .mcp.json; a session started elsewhere calls a tool with node ${target}/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities '{"situation":"<words>"}'`;
   return installed
-    ? `Next: ${references}${agent}. Read AGENTS.md once; CLAUDE.md is its copy. pnpm dev plays the game; pnpm test proves it.\n`
+    ? `Next: ${agent}. Read AGENTS.md once; CLAUDE.md is its copy. pnpm dev plays the game; pnpm test proves it.\n`
     : `Skipped install (--no-install). Run pnpm install in ${target}, then ${agent}.\n`;
+}
+
+const REFERENCE_DIGEST_SIZE = 5;
+
+/**
+ * The mechanics references for the game the user named with `--genre`, printed by the scaffold.
+ * Cold agents skipped the search even when the next-steps line gave the command (PRD-750
+ * sandboxes 4 and 5), so the scaffold runs it through the installed engine shim and shows the result.
+ */
+export function referenceDigest(
+  target: string,
+  genre: string,
+  run: (args: string[]) => string = (args) =>
+    execFileSync(process.execPath, args, { encoding: "utf8", timeout: 60_000 }),
+): string {
+  const engine = `${target}/node_modules/@threenative/core/mcp/engine.mjs`;
+  let results: {
+    game: string;
+    id: string;
+    kind: string;
+    name: string;
+    summary: string;
+    title: string;
+  }[];
+  try {
+    results = JSON.parse(
+      run([engine, "engine_search_references", JSON.stringify({ situation: genre })]),
+    ).results;
+  } catch (error) {
+    return `References unavailable: ${String((error as Error).message).split("\n")[0]}\n`;
+  }
+  if (results.length === 0) return `No mechanics references match ${JSON.stringify(genre)}.\n`;
+  const [first] = results;
+  const detail = JSON.stringify({ game: first?.game, id: first?.id, kind: first?.kind });
+  return [
+    `Mechanics references for ${JSON.stringify(genre)} (borrow the mechanics, not code, layouts or art):`,
+    ...results
+      .slice(0, REFERENCE_DIGEST_SIZE)
+      .map(({ title, name, summary }) => `- ${title} / ${name}: ${summary}`),
+    `Open one with node ${engine} engine_reference_detail '${detail}'.`,
+    "",
+  ].join("\n");
 }
 
 export function cliHelp(): string {
@@ -939,7 +973,9 @@ async function main(): Promise<void> {
   const result = await createProject(options);
   process.stdout.write(`Created ${result.template} project at ${result.target}\n`);
   process.stdout.write(scaffoldCompletionMessage(discoverKitManifests()));
-  process.stdout.write(scaffoldNextSteps(result.target, result.installed, options.genre));
+  if (options.genre !== undefined && result.installed)
+    process.stdout.write(referenceDigest(result.target, options.genre));
+  process.stdout.write(scaffoldNextSteps(result.target, result.installed));
 }
 
 // `realpathSync`, not `path.resolve`. A package manager installs a `bin` as a symlink, so the
