@@ -1,5 +1,5 @@
 /**
- * Midway tab of `pnpm perf:live`: reads the run directories `flight.sh` writes (`<tag>-<arm>/run.log`
+ * Midway tab of `pnpm dashboard`: reads the run directories `flight.sh` writes (`<tag>-<arm>/run.log`
  * and `parity.json`) and reduces them to KPIs. It times nothing itself and writes nothing.
  *
  * Fail closed: a log line whose JSON does not parse is skipped and counted, and a run with no usable

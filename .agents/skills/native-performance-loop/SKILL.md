@@ -1,6 +1,6 @@
 ---
 name: native-performance-loop
-description: Run an autonomous ThreeNative native-performance optimization loop using existing harnesses, quick synthetic load tests, and representative real games. Profile bottlenecks, make focused changes, accept or reject measured experiments, and maintain an HTML benchmark dashboard. Use for sustained native runtime optimization, frame pacing, startup, memory, or thermal efficiency campaigns, including the Tempest (rain) campaign where the web Wasm engine must beat stock three.js with the same image.
+description: Run an autonomous ThreeNative native-performance optimization loop using existing harnesses, quick synthetic load tests, and representative real games. Profile bottlenecks, make focused changes, accept or reject measured experiments, and keep a campaign tab in the one `pnpm dashboard` hub. Use for sustained native runtime optimization, frame pacing, startup, memory, or thermal efficiency campaigns, including the Tempest (rain) campaign where the web Wasm engine must beat stock three.js with the same image.
 ---
 
 # Native performance loop
@@ -28,8 +28,8 @@ the developer to supervise each iteration. Creating or editing this skill does n
    Browser results are comparison or diagnosis, never substitute native evidence. Read the local
    `measure-steady-state-fps` and `probe-android-startup-and-heat` skills when their lanes apply.
 4. Create or resume `<primary>/artifacts/native-performance-loop/<campaign-id>/`. Record the
-   contract and results described in [dashboard.md](references/dashboard.md), and create
-   `index.html` immediately, including an honest empty state. Choose workloads and targets
+   contract and results described in [dashboard.md](references/dashboard.md), and show them in a
+   `pnpm dashboard` tab immediately, including an honest empty state. Choose workloads and targets
    autonomously and state them. Default to a two-hour invocation budget, including setup and
    verification, unless the user supplied another duration or experiment limit. Reserve the last
    20 minutes for confirmation, restoration, and delivery; do not launch work that cannot finish
@@ -139,7 +139,7 @@ hypothesis; reaching a target does not establish a hardware limit. Do not instal
 scheduler or claim work continues after the agent stops.
 
 Before delivery, reproduce the best accepted build, rerun affected repository checks and native
-scenarios, refresh `index.html`, and record unrun platforms honestly. Preserve the dashboard and
+scenarios, update the campaign record, and record unrun platforms honestly. Preserve the record and
 raw artifacts outside a disposable task checkout. Follow the repository's PR and worktree cleanup
 rules within the session's existing authorization; no implicit push, merge or publication. Report
 any retained worktree's exact path, size and cleanup blocker. Finish with the dashboard link,

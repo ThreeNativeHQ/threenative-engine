@@ -191,6 +191,20 @@ describe("reference release cache", () => {
       validateReferenceIndex({ ...index, stubs: [{ ...index.stubs[0], game: "missing" }] }),
     ).toThrow(/missing/);
   });
+  it("accepts the editorial catalog fields the data repository adds to a release game", async () => {
+    const { validateReferenceIndex } = await refs();
+    const [row] = index.games;
+    const catalogued = {
+      ...row,
+      genre: "platformer",
+      kind: "decompilation",
+      rating: 5,
+      subgenre: "3d platformer",
+    };
+    expect(
+      validateReferenceIndex({ ...index, games: [catalogued, ...index.games.slice(1)] }).games[0],
+    ).toMatchObject({ id: row.id, tier: row.tier });
+  });
   it("merges a card that references an already saved node", async () => {
     const { saveReferenceGame, loadReferenceGame } = await refs();
     saveReferenceGame(game, project);
@@ -229,12 +243,19 @@ describe("reference release cache", () => {
     ).toThrow(/sha|revision/iu);
     expect(readFileSync(file, "utf8")).toBe(previous);
   });
+  it("reads releases from the renamed reverse-engineer data repo by default (PRD-735)", async () => {
+    const { referencesBaseUrl } = await refs();
+    vi.stubEnv("THREENATIVE_REFERENCES_URL", "");
+    expect(referencesBaseUrl()).toBe(
+      "https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp/releases/latest/download/",
+    );
+  });
   it("saves and merges by id, prioritizes local cards and returns a shell-safe contribution command", async () => {
     const { saveReferenceGame, loadReferenceGame } = await refs();
     const saved = saveReferenceGame(game, project);
     expect(existsSync(path.join(project, saved.saved))).toBe(true);
     expect(saved.contribution.command).toContain(
-      "gh issue create --repo jonit-dev/threenative-game-refs",
+      "gh issue create --repo ThreeNativeHQ/threenative-reverse-engineer-mcp",
     );
     saveReferenceGame(
       {

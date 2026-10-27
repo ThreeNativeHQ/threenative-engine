@@ -1,10 +1,12 @@
-// `pnpm perf:live` — leave the tab open; every bench:engines report that lands under the watched
-// roots shows up within seconds. It reads the reports the benches already write (no new timing,
+// `pnpm dashboard` — the one KPI hub (PRD-751). Leave the tab open; every bench:engines report that lands under the watched
+// roots shows up within seconds. The other tabs read their loop's ledger on each load. It reads the reports the benches already write (no new timing,
 // no hook in the benches), validates them with the bench's own parser, and plots p50 per workload.
 // ponytail: polls every 2 s and rescans the roots; add fs.watch only if the roots grow past ~10k files.
+import { existsSync } from "node:fs";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { softwareAdapterName } from "../packages/playtest/src/runner/browser.js";
 import { type IPairRow, frameRates, pairRows } from "./engine-load-test/pair.js";
 import { type IRunReport, parseRunReport, summarize } from "./engine-load-test/report.js";
@@ -52,7 +54,8 @@ export interface IRow {
 const args = process.argv.slice(2);
 const flag = (name: string): string[] =>
   args.flatMap((a, i) => (a === name && args[i + 1] ? [args[i + 1] as string] : []));
-const port = Number(flag("--port")[0] ?? 8765);
+// 8765 is Token Furnace on the owner machine; the hub takes its own port.
+const port = Number(flag("--port")[0] ?? 4751);
 const roots = flag("--root").length
   ? flag("--root")
   : [path.join(process.cwd(), "artifacts", "engine-load-test", "prd-573")];
@@ -778,6 +781,65 @@ export function desktopOf(runs: readonly ILoadedRun[]) {
   return { kpi, gpu, godot };
 }
 
+/** Every hub tab, in nav order. */
+export const TABS = [
+  ["/", "Epic scoreboard"],
+  ["/midway", "Midway"],
+  ["/shadows", "Shadows vs Unreal"],
+  ["/ci-speed", "CI speed"],
+  ["/asset-perf", "Asset perf"],
+  ["/kit-loop", "Kit loop"],
+] as const;
+
+const NAV_STYLE =
+  "<style>nav.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}nav.tabs a{padding:3px 12px;border-radius:999px;color:inherit;opacity:.75;text-decoration:none;border:1px solid #8886}nav.tabs a[aria-current]{background:#2f6fed;border-color:#2f6fed;color:#fff;opacity:1}</style>";
+
+/** Swaps a page's own `nav.tabs` for the hub nav, or puts the nav at the top of `<main>`. */
+export function withNav(html: string, current: string): string {
+  const links = TABS.map(
+    ([href, name]) =>
+      `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${name}</a>`,
+  ).join("");
+  const nav = `<nav class="tabs">${links}</nav>`;
+  return /<nav class="tabs">.*?<\/nav>/su.test(html)
+    ? html.replace(/<nav class="tabs">.*?<\/nav>/su, nav)
+    : html.replace("<main>", `${NAV_STYLE}<main>${nav}`);
+}
+
+/** The loops whose ledger a hub tab renders; each module exports `readLedger` and `renderHtml`. */
+const LEDGER_TABS = {
+  "ci-speed": { module: "./ci-speed-loop.mjs", ledger: "../docs/ci-speed/ledger.json" },
+  "asset-perf": { module: "./asset-perf-loop.mjs", ledger: "../docs/asset-perf/ledger.json" },
+  "kit-loop": { module: "./kit-loop.mjs", ledger: "../docs/kit-loop/ledger.json" },
+} as const;
+
+const ledgerTabOf = (url = "") =>
+  Object.keys(LEDGER_TABS).find((tab) => url === `/${tab}` || url.startsWith(`/${tab}?`));
+
+/** One ledger tab, rendered on each load. Fails closed: missing = `pending`, malformed = `invalid`. */
+export async function ledgerTab(
+  tab: keyof typeof LEDGER_TABS,
+  file = fileURLToPath(new URL(LEDGER_TABS[tab].ledger, import.meta.url)),
+): Promise<string> {
+  const page = (body: string) =>
+    withNav(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${tab}</title></head><body style="font:15px/1.45 system-ui,sans-serif"><main>${body}</main></body></html>`,
+      `/${tab}`,
+    );
+  if (!existsSync(file))
+    return page(`<p><b>pending</b>: no ledger at <code>${file}</code> yet.</p>`);
+  const loop = await import(new URL(LEDGER_TABS[tab].module, import.meta.url).href);
+  try {
+    return withNav(
+      loop.renderHtml(loop.readLedger(file), new Date(), { serving: true }),
+      `/${tab}`,
+    );
+  } catch (error) {
+    const reason = String(error instanceof Error ? error.message : error).replace(/[<>&]/gu, "");
+    return page(`<p><b>invalid</b>: <code>${file}</code>: ${reason}</p>`);
+  }
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   createServer(async (req, res) => {
     if (req.url?.startsWith("/api/epic")) {
@@ -800,22 +862,42 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       res.end(JSON.stringify(await midwayOnce()));
     } else if (req.url?.startsWith("/midway")) {
       res.writeHead(200, { "content-type": "text/html" });
-      res.end(await readFile(new URL("./midway-bench/dashboard.html", import.meta.url), "utf8"));
+      res.end(
+        withNav(
+          await readFile(new URL("./midway-bench/dashboard.html", import.meta.url), "utf8"),
+          "/midway",
+        ),
+      );
     } else if (req.url?.startsWith("/api/shadows")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(await shadowPerfOnce()));
     } else if (req.url?.startsWith("/shadows")) {
       res.writeHead(200, { "content-type": "text/html" });
-      res.end(await readFile(new URL("./shadow-perf/dashboard.html", import.meta.url), "utf8"));
+      res.end(
+        withNav(
+          await readFile(new URL("./shadow-perf/dashboard.html", import.meta.url), "utf8"),
+          "/shadows",
+        ),
+      );
+    } else if (req.url?.startsWith("/api/asset-perf")) {
+      const { liveState } = await import(new URL("./asset-perf-loop.mjs", import.meta.url).href);
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify(liveState()));
+    } else if (ledgerTabOf(req.url) !== undefined) {
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      res.end(await ledgerTab(ledgerTabOf(req.url) as keyof typeof LEDGER_TABS));
     } else if (req.url?.startsWith("/api/points")) {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       res.end(JSON.stringify(pointsOf(await allRows())));
     } else {
       res.writeHead(200, { "content-type": "text/html" });
-      res.end(await readFile(new URL("./perf-live.html", import.meta.url), "utf8"));
+      res.end(withNav(await readFile(new URL("./perf-live.html", import.meta.url), "utf8"), "/"));
     }
   }).listen(port, "127.0.0.1", () => {
-    process.stdout.write(`perf live: http://127.0.0.1:${port}  (watching ${roots.join(", ")})\n`);
+    process.stdout.write(`dashboard: http://127.0.0.1:${port}  (watching ${roots.join(", ")})\n`);
     void midwayOnce().catch(() => undefined); // warm the per-run parse cache before the first page load
   });
 }
