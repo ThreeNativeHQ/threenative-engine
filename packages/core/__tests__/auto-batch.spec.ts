@@ -226,6 +226,22 @@ describe("AutoBatch", () => {
     expect(draws(scene)).toBe(10);
   });
 
+  // The shooter turns matrixAutoUpdate off on its town pieces to keep their sight boxes. The guard
+  // then stamped a piece's matrix into its shared buffer and read that tail back as the town
+  // group's own, so the group "moved" and every source under it came back (8307 on the shooter).
+  it("keeps a still parent merged when its children hold their own matrices", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    const pieces = town(12, group);
+    group.updateMatrixWorld(true);
+    for (const piece of pieces) piece.matrixAutoUpdate = false;
+    const batch = new AutoBatch(scene, { settleFrames: 3, guard: "everyFrame" });
+    run(batch, 20);
+    expect(batch.census).toMatchObject({ meshes: 12, draws: 2, restored: 0 });
+    expect(draws(scene)).toBe(2);
+  });
+
   it("keeps a mesh a game entity holds out of the merge, and reports it", () => {
     const scene = new Scene();
     const group = new Group();

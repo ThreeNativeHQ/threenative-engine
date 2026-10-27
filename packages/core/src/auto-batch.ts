@@ -207,7 +207,12 @@ function writeStamp(object: Object3D, into: Float64Array): void {
   into[13] = object.renderOrder;
   into[14] = object.layers.mask;
   into[15] = object.matrixAutoUpdate ? 0 : 1;
-  if (object.matrixAutoUpdate) return;
+  // Clear the matrix slots too: `stampMatches` reuses one buffer, and a tail left by the last
+  // object with its own matrix made a still parent read as moved.
+  if (object.matrixAutoUpdate) {
+    into.fill(0, 16);
+    return;
+  }
   for (let element = 0; element < 16; element += 1)
     into[16 + element] = object.matrix.elements[element] ?? 0;
 }
