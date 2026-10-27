@@ -324,7 +324,13 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       };
       const core = await import("@threenative/core");
       const preset = quality.qualityPreset(tier);
-      expect(exposure.exposureSettings).toEqual(core.exposureSettings);
+      // The starter kits' shared 0 EV meter (kit-exposure.spec.ts).
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        key: 0.18,
+        minStops: Math.log2(0.18) - 20,
+        maxStops: Math.log2(0.18) + 10,
+      });
       expect(preset).toEqual({
         ...core.qualityPreset(tier),
         exposurePolicy: exposure.exposureSettings,

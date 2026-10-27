@@ -8,6 +8,10 @@ The shared Unreal 5.8.3 look comes from `@threenative/core`: `WorldEnvironment`,
 its reason. `tonemapMode: "aces"` and `autoExposureEnabled: false` with fixed `exposure`
 are explicit overrides, reported by the chain.
 
+The starter kits meter at 0 EV (key 0.18), not core's Unreal +1 EV: `template-assets/kitExposure.ts`
+is the one source, `pnpm stamp:template-render` copies it into each kit's `src/render/kitExposure.ts`,
+and `kit-exposure.spec.ts` names the kits that keep their own key (minimal, rain, shooter, snow).
+
 The tuning target is `scripts/unreal-look/scaffold/Reference.ts.in` at L9 and the
 `CalibrationScene.ts.in` scenes. Judge the kit's own game against two headed WebGPU runs
 per arm and the target frames. Each migration requires a fresh read-only judge's

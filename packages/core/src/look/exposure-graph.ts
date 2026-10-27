@@ -56,6 +56,23 @@ export const exposureBins = 64;
 /** The gather splits the blocks over 64 tiles, so a bin is summed by 64 short loops, not one long. */
 export const exposureTiles = 64;
 
+/** Unreal's histogram floor and bucket width in log2 luminance: EV100 -10 to 20 in 64 buckets (Scene.cpp:498-509). */
+const BLACK_FLOOR = -10;
+const BLACK_BUCKET = 30 / 63;
+
+/**
+ * The share of a block's weight Unreal keeps at this log2 luminance. Unreal splits a sample between
+ * the two of its 64 buckets around its position and drops the share in bucket 0
+ * (r.EyeAdaptation.BlackHistogramBucketInfluence 0, UE 5.8.3:
+ * Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessEyeAdaptation.cpp:110-115 and
+ * Engine/Shaders/Private/PostProcessHistogram.usf:150-179), so a black void does not open the eye.
+ * The floor is Unreal's, not this histogram's: a game's narrow `minStops`..`maxStops` keeps its dark blocks.
+ * ponytail: judged per 16x16 block mean, not per pixel; a block that mixes void and lit pixels counts whole.
+ */
+export function blackBucketWeight(log2Luminance: number): number {
+  return Math.min(1, Math.max(0, (log2Luminance - BLACK_FLOOR) / BLACK_BUCKET));
+}
+
 /**
  * Stage one of the histogram, drawn as a 64 (bins) x 64 (tiles) target. Texel (bin, tile) gathers
  * its tile of the block means of `blocks` (the second reduction level, about 8 000 texels at
@@ -82,19 +99,17 @@ export function histogramTiles(
       const i = first.add(offset);
       If(i.lessThan(total), () => {
         const block = textureLoad(blocks, ivec2(i.mod(width), i.div(width)));
-        const log = block.r
-          .div(block.g.max(1e-20))
-          .max(1e-20)
-          .log2()
-          .clamp(low, low + span);
+        const raw = block.r.div(block.g.max(1e-20)).max(1e-20).log2();
+        const log = raw.clamp(low, low + span);
         const index = log
           .sub(low)
           .mul(exposureBins / span)
           .floor()
           .min(exposureBins - 1);
-        If(block.g.greaterThan(0).and(index.equal(bin)), () => {
-          weight.addAssign(block.g);
-          logSum.addAssign(block.g.mul(log));
+        const kept = block.g.mul(raw.sub(BLACK_FLOOR).div(BLACK_BUCKET).clamp(0, 1));
+        If(kept.greaterThan(0).and(index.equal(bin)), () => {
+          weight.addAssign(kept);
+          logSum.addAssign(kept.mul(log));
         });
       });
     });
