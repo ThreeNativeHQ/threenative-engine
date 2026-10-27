@@ -69,6 +69,13 @@ add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scen
     src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp
     src/engine/scene/projected_cull.cpp)
 tn_native_engine_target(tn_engine_scene)
+if(EMSCRIPTEN)
+    # The web engine ships under a 4 MiB budget (native-engine-wasm action). The ray BVH (PRD-752) and
+    # the geometry generators, which run when a scene is built and not per frame, are built at -Os
+    # there; native keeps -O3.
+    set_source_files_properties(src/engine/scene/raycaster.cpp src/engine/scene/geometries.cpp
+        src/engine/scene/curves.cpp src/engine/scene/shape_utils.cpp PROPERTIES COMPILE_OPTIONS "-Os")
+endif()
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
