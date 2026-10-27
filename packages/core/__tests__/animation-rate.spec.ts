@@ -431,6 +431,73 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  it("flushes skipped time before a rate 8 to rate 1 transition", () => {
+    const baseline = player(1);
+    const candidate = player(8);
+    let skipped = false;
+    for (let frame = 0; frame < 3; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+      skipped ||= !candidate.updateRateReport.evaluated;
+    }
+    expect(skipped).toBe(true);
+    candidate.updateRate = 1;
+    for (let frame = 0; frame < 130; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+      expect(candidate.updateRateReport).toMatchObject({
+        rate: 1,
+        overridden: true,
+        evaluated: true,
+      });
+      expect(candidate.mixer.time).toBeCloseTo(baseline.mixer.time, 10);
+      expect(candidate.mixer.clipAction(candidate.clip("clip1")).time).toBeCloseTo(
+        baseline.mixer.clipAction(baseline.clip("clip1")).time,
+        10,
+      );
+      expect(candidate.root.rotation.x).toBeCloseTo(baseline.root.rotation.x, 6);
+    }
+    baseline.dispose();
+    candidate.dispose();
+  });
+
+  it("does not scan inactive clips at full rate", () => {
+    const clips = Array.from(
+      { length: 64 },
+      (_, index) =>
+        new AnimationClip(`scan${index}`, 1, [
+          new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1]),
+        ]),
+    );
+    const root = new Group();
+    const rig = new AnimationPlayer({ root, clips, strideSync: false, updateRate: 1 });
+    rig.play("scan0");
+    const expectedRoot = new Group();
+    const expectedMixer = new AnimationMixer(expectedRoot);
+    const expected = expectedMixer.clipAction(clips[0] as AnimationClip).play();
+    for (let tick = 0; tick < 4; tick += 1) {
+      expectedMixer.update(1 / 60);
+      rig.update(1 / 60);
+    }
+
+    const probes = clips.map((clip) => vi.spyOn(rig.mixer.clipAction(clip), "isScheduled"));
+
+    for (let tick = 0; tick < 30; tick += 1) {
+      expectedMixer.update(1 / 60);
+      rig.update(1 / 60);
+    }
+    for (let index = 1; index < probes.length; index += 1) {
+      expect(probes[index]?.mock.calls.length, clips[index]?.name).toBe(0);
+    }
+    const actual = rig.mixer.clipAction(rig.clip("scan0"));
+    expect(actual.time).toBeCloseTo(expected.time, 10);
+    expect(root.rotation.x).toBeCloseTo(expectedRoot.rotation.x, 10);
+
+    for (const probe of probes) probe.mockRestore();
+    expectedMixer.uncacheRoot(expectedRoot);
+    rig.dispose();
+  });
+
   it("never skips updateRate 1 and reports the explicit override", () => {
     const rig = player(1);
     for (let frame = 0; frame < 300; frame += 1) {
