@@ -234,7 +234,7 @@ describe("reference release cache", () => {
     const saved = saveReferenceGame(game, project);
     expect(existsSync(path.join(project, saved.saved))).toBe(true);
     expect(saved.contribution.command).toContain(
-      "gh issue create --repo jonit-dev/threenative-game-refs",
+      "gh issue create --repo ThreeNativeHQ/threenative-reverse-engineer-mcp",
     );
     saveReferenceGame(
       {

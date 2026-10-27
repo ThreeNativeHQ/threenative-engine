@@ -22,7 +22,7 @@ the manifest's `starterKits` section (verdict `"starterKit"` when no mechanic al
 lexical coincidence as engine guidance.
 
 Reference search reads a gzipped stub index; detail fetches one pinned game's map and cards lazily.
-The source is the latest release of [threenative-game-refs](https://github.com/jonit-dev/threenative-game-refs),
+The source is the latest release of [threenative-reverse-engineer-mcp](https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp),
 separate CC-BY 4.0 data. Downloads validate before replacing the cache in
 `$XDG_CACHE_HOME/threenative/refs` (default `~/.cache/threenative/refs`), refresh with ETags, and
 work offline from that cache. The index has a 5-second fetch budget; game files have 30 seconds,

@@ -7,7 +7,7 @@ import { createHash } from 'crypto';
 import os from 'os';
 import { gunzipSync } from 'zlib';
 
-var DEFAULT_REFERENCES_URL = "https://github.com/jonit-dev/threenative-game-refs/releases/latest/download/";
+var DEFAULT_REFERENCES_URL = "https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp/releases/latest/download/";
 var FETCH_TIMEOUT_MS = 5e3;
 var GAME_FETCH_TIMEOUT_MS = 3e4;
 var ID = /^[a-z0-9][a-z0-9-]*$/u;
@@ -372,7 +372,7 @@ function atomicWrite(file, value) {
 function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
-var CONTRIBUTION_REPO = "jonit-dev/threenative-game-refs";
+var CONTRIBUTION_REPO = "ThreeNativeHQ/threenative-reverse-engineer-mcp";
 function saveReferenceGame(value, cwd = process.cwd()) {
   const incoming = record(value, "reference", [
     "version",
