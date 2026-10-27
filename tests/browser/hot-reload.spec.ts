@@ -247,7 +247,14 @@ async function waitForHotReload(
           ).__THREENATIVE__;
           const diagnostics = tools?.hot?.();
           const player = tools?.snapshot?.().player;
+          // The updated game boots again, and its HUD reads nothing until that startup's cover
+          // lifts (PRD-748): the score is back on screen only then.
+          const scoreLabel = [...document.querySelectorAll("div")].find(
+            (element) => element.textContent?.trim() === "score",
+          );
           return (
+            scoreLabel?.nextElementSibling !== null &&
+            scoreLabel?.nextElementSibling !== undefined &&
             diagnostics !== undefined &&
             diagnostics.reloads >= reloads &&
             diagnostics.canvases === 1 &&
@@ -306,7 +313,8 @@ test("preserves starter state and stays flat across ten real HMR updates", async
   page.on("pageerror", (error) => {
     if (!isExpectedWebGpuBackendError(error.message)) errors.push(error.message);
   });
-  await page.goto("/");
+  // The page-thread entry; the config's baseURL says why.
+  await page.goto("/main.html");
   await page.waitForFunction(() => {
     try {
       const diagnostics = (

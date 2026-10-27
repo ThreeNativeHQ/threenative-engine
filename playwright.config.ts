@@ -506,7 +506,10 @@ export default defineConfig({
       name: "hot-reload",
       testDir: "./tests/browser",
       use: {
-        baseURL: `http://127.0.0.1:${hotReloadPort}`,
+        // `main.html`, the starter's page-thread override: state-keeping hot reload lives in its
+        // `src/main.ts`. `index.html` runs the game in a worker, which Vite cannot hot-update, and
+        // once a worker page has loaded, every game edit fully reloads every page of that server.
+        baseURL: `http://127.0.0.1:${hotReloadPort}/main.html`,
         // This proof drives a real game — it lands a player, walks it, and reads a score across ten
         // HMR updates — and headless Chromium serves WebGPU from SwiftShader whatever the flags
         // say. Headless, the run reported a reload counter stuck at zero for weeks; headed, on the
