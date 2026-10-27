@@ -97,7 +97,9 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
     build: (entry) =>
       scenario("explore-clean", entry, [explore(entry, 1800, "explored")], {
         diagnostics: DIAGNOSTICS,
-        movement: { entity: entry.subject, minDistance: 1 },
+        // Path, not net displacement: a lost life or a restart legitimately puts the subject back on its
+        // spawn, and the starter's explorer ended there with 63 m walked and 0.003 m of net distance.
+        movement: { entity: entry.subject, pathLength: 1 },
         visual: [{ region: { height: 540, minSharpness: 0.3, width: 960, x: 160, y: 90 } }],
       }),
     id: "explore-clean",

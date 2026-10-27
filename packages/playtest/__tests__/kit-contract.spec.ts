@@ -40,6 +40,12 @@ describe("kit contract", () => {
     ]);
   });
 
+  it("judges play by the path walked, so a respawn on the spawn point is not a subject that never moved", () => {
+    const row = planKitContract({ demo: FULL }, ["demo"]).find(({ row: id }) => id === "explore-clean");
+    const scenario = (row?.kind === "run" ? row.scenario : {}) as { assert?: { movement?: object } };
+    expect(scenario.assert?.movement).toEqual({ entity: "player", pathLength: 1 });
+  });
+
   it("reports an opt-out with its reason instead of dropping the row", () => {
     const plan = planKitContract({ demo: optOutOfDeclared() }, ["demo"]);
     const skipped = plan.filter(({ kind }) => kind === "opt-out");
