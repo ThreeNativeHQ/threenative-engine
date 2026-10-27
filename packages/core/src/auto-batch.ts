@@ -141,6 +141,11 @@ const scratch = new Float64Array(SNAPSHOT_LENGTH);
 /** Sources still drawn through a merged mesh, mapped to the group that draws them. */
 const sourceGroups = new WeakMap<Object3D, IGroup>();
 
+/** True while the engine draws `object` through a merged mesh and keeps it hidden. */
+export function isAutoBatchSource(object: Object3D): boolean {
+  return sourceGroups.has(object);
+}
+
 /** What a ray test needs to answer for a hidden source from its merged mesh. */
 export interface IAutoBatchPick {
   readonly merged: Mesh;
@@ -323,7 +328,6 @@ export class AutoBatch {
   #held = 0;
   #cursor = 0;
   #staleFrames = 1;
-  #settledOnce = false;
   readonly #entities: Registry | undefined;
   readonly #everyFrame: boolean;
 
@@ -334,11 +338,6 @@ export class AutoBatch {
     this.#settleFrames = options.settleFrames ?? SETTLE_FRAMES;
     this.#entities = options.entities;
     this.#everyFrame = options.guard === "everyFrame";
-  }
-
-  /** True once the first scan finished, whether or not it found anything to merge. */
-  get firstPassDone(): boolean {
-    return this.#settledOnce || !this.#enabled;
   }
 
   get census(): IAutoBatchCensus {
@@ -390,11 +389,23 @@ export class AutoBatch {
         // Nothing here can share a draw: the pass is finished until the scene's shape changes.
         this.#known = shape;
         this.#state = "idle";
-        this.#settledOnce = true;
       }
     } else if (this.#state === "watching" && this.#frames >= this.#settleFrames) {
       this.#settle();
     }
+  }
+
+  /**
+   * Merges now, without waiting for the scene to hold still. For the caller that knows nothing has
+   * moved yet: the first warm-up runs before any frame, so the merged meshes are what it compiles.
+   * Anything that does move later is given back by the guard.
+   */
+  settleNow(): void {
+    if (!this.#enabled) return;
+    const meshes = this.#snapshot();
+    if (meshes.size >= 2) this.#merge([...meshes.keys()]);
+    this.#known = fingerprint(this.#scene);
+    this.#state = "idle";
   }
 
   /** Gives every source back and forgets the scene; the game is leaving it. */
@@ -465,7 +476,6 @@ export class AutoBatch {
     this.#merge([...stable.keys()]);
     this.#known = fingerprint(this.#scene);
     this.#state = "idle";
-    this.#settledOnce = true;
   }
 
   #merge(meshes: Mesh[]): void {
@@ -640,18 +650,26 @@ export class AutoBatch {
     record.mesh.visible = true;
     const { group } = record;
     group.live -= 1;
-    // Every vertex of the source sits at the origin, so its triangles have no area and draw nothing.
-    // The index is left alone: a picker's hierarchy may have reordered it, but vertices stay put.
-    const position = group.merged.geometry.getAttribute("position");
+    if (group.live > 0) this.#collapse(record);
+    if (group.live > 0 || group.merged.parent === null) return;
+    group.merged.removeFromParent();
+    group.merged.geometry.dispose();
+    this.#draws -= 1;
+  }
+
+  /**
+   * Every vertex of the source goes to the origin, so its triangles have no area and draw nothing.
+   * The index is left alone: a picker's hierarchy may have reordered it, but vertices stay put.
+   * A group with no source left skips this, because its geometry is disposed in the same call and a
+   * queued upload would name a buffer that no longer exists.
+   */
+  #collapse(record: IRecord): void {
+    const position = record.group.merged.geometry.getAttribute("position");
     (position.array as Float32Array).fill(
       0,
       record.vertexStart * position.itemSize,
       (record.vertexStart + record.vertexCount) * position.itemSize,
     );
     position.needsUpdate = true;
-    if (group.live > 0 || group.merged.parent === null) return;
-    group.merged.removeFromParent();
-    group.merged.geometry.dispose();
-    this.#draws -= 1;
   }
 }

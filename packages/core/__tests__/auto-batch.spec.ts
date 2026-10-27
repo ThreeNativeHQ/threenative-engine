@@ -14,6 +14,7 @@ import { AUTO_BATCH_MARKER, AutoBatch, isAutoBatchMerged } from "../src/auto-bat
 import { Registry } from "../src/entities.js";
 import { ScenePicker } from "../src/picking.js";
 import { type IViewportSize, Viewport } from "../src/viewport.js";
+import { warmUpScene } from "../src/warmup.js";
 
 /** Meshes the renderer would walk: every visible mesh still in the graph. */
 function draws(scene: Scene): number {
@@ -239,19 +240,44 @@ describe("AutoBatch", () => {
     expect(batch.census.heldByEntities).toBe(1);
   });
 
-  it("finishes its first pass on an empty scene, and checks every source each frame on request", () => {
-    const empty = new AutoBatch(new Scene(), { settleFrames: 3 });
-    expect(empty.firstPassDone).toBe(false);
-    run(empty, 5);
-    expect(empty.firstPassDone).toBe(true);
+  it("merges at once on settleNow, before any frame has run", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    const meshes = town(10, group);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    batch.settleNow();
+    expect(draws(scene)).toBe(2);
+    // The scene did not change shape, so the frame loop starts no second pass over it.
+    run(batch, 8);
+    expect(draws(scene)).toBe(2);
+    meshes[1]?.position.setY(4);
+    batch.update();
+    expect(batch.census.restored).toBe(1);
+  });
+
+  it("checks every source each frame on request", () => {
     const scene = new Scene();
     const group = new Group();
     scene.add(group);
     town(10, group);
     const exact = new AutoBatch(scene, { guard: "everyFrame", settleFrames: 3 });
     run(exact, 8);
-    expect(exact.firstPassDone).toBe(true);
     expect(exact.census.guardStaleFrames).toBe(1);
+  });
+
+  it("counts a merged mesh in the warm-up, not the hidden sources it replaced", async () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(10, group);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    const report = await warmUpScene({} as never, scene, {} as never, {
+      granularity: "object",
+      includeHidden: true,
+    });
+    expect(report.candidates).toBe(2);
   });
 
   it("does nothing when disabled, and says so", () => {

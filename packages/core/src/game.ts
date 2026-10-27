@@ -963,6 +963,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    // What `enter()` built is what the warm-up compiles and the first frame draws, so it merges
+    // now, before either: no frame is ever drawn unmerged, and the compile counts merged meshes,
+    // not every source. Anything that moves afterwards is given back by the guard.
+    this.#autoBatch?.settleNow();
     // Before the audit, so an opacity the convention made take effect is reported as a warning.
     const opacity = applyOpacityConvention(ctx.scene);
     if (opacity !== undefined) console.warn(opacity);
@@ -1837,7 +1841,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         observeCompilation();
         // Before the first world pass compiles anything: the merged meshes it compiles are the ones
         // the player will see. A scene that has not entered has nothing built to settle.
-        if (this.#sceneEntered) this.#autoBatch?.update();
+        if (this.#sceneEntered) autoBatch.update();
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
