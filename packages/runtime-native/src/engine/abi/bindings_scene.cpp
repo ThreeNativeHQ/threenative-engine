@@ -383,6 +383,9 @@ void registerObject3D(ClassBinding& b) {
     // Engine-internal: the process-wide count of adds, removes, attaches and destroys. Core keeps a walk
     // that only finds who is under whom (the camera pass's rig and camera-part sets) while it holds still.
     b.getters["__hierarchyRevision"] = [](void*) { return Value::of(double(Object3D::hierarchyVersion())); };
+    // Engine-internal: the process-wide count of world-matrix composes. A playtest reads it per frame, so a
+    // walk that composes nodes nothing draws (a hidden batch source) fails its bound.
+    b.getters["__matrixEvaluations"] = [](void*) { return Value::of(double(Object3D::matrixEvaluations())); };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };
     b.getters["receiveShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->receiveShadow()); };

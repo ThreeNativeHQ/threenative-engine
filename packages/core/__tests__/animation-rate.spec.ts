@@ -931,6 +931,8 @@ describe("AnimationPlayer update rate", () => {
 
   it("on the native engine asks each rig part whether it is shown, and takes the walk's rates", () => {
     const run = (engine: boolean) => {
+      const cost: Record<string, number> = {};
+      (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost = cost;
       if (engine) {
         Object.defineProperty(Object3D.prototype, "__hierarchyRevision", {
           configurable: true,
@@ -982,13 +984,16 @@ describe("AnimationPlayer update rate", () => {
         Reflect.deleteProperty(Object3D.prototype, "__hierarchyRevision");
         Reflect.deleteProperty(Object3D.prototype, "__tnVisibleInWorld");
       }
-      return { rates, walks: walks.mock.calls.length };
+      return { rates, walks: walks.mock.calls.length, cost: { ...cost } };
     };
     const plain = run(false);
     const native = run(true);
     expect(plain.walks).toBeGreaterThan(0);
     expect(native.walks).toBe(0);
     expect(native.rates).toEqual(plain.rates);
+    // The engine-cost bag a kit's playtest bounds: one rig map for the run, no rig walk.
+    expect(plain.cost).toEqual({ cullRigRebuilds: 7, cullRigWalks: plain.walks });
+    expect(native.cost).toEqual({ cullRigRebuilds: 1 });
   });
 
   it("passes the named override through SkeletalMesh3D", () => {

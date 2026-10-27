@@ -217,6 +217,16 @@ function hierarchyRevision(object: Object3D): number | undefined {
   return typeof revision === "number" ? revision : undefined;
 }
 
+/**
+ * Counts one costly step by name in `globalThis.__tnEngineCost`, the bag a playtest reads per frame
+ * (three-native reports it as TN_ENGINE_COST), so a kit that brings back a per-frame walk fails its bound.
+ */
+function countEngineCost(name: string): void {
+  const host = globalThis as { __tnEngineCost?: Record<string, number> };
+  host.__tnEngineCost ??= {};
+  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + 1;
+}
+
 /** The native engine's one-call answer to "is it and every parent visible" (bindings_scene.cpp). */
 function visibleInWorld(object: unknown): boolean | undefined {
   const host = (object as { __tnVisibleInWorld?: () => boolean }).__tnVisibleInWorld;
@@ -340,6 +350,7 @@ export class RenderCameraCull {
       at += 3;
     }
     if (same && at === this.#animatedFrom.length) return this.#animated.size > 0;
+    countEngineCost("cullRigRebuilds");
     this.#animated.clear();
     this.#animatedFrom.length = 0;
     this.#rigParts.clear();
@@ -426,6 +437,7 @@ export class RenderCameraCull {
       parts === undefined ||
       typeof (rig as { __tnVisibleInWorld?: unknown }).__tnVisibleInWorld !== "function"
     ) {
+      countEngineCost("cullRigWalks");
       rig.traverseVisible(this.#animationVisitor);
       return;
     }
