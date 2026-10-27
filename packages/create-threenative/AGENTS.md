@@ -65,6 +65,16 @@ workflows into a named skill or reference and link its generated path.
 each template's Commands block is a fail-closed statement, not marketing; narrow it when a
 dependency (like Recast WASM on QuickJS) rules a target out.
 
+## The kit contract (PRD-749)
+
+A bug found in one kit becomes one row of `packages/playtest/src/kit-contract.ts`, so every kit is
+checked for it in one `pnpm test:templates` run. Each kit declares what the rows need (subject, keys,
+sole nodes, restart key, action clips) in `template-playtests/contract.json`, or opts out of a row with
+a written reason. A row a kit neither declares nor opts out of fails the sweep. The contract is a test:
+a generated game never carries it, and a kit may change any of its own files. Add a row when you fix a
+bug that another kit could have; `TN_KIT_CONTRACT_ONLY=1 TN_KIT_CONTRACT_ROWS=<row,...>
+TN_TEMPLATE_ONLY=<kit>` runs one cell.
+
 ## Keep the tests in sync
 
 Adding, renaming, or deleting a template file means updating `__tests__/scaffold.spec.ts`

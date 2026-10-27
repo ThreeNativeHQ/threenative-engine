@@ -10,6 +10,7 @@ import {
   playtestStepWaitTicks,
   type IPlaytestAssertionResult,
   type IPlaytestFootSlipObservation,
+  type IPlaytestSightLineObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestObservations,
   type IPlaytestSampleRequest,
@@ -278,6 +279,8 @@ export async function runStep(
   cpuWindow?: (advance: () => Promise<void>) => Promise<void>,
   /** Advances the step's ticks itself, in place of the batched advance below. */
   stepWindow?: (ticks: number) => Promise<void>,
+  /** Sight-line samples collected at the same cadence as path positions, when the scenario asserts one. */
+  sightLine?: { entity: string; samples: IPlaytestSightLineObservation[] },
 ): Promise<IRunStepSamples> {
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
@@ -393,6 +396,7 @@ export async function runStep(
     await cpuWindow(() => advanceFixedStep(page, bridge, 1000, true));
     await waitFrames(page, 1);
     await samplePathPosition(bridge, pathEntity, pathPositions);
+    await sampleSightLine(bridge, sightLine);
   } else if (ticks > 0 && fixedStep) {
     // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
     // path sample cadence. advanceFixedStep submits one tick per bridge request: a loaded visual
@@ -402,10 +406,12 @@ export async function runStep(
       const batch = Math.min(sampleTicks, ticks - index);
       await advanceFixedStep(page, bridge, batch);
       await samplePathPosition(bridge, pathEntity, pathPositions);
+      await sampleSightLine(bridge, sightLine);
     }
   } else {
     await waitFrames(page, Math.max(frames, ticks, 1));
     await samplePathPosition(bridge, pathEntity, pathPositions);
+    await sampleSightLine(bridge, sightLine);
   }
   const afterInput = bridge === undefined || movementSampleRequest === undefined
     ? undefined
@@ -749,6 +755,16 @@ export async function sampleFootSlip(
     });
   }
   return { entity, feet, label, samples };
+}
+
+/** Asks the bridge where the camera's line to the entity goes; a bridge that cannot answer leaves no sample. */
+export async function sampleSightLine(
+  bridge: IPlaytestBridgeClient | undefined,
+  sightLine: { entity: string; samples: IPlaytestSightLineObservation[] } | undefined,
+): Promise<void> {
+  if (bridge === undefined || sightLine === undefined) return;
+  const snapshot = await bridge.sample({ sightLine: { entity: sightLine.entity } });
+  if (snapshot.sightLine !== undefined) sightLine.samples.push(snapshot.sightLine);
 }
 
 export async function samplePathPosition(
