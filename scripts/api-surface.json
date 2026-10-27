@@ -42,6 +42,7 @@
         "./react",
         "./react-css",
         "./ui-layer",
+        "./worker",
         "./world"
       ],
       "symbols": {
@@ -62,6 +63,8 @@
         "@threenative/core/ui-layer#publishUiState": "export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }",
         "@threenative/core/ui-layer#sendUiIntent": "export function sendUiIntent(bridge: IUiBridge, intent: string, payload?: unknown): void { … }",
         "@threenative/core/ui-layer#subscribeUiState": "export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … }",
+        "@threenative/core/worker#serveWorkerGame": "export function serveWorkerGame( game: { … }",
+        "@threenative/core/worker#startWorkerGame": "export function startWorkerGame( worker: Worker, container: HTMLElement, ): { … }",
         "@threenative/core/world#cellPlacements": "export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32Array { … }",
         "@threenative/core/world#getWorldCapabilities": "export function getWorldCapabilities(options: IWorldCapabilitiesOptions = { … }",
         "@threenative/core/world#Heightfield": "export class Heightfield extends Group implements IComputeDriven { … }",
@@ -297,7 +300,7 @@
         "@threenative/playtest/protocol#jsonByteLength": "export function jsonByteLength(value: JsonValue): number { … }",
         "@threenative/playtest/protocol#requestedPlaytestClockMode": "export function requestedPlaytestClockMode(): PlaytestClockMode | undefined { … }",
         "@threenative/playtest/runner#AdbAndroidDriver": "export class AdbAndroidDriver implements IAndroidDriver { … }",
-        "@threenative/playtest/runner#advanceFixedStep": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, render = false, ): Promise<void> { … }",
+        "@threenative/playtest/runner#advanceFixedStep": "export async function advanceFixedStep( page: Page, bridge: { … }",
         "@threenative/playtest/runner#advanceTimeoutMs": "export function advanceTimeoutMs( ticks: number, perTickMs: number = PLAYTEST_ADVANCE_TICK_BUDGET_MS, ): number { … }",
         "@threenative/playtest/runner#androidMailboxPaths": "export function androidMailboxPaths( packageName: string, root = `/sdcard/Android/data/$ { … }",
         "@threenative/playtest/runner#androidTouchBatches": "export function androidTouchBatches( identity: readonly string[], positions: readonly string[], ): string[][] { … }",

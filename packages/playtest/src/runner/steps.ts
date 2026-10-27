@@ -608,7 +608,7 @@ async function executeAimAtStep(
  */
 export async function advanceFixedStep(
   page: Page,
-  bridge: Pick<IPlaytestBridgeClient, "advance">,
+  bridge: { advance(ticks: number, options?: { render?: boolean }): Promise<number | undefined | void> },
   ticks: number,
   render = false,
 ): Promise<void> {
@@ -618,11 +618,14 @@ export async function advanceFixedStep(
   // work during one tick to exceed a request's bounded budget. A measurement that couples updates
   // to world draws also asks for a drawn frame per tick and lets the HUD paint between ticks.
   // Every other step advances without drawing.
-  for (let tick = 0; tick < ticks; tick += 1) {
+  // A live clock answers a one-tick request with the ticks its own pump ran: two per frame at
+  // 30 fps on a 60 Hz step. Count those, or a held key stays down for twice its ticks (PRD-752).
+  // A stalled pump reports zero and still counts as one, so the loop always ends.
+  for (let tick = 0; tick < ticks; ) {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        if (render) await bridge.advance(1, { render: true });
-        else await bridge.advance(1);
+        const advanced = render ? await bridge.advance(1, { render: true }) : await bridge.advance(1);
+        tick += typeof advanced === "number" && advanced > 1 ? advanced : 1;
         break;
       } catch (error) {
         if (
@@ -634,7 +637,7 @@ export async function advanceFixedStep(
         await waitFrames(page, 1);
       }
     }
-    if (render && tick + 1 < ticks) await waitFrames(page, 1);
+    if (render && tick < ticks) await waitFrames(page, 1);
   }
 }
 

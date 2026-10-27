@@ -139,6 +139,33 @@ describe("web branding adapter", () => {
       delete process.env.THREENATIVE_NATIVE_BUNDLE;
     }
   });
+  it("routes three to the Wasm engine inside a worker bundle too (PRD-752)", async () => {
+    // Vite runs only `worker.plugins` on a worker bundle. Without the resolver there, a game booted
+    // in a worker ran upstream three, which rejected the engine's skin weights as `unorm32x4`.
+    const root = await makeTempDir("threenative-web-brand-worker-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "worker-game", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { app: { name: "Worker Game" }, engine: "threenative" };\n',
+    );
+    const plugin = createWebBrandPlugin();
+    const config = (await plugin.config({ root })) as {
+      worker?: {
+        format?: string;
+        plugins?: () => { resolveId(source: string, importer?: string): unknown }[];
+      };
+    };
+    await plugin.configResolved({ root });
+    // ES output: the engine module awaits its Wasm at the top level.
+    expect(config.worker?.format).toBe("es");
+    const workerPlugins = config.worker?.plugins?.() ?? [];
+    const routed = await Promise.all(workerPlugins.map((each) => each.resolveId("three")));
+    expect(routed).toContain("\0threenative:web-engine");
+  });
   it("keeps an authored favicon when config has no replacement", async () => {
     const root = await makeTempDir("threenative-web-brand-");
     roots.push(root);

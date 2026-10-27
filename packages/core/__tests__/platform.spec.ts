@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   detectPlatform,
   getPlatform,
+  hostGestureTarget,
   isMobile,
   isNative,
   isTouchscreenAvailable,
@@ -131,5 +132,23 @@ describe("platform detection", () => {
     expect(isMobile()).toBe(platform.formFactor === "mobile");
     expect(isTouchscreenAvailable()).toBe(platform.maxTouchPoints > 0);
     expect(isWeb()).not.toBe(isNative());
+  });
+});
+
+describe("host gesture target (PRD-752)", () => {
+  it("is the page window, else the input target a worker host installed", () => {
+    // AudioBus waits for a gesture before it plays. A worker has no window, so without the
+    // platform's input target every cue would stay queued.
+    const inputTarget = new EventTarget();
+    const view = new EventTarget();
+    vi.stubGlobal("__tnGamePlatform", { inputTarget });
+    try {
+      vi.stubGlobal("window", undefined);
+      expect(hostGestureTarget()).toBe(inputTarget);
+      vi.stubGlobal("window", view);
+      expect(hostGestureTarget()).toBe(view);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

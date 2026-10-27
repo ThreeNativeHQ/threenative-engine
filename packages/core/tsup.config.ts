@@ -8,6 +8,7 @@ export default defineConfig({
     "src/react.ts",
     "src/react-css.ts",
     "src/ui-layer.ts",
+    "src/worker.ts",
     "src/world.ts",
     "src/net.ts",
     // The terrain jobs' worker entry, emitted as its own file so `new Worker(new URL(...))` in

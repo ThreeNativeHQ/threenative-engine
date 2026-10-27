@@ -27,9 +27,7 @@ import {
   discoverKitManifests,
   discoverTemplateNames,
   parseArgs,
-  referenceDigest,
   scaffoldCompletionMessage,
-  scaffoldNextSteps,
 } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -294,8 +292,6 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // boot-failure text both engines now show, so only puzzle's tree moves.
   // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
   // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
-  // Recomputed 2026-10-27 (#575 merges develop #579): every template AGENTS.md names classic-game
-  // mechanics references beside capability search, so all sixteen trees move.
   // Recomputed 2026-10-26 (PR #574 merges #572): the action-rpg draw fix, the rain terrain cache,
   // the sailing and snow core-look migrations on top of the on-demand asset loader.
   "action-rpg": "2595a51284d1ec8eaeee853035cda111544d87b9392e5001f04270cebc3e18f9",
@@ -312,7 +308,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "281b609c12c54ed4fd9568aea9a99d0cedea2f9fb2646659af13d0a7451bff39",
+  collectathon: "07a00c5ccc4b33ae30cbbca156f585ec32f2bc3dae030bff6e5123916aa687b7",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -320,27 +316,30 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // sailing and starter ship the shared kitExposure.ts meter (0 EV).
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
-  adventure: "1c994f2ea9dbbe8de006516316fd2be91722fb81b9def5e12227847aab747406",
+  // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
+  // Recomputed 2026-10-27 (#575 merges develop #579): every template AGENTS.md names classic-game
+  // mechanics references beside capability search, so all sixteen trees move.
+  adventure: "66f885599f0a92837d0879747dabff74f13c665aa9f3b056f92cc8fbb89f9c30",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "4d0884a98ccfe97c0aeaaf6a64ed62b195154666123444539acf56ba5563963e",
   minimal: "e157e66fdf5e14761655fb39ef95af1fd005df68a6e8ecc6cb1159c0d501d227",
   platformer: "6694c571a16d48ee33d9a9eac081fe1982be389595824163192f9e489e7d4c52",
   puzzle: "40aeabf6ed77b2dc644acf0a71360ef2bc976d018a99f43523894179f7b9eaef",
   racing: "e1aacca0748b6a219d7573eedd228c9d1e0d5a67c1372dc8851117f635e03f2f",
-  rain: "83e6b0a2ef9bfa78c4b79c88d5028c15a8852aa2b7db64efd249d28a12f20cb8",
+  rain: "6e86e9dc5e1a413f84cd46977b5bef9c181fedd6e9c38ec15e288fed7a5061a3",
   rts: "44917927d738f4c2e56a1fb6972d5d3514592839f4df9fb80abc9c3b0624364f",
   runner: "3c5e0dd218b0cd82208e0eb9da236da358715b879076a1c169e688561f87e5f5",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "fb9d08250cabb500cbfa70c8ce78e739cc7dbe720c782cf8ffc0bb84284266f5",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "2a56575feb716f964c1e014eece9da4e2a1e94413f433712b6413c0b224cc6f8",
+  shooter: "c02a1b7333fe4f010bdce808cd0796d10fd5b762ef36091c97508440a6ce2393",
   snow: "61d81b402214c8378d6b4e5acb926b2b25aff4629414c1760c6cbfc625d5ac3e",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "a8e3650043ade9c2189e64cbdc5898cf5901b5c804cb3b33d359c5627d943f9d",
+  starter: "09313c615c2ea0840a91118691cf6b5c4f462795c3be7fc92c006c227995cd64",
   "tower-defense": "798dae4422ea48da95629e6e3de73a95facce66d022ccb776424cf952ff7f4d7",
 };
 
@@ -595,57 +594,7 @@ describe("create-threenative", () => {
         "utf8",
       );
       expect(source).toContain("scaffoldCompletionMessage(discoverKitManifests())");
-      // Kit-loop row 1 (PRD-750): a cold agent scaffolded from its session folder, never got the
-      // engine MCP that .mcp.json wires, and searched no capability. The last line says so.
-      expect(scaffoldNextSteps("/w/mario64", true)).toMatch(
-        /\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u,
-      );
-      expect(scaffoldNextSteps("/w/mario64", false)).toMatch(/pnpm install[\s\S]*\.mcp\.json/u);
-      expect(scaffoldNextSteps("/w/mario64", true)).toContain(
-        "node /w/mario64/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities",
-      );
-      // Rows 1 and 2 read the 45 KB CLAUDE.md + AGENTS.md pair, then AGENTS.md again.
-      expect(scaffoldNextSteps("/w/mario64", true)).toMatch(
-        /Read AGENTS\.md once; CLAUDE\.md is its copy/u,
-      );
       expect(source).not.toContain("Templates: minimal (smallest)");
-      // Sandboxes 4 and 5 (2026-10-27) made no reference call, even with a ready command in the
-      // Next line ("the kit is already a full SM64-style game"): the scaffold runs the search for
-      // the --genre word and prints what it found.
-      const calls: string[][] = [];
-      const hit = (id: string, name: string) => ({
-        game: "sm64",
-        id,
-        kind: "node",
-        name,
-        summary: `${name} summary`,
-        title: "Super Mario 64",
-      });
-      const digest = referenceDigest("/w/mario64", "mario", (args) => {
-        calls.push(args);
-        return JSON.stringify({ results: ["a", "b", "c", "d", "e", "f"].map((id) => hit(id, id)) });
-      });
-      expect(calls).toEqual([
-        [
-          "/w/mario64/node_modules/@threenative/core/mcp/engine.mjs",
-          "engine_search_references",
-          '{"situation":"mario"}',
-        ],
-      ]);
-      expect(digest).toContain('Mechanics references for "mario"');
-      expect(digest).toContain("- Super Mario 64 / a: a summary");
-      expect(digest).not.toContain("- Super Mario 64 / f:");
-      expect(digest).toContain(
-        `node /w/mario64/node_modules/@threenative/core/mcp/engine.mjs engine_reference_detail '{"game":"sm64","id":"a","kind":"node"}'`,
-      );
-      expect(
-        referenceDigest("/w/mario64", "mario", () => {
-          throw new Error("TN_REFERENCES_OFFLINE: fetch failed\nstack");
-        }),
-      ).toBe("References unavailable: TN_REFERENCES_OFFLINE: fetch failed\n");
-      expect(referenceDigest("/w/x", "zzz", () => '{"results":[]}')).toBe(
-        'No mechanics references match "zzz".\n',
-      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

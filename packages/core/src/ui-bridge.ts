@@ -277,6 +277,36 @@ function installInbound(scope: IScope, key: string, deliver: (frame: unknown) =>
   };
 }
 
+const LOOPBACK_KEY = "__tnUiLoopback";
+
+/**
+ * `?tnUiLoopback=1`: both ends stay in this realm but talk over a `MessageChannel`, so every
+ * frame arrives a task later, the hop a game in a worker adds (PRD-752). Installed once, as the
+ * host globals, by whichever end connects first; the game and the UI never know.
+ */
+function installLoopback(scope: IScope): void {
+  const search = (scope.location as { search?: unknown } | undefined)?.search;
+  if (typeof search !== "string" || new URLSearchParams(search).get("tnUiLoopback") !== "1") return;
+  if (scope[LOOPBACK_KEY] !== undefined) return;
+  const { port1: gamePort, port2: uiPort } = new MessageChannel();
+  const receive = (key: string) => (event: MessageEvent) =>
+    (scope[key] as ((frame: unknown) => void) | undefined)?.(event.data);
+  gamePort.onmessage = receive(UI_BRIDGE_GLOBALS.gameReceive);
+  uiPort.onmessage = receive(UI_BRIDGE_GLOBALS.uiReceive);
+  scope[UI_BRIDGE_GLOBALS.gamePost] = (frame: string) => gamePort.postMessage(frame);
+  scope[UI_BRIDGE_GLOBALS.uiHost] = { postMessage: (frame: string) => uiPort.postMessage(frame) };
+  scope.__tnUiOverlayAttached = () => true;
+  scope[LOOPBACK_KEY] = {
+    close() {
+      gamePort.close();
+      uiPort.close();
+      for (const key of [UI_BRIDGE_GLOBALS.gamePost, UI_BRIDGE_GLOBALS.uiHost, LOOPBACK_KEY])
+        scope[key] = undefined;
+      scope.__tnUiOverlayAttached = undefined;
+    },
+  };
+}
+
 /**
  * Connect one end of the bridge.
  *
@@ -293,6 +323,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
     throw new Error(`TN_UI_BRIDGE_END_INVALID: expected 'game' or 'ui', got '${String(end)}'.`);
   }
   const scope: IScope = options.scope ?? globalThis;
+  installLoopback(scope);
   const listeners = new Set<(message: IUiMessage) => void>();
   const deliver = (frame: unknown): void => {
     const message = parseFrame(frame);

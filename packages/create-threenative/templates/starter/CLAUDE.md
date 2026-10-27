@@ -47,7 +47,8 @@ a flag, which together produce `won` or `lost`; `R` and the React restart intent
 `initialState`. Keep the packaged `assets/native-proof.glb` load and its console marker for the
 desktop asset gate. `Play.ts` owns gameplay, `src/render/` owns the look, `src/ui/Hud.tsx`/`Menu.tsx`
 own UI, and `state.ts` publishes JSON-safe values. Keep `playtests/survives.playtest.json` as smoke
-proof and update outcome tests.
+proof and update outcome tests. `index.html` runs `game.ts` in a web worker
+(`src/worker.ts`, page side `src/worker-page.ts`), so a busy page cannot stall its frames; `main.html` is the named override that runs it on the page thread.
 
 On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), local `src/render/touch-controls.ts` adds a left movement stick and right jump button; the scene passes its input to `Player`, with keyboard mapping as the desktop fallback.
 ## Portable authoring contracts

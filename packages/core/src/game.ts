@@ -33,7 +33,7 @@ import { MatrixWorldPass } from "./matrix-world.js";
 import { updateModelLods } from "./model-lod.js";
 import { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
-import { getPlatform } from "./platform.js";
+import { getPlatform, hostDocument, hostWindow } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
 import { FrameCounters, counterDeviceOf } from "./profiling/FrameCounters.js";
 import {
@@ -1079,6 +1079,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     return pendingStart;
   }
 
+  /**
+   * The game's own platform source, else the one a worker host installed on the global scope:
+   * worker mode runs the unchanged portable entry, so it cannot pass `platform` here (PRD-752).
+   */
+  get #platform(): IGamePlatformSource | undefined {
+    return (
+      this.#config.platform ??
+      (globalThis as { __tnGamePlatform?: IGamePlatformSource }).__tnGamePlatform
+    );
+  }
+
   async #boot(): Promise<void> {
     const bootSceneName = this.#resumeScene ?? this.#config.start;
     this.#resumeScene = undefined;
@@ -1111,7 +1122,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#config.renderer?.resolutionScale,
         getPlatform().os,
       ),
-      source: this.#config.renderer?.source ?? this.#config.platform?.renderer,
+      source: this.#config.renderer?.source ?? this.#platform?.renderer,
     });
     if (this.#aborted) {
       renderer.dispose();
@@ -1119,23 +1130,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     }
     this.#renderer = renderer;
     const canvas = renderer.domElement;
-    const platform = this.#config.platform;
+    const platform = this.#platform;
+    const page = hostDocument();
     if (platform !== undefined) platform.mountCanvas(canvas, this.#config.container);
     else if (
       this.#config.container !== undefined &&
       canvas.parentElement !== this.#config.container
     )
       this.#config.container.append(canvas);
-    else if (canvas.parentElement === null && typeof document !== "undefined")
-      document.body.append(canvas);
+    else if (canvas.parentElement === null && page !== undefined) page.body.append(canvas);
 
     const inputTarget =
       this.#config.inputTarget ??
-      (platform === undefined
-        ? typeof window === "undefined"
-          ? canvas
-          : window
-        : (platform.inputTarget ?? canvas));
+      (platform === undefined ? (hostWindow() ?? canvas) : (platform.inputTarget ?? canvas));
     this.#input = new InputMap(
       this.#config.input,
       inputTarget,
@@ -1571,12 +1578,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#entities = entities;
     this.#scheduler = scheduler;
     this.#afterPhysicsPhase = afterPhysicsPhase;
-    const devToolsHost =
-      platform === undefined
-        ? typeof window === "undefined"
-          ? undefined
-          : window
-        : platform.devToolsHost;
+    const devToolsHost = platform === undefined ? hostWindow() : platform.devToolsHost;
     this.#cleanup.push(
       installDevTools(
         entities,
@@ -2530,8 +2532,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const renderer = this.#renderer;
     renderer?.dispose();
     if (renderer !== undefined) {
-      if (this.#config.platform === undefined) renderer.domElement.remove?.();
-      else this.#config.platform.unmountCanvas(renderer.domElement);
+      const platform = this.#platform;
+      if (platform === undefined) renderer.domElement.remove?.();
+      else platform.unmountCanvas(renderer.domElement);
     }
     this.#renderer = undefined;
     this.#viewport = undefined;

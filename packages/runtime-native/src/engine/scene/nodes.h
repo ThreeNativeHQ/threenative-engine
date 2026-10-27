@@ -89,6 +89,9 @@ class Mesh : public Object3D {
     }
     std::vector<double> morphTargetInfluences;
     virtual Vector3& getVertexPosition(uint64_t index, Vector3& target) const;
+    /** Whether getVertexPosition moves stored positions past morphs (a SkinnedMesh's bones); raycast then
+     *  tests every triangle, since a triangle tree built from stored positions would cull posed ones. */
+    [[nodiscard]] virtual bool posesVertices() const { return false; }
     bool raycast(const Raycaster& raycaster, std::vector<Intersection>& intersects) override;
 
     [[nodiscard]] std::string_view type() const override { return "Mesh"; }
