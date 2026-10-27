@@ -16,6 +16,11 @@
  */
 
 export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
+/**
+ * Set above zero by the playtest bridge while it samples: its scene walk reads every mesh's material
+ * and bounds inside the census frame, and no player run makes those reads.
+ */
+export const PLAYTEST_OBSERVING_GLOBAL = "__tnPlaytestObserving";
 
 /** Safe points before the first census: loading and the first frames build, so their reads are not steady. */
 export const WARMUP_FRAMES = 120;
@@ -124,6 +129,8 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
     },
     record(kind, self, name) {
       if (census === undefined) return;
+      if (((globalThis as Record<string, unknown>)[PLAYTEST_OBSERVING_GLOBAL] as number) > 0)
+        return;
       const label = `${kind} ${host.typeName(self.type)}.${name}`;
       census.byName.set(label, (census.byName.get(label) ?? 0) + 1);
       if (kind !== "get") return;

@@ -167,7 +167,10 @@ function scene(clock = { ms: 0 }) {
   return { ...engine, ...browser, Light, Group, Mixer, Geometry };
 }
 
-const host = globalThis as { __THREENATIVE_BRIDGE_CACHE__?: unknown };
+const host = globalThis as {
+  __THREENATIVE_BRIDGE_CACHE__?: unknown;
+  __tnPlaytestObserving?: number;
+};
 
 afterEach(() => {
   host.__THREENATIVE_BRIDGE_CACHE__ = undefined;
@@ -305,7 +308,7 @@ describe("bridge reads the back end keeps", () => {
 
 describe("the bridge census", () => {
   /** Runs frames that each read the key light's intensity `reads` times; the clock moves 16 ms a frame. */
-  function frames(reads: number) {
+  function frames(reads: number, observer = false) {
     const clock = { ms: 0 };
     vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
     const warnings: string[] = [];
@@ -315,7 +318,9 @@ describe("the bridge census", () => {
     const { Light, collect } = scene(clock);
     const key = new Light(0xffffff, 3);
     const validateControls = () => {
+      if (observer) host.__tnPlaytestObserving = 1;
       for (let read = 0; read < reads; read++) if (!(key.intensity >= 0)) throw new Error("bad");
+      if (observer) host.__tnPlaytestObserving = 0;
     };
     for (let frame = 0; frame < WARMUP_FRAMES + WINDOW_FRAMES * 2; frame++) {
       collect();
@@ -341,5 +346,12 @@ describe("the bridge census", () => {
 
   it("stays silent on the same frames with the cache on", () => {
     expect(frames(500)).toEqual([]);
+  });
+
+  it("leaves the playtest observer's reads out, which no player run makes", () => {
+    // Hosted CI's adventure `puzzle` run failed on 45,920 redundant reads, led by the playtest
+    // sample's own scene walk (countMaterials, Box3.setFromObject) inside the census frame.
+    host.__THREENATIVE_BRIDGE_CACHE__ = false;
+    expect(frames(500, true)).toEqual([]);
   });
 });
