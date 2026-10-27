@@ -229,12 +229,19 @@ describe("reference release cache", () => {
     ).toThrow(/sha|revision/iu);
     expect(readFileSync(file, "utf8")).toBe(previous);
   });
+  it("reads releases from the renamed reverse-engineer data repo by default (PRD-735)", async () => {
+    const { referencesBaseUrl } = await refs();
+    vi.stubEnv("THREENATIVE_REFERENCES_URL", "");
+    expect(referencesBaseUrl()).toBe(
+      "https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp/releases/latest/download/",
+    );
+  });
   it("saves and merges by id, prioritizes local cards and returns a shell-safe contribution command", async () => {
     const { saveReferenceGame, loadReferenceGame } = await refs();
     const saved = saveReferenceGame(game, project);
     expect(existsSync(path.join(project, saved.saved))).toBe(true);
     expect(saved.contribution.command).toContain(
-      "gh issue create --repo jonit-dev/threenative-game-refs",
+      "gh issue create --repo ThreeNativeHQ/threenative-reverse-engineer-mcp",
     );
     saveReferenceGame(
       {

@@ -50,6 +50,21 @@ describe("threenative-engine-mcp", () => {
     ]);
   });
 
+  it("leads a reverse-engineer request with the reference tools (PRD-735)", () => {
+    for (const situation of ["reverse engineer the mario long jump", "read the sm64 decomp"]) {
+      const response = searchCapabilities(situation, workspaceManifest);
+      expect(response.referenceTools).toEqual([
+        "engine_search_references",
+        "engine_reference_detail",
+        "engine_save_reference",
+      ]);
+      expect(response.guidance).toContain("engine_search_references");
+    }
+    expect(searchCapabilities("double jump", workspaceManifest).referenceTools).toBeUndefined();
+    for (const tool of toolDefinitions().filter((t) => t.name.includes("reference")))
+      expect(tool.description.toLowerCase()).toContain("reverse engineer");
+  });
+
   it("returns a matched verdict and exposes a numeric score on every result", () => {
     const response = searchCapabilities("enemy walks around a wall", workspaceManifest);
 

@@ -1,7 +1,7 @@
 # PRD-735 — Reverse-engineer references at scale: the repo rename, the full list, the classics and the scout pipeline
 
-**Status:** NOT STARTED
-**Priority:** P1 — AC-0 to AC-5 are open, and the PRD-750 kit loop (P1) needs their references past its first row; today the release holds one Tier-1 game (SM64).
+**Status:** PARTIAL — AC-0 done
+**Priority:** P1 — AC-1 to AC-5 are open, and the PRD-750 kit loop (P1) needs their references past its first row; today the release holds one Tier-1 game (SM64).
 **Complexity:** 4 (MEDIUM) — separate data release +2, external API +1, 1–5 files +1; risk override: none.
 **Owner:** João Paulo Furtado
 **Depends on:** PRD-734 (done: the reference tools, the schema and the `v0.1` release)
@@ -48,10 +48,6 @@ change here.
 
 See the phase boxes below. Each box names its proof.
 
-## Blocked on
-
-- The repo transfer to the `ThreeNativeHQ` org needs org admin rights on the owner's `gh` login — unblocked by the owner's token (try it first; AC-0 records the result).
-
 ## Integration Ledger
 
 Integration: the release URL and contribution repo in `packages/engine-mcp/src/references.ts` change with the rename (AC-0). The PRD-734 tools read the new releases with no other code change.
@@ -66,10 +62,10 @@ Integration: the release URL and contribution repo in `packages/engine-mcp/src/r
 
 #### Phase 1: The rename and Tier 2 for the full list
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — AC-0 done
 **Files:** `packages/engine-mcp/src/references.ts`; the data repo: import script, release workflow.
 
-- [ ] AC-0 [local]: an installed project's MCP fetches the release from `ThreeNativeHQ/threenative-reverse-engineer-mcp`, and `engine_search_capabilities "reverse engineer"` returns the reference tools. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/references.spec.ts packages/engine-mcp/__tests__/search.spec.ts`
+- [x] AC-0 [local]: an installed project's MCP fetches the release from `ThreeNativeHQ/threenative-reverse-engineer-mcp`, and `engine_search_capabilities "reverse engineer"` returns the reference tools. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/references.spec.ts packages/engine-mcp/__tests__/search.spec.ts` — red 2 failed, then 90/90 green (1 live skipped); `-t live` against the new URL 1/1 green; repo transferred and renamed with `gh api .../transfer` on the owner's admin login; the old `jonit-dev/threenative-game-refs` release URL redirects (HTTP 200), so installed games keep working (2026-10-26)
 - [ ] AC-1 [shared]: the release index holds one Tier-2 row per list project, and a second import keeps every existing id. proof: data repo `import` job, row count against the list README count
 - [ ] AC-2 [local]: engine-mcp searches a Tier-2 title from the new release and returns its repo with the explore guidance. proof: `THREENATIVE_REFERENCES_URL=<release> pnpm exec vitest run packages/engine-mcp/__tests__/references.spec.ts -t live`
 
