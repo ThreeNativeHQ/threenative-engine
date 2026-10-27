@@ -1,0 +1,1 @@
+hud-BEFORE-vs-AFTER.png | judged IMPROVEMENT (fresh Opus, 2 runs per arm, nvidia/turing) | top-left HUD drops the physics telemetry; keeps title, crates shoved, replay matched/drifted after V (commit c0673cbea)
