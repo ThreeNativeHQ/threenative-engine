@@ -498,6 +498,12 @@ check(record.value instanceof ArrayBuffer && String.fromCharCode(...new Uint8Arr
 let mismatch = false;
 try { globalThis.tn.loadAsset("audio", "sky.jpg"); } catch (error) { mismatch = /TN_NATIVE_ASSET_KIND_MISMATCH/.test(error.message); }
 check(mismatch, "a texture entry is not audio");
+// core's IAssetLoader on a native host: no disk cache (the files are installed), prefetch serves nothing.
+// The playtest bridge's state sample reads this report on every observation.
+const loader = createAssetLoader({ cache: false, backgroundFill: false });
+check(loader.cache.enabled === false && loader.cache.reason === "native host reads installed files" &&
+  loader.cache.bytesOnDisk === 0 && typeof loader.cache.clear === "function", "native asset cache report");
+check(typeof loader.prefetch === "function" && typeof loader.startBackgroundFill === "function", "native prefetch and fill");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
 // "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
