@@ -116,13 +116,16 @@ Sets the KPI baseline. Shooter kit and starter kit, same machine, same stated lo
 - [x] The shooter's frame on the worker page has no update spikes from scene ray queries: the engine raycast reads a cached triangle tree with hits identical to the brute-force scan. proof: `tn-native-engine-raycast-test` and `tn-native-engine-animation-skeleton-test raycast_posed_skin` in `packages/runtime-native/build/tn-engine-core` (`-DTN_ENGINE_CORE_ONLY=ON`); the shooter's `TN_FRAME_BUDGET` in Chrome on the RTX 2080. Result: 2,048 oracle rays 0 differ; 1,000 rays on a 20k-triangle mesh 8,471 ms -> 6.0 ms; a focused ray tests 4 of 20,000 triangles; posed skin hits 1/1 on both paths. Shooter on `/` (worker), 8 windows of 5 s: update p95 about 90 ms -> 5 to 10 ms, presented p95 100 ms -> 16.8 ms, 28 to 37 fps -> 56 to 60 fps
 
 ### Phase 4: Wasm threads and gate
-**Status:** NOT STARTED
+**Status:** PARTIAL — ceiling measured, threaded build probed; the job pool waits on PRD-573 v3.1 (Blocked on)
 
 - [ ] A `TN_WEB_THREADS` build costs at most 2% on one thread against the non-threaded build. proof: `profile:wasm-page` A/B, three runs per arm
+  Open: a `-pthread` build (no pool threads) boots in the worker under COOP/COEP with no errors, but costs about 1 to 5% on one thread. Engine `TN_FRAME_BUDGET` render p50, alternating arms, real display, vsync, RTX 2080: shooter 5 runs per arm, median 6.84 ms shipped vs 7.14 ms (+4.4%), pairs spread -17% to +27%; Midway on the deck, 5 runs per arm, median 20.02 vs 20.87 ms (+4.2%), +1.2% in the slow mode and +5.4% in the fast mode. `profile:wasm-page` cannot profile a worker (Playwright opens no CDP session on one), so the engine's own phases are the reading. `-sGROWABLE_ARRAYBUFFERS=2` (the glue-only fix Emscripten suggests) draws nothing (render phase 0 ms, no GPU time) and fails the Node 20 post-build check, so the facade's heap views need work before it can separate glue cost from Wasm atomics.
 - [ ] Without cross-origin isolation the engine reports `threads: off` and runs unchanged; with isolation (COOP/COEP) it reports the pool size. proof: `native_engine_wasm_browser_backend` for both isolation states
 - [ ] The job pool cuts engine frame CPU on the threaded build. proof: `profile:wasm-page` A/B on the shooter, threaded against not
 - [ ] Stability gate S is green on web with and without isolation headers. proof: the S commands in [PRD-573](./PRD-573-unreal-class-performance-in-release-cycles.md)
 
 ## Blocked on
 
-- None. The platform proof rule applies: a helper admitted for being unportable ships native proof in the same commit (`packages/runtime-native/AGENTS.md`).
+- The job pool itself: [PRD-573](./PRD-573-unreal-class-performance-in-release-cycles.md) Phase v3.1 "Jobs on every core" (mixers and transform subtrees as jobs, bit-equal to one thread) on epic PR #493. A second pool here would duplicate it. Phase 4's pool box, its isolation box and gate S resume when v3.1 lands; the threaded build then has to pay for its measured 1 to 5% single-thread cost out of the pool's win (Midway ceiling about 19% at 4 threads).
+- The shooter `performance` scenario under Xvfb on `/`: PR #574's owner picks the CI lane for it (Decisions, 2026-10-27).
+- The platform proof rule applies: a helper admitted for being unportable ships native proof in the same commit (`packages/runtime-native/AGENTS.md`).
