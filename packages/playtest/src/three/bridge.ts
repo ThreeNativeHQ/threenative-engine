@@ -187,6 +187,11 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
     sample: (request) => {
       const resourceOnly = isResourceOnlySample(request);
       if (!resourceOnly) syncEntities(registry, options.entities);
+      const sightLineSubject = resourceOnly || request.sightLine === undefined
+        ? undefined
+        : registry.get(request.sightLine.entity)?.object;
+      if (request.sightLine !== undefined && !resourceOnly && sightLineSubject === undefined)
+        throw new Error(`Sight-line entity '${request.sightLine.entity}' is not registered.`);
       const snapshot = sampleThreeObservations({
         camera: options.camera,
         clockMode: clockMode(),
@@ -198,6 +203,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         renderer: options.renderer,
         resources: options.resources === undefined ? undefined : () => options.resources!.read(),
         scene: options.scene,
+        ...(sightLineSubject === undefined ? {} : { sightLineSubject }),
         tick: options.tick?.(),
       }, request);
       const components = resourceOnly ? undefined : options.components?.();

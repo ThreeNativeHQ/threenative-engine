@@ -305,6 +305,22 @@ subject under 0.5 m, fewer than 4 planted tick pairs, or a target other than the
 `maxFootSlide` all fail closed with `no foot plant found: stride sync is off`
 (`TN_PLAYTEST_STRIDE_NO_FOOT_PLANT`).
 
+`assert.sightLine: { maxBlockedRatio, entity? }` watches the camera instead: every sample casts a ray
+from the camera's world position to the subject's world bounds centre and reports whether solid
+geometry is in the way. `maxBlockedRatio` (0..1) is the share of samples that may be blocked, and
+`entity` defaults to the scenario subject. A blocked sample names the five nearest blockers; a run
+over the share fails `TN_PLAYTEST_SIGHT_LINE_BLOCKED`. The check runs on the browser target only and
+fails `TN_PLAYTEST_SIGHT_LINE_UNOBSERVED` when it sampled nothing.
+
+`assert.hudAudit: { noDebugText?, minContrast? }` reads the text the page draws after the last step.
+`noDebugText` (only `true`) fails when an item reads like developer copy — debug, TODO, FIXME,
+lorem ipsum, placeholder, probe, raycast, hitbox, wall ray, an unresolved `undefined`, `null` or
+`NaN`, or a coerced `[object Object]` — as `TN_PLAYTEST_HUD_DEBUG_TEXT`. `minContrast` (1..21) is a
+WCAG 2.x floor on the ratio between the text colour and the colour composited behind it; text over
+the canvas (background alpha under 0.5) is counted as `unjudged`, not guessed at, and a judged item
+below the floor fails `TN_PLAYTEST_HUD_CONTRAST`. At least one key is required, the check runs on
+the browser target only, and a run that reported no text fails `TN_PLAYTEST_HUD_AUDIT_UNOBSERVED`.
+
 **The frame budget is 60 fps on every tier.** A `performance` assertion without `maxFrameMsP95`
 holds the run to 16.7 ms at nearest-rank p95, on a discrete, integrated or mobile GPU alike; the
 `frameBudget` row detail says which budget applied. A software adapter is unmeasurable and fails

@@ -1,12 +1,12 @@
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
-import { sampleHud } from "./sampling.js";
+import { sampleHud, sampleHudAudit } from "./sampling.js";
 import {
   normalizedRuntimeDiagnostics,
   pairObservations,
@@ -42,6 +42,7 @@ import {
   type IPlaytestCaptureProvenance,
   type IPlaytestFootSlipObservation,
   type IPlaytestFramebufferCoverageObservation,
+  type IPlaytestSightLineObservation,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
   type IPlaytestVisualElementRegionObservation,
@@ -752,6 +753,11 @@ async function runStandalonePlaytestInternal(
     const footSlip: IPlaytestFootSlipObservation[] = [];
     const footSlipAt = (label: string | undefined) =>
       label === undefined ? undefined : scenario.assert?.footSlip?.find(({ atStep }) => atStep === label);
+    const sightLineAssertion = scenario.assert?.sightLine;
+    const sightLineEntity = sightLineAssertion?.entity ?? scenario.subject;
+    const sightLine = sightLineAssertion === undefined || sightLineEntity === undefined
+      ? undefined
+      : { entity: sightLineEntity, samples: [] as IPlaytestSightLineObservation[] };
     for (const [index, step] of scenario.steps.entries()) {
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (framebufferAssertion !== undefined
@@ -812,7 +818,9 @@ async function runStandalonePlaytestInternal(
           }
           footSlip.push(await sampleFootSlip(activePage, bridge, ticks, step.label!, entity, assertion.feet));
           await samplePathPosition(bridge, pathEntity, pathPositions);
+          await sampleSightLine(bridge, sightLine);
         },
+        sightLine,
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;
@@ -864,6 +872,7 @@ async function runStandalonePlaytestInternal(
       if (position !== undefined) pathPositions.push(position);
     }
     const afterHud = await sampleHud(page, hudAssertions);
+    const hudAudit = scenario.assert?.hudAudit === undefined ? undefined : await sampleHudAudit(page);
     const afterScreenshot = (scenario.artifacts?.screenshots !== false && artifactFrames) || wantsVisual || wantsFinalTone
       ? wantsVisual || wantsFinalTone
         ? await captureVisualPage(
@@ -916,6 +925,8 @@ async function runStandalonePlaytestInternal(
       undefined,
       tone,
       footSlip.length === 0 ? undefined : footSlip,
+      sightLine === undefined || sightLine.samples.length === 0 ? undefined : sightLine,
+      hudAudit,
     );
     if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
     if (completionWindow !== undefined) {

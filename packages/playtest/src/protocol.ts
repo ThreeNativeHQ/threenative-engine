@@ -231,6 +231,17 @@ export interface IPlaytestSampleRequest {
   resources?: readonly string[];
   /** Scene-graph selectors to report, one observation per selector, in request order. */
   sceneNodes?: readonly IPlaytestSceneNodeSelector[];
+  /** Report what stands between the camera and this entity's world bounds centre. */
+  sightLine?: { entity: string };
+}
+
+/** What the lens sees of the subject: whether any solid blocks it, and which solids do. */
+export interface IPlaytestSightLineObservation {
+  blocked: boolean;
+  /** Distinct names of the nearest blocking meshes, nearest first, at most five. */
+  blockers: string[];
+  /** Metres from the camera's world position to the subject's world bounds centre. */
+  distance: number;
 }
 
 export interface IPlaytestEntityObservation {
@@ -590,6 +601,8 @@ export interface IPlaytestObservationSnapshot {
   resources?: Record<string, JsonValue>;
   scene?: IPlaytestSceneObservation;
   sceneNodes?: IPlaytestSceneNodesObservation[];
+  /** Present when the request named an entity to sight from the camera. */
+  sightLine?: IPlaytestSightLineObservation;
 }
 
 /**

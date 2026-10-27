@@ -12,6 +12,7 @@ import { Box3, Frustum, Matrix4, Vector2, Vector3, type Camera, type Object3D, t
 import type { ThreePlaytestEntityRegistry } from "./entities.js";
 import { observeSceneNodes } from "./scene-nodes.js";
 import { observeSceneResources } from "./scene-observation.js";
+import { observeSightLine } from "./sight-line.js";
 
 export interface IThreeObservationInput {
   camera: Camera;
@@ -23,6 +24,8 @@ export interface IThreeObservationInput {
   resources?: () => Record<string, JsonValue>;
   renderChain?: () => IPlaytestRenderChainObservation | undefined;
   scene: Scene;
+  /** The registered entity a sight-line request named, resolved by the bridge. */
+  sightLineSubject?: Object3D;
   gameplay?: () => IPlaytestObservationSnapshot["gameplay"];
   tick?: number;
 }
@@ -42,7 +45,7 @@ export interface IThreePlaytestRenderer {
 export function isResourceOnlySample(request: IPlaytestSampleRequest): boolean {
   return request.entities?.length === 0 && request.include?.length === 1 &&
     request.include[0] === "resources" && request.resources !== undefined &&
-    request.geometry === undefined && request.sceneNodes === undefined;
+    request.geometry === undefined && request.sceneNodes === undefined && request.sightLine === undefined;
 }
 
 function sampleClock(input: IThreeObservationInput): IPlaytestObservationSnapshot["clock"] {
@@ -86,6 +89,7 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
     ...(request.sceneNodes === undefined || request.sceneNodes.length === 0
       ? {}
       : { sceneNodes: observeSceneNodes(input.scene, input.camera, request.sceneNodes) }),
+    ...(input.sightLineSubject === undefined ? {} : { sightLine: observeSightLine(input.scene, input.camera, input.sightLineSubject) }),
   };
 }
 

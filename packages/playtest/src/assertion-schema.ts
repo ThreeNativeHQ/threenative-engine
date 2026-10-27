@@ -589,6 +589,40 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     trivialityRationale: "The measurement needs the subject to cover ground during the step, so a standing subject fails as unmeasured instead of passing.",
   },
   {
+    cardinality: "object",
+    description:
+      "Bounds the share of the run in which solid geometry stood between the camera and the subject's world bounds centre, so a camera that clips through a pillar or a wall that eats the framing fails. Browser target only; another target fails it as unobserved.",
+    example: { sightLine: { maxBlockedRatio: 0.02 } },
+    fields: [
+      { description: "The entity whose world bounds centre the camera should see; defaults to the scenario subject.", name: "entity", type: "string" },
+      { description: "Share of samples, 0..1, that may have any solid between the lens and the subject before the run fails; 0 requires a clear line on every sample.", name: "maxBlockedRatio", required: true, type: "number" },
+    ],
+    kind: "sightLine",
+    observationPath: "sightLine",
+    requiredCapabilities: ["camera.observe", "entity.observe"],
+    resultIdPrefix: "sightLine",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The measurement needs the runtime camera and subject to stay framed over time; an initial pose cannot satisfy a temporal share of clear lines.",
+  },
+  {
+    cardinality: "object",
+    description:
+      "Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved.",
+    example: { hudAudit: { minContrast: 3, noDebugText: true } },
+    fields: [
+      { description: "WCAG 2.x contrast ratio, 1..21, that every text item over a real backing colour must reach; text drawn straight on the canvas is counted as unjudged.", name: "minContrast", type: "number" },
+      { description: "Require that no text reads like developer copy. Only true is accepted.", name: "noDebugText", type: "true" },
+    ],
+    kind: "hudAudit",
+    observationPath: "hudAudit",
+    requiredCapabilities: ["browser.dom"],
+    resultIdPrefix: "hudAudit.",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The audit reads the live document the player sees, so an initial value cannot prove that developer text never appeared or that a colour stays readable.",
+  },
+  {
     cardinality: "array",
     description:
       "Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs.",
