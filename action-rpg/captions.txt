@@ -1,0 +1,2 @@
+ghost-raiders-walking-BEFORE-vs-AFTER.png | judged IMPROVEMENT (fresh Opus, 2 runs per arm, nvidia/turing, engine threejs) | walking raiders no longer turn see-through: each skinned mesh reads its own previous bones (three patch b6041ab12)
+full-frame-hud-BEFORE-vs-AFTER.png | judged IMPROVEMENT (same judge) | HUD: dev lines removed, weapon reads RUSTED BLADE, health number in text colour, one inventory row per item with N / 6 slots (36c6f9393, f1912bbda)

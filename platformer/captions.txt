@@ -1,0 +1,5 @@
+fox-idle-a-BEFORE-vs-AFTER.png | IMPROVEMENT (Opus judge) | standing fox: legs at rest instead of mid-stride (650e60724)
+fox-idle-b-BEFORE-vs-AFTER.png | IMPROVEMENT (Opus judge) | standing fox, 7 ticks later: same rest pose, BEFORE pose changes
+fox-idle-c-BEFORE-vs-AFTER.png | IMPROVEMENT (Opus judge) | standing fox, 14 ticks later: same rest pose
+fox-run-a-BEFORE-vs-AFTER.png | NEUTRAL (Opus judge) | running fox: stride kept
+fox-run-b-BEFORE-vs-AFTER.png | NEUTRAL (Opus judge) | running fox: stride kept

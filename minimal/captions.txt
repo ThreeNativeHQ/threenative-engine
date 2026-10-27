@@ -1,0 +1,4 @@
+camera-spawn-BEFORE-vs-AFTER.png | NEUTRAL (Opus judge) | no wall: framing unchanged (0a6ea3067)
+camera-walk-BEFORE-vs-AFTER.png | IMPROVEMENT (Opus judge) | wall near: BEFORE shows only the wall, AFTER shows the player from above
+camera-at-wall-BEFORE-vs-AFTER.png | IMPROVEMENT (Opus judge) | back to the wall: the camera stays in front of it and looks down; mannequin foreshortened
+camera-away-BEFORE-vs-AFTER.png | NEUTRAL (Opus judge) | after leaving the wall: framing eases back to BEFORE
