@@ -194,6 +194,7 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
 
 // In a dedicated worker, before the game module that imports this one after it evaluates.
 if (hostWindow() === undefined && "WorkerGlobalScope" in globalThis) {
+  // quality-allow: the worker scope is no Window; the UI bridge holds it as a keyed record
   holdUiBridge(globalThis as unknown as Record<string, unknown>);
 }
 
@@ -207,6 +208,7 @@ if (hostWindow() === undefined && "WorkerGlobalScope" in globalThis) {
  */
 export function serveWorkerGame(
   game: { start(): Promise<void> },
+  // quality-allow: the DOM lib this package compiles with has no DedicatedWorkerGlobalScope type
   scope: WorkerScope = globalThis as unknown as WorkerScope,
 ): void {
   const inputTarget = new EventTarget();
@@ -261,6 +263,7 @@ export function serveWorkerGame(
         inputTarget,
         mountCanvas: () => undefined,
         renderer: {
+          // quality-allow: three types its canvas as HTMLCanvasElement; the transferred OffscreenCanvas fills that slot
           createCanvas: () => message.canvas as unknown as HTMLCanvasElement,
           hasWebGPU: () => "gpu" in navigator,
           observeResize: observe,
@@ -410,6 +413,7 @@ export function startWorkerGame(
   if (documentHost === undefined || windowHost === undefined) {
     throw new Error("TN_WORKER_HOST_REQUIRED: startWorkerGame runs on a page.");
   }
+  // quality-allow: the page host is read by key for the globals it forwards
   const page = windowHost as unknown as Record<string, unknown>;
 
   const canvas = documentHost.createElement("canvas");
@@ -475,6 +479,7 @@ export function startWorkerGame(
   listen(windowHost, "gamepaddisconnected", pollGamepads);
 
   const eventFields = (event: Event): Record<string, unknown> => {
+    // quality-allow: a DOM event is copied by key into a structured-clone message
     const source = event as unknown as Record<string, unknown>;
     const fields: Record<string, unknown> = {};
     for (const field of EVENT_FIELDS) {

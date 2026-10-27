@@ -401,6 +401,7 @@ export function createRemoteAudioContext(port: MessagePort, init: IRemoteAudioIn
     }
   };
 
+  // quality-allow: a message-backed stand-in for the AudioContext a worker cannot create
   return makeHandle(0) as unknown as AudioContext;
 }
 
