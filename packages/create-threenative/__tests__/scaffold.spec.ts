@@ -316,14 +316,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // sailing and starter ship the shared kitExposure.ts meter (0 EV).
   adventure: "1927eab0e7dbb6fc26ffca8cfdbf93d4b072ec83104a4da15c89b8e184965135",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "1b62c208a61ddedfc3ae5130a56f72cc2ff3ef4201547f9b4ba35b3d413f7a82",
-  minimal: "d49800b9aefa668c8f45c6735771a67a4c6d8fb13861b97e1bf4ded8d59d0241",
-  platformer: "3954e10b1e923ecf24d9cd33cd81fe963dcb3cfe0cc8368b1ae5f99e466db73c",
+  kart: "066e54e311bdb8317527bddb9daa0b87af72a36ca75cbee7dfad367f366b2fc1",
+  minimal: "772a616dca234349aa4f555678bb9b0493f679c22c1a65388a3954ab6e26a042",
+  platformer: "7df262eb519137cd5cfbcd3cb210549a52c637fb94e2ebc3aaf0975bc66f50e3",
   puzzle: "2c8d1a41dae19b90cddb7e1037178ca2f91c7fe9fdd5fe72b24a9334bf72ba3a",
   racing: "2b1c4913ad3c60fd9e6a08d74c1edcc7646a6711c09b6742b60b78dbae9ee839",
   rain: "f6b96412333559caa8a2690a7dd51811cd9fa0bd743113df78a194846f468fdd",
-  rts: "ddaf1a98d57ee164d393eb38c718f102ab0576ed505dce5592b0e6dc6ca5c6cb",
-  runner: "6399c519fe7e2dbb560e6e523db31cdd60cfb94d9f666ee9b0af6a1394b32513",
+  rts: "152fdfb0fbf75055b98b184f040f819b0661c74056cfa78dea6e32142733f434",
+  runner: "dcabe5962307f070fd387390e68df03a599400c90302068edc38d49c7bec60c4",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "1429611e2da4350df3281cf6883b4273cf833ea9c8b03c38356ba25f93cfdb71",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
