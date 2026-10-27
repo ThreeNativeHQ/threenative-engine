@@ -62,6 +62,51 @@ describe("threenative/hot-callback-scene-work", () => {
   });
 });
 
+describe("threenative/hot-callback-scene-work beyond update and render", () => {
+  // core's AutoBatch fingerprint before 90856171d, written where a game would write it: 41% of the worker.
+  const fingerprint =
+    "let hash = this.scene.children.length; for (const child of this.scene.children) hash = (hash * 31 + child.children.length + 1) | 0;";
+
+  it("flags a hand walk over children in update, and in a callback an array iterator runs", () => {
+    expect(fired(scene(`update() { ${fingerprint} }`))).toEqual([
+      "threenative/hot-callback-scene-work",
+    ]);
+    expect(
+      fired(scene("update() { this.group.children.forEach((c) => c.updateMatrix()); }")),
+    ).toEqual(["threenative/hot-callback-scene-work"]);
+    expect(
+      fired(
+        scene(
+          "update() { this.enemies.forEach((enemy) => enemy.root.traverse(() => undefined)); }",
+        ),
+      ),
+    ).toEqual(["threenative/hot-callback-scene-work"]);
+  });
+
+  it("flags a walk in a TSL node's per-render callback, the backlight uniforms' hook", () => {
+    expect(
+      fired(
+        "const rimGain = uniform(controls.rimGain).onRenderUpdate(() => { controls.scene.traverse(() => undefined); return controls.rimGain; });",
+      ),
+    ).toEqual(["threenative/hot-callback-scene-work"]);
+    expect(
+      fired(
+        "renderer.setAnimationLoop(() => { box.setFromObject(world); renderer.render(world, camera); });",
+      ),
+    ).toEqual(["threenative/hot-callback-scene-work"]);
+  });
+
+  it("passes the same walk in enter, a deferred callback, and a uniform that only returns its value", () => {
+    expect(fired(scene(`enter() { ${fingerprint} }`))).toEqual([]);
+    expect(
+      fired(scene("update() { setTimeout(() => this.world.traverse(() => undefined), 0); }")),
+    ).toEqual([]);
+    expect(
+      fired("const rimGain = uniform(controls.rimGain).onRenderUpdate(() => controls.rimGain);"),
+    ).toEqual([]);
+  });
+});
+
 describe("threenative/hot-callback-resource-creation", () => {
   it("flags a new material, geometry or texture inside a frame callback", () => {
     for (const make of [

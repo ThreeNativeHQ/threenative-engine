@@ -2,7 +2,33 @@ import type { Rule } from "eslint";
 import type * as ESTree from "estree";
 
 const FRAME_METHODS = new Set(["render", "update"]);
-const FRAME_HOOKS = new Set(["afterPhysics", "beforeRender"]);
+/** Registration calls whose first argument runs every frame (or every render call), by label. The
+ * TSL node hooks run once per render call, and a post chain makes many a frame: the shooter's
+ * backlight validated its controls in eight `onRenderUpdate` callbacks, 525 bridge reads a frame. */
+const FRAME_HOOKS = new Map([
+  ["afterPhysics", "ctx.afterPhysics"],
+  ["beforeRender", "ctx.beforeRender"],
+  ["onFrameUpdate", ".onFrameUpdate"],
+  ["onObjectUpdate", ".onObjectUpdate"],
+  ["onRenderUpdate", ".onRenderUpdate"],
+  ["setAnimationLoop", "renderer.setAnimationLoop"],
+]);
+/** Array methods that call their callback before they return: a callback passed to one inside a hot
+ * callback runs every frame too (`this.enemies.forEach((e) => e.root.traverse(...))`). */
+export const SYNC_ITERATORS = new Set([
+  "every",
+  "filter",
+  "find",
+  "findIndex",
+  "findLast",
+  "flatMap",
+  "forEach",
+  "map",
+  "reduce",
+  "reduceRight",
+  "some",
+  "sort",
+]);
 
 type FunctionNode =
   | ESTree.ArrowFunctionExpression
@@ -17,18 +43,26 @@ export interface IHotCallbacks {
   where(): string | undefined;
 }
 
-function hookName(parent: ESTree.Node, node: FunctionNode): string | undefined {
-  if (parent.type !== "CallExpression" || parent.arguments[0] !== node) return undefined;
+/** The member a call's callee names (`x.forEach(...)` -> "forEach"), when `node` is one of its arguments. */
+function calleeMember(parent: ESTree.Node, node: FunctionNode): string | undefined {
+  if (parent.type !== "CallExpression" || !parent.arguments.some((arg) => arg === node))
+    return undefined;
   const callee = parent.callee;
   if (callee.type !== "MemberExpression" || callee.computed) return undefined;
-  const name = callee.property.type === "Identifier" ? callee.property.name : undefined;
-  return name !== undefined && FRAME_HOOKS.has(name) ? `ctx.${name}` : undefined;
+  return callee.property.type === "Identifier" ? callee.property.name : undefined;
+}
+
+function hookName(parent: ESTree.Node, node: FunctionNode): string | undefined {
+  if (parent.type !== "CallExpression" || parent.arguments[0] !== node) return undefined;
+  const name = calleeMember(parent, node);
+  return name === undefined ? undefined : FRAME_HOOKS.get(name);
 }
 
 /** Tracks whether the visitor is directly inside a per-frame callback: a `Scene` `update`/`render`
- * method or a function registered with `ctx.beforeRender` / `ctx.afterPhysics`. Syntactic on
- * purpose: a callback hidden behind a helper is outside its coverage. Shared by every rule that
- * means "this must not run every frame". */
+ * method, a function registered with `ctx.beforeRender` / `ctx.afterPhysics`, a TSL node's
+ * `onRenderUpdate` / `onFrameUpdate` / `onObjectUpdate`, or `setAnimationLoop`; a callback handed to
+ * an array iterator inside one is inside it too. Syntactic on purpose: a callback hidden behind a
+ * helper is outside its coverage. Shared by every rule that means "this must not run every frame". */
 export function trackHotCallbacks(): IHotCallbacks {
   const sceneLocals = new Set<string>();
   const frames: Array<string | undefined> = [];
@@ -40,7 +74,12 @@ export function trackHotCallbacks(): IHotCallbacks {
       const isSceneBase = base?.type === "Identifier" && sceneLocals.has(base.name);
       if (isSceneBase && FRAME_METHODS.has(parent.key.name)) return `Scene.${parent.key.name}`;
     }
-    return hookName(parent, node);
+    const hook = hookName(parent, node);
+    if (hook !== undefined) return hook;
+    const member = calleeMember(parent, node);
+    return member !== undefined && SYNC_ITERATORS.has(member)
+      ? frames[frames.length - 1]
+      : undefined;
   };
 
   // ESLint selects visitors by AST node type name, so the keys cannot be camelCase.

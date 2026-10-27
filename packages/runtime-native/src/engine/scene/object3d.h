@@ -312,6 +312,8 @@ public:
     /** three's `_object3DId ++`: a process-wide counter starting at zero. */
     [[nodiscard]] uint64_t id() const { return id_; }
     [[nodiscard]] static uint64_t hierarchyVersion();
+    /** Where `hierarchyVersion()` lives, so a back end (Wasm) reads it in place instead of asking. */
+    [[nodiscard]] static const uint64_t* hierarchyVersionAddress();
     std::string name;  // not a renderer input, so a plain field: writes do not bump `revision()`
 
     Object3D* parent = nullptr;

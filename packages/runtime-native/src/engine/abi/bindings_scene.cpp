@@ -421,6 +421,10 @@ void registerObject3D(ClassBinding& b) {
         as<Object3D>(self)->uuid = v.text;
     };
     b.getters["revision"] = [](void* self) { return Value::of(double(as<Object3D>(self)->revision())); };
+    // The process-wide hierarchy counter's address: the Wasm back end keeps `children` and `parent` until it moves.
+    b.getters["__hierarchy"] = [](void*) {
+        return Value::of(double(reinterpret_cast<uintptr_t>(Object3D::hierarchyVersionAddress())));
+    };
     b.getters["type"] = [](void* self) {
         return Value{Value::Kind::String, 0, std::string(as<Object3D>(self)->type())};
     };

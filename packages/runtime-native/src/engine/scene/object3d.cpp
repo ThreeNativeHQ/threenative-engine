@@ -271,6 +271,7 @@ void EventDispatcher::dispatchEvent(Event& event) {
 // ------------------------------------------------------------------------------ Object3D
 
 uint64_t Object3D::hierarchyVersion() { return hierarchyRevision; }
+const uint64_t* Object3D::hierarchyVersionAddress() { return &hierarchyRevision; }
 
 Object3D::Object3D() : transform_(acquireTransform()),
     position(transform_.page->positions[transform_.index]), rotation(transform_.page->rotations[transform_.index]),
