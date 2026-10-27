@@ -380,6 +380,9 @@ void registerObject3D(ClassBinding& b) {
             {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
             {"layers", at(&o->layers())}});
     };
+    // Engine-internal: the process-wide count of adds, removes, attaches and destroys. Core keeps a walk
+    // that only finds who is under whom (the camera pass's rig and camera-part sets) while it holds still.
+    b.getters["__hierarchyRevision"] = [](void*) { return Value::of(double(Object3D::hierarchyVersion())); };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };
     b.getters["receiveShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->receiveShadow()); };

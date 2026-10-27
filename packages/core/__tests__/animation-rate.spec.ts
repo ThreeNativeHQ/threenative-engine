@@ -7,12 +7,13 @@ import {
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
+  Object3D,
   PerspectiveCamera,
   Scene,
   SphereGeometry,
   VectorKeyframeTrack,
 } from "three";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { AnimationComposer } from "../src/animation-composition.js";
 import { AnimationPlayer } from "../src/animation.js";
 import { RenderCameraCull, animationRateStates } from "../src/render-camera-cull.js";
@@ -798,6 +799,45 @@ describe("AnimationPlayer update rate", () => {
     rig.update(1 / 60);
     expect(rig.updateRateReport).toMatchObject({ rate: 1, evaluated: true });
     expect(animationRateStates.get(rig.root)?.effectiveRate).toBe(1);
+    view.cull.dispose();
+    rig.dispose();
+  });
+
+  it("keeps its rig and camera walks while the engine's hierarchy holds still, and walks again when it moves", () => {
+    const rig = player();
+    const view = rendered(rig);
+    rig.root.position.x = 10;
+    const rigWalks = vi.spyOn(rig.root, "traverse");
+    const cameraWalks = vi.spyOn(view.camera, "traverse");
+    // Plain three has no hierarchy count: both walks run every frame.
+    view.render();
+    view.render();
+    expect([rigWalks.mock.calls.length, cameraWalks.mock.calls.length]).toEqual([2, 2]);
+    // The native engine's count, which every one of its objects reports.
+    let revision = 1;
+    Object.defineProperty(Object3D.prototype, "__hierarchyRevision", {
+      configurable: true,
+      get: () => revision,
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Object3D.prototype, "__hierarchyRevision");
+    });
+    view.render();
+    view.render();
+    view.render();
+    expect([rigWalks.mock.calls.length, cameraWalks.mock.calls.length]).toEqual([3, 3]);
+    rig.update(1 / 60);
+    expect(rig.updateRateReport.rate).toBeGreaterThan(1);
+    // Attaching the rig to the camera moves the count: both sets are found again.
+    view.scene.add(view.camera);
+    view.camera.add(rig.root);
+    revision += 1;
+    view.render();
+    // three's traverse recurses through each child's own, so the camera's walk calls the rig's too.
+    expect(rigWalks.mock.calls.length).toBeGreaterThan(3);
+    expect(cameraWalks.mock.calls.length).toBe(4);
+    rig.update(1 / 60);
+    expect(rig.updateRateReport).toMatchObject({ rate: 1, evaluated: true });
     view.cull.dispose();
     rig.dispose();
   });

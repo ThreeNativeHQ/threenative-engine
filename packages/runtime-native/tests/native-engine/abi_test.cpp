@@ -773,6 +773,40 @@ void walk_parents() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// `__hierarchyRevision` is the engine's count of adds, removes, attaches and destroys: core keeps a walk
+// that only finds who is under whom while it holds still, so it moves on each of those and nothing else.
+void hierarchy_revision() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, group{}, mesh{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    const auto revision = [&](tn_handle_t object) {
+        tn_value_t out{};
+        CHECK(tn_get(object, "__hierarchyRevision", &out, &d.value) == TN_OK && out.kind == TN_VALUE_NUMBER);
+        return out.number;
+    };
+    tn_value_t result{};
+    const double start = revision(scene);
+    CHECK(revision(mesh) == start);
+    const tn_value_t groupRef = ref(group), meshRef = ref(mesh);
+    CHECK(tn_invoke(scene, "add", &groupRef, 1, &result, &d.value) == TN_OK);
+    const double added = revision(scene);
+    CHECK(added > start);
+    const tn_value_t hidden = boolean(false);
+    CHECK(tn_set(mesh, "visible", &hidden, &d.value) == TN_OK);
+    CHECK(revision(scene) == added);
+    CHECK(tn_invoke(group, "add", &meshRef, 1, &result, &d.value) == TN_OK);
+    const double nested = revision(scene);
+    CHECK(nested > added);
+    CHECK(tn_invoke(scene, "attach", &meshRef, 1, &result, &d.value) == TN_OK);
+    CHECK(revision(scene) > nested);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // A SpotLight's target is a shared-owned Object3D like a DirectionalLight's, so a scene that holds it as a
 // child hands it to a walk and a clear. A C++-owned target made both throw "not shared-owned" (lamp-room).
 void spot_target_in_scene() {
@@ -2694,7 +2728,7 @@ void tsl_mat4_element() {
 }
 
 TN_TEST_MAIN({"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
-             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
+             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

@@ -207,6 +207,16 @@ interface IEngineCullRoot {
   __restoreCull(): void;
 }
 
+/**
+ * The native engine counts every add, remove, attach and destroy in the process (scene/object3d.h).
+ * While it holds still, no subtree changed, so a walk that only finds who is under whom can be kept.
+ * Plain three has no such count, and its walks run every frame as before.
+ */
+function hierarchyRevision(object: Object3D): number | undefined {
+  const revision = (object as { __hierarchyRevision?: unknown }).__hierarchyRevision;
+  return typeof revision === "number" ? revision : undefined;
+}
+
 function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
   const candidate = root as Partial<IEngineCullRoot> | null;
   return typeof candidate?.__cullProjected === "function" &&
@@ -241,10 +251,14 @@ export class RenderCameraCull {
    */
   readonly #animated = new Map<Object3D, readonly IAnimationRateState[]>();
   #collecting: readonly IAnimationRateState[] = [];
+  /** Each root, its state and the engine's hierarchy count read off it, as {@link #animated} was built. */
+  readonly #animatedFrom: (Object3D | IAnimationRateState | number | undefined)[] = [];
   readonly #collectAnimated: (object: Object3D) => void;
   /** The camera's descendants this frame, so camera attachment needs no walk up the parents. */
   readonly #cameraParts = new Set<Object3D>();
   readonly #collectCameraPart: (object: Object3D) => void;
+  #cameraPartsOf: Camera | undefined;
+  #cameraPartsRevision: number | undefined;
   /** Last position-buffer version seen per geometry, so a rewritten dynamic bound is recomputed. */
   readonly #positionVersions = new WeakMap<object, IPositionVersion>();
   #hiddenCount = 0;
@@ -290,16 +304,39 @@ export class RenderCameraCull {
     this.#collectCameraPart = (object) => this.#cameraParts.add(object);
   }
 
-  /** Rebuilds {@link #animated} from the live rate roots; false when no rig can take a rate. */
+  /**
+   * Rebuilds {@link #animated} from the live rate roots; false when no rig can take a rate. The
+   * roots and states are JS objects; only the walk under them crosses into the engine, so it is
+   * kept while the same roots hold the same states and the engine's hierarchy has not moved.
+   */
   #prepareAnimated(): boolean {
-    this.#animated.clear();
+    let same = true;
+    let at = 0;
     for (const ref of animationRateRoots) {
       const root = ref.deref();
-      if (root === undefined || !animationRateStates.has(root)) {
+      const state = root === undefined ? undefined : animationRateStates.get(root);
+      if (root === undefined || state === undefined) {
         animationRateRoots.delete(ref);
         continue;
       }
-      this.#collecting = [animationRateStates.get(root) as IAnimationRateState];
+      if (same) {
+        const revision = hierarchyRevision(root);
+        same =
+          revision !== undefined &&
+          this.#animatedFrom[at] === root &&
+          this.#animatedFrom[at + 1] === state &&
+          this.#animatedFrom[at + 2] === revision;
+      }
+      at += 3;
+    }
+    if (same && at === this.#animatedFrom.length) return this.#animated.size > 0;
+    this.#animated.clear();
+    this.#animatedFrom.length = 0;
+    for (const ref of animationRateRoots) {
+      const root = ref.deref() as Object3D;
+      const state = animationRateStates.get(root) as IAnimationRateState;
+      this.#animatedFrom.push(root, state, hierarchyRevision(root));
+      this.#collecting = [state];
       root.traverse(this.#collectAnimated);
     }
     return this.#animated.size > 0;
@@ -423,6 +460,10 @@ export class RenderCameraCull {
     this.restore();
     this.#animationPrepared = false;
     this.#camera = undefined;
+    this.#animated.clear();
+    this.#animatedFrom.length = 0;
+    this.#cameraParts.clear();
+    this.#cameraPartsOf = undefined;
   }
 
   /** Resolves the camera; returns true when the engine walked `root` itself and answered the counters. */
@@ -450,9 +491,7 @@ export class RenderCameraCull {
       this.#camera = camera;
       if (engine === undefined) {
         // The engine finds what hangs from the camera itself; this set serves only the JS walk.
-        this.#cameraParts.clear();
-        camera.traverse(this.#collectCameraPart);
-        this.#cameraParts.delete(camera);
+        this.#findCameraParts(camera);
       }
       this.#scale = viewportHeight / (2 * Math.tan((perspective.fov * Math.PI) / 360));
     }
@@ -689,6 +728,22 @@ export class RenderCameraCull {
         !visible,
       );
     }
+  }
+
+  /** Rebuilds {@link #cameraParts}, unless the engine's hierarchy has held still since. */
+  #findCameraParts(camera: Camera): void {
+    const revision = hierarchyRevision(camera);
+    if (
+      revision !== undefined &&
+      revision === this.#cameraPartsRevision &&
+      camera === this.#cameraPartsOf
+    )
+      return;
+    this.#cameraParts.clear();
+    camera.traverse(this.#collectCameraPart);
+    this.#cameraParts.delete(camera);
+    this.#cameraPartsOf = camera;
+    this.#cameraPartsRevision = revision;
   }
 
   #isVisibleInWorld(object: Object3D): boolean {
