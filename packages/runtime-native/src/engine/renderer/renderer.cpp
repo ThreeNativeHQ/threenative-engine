@@ -4261,7 +4261,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.triangles += effectPasses;
     }
     encoder = recordSampledTargets(encoder);
-    outputPass(encoder, presentTarget, presentFormat);
+    if (writesOutput_ || presentTarget) outputPass(encoder, presentTarget, presentFormat);
     const auto segments = passTimer_->segments;
     const bool resolveTiming = timed && !passTimer_->failed && !segments.empty();
     if (resolveTiming) {
@@ -4314,7 +4314,14 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
 }
 
+namespace {
+uint64_t outputPassCount = 0;
+}
+
+uint64_t outputPassesRecorded() { return outputPassCount; }
+
 void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat) {
+    ++outputPassCount;
     PipelineTarget outputTarget{present ? presentFormat : WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
     outputTarget.layout = outputPipelineLayout_;
     // overlayRenderer(): the output is premultiplied (buildOutput), so it composites "over" the frame on the surface.
