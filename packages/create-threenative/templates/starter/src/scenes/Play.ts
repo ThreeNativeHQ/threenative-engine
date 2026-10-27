@@ -237,7 +237,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ? ctx.entities.add("touch-controls", new TouchControls(ctx.camera as PerspectiveCamera))
       : undefined;
     // Offset, lead and damping all live in render/camera.ts — framing is a look decision.
-    const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
+    // What the lens must not end up behind: filled with the arena's solids once they exist.
+    const lensBlockers: Mesh[] = [];
+    const springArm = createSpringArm(ctx.camera as PerspectiveCamera, {
+      obstruction: (origin, direction, far) =>
+        ctx.raycast({ direction, far, origin, targets: lensBlockers })?.distance,
+    });
 
     // The prototype test arena every engine opens a new project on, dressed as a course: a light
     // metre-grid ground running out to the haze line, dark-grid walls and a pillar as backdrop,
@@ -271,6 +276,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     ctx.add(fixed(floorMesh));
     ctx.add(fixed(floorBase));
+    lensBlockers.push(...arena.solids, floorMesh, floorBase);
     ctx.entities.add("crate", new Crate(ctx, levelX, 4, -1.5, propMaterial));
     const pickupBase = block(0.42, 0.14, 0.42, propMaterial);
     const pickupStem = tube(0.08, 0.08, 0.3, propMaterial);

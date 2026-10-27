@@ -25,7 +25,9 @@ export const ROOM_CENTRES = [-6, 6, 18] as const;
 const ROOM_HALF_DEPTH = 6;
 /** North and south walls; the south one is low so the top-down camera can see over it. */
 const NORTH_WALL = 5.2;
-const SOUTH_WALL = 2.2;
+// A kerb on purpose: the camera sits over this wall, and a ray from the lens to a player who stands
+// against it crosses the wall at about 0.9 m, so a taller wall hides the player.
+const SOUTH_WALL = 0.6;
 const WALL_THICKNESS = 0.5;
 const DOOR_HALF_WIDTH = 2;
 const DOOR_HEIGHT = 3;
@@ -44,17 +46,17 @@ export interface IDungeon {
  * A wall torch: a bracket, an emissive flame, and the point light that sells it. The light is
  * the only warm source in the frame, so it is what tells you which wall the room's other end is.
  */
-function addTorch(room: Group, x: number, wallZ: number, inward: number): void {
-  const bracket = solidBox([0.1, 0.1, 0.5], [x, 2.25, wallZ + inward * 0.25], structureMaterial);
+function addTorch(room: Group, x: number, wallZ: number, inward: number, mount = 2.25): void {
+  const bracket = solidBox([0.1, 0.1, 0.5], [x, mount, wallZ + inward * 0.25], structureMaterial);
   bracket.name = "torch-bracket";
   room.add(bracket);
   const flame = new Mesh(new SphereGeometry(0.13, 8, 6), flameMaterial);
   flame.name = "torch-flame";
   flame.scale.y = 1.6;
-  flame.position.set(x, 2.45, wallZ + inward * 0.45);
+  flame.position.set(x, mount + 0.2, wallZ + inward * 0.45);
   room.add(flame);
   const light = new PointLight(0xffb066, 6, 9, 2);
-  light.position.set(x, 2.5, wallZ + inward * 0.7);
+  light.position.set(x, mount + 0.25, wallZ + inward * 0.7);
   room.add(light);
 }
 
@@ -170,7 +172,7 @@ export function createDungeon(): IDungeon {
       room.add(cover);
     }
     addTorch(room, centre - 2.5, -ROOM_HALF_DEPTH, 1);
-    addTorch(room, centre + 2.5, ROOM_HALF_DEPTH, -1);
+    addTorch(room, centre + 2.5, ROOM_HALF_DEPTH, -1, SOUTH_WALL + 0.05);
     // Torches and brackets never move relative to their room, so they bake down to one mesh per
     // material; the floor, walls, pillars and doorway stay separate objects, because those are the
     // ones a playtest looks up by name and the ones a trimesh body is built from.
