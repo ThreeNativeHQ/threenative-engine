@@ -298,8 +298,9 @@ export class Play extends Scene<GameState, undefined> {
       else if (at.y < EDGE) panRts(view, 0, -speed);
       else if (at.y > size.height - EDGE) panRts(view, 0, speed);
     }
+    // The axis is positive for a wheel rolled away from the user, which zooms in: a smaller view.
     const zoom = ctx.input.axis("zoom");
-    if (zoom !== 0) zoomRts(view, zoom);
+    if (zoom !== 0) zoomRts(view, -zoom);
 
     if (this.#drag !== undefined) {
       const live = raw.pointers.get(this.#drag.id);
