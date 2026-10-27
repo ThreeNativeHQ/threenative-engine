@@ -329,7 +329,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "603cce83c0b7da17f1ed2eba72e317f940840327e95081555191c22849041a73",
+  // Recomputed 2026-10-26 (PRD-752): worker.html, src/worker.ts, src/worker-page.ts and an AGENTS.md line run the game in a worker.
+  starter: "84da9469c321538b7b2518b92e778e004cfdad2a772bb64e0222df5a2b9ad896",
   "tower-defense": "c2874bdeedfb61095c23374f4e9716aacedfc801e0966648b067bbf267b1cb11",
 };
 
@@ -428,6 +429,10 @@ const STARTER_PATHS = [
   "vite.config.ts",
   "src/game.ts",
   "src/main.ts",
+  // PRD-752: the same game in a worker, at `worker.html`.
+  "worker.html",
+  "src/worker.ts",
+  "src/worker-page.ts",
   "src/scenes/Play.ts",
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
