@@ -27,8 +27,8 @@ import {
   discoverKitManifests,
   discoverTemplateNames,
   parseArgs,
-  scaffoldCompletionMessage,
   referenceDigest,
+  scaffoldCompletionMessage,
   scaffoldNextSteps,
 } from "../src/index.js";
 
