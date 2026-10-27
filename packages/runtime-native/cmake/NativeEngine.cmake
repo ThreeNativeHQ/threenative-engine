@@ -371,6 +371,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_geometry_cache=geometry
         native_engine_renderer_pipeline_cache=pipelines
         native_engine_renderer_sibling_pipelines=sibling_pipelines
+        native_engine_renderer_sibling_texture_change=sibling_texture_change
         native_engine_renderer_pipeline_compile_async=compile_before_render
         native_engine_renderer_init_texture=init_texture
         native_engine_renderer_recent_bind_groups=recent_bind_groups

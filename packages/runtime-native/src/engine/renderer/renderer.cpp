@@ -2485,7 +2485,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
     // A sibling replaced or released a shared map texture: this renderer's groups may bind its old view.
-    if (texturesSeen_ != textures_->generation) texturesChanged();
+    // Seeing the change is not making one: bumping the count here made the siblings hand it back and
+    // forth, and every renderer dropped its groups and bundles on every frame.
+    if (texturesSeen_ != textures_->generation) {
+        dropMapGroups();
+        texturesSeen_ = textures_->generation;
+    }
     diagnostics_.clear();
     if (!compilation) {  // a compile is no frame: three's deltaTime spans presented frames only
         const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
