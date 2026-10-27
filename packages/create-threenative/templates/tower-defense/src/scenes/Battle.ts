@@ -455,6 +455,10 @@ export class Battle extends Scene<GameState, IPhysicsContext> {
     ctx.entities.add("battle", {
       debug: () => ({
         armed,
+        // Walkers on the road whose health bar shows a chill they do not have, or hides one.
+        barTintMismatches: [...enemies.values()].filter(
+          (enemy) => enemy.active && !enemy.barTintMatches,
+        ).length,
         hostiles: waves.queued + [...enemies.values()].filter((enemy) => enemy.active).length,
         hoverPad: hoverPad ?? -1,
         phase: waves.phase,

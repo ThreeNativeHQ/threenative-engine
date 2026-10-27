@@ -139,6 +139,7 @@ export class Play extends Scene<GameState, undefined> {
   #notice = "";
   #fogText = "";
   #dots: number[] = [];
+  #viewCorners: number[] = [];
   #patch: Partial<GameState> = {};
 
   override async load(ctx: GameCtx): Promise<void> {
@@ -297,8 +298,9 @@ export class Play extends Scene<GameState, undefined> {
       else if (at.y < EDGE) panRts(view, 0, -speed);
       else if (at.y > size.height - EDGE) panRts(view, 0, speed);
     }
+    // The axis is positive for a scroll up (negative DOM deltaY), which zooms in: a smaller view.
     const zoom = ctx.input.axis("zoom");
-    if (zoom !== 0) zoomRts(view, zoom);
+    if (zoom !== 0) zoomRts(view, -zoom);
 
     if (this.#drag !== undefined) {
       const live = raw.pointers.get(this.#drag.id);
@@ -587,7 +589,8 @@ export class Play extends Scene<GameState, undefined> {
     patch.mode = this.#mode;
     patch.ore = Math.floor(sim.resources.ore);
     patch.primaryBuilt = primary?.built ?? true;
-    patch.primaryHp = primary?.hp ?? 0;
+    // Whole points, rounded up: the readout never shows a fraction or a living unit at 0.
+    patch.primaryHp = Math.ceil(primary?.hp ?? 0);
     patch.primaryMaxHp = primary?.maxHp ?? 0;
     patch.primaryProgress = primary?.progress ?? 0;
     patch.primaryTeam = primary?.team ?? 0;
@@ -625,7 +628,32 @@ export class Play extends Scene<GameState, undefined> {
         (item) => `${item.type}:${item.progress.toFixed(2)}`,
       );
     }
+    // The view follows the camera every frame, paused or not, but is republished only when it moved.
+    if (this.#viewQuad(ctx.camera as OrthographicCamera, ctx.viewport.size))
+      patch.minimapView = this.#viewCorners;
     ctx.state.set(patch);
+  }
+
+  /**
+   * The ground under the frame's four corners, in the minimap's units (tenths of a raster cell):
+   * an orthographic camera at a pitch sees a slanted quad of map, not a square. True when it moved.
+   */
+  #viewQuad(camera: OrthographicCamera, size: { height: number; width: number }): boolean {
+    const scale = (MINIMAP / WORLD) * 10;
+    const view: number[] = [];
+    for (const [sx, sy] of [
+      [0, 0],
+      [size.width, 0],
+      [size.width, size.height],
+      [0, size.height],
+    ] as const) {
+      const ground = groundAt(camera, sx, sy, size);
+      if (ground === null) return false;
+      view.push(Math.round((ground.x + HALF) * scale), Math.round((ground.z + HALF) * scale));
+    }
+    if (view.every((value, index) => value === this.#viewCorners[index])) return false;
+    this.#viewCorners = view;
+    return true;
   }
 
   /**
