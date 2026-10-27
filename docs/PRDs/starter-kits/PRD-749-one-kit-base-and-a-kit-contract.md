@@ -19,8 +19,10 @@ The 16 kits hold 663 source files and 100,401 lines (measured 2026-10-26 at 321f
 
 ### Phase 1 — The kit contract runs on every kit
 
-- [ ] A kit contract suite runs every row on all 16 kits from `pnpm test:templates`, each row a playtest assertion with a per-kit opt-out that needs a reason. proof: a spec in `packages/playtest/__tests__` for the opt-out rule, and the suite listing 16 kits.
+- [x] A kit contract suite runs every row on all 16 kits from `pnpm test:templates`, each row a playtest assertion with a per-kit opt-out that needs a reason. proof: a spec in `packages/playtest/__tests__` for the opt-out rule, and the suite listing 16 kits.
+  Done (2026-10-27): `kit-contract.spec.ts` rejects an opt-out without a written reason, for an unknown row, and a stale one; the headed sweep on pr563-followup 6ef214594 (`TN_KIT_CONTRACT_ONLY=1` of `pnpm test:templates`) lists all 16 kits, 8 rows each.
 - [ ] Seed rows from PRD-747's confirmed bugs, each red on the commit that shipped it: the camera never hides the player, retry resets state, no debug text in the shipped HUD, HUD text contrast, a hit lands inside its clip's contact window, foot slip under the PRD-735 bound, a one-shot clip (roll, attack) reaches its end, and no hitch (PRD-748's gate). proof: per row, the red commit and the green run on all 16 kits.
+  Progress (2026-10-27, open): the 6ef214594 sweep is green on every row of every kit except platformer `camera-sees-subject` (5 of 205 samples, 2.4% against 2%: the fox falls into the non-solid rock body, Stage.ts:105; a game-feel call, not tuned). Red on 11d0ff38a: 12 rows on 10 kits. Fixes: sight-line observer skips cutouts, depth-less effects and ropes (spec red to green); spring-arm pull-in in starter, platformer and adventure; puzzle and action-rpg near walls cut down; restart bounds with `lte` and a platformer `R` binding; explore judged by path length; `assert.animation` `atStep` and the action-rpg swing fitted to its clip.
 
 ### Phase 2 — Engine nodes for the repeated mechanics
 
