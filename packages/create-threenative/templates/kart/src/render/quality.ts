@@ -19,10 +19,11 @@ import {
 
 export type { QualityTier };
 
-// What `high` changes on top of the engine's `high`. Nothing yet.
-const high: IWorldEnvironmentOptions = {};
-// What `medium` changes on top of the engine's `medium`. Nothing yet.
-const medium: IWorldEnvironmentOptions = {};
+// What `high` changes on top of the engine's `high`: no motion blur. The owner (2026-10-26) read
+// the chase camera's blur as the kart hanging while it drives.
+const high: IWorldEnvironmentOptions = { motionBlurEnabled: false };
+// What `medium` changes on top of the engine's `medium`: no motion blur, as on `high`.
+const medium: IWorldEnvironmentOptions = { motionBlurEnabled: false };
 // What `low` changes on top of the engine's `low`. Nothing yet.
 const low: IWorldEnvironmentOptions = {};
 
