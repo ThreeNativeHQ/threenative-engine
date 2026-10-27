@@ -165,9 +165,21 @@ const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adap
 
 const FRAME_SAMPLES = 601;
 
-/** Presented-frame intervals in ms, one per requestAnimationFrame, for frameStats. */
-async function frames(page: Page) {
-  const intervals = await page.evaluate(
+/**
+ * The thread the game draws on: the worker holding the platform source a worker host installs
+ * (PRD-752), else the page. A worker page's own requestAnimationFrame times the page, not the game.
+ */
+async function gameThread(page: Page) {
+  for (const worker of page.workers()) {
+    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform")) === "object")
+      return { kind: "worker" as const, realm: worker };
+  }
+  return { kind: "page" as const, realm: page };
+}
+
+/** Presented-frame intervals in ms, one per requestAnimationFrame on the game's thread, for frameStats. */
+async function frames(realm: Pick<Page, "evaluate">) {
+  const intervals = await realm.evaluate(
     (count) =>
       new Promise<number[]>((resolve) => {
         const times: number[] = [];
@@ -410,7 +422,8 @@ export async function measure(url: string, o: IOptions) {
     await page.waitForTimeout(o.warmupMs);
     const reading = readHostLoad();
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
-    const frame = await frames(page);
+    const thread = await gameThread(page);
+    const frame = await frames(thread.realm);
     if (o.saveProfile !== undefined) mkdirSync(o.saveProfile, { recursive: true });
     const saveAs =
       o.saveProfile === undefined
@@ -443,6 +456,7 @@ export async function measure(url: string, o: IOptions) {
       ...(memory ? { memory: parseWebMetrics({ memory }).memory } : {}),
       adapter,
       startupMs,
+      gameThread: thread.kind,
       frame,
       profile,
       ...(census ? { calls: census } : {}),

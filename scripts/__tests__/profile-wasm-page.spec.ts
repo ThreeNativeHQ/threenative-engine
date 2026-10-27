@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   presented: [0, 0] as number[],
   thread: [1, 1.002] as number[],
   clicks: [] as string[],
+  workers: [] as { evaluate(fn: (() => unknown) | string): Promise<unknown> }[],
 }));
 vi.mock("node:os", () => ({
   default: { availableParallelism: () => 8, loadavg: () => [state.load, 0, 0] },
@@ -21,6 +22,7 @@ vi.mock("@playwright/test", () => ({
         click: async (selector: string) => {
           state.clicks.push(selector);
         },
+        workers: () => state.workers,
         context: () => ({
           newCDPSession: async () => ({
             send: async (method: string) =>
@@ -74,6 +76,7 @@ afterEach(() => {
   state.presented = [0, 0];
   state.thread = [1, 1.002];
   state.clicks = [];
+  state.workers = [];
   vi.unstubAllGlobals();
 });
 describe("profile:wasm-page scorecard", () => {
@@ -95,6 +98,21 @@ describe("profile:wasm-page scorecard", () => {
     expect(
       (await measure("http://test", options(["--url", "http://test"]))).memory,
     ).toBeUndefined();
+  });
+  it("reads frame times on the game's own thread: the page, or the worker that runs it (PRD-752)", async () => {
+    const page = await measure("http://test", options(["--url", "http://test"]));
+    expect(page.gameThread).toBe("page");
+    expect(page.frame.p50).toBe(10);
+    // An idle helper worker, then the worker holding the game's platform source.
+    const idle = { evaluate: async () => "undefined" };
+    const game = {
+      evaluate: async (fn: (() => unknown) | string) =>
+        typeof fn === "string" ? "object" : Array.from({ length: 600 }, () => 20),
+    };
+    state.workers = [idle, game];
+    const worker = await measure("http://test", options(["--url", "http://test"]));
+    expect(worker.gameThread).toBe("worker");
+    expect(worker.frame.p50).toBe(20);
   });
   it.each(["wasmMemoryBytes", "jsHeapUsedBytes"])(
     "fails closed when %s is unavailable",
