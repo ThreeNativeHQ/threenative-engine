@@ -315,18 +315,30 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
     // process was added, removed or attached, and let the cadence catch a geometry or material swap.
     const uint64_t hierarchy = Object3D::hierarchyVersion();
     const bool settled = hierarchy == host.hierarchy && minMeshes == host.minMeshes && host.sinceDecide + 1 < kDeclineRescanFrames;
+    using Walks = projection::WalkCounters;
+    Walks& walks = projection::walkCounters(projection::WalkCaller::HostReport);
     if (settled) {
         ++host.sinceDecide;
     } else {
+        uint64_t& nodes = projection::walkedNodes();
+        const uint64_t before = nodes;
         const double stamp = projection::structureStamp(root);
+        ++walks.stampWalks;
+        walks.stampNodes += nodes - before;
+        ++walks.stampBy[hierarchy != host.hierarchy ? Walks::Hierarchy : minMeshes != host.minMeshes ? Walks::MinMeshes : Walks::Cadence];
         if (stamp != host.stamp || minMeshes != host.minMeshes || ++host.sinceDecide >= kDeclineRescanFrames) {
+            ++walks.decideBy[stamp != host.stamp ? Walks::Structure : minMeshes != host.minMeshes ? Walks::MinMeshes : Walks::Cadence];
+            const uint64_t at = nodes;
             host.decision = projection::decide(root, minMeshes);
+            ++walks.decideWalks;
+            walks.decideNodes += nodes - at;
             host.stamp = stamp;
             host.minMeshes = minMeshes;
             host.sinceDecide = 0;
         }
         host.hierarchy = hierarchy;
     }
+    projection::countWalkCall(projection::WalkCaller::HostReport);
     const projection::Decision& d = host.decision;
     std::vector<std::pair<std::string, Value>> exact;
     for (const auto& [reason, count] : d.exact) exact.emplace_back(reason, Value::of(double(count)));
