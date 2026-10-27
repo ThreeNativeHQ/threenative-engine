@@ -55,6 +55,12 @@ export default game;
  * instead, which keeps one source of truth on the side that owns the simulation.
  */
 game.ui.onIntent((intent, payload) => {
+  // A new match: `game.goto` rebuilds the scene and resets the state to its initial shape.
+  if (intent === "restart") {
+    game.resume();
+    void game.goto("play");
+    return;
+  }
   if (intent === "pause") {
     game.pause();
     sendSceneIntent("cancel");
