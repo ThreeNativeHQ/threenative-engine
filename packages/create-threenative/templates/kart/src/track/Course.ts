@@ -102,6 +102,9 @@ export interface ICourse {
   /** Road height under x/z near sample `index`, interpolated between samples so a fast kart
    * does not feel the 1 m steps as bumps. */
   heightAt(index: number, x: number, z: number): number;
+  /** Road slope dy/ds under x/z near sample `index`, interpolated between samples so a fast kart's
+   * pitch does not step per metre. */
+  slopeAt(index: number, x: number, z: number): number;
   /** World position of `lateral` metres off sample `index`, on the road surface. */
   pointAt(index: number, lateral: number, out: { x: number; y: number; z: number }): void;
 }
@@ -225,6 +228,13 @@ export function buildCourse(): ICourse {
       const other = wrap(k + (along >= 0 ? 1 : -1));
       const f = Math.min(1, Math.abs(along) / STEP);
       return (y[k] ?? 0) + ((y[other] ?? 0) - (y[k] ?? 0)) * f;
+    },
+    slopeAt(i, px0, pz0) {
+      const k = wrap(i);
+      const along = (px0 - (x[k] ?? 0)) * (tx[k] ?? 0) + (pz0 - (z[k] ?? 0)) * (tz[k] ?? 0);
+      const other = wrap(k + (along >= 0 ? 1 : -1));
+      const f = Math.min(1, Math.abs(along) / STEP);
+      return (slope[k] ?? 0) + ((slope[other] ?? 0) - (slope[k] ?? 0)) * f;
     },
     pads: LAYOUT.pads.map(({ at, lateral }) => ({ index: index(at), lateral })),
     pointAt(i, lateral, out) {

@@ -196,7 +196,7 @@ export class KartModel {
     const along = Math.cos(kart.yaw - trackYaw);
     const pitch = kart.airborne
       ? root.rotation.x * 0.96
-      : Math.atan((course.slope[kart.index] ?? 0) * along);
+      : Math.atan(course.slopeAt(kart.index, kart.x, kart.z) * along);
     // A drift leans the kart out of the turn and swings its nose 17° further in, so the slide reads
     // from the chase camera, which follows the travel and not the nose.
     const lean = kart.drifting ? kart.driftSide * 0.1 : steer * 0.05 * Math.min(1, kart.speed / 10);

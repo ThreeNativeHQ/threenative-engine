@@ -612,6 +612,8 @@ const FAMILY_SCENARIO_ASSERTS = {
   scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
   sceneNodes: [{ select: { nameContains: "crate" }, visible: true }],
   footSlip: [{ atStep: "loading-end", feet: ["footL", "footR"], maxSlip: 0.35 }],
+  sightLine: { maxBlockedRatio: 0.02 },
+  hudAudit: { minContrast: 3, noDebugText: true },
   causedBy: [
     {
       cause: { contact: { entity: "fox", kind: "trigger", with: "coin" } },
@@ -668,6 +670,9 @@ const FAMILY_PASS_IDS = [
   "sceneNodes[0].count",
   "sceneNodes[0].visible",
   "footSlip[0].slip",
+  "sightLine",
+  "hudAudit.debugText",
+  "hudAudit.contrast",
   "causedBy[0].neverBefore",
   "causedBy[0].withinTicks",
   "startup.readyMs",
@@ -839,6 +844,13 @@ function familyReportObservations(fulfilled: boolean) {
         return { body: [0, 0, tick * 0.1], feet: [foot(0), foot(10)] };
       }),
     }],
+    sightLine: {
+      entity: "player",
+      samples: [{ blocked: false, blockers: [], distance: 5 }],
+    },
+    hudAudit: {
+      items: [{ background: [10, 10, 12, 1], color: [255, 255, 255, 1], fontSizePx: 14, selector: "div.hud", text: "Score 10" }],
+    },
     sceneNodes: [
       {
         matched: 1,
@@ -967,6 +979,8 @@ test("should preserve every assertion family's result contract", async () => {
     "scene.observed",
     "sceneNodes.observed",
     "footSlip[0].observed",
+    "sightLine.observed",
+    "hudAudit.observed",
     "causedBy.observed",
     "startup.readyMs",
     "diagnostics",
@@ -1012,6 +1026,8 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_SCENE_UNOBSERVED",
     "TN_PLAYTEST_SCENE_NODES_UNOBSERVED",
     "TN_PLAYTEST_FOOT_SLIP_UNOBSERVED",
+    "TN_PLAYTEST_SIGHT_LINE_UNOBSERVED",
+    "TN_PLAYTEST_HUD_AUDIT_UNOBSERVED",
     "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",

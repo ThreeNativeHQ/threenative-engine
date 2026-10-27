@@ -51,8 +51,8 @@ that the measurement says pay, tighten the scenario to the measured numbers, and
 
 ### Phase 1 — A skinned draw writes its own velocity (engine)
 
-- [ ] Skinned, morphed and node-deformed draws render in the velocity pass through their own vertex stage, with `previousClip = previousProjection * previousView * previousModel * currentDeformedLocal`. The camera-motion fill stays only for instanced, sprite and transparent draws. proof: a red-green case in `packages/runtime-native/tests/native-engine/renderer_test.cpp` (a skinned box under a camera, 5° yaw between two frames: box pixels read |v| < 1e-3 NDC, background reads the camera delta), and `TN_TRAA_VELOCITY_SKIPPED: skinned` no longer prints in the shooter.
-- [ ] The renderer's frame delta advances once per presented frame, not in `compileAsync` (`renderer.cpp:2490-2493`). proof: a red-green renderer test.
+- [x] Skinned, morphed and node-deformed draws render in the velocity pass through their own vertex stage, with `previousClip = previousProjection * previousView * previousModel * currentDeformedLocal`. The camera-motion fill stays only for instanced, sprite and transparent draws. proof: a red-green case in `packages/runtime-native/tests/native-engine/renderer_test.cpp` (a skinned box under a camera, 5° yaw between two frames: box pixels read |v| < 1e-3 NDC, background reads the camera delta), and `TN_TRAA_VELOCITY_SKIPPED: skinned` no longer prints in the shooter. Result (d165e3e4a): `traa_skinned_velocity` RED on the pre-fix code (77 failed checks, 76 box texels |v| >= 1e-3), GREEN after; all 32 renderer_test cases pass; the shooter page log printed `TN_TRAA_VELOCITY_SKIPPED: skinned` 36 times before, 0 after.
+- [x] The renderer's frame delta advances once per presented frame, not in `compileAsync` (`renderer.cpp:2490-2493`). proof: a red-green renderer test. Result (d165e3e4a): `frame_delta_skips_compiles` RED before (deltaTime 0.2 s, not 0.4 s), GREEN after.
 
 ### Phase 2 — Adopt what pays
 
@@ -66,7 +66,9 @@ claim comes from a 60 Hz real display or is marked unverified.
 
 ### Phase 3 — The look
 
-- [ ] Each of the three exposure overrides is kept only if a judge frame shows why. proof: the judge verdict per override.
+- [ ] The shooter's base look is the 7b546d6 look, restored as named, reported overrides on core's preset: ACES, fixed exposure 1, no motion blur or temporal AA, the 7b546d6 bloom, sun 0xfff1e0 at 4.5, ground 0xb4b1ae and the full sky range. proof: a fresh judge reads MATCH or CLOSE against `~/Downloads/pr563-prd723-shooter/frames/BEFORE-*` and `kit-look-defaults.spec.ts` asserts the overrides.
+- [ ] The town's plaster, stone, wood, metal and ground take tiling surfaces generated through OpenRouter (`agent-files/scripts/reference.mjs`, a cheap image model), at most 8 images of 512 px WebP and 1 MB in total, applied through the `surfaced()` pattern of `templates/adventure/src/render/surface.ts`, licence and prompts in `assets/tex-PROVENANCE.md`. Geometry stays procedural. proof: the byte total and the `survives` scenario.
+- [ ] Unreal-grade polish on procedural geometry only (owner, 2026-10-26: "polish visuals also as if its a unreal game, procedural only"): material response per surface, trims, edge wear and contact shading, judged against the Phase 3 BEFORE set. proof: the judge verdict below.
 - [ ] Fresh judge against BEFORE captures taken at the PR #574 head before Phase 2 (headed WebGPU, nvidia/turing, two runs per arm): IMPROVEMENT overall, the weapon sharp while turning and strafing, no REGRESSION. proof: the verdict and the sheets on the PR.
 
 ## Acceptance criteria
@@ -76,6 +78,8 @@ claim comes from a 60 Hz real display or is marked unverified.
 - [ ] `TN_TEMPLATE_ONLY=shooter pnpm test:templates` passes and the scaffold hash is re-pinned. proof: the run on the PR head.
 
 ## Decisions
+
+- 2026-10-26 (owner): the shooter keeps the 7b546d6 look as its base. He compared `BEFORE-survives-run2.png` (7b546d6) with `AFTER-five-soldiers-run2.png` (the core look) and wrote: "i actually prefer this version (polish considering this look). the after version sucks. looks yellowish". The yellow cast came from the kit's own migration edits (ground 0x9b9185, sun 0xffe6c8 at 6.5, sky fill 0.55) plus the filmic curve at key 0.14. The engine default stays the Unreal look; this kit opts out with named overrides.
 
 - 2026-10-26 (lead, measured): `markStatic` on the town is dropped. Three alternating pairs gave CPU p95 11.4/11.4/14.5 ms with it against 11.2/11.2/11.8 without, so no gain; `?tnRenderListValidate=1` showed 0 divergences over 660 frames while it was on.
 - 2026-10-26 (lead, measured): palms stay on `InstancedMesh`. `InstancedBatch` was neutral (same draws and triangles) and calling it from `src/render/palm.ts` breaks the render portability check (`scripts/check-core-boundary.ts`); reverted in 390696886.

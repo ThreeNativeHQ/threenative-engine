@@ -1,0 +1,101 @@
+{
+  "name": "kart-smooth-drive",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "straight",
+      "press": ["KeyW"],
+      "holdTicks": 240,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "drift",
+      "press": ["KeyW", "KeyA", "Space"],
+      "holdTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "speed",
+        "gte": 12,
+        "allowTrivial": "The grid starts at rest; four seconds of full throttle reach racing speed, so the straight the shake meter measures is real driving and not the parked grid."
+      },
+      {
+        "entity": "player",
+        "component": "drifts",
+        "gte": 1,
+        "allowTrivial": "The second phase holds the hop and steer, so at least one power-slide must exist for the roll and pitch bounds to see."
+      },
+      {
+        "entity": "player",
+        "component": "shakePitch",
+        "lte": 1,
+        "allowTrivial": "The meter starts at zero on the grid. On the start straight the model used to step its pitch once per 1 m road sample, 1.31 deg in one frame at 15 m/s, so the 1 deg bound catches the shake the owner saw."
+      },
+      {
+        "entity": "player",
+        "component": "shakeRoll",
+        "lte": 1,
+        "allowTrivial": "The drift's 6 deg lean eases over frames, so roll must never snap. A one-frame snap is the failure this bound catches even though the pre-run meter is zero."
+      },
+      {
+        "entity": "player",
+        "component": "shakeY",
+        "lte": 0.02,
+        "allowTrivial": "The 1 m height polyline's kink measured 0.0153 m per frame on the straight at 15.4 m/s. Twice that leaves the measured road noise room and still catches the 0.077 m hop landing."
+      },
+      {
+        "entity": "player",
+        "component": "shakeCamera",
+        "lte": 0.02,
+        "allowTrivial": "The camera's height above the kart measured 0.0149 m per frame on the straight. The bound catches a camera that lags or snaps while the kart holds a steady line."
+      },
+      {
+        "entity": "cpu.1",
+        "component": "shakePitch",
+        "lte": 1,
+        "allowTrivial": "CPU karts share the model and the road samples with the player. cpu.1 measured 1.37 deg in one frame before the fix, so the bound proves every kart's pitch, not only the player's."
+      },
+      {
+        "entity": "cpu.1",
+        "component": "shakeRoll",
+        "lte": 1,
+        "allowTrivial": "CPU karts lean through the same model; a per-frame roll snap would show here even though the pre-run meter is zero."
+      },
+      {
+        "entity": "cpu.1",
+        "component": "shakeY",
+        "lte": 0.02,
+        "allowTrivial": "CPU karts ride the same interpolated road height; cpu.1 measured 0.0059 m per frame, so 0.02 m holds the shared sim to the player's bound."
+      }
+    ]
+  }
+}

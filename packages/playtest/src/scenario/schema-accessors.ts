@@ -4,7 +4,7 @@ import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./err
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS, PLAYTEST_PER_ADAPTER_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSightLineAssertion, IPlaytestHudAuditAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -951,6 +951,37 @@ export function validateFootSlipAssertion(value: unknown, scenarioPath: string, 
     ...present("maxSlideSpeed", maxSlideSpeed),
     ...present("maxSlip", maxSlip),
     ...present("stepSeconds", optionalPositiveNumber(record, "stepSeconds", scenarioPath, objectPath)),
+  };
+}
+
+export function validateSightLineAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestSightLineAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["entity", "maxBlockedRatio"], scenarioPath, objectPath);
+  const maxBlockedRatio = optionalRatio(record, "maxBlockedRatio", scenarioPath, objectPath);
+  if (maxBlockedRatio === undefined) throw invalidScenario(scenarioPath, `${objectPath}.maxBlockedRatio is required; a sight line with no allowed blocked share bounds nothing.`);
+  return {
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    maxBlockedRatio,
+  };
+}
+
+export function validateHudAuditAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestHudAuditAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["minContrast", "noDebugText"], scenarioPath, objectPath);
+  const noDebugText = optionalBoolean(record, "noDebugText", scenarioPath, objectPath);
+  if (noDebugText === false) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.noDebugText' may only be true; remove the key to stop scanning for developer text.`);
+  }
+  const minContrast = optionalNumber(record, "minContrast", scenarioPath, objectPath);
+  if (minContrast !== undefined && (minContrast < 1 || minContrast > 21)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.minContrast' must be between 1 and 21, received ${describeValue(minContrast)}.`);
+  }
+  if (noDebugText === undefined && minContrast === undefined) {
+    throw invalidScenario(scenarioPath, `${objectPath} must declare at least one of 'minContrast' or 'noDebugText'.`);
+  }
+  return {
+    ...present("minContrast", minContrast),
+    ...(noDebugText === undefined ? {} : { noDebugText: true }),
   };
 }
 

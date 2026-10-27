@@ -183,6 +183,8 @@ describe("GPU exposure lifecycle", () => {
     expect(generated).toHaveLength(5);
     expect(generated[0]?.match(/textureLoad\(/gu)).toHaveLength(16);
     expect(generated[1]?.match(/textureLoad\(/gu)).toHaveLength(16);
+    // The tiles pass weights each block by Unreal's black bucket ramp (blackBucketWeight): floor -10, bucket 30/63.
+    expect(generated[2]).toMatch(/- -10\.0 \) \/ 0\.47619/u);
     expect(generated[4]).toContain("log2(");
     expect(generated[4]).toContain("smoothstep(");
     expect(generated[4]).toContain("exp(");

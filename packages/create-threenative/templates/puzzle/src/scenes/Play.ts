@@ -341,6 +341,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
      * shove — and drops the amplifier.
      */
     let snapshot: readonly IPose[] = [];
+    /** Where the opening drop left each crate, so the shove count survives the rebuild. */
+    let restSnapshot: readonly Vector3[] = [];
     let wardenSnapshot = new Vector3(WARDEN_SPAWN.x, WARDEN_SPAWN.y, WARDEN_SPAWN.z);
     /** V pressed before the opening drop finished: honoured as soon as it has. */
     let replayRequested = false;
@@ -493,12 +495,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
             // the two passes agreed to the last bit or merely to a millimetre.
             replayMatch = replayDrift <= REPLAY_TOLERANCE;
             replayPhase = "done";
+            const replayBodies = rig.length;
             // Put the vault back exactly as the player left it, then let the seal watch again.
             clearRig();
             buildCrates(snapshot);
+            crates.forEach((crate, index) => crate.rest.copy(restSnapshot[index] ?? crate.rest));
             warden.teleport(wardenSnapshot);
             seal.area.monitoring = true;
-            frame.state.set({ replayBodies: rig.length, replayDrift, replayMatch, replayPhase });
+            frame.state.set({ replayBodies, replayDrift, replayMatch, replayPhase });
             frame.state.flush();
           }
           camera.follow(warden.mesh.position, dt);
@@ -514,6 +518,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (replayRequested && replayPhase === "idle" && settled) {
         replayRequested = false;
         snapshot = capture();
+        restSnapshot = crates.map((crate) => crate.rest.clone());
 
         wardenSnapshot = warden.mesh.position.clone();
         // Nothing that happens during the two passes may end the run.

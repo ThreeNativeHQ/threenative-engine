@@ -167,6 +167,72 @@ describe("generated reference script", () => {
     }
   });
 
+  it("reads OpenRouter's live endpoints answer for a model id with a slash", async () => {
+    const root = await makeTempDir("threenative-reference-");
+    // The live shape (2026-10-26): `data` is the model object, its modalities on `architecture`.
+    const fixture = await fixtureServer(undefined, {
+      data: {
+        id: "meta/muse-image",
+        architecture: { input_modalities: ["text", "image"], output_modalities: ["image"] },
+        endpoints: [{ supported_parameters: ["max_tokens", "temperature"] }],
+      },
+    });
+    try {
+      await runFixture(root);
+      const result = await runReference(
+        root,
+        [
+          "--record",
+          ".dream-loop/run-1/run.json",
+          "--request-id",
+          "target-001",
+          "--prompt-file",
+          ".dream-loop/run-1/prompt.txt",
+          "--out",
+          ".dream-loop/run-1/target.png",
+        ],
+        { ...fixture, endpoint: fixture.endpoint.replace("/v1/", "/api/v1/") },
+        { TN_REFERENCE_CAPABILITIES_ENDPOINT: "" },
+      );
+      expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(fixture.requests.find(({ method }) => method === "GET")?.path).toBe(
+        "/api/v1/models/meta/muse-image/endpoints",
+      );
+    } finally {
+      await fixture.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("names an image that does not match the output extension", async () => {
+    const root = await makeTempDir("threenative-reference-");
+    const fixture = await fixtureServer();
+    try {
+      await runFixture(root);
+      const result = await runReference(
+        root,
+        [
+          "--record",
+          ".dream-loop/run-1/run.json",
+          "--request-id",
+          "target-001",
+          "--prompt-file",
+          ".dream-loop/run-1/prompt.txt",
+          "--out",
+          ".dream-loop/run-1/target.jpg",
+        ],
+        fixture,
+      );
+      expect(result.code).not.toBe(0);
+      const output = `${result.stdout}\n${result.stderr}`;
+      expect(output).toContain("does not match output extension");
+      expect(output).not.toContain("provider operation failed");
+    } finally {
+      await fixture.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("reuses a completed request and never duplicates a POST after a crash", async () => {
     const root = await makeTempDir("threenative-reference-retry-");
     const fixture = await fixtureServer();

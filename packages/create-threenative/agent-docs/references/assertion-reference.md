@@ -817,6 +817,47 @@ Bounds how far a planted foot slides while the subject moves, measured every tic
 }
 ```
 
+### `sightLine`
+
+Bounds the share of the run in which solid geometry stood between the camera and the subject's world bounds centre, so a camera that clips through a pillar or a wall that eats the framing fails. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** camera.observe, entity.observe
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `entity` | string | no |
+| `maxBlockedRatio` | number | yes |
+
+
+```json
+{
+  "sightLine": {
+    "maxBlockedRatio": 0.02
+  }
+}
+```
+
+### `hudAudit`
+
+Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** browser.dom
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `minContrast` | number | no |
+| `noDebugText` | true | no |
+
+
+```json
+{
+  "hudAudit": {
+    "minContrast": 3,
+    "noDebugText": true
+  }
+}
+```
+
 ### `causedBy`
 
 Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs. **Use when** that is the thing the scenario must prove.

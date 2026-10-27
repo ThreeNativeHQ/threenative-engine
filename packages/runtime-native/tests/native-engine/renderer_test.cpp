@@ -438,6 +438,108 @@ void traaCameraVelocity() {
     CHECK(moving > 50);  // the sphere's pixels move with the camera, not zero
 }
 
+// A skinned ball held 3 m in front of a camera that yaws 5 degrees a frame (a first-person weapon while the player turns).
+// The velocity pass drew no skinned draw and the camera-motion fill gave the ball the camera's motion, so motion blur
+// smeared the weapon (PRD-746). Drawn through its own skinned vertex, the ball reads still and the sky keeps the fill's
+// camera motion: background texels equal a frame with no ball.
+void traaSkinnedVelocity() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    const size_t vertices = ball->positions.byteLength() / 12;
+    BufferStore skinIndices(Scalar::U16, 0), skinWeights(Scalar::F32, 0);
+    skinIndices.resize(vertices * 4);
+    skinWeights.resize(vertices * 4);
+    const std::vector<uint16_t> zero(vertices * 4, 0);
+    std::vector<float> weights(vertices * 4, 0);
+    for (size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    skinIndices.write(0, zero.data(), zero.size() * 2);
+    skinWeights.write(0, weights.data(), weights.size() * 4);
+    const std::vector<float> bones = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    shader::StandardMaterial material;
+    const auto directory = std::filesystem::current_path() /
+        ("traa-skinned-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    constexpr int last = 20;  // the debug dump keeps frames 18-23
+    const auto velocity = [&](bool withBall, bool& skipped) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump();
+        DrawItem item;
+        item.key = item.id = 1; item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions; item.normals = &ball->normals; item.indices = &ball->indices; item.material = &material;
+        item.skinIndices = &skinIndices; item.skinWeights = &skinWeights; item.boneMatrices = &bones;
+        item.bindMatrix = item.bindMatrixInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        const auto folder = directory / (withBall ? "ball" : "sky");
+        skipped = false;
+        for (int frame = 0; frame <= last; ++frame) {
+            const double a = 5 * kPi / 180 * frame, c = std::cos(a), s = std::sin(a);
+            CameraState view = camera(double(width) / height);
+            view.matrixWorld = {c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 4, 1};
+            view.matrixWorldInverse = {c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, 4 * s, 0, -4 * c, 1};
+            item.matrixWorld = {c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, -3 * s, 0, 4 - 3 * c, 1};  // the camera's child at z = -3
+            renderer.render({&item, withBall ? 1u : 0u}, view, LightState{}, {0, 0, 0, 1});
+            for (const auto& note : renderer.diagnostics()) skipped = skipped || note.rfind("TN_TRAA_VELOCITY_SKIPPED: skinned", 0) == 0;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        std::ifstream file(folder / ("frame-" + std::to_string(last) + "-velocity.bin"), std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    bool skipped = false, unused = false;
+    const auto held = velocity(true, skipped);
+    const auto sky = velocity(false, unused);
+    CHECK(!skipped);
+    size_t still = 0, background = 0;
+    for (uint32_t y = 0; y < height; ++y)
+        for (uint32_t x = 0; x < width; ++x) {
+            const size_t texel = size_t{y} * width + x;
+            const double nx = (x + 0.5) / width * 2 - 1, ny = (y + 0.5) / height * 2 - 1;
+            // The ball spans about 0.57 NDC across and 0.76 NDC up: its inner half, and the four corners outside it.
+            if (std::hypot(nx * width / height, ny) < 0.4) {
+                ++still;
+                CHECK(std::hypot(held[texel * 4], held[texel * 4 + 1]) < 1e-3);
+            } else if (std::abs(nx) > 0.8 && std::abs(ny) > 0.8) {
+                ++background;
+                CHECK(std::abs(held[texel * 4] - sky[texel * 4]) < 1e-4f && std::abs(held[texel * 4 + 1] - sky[texel * 4 + 1]) < 1e-4f);
+                CHECK(std::abs(sky[texel * 4]) > 0.05f);  // the sky moves with the turning camera
+            }
+        }
+    CHECK(still > 20 && background > 8);
+}
+
+// The frame delta (three's deltaTime, read by the output pass and by material nodes) spans presented frames. A
+// pipeline compile between two frames restarted it, so the next frame read only the time since the compile.
+void frameDeltaSkipsCompiles() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(8, 8);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const CameraState view = camera(1);
+    renderer.setPostGraph(g::vec4({g::splat(g::uniform("deltaTime", shader::Type::f32()), 3), g::float_(1)}));
+    renderer.render({}, view, LightState{}, {0, 0, 0, 1});
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    renderer.compileAsync({}, view, LightState{}, WGPUTextureFormat_RGBA8Unorm);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    renderer.render({}, view, LightState{}, {0, 0, 0, 1});
+    const auto pixels = read(renderer, events);
+    CHECK(pixels.size() == 8 * 8 * 4);
+    if (pixels.size() == 8 * 8 * 4) CHECK(pixels[0] >= 0.36 * 255);  // at least the 0.4 s since the first frame, not the 0.2 s since the compile
+}
+
 // The shape a template gives the engine: the temporal effect is the colour convertToTexture hands the stages, and a stage
 // samples the velocity target the temporal pass draws. The effect has to be found inside the render texture (a TRAA the
 // engine never saw leaves the camera unjittered and the velocity undrawn) and a stage's `velocity` input has to be bound.
@@ -1897,6 +1999,8 @@ TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTa
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
+             {"traa_skinned_velocity", traaSkinnedVelocity},
+             {"frame_delta_skips_compiles", frameDeltaSkipsCompiles},
              {"traa_feeds_the_chain", traaFeedsTheChain},
              {"velocity_needs_traa", velocityNeedsTraa},
              {"traa_replaces_multisampling", traaReplacesMultisampling},

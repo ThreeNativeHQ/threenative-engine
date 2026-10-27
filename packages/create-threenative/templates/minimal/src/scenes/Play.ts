@@ -21,6 +21,7 @@ import {
   type PerspectiveCamera,
   PlaneGeometry,
   type Texture,
+  type Vector3,
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { type IPlayerModel, Player } from "../entities/Player.js";
@@ -188,7 +189,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     buildStaticColliders(ctx, level);
     const player = new Player(ctx, this.#model);
     const camera = ctx.camera as PerspectiveCamera;
-    afterPhysics(ctx, (dt) => followCamera(camera, player.mesh.position, dt));
+    const probe = (from: Vector3, to: Vector3) =>
+      ctx.physics.directSpaceState.intersectRay({ from, to })?.distance;
+    // Whether a wall stands between the player and the lens: what a playtest asserts. The ray
+    // starts inside the player's capsule, which the query ignores.
+    let hidden = false;
+    ctx.entities.add("camera", { debug: () => ({ hidden }) });
+    afterPhysics(ctx, (dt) => {
+      followCamera(camera, player.mesh.position, dt, probe);
+      hidden = probe(player.mesh.position, camera.position) !== undefined;
+    });
     ctx.entities.add("player", player);
     const pickup = new Area3D({
       physics: ctx.physics,

@@ -1,0 +1,58 @@
+{
+  "name": "platformer-finish",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 87,
+          "y": 4,
+          "z": 0
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run-to-the-flag",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after-the-win",
+      "waitTicks": 480,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "finished",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "allowTrivial": "The win toast must clear: the world keeps its own clock after the run clock stops at the flag, so the toast, the flag's sway and the walkers' hop all keep time.",
+        "id": "state",
+        "path": "toast",
+        "equals": ""
+      }
+    ]
+  }
+}

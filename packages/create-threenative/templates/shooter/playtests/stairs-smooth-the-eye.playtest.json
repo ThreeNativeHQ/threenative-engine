@@ -1,0 +1,56 @@
+{
+  "name": "stairs-smooth-the-eye",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 2,
+  "subject": "player",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [3, 0.89, -32.5],
+        "rotation": [0, 1, 0, 0]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "climb",
+      "press": "KeyW",
+      "holdTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "positionY",
+        "gte": 2.5,
+        "allowTrivial": "The player starts at the foot of the CT ramp flight (3, 0, -30) to (3, 2.4, -22), facing up it, and must end on it: a body standing at 0.89 would make the eye check below trivially true."
+      },
+      {
+        "entity": "player",
+        "component": "viewRisePeak",
+        "lte": 0.064,
+        "allowTrivial": "viewRisePeak is the fastest one-tick climb of the eye while on the ground, in metres. Through the stair spring it stays near 0.05 m. The defect: the eye was welded to the body, which climbs each 0.3 m step in a few ticks and then stops, so the view climbed the flight in jolts."
+      }
+    ]
+  }
+}

@@ -1848,6 +1848,8 @@ StandardPrograms buildDepth(const VertexVariant& variant) {
     return out;
 }
 
+ExprId localPosition(Program& v, const VertexVariant& variant) { return localVertex(v, variant, false).position; }
+
 StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     StandardPrograms out = buildBasic(variant);
     out.fragment = Program{Stage::Fragment};

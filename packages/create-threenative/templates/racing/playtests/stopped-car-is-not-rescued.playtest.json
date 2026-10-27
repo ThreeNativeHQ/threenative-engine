@@ -1,0 +1,59 @@
+{
+  "name": "racing-a-stopped-car-is-not-rescued",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "throttle",
+      "press": "ArrowUp",
+      "holdTicks": 186,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "brake-to-a-stop",
+      "press": "ShiftLeft",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "sit-still-on-the-road",
+      "waitTicks": 420,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "topSpeed",
+        "gte": 6,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "rescues",
+        "equals": 0,
+        "allowTrivial": "The car stopped on the road under the player's own brake: sitting still is not being beached, so no rescue counts toward the four that end the race."
+      },
+      {
+        "id": "state",
+        "path": "raceStatus",
+        "equals": "RACING",
+        "allowTrivial": "A player who stops for seven seconds is still racing, not out of the race."
+      }
+    ]
+  }
+}

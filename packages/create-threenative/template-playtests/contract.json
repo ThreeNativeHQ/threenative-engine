@@ -1,0 +1,445 @@
+{
+  "action-rpg": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyF", "KeyE", "ShiftLeft"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        },
+        {
+          "id": "state",
+          "path": "gameOver",
+          "equals": 0
+        }
+      ]
+    },
+    "actions": [
+      {
+        "key": "KeyF",
+        "clip": "Sword_Attack",
+        "ticks": 92,
+        "contactTicks": 24,
+        "effect": {
+          "signal": "attack"
+        }
+      },
+      {
+        "key": "KeyE",
+        "clip": "Spell_Simple_Shoot",
+        "ticks": 30
+      },
+      {
+        "key": "ShiftLeft",
+        "clip": "Roll",
+        "ticks": 88
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row"
+    }
+  },
+  "adventure": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyJ", "Space", "ShiftLeft", "KeyQ", "Tab", "KeyE"],
+      "pointer": true
+    },
+    "feet": ["footL", "footR"],
+    "optOut": {
+      "restart-resets": "a lost heart respawns at a checkpoint; there is no run to restart",
+      "action-clip-completes": "slash and roll are procedural states with no clip; combat.playtest.json bounds the slash contact",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "collectathon": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft", "KeyJ"],
+      "pointer": true
+    },
+    "feet": ["footL", "footR"],
+    "optOut": {
+      "restart-resets": "a lost heart respawns at a checkpoint; there is no run to restart",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "kart": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "start": [
+      {
+        "label": "go",
+        "waitForResource": {
+          "id": "state",
+          "path": "phase",
+          "equals": "race"
+        },
+        "timeoutMs": 60000,
+        "release": true
+      }
+    ],
+    "explore": {
+      "actions": ["Space", "KeyE"],
+      "pointer": true
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "countdown"
+        },
+        {
+          "id": "state",
+          "path": "lap",
+          "equals": 1
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "minimal": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "optOut": {
+      "restart-resets": "no failure or end state to retry; the sandbox runs until the player leaves",
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "platformer": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "finished",
+          "equals": false
+        },
+        {
+          "id": "state",
+          "path": "coins",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "gems",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "puzzle": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "status",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "sealedBy",
+          "equals": "none"
+        },
+        {
+          "id": "state",
+          "path": "pushedCrates",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "racing": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "raceStatus",
+          "equals": "RACING"
+        },
+        {
+          "id": "state",
+          "path": "completedLaps",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "elapsed",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "rain": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyE", "KeyQ", "ShiftLeft"],
+      "pointer": true
+    },
+    "optOut": {
+      "restart-resets": "a weather sandbox with no run; KeyR resets the fly camera",
+      "foot-slip": "the subject is a fly camera with no legs",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "rts": {
+    "subject": "camera.main",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyM", "KeyH", "KeyX", "F2", "Escape"],
+      "pointer": true
+    },
+    "optOut": {
+      "restart-resets": "a match restarts through the menu; no restart key is documented yet",
+      "camera-sees-subject": "the subject is the camera itself (a pan camera), so nothing can stand between it and itself",
+      "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "runner": {
+    "subject": "player",
+    "move": ["KeyA", "KeyD"],
+    "explore": {
+      "actions": ["Space"]
+    },
+    "feet": ["ball_l", "ball_r"],
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "status",
+          "equals": "RUNNING"
+        },
+        {
+          "id": "state",
+          "path": "distance",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "nearMisses",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "action-clip-completes": "the jump clip ends at landing by design, not at its last frame",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "sailing": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "status",
+          "equals": "sailing"
+        },
+        {
+          "id": "state",
+          "path": "buoysRounded",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "elapsed",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "shooter": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyR", "ShiftLeft", "KeyF", "ControlLeft"],
+      "pointer": true
+    },
+    "restart": {
+      "key": "Enter",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "score",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "shots",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "first-person player with no visible feet; soldiers are not driven by a player key",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "snow": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "start": [
+      {
+        "kind": "input",
+        "label": "hands-off",
+        "press": "KeyP",
+        "holdTicks": 2,
+        "release": true
+      }
+    ],
+    "explore": {
+      "actions": ["ShiftLeft", "KeyF", "KeyG", "KeyB"],
+      "pointer": true
+    },
+    "optOut": {
+      "restart-resets": "a weather sandbox with no run; KeyR resets the snow field",
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "starter": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft", "KeyG"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "status",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "score",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "lives",
+          "equals": 3
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "the jump clip ends at landing by design, not at its last frame",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  },
+  "tower-defense": {
+    "subject": "camera.main",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "start": [
+      {
+        "kind": "input",
+        "label": "launch",
+        "press": "Space",
+        "holdTicks": 1,
+        "release": true
+      }
+    ],
+    "explore": {
+      "actions": ["Digit1", "Digit2", "Digit3", "Digit4", "Space", "KeyU", "KeyX", "KeyF", "KeyG"],
+      "pointer": true
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "status",
+          "equals": "PLAYING"
+        },
+        {
+          "id": "state",
+          "path": "wave",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "kills",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "camera-sees-subject": "the subject is the camera itself (a pan camera), so nothing can stand between it and itself",
+      "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
+      "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
+      "effect-follows-contact": "no melee or timed hit with a contact window"
+    }
+  }
+}

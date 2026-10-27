@@ -2487,7 +2487,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A sibling replaced or released a shared map texture: this renderer's groups may bind its old view.
     if (texturesSeen_ != textures_->generation) texturesChanged();
     diagnostics_.clear();
-    {
+    if (!compilation) {  // a compile is no frame: three's deltaTime spans presented frames only
         const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
         frameDelta_ = frameTime_ == 0 ? 1.0f / 60.0f : std::max(0.0f, now - frameTime_);
         frameTime_ = now;
@@ -3361,35 +3361,46 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
     if (traa_) {
-        const std::string key = "traa-velocity";
-        if (!programs_.count(key)) {
-            auto source = traaVelocityPrograms();
+        // One velocity program per local-vertex shape: rigid, or skinned, morphed or moved by a position node.
+        const auto velocityProgram = [&](const shader::VertexVariant& from) -> Program& {
+            shader::VertexVariant local;
+            local.skinned = from.skinned; local.skinnedPalette = from.skinnedPalette;
+            local.morphTargets = from.morphTargets; local.morphNormals = from.morphNormals;
+            local.positionNode = from.positionNode; local.nodes.positionNode = from.nodes.positionNode;
+            const std::string key = "traa-velocity|" + local.key();
+            if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+            auto source = traaVelocityPrograms(local);
             source.vertex.setInvariantPosition(true);  // drawn depth-Equal against the colour pass, which is flagged under TRAA
-            add(key, shader::buildStage(source.vertex, 0), shader::buildStage(source.fragment, 1));
-        }
-        Program& velocity = *programs_.at(key);
+            auto vertex = shader::buildStage(source.vertex, 0), fragment = shader::buildStage(source.fragment, 1);
+            if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: TRAA velocity program");
+            return add(key, std::move(vertex), std::move(fragment));
+        };
+        Program& rigid = velocityProgram({});
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
-            // Previous deformed vertex data is not yet retained by these variants, and a transparent or alpha-tested
-            // draw has no depth of its own to match. The velocity pass leaves them out and the camera-motion fill
-            // keeps their pixels moving with the camera, so a game with a skinned character, grass or glass still draws.
-            // Ordinary rigid object/camera motion goes through the real VelocityNode equations. Named once a frame.
-            if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
-                item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || !item.attributes.empty() ||
-                item.transparent || item.material->alphaTest > 0) {
-                const char* reason = item.instanceMatrices ? "instanced" : item.skinIndices ? "skinned" : item.morphGeometry ? "morphed"
-                    : item.sprite ? "sprite" : item.transparent ? "transparent" : item.material->alphaTest > 0 ? "alpha-tested" : "node-deformed";
+            // An instanced, sprite, transparent or alpha-tested draw, or one whose vertexNode is the clip position, has no
+            // previous position here or no depth of its own to match. The velocity pass leaves them out and the
+            // camera-motion fill keeps their pixels moving with the camera. A skinned, morphed or position-node draw runs
+            // its own local vertex (UE 5.8.3: Engine/Shaders/Private/VelocityShader.usf:61-87), so a weapon held by the
+            // camera reads still while the camera turns. Ordinary rigid motion goes through the same VelocityNode equations.
+            if (item.instanceMatrices || item.sprite || item.nodes.vertexNode || item.transparent || item.material->alphaTest > 0) {
+                const char* reason = item.instanceMatrices ? "instanced" : item.sprite ? "sprite" : item.transparent ? "transparent"
+                    : item.material->alphaTest > 0 ? "alpha-tested" : "vertex-node";
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
                     " draws carry the camera's motion only (no previous vertex data)";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
+            const bool deformed = item.boneMatrices || item.morphGeometry || item.positionNode || item.nodes.positionNode;
+            Program& velocity = deformed ? velocityProgram(variantOf(item)) : rigid;
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
             target.sampleCount = sampleCount_;
             lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(velocity.vertex, item);
             if (compilation) {
                 compilation->push_back(pipelines_->getAsync(velocity.vertex, &velocity.fragment, target));
                 continue;
@@ -3406,6 +3417,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, traa_->previousModel(item.key, item.matrixWorld));
                 if (field.name == "previousProjection") put(frameUniforms_, offset, &field, traa_->previousProjection());
                 if (field.name == "previousView") put(frameUniforms_, offset, &field, traa_->previousView());
+            }
+            if (deformed) {
+                const auto* vs = velocity.vertexSlots;
+                put(frameUniforms_, offset, vs[kCameraPosition], std::array<double, 3>{camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]});
+                put(frameUniforms_, offset, vs[kCameraProjectionMatrix], camera.projectionMatrix);
+                put(frameUniforms_, offset, vs[kCameraWorldMatrix], camera.matrixWorld);
+                put(frameUniforms_, offset, vs[kCameraNear], std::array<double, 1>{camera.near});
+                put(frameUniforms_, offset, vs[kCameraFar], std::array<double, 1>{camera.far});
+                put(frameUniforms_, offset, vs[kScreenSize], std::array<double, 2>{double(width_), double(height_)});
+                putSkin(offset, vs, item);
+                putNodes(frameUniforms_, offset, velocity.vertex, item.nodes, frameTime_, frameDelta_, lights);
             }
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
         }
@@ -3675,6 +3697,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (const ShadowPass& pass : shadowPasses)
         for (const Planned& draw : pass.draws)
             if (draw.item->material->alphaHash && draw.item->map) materialTexture(*draw.item->map);
+    for (Planned& draw : velocityPlan) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) {
             draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));

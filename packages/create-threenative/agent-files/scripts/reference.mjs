@@ -373,8 +373,9 @@ function hasImageModality(architecture, key) {
 }
 
 function capabilitySupportsImages(value, needsInput) {
-  if (!Array.isArray(value?.data)) return false;
-  return value.data.some((endpoint) => {
+  // OpenRouter answers `/models/<id>/endpoints` with the model object; a list is accepted too.
+  const entries = Array.isArray(value?.data) ? value.data : value?.data ? [value.data] : [];
+  return entries.some((endpoint) => {
     const architecture = endpoint?.architecture;
     return (
       hasImageModality(architecture, "output_modalities") &&
@@ -387,7 +388,8 @@ function capabilityEndpoint(apiEndpoint, model) {
   if (process.env.NODE_ENV === "test" && process.env.TN_REFERENCE_CAPABILITIES_ENDPOINT)
     return process.env.TN_REFERENCE_CAPABILITIES_ENDPOINT;
   const endpoint = new URL(apiEndpoint);
-  endpoint.pathname = `/api/v1/models/${encodeURIComponent(model)}/endpoints`;
+  // OpenRouter routes `<author>/<slug>` as two path segments; an encoded slash is a 404.
+  endpoint.pathname = `/api/v1/models/${model.split("/").map(encodeURIComponent).join("/")}/endpoints`;
   endpoint.search = "";
   return endpoint.toString();
 }
@@ -645,7 +647,10 @@ async function generate(options, recordFile, record, roots) {
     const safeError =
       error instanceof ProviderError
         ? error
-        : new ProviderError("provider operation failed", { category: "provider" });
+        : // A check of the returned image (its type, its extension) names what failed; it holds no secret.
+          error instanceof InputError
+          ? new ProviderError(error.message, { category: "invalid-image" })
+          : new ProviderError("provider operation failed", { category: "provider" });
     const receipt = removeRequest(record, requestId, "pending");
     if (receipt !== undefined) {
       const destination =

@@ -40,11 +40,13 @@ void TraaPass::stageDebugTexture(WGPUCommandEncoder encoder, WGPUTexture texture
     wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &extent);
 }
 
-shader::OutputPrograms traaVelocityPrograms() {
+// UE 5.8.3: Engine/Shaders/Private/VelocityShader.usf:61-87 draws a deformed mesh through its own vertex factory, and
+// Engine/Shaders/Private/GpuSkinVertexFactory.ush:953-956 skins the previous position with last frame's bones.
+shader::OutputPrograms traaVelocityPrograms(const shader::VertexVariant& variant) {
     shader::OutputPrograms out;
     using shader::Type;
     auto& v = out.vertex;
-    const auto p = v.construct(Type::vec(4), {v.attribute("position", Type::vec(3)), v.constant(1.f)});
+    const auto p = shader::localPosition(v, variant);
     const auto model = v.uniform("modelMatrix", Type::mat(4, 4));
     const auto view = v.uniform("viewMatrix", Type::mat(4, 4));
     const auto local = v.mul(view, v.mul(model, p));
@@ -59,6 +61,7 @@ shader::OutputPrograms traaVelocityPrograms() {
     f.output("color", f.construct(Type::vec(4), {
         f.sub(f.div(f.swizzle(current, "xy"), f.swizzle(current, "w")),
               f.div(f.swizzle(previous, "xy"), f.swizzle(previous, "w"))), f.constant(0.f), f.constant(1.f)}));
+    v.linkVaryings(f);  // a position node's own varyings come first in the vertex stage
     return out;
 }
 

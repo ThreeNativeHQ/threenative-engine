@@ -234,6 +234,14 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "stepSeconds": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
   }),
+  "sightLine": Object.freeze({
+    "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "maxBlockedRatio": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+  }),
+  "hudAudit": Object.freeze({
+    "minContrast": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "noDebugText": (value: unknown) => value === true,
+  }),
   "causedBy": Object.freeze({
     "cause": (value: unknown) => isRecord(value),
     "effect": (value: unknown) => isRecord(value),
