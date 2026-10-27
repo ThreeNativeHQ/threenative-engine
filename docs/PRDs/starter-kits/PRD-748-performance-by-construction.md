@@ -25,9 +25,14 @@ The repo rule "auto by default: if the engine can measure a value where it is us
 - [ ] Cost per stage: `TN_FRAME_BUDGET` attributes GPU ms to the shadow, main, post-stage (GTAO, SSR, bloom, motion blur, TAA) and present passes, and a failing frame bound names its top stage and the override that cuts it. proof: a spec, and the runner GTAO arm (51 ms) reads red with "GTAO" named.
 - [ ] Allocation guard: after warm-up, a JS heap growth or GC rate above a bound fails the scenario, naming the top allocation site. proof: a spec, and the adventure "one material per tick" commit reads red.
 - [ ] The frame, draw and triangle bounds also run on the `explore` and `controls` gates, not only the scripted pose. proof: a spec, and the shooter's pre-merge town reads red on `explore`.
+- [ ] Tick cost per entity class: the engine times each entity `update` it calls and each `ctx` query, and `TN_HOT_CALL` names the class, method and ms per second over a bound; a kit contract row fails every kit that has one. proof: a spec, and the shooter at 384e311e0 reads red with `Enemy.update` (401 ms/s) and `boneContact` (192 ms/s) named.
 
 ### Phase 2 — The engine decides
 
+- [ ] Sim budget governor: the fixed-step loop times its steps, and when catch-up would exceed the frame budget it runs at most two steps and slows game time (UE 5.8.3 `MaxDeltaTime`), while the render keeps the display rate with interpolation; `maxSteps` and a named `simBudget` override stay, and the slowdown is reported. Today `core/src/loop.ts:377` runs up to 5 full steps after a slow frame, so a 33 ms frame doubles the AI cost. proof: a red-green `loop.spec.ts` case, and the shooter under a stated CPU load holds p95 with the old loop reading red.
+- [ ] Engine queries cost the same however a game calls them: `raycastAll` keeps a bounds hierarchy per target set and tests only the meshes on the ray, and `boneContact` caches a rigid target's local bounds. proof: specs with call counts, and the shooter's sight ray (197 ms/s) and contact check (192 ms/s) at 384e311e0 drop with no game edit.
+- [ ] Tick significance: off-screen and far entities tick at a lower rate by default, as `updateRate: "auto"` already does for mixers (UE 5.8.3 Significance Manager), with a named full-rate override and a report. proof: a spec, and a 32-enemy crowd scenario holds its budget.
+- [ ] `useUiState()` with no selector re-renders only when a field the component read changes. proof: a `packages/ui` spec counting renders, and the shooter HUD at 384e311e0 drops from one render per frame.
 - [ ] Static meshes merge by material and repeated meshes instance automatically at scene build, each with a named opt-out on the same object that the engine reports. Kits then call no mechanism from `src/render/`, which also removes the conflict with the portability boundary (`scripts/check-core-boundary.ts` blocked `InstancedBatch` in the shooter). proof: the shooter town reaches its merged draw count with `collapseTown` deleted, adventure (331 renderables, 0 batches) batches, and a judge reads NEUTRAL.
 - [ ] Every material and variant compiles before the first presented frame, including the scene pass, and one-shot builds over a frame's budget run sliced. proof: the Phase 1 hitch gate stays silent after frame 1 in every kit.
 
@@ -62,5 +67,7 @@ perf-inventory, 2026-10-26 (commit messages and PRD text, no kit re-run): about 
 Top gaps, ranked by shipped bugs prevented: opt-in geometry mechanisms (about 9), no per-stage attribution (7), ungated startup hitches (3), no allocation guard (2), bounds checked only on the scripted pose (about 5 earlier catches). Phase 1 and Phase 2 close them in that order.
 
 ## Decisions
+
+- 2026-10-26, owner: "What can I change on the engine, that even if a dumbfuck dev wants to do some shitty code on the game side, we're still high performance?" The four boxes for the governor, queries, tick significance and HUD fields came from that question and the shooter profile (frame median 33 ms, p95 100 ms, main thread 100% busy, NVIDIA, no DevTools). A worker (PRD-573 v5) moves this cost to another thread but does not cut it.
 
 - 2026-10-26 (owner): option 1, the engine decides and fails closed, over guards-only or more AGENTS.md rules.
