@@ -291,6 +291,9 @@ struct OutputState {
 std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
                                          std::string& refusal, shader::graph::Node custom = {});
 
+/** How many output passes (the tone-mapped image a frame presents) have been recorded in this process. */
+uint64_t outputPassesRecorded();
+
 /**
  * The native renderer's draw core (PRD-514): standard-material meshes into a linear RGBA16Float
  * scene target with depth, then three's output pass — tone mapping, then the output colour space —
@@ -392,6 +395,8 @@ public:
         sourceDepth_ = depth;
         if (replaced) rebuildGroups();
     }
+    /** A render target's renderer is read through `sceneColorView()` and `readProbePixels()`, never as a finished frame: its output pass would draw an image nothing reads. */
+    void skipOutputPass() { writesOutput_ = false; }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
@@ -902,6 +907,7 @@ private:
     // Moves whenever the per-draw bind groups (mapGroups_) are released, so a DrawCache's group
     // handles built under an older epoch are never reused.
     uint64_t groupEpoch_ = 0;
+    bool writesOutput_ = true;
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;
