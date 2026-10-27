@@ -12,7 +12,8 @@ import { STARTUP_COMPILE_BUDGET_MS, STARTUP_STABLE_WINDOW_MS } from "../src/star
 // after the compile budget plus the sustained-frame window. Pinned here rather than in
 // packages/playtest, which must not depend on @threenative/core.
 test("the runner's startup wait outlasts core's own bounded launch, with margin", () => {
-  const bound = STARTUP_COMPILE_BUDGET_MS + STARTUP_STABLE_WINDOW_MS;
+  // The runner also waits for the UI cover to lift, and that hand-off is bounded by one more window.
+  const bound = STARTUP_COMPILE_BUDGET_MS + 2 * STARTUP_STABLE_WINDOW_MS;
   expect(PLAYTEST_STARTUP_READY_TIMEOUT_MS).toBeGreaterThan(bound);
   // Merely exceeding the sum is not enough. The gate's budgets do not cover the scene build and
   // first-use work that run before it opens: measured on a real SwiftShader adapter, a starter

@@ -145,6 +145,12 @@ export interface IPlaytestStartupObservation {
    * the machine has no GPU has already conceded it is not measuring that.
    */
   compileSettled?: boolean;
+  /**
+   * Whether the loading cover has lifted, which happens after `phase` reaches `"ready"`: the
+   * game holds its UI state until the first uncovered frame has left the GPU. Absent from a
+   * game that does not report it, which the runner reads as uncovered.
+   */
+  revealed?: boolean;
   /** Present when the application records its startup milestones. */
   timeline?: IPlaytestStartupTimeline;
   /** Present once the reveal ran and the application measured what it waited for. */
