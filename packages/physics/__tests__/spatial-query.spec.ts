@@ -374,6 +374,24 @@ describe("PhysicsDirectSpaceState3D", () => {
       simulation.dispose();
     });
 
+    it("ignores a ball around the ray start by default", () => {
+      const simulation = createSimulation();
+      simulation.createBody({
+        mass: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        sensor: false,
+        shape: CollisionShape3D.sphere(1).descriptor,
+        type: "kinematic",
+      });
+      simulation.step(1 / 60);
+      const space = new PhysicsDirectSpaceState3D(simulation);
+
+      expect(space.intersectRay({ from, to })).toBeUndefined();
+      expect(space.intersectRay({ from, hitFromInside: true, to })?.distance).toBe(0);
+      simulation.dispose();
+    });
+
     it("reports no hit by default when nothing else is in the way", () => {
       const simulation = createSimulation();
       addBox(simulation, { x: 0, y: 0, z: 0 });

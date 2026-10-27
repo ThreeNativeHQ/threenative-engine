@@ -1400,9 +1400,10 @@ impl Simulation {
             point![query.from_x, query.from_y, query.from_z],
             scaled_direction / scaled_distance,
         );
-        // Rapier's solid cast reports a ray that starts inside a collider as time of impact 0
-        // with a zero normal. Godot's default (`hit_from_inside` false) skips that collider, so
-        // skip it and cast again: one pass per overlapping collider at most.
+        // Rapier's solid cast reports a ray that starts inside a collider as time of impact 0,
+        // with a zero normal for a box and the reversed ray for a ball or capsule. Godot's
+        // default (`hit_from_inside` false) skips every such collider, so skip it and cast
+        // again: one pass per overlapping collider at most.
         let mut skipped: Vec<ColliderHandle> = Vec::new();
         let (collider, intersection) = loop {
             let predicate = |handle: ColliderHandle, collider: &Collider| {
@@ -1427,10 +1428,7 @@ impl Simulation {
             else {
                 return Ok(None);
             };
-            if query.hit_from_inside == 0
-                && intersection.time_of_impact == 0.0
-                && intersection.normal == vector![0.0, 0.0, 0.0]
-            {
+            if query.hit_from_inside == 0 && intersection.time_of_impact == 0.0 {
                 skipped.push(collider);
                 continue;
             }
@@ -1444,14 +1442,20 @@ impl Simulation {
             return Ok(None);
         };
         let position = ray.point_at(intersection.time_of_impact);
+        // A solid around the origin reports a zero normal, whatever its shape, the same as web.
+        let normal = if intersection.time_of_impact == 0.0 {
+            vector![0.0, 0.0, 0.0]
+        } else {
+            intersection.normal
+        };
         let hit = TnPhysicsRayHit {
             body_id,
             position_x: position.x,
             position_y: position.y,
             position_z: position.z,
-            normal_x: intersection.normal.x,
-            normal_y: intersection.normal.y,
-            normal_z: intersection.normal.z,
+            normal_x: normal.x,
+            normal_y: normal.y,
+            normal_z: normal.z,
             distance: intersection.time_of_impact,
         };
         if [
@@ -2706,6 +2710,52 @@ mod tests {
             (inside.normal_x, inside.normal_y, inside.normal_z),
             (0.0, 0.0, 0.0)
         );
+
+        // A capsule and a ball report a reversed-ray normal instead of a zero normal, so a skip
+        // that also tests the normal misses them; every solid must skip the same way.
+        let inside_solid = |shape_type: u32, shape_x: f32, shape_y: f32| {
+            let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+                gravity_x: 0.0,
+                gravity_y: 0.0,
+                gravity_z: 0.0,
+            })
+            .unwrap();
+            let mut solid = fixed_box(0, 0.0, 0.0, 1);
+            solid.shape_type = shape_type;
+            solid.shape_x = shape_x;
+            solid.shape_y = shape_y;
+            assert!(simulation.add_body(solid));
+            assert!(simulation.add_body(fixed_box(1, 5.0, 0.0, 1)));
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            let query = |hit_from_inside: u32| TnPhysicsRayQuery {
+                from_x: 0.0,
+                from_y: 0.0,
+                from_z: 0.0,
+                to_x: 10.0,
+                to_y: 0.0,
+                to_z: 0.0,
+                collision_mask: 1,
+                hit_from_inside,
+            };
+
+            let next = simulation
+                .intersect_ray(query(0))
+                .expect("valid ray arithmetic")
+                .expect("the default skips the solid around the origin");
+            assert_eq!(next.body_id, 1);
+            let inside = simulation
+                .intersect_ray(query(1))
+                .expect("valid ray arithmetic")
+                .expect("hit_from_inside reports the solid around the origin");
+            assert_eq!(inside.body_id, 0);
+            assert_eq!(inside.distance, 0.0);
+            assert_eq!(
+                (inside.normal_x, inside.normal_y, inside.normal_z),
+                (0.0, 0.0, 0.0)
+            );
+        };
+        inside_solid(2, 0.6, 0.3);
+        inside_solid(1, 0.8, 0.0);
     }
 
     #[test]
