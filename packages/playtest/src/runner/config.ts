@@ -405,7 +405,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   };
 }
 
-const SCENARIO_GLOB = /[*?[]/u;
+const SCENARIO_GLOB = /[*?[{]/u;
 
 function expandScenarioPattern(projectPath: string, pattern: string): string[] {
   if (!SCENARIO_GLOB.test(pattern)) return [pattern];
@@ -449,14 +449,24 @@ function matchGlobParts(pattern: readonly string[], file: readonly string[]): bo
 }
 
 function segmentMatches(pattern: string, value: string): boolean {
-  let expression = "^";
+  return new RegExp(`^${segmentExpression(pattern)}$`, "u").test(value);
+}
+
+// `{a,b}` is the shell's brace list; an agent quotes one and expects it to work (PRD-750 row 2).
+// ponytail: one level, no nesting; nest when a scenario name needs it.
+function segmentExpression(pattern: string): string {
+  let expression = "";
   for (let index = 0; index < pattern.length; index += 1) {
     const character = pattern[index]!;
-    if (character === "*") expression += "[^/]*";
+    const close = character === "{" ? pattern.indexOf("}", index) : -1;
+    if (close > index) {
+      expression += `(?:${pattern.slice(index + 1, close).split(",").map(segmentExpression).join("|")})`;
+      index = close;
+    } else if (character === "*") expression += "[^/]*";
     else if (character === "?") expression += "[^/]";
     else expression += escapeRegExp(character);
   }
-  return new RegExp(`${expression}$`, "u").test(value);
+  return expression;
 }
 
 function escapeRegExp(value: string): string {
