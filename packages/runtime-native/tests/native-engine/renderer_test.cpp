@@ -130,6 +130,7 @@ struct Dimensions { size: vec2<f32> }
     let size = textureDimensions(velocity);
     let u = Dimensions(vec2<f32>(size));
     let texel = vec2<i32>(id.xy);
+    let currentUV = (vec2<f32>(texel) + 0.5) / u.size;
     let closestPosition = vec2<f32>(texel + vec2<i32>(i32(id.z % 5u) - 2, i32(id.z / 5u) - 2));
     let motionSample = textureLoad(velocity, vec2<i32>(closestPosition), 0);
     let upsampling = true;

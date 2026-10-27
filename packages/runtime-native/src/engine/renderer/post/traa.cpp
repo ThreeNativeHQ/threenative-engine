@@ -184,17 +184,19 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
     let dynamic = motionSample.z != 1;
     var dynamicNeighborhood = dynamic;
     var completeMotion = motionSample.z > 0.5;
+    var transparentRim = false;
+    var motionLow = vec2(1e30);
+    var motionHigh = vec2(-1e30);
     if (upsampling) {
         // A gather at integer + .25 covers integer - 1 through integer. The four
         // overlapping quads cover the same clamped 3x3 footprint as the loads.
-        if (completeMotion) {
-            let origin = vec2<f32>(texel) + 0.25;
-            let g00 = textureGather(2, velocity, linearSampler, origin / u.size);
-            let g10 = textureGather(2, velocity, linearSampler, (origin + vec2(1,0)) / u.size);
-            let g01 = textureGather(2, velocity, linearSampler, (origin + vec2(0,1)) / u.size);
-            let g11 = textureGather(2, velocity, linearSampler, (origin + vec2(1,1)) / u.size);
-            completeMotion = completeMotion && all(g00 > vec4(0.5)) && all(g10 > vec4(0.5)) &&
-                             all(g01 > vec4(0.5)) && all(g11 > vec4(0.5));
+        for (var y = -1; y <= 1; y++) {
+            for (var x = -1; x <= 1; x++) {
+                let sampleVelocity = textureLoad(velocity, clamp(vec2<i32>(floor(currentUV * u.size)) + vec2<i32>(x, y), vec2<i32>(0), vec2<i32>(u.size) - 1), 0);
+                completeMotion = completeMotion && sampleVelocity.z > 0.5;
+                transparentRim = transparentRim || sampleVelocity.w < 0.5;
+                motionLow = min(motionLow, sampleVelocity.xy); motionHigh = max(motionHigh, sampleVelocity.xy);
+            }
         }
         if (!dynamicNeighborhood) {
             let nearestOrigin = vec2<f32>(vec2<i32>(closestPosition)) + 0.25;
@@ -212,18 +214,15 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
     // history mask over eight frames, and marked pixels clip like pixels near a mover.
     var responsive = false;
     var overlay = 0.0;
+    var previousFlags = vec2<f32>(0);
+    if (upsampling) { previousFlags = textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).rg; }
     if (upsampling) {
         // The 3x3 footprint, as the complete-motion test reads it: a transparent rim spans the closest texel's neighbours.
-        let origin = vec2<f32>(texel) + 0.25;
-        let a00 = textureGather(3, velocity, linearSampler, origin / u.size);
-        let a10 = textureGather(3, velocity, linearSampler, (origin + vec2(1,0)) / u.size);
-        let a01 = textureGather(3, velocity, linearSampler, (origin + vec2(0,1)) / u.size);
-        let a11 = textureGather(3, velocity, linearSampler, (origin + vec2(1,1)) / u.size);
-        responsive = any(min(min(a00, a10), min(a01, a11)) < vec4(0.5));
-        overlay = select(max(textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).g - 0.125, 0.0), 1.0, responsive);
+        responsive = transparentRim;
+        overlay = select(max(previousFlags.g - 0.125, 0.0), 1.0, responsive);
         dynamicNeighborhood = dynamicNeighborhood || overlay > 0;
     }
-    let oldDynamic = upsampling && textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
+    let oldDynamic = previousFlags.r > 0;
     let departed = !dynamicNeighborhood && oldDynamic && disocclusion;
     let valid = u.historyValid != 0 && validUV && (edge || !disocclusion) && !departed;
     let counting = u.count != 0;
@@ -257,8 +256,6 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         var weights = 0.0;
         var spread1 = vec4<f32>(0);
         var spread2 = vec4<f32>(0);
-        var motionLow = vec2(1e30);
-        var motionHigh = vec2(-1e30);
         var hueLow = vec2(1e30);
         var hueHigh = vec2(-1e30);
         for (var y = -1; y <= 1; y++) {
@@ -275,8 +272,6 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
                 weights += weight;
                 let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
                 spread1 += neighborhood; spread2 += neighborhood * neighborhood;
-                let sampleMotion = textureLoad(velocity, pixel, 0).xy;
-                motionLow = min(motionLow, sampleMotion); motionHigh = max(motionHigh, sampleMotion);
                 let hue = neighborhood.yz / max(neighborhood.x, 0.02);
                 hueLow = min(hueLow, hue); hueHigh = max(hueHigh, hue);
                 if (highClamp && ((x == 0 && y == 0) || dot(distance, distance) < radius * radius)) {
@@ -304,19 +299,17 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
         // history diffused from a crossing blade. Nearest samples within one output pixel are too few at 0.72 and
         // stair-step edges; grass swaying as one keeps the sample-distance box and the detail it rebuilds.
         let motionEdge = length((motionHigh - motionLow) * vec2(0.5, -0.5) * outputSize) > 0.5 && length(hueHigh - hueLow) > 0.8;
-        let filtered = vec4(rgbToNeighborhood * current.rgb, current.a);
-        var tapLow = filtered;
-        var tapHigh = filtered;
-        var tapRgbLow = current;
-        var tapRgbHigh = current;
-        for (var k = 0; k < 4; k++) {
-            let corner = vec2(f32(k & 1) - 0.5, f32(k >> 1) - 0.5) / outputSize;
-            let color = textureSampleLevel(beauty, linearSampler, currentUV + corner, 0.0);
-            let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
-            tapLow = min(tapLow, neighborhood); tapHigh = max(tapHigh, neighborhood);
-            tapRgbLow = min(tapRgbLow, color); tapRgbHigh = max(tapRgbHigh, color);
+        if (dynamicNeighborhood && motionEdge) {
+            let filtered = vec4(rgbToNeighborhood * current.rgb, current.a);
+            low = filtered; high = filtered; rgbLow = current; rgbHigh = current;
+            for (var k = 0; k < 4; k++) {
+                let corner = vec2(f32(k & 1) - 0.5, f32(k >> 1) - 0.5) / outputSize;
+                let color = textureSampleLevel(beauty, linearSampler, currentUV + corner, 0.0);
+                let neighborhood = vec4(rgbToNeighborhood * color.rgb, color.a);
+                low = min(low, neighborhood); high = max(high, neighborhood);
+                rgbLow = min(rgbLow, color); rgbHigh = max(rgbHigh, color);
+            }
         }
-        if (dynamicNeighborhood && motionEdge) { low = tapLow; high = tapHigh; rgbLow = tapRgbLow; rgbHigh = tapRgbHigh; }
     } else {
         current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
     }
