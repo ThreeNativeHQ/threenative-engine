@@ -61,3 +61,36 @@ describe("ui bridge inbound global", () => {
     expect(scope[UI_BRIDGE_GLOBALS.gameReceive]).toBeUndefined();
   });
 });
+
+describe("ui bridge loopback over a message port (PRD-752)", () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("carries state and intents over an async port when the page asks for ?tnUiLoopback=1", async () => {
+    const scope: Record<string, unknown> = { location: { search: "?tnUiLoopback=1" } };
+    const ui = connectUiBridge({ end: "ui", scope });
+    const game = connectUiBridge({ end: "game", scope });
+    const seenByUi: unknown[] = [];
+    const seenByGame: unknown[] = [];
+    ui.onMessage((message) => seenByUi.push(message));
+    game.onMessage((message) => seenByGame.push(message));
+
+    expect([ui.transport, game.transport]).toEqual(["host", "host"]);
+    expect(game.hasPeer()).toBe(true);
+    game.post({ type: "tn:state", state: { score: 3 } });
+    ui.post({ type: "tn:intent", name: "pause" });
+    // A worker delivers a task later, never inside the post: the loopback must too.
+    expect([seenByUi, seenByGame]).toEqual([[], []]);
+    await tick();
+    expect(seenByUi).toEqual([{ type: "tn:state", state: { score: 3 } }]);
+    expect(seenByGame).toEqual([{ type: "tn:intent", name: "pause" }]);
+
+    ui.close();
+    game.close();
+    (scope.__tnUiLoopback as { close(): void }).close();
+  });
+
+  it("keeps the in-process broker without the flag", () => {
+    const scope: Record<string, unknown> = { location: { search: "" } };
+    expect(connectUiBridge({ end: "ui", scope }).transport).toBe("in-process");
+  });
+});
