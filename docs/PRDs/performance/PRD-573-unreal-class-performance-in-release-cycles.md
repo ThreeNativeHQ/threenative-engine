@@ -56,6 +56,7 @@ shares: animation about 13%, cull and project about 11%, `Renderer::render` 21%,
   when its web and desktop rows both pass on the engine ([PRD-617](PRD-617-every-template-runs-on-the-native-engine.md)).
   The engine exposes the upstream Three.js API, and a game uses the same source on every back end.
   This refines the previous decision: the default is not reverted while templates remain pinned.
+- 2026-10-26 (owner): the worker HUD contract is confirmed (one state snapshot per frame out, intents back): "Yes, and v5.2 threads too". Cycle v5 moves to [PRD-752](./PRD-752-web-games-run-in-a-worker-so-the-page-cannot-stall-them.md).
 - 2026-10-15 (owner): housekeeping. Delete junk and reduce the file count; keep every behaviour.
 - Deferred, filed again only on scorecard evidence: transform compose skip (if
   `updateMatrixWorldSelf` is above 2% of the frame), projection reuse and SIMD world matrices (if
@@ -317,6 +318,8 @@ TN today: HZB declined ([PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md
 
 ## Cycle v5 — web worker
 
+**Owned by [PRD-752](./PRD-752-web-games-run-in-a-worker-so-the-page-cannot-stall-them.md)** (owner, 2026-10-26: worker HUD contract confirmed, "Yes, and v5.2 threads too"). The boxes below stay as the summary; PRD-752 carries the proof.
+
 The game side reads the DOM directly (23 core files read `document.` or `window.`; audio, pointer lock, gamepads, `localStorage`). A worker keeps frame p50; only Wasm threads can cut it.
 
 #### Phase v5.1: Worker mode
@@ -334,7 +337,6 @@ The game side reads the DOM directly (23 core files read `document.` or `window.
 - The v3 margin over Godot is an owner number, set before v3 starts.
 - Whether engine-only commits may skip `native-platforms` is an owner call (slice 0b).
 - `AnimationMixer.updateRate` adds a non-three property; João confirms the name before v2.3.
-- The worker HUD contract (state out once per frame) needs João's confirmation before v5.1.
 - Android timing rows need the Pixel 8 attached; the emulator holds counter and memory rows.
 - Safari rows need a macOS machine.
 

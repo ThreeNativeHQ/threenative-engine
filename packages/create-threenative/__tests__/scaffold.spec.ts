@@ -329,14 +329,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "1429611e2da4350df3281cf6883b4273cf833ea9c8b03c38356ba25f93cfdb71",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "e8efead6bdd844433d6f9c64bc81d947e418d0f52c78c807650fa2a28381bb27",
+  shooter: "b281400f4a039ab993e13332a2ed9d0c939fcd732fac9040fce8d4dfe8b28f8d",
   snow: "44540fc309fab668b63491b002c73f8e64b9d1c6d4b4d9d5f533f9eb812e0d34",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "4ed2c0154320e13fcabb1b366e42462af87dce46c9b697bd0c32e7c03fbfd383",
+  starter: "66cf05bad1f49c11a260357898655d0f8d548e56b30fd26072b7487401b8dbc4",
   "tower-defense": "b675065d408bf7aea598ab2b962c24b7b96e0789ec3662940ff2f54bd675d25f",
 };
 

@@ -3402,6 +3402,36 @@ export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … 
 const mirror = subscribeUiState(bridge);
 ```
 
+## `@threenative/core/worker`
+
+### `serveWorkerGame`
+
+`function` — Runs inside the worker: wire the page's messages to the unchanged portable game. Call it last in the worker entry, after the game module evaluated: it posts the ready message the page waits for before it sends the canvas.
+
+```ts
+export function serveWorkerGame( game: { … }
+```
+
+- **Use when:** run the game loop in a web worker so a busy page cannot stall its frames
+
+```ts
+serveWorkerGame(game);
+```
+
+### `startWorkerGame`
+
+`function` — Runs on the page: own the canvas and the DOM, and feed the worker game. Call it before the UI mounts: the HUD's bridge host globals exist from this call on.
+
+```ts
+export function startWorkerGame( worker: Worker, container: HTMLElement, ): { … }
+```
+
+- **Use when:** host a worker-run game's canvas, input and HUD on the page
+
+```ts
+const handle = startWorkerGame(new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }), root);
+```
+
 ## `@threenative/core/world`
 
 ### `cellPlacements`
@@ -4488,7 +4518,7 @@ const adb = discoverAdb(process.env);
 `function` — Execute scenario steps, assertions, and evidence capture.
 
 ```ts
-export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, render = false, ): Promise<void> { … }
+export async function advanceFixedStep( page: Page, bridge: { … }
 ```
 
 - **Use when:** run a complete browser or device playtest · capture diagnostics and screenshots from a managed server

@@ -3530,6 +3530,58 @@ describe("IGame", () => {
     }
   });
 
+  it("takes the platform source a worker host installs when the game names none (PRD-752)", async () => {
+    // Worker mode: game.ts is the unchanged portable entry, so the worker host cannot pass
+    // `platform` to defineGame. It installs the source on the global scope before start().
+    const canvas = new EventTarget() as HTMLCanvasElement;
+    let mounted = 0;
+    let unmounted = 0;
+    const platform: IGamePlatformSource = {
+      input: () => [],
+      inputTarget: new EventTarget(),
+      mountCanvas: () => {
+        mounted += 1;
+      },
+      renderer: {
+        createCanvas: () => canvas,
+        hasWebGPU: () => false,
+        observeResize: () => () => undefined,
+        readSize: () => [320, 180],
+      },
+      unmountCanvas: () => {
+        unmounted += 1;
+      },
+      viewport: {
+        observeResize: () => () => undefined,
+        readSize: () => ({ aspect: 16 / 9, height: 180, width: 320 }),
+      },
+    };
+    vi.stubGlobal("__tnGamePlatform", platform);
+    const game = defineGame({
+      renderer: {
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: EmptyScene },
+      start: "test",
+    });
+    try {
+      await game.start();
+      expect(mounted).toBe(1);
+      expect(game.ctx?.viewport.size).toEqual({ aspect: 16 / 9, height: 180, width: 320 });
+      game.stop();
+      expect(unmounted).toBe(1);
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     { opaque: false, worldDrawn: false },
     { opaque: true, worldDrawn: true },

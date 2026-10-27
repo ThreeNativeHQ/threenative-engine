@@ -132,6 +132,20 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
       if (loaded.engine === "threenative" && process.env.THREENATIVE_NATIVE_BUNDLE === undefined)
         return {
           optimizeDeps: { exclude: ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"] },
+          // Vite runs only `worker.plugins` on a worker bundle, so a game booted in a worker
+          // (PRD-752) needs the same resolver, as ES output for the engine's top-level await.
+          worker: {
+            format: "es",
+            plugins: () => [
+              {
+                name: "threenative-web-engine-worker",
+                enforce: "pre",
+                resolveId: (source: string, importer?: string) =>
+                  engine?.resolveId(source, importer) ?? null,
+                load: async (id: string) => engine?.load(id) ?? null,
+              },
+            ],
+          },
         };
       return undefined;
     },

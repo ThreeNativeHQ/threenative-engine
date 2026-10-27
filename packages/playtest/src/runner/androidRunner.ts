@@ -270,7 +270,7 @@ async function runDevicePlaytestInternal(
         // this the wait reads that as a slow loading gate and burns its whole deadline; with it
         // the report names the exit and carries the console tail that says why.
         hostAlive: () => target.driver.isAlive().catch(() => undefined),
-        pump: () => attached.advance(1),
+        pump: async () => { await attached.advance(1); },
       });
     await throwIfAborted(target);
     // Device requests are polled on animation frames; observe warmup draws, as the browser does,
@@ -395,7 +395,7 @@ async function runDevicePlaytestInternal(
         }
         const attachedBridge = bridge;
         afterInput = await waitForResource({
-          advance: () => attachedBridge.advance(1),
+          advance: async () => { await attachedBridge.advance(1); },
           id: wait.id,
           path: wait.path,
           predicate: wait,
@@ -494,7 +494,7 @@ async function runDevicePlaytestInternal(
               const pid = target.driver.processId;
               if (pid === undefined) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: native child PID unavailable");
               return { rootPid: pid, pid, tid: pid };
-            }, measuredBridge, () => measuredBridge.advance(1000)));
+            }, measuredBridge, async () => { await measuredBridge.advance(1000); }));
           } finally {
             if (holdRender) await transport.call("_holdAutomaticRender", false);
           }

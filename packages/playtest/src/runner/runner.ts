@@ -193,6 +193,19 @@ export interface IStandalonePlaytestRunOptions {
 
 interface IStandalonePlaytestInternalOptions extends IStandalonePlaytestRunOptions {
   remoteBrowser?: IRemoteBrowserSession;
+  /** Set on the relaunch after the page showed a game drawing from a worker (PRD-752). */
+  gameThread?: "worker";
+}
+
+/** The page runs its game in a worker, so the run relaunches with that thread's measurement flags. */
+class WorkerGameRelaunch extends Error {}
+
+/** A worker host installs its platform source in the worker before the game starts (PRD-752). */
+async function runsGameInWorker(page: Page): Promise<boolean> {
+  for (const worker of page.workers()) {
+    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform").catch(() => undefined)) === "object") return true;
+  }
+  return false;
 }
 
 export async function runStandalonePlaytest(
@@ -208,6 +221,18 @@ export async function runStandalonePlaytest(
 async function runStandalonePlaytestInternal(
   config: IStandalonePlaytestConfig,
   options: IStandalonePlaytestInternalOptions = {},
+): Promise<IStandalonePlaytestReport> {
+  try {
+    return await runStandalonePlaytestOnce(config, options);
+  } catch (error) {
+    if (!(error instanceof WorkerGameRelaunch)) throw error;
+    return runStandalonePlaytestOnce(config, { ...options, gameThread: "worker" });
+  }
+}
+
+async function runStandalonePlaytestOnce(
+  config: IStandalonePlaytestConfig,
+  options: IStandalonePlaytestInternalOptions,
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
   const resolvedConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
@@ -231,7 +256,7 @@ async function runStandalonePlaytestInternal(
   let completionWindow: ICompletionWindow | undefined;
   const completionDisplay = completionLabel === undefined ? undefined : completionWindowEnvironment("browser", activeConfig.headless);
   if (completionLabel !== undefined && options.remoteBrowser !== undefined) throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: requires a fresh local browser process");
-  const measurementArgs = measurementBrowserArgs(scenario.assert?.performance !== undefined, completionLabel !== undefined, frameDisplay());
+  const measurementArgs = measurementBrowserArgs(scenario.assert?.performance !== undefined, completionLabel !== undefined, frameDisplay(), options.gameThread);
   const browserConfig = measurementArgs.length === 0
     ? activeConfig
     : {
@@ -464,6 +489,9 @@ async function runStandalonePlaytestInternal(
     // Started before navigation: the frames a player sees first are the ones a cover must own.
     const coverRecorder = scenario.assert?.startup?.steadyCover === true ? await recordStartupCover(page) : undefined;
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
+    // Browser flags are per process, so the thread the game draws on can only pick them on a relaunch.
+    if (options.gameThread === undefined && measurementArgs.includes("--disable-frame-rate-limit")
+      && await runsGameInWorker(page)) throw new WorkerGameRelaunch();
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     const setupApplication = bridge?.setupApplication;
@@ -934,6 +962,7 @@ async function runStandalonePlaytestInternal(
       completionWindow.provenance = { requestedDisplay: completionDisplay!, qualified: false,
         browserArgs: resolveBrowserArguments(browserConfig.browserArgs) };
     }
+    if (options.gameThread !== undefined) report.gameThread = options.gameThread;
     report.acquisition = { requestUrls: [...requestUrls], ...(cpuLabels.length === 0 ? {} : { cpuWindows }), ...(completionWindow === undefined ? {} : { completionWindow }) };
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
@@ -946,6 +975,7 @@ async function runStandalonePlaytestInternal(
     else await page.close();
     return addPreflightDiagnostic(report, preflight);
   } catch (error) {
+    if (error instanceof WorkerGameRelaunch) throw error;
     // Retain already-collected observations under the existing artifact policy.
     // A failed bridge is never queried here; artifact I/O cannot replace the primary error.
     try {

@@ -5,7 +5,107 @@
 #include <cmath>
 
 namespace tn::engine {
+struct TriangleBVH {
+    struct AttributeState {
+        std::shared_ptr<BufferAttribute> attribute;
+        std::shared_ptr<BufferStore> store;
+        uint64_t count = 0, writes = 0;
+        uint32_t version = 0;
+        int itemSize = 0;
+        bool normalized = false;
+        explicit AttributeState(const std::shared_ptr<BufferAttribute>& a) : attribute(a) {
+            if (!a) return;
+            store = a->store; count = a->count(); writes = store->writes(); version = a->version();
+            itemSize = a->itemSize; normalized = a->normalized;
+        }
+        bool matches(const std::shared_ptr<BufferAttribute>& a) const {
+            return attribute == a && (!a || (store == a->store && count == a->count() &&
+                writes == store->writes() && version == a->version() &&
+                itemSize == a->itemSize && normalized == a->normalized));
+        }
+    };
+    struct Node {
+        Box3 bounds;
+        size_t begin = 0, count = 0, left = 0, right = 0;
+    };
+    AttributeState position, index;
+    DrawRange drawRange;
+    std::vector<Node> nodes;
+    std::vector<double> starts;
+
+    TriangleBVH(const std::shared_ptr<BufferAttribute>& p, const std::shared_ptr<BufferAttribute>& ix,
+                const DrawRange& range, double start, double end) : position(p), index(ix), drawRange(range) {
+        struct Triangle { double start; Box3 bounds; };
+        std::vector<Triangle> triangles;
+        for (double i = start; i < end; i += 3) {
+            Triangle triangle{i, {}};
+            for (int j = 0; j < 3; ++j) {
+                const auto at = uint64_t(ix ? ix->getX(uint64_t(i + j)) : i + j);
+                const Vector3 v{p->getX(at), p->getY(at), p->getZ(at)};
+                if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
+                    triangle.bounds.min.setScalar(-std::numeric_limits<double>::infinity());
+                    triangle.bounds.max.setScalar(std::numeric_limits<double>::infinity());
+                    break; // Malformed triangles retain the original hit math instead of being culled.
+                }
+                triangle.bounds.expandByPoint(v);
+            }
+            triangles.push_back(triangle);
+        }
+        const auto component = [](const Vector3& v, int axis) { return axis == 0 ? v.x : axis == 1 ? v.y : v.z; };
+        const auto build = [&](auto&& self, size_t begin, size_t end) -> size_t {
+            const size_t node = nodes.size();
+            nodes.emplace_back();
+            Box3 bounds;
+            for (size_t i = begin; i < end; ++i) bounds.unionWith(triangles[i].bounds);
+            nodes[node].bounds = bounds;
+            if (end - begin <= 8) {
+                nodes[node].begin = begin; nodes[node].count = end - begin;
+            } else {
+                Vector3 extent; bounds.getSize(extent);
+                const int axis = extent.x >= extent.y && extent.x >= extent.z ? 0 : extent.y >= extent.z ? 1 : 2;
+                const size_t middle = begin + (end - begin) / 2;
+                const auto center = [&](const Triangle& t) {
+                    const double value = component(t.bounds.min, axis) * 0.5 + component(t.bounds.max, axis) * 0.5;
+                    return std::isnan(value) ? 0 : value;
+                };
+                std::nth_element(triangles.begin() + begin, triangles.begin() + middle, triangles.begin() + end,
+                    [&](const Triangle& a, const Triangle& b) { return center(a) < center(b); });
+                const size_t left = self(self, begin, middle), right = self(self, middle, end);
+                nodes[node].left = left; nodes[node].right = right;
+            }
+            return node;
+        };
+        if (!triangles.empty()) build(build, 0, triangles.size());
+        starts.reserve(triangles.size());
+        for (const auto& triangle : triangles) starts.push_back(triangle.start);
+        // A deferred store may have filled its bytes while the bounds were read.
+        position = AttributeState(p); index = AttributeState(ix);
+    }
+};
 namespace {
+thread_local uint64_t trianglesTested = 0;
+bool intersectsBounds(const Ray& ray, const Box3& bounds, double near, double far) {
+    const double origins[] = {ray.origin.x, ray.origin.y, ray.origin.z};
+    const double directions[] = {ray.direction.x, ray.direction.y, ray.direction.z};
+    const double minima[] = {bounds.min.x, bounds.min.y, bounds.min.z};
+    const double maxima[] = {bounds.max.x, bounds.max.y, bounds.max.z};
+    for (int axis = 0; axis < 3; ++axis) {
+        // Pad both the bounds and slab distances: edge, vertex and zero-thickness hits must survive rounding.
+        const double padding = 64 * std::numeric_limits<double>::epsilon() *
+            std::max({1.0, std::abs(origins[axis]), std::abs(minima[axis]), std::abs(maxima[axis])});
+        const double low = minima[axis] - padding, high = maxima[axis] + padding;
+        if (directions[axis] == 0) {
+            if (origins[axis] < low || origins[axis] > high) return false;
+            continue;
+        }
+        double a = (low - origins[axis]) / directions[axis], b = (high - origins[axis]) / directions[axis];
+        if (a > b) std::swap(a, b);
+        near = std::max(near, std::nextafter(a, -std::numeric_limits<double>::infinity()));
+        far = std::min(far, std::nextafter(b, std::numeric_limits<double>::infinity()));
+        if (near > far) return false;
+    }
+    return true;
+}
 void intersect(Object3D& object, const Raycaster& caster, std::vector<Intersection>& hits, bool recursive) {
     bool propagate = true;
     if (object.layers().test(caster.layers)) propagate = object.raycast(caster, hits);
@@ -41,6 +141,9 @@ template<class V> V interpolate(const BufferAttribute& attr, uint64_t a, uint64_
     return target;
 }
 }
+uint64_t raycastTrianglesTested() { return trianglesTested; }
+void resetRaycastTrianglesTested() { trianglesTested = 0; }
+
 bool Raycaster::setFromCamera(const Vector2& coords, Camera& source) {
     if (dynamic_cast<PerspectiveCamera*>(&source)) {
         ray.origin.setFromMatrixPosition(source.matrixWorld);
@@ -111,7 +214,40 @@ bool Mesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
     const auto index = geometry->index;
     const double start = jsMax(0, geometry->drawRange.start);
     const double end = jsMin(double(index ? index->count() : position->count()), geometry->drawRange.start + geometry->drawRange.count);
-    for (double i = start; i < end; i += 3) {
+    const bool accelerated = !caster.meshBruteForceForTesting && !posesVertices() &&
+        std::none_of(morphTargetInfluences.begin(), morphTargetInfluences.end(), [](double v) { return v != 0; });
+    std::vector<double> candidates;
+    if (accelerated) {
+        auto& tree = geometry->raycastBVH;
+        if (!tree || !tree->position.matches(position) || !tree->index.matches(index) ||
+            tree->drawRange.start != geometry->drawRange.start || tree->drawRange.count != geometry->drawRange.count)
+            tree = std::make_shared<TriangleBVH>(position, index, geometry->drawRange, start, end);
+        // The inverse linear transform's Frobenius norm overestimates every local/world distance ratio.
+        // Zero is a conservative lower bound for near; the unchanged hit code enforces the exact interval.
+        const auto& e = inverse.elements;
+        const double localScale = std::hypot(std::hypot(e[0], e[1], e[2]),
+            std::hypot(e[4], e[5], e[6]), std::hypot(e[8], e[9], e[10]));
+        const auto& world = matrixWorld.elements;
+        const double rounding = 64 * std::numeric_limits<double>::epsilon() * std::max({1.0,
+            std::abs(caster.ray.origin.x), std::abs(caster.ray.origin.y), std::abs(caster.ray.origin.z),
+            std::abs(world[12]), std::abs(world[13]), std::abs(world[14])});
+        const double localFar = std::isfinite(caster.far) && caster.far >= 0 && std::isfinite(localScale) && localScale > 0
+            ? std::nextafter((caster.far + rounding) * localScale, std::numeric_limits<double>::infinity())
+            : std::numeric_limits<double>::infinity();
+        const auto visit = [&](auto&& self, size_t at) -> void {
+            const auto& node = tree->nodes[at];
+            if (!intersectsBounds(local, node.bounds, 0, localFar)) return;
+            if (node.count) candidates.insert(candidates.end(), tree->starts.begin() + node.begin,
+                tree->starts.begin() + node.begin + node.count);
+            else { self(self, node.left); self(self, node.right); }
+        };
+        if (!tree->nodes.empty()) visit(visit, 0);
+        std::sort(candidates.begin(), candidates.end());
+    }
+    size_t candidate = 0;
+    for (double i = accelerated ? (candidates.empty() ? end : candidates[0]) : start; i < end;
+         i = accelerated ? (++candidate < candidates.size() ? candidates[candidate] : end) : i + 3) {
+        ++trianglesTested;
         const auto a = uint64_t(index ? index->getX(uint64_t(i)) : i);
         const auto b = uint64_t(index ? index->getX(uint64_t(i + 1)) : i + 1);
         const auto c = uint64_t(index ? index->getX(uint64_t(i + 2)) : i + 2);

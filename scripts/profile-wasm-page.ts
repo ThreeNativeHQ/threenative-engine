@@ -1,5 +1,5 @@
 /**
- * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--memory] [--json]`
+ * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--vsync] [--calls] [--memory] [--json]`
  *
  * Profiles a running game page the way a Wasm-engine performance question needs: frame time from
  * requestAnimationFrame, a Chrome CPU profile grouped into engine Wasm, JavaScript and WebGPU calls
@@ -7,12 +7,15 @@
  * (three-native's opt-in census, `__tnCallCounts`), and with `--gpu-calls` the WebGPU API calls per
  * frame on both pages (render passes, draws, bind groups, buffer writes). `--control` runs a second page, the same game on
  * three.js, through the same measurement, so the verdict is a ratio on one lane, never an absolute.
+ * `--load <n>` keeps `n` busy-loop processes alive for the whole page run: the stated CPU load.
+ * `--vsync` keeps the browser's frame pacing; a worker against page-thread verdict needs it.
  *
  * It refuses a software WebGPU adapter (`--allow-software` overrides) and needs a display: run it as
  * `sh scripts/xvfb.sh pnpm profile:wasm-page -- ...`. Wasm function names need a module linked with
  * `--profiling-funcs`; without it the Wasm rows are numbered. Diagnose with it; the steady-state
  * counter gates (render_database_test steady_state, wasm-engine-boot's renderer scenario) hold a fix.
  */
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -40,6 +43,13 @@ interface IOptions {
   clicks: string[];
   /** Directory that receives each page's raw Chrome .cpuprofile, named by the page's port. */
   saveProfile?: string;
+  /** Busy-loop processes kept running for the whole page run: the stated CPU load. */
+  load: number;
+  /**
+   * Keep the browser's frame pacing. Without it the page's requestAnimationFrame runs unthrottled,
+   * but a worker's OffscreenCanvas frames do not, so a worker against page-thread verdict needs it.
+   */
+  vsync: boolean;
 }
 
 export function options(argv: readonly string[]): IOptions {
@@ -50,12 +60,15 @@ export function options(argv: readonly string[]): IOptions {
   const url = value("url");
   if (url === undefined)
     throw new Error(
-      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--calls] [--memory] [--json]",
+      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--vsync] [--calls] [--memory] [--json]",
     );
   const seconds = Number(value("seconds") ?? 5);
   const warmupMs = Number(value("warmup-ms") ?? 12000);
   if (!(seconds > 0) || !(warmupMs >= 0))
     throw new Error("--seconds and --warmup-ms must be positive numbers");
+  const load = Number(value("load") ?? 0);
+  if (!(Number.isInteger(load) && load >= 0))
+    throw new Error("--load must be a whole number of processes, 0 or more");
   const control = value("control");
   return {
     url,
@@ -68,9 +81,11 @@ export function options(argv: readonly string[]): IOptions {
     memory: argv.includes("--memory"),
     allowSoftware: argv.includes("--allow-software"),
     cpuWork: argv.includes("--cpu-work"),
+    vsync: argv.includes("--vsync"),
     ...(value("save-profile") === undefined
       ? {}
       : { saveProfile: value("save-profile") as string }),
+    load,
     clicks: argv.flatMap((arg, i) => {
       if (arg !== "--click") return [];
       const selector = argv[i + 1];
@@ -78,6 +93,27 @@ export function options(argv: readonly string[]): IOptions {
         throw new Error("--click needs a selector");
       return [selector];
     }),
+  };
+}
+
+export function startCpuLoad(processes: number): { pids: number[]; stop(): Promise<void> } {
+  const children = Array.from({ length: processes }, () =>
+    spawn(process.execPath, ["-e", "for(;;){}"], { stdio: "ignore" }),
+  );
+  return {
+    pids: children.map((child) => child.pid as number),
+    async stop() {
+      await Promise.all(
+        children.map(
+          (child) =>
+            new Promise<void>((resolve) => {
+              if (child.exitCode !== null || child.signalCode !== null) return resolve();
+              child.once("exit", () => resolve());
+              child.kill("SIGKILL");
+            }),
+        ),
+      );
+    },
   };
 }
 
@@ -103,7 +139,9 @@ export function cpuWork(profile: ICpuProfile, frames: number) {
     wallUs += delta;
     if (!idle.has(id)) busyUs += delta;
   });
-  return { busyMsPerFrame: busyUs / 1000 / frames, frames, wallMs: wallUs / 1000 };
+  // The share of the profile window the main thread was busy: the worker KPI (PRD-752).
+  const busyPercent = wallUs > 0 ? (100 * busyUs) / wallUs : 0;
+  return { busyMsPerFrame: busyUs / 1000 / frames, busyPercent, frames, wallMs: wallUs / 1000 };
 }
 
 /**
@@ -134,9 +172,23 @@ const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adap
 
 const FRAME_SAMPLES = 601;
 
-/** Presented-frame intervals in ms, one per requestAnimationFrame, for frameStats. */
-async function frames(page: Page) {
-  const intervals = await page.evaluate(
+/**
+ * The thread the game draws on: the worker holding the platform source a worker host installs
+ * (PRD-752), else the page. A worker page's own requestAnimationFrame times the page, not the game.
+ */
+async function gameThread(page: Page) {
+  for (const worker of page.workers()) {
+    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform")) !== "object") continue;
+    // The page's init script shims tsx's `__name`; a worker gets no init script.
+    await worker.evaluate("globalThis.__name = (fn) => fn;");
+    return { kind: "worker" as const, realm: worker };
+  }
+  return { kind: "page" as const, realm: page };
+}
+
+/** Presented-frame intervals in ms, one per requestAnimationFrame on the game's thread, for frameStats. */
+async function frames(realm: Pick<Page, "evaluate">) {
+  const intervals = await realm.evaluate(
     (count) =>
       new Promise<number[]>((resolve) => {
         const times: number[] = [];
@@ -148,6 +200,50 @@ async function frames(page: Page) {
         requestAnimationFrame(step);
       }),
     FRAME_SAMPLES,
+  );
+  return frameStats(intervals);
+}
+
+const PRESENTED_SAMPLES = 301;
+
+/**
+ * Intervals between the frames the game presents: one `getCurrentTexture` call each, on either back
+ * end (the `gpuCalls` divisor). Unlike requestAnimationFrame it follows the game in a worker too.
+ */
+async function presented(realm: Pick<Page, "evaluate">) {
+  const intervals = await realm.evaluate(
+    (count) =>
+      new Promise<number[]>((resolve, reject) => {
+        const proto = (
+          globalThis as {
+            GPUCanvasContext?: { prototype: { getCurrentTexture(...args: unknown[]): unknown } };
+          }
+        ).GPUCanvasContext?.prototype;
+        if (proto === undefined) {
+          reject(
+            new Error("TN_PROFILE_NO_WEBGPU_CANVAS: the game's thread has no GPUCanvasContext"),
+          );
+          return;
+        }
+        const original = proto.getCurrentTexture;
+        const times: number[] = [];
+        const restore = setTimeout(() => {
+          proto.getCurrentTexture = original;
+          reject(
+            new Error(`TN_PROFILE_PRESENTED_TIMEOUT: ${times.length} of ${count} frames in 60 s`),
+          );
+        }, 60_000);
+        proto.getCurrentTexture = function (this: unknown, ...args: unknown[]) {
+          times.push(performance.now());
+          if (times.length === count) {
+            proto.getCurrentTexture = original;
+            clearTimeout(restore);
+            resolve(times.slice(1).map((x, i) => x - (times[i] as number)));
+          }
+          return original.apply(this, args);
+        };
+      }),
+    PRESENTED_SAMPLES,
   );
   return frameStats(intervals);
 }
@@ -168,8 +264,14 @@ async function threadSeconds(cdp: CDPSession): Promise<number> {
   return found.value;
 }
 
-async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: string) {
-  const framesBefore = withWork ? await presentedFrames(page) : 0;
+async function cpu(
+  page: Page,
+  realm: Pick<Page, "evaluate">,
+  seconds: number,
+  withWork: boolean,
+  saveAs?: string,
+) {
+  const framesBefore = withWork ? await presentedFrames(realm) : 0;
   const cdp = await page.context().newCDPSession(page);
   if (withWork) await cdp.send("Performance.enable");
   const threadBefore = withWork ? await threadSeconds(cdp) : 0;
@@ -179,7 +281,7 @@ async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: stri
   await page.waitForTimeout(seconds * 1000);
   const { profile } = (await cdp.send("Profiler.stop")) as { profile: ICpuProfile };
   if (saveAs) writeFileSync(saveAs, JSON.stringify(profile));
-  const frames = withWork ? (await presentedFrames(page)) - framesBefore : 0;
+  const frames = withWork ? (await presentedFrames(realm)) - framesBefore : 0;
   const work = withWork
     ? {
         ...cpuWork(profile, frames),
@@ -234,17 +336,25 @@ async function cpu(page: Page, seconds: number, withWork: boolean, saveAs?: stri
   };
 }
 
-/** Counts every presented frame from page load; installed by --cpu-work (CPU_WORK_COUNTER). */
-const CPU_WORK_COUNTER = `(() => { globalThis.__tnPresented = 0;
-  const count = () => { globalThis.__tnPresented++; requestAnimationFrame(count); };
-  requestAnimationFrame(count); })();`;
+/** Counts game presentations, including capped loops and worker games (--cpu-work). */
+const CPU_WORK_COUNTER = `(() => {
+  globalThis.__tnPresented = 0;
+  const proto = globalThis.GPUCanvasContext?.prototype;
+  if (!proto) throw new Error("TN_PROFILE_NO_WEBGPU_CANVAS: no presentation counter available");
+  const original = proto.getCurrentTexture;
+  proto.getCurrentTexture = function (...args) {
+    const texture = original.apply(this, args);
+    globalThis.__tnPresented++;
+    return texture;
+  };
+})();`;
 
-async function presentedFrames(page: Page) {
-  return Number(await page.evaluate("globalThis.__tnPresented"));
+async function presentedFrames(realm: Pick<Page, "evaluate">) {
+  return Number(await realm.evaluate("globalThis.__tnPresented"));
 }
 
-async function calls(page: Page) {
-  return page.evaluate(
+async function calls(realm: Pick<Page, "evaluate">) {
+  return realm.evaluate(
     () =>
       new Promise<{ perFrame: number; top: { name: string; perFrame: number }[] }>(
         (resolve, reject) => {
@@ -313,8 +423,8 @@ const GPU_CENSUS = `(() => {
  * would credit the arm with the faster callback rate. The divisor is `getCurrentTexture`, which both
  * back ends call once per frame they present; the window runs until 120 such frames passed.
  */
-async function gpuCalls(page: Page) {
-  return page.evaluate(
+async function gpuCalls(realm: Pick<Page, "evaluate">) {
+  return realm.evaluate(
     () =>
       new Promise<{ name: string; perFrame: number }[]>((resolve) => {
         const g = globalThis as { __tnGpuCounts?: Map<string, number> };
@@ -341,8 +451,10 @@ async function gpuCalls(page: Page) {
 export async function measure(url: string, o: IOptions) {
   const browser = await chromium.launch({
     headless: false,
-    args: [...WEBGPU_BROWSER_ARGS, ...PERFORMANCE_BROWSER_ARGS],
+    args: [...WEBGPU_BROWSER_ARGS, ...(o.vsync ? [] : PERFORMANCE_BROWSER_ARGS)],
   });
+  // Started after the launch, so a launch failure leaves no busy process behind.
+  const cpuLoad = startCpuLoad(o.load);
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const errors: string[] = [];
@@ -377,17 +489,24 @@ export async function measure(url: string, o: IOptions) {
     await page.waitForTimeout(o.warmupMs);
     const reading = readHostLoad();
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
-    const frame = await frames(page);
+    const thread = await gameThread(page);
+    const realm: Pick<Page, "evaluate"> = thread.realm;
+    if (thread.kind === "worker") {
+      if (o.gpuCalls) await thread.realm.evaluate(GPU_CENSUS);
+      if (o.cpuWork) await thread.realm.evaluate(CPU_WORK_COUNTER);
+    }
+    const frame = await frames(thread.realm);
+    const presentedFrame = await presented(thread.realm);
     if (o.saveProfile !== undefined) mkdirSync(o.saveProfile, { recursive: true });
     const saveAs =
       o.saveProfile === undefined
         ? undefined
         : join(o.saveProfile, `${new URL(url).port}.cpuprofile`);
-    const profile = await cpu(page, o.seconds, o.cpuWork, saveAs);
-    const census = o.calls ? await calls(page) : undefined;
-    const gpu = o.gpuCalls ? await gpuCalls(page) : undefined;
+    const profile = await cpu(page, thread.realm, o.seconds, o.cpuWork, saveAs);
+    const census = o.calls ? await calls(thread.realm) : undefined;
+    const gpu = o.gpuCalls ? await gpuCalls(thread.realm) : undefined;
     const memory = o.memory
-      ? await page.evaluate(() => ({
+      ? await realm.evaluate(() => ({
           jsHeapUsedBytes: (performance as { memory?: { usedJSHeapSize?: number } }).memory
             ?.usedJSHeapSize,
           wasmMemoryBytes: (
@@ -406,15 +525,20 @@ export async function measure(url: string, o: IOptions) {
     return {
       url,
       hostLoad,
+      cpuLoad: { processes: o.load },
       ...(memory ? { memory: parseWebMetrics({ memory }).memory } : {}),
       adapter,
       startupMs,
+      gameThread: thread.kind,
+      vsync: o.vsync,
       frame,
+      presented: presentedFrame,
       profile,
       ...(census ? { calls: census } : {}),
       ...(gpu ? { gpu } : {}),
     };
   } finally {
+    await cpuLoad.stop();
     await browser.close();
   }
 }
@@ -424,6 +548,7 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   console.log(
     `host load ${r.hostLoad.load1} on ${r.hostLoad.cores} cores, absolutes ${r.hostLoad.absolutes}`,
   );
+  console.log(`cpu load ${r.cpuLoad.processes} busy processes`);
   if (r.memory)
     console.log(
       `memory: Wasm ${r.memory.wasmMemoryBytes} bytes, JS heap used ${r.memory.jsHeapUsedBytes} bytes`,
@@ -433,7 +558,7 @@ function print(label: string, r: Awaited<ReturnType<typeof measure>>) {
   );
   if (r.profile.work)
     console.log(
-      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame (thread CPU ${r.profile.work.threadMsPerFrame.toFixed(2)} ms) over ${r.profile.work.frames} frames`,
+      `cpu work ${r.profile.work.busyMsPerFrame.toFixed(2)} ms per frame, main thread ${r.profile.work.busyPercent.toFixed(0)}% busy (thread CPU ${r.profile.work.threadMsPerFrame.toFixed(2)} ms) over ${r.profile.work.frames} frames`,
     );
   console.log(
     `cpu (${r.profile.samples} samples): ${r.profile.groups.map((g) => `${g.name} ${g.percent}%`).join(", ")}`,

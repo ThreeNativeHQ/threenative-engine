@@ -288,7 +288,10 @@ export class InputMap {
     const lockTargets = new Set<EventTarget>([this.#target, this.#pointerTarget]);
     if (lockDocument !== undefined) lockTargets.add(lockDocument);
     for (const target of lockTargets) {
-      this.#listen(target, "pointerlockchange", () => this.#syncCaptured());
+      // A worker has no document to ask; its host forwards the page's verdict as `captured`.
+      this.#listen(target, "pointerlockchange", (event) =>
+        this.#syncCaptured((event as Event & { captured?: boolean }).captured),
+      );
     }
   }
 

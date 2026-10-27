@@ -64,6 +64,10 @@
       "types": "./dist/ui-layer.d.ts",
       "import": "./dist/ui-layer.js"
     },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    },
     "./world": {
       "types": "./dist/world.d.ts",
       "import": "./dist/world.js"

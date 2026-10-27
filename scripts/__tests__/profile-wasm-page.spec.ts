@@ -6,72 +6,87 @@ const state = vi.hoisted(() => ({
   presented: [0, 0] as number[],
   thread: [1, 1.002] as number[],
   clicks: [] as string[],
+  launchArgs: [] as string[],
+  workers: [] as { evaluate(fn: (() => unknown) | string): Promise<unknown> }[],
 }));
+const recordLaunch = vi.hoisted(() => <T>(args: string[], browser: T): T => {
+  state.launchArgs = args;
+  return browser;
+});
 vi.mock("node:os", () => ({
   default: { availableParallelism: () => 8, loadavg: () => [state.load, 0, 0] },
 }));
 vi.mock("@playwright/test", () => ({
   chromium: {
-    launch: async () => ({
-      newPage: async () => ({
-        on: vi.fn(),
-        addInitScript: vi.fn(),
-        goto: vi.fn(),
-        waitForTimeout: vi.fn(),
-        click: async (selector: string) => {
-          state.clicks.push(selector);
-        },
-        context: () => ({
-          newCDPSession: async () => ({
-            send: async (method: string) =>
-              method === "Performance.getMetrics"
-                ? // the thread's CPU seconds: 2 ms more at the second read
-                  { metrics: [{ name: "ThreadTime", value: state.thread.shift() ?? 0 }] }
-                : method === "Profiler.stop"
-                  ? {
-                      // 1 ms busy in `work`, 3 ms in `(idle)`: a quarter of the window is CPU work.
-                      profile: {
-                        nodes: [
-                          { id: 1, callFrame: { functionName: "(idle)", url: "" } },
-                          { id: 2, callFrame: { functionName: "work", url: "" } },
-                        ],
-                        samples: [1, 2, 1, 1],
-                        timeDeltas: [1000, 1000, 1000, 1000],
-                      },
-                    }
-                  : {},
+    launch: async ({ args }: { args: string[] }) =>
+      recordLaunch(args, {
+        newPage: async () => ({
+          on: vi.fn(),
+          addInitScript: vi.fn(),
+          goto: vi.fn(),
+          waitForTimeout: vi.fn(),
+          click: async (selector: string) => {
+            state.clicks.push(selector);
+          },
+          workers: () => state.workers,
+          context: () => ({
+            newCDPSession: async () => ({
+              send: async (method: string) =>
+                method === "Performance.getMetrics"
+                  ? // the thread's CPU seconds: 2 ms more at the second read
+                    { metrics: [{ name: "ThreadTime", value: state.thread.shift() ?? 0 }] }
+                  : method === "Profiler.stop"
+                    ? {
+                        // 1 ms busy in `work`, 3 ms in `(idle)`: a quarter of the window is CPU work.
+                        profile: {
+                          nodes: [
+                            { id: 1, callFrame: { functionName: "(idle)", url: "" } },
+                            { id: 2, callFrame: { functionName: "work", url: "" } },
+                          ],
+                          samples: [1, 2, 1, 1],
+                          timeDeltas: [1000, 1000, 1000, 1000],
+                        },
+                      }
+                    : {},
+            }),
           }),
+          evaluate: async (fn: (() => unknown) | string) => {
+            if (typeof fn === "string") return state.presented.shift() ?? 0;
+            if (fn.toString().includes("requestAdapter")) return "hardware";
+            if (fn.toString().includes("__tnCallCounts")) return { perFrame: 0, top: [] };
+            if (fn.toString().includes("__tnGpuCounts")) return [];
+            if (fn.toString().includes("getCurrentTexture"))
+              return Array.from({ length: 300 }, () => 10);
+            if (fn.toString().includes("requestAnimationFrame"))
+              return Array.from({ length: 600 }, (_, i) => (i === 599 ? 40 : 10));
+            vi.stubGlobal("performance", {
+              memory: { usedJSHeapSize: state.memory.jsHeapUsedBytes },
+            });
+            vi.stubGlobal(
+              "__tnWasmMemoryBytes",
+              state.memory.wasmMemoryBytes === undefined
+                ? undefined
+                : () => state.memory.wasmMemoryBytes,
+            );
+            return fn();
+          },
         }),
-        evaluate: async (fn: (() => unknown) | string) => {
-          if (typeof fn === "string") return state.presented.shift() ?? 0;
-          if (fn.toString().includes("requestAdapter")) return "hardware";
-          if (fn.toString().includes("requestAnimationFrame"))
-            return Array.from({ length: 600 }, (_, i) => (i === 599 ? 40 : 10));
-          vi.stubGlobal("performance", {
-            memory: { usedJSHeapSize: state.memory.jsHeapUsedBytes },
-          });
-          vi.stubGlobal(
-            "__tnWasmMemoryBytes",
-            state.memory.wasmMemoryBytes === undefined
-              ? undefined
-              : () => state.memory.wasmMemoryBytes,
-          );
-          return fn();
-        },
+        close: vi.fn(),
       }),
-      close: vi.fn(),
-    }),
   },
 }));
 
 // Importing the command must not launch a profile.
-const { cpuWork, frameStats, measure, options } = await import("../profile-wasm-page.js");
+const { cpuWork, frameStats, measure, options, startCpuLoad } = await import(
+  "../profile-wasm-page.js"
+);
 afterEach(() => {
   state.load = 2;
   state.memory = {};
   state.presented = [0, 0];
   state.thread = [1, 1.002];
   state.clicks = [];
+  state.workers = [];
   vi.unstubAllGlobals();
 });
 describe("profile:wasm-page scorecard", () => {
@@ -94,6 +109,99 @@ describe("profile:wasm-page scorecard", () => {
       (await measure("http://test", options(["--url", "http://test"]))).memory,
     ).toBeUndefined();
   });
+  it("reads frame times on the game's own thread: the page, or the worker that runs it (PRD-752)", async () => {
+    const page = await measure("http://test", options(["--url", "http://test"]));
+    expect(page.gameThread).toBe("page");
+    expect(page.frame.p50).toBe(10);
+    // An idle helper worker, then the worker holding the game's platform source.
+    const idle = { evaluate: async () => "undefined" };
+    const game = {
+      evaluate: async (fn: (() => unknown) | string) =>
+        typeof fn === "string" ? "object" : Array.from({ length: 600 }, () => 20),
+    };
+    state.workers = [idle, game];
+    const worker = await measure("http://test", options(["--url", "http://test"]));
+    expect(worker.gameThread).toBe("worker");
+    expect(worker.frame.p50).toBe(20);
+  });
+  it("times presented frames by the game's getCurrentTexture calls, the same divisor in both arms (PRD-752)", async () => {
+    // A worker's requestAnimationFrame does not follow what the game presents.
+    const game = {
+      evaluate: async (fn: (() => unknown) | string) =>
+        typeof fn === "string"
+          ? "object"
+          : fn.toString().includes("getCurrentTexture")
+            ? Array.from({ length: 300 }, () => 16)
+            : Array.from({ length: 600 }, () => 0.1),
+    };
+    state.workers = [game];
+    const run = await measure("http://test", options(["--url", "http://test"]));
+    expect(run.presented.p50).toBe(16);
+  });
+  it("reads engine census and memory from the game worker", async () => {
+    state.memory = { wasmMemoryBytes: 1, jsHeapUsedBytes: 2 };
+    state.workers = [
+      {
+        evaluate: async (fn) => {
+          if (typeof fn === "string") return "object";
+          if (fn.toString().includes("__tnCallCounts"))
+            return { perFrame: 12, top: [{ name: "Thing.draw", perFrame: 12 }] };
+          if (fn.toString().includes("__tnWasmMemoryBytes"))
+            return { wasmMemoryBytes: 65536, jsHeapUsedBytes: 1234 };
+          return Array.from({ length: 600 }, () => 16);
+        },
+      },
+    ];
+    const run = await measure(
+      "http://test",
+      options(["--url", "http://test", "--calls", "--memory"]),
+    );
+    expect(run.calls).toEqual({ perFrame: 12, top: [{ name: "Thing.draw", perFrame: 12 }] });
+    expect(run.memory).toEqual({ wasmMemoryBytes: 65536, jsHeapUsedBytes: 1234 });
+  });
+
+  it("reads GPU calls from the game worker's presentations", async () => {
+    state.workers = [
+      {
+        evaluate: async (fn) => {
+          if (typeof fn === "string") return "object";
+          if (fn.toString().includes("__tnGpuCounts"))
+            return [{ name: "GPUCanvasContext.getCurrentTexture", perFrame: 1 }];
+          return Array.from({ length: 600 }, () => 16);
+        },
+      },
+    ];
+    const run = await measure("http://test", options(["--url", "http://test", "--gpu-calls"]));
+    expect(run.gpu).toEqual([{ name: "GPUCanvasContext.getCurrentTexture", perFrame: 1 }]);
+  });
+
+  it("divides page CPU work by game worker presentations", async () => {
+    const presentations = [100, 120];
+    state.workers = [
+      {
+        evaluate: async (fn) => {
+          if (typeof fn === "string")
+            return fn === "globalThis.__tnPresented" ? presentations.shift() : "object";
+          return Array.from({ length: 600 }, () => 16);
+        },
+      },
+    ];
+    const run = await measure("http://test", options(["--url", "http://test", "--cpu-work"]));
+    expect(run.profile.work).toMatchObject({ frames: 20, busyMsPerFrame: 0.05, wallMs: 4 });
+    expect(run.profile.work?.threadMsPerFrame).toBeCloseTo(0.1, 6);
+  });
+
+  it("keeps the browser's frame pacing with --vsync and records it (a worker's frames do not unthrottle)", async () => {
+    state.workers = [];
+    const paced = await measure("http://test", options(["--url", "http://test", "--vsync"]));
+    expect(state.launchArgs).not.toContain("--disable-gpu-vsync");
+    expect(state.launchArgs).not.toContain("--disable-frame-rate-limit");
+    expect(paced.vsync).toBe(true);
+    const unpaced = await measure("http://test", options(["--url", "http://test"]));
+    expect(state.launchArgs).toContain("--disable-gpu-vsync");
+    expect(unpaced.vsync).toBe(false);
+  });
+
   it.each(["wasmMemoryBytes", "jsHeapUsedBytes"])(
     "fails closed when %s is unavailable",
     async (field) => {
@@ -117,7 +225,12 @@ describe("profile:wasm-page startup, input and CPU work", () => {
       samples: [1, 2, 2, 1],
       timeDeltas: [1000, 1000, 1000, 1000],
     };
-    expect(cpuWork(profile, 2)).toEqual({ busyMsPerFrame: 1, frames: 2, wallMs: 4 });
+    expect(cpuWork(profile, 2)).toEqual({
+      busyMsPerFrame: 1,
+      busyPercent: 50,
+      frames: 2,
+      wallMs: 4,
+    });
     expect(() => cpuWork(profile, 0)).toThrow("TN_PROFILE_CPU_WORK_NO_FRAMES");
     expect(() => cpuWork({ ...profile, timeDeltas: [1] }, 2)).toThrow("TN_PROFILE_CPU_WORK_DELTAS");
   });
@@ -153,6 +266,26 @@ describe("profile:wasm-page startup, input and CPU work", () => {
       saveProfile: "/tmp/p",
     });
     expect(options(["--url", "u"]).saveProfile).toBeUndefined();
+  });
+
+  it("parses --load as a count of busy processes and refuses a bad count", () => {
+    expect(options(["--url", "u", "--load", "6"]).load).toBe(6);
+    expect(options(["--url", "u"]).load).toBe(0);
+    for (const bad of ["-1", "1.5", "x"])
+      expect(() => options(["--url", "u", "--load", bad])).toThrow("--load");
+  });
+
+  it("starts the busy processes, keeps them alive and stops them", async () => {
+    const load = startCpuLoad(2);
+    expect(load.pids).toHaveLength(2);
+    for (const pid of load.pids) expect(() => process.kill(pid, 0)).not.toThrow();
+    await load.stop();
+    for (const pid of load.pids) expect(() => process.kill(pid, 0)).toThrow();
+  });
+
+  it("stamps the stated load on the run", async () => {
+    const run = await measure("http://test", options(["--url", "http://test", "--load", "1"]));
+    expect(run.cpuLoad).toEqual({ processes: 1 });
   });
 
   it("clicks in order before the warm-up, stamps startup, and reports CPU work per frame", async () => {

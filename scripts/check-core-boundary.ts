@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import ts from "typescript";
 
 export const ENTITY_LINE_LIMIT = 80;
+// The one core file that may read globals a dedicated worker lacks (PRD-752).
+export const HOST_LAYER = "packages/core/src/platform.ts";
 
 const BANNED_ENTITY_TOKENS = /\b(?:archetype|createQuery|defineComponent|System|Component)\b/gu;
 // The Academy's licence text, which the ACES curve in this file must keep, uses the English words "System" and "Components".
@@ -180,11 +183,75 @@ async function checkBuiltScaffold(root: string): Promise<string[]> {
   return findings;
 }
 
+function deepestNodeAt(sourceFile: ts.SourceFile, position: number): ts.Node {
+  let node: ts.Node = sourceFile;
+  for (;;) {
+    let next: ts.Node | undefined;
+    for (const child of node.getChildren(sourceFile)) {
+      if (child.pos <= position && position < child.end) {
+        next = child;
+        break;
+      }
+    }
+    if (!next) return node;
+    node = next;
+  }
+}
+
+function isTypePosition(node: ts.Node): boolean {
+  for (let current: ts.Node | undefined = node; current; current = current.parent) {
+    if (ts.isTypeNode(current)) return true;
+    if (ts.isStatement(current)) return false;
+  }
+  return false;
+}
+
+export async function checkWorkerGlobals(root: string): Promise<string[]> {
+  const directory = path.join(root, "packages/core/src");
+  if (!existsSync(directory)) return [];
+  const files = (await filesUnder(directory)).filter((file) =>
+    CORE_SOURCE_EXTENSIONS.has(path.extname(file)),
+  );
+  const program = ts.createProgram(files, {
+    target: ts.ScriptTarget.ES2023,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    lib: ["lib.es2023.d.ts", "lib.webworker.d.ts"],
+    types: [],
+    noEmit: true,
+    skipLibCheck: true,
+    strict: true,
+  });
+  const findings: string[] = [];
+  const seen = new Set<string>();
+  for (const file of files) {
+    const sourceFile = program.getSourceFile(file);
+    if (!sourceFile) continue;
+    const relativePath = relative(root, file);
+    if (relativePath === HOST_LAYER) continue;
+    for (const diagnostic of program.getSemanticDiagnostics(sourceFile)) {
+      if (![2304, 2552, 2584].includes(diagnostic.code) || diagnostic.start === undefined) continue;
+      if (isTypePosition(deepestNodeAt(sourceFile, diagnostic.start))) continue;
+      const name = sourceFile.text.slice(
+        diagnostic.start,
+        diagnostic.start + (diagnostic.length ?? 0),
+      );
+      const line = sourceFile.getLineAndCharacterOfPosition(diagnostic.start).line + 1;
+      const finding = `${relativePath}:${line} reads '${name}', which a worker does not have; reach it through ${HOST_LAYER}`;
+      if (seen.has(finding)) continue;
+      seen.add(finding);
+      findings.push(finding);
+    }
+  }
+  return findings;
+}
+
 export async function checkCoreBoundary(root = process.cwd()): Promise<readonly string[]> {
   return [
     ...(await checkEntityRegistry(root)),
     ...(await checkScaffoldHygiene(root)),
     ...(await checkBuiltScaffold(root)),
+    ...(await checkWorkerGlobals(root)),
   ];
 }
 
@@ -197,7 +264,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  console.log("core boundary and scaffold hygiene passed");
+  console.log("core boundary, scaffold hygiene and worker globals passed");
 }
 
 if (

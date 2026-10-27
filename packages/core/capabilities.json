@@ -4372,6 +4372,34 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "serveWorkerGame(game);",
+      "importPath": "@threenative/core/worker",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function serveWorkerGame( game: { … }",
+      "situations": ["run the game loop in a web worker so a busy page cannot stall its frames"],
+      "summary": "Runs inside the worker: wire the page's messages to the unchanged portable game. Call it last in the worker entry, after the game module evaluated: it posts the ready message the page waits for before it sends the canvas.",
+      "supersedes": [],
+      "symbol": "serveWorkerGame"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const handle = startWorkerGame(new Worker(new URL(\"./worker.ts\", import.meta.url), { type: \"module\" }), root);",
+      "importPath": "@threenative/core/worker",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function startWorkerGame( worker: Worker, container: HTMLElement, ): { … }",
+      "situations": ["host a worker-run game's canvas, input and HUD on the page"],
+      "summary": "Runs on the page: own the canvas and the DOM, and feed the worker game. Call it before the UI mounts: the HUD's bridge host globals exist from this call on.",
+      "supersedes": [],
+      "symbol": "startWorkerGame"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
@@ -5663,7 +5691,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, render = false, ): Promise<void> { … }",
+      "signature": "export async function advanceFixedStep( page: Page, bridge: { … }",
       "situations": [
         "run a complete browser or device playtest",
         "capture diagnostics and screenshots from a managed server"
