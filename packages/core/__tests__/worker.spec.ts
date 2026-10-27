@@ -303,6 +303,25 @@ describe("worker game host (PRD-752)", () => {
     handle.stop();
   });
 
+  it("copies the renderer's canvas attributes onto the page canvas", async () => {
+    // The harness reads `data-engine` on the page's canvas for capture provenance; the Wasm
+    // renderer sets it on its own canvas, which in a worker is the OffscreenCanvas.
+    const { scope, worker } = link();
+    const { canvas, container, offscreen } = page();
+    const setAttribute = vi.fn();
+    Object.assign(canvas, { setAttribute });
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    (offscreen as unknown as Element).setAttribute("data-engine", "threenative wasm webgpu");
+    await tick();
+    expect(setAttribute).toHaveBeenCalledWith("data-engine", "threenative wasm webgpu");
+    handle.stop();
+  });
+
   it("mirrors the playtest bridge while start is still held for the runner to attach", async () => {
     // With a runner announced, the playtest plugin holds the boot until the runner calls the
     // bridge: a mirror sent only after start never reaches the page.

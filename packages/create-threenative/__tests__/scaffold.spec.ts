@@ -322,16 +322,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   runner: "cda53296a601c2dac944f169afc60d94d3fa03f049f5a3eaf88889819f1ec55d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "5383db14b9c32f6185f406113a83054b465a869a36e171eb2a9308d544a5522d",
-  // Recomputed 2026-10-26 (PRD-752): worker.html, src/worker.ts, src/worker-page.ts and an AGENTS.md line run the game in a worker.
-  shooter: "1fdfdcda1de8fe7a097e80e003db56a8b236fc348845911fcfea86cd6df93fbc",
+  // Recomputed 2026-10-26 (PRD-752): index.html runs the worker, main.html the page thread; src/worker.ts, src/worker-page.ts and an AGENTS.md line run the game in a worker.
+  shooter: "1053e6fa8282ab028fec295287e2eb011ddd3dc4c29a870c79b7c39efe7a898d",
   snow: "183b80ada822f22f25c9f7e6ca0f45aef2f5789a71f51f8cc3048965ddda8d2b",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  // Recomputed 2026-10-26 (PRD-752): worker.html, src/worker.ts, src/worker-page.ts and an AGENTS.md line run the game in a worker.
-  starter: "84da9469c321538b7b2518b92e778e004cfdad2a772bb64e0222df5a2b9ad896",
+  // Recomputed 2026-10-26 (PRD-752): index.html runs the worker, main.html the page thread; src/worker.ts, src/worker-page.ts and an AGENTS.md line run the game in a worker.
+  starter: "6286c303cd4ad04ec9bbe3478e9f5fddaae6365e0e0a3a5baeaa51ecb5f9b488",
   "tower-defense": "c2874bdeedfb61095c23374f4e9716aacedfc801e0966648b067bbf267b1cb11",
 };
 
@@ -430,8 +430,8 @@ const STARTER_PATHS = [
   "vite.config.ts",
   "src/game.ts",
   "src/main.ts",
-  // PRD-752: the same game in a worker, at `worker.html`.
-  "worker.html",
+  // PRD-752: `index.html` runs the game in a worker; `main.html` runs it on the page thread.
+  "main.html",
   "src/worker.ts",
   "src/worker-page.ts",
   "src/scenes/Play.ts",

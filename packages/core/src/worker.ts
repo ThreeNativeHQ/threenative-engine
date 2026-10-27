@@ -63,6 +63,7 @@ type WorkerOutbound =
   | { type: "tn-worker-started" }
   | { type: "tn-worker-failed"; message: string }
   | { type: "tn-worker-pointer-lock"; lock: boolean }
+  | { type: "tn-worker-attribute"; name: string; value: string }
   | { type: "tn-worker-rpc-result"; id: number; result?: unknown; error?: string };
 
 type PageOutbound = WorkerInbound;
@@ -180,10 +181,13 @@ export function serveWorkerGame(
     try {
       canvas = message.canvas;
       // An OffscreenCanvas cannot lock the pointer: the page locks its own canvas, inside the
-      // click's activation window, and forwards each pointerlockchange with `captured`.
+      // click's activation window, and forwards each pointerlockchange with `captured`. Attributes
+      // (the renderer's `data-engine`) land on the page canvas, where the harness reads them.
       Object.assign(canvas, {
         exitPointerLock: () => post({ lock: false, type: "tn-worker-pointer-lock" }),
         requestPointerLock: () => post({ lock: true, type: "tn-worker-pointer-lock" }),
+        setAttribute: (name: string, value: string) =>
+          post({ name, type: "tn-worker-attribute", value: String(value) }),
       });
       size.width = message.width;
       size.height = message.height;
@@ -536,6 +540,9 @@ export function startWorkerGame(
         break;
       case "tn-worker-pointer-lock":
         pointerLock(message.lock);
+        break;
+      case "tn-worker-attribute":
+        canvas.setAttribute(message.name, message.value);
         break;
       case "tn-worker-mirror":
         installMirror(message.name, message.methods);

@@ -53,8 +53,8 @@ click fires, F or right click aims, R reloads, shift sprints, ctrl/C crouches. `
 owns the layout — blocks, quay, pier, raised decks, routes, spawns — and every solid in it is both a
 collider and a raycast target. `src/entities/` owns the fight: `FpsPlayer` moves, `Rifle` fires and
 zeroes, `Enemy` patrols, hears, sees and shoots back, `Target` scores the plates. `src/scenes/Play.ts`
-wires them and `src/ui/Hud.tsx` is the only HUD. `/worker.html` runs the same `game.ts` in a web
-worker (`src/worker.ts`, page side `src/worker-page.ts`), so a busy page cannot stall its frames. `playtests/survives.playtest.json` is the durable
+wires them and `src/ui/Hud.tsx` is the only HUD. `index.html` runs `game.ts` in a web
+worker (`src/worker.ts`, page side `src/worker-page.ts`), so a busy page cannot stall its frames; `main.html` is the named override that runs it on the page thread. `playtests/survives.playtest.json` is the durable
 smoke proof. The soldiers are `assets/mannequin-combat.glb` (Quaternius UAL, CC0); the hands in
 `assets/player-viewmodel.glb` are "Animated FPS hands (rifle animation pack)" by Cransh,
 CC-BY-4.0 — https://sketchfab.com/3d-models/animated-fps-hands-rifle-animation-pack-5f2d0ed780a94724b36ab505f7564057.
