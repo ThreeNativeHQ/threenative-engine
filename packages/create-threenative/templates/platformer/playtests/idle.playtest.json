@@ -1,0 +1,44 @@
+{
+  "name": "platformer-idle",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run",
+      "press": "ArrowRight",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "standing",
+      "waitTicks": 150,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "standingSwing",
+        "lte": 0.05,
+        "allowTrivial": "0 until the fox stands; after a run, a fox standing still on the ground keeps its legs still, so the widest standing swing stays under 0.05 rad (3 degrees)."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 1
+    }
+  }
+}

@@ -370,12 +370,15 @@ describe("generated template ordinary-frame runtime cost", () => {
     try {
       const camera = new PerspectiveCamera(60, 16 / 9);
       const target = new Vector3(-2, 0.9, 0);
-      for (let frame = 0; frame < WARMUP_FRAMES; frame += 1)
-        minimal.followCamera(camera, target, DT);
-      expect(
-        measureVectorAllocations(() => minimal.followCamera(camera, target, DT)),
-        "minimal followCamera vector allocation sentinel",
-      ).toEqual({ clones: 0, constructors: 0 });
+      // Both arms: a clear way eases the lens, a wall at 1 m pulls it in and climbs.
+      for (const probe of [() => undefined, () => 1]) {
+        for (let frame = 0; frame < WARMUP_FRAMES; frame += 1)
+          minimal.followCamera(camera, target, DT, probe);
+        expect(
+          measureVectorAllocations(() => minimal.followCamera(camera, target, DT, probe)),
+          "minimal followCamera vector allocation sentinel",
+        ).toEqual({ clones: 0, constructors: 0 });
+      }
 
       const ctx = gameContext(physics.physics);
       const player = new starter.Player(

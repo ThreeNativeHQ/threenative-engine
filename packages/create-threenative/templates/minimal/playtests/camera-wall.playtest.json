@@ -1,0 +1,24 @@
+{
+  "name": "minimal-camera-wall",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "walk-to-the-south-wall", "press": "ArrowDown", "holdTicks": 420, "release": true },
+    { "kind": "wait", "label": "against-the-wall", "waitTicks": 60, "release": true, "screenshot": "against-the-wall" }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "movement": { "entity": "player", "minDistance": 12 },
+    "components": [
+      {
+        "entity": "camera",
+        "component": "hidden",
+        "equals": false,
+        "allowTrivial": "False at spawn too: the proof is that it stays false with the player's back to the arena wall, where the offset behind the player lies past the wall."
+      }
+    ]
+  }
+}

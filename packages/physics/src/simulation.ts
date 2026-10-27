@@ -626,12 +626,10 @@ const QUERY_SHAPE_KINDS = new Set<PhysicsShapeKind>([
 ]);
 
 /** Rapier reports a solid cast that starts inside a collider as toi 0 with a zero normal. */
-function startsInside(hit: {
-  readonly timeOfImpact: number;
-  readonly normal: IPhysicsVector3;
-}): boolean {
-  const { x, y, z } = hit.normal;
-  return hit.timeOfImpact === 0 && x === 0 && y === 0 && z === 0;
+// A solid cast that starts inside a collider stops at toi 0. The normal is no test: Rapier gives
+// a box a zero normal there but a ball or capsule the reversed ray.
+function startsInside(hit: { readonly timeOfImpact: number }): boolean {
+  return hit.timeOfImpact === 0;
 }
 
 function queryObject(value: unknown, label: string): Record<string, unknown> {
@@ -1405,9 +1403,9 @@ export function createWebPhysicsSimulation(
         y: dy / distance,
         z: dz / distance,
       });
-      // Rapier's solid cast reports a ray that starts inside a collider as toi 0 with a zero
-      // normal. Godot's default (`hit_from_inside` false) skips that collider, so skip it here
-      // and cast again; the loop ends after at most one pass per overlapping collider.
+      // Rapier's solid cast reports a ray that starts inside a collider as toi 0. Godot's default
+      // (`hit_from_inside` false) skips that collider, so skip it here and cast again; the loop
+      // ends after at most one pass per overlapping collider.
       const skipped = new Set<number>();
       const accepts = queryPredicate(query.collisionMask);
       let closestCollider: rapier.Collider | undefined;
@@ -1455,7 +1453,11 @@ export function createWebPhysicsSimulation(
       return {
         ...queryHit(entry),
         distance: closestTime,
-        normal: { x: closestNormal.x, y: closestNormal.y, z: closestNormal.z },
+        // `hitFromInside` reports the solid around the origin with a zero normal, whatever its shape.
+        normal:
+          closestTime === 0
+            ? { x: 0, y: 0, z: 0 }
+            : { x: closestNormal.x, y: closestNormal.y, z: closestNormal.z },
         position: { x: position.x, y: position.y, z: position.z },
       };
     },

@@ -288,8 +288,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       defeated += 1;
       emitPlaytestEvent({ entity: "player", name: how });
     };
-    // Ticks a Sunseed sat under the HUD pill, and of those, ticks the pill stayed opaque over it.
-    const hud = { covered: 0, under: 0 };
+    // Ticks a Sunseed sat under the HUD pill: each one fades the pill through `hudFaded`.
+    const hud = { under: 0 };
     ctx.entities.add("hud", { debug: () => ({ ...hud }) });
     const seedAt = new Vector3();
     const seedUnderHud = (width: number, height: number): boolean => {
@@ -439,7 +439,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const under = seedUnderHud(frameCtx.viewport.size.width, frameCtx.viewport.size.height);
       statePatch.hudFaded = under;
       hud.under += under ? 1 : 0;
-      hud.covered += under && !statePatch.hudFaded ? 1 : 0;
       statePatch.action = hero.action;
       statePatch.checkpoint = checkpoint;
       statePatch.coins = coins;
