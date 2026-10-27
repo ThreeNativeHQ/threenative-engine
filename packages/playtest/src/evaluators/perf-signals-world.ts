@@ -82,6 +82,7 @@ export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
         const value = readPath(sample?.snapshots[assertion.id], assertion.path);
         const pass = sample !== undefined
           && (!Object.hasOwn(expected, "equals") || jsonEqual(value, expected.equals))
+          && (expected.lte === undefined || (typeof value === "number" && value <= expected.lte))
           && (expected.textIncludes === undefined || String(textValue(value)).includes(expected.textIncludes));
         return { expected, pass, value };
       });

@@ -1028,12 +1028,14 @@ export function validatePathAssertion(value: unknown, scenarioPath: string, obje
     ? record.atSteps.map((step, index) => {
       const stepPath = `${objectPath}.atSteps[${index}]`;
       const entry = requireRecord(step, scenarioPath, stepPath);
-      if (!hasKey(entry, "equals") && entry.textIncludes === undefined) {
-        throw invalidScenario(scenarioPath, `'${stepPath}' must set equals or textIncludes; a labeled step with no expectation passes on any value.`);
+      const stepLte = optionalNumber(entry, "lte", scenarioPath, stepPath);
+      if (!hasKey(entry, "equals") && entry.textIncludes === undefined && stepLte === undefined) {
+        throw invalidScenario(scenarioPath, `'${stepPath}' must set equals, lte or textIncludes; a labeled step with no expectation passes on any value.`);
       }
       return {
         ...(hasKey(entry, "equals") ? { equals: entry.equals } : {}),
         label: requireString(entry, "label", scenarioPath, stepPath),
+        ...present("lte", stepLte),
         ...present("textIncludes", optionalString(entry, "textIncludes", scenarioPath, stepPath)),
       };
     })
@@ -1238,7 +1240,7 @@ export function validateNestedAssertionKeys(
     if (Array.isArray(value.atSteps)) {
       value.atSteps.forEach((step, index) => {
         if (isRecord(step)) {
-          rejectUnknownKeys(step, kind === "components" ? ["equals", "label"] : ["equals", "label", "textIncludes"], scenarioPath, `assert.${kind}${suffix}.atSteps[${index}]`);
+          rejectUnknownKeys(step, kind === "components" ? ["equals", "label"] : ["equals", "label", "lte", "textIncludes"], scenarioPath, `assert.${kind}${suffix}.atSteps[${index}]`);
         }
       });
     }

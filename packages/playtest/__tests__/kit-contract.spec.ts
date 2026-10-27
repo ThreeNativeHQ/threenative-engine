@@ -8,7 +8,7 @@ const FULL: IKitContractEntry = {
   actions: [{ clip: "swing", contactTicks: 24, effect: { signal: "attack" }, key: "KeyF", ticks: 40 }],
   feet: ["footL", "footR"],
   move: ["KeyW", "KeyA"],
-  restart: { key: "KeyR", resets: [{ equals: 0, id: "state", path: "score" }] },
+  restart: { key: "KeyR", resets: [{ equals: 0, id: "state", path: "score" }, { id: "state", lte: 1, path: "elapsed" }] },
   subject: "player",
 };
 
@@ -29,6 +29,15 @@ describe("kit contract", () => {
       expect(verdict.kind).toBe("run");
       if (verdict.kind === "run") expect(() => validatePlaytestScenario(verdict.scenario, `${verdict.row}.json`)).not.toThrow();
     }
+  });
+
+  it("bounds a restart reset that keeps running with lte instead of equals", () => {
+    const row = planKitContract({ demo: FULL }, ["demo"]).find(({ row: id }) => id === "restart-resets");
+    const resources = (row?.kind === "run" ? row.scenario : {}) as { assert?: { resources?: { atSteps: object[] }[] } };
+    expect(resources.assert?.resources?.map(({ atSteps }) => atSteps)).toEqual([
+      [{ equals: 0, label: "settled" }],
+      [{ label: "settled", lte: 1 }],
+    ]);
   });
 
   it("reports an opt-out with its reason instead of dropping the row", () => {

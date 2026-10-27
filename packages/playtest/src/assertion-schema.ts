@@ -218,7 +218,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Substring expected in the observed value.", name: "textIncludes", type: "string" },
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
       { description: "Require the value assertion after every labeled scenario step.", name: "throughoutSteps", type: "boolean" },
-      { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, textIncludes?: string }>" },
+      { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, lte?: number, textIncludes?: string }>" },
       { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
       { description: "Require at least one alternative path assertion on this resource id.", name: "anyOf", type: "Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }>" },
     ],

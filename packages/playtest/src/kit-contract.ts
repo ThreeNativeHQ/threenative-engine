@@ -44,8 +44,11 @@ export interface IKitContractAction {
 }
 
 export interface IKitContractReset {
-  readonly equals: unknown;
+  /** Exact value after the restart settles. Use `lte` for a clock or counter that keeps running during the settle window. */
+  readonly equals?: unknown;
   readonly id: string;
+  /** Upper bound after the restart settles: far below the dirty run's value, above one settle window of a running clock. */
+  readonly lte?: number;
   readonly path: string;
 }
 
@@ -162,8 +165,8 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
         ],
         {
           diagnostics: DIAGNOSTICS,
-          resources: entry.restart!.resets.map(({ equals, id, path }) => ({
-            atSteps: [{ equals, label: "settled" }],
+          resources: entry.restart!.resets.map(({ equals, id, lte, path }) => ({
+            atSteps: [{ ...(equals === undefined ? {} : { equals }), ...(lte === undefined ? {} : { lte }), label: "settled" }],
             id,
             path,
           })),

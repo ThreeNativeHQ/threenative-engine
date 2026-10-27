@@ -552,6 +552,30 @@ test("atSteps reports a reset even when the final value recovered", async () => 
   expect(evaluated.assertions.find(({ id }) => id === "resource.GameState.coins.atSteps")?.pass).toBe(false);
 });
 
+test("atSteps lte bounds a running clock at a labeled step", async () => {
+  const steps = [
+    { label: "dirty", release: true, waitFrames: 1 },
+    { label: "settled", release: true, waitFrames: 1 },
+  ];
+  const run = (settled: number) =>
+    evaluate(
+      { resources: [{ id: "GameState", path: "elapsed", atSteps: [{ label: "settled", lte: 1 }] }] },
+      {
+        observations: {
+          ...EMPTY_OBSERVATIONS,
+          resourceSeries: [
+            { label: "dirty", snapshots: { GameState: { elapsed: 2 } }, tick: 1 },
+            { label: "settled", snapshots: { GameState: { elapsed: settled } }, tick: 2 },
+          ],
+        },
+      },
+      steps,
+    );
+
+  expect((await run(0.5)).assertions.find(({ id }) => id === "resource.GameState.elapsed.atSteps")?.pass).toBe(true);
+  expect((await run(2.5)).assertions.find(({ id }) => id === "resource.GameState.elapsed.atSteps")?.pass).toBe(false);
+});
+
 test("maxCount zero fails when the event channel was never drained", async () => {
   const evaluated = await evaluate({ signals: [{ maxCount: 0, name: "collected" }] });
 

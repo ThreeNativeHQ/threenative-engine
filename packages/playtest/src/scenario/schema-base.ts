@@ -154,6 +154,7 @@ export interface IPlaytestPathAssertion {
   atSteps?: Array<{
     equals?: unknown;
     label: string;
+    lte?: number;
     textIncludes?: string;
   }>;
   changed?: boolean;
