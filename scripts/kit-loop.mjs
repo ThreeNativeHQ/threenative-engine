@@ -173,7 +173,9 @@ export function renderHtml(ledger, now = new Date()) {
     .map((goal) => {
       const current = latest.metrics[goal.key];
       const progress = progressToward(goal, baseline.metrics[goal.key], current);
-      const met = meetsGoal(goal, current);
+      // K2 is one KPI with three parts (PRD-750): the scenario share alone never meets it.
+      const k2Rest = latest.metrics.k2BudgetMet && VISUAL_OK.has(latest.metrics.k2Visual);
+      const met = meetsGoal(goal, current) && (goal.key !== "k2ScenarioPct" || k2Rest);
       return `<tr><td>${esc(goal.label)}</td><td class="n">${esc(baseline.metrics[goal.key])}</td><td class="n"><b>${esc(current)}</b></td><td class="n">${goal.better === "lower" ? "≤" : "≥"} ${esc(goal.goal)} ${esc(goal.unit)}</td><td><span class="track"><span class="fill${met ? " ok" : ""}" style="width:${Math.round((progress ?? 0) * 100)}%"></span></span> ${progress === null ? "n/a" : `${Math.round(progress * 100)}%`}</td><td><span class="pill${met ? " ok" : ""}">${met ? "met" : "open"}</span></td></tr>`;
     })
     .join("");

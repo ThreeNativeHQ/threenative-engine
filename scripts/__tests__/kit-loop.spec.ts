@@ -118,4 +118,27 @@ describe("kit-loop", () => {
     expect(html).toContain("searched &#39;triple jump&#39; and missed");
     expect(renderHtml(emptyLedger(), new Date(0))).toContain("Baseline pending");
   });
+
+  // Rows 2-3 of the real ledger: 22/22 scenarios, frame budget over. K2 is not met on scenarios alone.
+  it("marks K2 met only with all scenarios green, the frame budget met and a CLOSE verdict", () => {
+    const k2Pill = (gates: Record<string, unknown>) => {
+      const ledger = appendRow(emptyLedger(), measureDir(coldBuild({ "gates.json": gates })), {
+        kit: "collectathon",
+        reference: "sm64",
+      });
+      const row = renderHtml(ledger, new Date(0))
+        .split("<tr>")
+        .find((r: string) => r.includes("K2 kit scenarios"));
+      return row?.match(/class="pill[^"]*">(met|open)</u)?.[1];
+    };
+    const green = {
+      scenarios: { total: 4, green: 4 },
+      presentedP95Ms: 15.2,
+      budgetMs: 16.7,
+      visualVerdict: "CLOSE",
+    };
+    expect(k2Pill(green)).toBe("met");
+    expect(k2Pill({ ...green, presentedP95Ms: 17.5 })).toBe("open");
+    expect(k2Pill({ ...green, visualVerdict: "FAR" })).toBe("open");
+  });
 });
