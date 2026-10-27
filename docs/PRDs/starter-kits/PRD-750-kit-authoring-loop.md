@@ -138,9 +138,10 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 3: Iterations 2..N to the stop rule
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — row 1's top two retro fixes landed (a4d5345ef, 42cbf971c + c5bc052e7); row 2's author step runs on tarballs built after them
 **Files:** one kit PRD per row, the authoring-layer fixes each retro names, the ledger.
 
 - [ ] AC-5 [local]: each later iteration lands its top retro fixes before its author step, and its ledger row names them. proof: ledger rows 2..N, the fix commits
+  - Open (2026-10-26): row 1 fixes landed, row 2 not yet recorded. (1) a cost bound failed beside foreign Chromium GPU processes names them and says to rerun before changing the game (a4d5345ef, red-green `frame-budget.spec.ts`, 1893/1893 playtest tests). (2) the scaffold's last line says to start the agent in the project so `.mcp.json` loads the engine MCP, and `engine.mjs <tool> '<json>'` answers one call without it (42cbf971c, c5bc052e7, red-green `scaffold.spec.ts` and `server.spec.ts`; the shim answered the mario search with collectathon, exit 0, and a bad tool with exit 1). Friction 3 (the 45 KB `CLAUDE.md` + `AGENTS.md` pair read twice) is not fixed: an agent started in the project loads `CLAUDE.md` itself, so fix 2 removes the reason to read both.
 - [ ] AC-6 [local]: the loop stops by the rule: the list is done, or two rows in a row gain under 5% on all of K1–K4. proof: the ledger, the stop line in this PRD
 - [ ] AC-7 [local]: K1–K4 meet their targets at the last row, or the gap per KPI is recorded with its cause. proof: dashboard kit-loop tab, the last ledger row
