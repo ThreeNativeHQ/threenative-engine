@@ -94,6 +94,10 @@ function sceneRuntime(clock: { ms: number }) {
         words[HIERARCHY / 4] = (words[HIERARCHY / 4] ?? 0) + 1;
       }
       if (method === "__walk") return walk(self);
+      if (method === "clipAction") return make("AnimationAction");
+      if (method === "isScheduled") return true;
+      if (method === "computeBoundingSphere")
+        values.get(self.key)?.set("boundingSphere", make("Sphere"));
       if (method === "update")
         for (const props of values.values()) if (props.has("intensity")) props.set("intensity", 7);
       if (method === "test") return true;
@@ -106,6 +110,7 @@ function sceneRuntime(clock: { ms: number }) {
       calls.push(`get ${names.get(self.type)}.${property}`);
       if (property === "children") return [...(children.get(self.key) ?? [])];
       if (property === "parent") return parents.get(self.key) ?? null;
+      if (property === "boundingSphere") return values.get(self.key)?.get(property) ?? null;
       if (property === "layers") {
         const layers = make("Layers");
         return layers;
@@ -146,8 +151,20 @@ function scene(clock = { ms: 0 }) {
   const Group = browser.classes.Group as unknown as new () => ILight;
   const Mixer = browser.classes.AnimationMixer as unknown as new (
     root: object,
-  ) => { update(dt: number): unknown };
-  return { ...engine, ...browser, Light, Group, Mixer };
+  ) => {
+    update(dt: number): unknown;
+    stopAllAction(): unknown;
+    clipAction(clip: string): {
+      isScheduled(): boolean;
+      stop(): unknown;
+      setEffectiveWeight(w: number): unknown;
+    };
+  };
+  const Geometry = browser.classes.BufferGeometry as unknown as new () => {
+    boundingSphere: object | null;
+    computeBoundingSphere(): void;
+  };
+  return { ...engine, ...browser, Light, Group, Mixer, Geometry };
 }
 
 const host = globalThis as { __THREENATIVE_BRIDGE_CACHE__?: unknown };
@@ -203,6 +220,61 @@ describe("bridge reads the back end keeps", () => {
     const seen: object[] = [];
     other.traverse((object) => seen.push(object));
     expect(seen).toEqual([other, key]);
+  });
+
+  it("asks an action whether it is scheduled once, until its own play/stop or a mixer-wide call", () => {
+    const { Group, Mixer, count } = scene();
+    const mixer = new Mixer(new Group());
+    const action = mixer.clipAction("walk");
+    const other = mixer.clipAction("run");
+    for (let step = 0; step < 50; step++) {
+      expect(action.isScheduled()).toBe(true);
+      other.setEffectiveWeight(0.5);
+      mixer.clipAction("walk");
+      mixer.update(0.016);
+    }
+    expect(count("call AnimationAction.isScheduled")).toBe(1);
+    action.stop();
+    action.isScheduled();
+    expect(count("call AnimationAction.isScheduled")).toBe(2);
+    mixer.stopAllAction();
+    action.isScheduled();
+    expect(count("call AnimationAction.isScheduled")).toBe(3);
+  });
+
+  it("keeps the labels through a transform-only method, a setter of another property and a same-value write", () => {
+    const { Light, Group, count } = scene();
+    const key = new Light(0xffffff, 3) as ILight & {
+      renderOrder: number;
+      lookAt(x: number, y: number, z: number): void;
+      copy(other: object): unknown;
+    };
+    expect(key.intensity).toBe(3);
+    for (let frame = 0; frame < 20; frame++) {
+      key.lookAt(0, 0, frame);
+      expect(key.renderOrder).toBe(1);
+      key.intensity = 3;
+    }
+    expect(count("get DirectionalLight.renderOrder")).toBe(1);
+    expect(count("set DirectionalLight.intensity")).toBe(0);
+    key.intensity = 4;
+    expect(key.renderOrder).toBe(1);
+    expect(count("get DirectionalLight.renderOrder")).toBe(1);
+    key.copy(new Group());
+    void key.renderOrder;
+    expect(count("get DirectionalLight.renderOrder")).toBe(2);
+  });
+
+  it("keeps a geometry's bound once present, never a missing one", () => {
+    const { Geometry, count } = scene();
+    const geometry = new Geometry();
+    expect(geometry.boundingSphere).toBeNull();
+    expect(geometry.boundingSphere).toBeNull();
+    expect(count("get BufferGeometry.boundingSphere")).toBe(2);
+    geometry.computeBoundingSphere();
+    const sphere = geometry.boundingSphere;
+    for (let read = 0; read < 50; read++) expect(geometry.boundingSphere).toBe(sphere);
+    expect(count("get BufferGeometry.boundingSphere")).toBe(3);
   });
 
   it("tests two layer masks in JS, with no call", () => {

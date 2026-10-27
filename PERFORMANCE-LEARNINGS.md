@@ -77,6 +77,33 @@ no COOP/COEP); that lane is open.
 
 ## Levers
 
+### 2026-10-27 — Web engine bridge: keep what game code reads again (three-native back end) — KEEP
+- Where: `packages/three-native/src/browser-backend.ts`, PRD-748; commits `b088dc46f` (round 1) and the round-3 commit beside this entry.
+- Ceiling: the shooter census read 2,054 crossings per idle frame, at about 0.8 µs each; the top classes were
+  JS-written or mixer-written properties read again (light intensity 454, colour 227, `matrixAutoUpdate` 205,
+  `parent`/`renderOrder` 102), `AnimationAction.isScheduled` 171, `Layers.test` 51 and geometry bounds 70.
+- Round 1 (property mirror, `children`/`parent`/walk kept until `Object3D::hierarchyVersion` moves, JS `Layers.test`):
+  idle census 2,022 → 661 crossings per frame; shooter route, 3 pairs, load 10-18: 3,249/3,092/3,241 → 1,557/2,228/1,641
+  crossings per frame, worker update+render mean 11.03/9.71/10.37 → 9.16/7.79/8.85 ms.
+- Round 3 (an action's schedule kept until its own play/stop or a mixer-wide call; transform-only Object3D methods keep
+  the mirror; a mirrored setter drops only its own property and skips a write of the value held; a present geometry
+  bound kept): route crossings 3,168/3,448/3,645 → 797/846/1,024 per frame (shooter), 1,443/1,673/1,839 → 997/1,134/1,030
+  (adventure). Frame time in that batch is inconclusive: load 15-26, pairs split 1:2 and 1:2.
+- Ceiling reached: a quiet shooter frame now makes about 190 crossings, all engine writes (opacity, intensity, lookAt,
+  the post chain's quad material and render-target size), world-matrix queries the engine owns (`getWorldPosition`,
+  `updateWorldMatrix`), the mixer's per-step calls, and core's camera cull math on engine Ray/Frustum objects
+  (`intersectsSphere` 70, attribute `version` 35, render-camera-cull.ts). The two last levers measured (schedule table,
+  clipAction exemption) took 825 and 340 crossings; the next candidates are each under 40 per frame.
+- Knob: `__THREENATIVE_BRIDGE_CACHE__ = false` turns the whole cache off for a paired A/B in one code state.
+
+### 2026-10-27 — Interned engine refs per slot index (`keyOf`) — REJECT
+- Where: `createWasmRuntime` `keyOf`, three-native; candidate not committed.
+- Result: real Wasm microbench, a `parent` read with the cache off, 4/4 alternating pairs faster: 946/918/1,293/987 →
+  883/737/1,042/778 ns (load 25-33).
+- Cause: after the bridge cache, a quiet shooter frame makes only tens of handle-returning crossings, so the ceiling is
+  a few microseconds a frame. A per-call speedup inside a crossing does not remove the crossing (see the 2026-10-14 decode
+  reuse entry). Revisit only with a measured class of handle reads that the cache cannot keep.
+
 ### 2026-10-27 — Batching holds a projecting decision; render thread on by default — KEEP
 - Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), `RenderDatabase::batch`, `player/run.cpp`.
 - Result (Midway desktop, matched CPU, 3 alternating pairs): main-thread CPU per frame falls 3.4 to 7.5 ms per
