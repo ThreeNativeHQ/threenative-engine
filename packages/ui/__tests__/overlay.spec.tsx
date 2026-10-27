@@ -33,6 +33,35 @@ afterEach(() => {
 });
 
 describe("DebugOverlay", () => {
+  // A snapshot calls every entity's `debug()`, and a game's debug() may walk vertices (the shooter's
+  // soldiers measured bone contacts there). Polling it while the panel is closed cost the shooter
+  // 63% of sampled main-thread time in a DevTools trace (2026-10-26), for a panel nobody opened.
+  it("reads no snapshot while the panel is closed", () => {
+    vi.useFakeTimers();
+    const snapshot = vi.fn(() => ({ player: { hull: 100 } }));
+    const controls = installDevWindow(snapshot);
+    let renderer: ReturnType<typeof create> | undefined;
+    act(() => {
+      renderer = create(<DebugOverlay />);
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(snapshot).not.toHaveBeenCalled();
+    act(() => controls.toggle());
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(snapshot.mock.calls.length).toBeGreaterThan(0);
+    const whileOpen = snapshot.mock.calls.length;
+    act(() => controls.toggle());
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(snapshot.mock.calls.length).toBe(whileOpen);
+    act(() => renderer?.unmount());
+  });
+
   it("renders one row per registered entity field", () => {
     vi.useFakeTimers();
     const controls = installDevWindow(() => ({
