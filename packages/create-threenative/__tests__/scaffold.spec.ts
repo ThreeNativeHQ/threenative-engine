@@ -296,7 +296,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // the sailing and snow core-look migrations on top of the on-demand asset loader.
   // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
   // to its clip; platformer binds R to restart.
-  "action-rpg": "11d8a6d6699e60db014f04cc1c3436bf550c7656e14be213c58f43285f01447a",
+  "action-rpg": "97d50dcb9c1d56157152b572eaec1774b14f254f765f77a4a164f01ee421bb71",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
