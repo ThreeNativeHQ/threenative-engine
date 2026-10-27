@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   presented: [0, 0] as number[],
   thread: [1, 1.002] as number[],
   clicks: [] as string[],
+  launchArgs: [] as string[],
   workers: [] as { evaluate(fn: (() => unknown) | string): Promise<unknown> }[],
 }));
 vi.mock("node:os", () => ({
@@ -13,7 +14,8 @@ vi.mock("node:os", () => ({
 }));
 vi.mock("@playwright/test", () => ({
   chromium: {
-    launch: async () => ({
+    launch: async ({ args }: { args: string[] }) => ({
+      ...((state.launchArgs = args), {}),
       newPage: async () => ({
         on: vi.fn(),
         addInitScript: vi.fn(),
@@ -183,6 +185,17 @@ describe("profile:wasm-page scorecard", () => {
     const run = await measure("http://test", options(["--url", "http://test", "--cpu-work"]));
     expect(run.profile.work).toMatchObject({ frames: 20, busyMsPerFrame: 0.05, wallMs: 4 });
     expect(run.profile.work?.threadMsPerFrame).toBeCloseTo(0.1, 6);
+  });
+
+  it("keeps the browser's frame pacing with --vsync and records it (a worker's frames do not unthrottle)", async () => {
+    state.workers = [];
+    const paced = await measure("http://test", options(["--url", "http://test", "--vsync"]));
+    expect(state.launchArgs).not.toContain("--disable-gpu-vsync");
+    expect(state.launchArgs).not.toContain("--disable-frame-rate-limit");
+    expect(paced.vsync).toBe(true);
+    const unpaced = await measure("http://test", options(["--url", "http://test"]));
+    expect(state.launchArgs).toContain("--disable-gpu-vsync");
+    expect(unpaced.vsync).toBe(false);
   });
 
   it.each(["wasmMemoryBytes", "jsHeapUsedBytes"])(

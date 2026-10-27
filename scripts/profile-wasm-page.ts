@@ -1,5 +1,5 @@
 /**
- * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--calls] [--memory] [--json]`
+ * `pnpm profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--vsync] [--calls] [--memory] [--json]`
  *
  * Profiles a running game page the way a Wasm-engine performance question needs: frame time from
  * requestAnimationFrame, a Chrome CPU profile grouped into engine Wasm, JavaScript and WebGPU calls
@@ -8,6 +8,7 @@
  * frame on both pages (render passes, draws, bind groups, buffer writes). `--control` runs a second page, the same game on
  * three.js, through the same measurement, so the verdict is a ratio on one lane, never an absolute.
  * `--load <n>` keeps `n` busy-loop processes alive for the whole page run: the stated CPU load.
+ * `--vsync` keeps the browser's frame pacing; a worker against page-thread verdict needs it.
  *
  * It refuses a software WebGPU adapter (`--allow-software` overrides) and needs a display: run it as
  * `sh scripts/xvfb.sh pnpm profile:wasm-page -- ...`. Wasm function names need a module linked with
@@ -44,6 +45,11 @@ interface IOptions {
   saveProfile?: string;
   /** Busy-loop processes kept running for the whole page run: the stated CPU load. */
   load: number;
+  /**
+   * Keep the browser's frame pacing. Without it the page's requestAnimationFrame runs unthrottled,
+   * but a worker's OffscreenCanvas frames do not, so a worker against page-thread verdict needs it.
+   */
+  vsync: boolean;
 }
 
 export function options(argv: readonly string[]): IOptions {
@@ -54,7 +60,7 @@ export function options(argv: readonly string[]): IOptions {
   const url = value("url");
   if (url === undefined)
     throw new Error(
-      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--calls] [--memory] [--json]",
+      "usage: profile:wasm-page -- --url <url> [--control <url>] [--seconds 5] [--load 0] [--vsync] [--calls] [--memory] [--json]",
     );
   const seconds = Number(value("seconds") ?? 5);
   const warmupMs = Number(value("warmup-ms") ?? 12000);
@@ -75,6 +81,7 @@ export function options(argv: readonly string[]): IOptions {
     memory: argv.includes("--memory"),
     allowSoftware: argv.includes("--allow-software"),
     cpuWork: argv.includes("--cpu-work"),
+    vsync: argv.includes("--vsync"),
     ...(value("save-profile") === undefined
       ? {}
       : { saveProfile: value("save-profile") as string }),
@@ -444,7 +451,7 @@ async function gpuCalls(realm: Pick<Page, "evaluate">) {
 export async function measure(url: string, o: IOptions) {
   const browser = await chromium.launch({
     headless: false,
-    args: [...WEBGPU_BROWSER_ARGS, ...PERFORMANCE_BROWSER_ARGS],
+    args: [...WEBGPU_BROWSER_ARGS, ...(o.vsync ? [] : PERFORMANCE_BROWSER_ARGS)],
   });
   // Started after the launch, so a launch failure leaves no busy process behind.
   const cpuLoad = startCpuLoad(o.load);
@@ -483,6 +490,7 @@ export async function measure(url: string, o: IOptions) {
     const reading = readHostLoad();
     const hostLoad = { ...reading, absolutes: absolutesVerdict(reading) };
     const thread = await gameThread(page);
+    const realm: Pick<Page, "evaluate"> = thread.realm;
     if (thread.kind === "worker") {
       if (o.gpuCalls) await thread.realm.evaluate(GPU_CENSUS);
       if (o.cpuWork) await thread.realm.evaluate(CPU_WORK_COUNTER);
@@ -498,7 +506,7 @@ export async function measure(url: string, o: IOptions) {
     const census = o.calls ? await calls(thread.realm) : undefined;
     const gpu = o.gpuCalls ? await gpuCalls(thread.realm) : undefined;
     const memory = o.memory
-      ? await thread.realm.evaluate(() => ({
+      ? await realm.evaluate(() => ({
           jsHeapUsedBytes: (performance as { memory?: { usedJSHeapSize?: number } }).memory
             ?.usedJSHeapSize,
           wasmMemoryBytes: (
@@ -522,6 +530,7 @@ export async function measure(url: string, o: IOptions) {
       adapter,
       startupMs,
       gameThread: thread.kind,
+      vsync: o.vsync,
       frame,
       presented: presentedFrame,
       profile,
