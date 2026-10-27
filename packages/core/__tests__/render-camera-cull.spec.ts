@@ -384,7 +384,6 @@ describe("render camera cull", () => {
         projecting: false,
         reasonCode: "belowMeshFloor",
         sourceRenderables: 2,
-        resultDrawCandidates: 2,
         projectedObjects: 0,
         batches: 0,
         instancedBatches: 0,
