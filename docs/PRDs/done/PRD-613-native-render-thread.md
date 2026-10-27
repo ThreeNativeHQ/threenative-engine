@@ -1,6 +1,6 @@
 # PRD-613 — Native render thread: cull, project and encode leave the main thread
 
-**Status:** IN PROGRESS (Phase 3 passed; the default switch waits for its green flight)
+**Status:** DONE (2026-10-27)
 **Priority:** P1 — the largest measured lever for PRD-610's 2x to 3x bar: render prepare and encode cost 1.65 / 2.89 / 4.41 ms of the native main thread per frame on Midway.
 **Complexity:** 7 (HIGH)
 **Owner:** João
@@ -69,7 +69,7 @@ Each box closes on the phase boxes it names; their proof is there.
 
 - [x] **The main thread is faster on Midway.** Main-thread CPU per frame falls by at least 1.0 ms at takeoff, cockpit and rear gunner, parity PASS. proof: Phase 3 "Three pairs" (smallest drop 3.44 ms in pairs 1-3), Phase 2 "Stage 2 lever"
 - [x] **Frames stay correct.** Frame N encodes only frame N's data under TSan, steady state takes no inline fallback, and the screen does not change. proof: Phase 1 "Order ctest", Phase 3 "Steady state has no fallback" and "Pixels unchanged" (visual judge NEUTRAL)
-- [ ] **On by default.** The player runs the render thread with no flag; `TN_RENDER_THREAD=0` turns it off and a GPU timing run keeps it off. proof: `player/run.cpp` `Session::initialize`; Midway flight `dflt-green` with the variable unset reports `renderThreadCpuMs` and `renderThreadFallbacks`, `dflt-red` on the binary before the switch reports neither; `ctest -R "render_thread|player_frame|player_imports|skinned_"` 17/17
+- [x] **On by default.** The player runs the render thread with no flag; `TN_RENDER_THREAD=0` turns it off and a GPU timing run keeps it off. proof: `player/run.cpp` `Session::initialize`; Midway flight `dflt-green` (2026-10-27, HEAD after the switch) with the variable unset reports `renderThreadCpuMs` in 4,574 frame lines with `renderThreadFallbacks` 1, parity PASS; `dflt-red` on `99ad82d99` reports 0 of 4,567; `ctest -R "render_thread|player_frame|player_imports|skinned_"` 17/17
 
 ## Integration Ledger
 
