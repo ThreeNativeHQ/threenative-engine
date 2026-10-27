@@ -294,7 +294,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
   // Recomputed 2026-10-26 (PR #574 merges #572): the action-rpg draw fix, the rain terrain cache,
   // the sailing and snow core-look migrations on top of the on-demand asset loader.
-  "action-rpg": "2595a51284d1ec8eaeee853035cda111544d87b9392e5001f04270cebc3e18f9",
+  // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
+  // to its clip; platformer binds R to restart.
+  "action-rpg": "11d8a6d6699e60db014f04cc1c3436bf550c7656e14be213c58f43285f01447a",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -321,7 +323,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "4d0884a98ccfe97c0aeaaf6a64ed62b195154666123444539acf56ba5563963e",
   minimal: "e157e66fdf5e14761655fb39ef95af1fd005df68a6e8ecc6cb1159c0d501d227",
-  platformer: "6694c571a16d48ee33d9a9eac081fe1982be389595824163192f9e489e7d4c52",
+  platformer: "29be2ca6ac4f331879d22c9c23413016182e489fa0d027ea26f2d5c15879185f",
   puzzle: "40aeabf6ed77b2dc644acf0a71360ef2bc976d018a99f43523894179f7b9eaef",
   racing: "e1aacca0748b6a219d7573eedd228c9d1e0d5a67c1372dc8851117f635e03f2f",
   rain: "6e86e9dc5e1a413f84cd46977b5bef9c181fedd6e9c38ec15e288fed7a5061a3",
