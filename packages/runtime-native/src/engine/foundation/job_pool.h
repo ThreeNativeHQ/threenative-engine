@@ -44,6 +44,9 @@ public:
     [[nodiscard]] unsigned workers() const { return unsigned(threads_.size()); }
     /** True on a pool worker, and on the caller while it runs items. */
     [[nodiscard]] static bool inJob() { return inJob_; }
+    // Engine-cost counters: forEach calls the workers shared, and the items those calls ran.
+    [[nodiscard]] uint64_t runs() const { return runs_.load(std::memory_order_relaxed); }
+    [[nodiscard]] uint64_t items() const { return items_.load(std::memory_order_relaxed); }
 
     /** Runs `body(i)` for every `i` in [0, count) across the caller and the workers. */
     template <class F>
@@ -73,6 +76,7 @@ private:
     bool stopping_ = false;
     std::atomic<uint32_t> next_{0};
     std::atomic<uint32_t> busy_{0};
+    std::atomic<uint64_t> runs_{0}, items_{0};
     std::atomic<bool> running_{false};
     inline static thread_local bool inJob_ = false;
 };

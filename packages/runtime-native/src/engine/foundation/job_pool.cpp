@@ -81,6 +81,8 @@ void JobPool::run(uint32_t count, Call call, void* context) {
         for (uint32_t i = 0; i < count; ++i) call(context, i);
         return;
     }
+    runs_.fetch_add(1, std::memory_order_relaxed);
+    items_.fetch_add(count, std::memory_order_relaxed);
     const Job job{call, context, count, ++generation_};
     {
         std::lock_guard lock(mutex_);

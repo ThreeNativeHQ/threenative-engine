@@ -31,6 +31,7 @@
 #include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/texture.h"
+#include "engine/foundation/job_pool.h"
 #include "engine/scene/object3d.h"
 
 #include <array>
@@ -487,6 +488,10 @@ void registerObject3D(ClassBinding& b) {
     // Engine-internal: the process-wide count of world-matrix composes. A playtest reads it per frame, so a
     // walk that composes nodes nothing draws (a hidden batch source) fails its bound.
     b.getters["__matrixEvaluations"] = [](void*) { return Value::of(double(Object3D::matrixEvaluations())); };
+    // Engine-internal, PRD-752: the job pool's shared runs and their items, process-wide, so a playtest bounds
+    // jobs per frame; both stay 0 on a build or a page with no pool threads.
+    b.getters["__jobPoolRuns"] = [](void*) { return Value::of(double(JobPool::shared().runs())); };
+    b.getters["__jobPoolItems"] = [](void*) { return Value::of(double(JobPool::shared().items())); };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };
     b.getters["receiveShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->receiveShadow()); };

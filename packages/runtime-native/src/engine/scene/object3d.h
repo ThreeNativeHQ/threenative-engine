@@ -275,8 +275,9 @@ public:
     inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0;
     // Counted by the matrix walk, which runs on the job pool's threads (updateMatrixWorldVisibleJobs).
     inline static std::atomic<uint64_t> gpuBoundaryVisits_ = 0;
-    // Set on a pool thread for one job: the evaluation stamp every node of that job's walk takes.
-    inline static thread_local uint64_t walkStamp_ = 0;
+    // Set on a pool thread for one job: the evaluation stamp every node of that job's walk takes, and that
+    // thread's compose count, which the join adds to matrixEvaluations_ so the count matches one thread.
+    inline static thread_local uint64_t walkStamp_ = 0, threadComposes_ = 0;
     // Executed GPU-lazy projection, validation, and admission/revocation node inspections.
     inline static uint64_t gpuProjectionVisits_ = 0, gpuValidationVisits_ = 0, gpuMaintenanceVisits_ = 0;
     [[nodiscard]] static uint64_t joinDependencyVisits() { return joinDependencyVisits_; }
@@ -469,11 +470,12 @@ public:
     /**
      * updateMatrixWorldVisible over the job pool (PRD-752 phase 4): breadth-first from here until the frontier
      * holds enough independent subtrees, then each subtree is one job. Each node composes from its parent alone,
-     * so the matrices, revisions and visit count are those of the one-thread walk. A walk under
-     * kParallelWalkNodes nodes last frame, a pool with no workers, or a pose observer runs the plain walk.
+     * so the matrices, revisions, visit and compose counts are those of the one-thread walk. A walk that
+     * composed under kParallelWalkComposes matrices last frame, a pool with no workers, or a pose observer
+     * runs the plain walk: a hidden node costs a visit, not a compose, so visits do not measure the work.
      */
     uint32_t updateMatrixWorldVisibleJobs(bool force, bool prune);
-    static constexpr uint32_t kParallelWalkNodes = 1024;
+    static constexpr uint32_t kParallelWalkComposes = 1024;
     /** What a subclass derives from its world matrix (a camera's view, a skinned mesh's bind inverse), after a walk. */
     virtual void afterMatrixWorld() {}
 
@@ -498,6 +500,7 @@ private:
     uint64_t revision_ = 0;
     std::vector<std::shared_ptr<Object3D>> owned_;  // shared-owned children, held while attached
     uint32_t walkNodes_ = 0;  // nodes the last updateMatrixWorldVisibleJobs from here visited
+    uint32_t walkComposes_ = 0;  // matrices that walk composed
     // The walk's step at this node: -1 when its subtree waits, else the force its children take.
     int visitMatrixWorldVisible(bool force, bool prune);
     void own(Object3D& child);

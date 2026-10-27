@@ -692,7 +692,12 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 }  // namespace
 
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
-    lastWorldEvaluation_ = walkStamp_ != 0 ? walkStamp_ : ++matrixEvaluations_;
+    if (walkStamp_ != 0) {
+        lastWorldEvaluation_ = walkStamp_;
+        ++threadComposes_;
+    } else {
+        lastWorldEvaluation_ = ++matrixEvaluations_;
+    }
     materializeLocalTransform();
     // Escaped aliases can change without a revision; auto-world ownership recomposes eagerly.
     const auto* tracking = ownTransformTracking();
@@ -795,8 +800,12 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
 
 uint32_t Object3D::updateMatrixWorldVisibleJobs(bool force, bool prune) {
     JobPool& pool = JobPool::shared();
-    if (pool.workers() == 0 || JobPool::inJob() || poseObserver != nullptr || walkNodes_ < kParallelWalkNodes)
-        return walkNodes_ = updateMatrixWorldVisible(force, prune);
+    const uint64_t composedBefore = matrixEvaluations_;
+    if (pool.workers() == 0 || JobPool::inJob() || poseObserver != nullptr || walkComposes_ < kParallelWalkComposes) {
+        walkNodes_ = updateMatrixWorldVisible(force, prune);
+        walkComposes_ = uint32_t(matrixEvaluations_ - composedBefore);
+        return walkNodes_;
+    }
     struct Item { Object3D* node; bool force; };
     // The caller's scratch: a job names it through this reference, never through the thread_local.
     static thread_local std::vector<Item> scratch, scratchJobs;
@@ -823,16 +832,22 @@ uint32_t Object3D::updateMatrixWorldVisibleJobs(bool force, bool prune) {
             for (Object3D* child : item.node->children) frontier.push_back({child, childForce == 1});
     }
     // Every node a job composes takes one stamp, later than any the frontier took: "evaluated since" holds.
-    const uint64_t stamp = ++matrixEvaluations_;
+    const uint64_t stamp = matrixEvaluations_ + 1;
     std::atomic<uint32_t> jobVisits{0};
+    std::atomic<uint64_t> jobComposes{0};
     pool.forEach(uint32_t(jobs.size()), [&](uint32_t i) {
         Object3D& node = *jobs[i].node;
         walkStamp_ = stamp;
+        threadComposes_ = 0;
         // The subtree's size decides next frame whether it is split further.
         node.walkNodes_ = node.updateMatrixWorldVisible(jobs[i].force, prune);
         jobVisits.fetch_add(node.walkNodes_, std::memory_order_relaxed);
+        jobComposes.fetch_add(threadComposes_, std::memory_order_relaxed);
         walkStamp_ = 0;
     });
+    // At least the stamp when any job composed, so a later stamp is later than every job's.
+    matrixEvaluations_ += jobComposes.load(std::memory_order_relaxed);
+    walkComposes_ = uint32_t(matrixEvaluations_ - composedBefore);
     return walkNodes_ = visited + jobVisits.load(std::memory_order_relaxed);
 }
 

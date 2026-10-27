@@ -830,7 +830,8 @@ target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAK
 # PRD-752 phase 4: the job pool runs each item once, and the matrix walk on it is the one-thread walk, bit for bit.
 tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
     native_engine_job_pool=for_each_once
-    native_engine_matrix_walk_jobs=matrix_walk_jobs)
+    native_engine_matrix_walk_jobs=matrix_walk_jobs
+    native_engine_matrix_walk_threshold=matrix_walk_threshold)
 target_link_libraries(tn-native-engine-job-pool-test PRIVATE tn_engine_scene)
 
 # The engine's JSON reader and writer (header-only), against JSON.parse, JSON.stringify and

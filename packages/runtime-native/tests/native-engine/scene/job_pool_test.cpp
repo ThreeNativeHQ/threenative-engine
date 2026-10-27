@@ -112,25 +112,65 @@ void matrixWalkJobs() {
     constexpr std::size_t kNodes = 6000;
     Tree one = build(7, kNodes), many = build(7, kNodes);
     std::mt19937 editsOne(11), editsMany(11);
-    std::size_t differing = 0, visitsDiffer = 0;
+    std::size_t differing = 0, visitsDiffer = 0, composesDiffer = 0;
     for (int frame = 0; frame < 40; ++frame) {
         const bool prune = frame % 3 != 0;
         JobPool::resetShared(0);
+        uint64_t before = Object3D::matrixEvaluations();
         const uint32_t serial = one.nodes[0]->updateMatrixWorldVisibleJobs(frame == 0, prune);
+        const uint64_t serialComposes = Object3D::matrixEvaluations() - before;
         JobPool::resetShared(3);
+        before = Object3D::matrixEvaluations();
         const uint32_t jobs = many.nodes[0]->updateMatrixWorldVisibleJobs(frame == 0, prune);
+        // The engine-cost counter reads composes per frame: the jobs count every one, as one thread does.
+        composesDiffer += Object3D::matrixEvaluations() - before == serialComposes ? 0 : 1;
         visitsDiffer += serial == jobs ? 0 : 1;
         differing += differ(one, many);
         edit(one, editsOne);
         edit(many, editsMany);
     }
     JobPool::resetShared(0);
-    std::printf("matrix walk on 3 workers: %zu nodes, 40 frames, %zu node states differ, %zu visit counts differ\n",
-                kNodes, differing, visitsDiffer);
+    std::printf("matrix walk on 3 workers: %zu nodes, 40 frames, %zu node states differ, %zu visit counts differ, "
+                "%zu compose counts differ\n", kNodes, differing, visitsDiffer, composesDiffer);
     CHECK(differing == 0);
     CHECK(visitsDiffer == 0);
+    CHECK(composesDiffer == 0);
+}
+
+// The pool pays for itself on composes, not visits: a walk of hidden batch sources (visits only) stays on
+// one thread, and a walk that recomposes thousands of nodes shares out.
+void matrixWalkThreshold() {
+    JobPool::resetShared(3);
+    auto root = std::make_shared<Object3D>();
+    std::vector<std::shared_ptr<Object3D>> nodes;
+    for (std::size_t i = 0; i < 8000; ++i) {
+        auto group = std::make_shared<Object3D>();
+        group->setVisible(i % 40 == 0);  // 200 shown, 7800 hidden
+        root->add(*group);
+        nodes.push_back(std::move(group));
+    }
+    const auto runs = [] { return JobPool::shared().runs(); };
+    for (int frame = 0; frame < 3; ++frame) root->updateMatrixWorldVisibleJobs(true, true);
+    const uint64_t before = runs();
+    for (int frame = 0; frame < 5; ++frame) {
+        root->position.x = root->position.x + 1;  // every shown node recomposes
+        root->updateMatrixWorldVisibleJobs(false, true);
+    }
+    const uint64_t hiddenRuns = runs() - before;
+    for (auto& node : nodes) node->setVisible(true);
+    root->updateMatrixWorldVisibleJobs(false, true);  // 8001 composes: the next walk shares out
+    const uint64_t shown = runs();
+    root->position.x = root->position.x + 1;
+    root->updateMatrixWorldVisibleJobs(false, true);
+    const uint64_t shownRuns = runs() - shown;
+    JobPool::resetShared(0);
+    std::printf("matrix walk threshold: 8000 nodes, 200 shown -> %llu pool runs in 5 frames; all shown -> %llu\n",
+                (unsigned long long)hiddenRuns, (unsigned long long)shownRuns);
+    CHECK(hiddenRuns == 0);
+    CHECK(shownRuns == 1);
 }
 
 }  // namespace
 
-TN_TEST_MAIN({"for_each_once", forEachOnce}, {"matrix_walk_jobs", matrixWalkJobs})
+TN_TEST_MAIN({"for_each_once", forEachOnce}, {"matrix_walk_jobs", matrixWalkJobs},
+             {"matrix_walk_threshold", matrixWalkThreshold})
