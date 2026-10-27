@@ -302,6 +302,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_batched_vs_unbatched=batched_vs_unbatched
         native_engine_skinned_batched_vs_unbatched=skinned_crowd
         native_engine_skinned_decline_cadence=skinned_decline_cadence
+        native_engine_skinned_projecting_cadence=skinned_projecting_cadence
         native_engine_skinned_normalized_weights=skinned_normalized_weights
         native_engine_normal_map_tilt=normal_map_tilt
         native_engine_renderer_gpu_mipmaps=gpu_mipmaps

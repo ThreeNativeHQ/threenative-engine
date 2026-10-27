@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "engine/renderer/renderer.h"
+#include "engine/renderer/projection/plan.h"
 #include "engine/animation/skinning/palette.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometry.h"
@@ -107,6 +108,8 @@ class RenderDatabase {
     static constexpr std::size_t kMinBatchMembers = 4;
     /** Draws the last render merged by batching: groups made and meshes they absorbed. */
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
+    /** How many projection decisions batching has made (PRD-613): a settled scene makes none per frame. */
+    [[nodiscard]] uint64_t batchDecisions() const { return batchDecisions_; }
 
   private:
     // A material's pmremTexture source and reflector, walked once per material version: the graph
@@ -209,6 +212,12 @@ class RenderDatabase {
     // frame. Starts at the interval so the first batch always scans.
     static constexpr std::size_t kDeclineRescanFrames = 60;
     std::size_t framesSinceDeclineScan_ = kDeclineRescanFrames;
+    uint64_t batchDecisions_ = 0;
+    projection::Decision batchDecision_;  // the last one, held while its scene's structure holds
+    const Object3D* batchScene_ = nullptr;
+    uint64_t batchHierarchy_ = ~uint64_t(0);
+    double batchStamp_ = -1;
+    std::vector<std::pair<const SkinnedMesh*, uintptr_t>> batchRigs_;  // its rigs and their lane keys
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
 
     std::vector<DrawItem> items_;

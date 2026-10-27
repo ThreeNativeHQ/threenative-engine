@@ -1,7 +1,7 @@
 // The owned engine consumes verified TNPK entries, never browser loaders or network fallbacks.
 import { audio } from "./core-audio.mjs";
 export function createAssetLoader(options = {}) {
-  if (Object.keys(options).some((key) => !["renderer", "basePath", "manifest", "sourcePath"].includes(key)))
+  if (Object.keys(options).some((key) => !["renderer", "basePath", "manifest", "sourcePath", "cache", "backgroundFill"].includes(key)))
     throw new Error("TN_NATIVE_ASSET_OPTIONS_UNSUPPORTED: this player accepts cooked package paths only");
   // core's fallback for a game without a manifest: the verbatim path, then `<sourcePath>/<path>`.
   const sourcePath = (options.sourcePath ?? "assets").replace(/^\/+|\/+$/g, "");
@@ -58,5 +58,13 @@ export function createAssetLoader(options = {}) {
     // Final disposal releases decoder worker pools in core; the TNPK host owns no such pool.
     // Keep this idempotent contract separate from clear(), which empties the reusable cache.
     dispose() {},
+    // core's disk cache (PRD-743) is web-only: a native game reads its installed package, so the report
+    // says so and prefetch and the background fill have nothing to fetch. `cache: false` changes nothing here.
+    get cache() {
+      return { enabled: false, persisted: false, hits: 0, misses: 0, bytesOnDisk: 0, bytesTotal: 0, filling: false,
+        backgroundFill: false, reason: "native host reads installed files", clear: async () => {} };
+    },
+    prefetch: async () => ({ requested: 0, requestedBytes: 0, settled: 0, settledBytes: 0 }),
+    startBackgroundFill: async () => {},
   };
 }
