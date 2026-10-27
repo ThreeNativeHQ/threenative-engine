@@ -43,6 +43,37 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - **A capture timeout is not a game result.** The shared capture queue races for admission and is not FIFO; its default 120 s wait can expire behind a healthy four-minute playtest. Doctor passed after `visible-resume-base-1` exited 75 with zero windows. Existing `CAPTURE_LOCK_TIMEOUT_MS=900000` permits a bounded 15-minute wait; preserve failed attempts and do not retry again on the same queue-timeout cause.
 - **Ratio levers live in the engine.** A fix in code that both arms run (for example `@threenative/core`) lowers the
   absolute cost but does not move the native or web Wasm ratio against three.js.
+- **On the web Wasm engine, count crossings by class first.** Each bridge get costs ~0.8 µs and a `children` read
+  re-wraps every child, so code that is free in plain three.js is slow here. Removing a whole class of crossings
+  pays (2026-10-27 bridge cache below); making each crossing cheaper does not (2026-10-14, 2026-10-15 rejects).
+  `TN_BRIDGE_WARNING` names the property and the caller.
+- **The frame meter must count drawn frames.** Until 2026-10-27 `presented` and `fps` counted rAF ticks; the web
+  engine declines a draw while two frames are on the GPU, so 2-63 lost frames per 5 s read as 60 fps.
+  `drawnFps`/`drawn` now sit beside them. Read them, and record `nvidia-smi pmon` beside each reading: the skips
+  followed another process's GPU load, not engine cost.
+- **A 60 Hz panel caps what you can see.** Measure frame cost uncapped (`--disable-gpu-vsync
+  --disable-frame-rate-limit`, headed, real GPU) when the target is above the panel rate. On a desktop at load 25-40,
+  paired A/B moved to the laptop's Iris Xe; the NVIDIA reading is still owed for those levers.
+
+## 2026-10-27 shooter campaign (PR #574, worker mode, web Wasm engine)
+
+Baseline from the owner's trace: worker rAF interval p50 22.3 / p95 33.6 ms, 81% of frames over 17.5 ms, GPU 3-4 ms.
+All levers are engine-layer, each with a spec that fails before the fix. Paired A/B from one code state.
+
+| Lever | Commit | Result | Verdict |
+| --- | --- | --- | --- |
+| AutoBatch counts graph events, not `scene.children` per frame (was 41% of the worker) | `90856171d` | interval p50 22.2 → 16.67 ms, p95 29.9 → 16.9 ms | KEEP |
+| Batch `decide` skips hidden subtrees (8,300 hidden sources) | `73ffa779a` | 25 ms spike every 60 frames removed, p99 37 → 20-24 ms | KEEP |
+| 5 s projection line stops walking the scene | `9e38c0edf` | that frame 13-16 → under 3 ms | KEEP |
+| Native matrix walk: a hidden node defers its own compose | `60846cdbb` | scene update mean 2.40 → 0.43 ms | KEEP |
+| Kit backlight reads its controls once per render (12 kits) | `b430a9756` | 0.93 → 0.48 ms; the bridge cache now covers this class | KEEP |
+| Camera cull keeps its rig map while the hierarchy holds still | `4fb0c6f26` | cull 2.47-2.69 → 1.85-1.92 ms (laptop, uncapped) | KEEP |
+| Bridge cache: `children`/`parent` and JS-only properties read from JS; meter; lint | `b088dc46f` | crossings 3,190 → 1,810, p50 9.95 → 8.9 ms, p95 19.55 → 13.45 ms | KEEP |
+| `kMaxFramesOnGpu` 2 → 3 | not built | absorbs ~40 ms GPU stalls at +1 frame of latency; stalls come from outside the engine | REJECT |
+
+Not causes, ruled out by counts: readback staging buffers (steady while skips swing), pipeline or shader creation
+(zero after the first frames), heap growth (floor 76.9 MB across 13 major GCs). Wasm threads were off (no `-pthread`,
+no COOP/COEP); that lane is open.
 
 ## Levers
 
