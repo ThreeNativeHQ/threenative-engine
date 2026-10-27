@@ -572,6 +572,17 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("takes the lock state a worker host forwards with pointerlockchange, where no document exists (PRD-752)", () => {
+    const canvas = Object.assign(new EventTarget(), { requestPointerLock: () => undefined });
+    const input = new InputMap({ look: { pointerRelative: true } }, canvas, canvas);
+    input.captureMouse();
+    expect(input.raw.pointer.captured).toBe(true);
+    // Escape on the page: the host forwards the change with the page's verdict.
+    canvas.dispatchEvent(Object.assign(new Event("pointerlockchange"), { captured: false }));
+    expect(input.raw.pointer.captured).toBe(false);
+    input.dispose();
+  });
+
   it("releases a held mouse button on a button-less move while the pointer is free", () => {
     // Released outside the window, no pointerup arrives: the next move is what clears it.
     const target = new EventTarget();

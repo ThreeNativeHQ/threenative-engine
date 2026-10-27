@@ -62,6 +62,7 @@ type WorkerOutbound =
   | { type: "tn-worker-mirror"; name: string; methods: string[] }
   | { type: "tn-worker-started" }
   | { type: "tn-worker-failed"; message: string }
+  | { type: "tn-worker-pointer-lock"; lock: boolean }
   | { type: "tn-worker-rpc-result"; id: number; result?: unknown; error?: string };
 
 type PageOutbound = WorkerInbound;
@@ -178,6 +179,12 @@ export function serveWorkerGame(
   const initialise = async (message: IWorkerInitMessage): Promise<void> => {
     try {
       canvas = message.canvas;
+      // An OffscreenCanvas cannot lock the pointer: the page locks its own canvas, inside the
+      // click's activation window, and forwards each pointerlockchange with `captured`.
+      Object.assign(canvas, {
+        exitPointerLock: () => post({ lock: false, type: "tn-worker-pointer-lock" }),
+        requestPointerLock: () => post({ lock: true, type: "tn-worker-pointer-lock" }),
+      });
       size.width = message.width;
       size.height = message.height;
       size.dpr = message.dpr;
@@ -397,6 +404,27 @@ export function startWorkerGame(
   for (const type of WINDOW_EVENTS) listen(windowHost, type, (event) => forward(event, "window"));
   for (const type of CANVAS_EVENTS) listen(canvas, type, (event) => forward(event, "canvas"));
   listen(canvas, "contextmenu", (event) => event.preventDefault());
+  const pageLock = documentHost as Document & { pointerLockElement?: Element | null };
+  const sendLock = (captured: boolean): void =>
+    send({
+      event: { captured, type: "pointerlockchange" },
+      target: "canvas",
+      type: "tn-worker-event",
+    });
+  listen(pageLock, "pointerlockchange", () => sendLock(pageLock.pointerLockElement === canvas));
+  const pointerLock = (lock: boolean): void => {
+    if (!lock) {
+      pageLock.exitPointerLock?.();
+      return;
+    }
+    // A refused lock fires no pointerlockchange: report it, or the game believes it captured.
+    const refused = (): void => sendLock(false);
+    try {
+      void (canvas.requestPointerLock?.() as Promise<void> | undefined)?.catch(refused);
+    } catch {
+      refused();
+    }
+  };
 
   // The worker's game plays through the page's own AudioContext, resumed by a page gesture.
   const AudioContextCtor = page.AudioContext as (new () => AudioContext) | undefined;
@@ -492,6 +520,9 @@ export function startWorkerGame(
     switch (message.type) {
       case "tn-worker-ready":
         sendInit();
+        break;
+      case "tn-worker-pointer-lock":
+        pointerLock(message.lock);
         break;
       case "tn-worker-mirror":
         installMirror(message.name, message.methods);

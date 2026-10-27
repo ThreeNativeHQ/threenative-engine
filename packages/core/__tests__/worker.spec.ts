@@ -267,6 +267,42 @@ describe("worker game host (PRD-752)", () => {
     }
   });
 
+  it("locks the page's pointer when the worker game asks, and reports the lock back", async () => {
+    // The shooter's mouse look: InputMap asks its canvas, an OffscreenCanvas with no pointer lock.
+    const { scope, worker } = link();
+    const { canvas, container, offscreen } = page();
+    const requestPointerLock = vi.fn();
+    Object.assign(canvas, { requestPointerLock });
+    const pageDocument = globalThis.document as unknown as EventTarget & Record<string, unknown>;
+    const exitPointerLock = vi.fn();
+    pageDocument.exitPointerLock = exitPointerLock;
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const target = offscreen as EventTarget & {
+      requestPointerLock(): void;
+      exitPointerLock(): void;
+    };
+    target.requestPointerLock();
+    await tick();
+    expect(requestPointerLock).toHaveBeenCalledTimes(1);
+    const changes: unknown[] = [];
+    offscreen.addEventListener("pointerlockchange", (event) =>
+      changes.push((event as Event & { captured?: boolean }).captured),
+    );
+    pageDocument.pointerLockElement = canvas;
+    pageDocument.dispatchEvent(new Event("pointerlockchange"));
+    await tick();
+    expect(changes).toEqual([true]);
+    target.exitPointerLock();
+    await tick();
+    expect(exitPointerLock).toHaveBeenCalledTimes(1);
+    handle.stop();
+  });
+
   it("copies the harness's page globals into the worker before start", async () => {
     const { scope, worker } = link();
     const { container, view } = page();
