@@ -2695,7 +2695,7 @@ void skinnedCrowdPixels() {
 
 // A settled projection decline re-judges every 60 frames, as core's SceneRenderProjection does
 // (DECLINE_RESCAN_FRAMES): a crowd blocked by a render hook draws exactly, and once the hook leaves
-// it batches on the 60th frame after the declining scan. A projecting decision is re-judged every frame.
+// it batches on the 60th frame after the declining scan.
 void skinnedDeclineCadence() {
     player::SkinnedCrowd crowd(false);
     Mesh hooked(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
@@ -2717,6 +2717,43 @@ void skinnedDeclineCadence() {
     crowd.scene().add(hooked);
     database.prepare(crowd.scene(), crowd.camera(), lights);
     CHECK(database.lastBatches().first == 0);
+}
+
+// PRD-613: a projecting decision holds while the scene's structure does, re-judged on the same 60-frame
+// cadence as a decline (hostProjectionReport's rule). Moving bones and rigs re-decide nothing; adding or
+// removing an object does. Every frame batches as a fresh decision would.
+void skinnedProjectingCadence() {
+    player::SkinnedCrowd crowd(false);
+    RenderDatabase database;
+    LightState lights;
+    const auto fresh = [&] {
+        RenderDatabase once;
+        LightState l;
+        once.prepare(crowd.scene(), crowd.camera(), l);
+        return once.lastBatches();
+    };
+    database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.lastBatches().first > 0);
+    CHECK(database.batchDecisions() == 1);
+    for (int frame = 1; frame < 59; ++frame) {
+        crowd.update(1.0 / 60);
+        database.prepare(crowd.scene(), crowd.camera(), lights);
+        CHECK(database.lastBatches() == fresh());
+    }
+    CHECK(database.batchDecisions() == 1);
+    Mesh box(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard));
+    crowd.scene().add(box);
+    database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.batchDecisions() == 2);
+    CHECK(database.lastBatches() == fresh());
+    crowd.scene().remove(box);
+    database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.batchDecisions() == 3);
+    for (int frame = 1; frame < 60; ++frame) database.prepare(crowd.scene(), crowd.camera(), lights);
+    CHECK(database.batchDecisions() == 3);
+    database.prepare(crowd.scene(), crowd.camera(), lights);  // the 60th frame since the last decision
+    CHECK(database.batchDecisions() == 4);
+    CHECK(database.lastBatches() == fresh());
 }
 
 // PRD-526: glTF stores WEIGHTS_0 as normalized unsigned bytes. The shader reads vec4<f32>, so the
@@ -5933,7 +5970,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_lod_rung", virtualSunLodRung},
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 

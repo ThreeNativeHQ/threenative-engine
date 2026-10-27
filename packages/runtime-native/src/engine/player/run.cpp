@@ -613,7 +613,8 @@ struct Session {
     double gpuThreadCpuMs = -1;  // the GPU thread's CPU for the previous frame's present job
     double gpuJobCpuMs = -1;     // written by that job; copied above only after a wait
     // PRD-613: the encode half of the frame (every pass, main and reflections) runs here, off the game
-    // thread, while the next frame's JS runs. TN_RENDER_THREAD=1 enables it; it needs the GPU thread.
+    // thread, while the next frame's JS runs. On by default; TN_RENDER_THREAD=0 turns it off and GPU timing runs
+    // keep it off. It needs the GPU thread.
     // The game thread touches the renderer only after waitRenderThread() and before it posts the next job.
     std::shared_ptr<GpuThread> renderThread;
     std::vector<std::function<void()>> encodeJobs;  // this frame's passes, in order; the job reads them, so they live here
@@ -774,7 +775,7 @@ int Session::initialize() {
         gpuThread = std::make_shared<GpuThread>();
         renderer->gpu().setThread(gpuThread);
         // Only a game that fences its own renderer touches (setRenderBarrier) can share the renderer with a thread.
-        if (const char* rt = std::getenv("TN_RENDER_THREAD"); rt && std::strcmp(rt, "1") == 0 && game.setRenderBarrier) {
+        if (const char* rt = std::getenv("TN_RENDER_THREAD"); !gpuTiming && !(rt && std::strcmp(rt, "0") == 0) && game.setRenderBarrier) {
             renderThread = std::make_shared<GpuThread>();
             renderer->collectFrame();
             game.setRenderBarrier([this] { waitRenderThread(false); });
