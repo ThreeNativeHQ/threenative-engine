@@ -26,12 +26,12 @@ const DODGE_SPEED = 9;
 const HALF_HEIGHT = 0.38;
 const RADIUS = 0.34;
 /**
- * How long a swing, a cast and a roll keep the legs from taking over the clip. The swing holds
- * through the follow-through of `Sword_Attack` (1.53 s); a new swing waits for it. The roll holds
- * long enough to play the whole `Roll` clip inside it.
+ * How long a swing, a cast and a roll keep the legs from taking over the clip. The swing and the
+ * roll are fitted: their whole clip (`Sword_Attack` 1.53 s, `Roll` 1.47 s) plays inside the hold, so
+ * the follow-through is never cut, and a new swing waits for it.
  */
 const SWING = 0.8;
-/** When the blade crosses the front of the figure in `Sword_Attack`: the hand peaks at 0.40 s. */
+/** When the blade crosses the front of the figure in `Sword_Attack`, in clip seconds: the hand peaks at 0.40 s. */
 const SWING_CONTACT = 0.4;
 const CAST = 0.7;
 const ROLL = 0.7;
@@ -138,8 +138,8 @@ export class Player extends Fighter {
    */
   strike(land: () => void): boolean {
     if (this.dead || (this.action === "attack" && this.busy)) return false;
-    this.play("attack", { fade: 0.05, hold: SWING });
-    this.#swing = { land, remaining: SWING_CONTACT };
+    const rate = this.play("attack", { fade: 0.05, fit: true, hold: SWING });
+    this.#swing = { land, remaining: SWING_CONTACT / rate };
     return true;
   }
 

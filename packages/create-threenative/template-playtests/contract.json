@@ -29,8 +29,8 @@
       {
         "key": "KeyF",
         "clip": "Sword_Attack",
-        "ticks": 92,
-        "contactTicks": 24,
+        "ticks": 48,
+        "contactTicks": 13,
         "effect": {
           "signal": "attack"
         }
@@ -38,12 +38,12 @@
       {
         "key": "KeyE",
         "clip": "Spell_Simple_Shoot",
-        "ticks": 30
+        "ticks": 42
       },
       {
         "key": "ShiftLeft",
         "clip": "Roll",
-        "ticks": 88
+        "ticks": 42
       }
     ],
     "optOut": {
@@ -145,8 +145,8 @@
         },
         {
           "id": "state",
-          "path": "coins",
-          "equals": 0
+          "path": "time",
+          "lte": 1
         },
         {
           "id": "state",
@@ -212,7 +212,7 @@
         {
           "id": "state",
           "path": "elapsed",
-          "equals": 0
+          "lte": 1
         }
       ]
     },
@@ -269,7 +269,7 @@
         {
           "id": "state",
           "path": "distance",
-          "equals": 0
+          "lte": 10
         },
         {
           "id": "state",
@@ -302,7 +302,7 @@
         {
           "id": "state",
           "path": "elapsed",
-          "equals": 0
+          "lte": 1
         }
       ]
     },

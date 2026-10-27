@@ -236,6 +236,26 @@ test("world runtime fingerprints pass only when the complete metadata matches", 
   expect(mismatched.diagnostics[0]?.observedRuntimePath).toContain("world/runtime");
 });
 
+test("an animation assertion with atStep judges that step's report, not the last one", async () => {
+  const steps = [{ label: "swing-end", release: true, waitFrames: 1 }, { label: "roll-end", release: true, waitFrames: 1 }];
+  const gameplay = (clip: string, finished: boolean) => ({ animation: { player: { advancedFrames: 9, clip, finished } }, states: {} });
+  const run = (assertion: object) =>
+    evaluate({ animation: [{ entity: "player", entered: true, finished: true, ...assertion }] }, {
+      observations: {
+        ...EMPTY_OBSERVATIONS,
+        runtimeObservations: {
+          gameplay: gameplay("Roll", true),
+          gameplaySeries: [{ gameplay: gameplay("Sword_Attack", true), label: "swing-end" }, { gameplay: gameplay("Roll", true), label: "roll-end" }],
+        },
+      } as IPlaytestObservations,
+    }, steps);
+  const passed = async (assertion: object) => (await run(assertion)).assertions.find(({ id }) => id === "animation.player")?.pass;
+
+  expect(await passed({ atStep: "swing-end", clip: "Sword_Attack" })).toBe(true);
+  expect(await passed({ clip: "Sword_Attack" })).toBe(false);
+  expect(await passed({ atStep: "swing-end", clip: "Roll" })).toBe(false);
+});
+
 test("an animation assertion requires matching evidence rather than defaulting to satisfied", async () => {
   // `minCount` was 0 unless `entered` or `advancedFrames` was set, so a bare
   // { entity, clip } assertion evaluated `0 >= 0` and passed with no effect log.
@@ -550,6 +570,30 @@ test("atSteps reports a reset even when the final value recovered", async () => 
 
   expect(evaluated.assertions.find(({ id }) => id === "resource.GameState.coins")?.pass).toBe(true);
   expect(evaluated.assertions.find(({ id }) => id === "resource.GameState.coins.atSteps")?.pass).toBe(false);
+});
+
+test("atSteps lte bounds a running clock at a labeled step", async () => {
+  const steps = [
+    { label: "dirty", release: true, waitFrames: 1 },
+    { label: "settled", release: true, waitFrames: 1 },
+  ];
+  const run = (settled: number) =>
+    evaluate(
+      { resources: [{ id: "GameState", path: "elapsed", atSteps: [{ label: "settled", lte: 1 }] }] },
+      {
+        observations: {
+          ...EMPTY_OBSERVATIONS,
+          resourceSeries: [
+            { label: "dirty", snapshots: { GameState: { elapsed: 2 } }, tick: 1 },
+            { label: "settled", snapshots: { GameState: { elapsed: settled } }, tick: 2 },
+          ],
+        },
+      },
+      steps,
+    );
+
+  expect((await run(0.5)).assertions.find(({ id }) => id === "resource.GameState.elapsed.atSteps")?.pass).toBe(true);
+  expect((await run(2.5)).assertions.find(({ id }) => id === "resource.GameState.elapsed.atSteps")?.pass).toBe(false);
 });
 
 test("maxCount zero fails when the event channel was never drained", async () => {

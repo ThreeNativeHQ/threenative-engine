@@ -42,6 +42,8 @@ export abstract class Fighter {
   #action = "";
   #actionRemaining = 0;
   readonly #clipDuration = new Map<string, number>();
+  /** The last one-shot clip, the frames it advanced and the seconds it ran against the seconds its whole clip needs. */
+  #oneShot = { clip: "", frames: 0, needed: 0, ran: 0 };
 
   protected constructor(
     ctx: GameCtx,
@@ -79,14 +81,29 @@ export abstract class Fighter {
   }
 
   /**
-   * Start a clip. `hold` is how long a one-shot keeps the fighter out of its locomotion loop; the
-   * caller that owns the state machine decides when the action ends, not the clip. `fit` speeds
-   * the clip up so the whole clip plays inside `hold`.
+   * What the playtest bridge reads off a registered entity, and what `assert.animation[]` bounds:
+   * the last one-shot action (swing, cast, roll, death; a flinch is a reaction, not an action) and
+   * whether it ran its whole clip before locomotion or another action took the rig over. The rig's
+   * own clip is the locomotion loop by then, so the one-shot is kept until the next one starts.
+   */
+  get animation(): { advancedFrames: number; current: string; finished: boolean } {
+    const { clip, frames, needed, ran } = this.#oneShot;
+    return {
+      advancedFrames: frames,
+      current: clip === "" ? (this.character.current ?? "") : clip,
+      finished: clip !== "" && ran >= needed - 1e-6,
+    };
+  }
+
+  /**
+   * Start a clip and return the rate it plays at. `hold` is how long a one-shot keeps the fighter
+   * out of its locomotion loop; the caller that owns the state machine decides when the action
+   * ends, not the clip. `fit` speeds the clip up so the whole clip plays inside `hold`.
    */
   play(
     action: string,
     options: { readonly fade?: number; readonly fit?: boolean; readonly hold?: number } = {},
-  ): void {
+  ): number {
     const clip = this.clips[action];
     if (clip === undefined) throw new Error(`Unknown fighter action '${action}'.`);
     this.#action = action;
@@ -101,6 +118,10 @@ export abstract class Fighter {
       mode: "once",
       ...(speed === undefined ? {} : { speed }),
     });
+    // A flinch is a reaction to an enemy, not an action the fighter chose: it never replaces the record.
+    if (this.#actionRemaining > 0 && action !== "hit")
+      this.#oneShot = { clip, frames: 0, needed: duration / (speed ?? 1), ran: 0 };
+    return speed ?? 1;
   }
 
   /** True while a one-shot is still holding; locomotion waits for it. */
@@ -115,6 +136,10 @@ export abstract class Fighter {
    * from the stick, and `AnimationPlayer`'s stride sync re-times it to the ground actually covered.
    */
   protected animateRig(dt: number, heading: number | undefined, speed: number): void {
+    if (this.#actionRemaining > 0 && this.#action !== "hit") {
+      this.#oneShot.frames += 1;
+      this.#oneShot.ran += Math.min(dt, this.#actionRemaining);
+    }
     this.#actionRemaining = Math.max(0, this.#actionRemaining - dt);
     if (heading !== undefined && speed > 0.05) {
       const turn = MathUtils.euclideanModulo(

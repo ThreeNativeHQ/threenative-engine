@@ -290,6 +290,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     return (frameCtx, dt) => {
       loading.update();
+      if (frameCtx.input.justPressed("restart")) {
+        frameCtx.state.set(Play.initialState);
+        frameCtx.state.flush();
+        void frameCtx.goto("play");
+        return;
+      }
       fox.update(
         frameCtx,
         dt,

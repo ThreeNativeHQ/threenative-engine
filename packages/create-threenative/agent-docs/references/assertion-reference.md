@@ -303,7 +303,7 @@ Proves resource state after the scenario through equals, gte, lte, textIncludes,
 | `textIncludes` | string | no |
 | `changed` | boolean | no |
 | `throughoutSteps` | boolean | no |
-| `atSteps` | Array<{ label: string, equals?: json, textIncludes?: string }> | no |
+| `atSteps` | Array<{ label: string, equals?: json, lte?: number, textIncludes?: string }> | no |
 | `allowTrivial` | triviality reason | no |
 | `anyOf` | Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }> | no |
 
@@ -707,6 +707,7 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 | --- | --- | --- |
 | `entity` | string | no |
 | `clip` | string | no |
+| `atStep` | string | no |
 | `entered` | boolean | no |
 | `advancedFrames` | number | no |
 | `finished` | boolean | no |

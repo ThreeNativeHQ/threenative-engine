@@ -33,19 +33,22 @@ export interface IKitContractEntry {
 }
 
 export interface IKitContractAction {
-  /** Ticks to wait before the effect: the clip's contact window opens here. */
+  /** Ticks to wait before the effect: the clip's contact window opens here, at the speed the kit plays it. */
   readonly contactTicks?: number;
   readonly clip: string;
   /** Signal (a `signals` assertion name) the subject emits when the hit lands: none before `contactTicks`, one after. */
   readonly effect?: { readonly signal: string };
   readonly key: string;
-  /** Ticks the clip lasts at normal speed. */
+  /** Ticks the action keeps the subject busy in the kit: its hold, which a fitted clip fills, not the file's length. */
   readonly ticks: number;
 }
 
 export interface IKitContractReset {
-  readonly equals: unknown;
+  /** Exact value after the restart settles. Use `lte` for a clock or counter that keeps running during the settle window. */
+  readonly equals?: unknown;
   readonly id: string;
+  /** Upper bound after the restart settles: far below the dirty run's value, above one settle window of a running clock. */
+  readonly lte?: number;
   readonly path: string;
 }
 
@@ -94,7 +97,9 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
     build: (entry) =>
       scenario("explore-clean", entry, [explore(entry, 1800, "explored")], {
         diagnostics: DIAGNOSTICS,
-        movement: { entity: entry.subject, minDistance: 1 },
+        // Path, not net displacement: a lost life or a restart legitimately puts the subject back on its
+        // spawn, and the starter's explorer ended there with 63 m walked and 0.003 m of net distance.
+        movement: { entity: entry.subject, pathLength: 1 },
         visual: [{ region: { height: 540, minSharpness: 0.3, width: 960, x: 160, y: 90 } }],
       }),
     id: "explore-clean",
@@ -162,8 +167,8 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
         ],
         {
           diagnostics: DIAGNOSTICS,
-          resources: entry.restart!.resets.map(({ equals, id, path }) => ({
-            atSteps: [{ equals, label: "settled" }],
+          resources: entry.restart!.resets.map(({ equals, id, lte, path }) => ({
+            atSteps: [{ ...(equals === undefined ? {} : { equals }), ...(lte === undefined ? {} : { lte }), label: "settled" }],
             id,
             path,
           })),
@@ -183,7 +188,14 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
           { kind: "wait", label: `${action.clip}-end`, release: true, waitTicks: action.ticks + 6 },
         ]),
         {
-          animation: entry.actions!.map((action) => ({ clip: action.clip, entered: true, entity: entry.subject, finished: true })),
+          // Each clip is judged at its own step: the last sample alone could only ever show the last action.
+          animation: entry.actions!.map((action) => ({
+            atStep: `${action.clip}-end`,
+            clip: action.clip,
+            entered: true,
+            entity: entry.subject,
+            finished: true,
+          })),
           diagnostics: DIAGNOSTICS,
         },
       ),
