@@ -15,14 +15,13 @@ output, never measurement.
 the display period: move draws and objects, not settings. `npx threenative doctor` and
 `DEV_MODE=true` repeat it; `TN_FRAME_SPANS=1` splits that phase.
 Largest static win: three skips binding updates when nothing changed; not writing a transform saved 7.35 ms on 1,561 objects, `markStatic(root)` 0.009 ms.
-A slow pattern in your own code that no check caught (a scene walk or a property poll every frame) is a gap in the harness: fix your code, then report it with the `file-engine-bug` skill, so the engine, the playtest or the `pnpm check` lint rejects it in every game.
+An uncaught per-frame walk or poll? Fix it, then `file-engine-bug`.
 
 ## Use the shipped defaults
 
 The engine prepares transforms, batches, culls, scales resolution and cooks assets;
 read `node_modules/create-threenative/agent-docs/references/performance-basics.md` before hand-rolling any.
-Unexecuted platforms stay unverified; never invent numbers.
-Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. Bounded proof:
+Withdraw thermally-confounded Tiers 1–3 comparisons; report Tier 4. Bounded proof:
 `{"performance":{"minFps":60,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`; frame time defaults to 16.7 ms p95 (looser needs `maxFrameMsReason`);
 defined in `node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance`; pass bounds fail closed without a
 per-pass split.
