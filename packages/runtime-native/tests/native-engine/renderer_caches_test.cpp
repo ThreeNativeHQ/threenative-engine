@@ -347,6 +347,42 @@ void siblingSharesPipelines() {
     CHECK(renderer.pipelines().compiles() == compiled);
 }
 
+// A texture one renderer replaces is a change each sibling must see once. Seeing it is not a second change:
+// counted as one, the siblings hand it back and forth, and every frame of every renderer drops its map groups
+// and render bundles for the life of the process (the shooter: 54 bind groups and 26 bundles a frame).
+void siblingTextureChangeSettles() {
+    CompileDevice d;
+    CHECK(d.device != nullptr);
+    if (!d.device) return;
+    Renderer renderer(d.instance, d.device, d.queue, d.events);
+    renderer.setSize(32, 32);
+    auto sibling = renderer.sibling();
+    sibling->setSize(32, 32);
+    RenderDatabase database, siblingDatabase;
+    Scene scene;
+    PerspectiveCamera camera;
+    camera.position.z = 8;
+    auto material = std::make_shared<Material>(MaterialType::Basic);
+    auto map = std::make_shared<Texture>();
+    map->width = map->height = 2;
+    map->data.assign(16, 255);
+    material->maps["map"] = map;
+    Mesh mesh(makeBoxGeometry(), material);
+    scene.add(mesh);
+    const auto frames = [&](int count) {
+        for (int i = 0; i < count; ++i) {
+            database.render(renderer, scene, camera);
+            siblingDatabase.render(*sibling, scene, camera);
+        }
+    };
+    frames(3);
+    map->needsUpdate();
+    frames(3);  // each renderer sees the change and rebuilds its groups once
+    const auto groups = bindGroupsCreated();
+    frames(10);
+    CHECK(bindGroupsCreated() == groups);
+}
+
 void compileBeforeRender() {
     CompileDevice d;
     CHECK(d.device != nullptr);
@@ -648,7 +684,7 @@ void recentBindGroups() {
     groups.clear();
 }
 
-TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
+TN_TEST_MAIN({"attribute_disposal_lifetime", attributeDisposalLifetime}, {"geometry", geometry}, {"pipelines", pipelines}, {"sibling_pipelines", siblingSharesPipelines}, {"sibling_texture_change", siblingTextureChangeSettles}, {"compile_before_render", compileBeforeRender}, {"init_texture", initializeTexture}, {"recent_bind_groups", recentBindGroups}, {"line_depth_bias", lineDepthBias}
 #ifdef TN_TEST_PIPELINE_WORKERS
     , {"failed_ticket", failedTicket}, {"synchronous_adoption", synchronousAdoption},
     {"shutdown_queue", shutdownQueue}, {"nonstandard_exception", nonStandardException}

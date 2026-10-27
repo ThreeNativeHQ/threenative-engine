@@ -2485,7 +2485,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
     // A sibling replaced or released a shared map texture: this renderer's groups may bind its old view.
-    if (texturesSeen_ != textures_->generation) texturesChanged();
+    // Seeing the change is not making one: bumping the count here made the siblings hand it back and
+    // forth, and every renderer dropped its groups and bundles on every frame.
+    if (texturesSeen_ != textures_->generation) {
+        dropMapGroups();
+        texturesSeen_ = textures_->generation;
+    }
     diagnostics_.clear();
     if (!compilation) {  // a compile is no frame: three's deltaTime spans presented frames only
         const float now = std::chrono::duration<float>(std::chrono::steady_clock::now() - start_).count();
@@ -4256,7 +4261,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.triangles += effectPasses;
     }
     encoder = recordSampledTargets(encoder);
-    outputPass(encoder, presentTarget, presentFormat);
+    if (writesOutput_ || presentTarget) outputPass(encoder, presentTarget, presentFormat);
     const auto segments = passTimer_->segments;
     const bool resolveTiming = timed && !passTimer_->failed && !segments.empty();
     if (resolveTiming) {
@@ -4309,7 +4314,14 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
 }
 
+namespace {
+uint64_t outputPassCount = 0;
+}
+
+uint64_t outputPassesRecorded() { return outputPassCount; }
+
 void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat) {
+    ++outputPassCount;
     PipelineTarget outputTarget{present ? presentFormat : WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
     outputTarget.layout = outputPipelineLayout_;
     // overlayRenderer(): the output is premultiplied (buildOutput), so it composites "over" the frame on the surface.

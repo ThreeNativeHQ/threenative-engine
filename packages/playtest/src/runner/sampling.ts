@@ -839,15 +839,16 @@ export async function sampleHudAudit(page: Page): Promise<{ items: IPlaytestHudA
       let accumulated: [number, number, number, number] = [0, 0, 0, 0];
       for (let current: Element | null = element; current !== null; current = current.parentElement) {
         const [r, g, b, a] = parseColour(window.getComputedStyle(current).backgroundColor);
+        // Each ancestor paints underneath what is already accumulated: the nearer plate stays on top.
         if (a > 0 && accumulated[3] < 0.99) {
-          const under = accumulated[3];
-          const over = a + under * (1 - a);
-          if (over > 0) {
+          const near = accumulated[3];
+          const total = near + a * (1 - near);
+          if (total > 0) {
             accumulated = [
-              (r * a + accumulated[0] * under * (1 - a)) / over,
-              (g * a + accumulated[1] * under * (1 - a)) / over,
-              (b * a + accumulated[2] * under * (1 - a)) / over,
-              over,
+              (accumulated[0] * near + r * a * (1 - near)) / total,
+              (accumulated[1] * near + g * a * (1 - near)) / total,
+              (accumulated[2] * near + b * a * (1 - near)) / total,
+              total,
             ];
           }
         }

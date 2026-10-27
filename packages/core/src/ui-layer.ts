@@ -26,6 +26,7 @@ export {
   UI_DEV_METRICS_MESSAGE,
   UI_INTENT_MESSAGE,
   UI_READY_INTENT,
+  UI_STARTUP_MESSAGE,
   type IUiBridge,
   type IUiMessage,
   type UiBridgeEnd,

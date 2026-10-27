@@ -1531,9 +1531,13 @@ void renderTarget() {
     scene.updateMatrixWorld(true);
     RenderDatabase database;
     const auto frame = [&] {
+        const uint64_t outputs = outputPassesRecorded();
         const auto refused = renderToTarget(renderer, *target, inner, innerCamera, {0.25, 0.5, 0.75, 1}, false);
         CHECK(refused.empty());
+        // The target is read as linear scene colour: a tone-mapped output image of it would be drawn and never read.
+        CHECK(outputPassesRecorded() == outputs);
         database.render(renderer, scene, camera, {0, 0, 0, 1});
+        CHECK(outputPassesRecorded() == outputs + 1);
     };
     frame();
     // The target's own pixels: a corner is the clear colour, the middle is the red square.

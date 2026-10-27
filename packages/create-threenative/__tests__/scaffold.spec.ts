@@ -318,20 +318,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
   // Recomputed 2026-10-26 (PRD-747 exposure): adventure, collectathon, kart, platformer, racing, runner,
   // sailing and starter ship the shared kitExposure.ts meter (0 EV).
-  adventure: "b86a109fcdd9ae514c0535fdff7ee792ed707ce53e3f2fe79ac7bcd2ae8dfad1",
+  // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
+  // reads state through `useUiStateDuringStartup`.
+  adventure: "1c994f2ea9dbbe8de006516316fd2be91722fb81b9def5e12227847aab747406",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "68918d44406f91605db200d0c709a86aa681c654a8479d68ebb163904352287e",
+  kart: "4d0884a98ccfe97c0aeaaf6a64ed62b195154666123444539acf56ba5563963e",
   minimal: "e157e66fdf5e14761655fb39ef95af1fd005df68a6e8ecc6cb1159c0d501d227",
   platformer: "6694c571a16d48ee33d9a9eac081fe1982be389595824163192f9e489e7d4c52",
   puzzle: "40aeabf6ed77b2dc644acf0a71360ef2bc976d018a99f43523894179f7b9eaef",
   racing: "e1aacca0748b6a219d7573eedd228c9d1e0d5a67c1372dc8851117f635e03f2f",
-  rain: "d78871fba22321a07dfb18fa0cf0a089588f4e8409f469345cfbf09d4e0b0a26",
+  rain: "83e6b0a2ef9bfa78c4b79c88d5028c15a8852aa2b7db64efd249d28a12f20cb8",
   rts: "44917927d738f4c2e56a1fb6972d5d3514592839f4df9fb80abc9c3b0624364f",
   runner: "3c5e0dd218b0cd82208e0eb9da236da358715b879076a1c169e688561f87e5f5",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "fb9d08250cabb500cbfa70c8ce78e739cc7dbe720c782cf8ffc0bb84284266f5",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "54e92ceacf3d454d6e63c8c1762a299badb84c05a798170d204fadca7efccda2",
+  shooter: "2a56575feb716f964c1e014eece9da4e2a1e94413f433712b6413c0b224cc6f8",
   snow: "61d81b402214c8378d6b4e5acb926b2b25aff4629414c1760c6cbfc625d5ac3e",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts

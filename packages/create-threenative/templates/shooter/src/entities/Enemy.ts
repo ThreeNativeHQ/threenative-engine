@@ -45,6 +45,8 @@ const WALK_SPEED = 2.4;
 const CHASE_SPEED = 3.4;
 const HEAR_RANGE = 26;
 const VIEW_RANGE = 30;
+/** The grip bound the rifle-grip playtest holds each hand to, metres; a wider cheap gap is re-measured exactly. */
+const GRIP_GAP_EXACT_ABOVE = 0.05;
 const VIEW_HALF_ANGLE = MathUtils.degToRad(46);
 const ENGAGE_RANGE = 13;
 const BURST_ROUNDS = 3;
@@ -241,6 +243,10 @@ const NAV_GRIDS = new WeakMap<object, Map<string, Uint8Array>>();
 
 // Scratch for the per-frame sight test; five soldiers × three vectors × 60 Hz is real garbage.
 const scratchGoal = new Vector3();
+/** The hand joint in the rifle's own frame, its clamp onto the rifle box, and the rifle's scale. */
+const scratchGap = new Vector3();
+const scratchNearest = new Vector3();
+const scratchScale = new Vector3();
 const scratchTo = new Vector3();
 const scratchFacing = new Vector3();
 const scratchFlat = new Vector3();
@@ -585,6 +591,8 @@ export class Enemy {
   #weaponVelocity = new Vector3();
   #rifleLocalMinZ = -scale.rifleLength * 0.35;
   #rifleLocalMaxZ = scale.rifleLength * 0.65;
+  /** The rifle's bounds in its own frame, measured once at equip: it is rigid, so they never change. */
+  #rifleLocalBox: Box3 | null = null;
   #rightHand: Object3D | undefined;
   #leftHand: Object3D | undefined;
   #weaponNodes: string[] = [];
@@ -832,6 +840,7 @@ export class Enemy {
     const bounds = new Box3().setFromObject(rifle);
     this.#rifleLocalMinZ = bounds.min.z;
     this.#rifleLocalMaxZ = bounds.max.z;
+    this.#rifleLocalBox = bounds;
 
     if (hand === undefined) {
       // No hand bone: hang it beside the hip rather than dropping it. A soldier without a
@@ -1091,8 +1100,34 @@ export class Enemy {
     this.#clipFrames.set(current, frames);
     // Not the first frames: a clip that has only just started is still a crossfade from the last.
     if (frames < 12 || frames % 4 !== 0 || this.#weaponDetached) return;
-    const worst = Math.max(this.#contact("hand_r") ?? 0, this.#contact("hand_l") ?? 0);
+    // The rifle's own box sits inside the world box `boneContact` clamps to, so the cheap gap is
+    // never smaller than the honest one: under the 5 cm grip bound it already proves the grip,
+    // and only a wider gap pays for the exact vertex walk.
+    const cheap = Math.max(this.#handGap("hand_r") ?? 0, this.#handGap("hand_l") ?? 0);
+    const worst =
+      cheap <= GRIP_GAP_EXACT_ABOVE
+        ? cheap
+        : Math.max(this.#contact("hand_r") ?? 0, this.#contact("hand_l") ?? 0);
     this.#contactPeak.set(current, Math.max(this.#contactPeak.get(current) ?? 0, worst));
+  }
+
+  /**
+   * Metres from a hand joint to the rifle's own bounds, sampled without touching its vertices.
+   *
+   * `boneContact` measures a world-space box over every rifle vertex, which is the honest number
+   * for a playtest and far too much work to repeat while playing. The rifle is rigid, so its
+   * bounds in its own frame never change: transform the joint into that frame, clamp, and scale
+   * the local gap back to metres. One matrix invert and one clamp, no walk.
+   */
+  #handGap(bone: "hand_r" | "hand_l"): number | null {
+    const weapon = this.#weaponModel;
+    const bounds = this.#rifleLocalBox;
+    const joint = bone === "hand_r" ? this.#rightHand : this.#leftHand;
+    if (weapon === undefined || bounds === null || joint === undefined) return null;
+    weapon.updateWorldMatrix(true, false);
+    weapon.worldToLocal(joint.getWorldPosition(scratchGap));
+    const nearest = bounds.clampPoint(scratchGap, scratchNearest);
+    return nearest.distanceTo(scratchGap) * weapon.getWorldScale(scratchScale).x;
   }
 
   /**

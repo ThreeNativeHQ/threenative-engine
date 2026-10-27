@@ -3,6 +3,7 @@ import {
   type IUiBridge,
   type IUiMessage,
   UI_INTENT_MESSAGE,
+  UI_STARTUP_MESSAGE,
   postUiState,
   serializeUiState,
 } from "./ui-bridge.js";
@@ -46,7 +47,9 @@ export interface IUiStatePublisher {
 export interface IUiStateMirror<T> {
   /** The last state the game published, or undefined before the first frame arrives. */
   get(): T | undefined;
-  /** Called after each accepted publication. Returns an unsubscribe function. */
+  /** True while the game reports its loading cover up; false before it says so and after it lifts. */
+  covered(): boolean;
+  /** Called after each accepted publication, and when the cover state changes. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
   /** Stop listening. */
   stop(): void;
@@ -151,7 +154,15 @@ export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> {
   }
   const listeners = new Set<() => void>();
   let current: T | undefined;
+  let covered = false;
   const off = bridge.onMessage((message) => {
+    if (message.type === UI_STARTUP_MESSAGE) {
+      const next = message.phase !== "ready";
+      if (next === covered) return;
+      covered = next;
+      for (const listener of [...listeners]) listener();
+      return;
+    }
     if (message.type !== GAME_STATE_MESSAGE) return;
     const state = message.state;
     if (typeof state !== "object" || state === null || Array.isArray(state)) {
@@ -162,6 +173,7 @@ export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> {
   });
   return {
     get: () => current,
+    covered: () => covered,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

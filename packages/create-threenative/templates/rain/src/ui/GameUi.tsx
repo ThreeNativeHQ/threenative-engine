@@ -1,4 +1,4 @@
-import { UiLayer, useUiIntent, useUiState } from "@threenative/ui";
+import { UiLayer, useUiIntent, useUiStateDuringStartup } from "@threenative/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type GameState, VISIBILITY_INTENT } from "../state.js";
 import { Hud, captureScene, toggleFullscreen } from "./Hud.js";
@@ -27,7 +27,11 @@ export function GameUi() {
  * defaults that have to be applied against a real snapshot rather than guessed at mount.
  */
 function RainInterface() {
-  const state = useUiState<GameState>();
+  // The staged TEMPEST curtain below is this page's own loading screen, so it reads state while the
+  // engine's cover is up.
+  const state = useUiStateDuringStartup<GameState>({
+    reason: "draws its own staged loading overlay",
+  });
   const send = useUiIntent();
   const [toast, setToast] = useState("");
   const [toastVisible, setToastVisible] = useState(false);

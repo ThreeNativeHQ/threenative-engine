@@ -56,6 +56,12 @@
         "component": "liveShards",
         "gte": 1,
         "allowTrivial": "shards carry a physics body only while they are flying, so the resting zero cannot satisfy this either"
+      },
+      {
+        "entity": "breakables",
+        "component": "drawnShards",
+        "gte": 7,
+        "allowTrivial": "shards are drawn only while flying, so the resting zero cannot satisfy this; a pot bursts into at least seven pieces and a shot vase never hides one"
       }
     ]
   }

@@ -139,11 +139,19 @@ type Prop = {
 
 type Shard = {
   readonly mesh: Mesh;
-  readonly material: MeshStandardMaterial;
   body: RigidBody3D | undefined;
   age: number;
   live: boolean;
 };
+
+/**
+ * The material the renderer draws this shard with, read at the moment of use. Never cache it:
+ * `createMaterialLighting` swaps every mesh in the scene to a converted copy, so a reference taken
+ * at construction soon points at a material nothing draws.
+ */
+function drawn(shard: Shard): MeshStandardMaterial {
+  return shard.mesh.material as MeshStandardMaterial;
+}
 
 const scratchDirection = new Vector3();
 const scratchOffset = new Vector3();
@@ -200,7 +208,7 @@ export class BreakableField {
       mesh.castShadow = false;
       mesh.frustumCulled = false;
       scene.add(mesh);
-      this.#shards.push({ mesh, material, body: undefined, age: 0, live: false });
+      this.#shards.push({ mesh, body: undefined, age: 0, live: false });
     }
   }
 
@@ -293,7 +301,7 @@ export class BreakableField {
         continue;
       }
       const remaining = SHARD_SECONDS - shard.age;
-      shard.material.opacity =
+      drawn(shard).opacity =
         remaining >= SHARD_FADE_SECONDS ? 1 : Math.max(0, remaining / SHARD_FADE_SECONDS);
     }
   }
@@ -313,10 +321,25 @@ export class BreakableField {
     }
   }
 
-  /** Registered as an entity so a scenario can assert a shot vessel came apart and cleaned up. */
-  debug(): { broken: number; liveShards: number; props: number; shardCapacity: number } {
+  /**
+   * Registered as an entity so a scenario can assert a shot vessel came apart and cleaned up.
+   * `drawnShards` counts the flying shards whose material, as the renderer holds it right now, is
+   * opaque and shown: a body can be live while nothing of it reaches the screen.
+   */
+  debug(): {
+    broken: number;
+    drawnShards: number;
+    liveShards: number;
+    props: number;
+    shardCapacity: number;
+  } {
+    let drawnShards = 0;
+    for (const shard of this.#shards) {
+      if (shard.live && shard.mesh.visible && drawn(shard).opacity > 0.5) drawnShards += 1;
+    }
     return {
       broken: this.#broken,
+      drawnShards,
       liveShards: this.#liveShards,
       props: this.#props.length,
       shardCapacity: this.#shards.length,
@@ -326,7 +349,7 @@ export class BreakableField {
   dispose(): void {
     for (const shard of this.#shards) {
       shard.body?.dispose();
-      shard.material.dispose();
+      drawn(shard).dispose();
       shard.mesh.removeFromParent();
     }
     this.#shards.length = 0;
@@ -375,9 +398,10 @@ export class BreakableField {
     // A fired vessel is not one colour: the glazed outside, the raw clay core and the shadowed
     // inside all show once it opens up. A little spread per shard is what stops the pile reading
     // as confetti cut from a single sheet.
-    shard.material.color.setHex(style.shardColour);
-    shard.material.color.multiplyScalar(0.72 + rng() * 0.5);
-    shard.material.opacity = 1;
+    const material = drawn(shard);
+    material.color.setHex(style.shardColour);
+    material.color.multiplyScalar(0.72 + rng() * 0.5);
+    material.opacity = 1;
 
     const body = new RigidBody3D({
       object: shard.mesh,
@@ -404,7 +428,7 @@ export class BreakableField {
     shard.body = undefined;
     shard.live = false;
     shard.age = 0;
-    shard.material.opacity = 0;
+    drawn(shard).opacity = 0;
     shard.mesh.scale.setScalar(0.0001);
     if (this.#settled) shard.mesh.visible = false;
     this.#liveShards = Math.max(0, this.#liveShards - 1);

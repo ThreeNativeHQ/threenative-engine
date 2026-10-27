@@ -1,0 +1,108 @@
+{
+  "name": "item-key",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 115.4,
+          "y": -0.21,
+          "z": -31.37
+        },
+        "facing": {
+          "yaw": 0.8892
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot-on",
+      "press": ["KeyP"],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "to-the-box",
+      "waitForResource": {
+        "id": "state",
+        "path": "item",
+        "equals": "rolling"
+      },
+      "timeoutMs": 30000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot-off",
+      "press": ["KeyP"],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "roulette-done",
+      "waitTicks": 80,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "use",
+      "press": ["KeyE"],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "boxes",
+        "gte": 1,
+        "allowTrivial": "The autopilot drove the player through an item box."
+      },
+      {
+        "entity": "player",
+        "component": "used",
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "roulette-done",
+            "equals": ""
+          }
+        ],
+        "allowTrivial": "Nothing is used while the player holds the item; E uses it."
+      }
+    ]
+  }
+}
