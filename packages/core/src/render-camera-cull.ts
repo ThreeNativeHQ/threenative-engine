@@ -217,6 +217,12 @@ function hierarchyRevision(object: Object3D): number | undefined {
   return typeof revision === "number" ? revision : undefined;
 }
 
+/** The native engine's one-call answer to "is it and every parent visible" (bindings_scene.cpp). */
+function visibleInWorld(object: unknown): boolean | undefined {
+  const host = (object as { __tnVisibleInWorld?: () => boolean }).__tnVisibleInWorld;
+  return typeof host === "function" ? host.call(object) : undefined;
+}
+
 function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
   const candidate = root as Partial<IEngineCullRoot> | null;
   return typeof candidate?.__cullProjected === "function" &&
@@ -253,6 +259,9 @@ export class RenderCameraCull {
   #collecting: readonly IAnimationRateState[] = [];
   /** Each root, its state and the engine's hierarchy count read off it, as {@link #animated} was built. */
   readonly #animatedFrom: (Object3D | IAnimationRateState | number | undefined)[] = [];
+  /** The renderables under each rate root, in walk order, from the same walk as {@link #animated}. */
+  readonly #rigParts = new Map<Object3D, Object3D[]>();
+  #collectingParts: Object3D[] = [];
   readonly #collectAnimated: (object: Object3D) => void;
   /** The camera's descendants this frame, so camera attachment needs no walk up the parents. */
   readonly #cameraParts = new Set<Object3D>();
@@ -294,6 +303,7 @@ export class RenderCameraCull {
     this.#animationVisitor = (object) => this.#visitAnimation(object);
     this.#visitor = (object) => this.#visit(object);
     this.#collectAnimated = (object) => {
+      if (isRenderable(object)) this.#collectingParts.push(object);
       const outer = this.#animated.get(object);
       // A rig nested in another rig answers to both roots.
       this.#animated.set(
@@ -332,12 +342,15 @@ export class RenderCameraCull {
     if (same && at === this.#animatedFrom.length) return this.#animated.size > 0;
     this.#animated.clear();
     this.#animatedFrom.length = 0;
+    this.#rigParts.clear();
     for (const ref of animationRateRoots) {
       const root = ref.deref() as Object3D;
       const state = animationRateStates.get(root) as IAnimationRateState;
       this.#animatedFrom.push(root, state, hierarchyRevision(root));
       this.#collecting = [state];
+      this.#collectingParts = [];
       root.traverse(this.#collectAnimated);
+      this.#rigParts.set(root, this.#collectingParts);
     }
     return this.#animated.size > 0;
   }
@@ -381,10 +394,10 @@ export class RenderCameraCull {
     if (!this.#prepareAnimated()) return;
     // Start at each rig and each stand-in that observes one, never at the scene: the walk then visits
     // the same objects a scene walk would have acted on, and nothing else.
+    const rootShown = visibleInWorld(root) === true;
     for (const ref of animationRateRoots) {
       const rig = ref.deref();
-      if (rig !== undefined && this.#reaches(rig, root))
-        rig.traverseVisible(this.#animationVisitor);
+      if (rig !== undefined && this.#reaches(rig, root)) this.#visitRig(rig, rootShown);
     }
     for (const ref of animationRateCarriers) {
       const carrier = ref.deref();
@@ -399,6 +412,24 @@ export class RenderCameraCull {
       for (const source of sources.keys()) observes ||= this.#animated.has(source);
       if (observes && this.#reaches(carrier, root)) carrier.traverseVisible(this.#animationVisitor);
     }
+  }
+
+  /**
+   * The rig's visible walk, as `traverseVisible` would make it. Only its renderables act, so on the
+   * native engine, with the walk's root shown, each kept part asks once whether it is shown, rather
+   * than the walk wrapping every bone across the boundary. A rig that reaches a shown root is itself
+   * shown, so a part shown in the world is exactly a part its rig's walk reaches.
+   */
+  #visitRig(rig: Object3D, rootShown: boolean): void {
+    const parts = rootShown ? this.#rigParts.get(rig) : undefined;
+    if (
+      parts === undefined ||
+      typeof (rig as { __tnVisibleInWorld?: unknown }).__tnVisibleInWorld !== "function"
+    ) {
+      rig.traverseVisible(this.#animationVisitor);
+      return;
+    }
+    for (const part of parts) if (visibleInWorld(part) === true) this.#visitAnimation(part);
   }
 
   /**
@@ -462,6 +493,7 @@ export class RenderCameraCull {
     this.#camera = undefined;
     this.#animated.clear();
     this.#animatedFrom.length = 0;
+    this.#rigParts.clear();
     this.#cameraParts.clear();
     this.#cameraPartsOf = undefined;
   }

@@ -842,6 +842,68 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  it("on the native engine asks each rig part whether it is shown, and takes the walk's rates", () => {
+    const run = (engine: boolean) => {
+      if (engine) {
+        Object.defineProperty(Object3D.prototype, "__hierarchyRevision", {
+          configurable: true,
+          get: () => 1,
+        });
+        Object.defineProperty(Object3D.prototype, "__tnVisibleInWorld", {
+          configurable: true,
+          value(this: Object3D) {
+            for (let node: Object3D | null = this; node !== null; node = node.parent)
+              if (!node.visible) return false;
+            return true;
+          },
+        });
+      }
+      const rig = player();
+      const part = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
+      const near = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
+      near.position.x = 8;
+      rig.root.add(part, near);
+      const scene = new Scene();
+      scene.add(rig.root);
+      const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+      const cull = new RenderCameraCull();
+      const walks = vi.spyOn(rig.root, "traverseVisible");
+      const rates: number[] = [];
+      const step = () => {
+        scene.updateMatrixWorld(true);
+        cull.prepareAnimation(scene, camera, 720);
+        cull.restore();
+        rig.update(1 / 60);
+        rates.push(rig.updateRateReport.rate);
+      };
+      rig.root.position.set(2, 0, -60);
+      step();
+      step();
+      // The far part alone is left: the rig's sphere is the far part's.
+      near.visible = false;
+      step();
+      step();
+      near.visible = true;
+      rig.root.position.set(2, 0, -8);
+      step();
+      rig.root.visible = false;
+      step();
+      step();
+      cull.dispose();
+      rig.dispose();
+      if (engine) {
+        Reflect.deleteProperty(Object3D.prototype, "__hierarchyRevision");
+        Reflect.deleteProperty(Object3D.prototype, "__tnVisibleInWorld");
+      }
+      return { rates, walks: walks.mock.calls.length };
+    };
+    const plain = run(false);
+    const native = run(true);
+    expect(plain.walks).toBeGreaterThan(0);
+    expect(native.walks).toBe(0);
+    expect(native.rates).toEqual(plain.rates);
+  });
+
   it("passes the named override through SkeletalMesh3D", () => {
     const rig = new SkeletalMesh3D({ source: new Group(), updateRate: 4 });
     expect(rig.updateRate).toBe(4);
