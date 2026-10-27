@@ -8,6 +8,7 @@
 // out of a drift, spins on a burr and flips on an acorn. Forward is −z, the origin is the ground.
 import {
   AdditiveBlending,
+  Box3,
   BoxGeometry,
   CapsuleGeometry,
   Color,
@@ -140,7 +141,12 @@ export class KartModel {
   readonly #frontWheels: readonly Mesh[];
   readonly #flame: Mesh;
   readonly #glows: readonly Mesh[];
+  /** The chassis and wheels' reach from the root origin: half the body's length and its top. */
+  readonly #halfLength: number;
+  readonly #top: number;
   #roll = 0;
+  /** The road's pitch, kept apart from the tumble's flip so the flip never feeds back into it. */
+  #pitch = 0;
   #spin = 0;
 
   constructor(readonly livery: ILivery) {
@@ -184,6 +190,12 @@ export class KartModel {
       this.root.add(glow);
       return glow;
     });
+    // The tumble's lift is measured from the kart itself, not the hidden flame and glows.
+    const bounds = new Box3().setFromObject(body);
+    bounds.expandByObject(this.#rear);
+    for (const pivot of fronts) bounds.expandByObject(pivot);
+    this.#halfLength = Math.max(-bounds.min.z, bounds.max.z);
+    this.#top = bounds.max.y;
   }
 
   /** Follows the kart: place, heading, the road's pitch, a lean out of a drift, the hits. */
@@ -195,8 +207,9 @@ export class KartModel {
     const trackYaw = Math.atan2(-(course.tx[kart.index] ?? 0), -(course.tz[kart.index] ?? 0));
     const along = Math.cos(kart.yaw - trackYaw);
     const pitch = kart.airborne
-      ? root.rotation.x * 0.96
+      ? this.#pitch * 0.96
       : Math.atan(course.slopeAt(kart.index, kart.x, kart.z) * along);
+    this.#pitch = pitch;
     // A drift leans the kart out of the turn and swings its nose 17° further in, so the slide reads
     // from the chase camera, which follows the travel and not the nose.
     const lean = kart.drifting ? kart.driftSide * 0.1 : steer * 0.05 * Math.min(1, kart.speed / 10);
@@ -204,6 +217,12 @@ export class KartModel {
     const flip =
       kart.tumbleTicks > 0 ? (1 - kart.tumbleTicks / kart.feel.tumbleTicks) * Math.PI * 2 : 0;
     root.rotation.set(pitch + flip, kart.yaw + kart.spinAngle - kart.driftSide * 0.3, this.#roll);
+    // The root's origin is the road contact, so a flip about it swings half the kart under the
+    // road. Lift the root by how far the rotated body would dip, so the tumble stays on the road.
+    const angle = pitch + flip;
+    if (flip !== 0)
+      root.position.y +=
+        this.#halfLength * Math.abs(Math.sin(angle)) + Math.max(0, -this.#top * Math.cos(angle));
     const boosting = kart.boostTicks > 0 || kart.miniTurboTicks > 0;
     this.#flame.visible = boosting;
     if (boosting) this.#flame.scale.set(1, 1, 0.75 + Math.abs(Math.sin(this.#spin * 7)) * 0.5);

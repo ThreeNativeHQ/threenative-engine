@@ -7,7 +7,7 @@ import {
   isTouchscreenAvailable,
   qualityTiers,
 } from "@threenative/core";
-import { type DataTexture, Euler, type PerspectiveCamera, Vector3 } from "three";
+import { Box3, type DataTexture, Euler, type PerspectiveCamera, Vector3 } from "three";
 import { Driver } from "../entities/Driver.js";
 import { CourseItem, ITEM_FEEL, ItemSlot, drawItem } from "../entities/Items.js";
 import { type IKartInput, Kart, idleInput } from "../entities/Kart.js";
@@ -77,6 +77,8 @@ interface IEntrant {
   wallClock: number;
   /** Every item this kart used, in order, for the scenarios. */
   used: string[];
+  /** Worst depth, metres, the model's world box reached below the road under the kart this run. */
+  lowestPointBelowRoad: number;
   readonly shake: IShake;
 }
 
@@ -129,6 +131,7 @@ export class Race extends Scene<GameState> {
   #items: CourseItem[] = [];
   #boxes: ItemBoxes | undefined;
   #post: ReturnType<typeof setupPost> | undefined;
+  readonly #box = new Box3();
 
   /**
    * Everything a scenario can place is built and registered here: `setup.place` is applied after
@@ -166,6 +169,7 @@ export class Race extends Scene<GameState> {
         boxes: 0,
         driver: new Driver(kart, slot % 2 === 0 ? -3 : 3, 0.5 + (i % 4) * 0.04),
         kart,
+        lowestPointBelowRoad: 0,
         model,
         name: player ? "player" : `cpu.${i}`,
         onPad: false,
@@ -219,6 +223,7 @@ export class Race extends Scene<GameState> {
           itemDraws: entrant.slot.draws,
           lap: entrant.racer.lap,
           lateral: kart.lateral,
+          lowestPointBelowRoad: entrant.lowestPointBelowRoad,
           longestAir: kart.longestAir,
           maxLateral: kart.maxLateral,
           maxJump: entrant.racer.maxJump,
@@ -742,6 +747,25 @@ export class Race extends Scene<GameState> {
           entrant.wallClock = 0.15;
           burst("wall", { x: kart.x, y: kart.y + 0.5, z: kart.z });
         }
+      }
+      // The rendered model's lowest point against the road under the kart: a hit must not sink it.
+      // Hidden effect meshes do not count, and one Box3 is reused, so a frame allocates nothing.
+      // Only a kart in a spin or a tumble is measured: the walk visits every vertex, and a kart on
+      // its wheels cannot dip below its own road contact.
+      for (const entrant of field) {
+        const { kart, model } = entrant;
+        if (!kart.hit) continue;
+        model.root.updateWorldMatrix(true, true);
+        this.#box.makeEmpty();
+        model.root.traverseVisible((object) => {
+          if ((object as { geometry?: unknown }).geometry !== undefined)
+            this.#box.expandByObject(object, true);
+        });
+        const road = course.heightAt(kart.index, kart.x, kart.z);
+        entrant.lowestPointBelowRoad = Math.max(
+          entrant.lowestPointBelowRoad,
+          road - this.#box.min.y,
+        );
       }
       boxes.update(elapsed, (i) => (boxReady[i] ?? 0) <= elapsed, dt, camera.position);
       rig.update(player.kart, dt);
