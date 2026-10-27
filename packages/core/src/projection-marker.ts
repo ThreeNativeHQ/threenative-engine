@@ -1,6 +1,10 @@
 import type { IMatrixWorldReport } from "./matrix-world.js";
 import type { IRenderCameraCullReport } from "./render-camera-cull.js";
-import type { IRenderProjectionReport, ProjectionExactReason } from "./renderProjection.js";
+import type {
+  IRenderProjectionReport,
+  ProjectionExactReason,
+  ProjectionWindowReport,
+} from "./renderProjection.js";
 
 /**
  * The per-window projection line.
@@ -99,7 +103,7 @@ export function rankExactReasons(
  * to do".
  */
 export function formatProjectionWindow(
-  report: IRenderProjectionReport,
+  report: ProjectionWindowReport,
   window: number,
   drawsActual: number | undefined,
   cull?: IRenderCameraCullReport,

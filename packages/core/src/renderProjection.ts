@@ -118,6 +118,9 @@ function declineCauseOf(
   return count === undefined ? undefined : { ...count, hint: DECLINE_HINTS[count.code] };
 }
 
+/** What the window line reads: the report less its one scene-walking field. */
+export type ProjectionWindowReport = Omit<IRenderProjectionReport, "resultDrawCandidates">;
+
 export interface IRenderProjectionReport {
   readonly schemaVersion: 1;
   /** True while the renderer is being handed the mirror rather than the authored scene. */
@@ -635,14 +638,24 @@ export class SceneRenderProjection {
 
   get report(): IRenderProjectionReport {
     if (this.#host !== undefined) return this.#hostReport(this.#hostVerdict ?? NO_HOST_VERDICT);
-    const exact: Partial<Record<ProjectionExactReason, number>> = {};
-    for (const [reason, count] of this.#mirror?.exactCounts ?? []) exact[reason] = count;
     let resultDrawCandidates = 0;
     // Counted from the scene the renderer is actually handed. Anything else is this class marking
     // its own homework.
     this.root.traverse((object) => {
       if (isRenderable(object)) resultDrawCandidates += 1;
     });
+    return { ...this.windowReport, resultDrawCandidates };
+  }
+
+  /**
+   * {@link report} less `resultDrawCandidates`, the one field that walks the scene. The window line
+   * every five seconds reads this: on the native engine the walk crosses the bridge per node, and
+   * the shooter town's 8,900 nodes made that window's frame miss its vsync.
+   */
+  get windowReport(): ProjectionWindowReport {
+    if (this.#host !== undefined) return this.#hostReport(this.#hostVerdict ?? NO_HOST_VERDICT);
+    const exact: Partial<Record<ProjectionExactReason, number>> = {};
+    for (const [reason, count] of this.#mirror?.exactCounts ?? []) exact[reason] = count;
     const batches = this.#deoptimized ? 0 : (this.#mirror?.batchCount ?? 0);
     const exactObjects = this.#deoptimized ? 0 : (this.#mirror?.proxyCount ?? 0);
     return {
@@ -652,7 +665,6 @@ export class SceneRenderProjection {
       ...(this.#reason === undefined ? {} : { reason: this.#reason }),
       ...(this.#cause === undefined ? {} : { cause: this.#cause }),
       sourceRenderables: this.#sourceRenderables,
-      resultDrawCandidates,
       projectedObjects: this.#deoptimized ? 0 : (this.#mirror?.projectedObjects ?? 0),
       batches,
       instancedBatches: this.#deoptimized ? 0 : (this.#mirror?.instancedBatchCount ?? 0),

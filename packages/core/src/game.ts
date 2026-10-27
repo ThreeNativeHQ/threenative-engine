@@ -1709,7 +1709,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               if (projection !== undefined) {
                 reportInfo(
                   formatProjectionWindow(
-                    projection.report,
+                    projection.windowReport,
                     reported.window,
                     lastWorldDrawCalls,
                     this.#cameraCull?.report,
