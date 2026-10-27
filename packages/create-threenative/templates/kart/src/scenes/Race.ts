@@ -37,6 +37,25 @@ const BUMP = { length: 2.2, width: 1.5 } as const;
 const EFFECT_RANGE = 90;
 const POOL = { burrs: ITEM_FEEL.maxBurrs, acorns: 6 } as const;
 
+/** A per-frame shake meter: the previous two samples and the worst frame-to-frame step this run. */
+interface IShake {
+  y: number;
+  y2: number;
+  /** The camera's height relative to the kart, player only. */
+  offset: number;
+  offset2: number;
+  /** The rendered model's pitch and roll, radians. */
+  pitch: number;
+  roll: number;
+  /** Frames to skip after leaving the ground: a hop's arc is not a shake. */
+  air: number;
+  maxY: number;
+  maxOffset: number;
+  /** Worst frame-to-frame pitch and roll change, degrees. */
+  maxPitch: number;
+  maxRoll: number;
+}
+
 /** A kart in the field: the model, its place in the race, its hand on the wheel and its item. */
 interface IEntrant {
   readonly name: string;
@@ -58,6 +77,7 @@ interface IEntrant {
   wallClock: number;
   /** Every item this kart used, in order, for the scenarios. */
   used: string[];
+  readonly shake: IShake;
 }
 
 /** The sample nearest a world point, height included, so the bridge and the road under it differ. */
@@ -152,6 +172,19 @@ export class Race extends Scene<GameState> {
         padHits: 0,
         player,
         racer: new Racer(livery.name, kart, course.checkpoints),
+        shake: {
+          air: 0,
+          maxOffset: 0,
+          maxPitch: 0,
+          maxRoll: 0,
+          maxY: 0,
+          offset: 0,
+          offset2: 0,
+          pitch: model.root.rotation.x,
+          roll: model.root.rotation.z,
+          y: kart.y,
+          y2: kart.y,
+        },
         slot: new ItemSlot(),
         sparkClock: 0,
         stuck: 0,
@@ -196,6 +229,10 @@ export class Race extends Scene<GameState> {
           passed: entrant.racer.passed,
           progress: entrant.racer.progress,
           rank: entrant.racer.rank,
+          shakeCamera: entrant.shake.maxOffset,
+          shakePitch: entrant.shake.maxPitch,
+          shakeRoll: entrant.shake.maxRoll,
+          shakeY: entrant.shake.maxY,
           settledGrass: kart.settled.grass,
           settledRoad: kart.settled.road,
           speed: kart.speed,
@@ -318,6 +355,21 @@ export class Race extends Scene<GameState> {
     const rig = createChaseCamera(camera);
     rig.snap(player.kart);
     ctx.entities.add("camera-rig", { debug: () => rig.debug() });
+    // A scenario may have moved a kart above, so the shake meter starts from the placed pose.
+    for (const entrant of field) {
+      const s = entrant.shake;
+      s.air = 0;
+      s.maxOffset = 0;
+      s.maxPitch = 0;
+      s.maxRoll = 0;
+      s.maxY = 0;
+      s.pitch = entrant.model.root.rotation.x;
+      s.roll = entrant.model.root.rotation.z;
+      s.y = entrant.kart.y;
+      s.y2 = entrant.kart.y;
+    }
+    player.shake.offset = camera.position.y - player.kart.y;
+    player.shake.offset2 = player.shake.offset;
 
     // Effects: five pooled emitters, every look parameter in `render/effects.ts`.
     const make = (name: keyof typeof EFFECTS): GPUParticles3D => {
@@ -693,6 +745,30 @@ export class Race extends Scene<GameState> {
       }
       boxes.update(elapsed, (i) => (boxReady[i] ?? 0) <= elapsed, dt, camera.position);
       rig.update(player.kart, dt);
+      // Shake meter: the second difference of the kart's height and of the camera's height above
+      // it, and the per-frame pitch/roll step the model drew. A hop is a real arc, not a shake, so
+      // the air and the two frames that land it are skipped.
+      const cameraOffset = camera.position.y - player.kart.y;
+      for (const entrant of field) {
+        const s = entrant.shake;
+        const pitch = entrant.model.root.rotation.x;
+        const roll = entrant.model.root.rotation.z;
+        const offset = entrant === player ? cameraOffset : s.offset;
+        if (s.air === 0 && !entrant.kart.airborne) {
+          s.maxY = Math.max(s.maxY, Math.abs(entrant.kart.y - 2 * s.y + s.y2));
+          s.maxPitch = Math.max(s.maxPitch, Math.abs(pitch - s.pitch) * (180 / Math.PI));
+          s.maxRoll = Math.max(s.maxRoll, Math.abs(roll - s.roll) * (180 / Math.PI));
+          if (entrant === player)
+            s.maxOffset = Math.max(s.maxOffset, Math.abs(offset - 2 * s.offset + s.offset2));
+        }
+        s.air = entrant.kart.airborne ? 2 : Math.max(0, s.air - 1);
+        s.y2 = s.y;
+        s.y = entrant.kart.y;
+        s.offset2 = s.offset;
+        s.offset = offset;
+        s.pitch = pitch;
+        s.roll = roll;
+      }
       lighting.follow(new Vector3(player.kart.x, player.kart.y, player.kart.z));
 
       // ---- What the HUD reads ----------------------------------------------------------------

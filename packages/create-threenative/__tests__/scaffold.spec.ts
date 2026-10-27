@@ -316,7 +316,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-26 (PRD-747 kits): kart, puzzle, racing, runner and sailing play fixes
   // (their src/, playtests/ and HUD text), measured by this test on a clean committed tree.
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "86b8d1c72acf87c9c34a0f6ca498ed480af84e9546223553734b7ae758a3bfcc",
+  kart: "80e9c25a1513381da6d91cf1f19baef95531f0e2e6f09d877d1b467f17893395",
   minimal: "2786d7eee1ba93183585b2a9a20ea370c7d98cad4543cbd07849b5145c17d49e",
   platformer: "c26471c971cb8c50b631056f00d023ccf415fa1ec12eb2102b164fb6f84ce33a",
   puzzle: "ed8204b07e2c2b49a7b122b31e286933919139f86ec6bf87721f97e8bca7cad3",
