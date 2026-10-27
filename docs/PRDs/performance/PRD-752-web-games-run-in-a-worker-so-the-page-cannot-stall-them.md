@@ -1,6 +1,6 @@
 # PRD-752 — Web games run in a worker, so the page cannot stall them
 
-**Status:** PARTIAL — phase 1 done; phase 2 box 1 done.
+**Status:** PARTIAL — phases 1 and 2 done; phase 3 next.
 **Priority:** P1 — on a loaded host every web game collapses (shooter kit: frame p50 33 ms, p95 100 ms, main thread 100% busy); worker mode (phase 3) and Wasm threads (phase 4) are open.
 **Complexity:** 8 (HIGH) — 10+ files across core, the web host, the Wasm engine and the harness (+3), a new host-capability layer (+2), worker and `OffscreenCanvas` boot (+2), Wasm threads and isolation headers (+1); risk override: none
 **Owner:** João
@@ -70,11 +70,11 @@ Sets the KPI baseline. Shooter kit and starter kit, same machine, same stated lo
 - [x] The baseline for the shooter and the starter is recorded in this PRD under `## Decisions`, with load, adapter name (not SwiftShader) and three runs per arm. The v5 KPI numbers are set from it. proof: the `## Decisions` entry, `adapter.info` captured in the run. Result: baseline and KPI entries above, adapter "nvidia turing" in all 12 runs
 
 ### Phase 2: Host-capability layer
-**Status:** PARTIAL — box 1 done
+**Status:** DONE
 
 - [x] A red-green spec scans `packages/core/src` and fails on any read of a global a dedicated worker lacks (type check against the `webworker` lib, value positions only) outside the host-capability layer `packages/core/src/platform.ts`. It is red on the current reads and green after the move. proof: `pnpm exec vitest run scripts/__tests__/check-core-boundary.spec.ts`. Result: red with 19 reads in 5 files, green 32/32 after the move to `hostWindow`/`hostDocument`/`hostResizeObserver`; `pnpm exec tsx scripts/check-core-boundary.ts` passes; 11 related core and boundary spec files 248/248; core typecheck exit 0
-- [ ] The native host runs core unmodified through the same layer, with no dynamic `import()` in core. proof: `pnpm exec vitest run scripts/__tests__/check-core-boundary.spec.ts`; `pnpm native:verify:desktop`
-- [ ] The starter plays through a loopback proxy (main thread talks to the layer over a message channel in the same thread) with unchanged behaviour. proof: `pnpm test:templates` on the starter, green
+- [x] The native host runs core unmodified through the same layer, with no dynamic `import()` in core. proof: `pnpm exec vitest run scripts/__tests__/check-core-boundary.spec.ts`; `pnpm native:verify:desktop`. Result: 32/32; `native:verify:desktop` exit 0 ("desktop core gate passed: 300 frames, 1280x720", UI frame gate passed) after `pnpm native:build` in this worktree
+- [x] The starter plays through a loopback proxy (main thread talks to the layer over a message channel in the same thread) with unchanged behaviour. proof: `packages/core/__tests__/ui-bridge-inbound.spec.ts`; a pause round-trip scenario (click `button[aria-pressed]`, `hud` asserts `pause` -> `resume`) on a scaffolded starter at `/` and at `/?tnUiLoopback=1`; the starter's own `pnpm test` (`test:templates` skips the starter: it runs in the golden-path lane). Result: spec 6/6; round trip exit 0 on both URLs; a Playwright probe reads `__tnUiLoopback` false at `/` and true with the flag; kit `movement`, `survives`, `production-readiness` pass. `play` fails `performance.maxFrameMsP95` on GPU time on this host, and the scaffold from before this change fails it too (before 2/2 runs at GPU p95 20.3/17.3 ms, after 1/2 at 18.1 ms; CPU about 7.5 ms in both)
 
 ### Phase 3: Worker mode and v5 KPI
 **Status:** NOT STARTED
