@@ -198,7 +198,20 @@ export function validateReferenceIndex(value: unknown, where = "index"): IRefere
   const index = record(value, where, ["version", "games", "stubs"]);
   if (index.version !== 1) fail(`${where}.version`, "expected 1");
   const games = list(index.games, `${where}.games`, (entry, at) => {
-    const game = record(entry, at, ["id", "title", "platform", "repo", "tier"]);
+    // `kind`, `rating`, `genre` and `subgenre` are editorial catalog fields the data repository
+    // publishes and search never reads; a new catalog field is one name here and one schema change
+    // there, never a rejection of the whole release.
+    const game = record(entry, at, [
+      "id",
+      "title",
+      "platform",
+      "repo",
+      "tier",
+      "kind",
+      "rating",
+      "genre",
+      "subgenre",
+    ]);
     if (game.tier !== 1 && game.tier !== 2) fail(`${at}.tier`, "expected 1 or 2");
     return {
       id: id(game.id, `${at}.id`),
