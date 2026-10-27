@@ -1,7 +1,7 @@
 # PRD-735 — Reverse-engineer references at scale: the repo rename, the full list, the classics and the scout pipeline
 
-**Status:** PARTIAL — AC-0 done
-**Priority:** P1 — AC-1 to AC-5 are open, and the PRD-750 kit loop (P1) needs their references past its first row; today the release holds one Tier-1 game (SM64).
+**Status:** PARTIAL — AC-0, AC-1 and AC-3 done
+**Priority:** P1 — AC-2, AC-4 and AC-5 are open, and the PRD-750 kit loop (P1) needs their references past its first row; today the release holds one Tier-1 game (SM64).
 **Complexity:** 4 (MEDIUM) — separate data release +2, external API +1, 1–5 files +1; risk override: none.
 **Owner:** João Paulo Furtado
 **Depends on:** PRD-734 (done: the reference tools, the schema and the `v0.1` release)
@@ -62,19 +62,19 @@ Integration: the release URL and contribution repo in `packages/engine-mcp/src/r
 
 #### Phase 1: The rename and Tier 2 for the full list
 
-**Status:** PARTIAL — AC-0 done
+**Status:** PARTIAL — AC-0 and AC-1 done; AC-2 waits for a published release
 **Files:** `packages/engine-mcp/src/references.ts`; the data repo: import script, release workflow.
 
 - [x] AC-0 [local]: an installed project's MCP fetches the release from `ThreeNativeHQ/threenative-reverse-engineer-mcp`, and `engine_search_capabilities "reverse engineer"` returns the reference tools. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/references.spec.ts packages/engine-mcp/__tests__/search.spec.ts` — red 2 failed, then 90/90 green (1 live skipped); `-t live` against the new URL 1/1 green; repo transferred and renamed with `gh api .../transfer` on the owner's admin login; the old `jonit-dev/threenative-game-refs` release URL redirects (HTTP 200), so installed games keep working (2026-10-26)
-- [ ] AC-1 [shared]: the release index holds one Tier-2 row per list project, and a second import keeps every existing id. proof: data repo `import` job, row count against the list README count
+- [x] AC-1 [shared]: the release index holds one Tier-2 row per list project, and a second import keeps every existing id. proof: data repo `import.mjs` (red, then `import.spec.mjs` 4/4) run on the list README at `9051afcd` ("3287 projects"): 3287 catalog rows = 3286 distinct list repositories (one repository is listed twice) + Quake; a second import is byte-identical (`cmp`); the `validate` job builds `index.json.gz` from it, green on `806e728` (run 40441794931) (2026-10-26)
 - [ ] AC-2 [local]: engine-mcp searches a Tier-2 title from the new release and returns its repo with the explore guidance. proof: `THREENATIVE_REFERENCES_URL=<release> pnpm exec vitest run packages/engine-mcp/__tests__/references.spec.ts -t live`
 
 #### Phase 2: Scout pipeline and Ocarina of Time
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** the data repo: scout brief, scout runner script.
 
-- [ ] AC-3 [shared]: OoT has a reviewed map and at least 10 reviewed cards at a pinned SHA, each constant with its unit and timestep, and the `validate` job passes. proof: data repo `validate` job
+- [x] AC-3 [shared]: OoT has a reviewed map and at least 10 reviewed cards at a pinned SHA, each constant with its unit and timestep, and the `validate` job passes. proof: `game-oot.json` at `zeldaret/oot@14759abf`, 8 nodes and 17 cards, scouted on the cheap arm (`scout/run.sh`), then a full per-card review against the pinned tree fixed 14 cards (the 1.5x `R_UPDATE_RATE` position scaling at `src/code/z_actor.c:987`, adult/child values, ledge thresholds); `validate` green on `806e728` (run 40441794931) (2026-10-26)
 
 #### Phase 3: The classics and the contribution path
 
