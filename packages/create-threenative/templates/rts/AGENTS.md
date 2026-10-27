@@ -51,7 +51,7 @@ every gesture through `ctx.input`; `src/render/` draws it (terrain displaced by 
 `terrainHeight`, instanced models per (type, team), selection rings and health bars, fog of war in the
 terrain material); `src/ui/` is the HUD, the minimap and the command panel, where every order starts as
 a named intent the scene resolves. `playtests/survives.playtest.json` is the durable smoke proof;
-`rts-orders`, `rts-build`, `rts-train`, `rts-attack`, `rts-ai-attack` and `performance` are the rest.
+`rts-orders`, `rts-build`, `rts-train`, `rts-attack`, `rts-ai-attack`, `rts-pause`, `rts-zoom` and `performance` are the rest.
 
 ## Portable authoring contracts
 
