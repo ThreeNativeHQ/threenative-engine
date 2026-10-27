@@ -9,66 +9,70 @@ const state = vi.hoisted(() => ({
   launchArgs: [] as string[],
   workers: [] as { evaluate(fn: (() => unknown) | string): Promise<unknown> }[],
 }));
+const recordLaunch = vi.hoisted(() => <T>(args: string[], browser: T): T => {
+  state.launchArgs = args;
+  return browser;
+});
 vi.mock("node:os", () => ({
   default: { availableParallelism: () => 8, loadavg: () => [state.load, 0, 0] },
 }));
 vi.mock("@playwright/test", () => ({
   chromium: {
-    launch: async ({ args }: { args: string[] }) => ({
-      ...((state.launchArgs = args), {}),
-      newPage: async () => ({
-        on: vi.fn(),
-        addInitScript: vi.fn(),
-        goto: vi.fn(),
-        waitForTimeout: vi.fn(),
-        click: async (selector: string) => {
-          state.clicks.push(selector);
-        },
-        workers: () => state.workers,
-        context: () => ({
-          newCDPSession: async () => ({
-            send: async (method: string) =>
-              method === "Performance.getMetrics"
-                ? // the thread's CPU seconds: 2 ms more at the second read
-                  { metrics: [{ name: "ThreadTime", value: state.thread.shift() ?? 0 }] }
-                : method === "Profiler.stop"
-                  ? {
-                      // 1 ms busy in `work`, 3 ms in `(idle)`: a quarter of the window is CPU work.
-                      profile: {
-                        nodes: [
-                          { id: 1, callFrame: { functionName: "(idle)", url: "" } },
-                          { id: 2, callFrame: { functionName: "work", url: "" } },
-                        ],
-                        samples: [1, 2, 1, 1],
-                        timeDeltas: [1000, 1000, 1000, 1000],
-                      },
-                    }
-                  : {},
+    launch: async ({ args }: { args: string[] }) =>
+      recordLaunch(args, {
+        newPage: async () => ({
+          on: vi.fn(),
+          addInitScript: vi.fn(),
+          goto: vi.fn(),
+          waitForTimeout: vi.fn(),
+          click: async (selector: string) => {
+            state.clicks.push(selector);
+          },
+          workers: () => state.workers,
+          context: () => ({
+            newCDPSession: async () => ({
+              send: async (method: string) =>
+                method === "Performance.getMetrics"
+                  ? // the thread's CPU seconds: 2 ms more at the second read
+                    { metrics: [{ name: "ThreadTime", value: state.thread.shift() ?? 0 }] }
+                  : method === "Profiler.stop"
+                    ? {
+                        // 1 ms busy in `work`, 3 ms in `(idle)`: a quarter of the window is CPU work.
+                        profile: {
+                          nodes: [
+                            { id: 1, callFrame: { functionName: "(idle)", url: "" } },
+                            { id: 2, callFrame: { functionName: "work", url: "" } },
+                          ],
+                          samples: [1, 2, 1, 1],
+                          timeDeltas: [1000, 1000, 1000, 1000],
+                        },
+                      }
+                    : {},
+            }),
           }),
+          evaluate: async (fn: (() => unknown) | string) => {
+            if (typeof fn === "string") return state.presented.shift() ?? 0;
+            if (fn.toString().includes("requestAdapter")) return "hardware";
+            if (fn.toString().includes("__tnCallCounts")) return { perFrame: 0, top: [] };
+            if (fn.toString().includes("__tnGpuCounts")) return [];
+            if (fn.toString().includes("getCurrentTexture"))
+              return Array.from({ length: 300 }, () => 10);
+            if (fn.toString().includes("requestAnimationFrame"))
+              return Array.from({ length: 600 }, (_, i) => (i === 599 ? 40 : 10));
+            vi.stubGlobal("performance", {
+              memory: { usedJSHeapSize: state.memory.jsHeapUsedBytes },
+            });
+            vi.stubGlobal(
+              "__tnWasmMemoryBytes",
+              state.memory.wasmMemoryBytes === undefined
+                ? undefined
+                : () => state.memory.wasmMemoryBytes,
+            );
+            return fn();
+          },
         }),
-        evaluate: async (fn: (() => unknown) | string) => {
-          if (typeof fn === "string") return state.presented.shift() ?? 0;
-          if (fn.toString().includes("requestAdapter")) return "hardware";
-          if (fn.toString().includes("__tnCallCounts")) return { perFrame: 0, top: [] };
-          if (fn.toString().includes("__tnGpuCounts")) return [];
-          if (fn.toString().includes("getCurrentTexture"))
-            return Array.from({ length: 300 }, () => 10);
-          if (fn.toString().includes("requestAnimationFrame"))
-            return Array.from({ length: 600 }, (_, i) => (i === 599 ? 40 : 10));
-          vi.stubGlobal("performance", {
-            memory: { usedJSHeapSize: state.memory.jsHeapUsedBytes },
-          });
-          vi.stubGlobal(
-            "__tnWasmMemoryBytes",
-            state.memory.wasmMemoryBytes === undefined
-              ? undefined
-              : () => state.memory.wasmMemoryBytes,
-          );
-          return fn();
-        },
+        close: vi.fn(),
       }),
-      close: vi.fn(),
-    }),
   },
 }));
 
