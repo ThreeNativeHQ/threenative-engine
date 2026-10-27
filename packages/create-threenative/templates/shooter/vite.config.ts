@@ -40,6 +40,8 @@ export default defineConfig({
     tailwindcss(),
     assetsWatchPlugin(),
   ],
+  // `worker.html` runs the same game in a worker; `index.html` stays the default page.
+  build: { rollupOptions: { input: { index: "index.html", worker: "worker.html" } } },
   server: {
     watch: {
       ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],

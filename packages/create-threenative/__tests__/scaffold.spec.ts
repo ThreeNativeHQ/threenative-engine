@@ -322,7 +322,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   runner: "cda53296a601c2dac944f169afc60d94d3fa03f049f5a3eaf88889819f1ec55d",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "5383db14b9c32f6185f406113a83054b465a869a36e171eb2a9308d544a5522d",
-  shooter: "07eb04cfbb07bab2321795b66c0a81b372a0e801df4120da74dce22e570f4b2e",
+  // Recomputed 2026-10-26 (PRD-752): worker.html, src/worker.ts, src/worker-page.ts and an AGENTS.md line run the game in a worker.
+  shooter: "1fdfdcda1de8fe7a097e80e003db56a8b236fc348845911fcfea86cd6df93fbc",
   snow: "183b80ada822f22f25c9f7e6ca0f45aef2f5789a71f51f8cc3048965ddda8d2b",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
