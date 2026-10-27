@@ -81,7 +81,8 @@ export function createSpringArm(
     if (!(length > MIN_ARM)) return;
     toLens.multiplyScalar(1 / length);
     const hit = options.obstruction(pivot, toLens, length);
-    if (hit !== undefined) camera.position.copy(pivot).addScaledVector(toLens, Math.max(MIN_ARM, hit - MARGIN));
+    if (hit !== undefined)
+      camera.position.copy(pivot).addScaledVector(toLens, Math.max(MIN_ARM, hit - MARGIN));
   };
 
   const dolly = (amount: number, dt: number): void => {

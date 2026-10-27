@@ -166,7 +166,9 @@ describe("platformer checkpoints", () => {
     // `moveAndSlide` only queues motion, so a camera written before the physics step frames where
     // the body was. `afterPhysics` is the phase the engine owns.
     expect(play).toContain("afterPhysics(ctx, (dt) => {");
-    expect(play).toContain("followCamera(camera, fox.mesh.position, fox.body.velocity.x, dt, lensObstruction)");
+    expect(play).toContain(
+      "followCamera(camera, fox.mesh.position, fox.body.velocity.x, dt, lensObstruction)",
+    );
     expect(play).toContain("lighting.follow(fox.mesh.position)");
   });
 

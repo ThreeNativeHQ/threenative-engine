@@ -323,8 +323,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "4d0884a98ccfe97c0aeaaf6a64ed62b195154666123444539acf56ba5563963e",
   minimal: "e157e66fdf5e14761655fb39ef95af1fd005df68a6e8ecc6cb1159c0d501d227",
-  platformer: "eb877b382d0640788a438392e747f5da51a941a9e8711f665d42985f7ee7ca94",
-  puzzle: "0c9ca72fb08525eb35b7b96d09466fa21d3f798ec95d1e02105257cbf852b935",
+  platformer: "7519c26834fb6bb337b858ede5f170ccf9e7011690e6bc101f5e955a8f29eb44",
+  puzzle: "83dd1e3c3653c2e29f197a4912f089514980d9acb2f3b5867207dd6f231c0843",
   racing: "e1aacca0748b6a219d7573eedd228c9d1e0d5a67c1372dc8851117f635e03f2f",
   rain: "6e86e9dc5e1a413f84cd46977b5bef9c181fedd6e9c38ec15e288fed7a5061a3",
   rts: "44917927d738f4c2e56a1fb6972d5d3514592839f4df9fb80abc9c3b0624364f",
@@ -339,7 +339,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "90d6c89fcf6cae3e7bcf5f5b1bfbb9a9bb85cd1b04dc57130623d44d85cc13fd",
+  starter: "b357d4f22007c30e03bd27ac6dfb3cc4103babb1bc520c23ecaa2db660e24c02",
   "tower-defense": "798dae4422ea48da95629e6e3de73a95facce66d022ccb776424cf952ff7f4d7",
 };
 

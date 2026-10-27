@@ -11,7 +11,11 @@ const CAMERA_OFFSET = { x: -5.5, y: 5.2, z: 14.5 } as const;
 const FOLLOW_RATE = 0.0018;
 
 /** Where the lens must stop: how far a ray runs before it meets something solid, or `undefined`. */
-export type LensObstruction = (origin: Vector3, direction: Vector3, far: number) => number | undefined;
+export type LensObstruction = (
+  origin: Vector3,
+  direction: Vector3,
+  far: number,
+) => number | undefined;
 
 // Godot's SpringArm3D collision: the ray starts at the fox's chest, never at the ground under her,
 // and the lens stops `MARGIN` short of what it met, never closer than `MIN_ARM` to her.

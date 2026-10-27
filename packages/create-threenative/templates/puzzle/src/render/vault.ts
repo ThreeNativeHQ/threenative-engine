@@ -140,7 +140,9 @@ export function createVaultRoom(): IVaultRoom {
 
     if (railHeight > 0) {
       const [railW, railD] = size(span.length, VAULT.wallThickness * 1.16);
-      const rail = block(railW as number, railHeight, railD as number, timberMaterial, { radius: 0.07 });
+      const rail = block(railW as number, railHeight, railD as number, timberMaterial, {
+        radius: 0.07,
+      });
       rail.position.set(centre.x, 0.46 + plasterHeight + railHeight / 2, centre.z);
       root.add(rail);
     }
