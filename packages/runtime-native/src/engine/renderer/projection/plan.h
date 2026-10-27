@@ -114,6 +114,15 @@ inline const char* skinnedLaneReason(const SkinnedMesh& rig) {
     return nullptr;
 }
 
+// What decide reads off a rig on every frame, outside the structure stamp (PRD-613): its lane reason (material
+// nodes, transparency, render order, skeleton) and whether its world matrix is a similarity and not mirrored.
+// A held decision is judged again the frame this changes for any of its rigs.
+inline uintptr_t rigLaneKey(const SkinnedMesh& rig) {
+    const double* e = rig.matrixWorld.elements.data();
+    return reinterpret_cast<uintptr_t>(skinnedLaneReason(rig)) * 4 + (isSimilarityTransform(e) ? 2 : 0) +
+           (rig.matrixWorld.determinant() > 0 ? 1 : 0);
+}
+
 // batchFlagsOf: layers, castShadow, receiveShadow, frustumCulled in one key.
 inline double batchFlags(const Mesh& m) {
     return double(m.layers().mask) * 8 + (m.castShadow() ? 4 : 0) + (m.receiveShadow() ? 2 : 0) + (m.frustumCulled ? 1 : 0);
@@ -388,6 +397,38 @@ inline const GeometryContentClass& contentClassOf(const std::shared_ptr<BufferGe
 /** The geometry a batch draws for every member whose geometry has `geometry`'s bytes. */
 inline std::shared_ptr<BufferGeometry> canonicalGeometry(const std::shared_ptr<BufferGeometry>& geometry) {
     return contentClassOf(geometry).canonical.lock();
+}
+
+// One number that changes whenever anything the projection's stability proof reads off the engine
+// changes (projection-stability.ts): the walk order, each node's visibility, and for a mesh its
+// geometry, material, flags, render order and layer mask. It walks the way that proof walks, so a
+// light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
+// the caller to its own exact walk.
+inline double structureStamp(Object3D& root) {
+    uint64_t h = 0xcbf29ce484222325ULL;
+    const auto mix = [&h](uint64_t v) {
+        h = (h ^ v) * 0x100000001b3ULL;
+        h ^= h >> 29;
+    };
+    std::vector<const Object3D*> stack(root.children.rbegin(), root.children.rend());
+    while (!stack.empty()) {
+        const Object3D* object = stack.back();
+        stack.pop_back();
+        const auto* mesh = dynamic_cast<const Mesh*>(object);
+        mix(object->id() * 2 + (object->visible() ? 1 : 0));
+        if (mesh != nullptr) {
+            mix(reinterpret_cast<uintptr_t>(mesh->geometry.get()));
+            mix(reinterpret_cast<uintptr_t>(mesh->material.get()));
+            mix(static_cast<uint64_t>(mesh->castShadow()) | static_cast<uint64_t>(mesh->receiveShadow()) << 1 |
+                static_cast<uint64_t>(mesh->frustumCulled) << 2);
+            mix(static_cast<uint64_t>(static_cast<int64_t>(mesh->renderOrder())));
+            mix(std::bit_cast<uint64_t>(mesh->layers().mask));
+        }
+        mix(object->children.size());
+        if (object->isLight() || object->type() == "LOD") continue;
+        for (auto it = object->children.rbegin(); it != object->children.rend(); ++it) stack.push_back(*it);
+    }
+    return static_cast<double>(h & ((1ULL << 53) - 1));
 }
 
 /**
