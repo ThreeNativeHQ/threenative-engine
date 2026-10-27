@@ -18,8 +18,8 @@
 //  2. Determinism: every placement is driven by `hash(seed)`, never
 //     `Math.random()`, so a replay renders identically.
 //  3. Budget: facade detail multiplies by ~50 lane faces. Every piece is a
-//     mesh in the town group, and `collapseTown` merges the whole town into ONE
-//     mesh per material at the end, so the whole town's joinery costs tens of
+//     mesh in the town group, and the engine merges the settled town into one
+//     mesh per material (auto batching), so the whole town's joinery costs tens of
 //     draw calls rather than the ~900 individual meshes it would otherwise be.
 //  4. Dressing never gets a collider. The batch's meshes go into `hittable`
 //     (a bullet stops on a door, as before) but no `TownCollider` is emitted
@@ -160,7 +160,7 @@ function createFacadeMaterials(materials: TownMaterials): FacadeMaterials {
 
 /**
  * Every facade piece is its own mesh until the scene merges the whole town per
- * material (`collapseTown`): ~900 small meshes cost a few dozen draw calls.
+ * material (the engine's auto batching): ~900 small meshes cost a few dozen draw calls.
  * Each piece is already in world space by `put`, so `worldGridUVs` is honest
  * here: one grid tile is one metre on every wall, trim and shutter in the town,
  * however the face was authored and however big the building is.

@@ -966,8 +966,8 @@ export function buildTown(materials: TownMaterials): Town {
   const decks: DeckFootprint[] = [BACK_PLAT_DECK, HEAVEN_DECK, CATWALK_DECK];
 
   // Every solid now exists carrying its final material, so this one walk can
-  // tag them all — before `collapseTown` merges them in the scene, while a crate
-  // is still called "crate".
+  // tag them all — while a crate is still called "crate": the engine
+  // merges the settled town later, and a hit still names the authored mesh.
   tagSurfaces(hittable, materials);
 
   return {

@@ -24,6 +24,12 @@ control moments and the carrier-deck run for a fixed-wing aircraft, and takes ev
 constant, wind value and damage multiplier from the game. It moves the aircraft the game gives it
 and ships no airframe, geometry, material or colour of its own. See `CHARTER.md`'s "Mechanism is
 not appearance".
+Automatic static-mesh batching (`AutoBatch`, PRD-748) is admitted as mechanism: once the scene has
+settled it merges static meshes that share a material into one draw, hides their sources instead of
+removing them, and gives a source back the moment the game changes it. It reads materials and
+render flags to decide and decides no appearance. Named overrides: `userData.batch = "off"` on a
+mesh or ancestor, `autoBatch: false`, and `autoBatch: { guard: "everyFrame" }`; `TN_AUTO_BATCH`
+reports each one.
 Optional portable message transport is admitted by PRD-359 at the `@threenative/core/net` subpath.
 `connect` opens authenticated HTTPS WebTransport only; credentials come from the game's identity
 flow, and there is no fallback transport. Defaults are a 10-second connect timeout, 65,536-byte

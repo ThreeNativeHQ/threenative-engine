@@ -326,8 +326,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   runner: "dcabe5962307f070fd387390e68df03a599400c90302068edc38d49c7bec60c4",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "1429611e2da4350df3281cf6883b4273cf833ea9c8b03c38356ba25f93cfdb71",
-  // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "c23e8e43851d2bf675a937c18ee54efa51ae60e56a8f98ef71dcb2b9fd136778",
+  // Recomputed 2026-10-27 (PRD-748): the engine merges the settled town itself, so src/townBatch.ts is gone.
+  shooter: "1ea2fa19fcd4c207852c907af9f8c6b5ce6ff978364c2f3ba1590d051b36f05d",
   snow: "44540fc309fab668b63491b002c73f8e64b9d1c6d4b4d9d5f533f9eb812e0d34",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
