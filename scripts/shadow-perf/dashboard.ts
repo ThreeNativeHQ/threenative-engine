@@ -1,5 +1,5 @@
 /**
- * "Shadows vs Unreal" tab of `pnpm perf:live`: reads the lamp-shadow perf loop's results file
+ * "Shadows vs Unreal" tab of `pnpm dashboard`: reads the lamp-shadow perf loop's results file
  * (PRD-650/652) and pairs each iteration's ThreeNative and Unreal GPU times per scene. It times
  * nothing itself and writes nothing.
  *

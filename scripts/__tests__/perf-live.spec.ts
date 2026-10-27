@@ -11,6 +11,7 @@ import {
   desktopOf,
   epicOf,
   heroOf,
+  ledgerTab,
   loadRuns,
   phaseGapOf,
   pointsOf,
@@ -19,6 +20,7 @@ import {
   staleReason,
   valueColor,
   webOf,
+  withNav,
 } from "../perf-live.js";
 
 const pilot = "artifacts/engine-load-test/prd-449/pilots/scoreboard-tn-r3-2026-09-28.json";
@@ -772,6 +774,45 @@ describe("perf-live", () => {
       expect(html).toContain('id="web"');
       for (const label of ["pending", "missing", "regression", "software adapter"])
         expect(html).toContain(label);
+    });
+  });
+
+  describe("the hub tabs (PRD-751)", () => {
+    const ledgerFile = async (text: string) => {
+      const file = path.join(await makeTempDir("dashboard-tab"), "ledger.json");
+      await writeFile(file, text);
+      return file;
+    };
+
+    it("puts every tab in the nav and marks the current one", async () => {
+      const html = withNav(
+        await readFile(new URL("../perf-live.html", import.meta.url), "utf8"),
+        "/ci-speed",
+      );
+      for (const href of ["/", "/midway", "/shadows", "/ci-speed", "/asset-perf"])
+        expect(html).toContain(`href="${href}"`);
+      expect(html).toContain('<a href="/ci-speed" aria-current="page">');
+      expect(html.match(/<nav class="tabs">/gu)).toHaveLength(1);
+    });
+
+    it("renders the CI speed and asset perf ledgers live", async () => {
+      const empty = '{"schemaVersion":1,"iterations":[]}';
+      const ci = await ledgerTab("ci-speed", await ledgerFile(empty));
+      expect(ci).toContain("<title>CI speed loop</title>");
+      expect(ci).toContain('<a href="/ci-speed" aria-current="page">');
+      const asset = await ledgerTab("asset-perf", await ledgerFile(empty));
+      expect(asset).toContain("<title>Asset pipeline performance</title>");
+      expect(asset).toContain('fetch("/api/asset-perf"');
+    });
+
+    it("fails closed: a missing ledger is pending, a malformed one is invalid", async () => {
+      const missing = await ledgerTab("ci-speed", "/nonexistent/ledger.json");
+      expect(missing).toContain("pending");
+      expect(missing).toContain('<a href="/ci-speed" aria-current="page">');
+      expect(await ledgerTab("asset-perf", await ledgerFile("{not json"))).toContain("invalid");
+      expect(await ledgerTab("ci-speed", await ledgerFile('{"schemaVersion":2}'))).toContain(
+        "invalid",
+      );
     });
   });
 });

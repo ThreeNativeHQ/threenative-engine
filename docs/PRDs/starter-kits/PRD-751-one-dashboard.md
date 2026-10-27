@@ -1,7 +1,7 @@
 # PRD-751 — One dashboard: `pnpm dashboard` holds every KPI tab
 
-**Status:** NOT STARTED
-**Priority:** P2 — the owner cannot see what the loops do from one place: CI speed and asset perf still render separate pages, and the kit-loop KPIs have no view (all phases open)
+**Status:** PARTIAL — Phase 1 done
+**Priority:** P2 — the kit-loop KPIs have no view yet and the native-performance-loop skill still asks for its own page (Phase 2 open)
 **Complexity:** 2 (LOW) — 6–10 files +2; risk override: none
 **Owner:** João Paulo Furtado
 **Depends on:** None
@@ -53,12 +53,12 @@ See the phase boxes. Each box names its proof.
 
 #### Phase 1: The hub and its two folded tabs
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `package.json`, `scripts/perf-live.ts`, `scripts/perf-live.html`, `scripts/ci-speed-loop.mjs`, `scripts/asset-perf-loop.mjs`, the two deleted `index.html` files and their consumers.
 
-- [ ] AC-1 [local]: `pnpm dashboard` serves the existing tabs plus CI speed and Asset perf, read from their ledgers; a missing or malformed ledger shows `pending` or `invalid`. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts`
-- [ ] AC-2 [local]: no tracked file writes or links a removed page. proof: `rg -n "ci-speed/index.html|asset-perf/index.html|perf:live" --glob '!docs/PRDs/done/**'` empty, `pnpm check:docs`, `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts`
-- [ ] AC-3 [local]: the hub renders all tabs in a real browser with no console error. proof: headed screenshot per tab on the PR
+- [x] AC-1 [local]: `pnpm dashboard` serves the existing tabs plus CI speed and Asset perf, read from their ledgers; a missing or malformed ledger shows `pending` or `invalid`. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts` — red 3 failed before `ledgerTab`/`withNav`, then 29/29 green; with the ci-speed and asset-perf specs 49/49 (2026-10-26)
+- [x] AC-2 [local]: no tracked file writes or links a removed page. proof: `rg -n "ci-speed/index.html|asset-perf/index.html|perf:live" --glob '!docs/PRDs/done/**'` empty, `pnpm check:docs`, `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts` — rg empty apart from this PRD's own history, check:docs exit 0 (3558 links), ci-efficiency 55/55; the `report` and `serve` commands are gone (2026-10-26)
+- [x] AC-3 [local]: the hub renders all tabs in a real browser with no console error. proof: headed screenshot per tab on the PR — headed Chromium under Xvfb, 5 tabs, 0 console errors, nav identical on each; images on the `prd-751-screenshots` branch (2026-10-26)
 
 #### Phase 2: The kit-loop tab and the skill pointer
 
