@@ -17,7 +17,7 @@ function Legend() {
     <div className="desktop-only pointer-events-none flex items-center gap-3 bg-black/45 px-4 py-2 text-[13px] font-semibold tracking-wide">
       {KEYS.map(([key, label], index) => (
         <span className="flex items-center gap-2" key={key}>
-          {index > 0 ? <i className="mr-1 not-italic text-white/25">|</i> : null}
+          {index > 0 ? <i className="mr-1 not-italic text-white/50">|</i> : null}
           <b className="font-bold text-[#ffa63d]">{key}</b>
           <span className="font-normal text-white/85">{label}</span>
         </span>
