@@ -7054,11 +7054,27 @@ export function useUiState<TState extends object>(): TState | undefined;
 ```
 
 - **Use when:** bind a HUD to game state on web and native alike · show score or health in a UI rendered over the game surface
-- **Constraints:** returns undefined until the game publishes its first state
+- **Constraints:** returns undefined until the game publishes its first state and while the loading cover is up
 - **Requires:** npm i @threenative/ui
 
 ```ts
 const score = useUiState<GameState, number>((state) => state.score);
+```
+
+### `useUiStateDuringStartup`
+
+`function` — Read the game's published state while the loading cover is still up, for a UI that draws its own loading screen.
+
+```ts
+export function useUiStateDuringStartup<TState extends object>(options: { … }
+```
+
+- **Use when:** draw a staged loading overlay from the startup progress the game publishes
+- **Constraints:** needs a non-empty reason, reported once as TN_UI_STARTUP_OVERRIDE; every other HUD uses useUiState
+- **Requires:** npm i @threenative/ui
+
+```ts
+const loading = useUiStateDuringStartup<GameState, number>({ reason: "staged loading overlay" }, (state) => state.loading.progress);
 ```
 
 ## `src/audio/storm.ts`

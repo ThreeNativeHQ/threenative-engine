@@ -314,14 +314,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
   // Recomputed 2026-10-26 (PRD-747 exposure): adventure, collectathon, kart, platformer, racing, runner,
   // sailing and starter ship the shared kitExposure.ts meter (0 EV).
-  adventure: "1927eab0e7dbb6fc26ffca8cfdbf93d4b072ec83104a4da15c89b8e184965135",
+  // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
+  // reads state through `useUiStateDuringStartup`.
+  adventure: "7785d6566f92274c761020b09e32d9aa514b721979cd05e383e7c43e59f2183b",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "10af477d1a520fdc1ce9303d488a9218177360231d7082a2093e3d397310e23c",
   minimal: "772a616dca234349aa4f555678bb9b0493f679c22c1a65388a3954ab6e26a042",
   platformer: "7df262eb519137cd5cfbcd3cb210549a52c637fb94e2ebc3aaf0975bc66f50e3",
   puzzle: "2c8d1a41dae19b90cddb7e1037178ca2f91c7fe9fdd5fe72b24a9334bf72ba3a",
   racing: "2b1c4913ad3c60fd9e6a08d74c1edcc7646a6711c09b6742b60b78dbae9ee839",
-  rain: "f6b96412333559caa8a2690a7dd51811cd9fa0bd743113df78a194846f468fdd",
+  rain: "d8dcb340b1fca72196c5224fde3e3f68a57ae2ed3e478ecc042094167abce27d",
   rts: "152fdfb0fbf75055b98b184f040f819b0661c74056cfa78dea6e32142733f434",
   runner: "dcabe5962307f070fd387390e68df03a599400c90302068edc38d49c7bec60c4",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.

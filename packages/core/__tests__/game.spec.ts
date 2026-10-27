@@ -240,13 +240,23 @@ describe("IGame", () => {
       const ui = connectUiBridge({ end: "ui" });
       const mirror = subscribeUiState<{ score: number }>(ui);
       const observed: number[] = [];
-      mirror.subscribe(() => observed.push(mirror.get()?.score ?? -1));
+      let wasCovered = mirror.covered();
+      mirror.subscribe(() => {
+        // A cover change is not a state publication; this test counts publications.
+        if (mirror.covered() !== wasCovered) {
+          wasCovered = mirror.covered();
+          return;
+        }
+        observed.push(mirror.get()?.score ?? -1);
+      });
       ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
       try {
         await game.start();
         await Promise.resolve();
         observed.length = 0;
         if (frame === undefined) throw new Error("Game did not start its loop.");
+        // The page UI reads nothing behind the loading cover; the mirror learns it over the bridge.
+        expect(mirror.covered()).toBe(true);
         let lagging = 0;
         for (let count = 1; count <= 64; count++) {
           frame(count * 16);
@@ -255,6 +265,7 @@ describe("IGame", () => {
         }
         // Startup may hold the world while still presenting loader frames. Count actual renders.
         expect(renderedFrames).toBeGreaterThanOrEqual(8);
+        expect(mirror.covered()).toBe(false);
         if (stateFlushMs === undefined) {
           // Every frame publishes, except the startup hand-off's three held frames, once.
           expect(lagging).toBeGreaterThan(0);

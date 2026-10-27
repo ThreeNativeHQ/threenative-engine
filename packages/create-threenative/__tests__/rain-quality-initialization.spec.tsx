@@ -15,7 +15,7 @@ const hooks = vi.hoisted(() => ({
 }));
 vi.mock("@threenative/ui", () => ({
   UiLayer: "div",
-  useUiState: () => hooks.state,
+  useUiStateDuringStartup: () => hooks.state,
   useUiIntent: () => hooks.send,
 }));
 vi.mock("react/jsx-runtime", () => ({
