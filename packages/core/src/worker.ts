@@ -148,10 +148,10 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
   const outbound: unknown[] = [];
   const inbound: unknown[] = [];
   let snapshot: string | undefined;
-  let snapshotInFlight = false;
+  let snapshotPending = false;
   const flushSnapshot = (): void => {
-    if (port === undefined || snapshotInFlight || snapshot === undefined) return;
-    snapshotInFlight = true;
+    if (port === undefined || snapshotPending || snapshot === undefined) return;
+    snapshotPending = true;
     port.postMessage(snapshot);
     snapshot = undefined;
   };
@@ -177,7 +177,7 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
       port = next;
       next.onmessage = (event: MessageEvent) => {
         if (event.data?.type === "tn-worker-ui-ack") {
-          snapshotInFlight = false;
+          snapshotPending = false;
           flushSnapshot();
           return;
         }

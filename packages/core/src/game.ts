@@ -7,6 +7,7 @@ import {
   Vector2,
 } from "three";
 import { type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { AutoBatch, type IAutoBatchConfig } from "./auto-batch.js";
 import { CanvasLayer } from "./canvas-layer.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
 import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
@@ -405,6 +406,13 @@ export interface IGameConfig<
    * assertion, because turning a convention off must not turn its measurement off.
    */
   readonly frameBudget?: IFrameBudgetOptions | false;
+  /**
+   * Static meshes that share a material merge into one draw once the scene has settled, on by
+   * default and reported as `TN_AUTO_BATCH`. A mesh the game later moves, hides or re-materials
+   * comes back at once. `false` turns the pass off; `userData.batch = "off"` on a mesh or any
+   * ancestor keeps just that subtree out.
+   */
+  readonly autoBatch?: boolean | IAutoBatchConfig;
   readonly initialState?: TState;
   /**
    * The **pre-start** shader warm-up. Off by default, and that is not the same as no warm-up.
@@ -741,6 +749,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #loop: FixedStepLoop | undefined;
   #interpolation: PhysicsInterpolation | undefined;
   #projection: SceneRenderProjection | undefined;
+  #autoBatch: AutoBatch | undefined;
   #cameraCull: RenderCameraCull | undefined;
   #matrixWorld: MatrixWorldPass | undefined;
   #cleanup: Array<() => void> = [];
@@ -933,6 +942,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // Put back anything the cull hid before the outgoing scene is cleared, so a scene change never
     // leaves an object invisible if the game keeps a reference to it.
     this.#cameraCull?.restore();
+    this.#autoBatch?.reset();
     clearScene(ctx.scene, this.#computeDriven);
     const scene = new SceneType();
     this.#scene = scene;
@@ -969,6 +979,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    // What `enter()` built is what the warm-up compiles and the first frame draws, so it merges
+    // now, before either: no frame is ever drawn unmerged, and the compile counts merged meshes,
+    // not every source. Anything that moves afterwards is given back by the guard.
+    this.#autoBatch?.settleNow();
     // Before the audit, so an opacity the convention made take effect is reported as a warning.
     const opacity = applyOpacityConvention(ctx.scene);
     if (opacity !== undefined) console.warn(opacity);
@@ -1221,6 +1235,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       matrixWorld: matrixWorldPass,
     });
     this.#projection = projection;
+    const autoBatchConfig = this.#config.autoBatch;
+    const autoBatch = new AutoBatch(threeScene, {
+      enabled: autoBatchConfig !== false,
+      entities,
+      ...(typeof autoBatchConfig === "object" ? autoBatchConfig : {}),
+      report: (line) =>
+        (this.#config.frameBudget === false ? undefined : this.#config.frameBudget?.report)?.(
+          line,
+        ) ?? console.info(line),
+    });
+    this.#autoBatch = autoBatch;
     // Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 px,
     // and measured whether or not the game narrows or declines it. Its decision is per camera, so
     // a shadow caster and anything attached to the camera are never dropped on the main view alone.
@@ -1832,6 +1857,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       onRender: (alpha) => {
         observeCompilation();
+        // Before the first world pass compiles anything: the merged meshes it compiles are the ones
+        // the player will see. A scene that has not entered has nothing built to settle.
+        if (this.#sceneEntered) autoBatch.update();
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
@@ -2520,6 +2548,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         failures.push(error);
       }
     }
+    this.#autoBatch?.reset();
     if (ctx !== undefined) clearScene(ctx.scene, this.#computeDriven);
     this.#cameraCull?.dispose();
     this.#cameraCull = undefined;

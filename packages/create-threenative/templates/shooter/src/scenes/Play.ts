@@ -56,7 +56,6 @@ import { TOWN_HALF, type Town, type TownCollider, buildTown } from "../render/to
 import { createTownMaterials } from "../render/townMaterials.js";
 import { type GameState, TARGET_GOAL } from "../state.js";
 import { resolveSurface } from "../surfaces.js";
-import { collapseTown } from "../townBatch.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -209,10 +208,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const loading = createLoadingScreen(ctx);
     const materials = createTownMaterials();
     const town: Town = buildTown(materials);
-    // The exact half of a sight answer reads the town's own pieces, so keep them and their world
-    // boxes before `collapseTown` bakes the pieces into a few town-wide buffers. `matrixAutoUpdate`
-    // goes off here: a piece detached by the merge would otherwise be re-placed from its local
-    // matrix, and the vans are the pieces that carry a parent transform.
+    // The exact half of a sight answer reads the town's own pieces and their world boxes. The
+    // engine's auto batch hides the pieces behind merged draws and keeps them; `matrixAutoUpdate`
+    // goes off because the town never moves, and the vans carry a parent transform.
     town.group.updateMatrixWorld(true);
     const sightBounds = new Map<Mesh, Box3>();
     for (const mesh of town.hittable) sightBounds.set(mesh, new Box3().setFromObject(mesh));
@@ -234,7 +232,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
       sightByBox.set(collider, pieces);
     }
-    collapseTown(town.group, town.hittable);
     ctx.add(town.group);
     // Plates are raycast targets like any solid: without them in the list a round flies
     // straight through and scores whatever soldier happens to stand behind the plate.

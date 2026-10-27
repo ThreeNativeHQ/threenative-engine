@@ -1273,6 +1273,8 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -1477,6 +1479,8 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -2924,6 +2928,8 @@ describe("IGame", () => {
       },
     });
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -3001,6 +3007,8 @@ describe("IGame", () => {
       },
     });
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
