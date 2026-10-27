@@ -799,16 +799,24 @@ uint32_t Object3D::updateMatrixWorldVisibleJobs(bool force, bool prune) {
         return walkNodes_ = updateMatrixWorldVisible(force, prune);
     struct Item { Object3D* node; bool force; };
     // The caller's scratch: a job names it through this reference, never through the thread_local.
-    static thread_local std::vector<Item> scratch;
+    static thread_local std::vector<Item> scratch, scratchJobs;
     std::vector<Item>& frontier = scratch;
+    std::vector<Item>& jobs = scratchJobs;
     frontier.clear();
+    jobs.clear();
     frontier.push_back({this, force});
-    // Breadth-first, so the jobs left in front are the shallow, larger subtrees: they start first.
+    // Breadth-first: a subtree becomes a job once there are enough jobs and its last walk was small,
+    // so one deep subtree is split instead of keeping a worker busy while the others wait.
     const std::size_t target = 8 * (std::size_t(pool.workers()) + 1);
+    const uint32_t grain = walkNodes_ / uint32_t(target);
     std::size_t head = 0;
     uint32_t visited = 0;
-    while (head < frontier.size() && frontier.size() - head < target) {
+    while (head < frontier.size()) {
         const Item item = frontier[head++];
+        if (item.node->walkNodes_ <= grain && jobs.size() + (frontier.size() - head) + 1 >= target) {
+            jobs.push_back(item);
+            continue;
+        }
         ++visited;
         const int childForce = item.node->visitMatrixWorldVisible(item.force, prune);
         if (childForce >= 0)
@@ -817,10 +825,12 @@ uint32_t Object3D::updateMatrixWorldVisibleJobs(bool force, bool prune) {
     // Every node a job composes takes one stamp, later than any the frontier took: "evaluated since" holds.
     const uint64_t stamp = ++matrixEvaluations_;
     std::atomic<uint32_t> jobVisits{0};
-    pool.forEach(uint32_t(frontier.size() - head), [&](uint32_t i) {
-        const Item& item = frontier[head + i];
+    pool.forEach(uint32_t(jobs.size()), [&](uint32_t i) {
+        Object3D& node = *jobs[i].node;
         walkStamp_ = stamp;
-        jobVisits.fetch_add(item.node->updateMatrixWorldVisible(item.force, prune), std::memory_order_relaxed);
+        // The subtree's size decides next frame whether it is split further.
+        node.walkNodes_ = node.updateMatrixWorldVisible(jobs[i].force, prune);
+        jobVisits.fetch_add(node.walkNodes_, std::memory_order_relaxed);
         walkStamp_ = 0;
     });
     return walkNodes_ = visited + jobVisits.load(std::memory_order_relaxed);
