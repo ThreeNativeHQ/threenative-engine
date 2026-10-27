@@ -5,6 +5,7 @@
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
 #include "engine/foundation/job_pool.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/renderer/render_database.h"
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
@@ -311,6 +312,8 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     } catch (const std::exception& error) {
         refused = error.what();
     }
+    // One drawn game frame, counted: the waste counters print their window from here.
+    if (!overlay) waste::frame();
     if (view) wgpuTextureViewRelease(view);
     if (frame.texture) wgpuTextureRelease(frame.texture);
     framesOnGpu.push_back(renderer->gpu().submittedSerial());

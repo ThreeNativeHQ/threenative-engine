@@ -86,6 +86,7 @@ replay (about 66 calls, 7 µs a step) and the shooter enemies' per-step `telepor
 (5 zero-motion controller moves, about 35 µs a step). Ceiling: the laptop split after the fix is character
 controller 76-188 µs, `world.step` 77-99 µs and JS glue about 150 µs a step, so no physics bucket reaches 0.3 ms a
 frame at one step a frame.
+| Waste counters (6 classes) on the shooter: crossings 457/frame (0.37 ms), transform visits 9,387/frame (0.31 ms), uniform write attempts 1,360/frame, geometry classification 0.02 ms, GPU allocations 0 | this lane | see `### 2026-10-27 — Wasted work, counted by class` below | DIAGNOSTIC |
 
 Renderer classes counted on the shooter (render lane, 2026-10-27; a JS probe on every WebGPU call, desktop, and a
 named-Wasm worker profile at load 15-21): 36 passes per frame, 24 of them post targets that core's bloom and local
@@ -149,6 +150,26 @@ no COOP/COEP); that lane is open.
 - Result: the three functions take 0.06% to 0.32% of the game thread on Midway and the shooter, native and web, two runs each (gate 2%). `RenderDatabase::batch` decides 0 to 25 times per 1,000 calls, nearly all on its 60-call cadence; `hostProjectionReport` is not called, because both games set `renderer.projection: false`.
 - Cause: the cited 10.8% predates or misattributes the PRD-613 hold above; once `batch` holds its decision, no scene walk is left to remove. The largest piece is `contentClassOf` from `RenderDatabase::record`, once per drawn mesh per frame (0.14% to 0.26%).
 - Insight: count the walks before porting a change set. A profile share names a function, not how often its caller runs.
+
+### 2026-10-27 — Wasted work on the shooter, counted by class — DIAGNOSTIC (2 of 6 classes have a fix in another lane)
+- Where: lane "waste", worktree `.claude/worktrees/pr574-waste`; counters in
+  `packages/runtime-native/src/engine/foundation/waste_counters.h` (`TN_WASTE:`, one line per 300 drawn
+  frames), `TN_FRAME_BUDGET.counters.bridgeCrossings` (core), and two reused ones (`TN_PROJECTION.matrixWorld.visited`,
+  `TN_FRAME_SPANS`); scratch patches for the two sibling-owned classes.
+- Result (shooter, worker `index.html`, uncapped, desktop at load 31, 900 steady frames):
+  contentClassOf 276/frame with 132 `contentVersionKey` recomputes and 0 `classify`; `share` 76/frame all cached
+  (0.2 mints); render bundles 0.4 encodes vs 25 replays/frame; GPU buffers/textures 0/frame after warm-up;
+  transform visits 9,387/frame = `sceneUpdate` 0.31 ms; crossings 457/frame ≈ 0.37 ms; TSL uniform syncs 34/frame,
+  1,360 write attempts/frame of which 99.6 % are unchanged (the array `uniformLanes()` allocates is the cost).
+- Cause: the three classes the brief named as leads are 4 µs, 6 µs and (uniform) ~0.1 ms when sized by a counter;
+  the two ≥0.3 ms buckets are a bridge cache (bridge's file) and the authored `markStatic` freeze the shooter never
+  asks for (a settled-subtree freeze the engine decides is feature-sized, not a lane lever).
+- Insight: **count the class before naming a fix.** "share allocates a std::string per returned handle" is true and
+  worth 4 µs/frame because every call is a cache hit and most type names fit the SSO buffer. The same reading says
+  where the 0.3 ms actually is.
+- Artifact: `~/.cache/tmp-tn/pr574-waste/counters.md`, `patches/{tsl-uniforms-counters,render-bundle-counters}.patch`,
+  `summarize.py`.
+
 
 ### 2026-10-27 — Batching holds a projecting decision; render thread on by default — KEEP
 - Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), `RenderDatabase::batch`, `player/run.cpp`.

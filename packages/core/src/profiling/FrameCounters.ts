@@ -35,6 +35,11 @@ export interface IFrameCounters {
   readonly gpuBytes?: number;
   readonly hostCalls?: number;
   readonly jsAllocBytes?: number;
+  /**
+   * JS->Wasm crossings this frame, from the web back end's own count (`createCrossingReader`).
+   * Absent on a host whose back end keeps no such count.
+   */
+  readonly bridgeCrossings?: number;
   /** The loop's fixed-step count at the frame's end; absent when the caller did not feed one. */
   readonly simulationTick?: number;
 }
@@ -228,4 +233,34 @@ function readHeapBytes(): number | undefined {
   const perf = globalThis.performance as { memory?: { usedJSHeapSize?: unknown } } | undefined;
   const used = perf?.memory?.usedJSHeapSize;
   return typeof used === "number" && Number.isFinite(used) ? used : undefined;
+}
+
+/**
+ * The web back end's running count of JS->Wasm crossings, when the engine publishes one.
+ *
+ * `@threenative/three-native` installs `globalThis.__tnCrossingCount` (browser-entry.ts) and answers
+ * the total so far, so one frame's crossings are a difference of two reads. It is a different number
+ * from `hostCalls`: this counts the game's and the engine's calls into the engine's own ABI, which
+ * on the owned engine is a Wasm boundary on the game thread, and `hostCalls` counts WebGPU API calls.
+ * A host with no such back end (upstream three, the native player) answers `undefined`, and the
+ * field stays absent rather than reading zero.
+ *
+ * Per frame, not cumulative: the counter rides the frame budget's window, whose series are
+ * per-frame samples, and a cumulative total would climb with the window and say nothing about a frame.
+ */
+export function createCrossingReader(
+  host: { readonly __tnCrossingCount?: () => number } = globalThis as {
+    readonly __tnCrossingCount?: () => number;
+  },
+): () => number | undefined {
+  let last: number | undefined;
+  return () => {
+    if (typeof host.__tnCrossingCount !== "function") return undefined;
+    const total = host.__tnCrossingCount();
+    if (!Number.isFinite(total)) return undefined;
+    const previous = last;
+    last = total;
+    // The first read of a run is not a frame's worth of crossings: it is everything since boot.
+    return previous === undefined ? undefined : Math.max(0, total - previous);
+  };
 }

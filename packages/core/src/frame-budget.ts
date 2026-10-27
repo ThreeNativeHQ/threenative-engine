@@ -441,6 +441,8 @@ export interface IFrameBudgetWindow {
     readonly hostCalls?: IFrameBudgetSummary;
     readonly gpuBytes?: IFrameBudgetSummary;
     readonly jsAllocBytes?: IFrameBudgetSummary;
+    /** JS->Wasm crossings per frame, when the back end counts them (`createCrossingReader`). */
+    readonly bridgeCrossings?: IFrameBudgetSummary;
     readonly simulationTick?: number;
   };
 }
@@ -662,6 +664,7 @@ export class FrameBudget {
   #hostCalls: Ring;
   #gpuBytes: Ring;
   #jsAllocBytes: Ring;
+  #bridgeCrossings: Ring;
   #countersThisFrame: IFrameCounters | undefined;
   // The latest tick fed this window. It is not a boundary count and does not sum across frames: it
   // is the loop's fixed-step count at the last frame that fed one, so consecutive window closes read
@@ -757,6 +760,7 @@ export class FrameBudget {
     this.#hostCalls = new Ring(capacity);
     this.#gpuBytes = new Ring(capacity);
     this.#jsAllocBytes = new Ring(capacity);
+    this.#bridgeCrossings = new Ring(capacity);
     this.#phaseRings = {
       hostGap: new Ring(capacity),
       overlay: new Ring(capacity),
@@ -980,6 +984,7 @@ export class FrameBudget {
       ["hostCalls", counters.hostCalls],
       ["gpuBytes", counters.gpuBytes],
       ["jsAllocBytes", counters.jsAllocBytes],
+      ["bridgeCrossings", counters.bridgeCrossings],
     ] as const) {
       if (value === undefined) continue;
       if (!Number.isFinite(value) || value < 0)
@@ -1135,6 +1140,8 @@ export class FrameBudget {
     if (counters?.hostCalls !== undefined) this.#hostCalls.push(counters.hostCalls);
     if (counters?.gpuBytes !== undefined) this.#gpuBytes.push(counters.gpuBytes);
     if (counters?.jsAllocBytes !== undefined) this.#jsAllocBytes.push(counters.jsAllocBytes);
+    if (counters?.bridgeCrossings !== undefined)
+      this.#bridgeCrossings.push(counters.bridgeCrossings);
     this.#framesInWindow += 1;
     this.#maybeReport();
     return sample;
@@ -1197,14 +1204,20 @@ export class FrameBudget {
       this.#gpuBytes.count === 0 ? undefined : this.#gpuBytes.summarize(this.#scratch);
     const jsAllocBytes =
       this.#jsAllocBytes.count === 0 ? undefined : this.#jsAllocBytes.summarize(this.#scratch);
+    const bridgeCrossings =
+      this.#bridgeCrossings.count === 0
+        ? undefined
+        : this.#bridgeCrossings.summarize(this.#scratch);
     const simulationTick = this.#simulationTick;
     const counters =
       hostCalls === undefined &&
       gpuBytes === undefined &&
       jsAllocBytes === undefined &&
+      bridgeCrossings === undefined &&
       simulationTick === undefined
         ? undefined
         : {
+            ...(bridgeCrossings === undefined ? {} : { bridgeCrossings }),
             ...(gpuBytes === undefined ? {} : { gpuBytes }),
             ...(hostCalls === undefined ? {} : { hostCalls }),
             ...(jsAllocBytes === undefined ? {} : { jsAllocBytes }),
@@ -1388,6 +1401,7 @@ export class FrameBudget {
     this.#hostCalls.reset();
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();
+    this.#bridgeCrossings.reset();
     this.#simulationTick = undefined;
     this.#gpuStaleInWindow = 0;
     this.#renderSkipsInWindow = 0;
