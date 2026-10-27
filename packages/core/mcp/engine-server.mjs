@@ -1184,7 +1184,10 @@ async function runCli(argv, manifestFile = defaultManifestPath(), io = {
 }) {
   const [name, json = "{}"] = argv;
   try {
-    const result = await handleToolCall({ arguments: JSON.parse(json), name }, manifestFile);
+    const result = await handleToolCall(
+      { arguments: JSON.parse(json), name },
+      manifestFile
+    );
     io.stdout(`${result.content[0].text}
 `);
     return 0;

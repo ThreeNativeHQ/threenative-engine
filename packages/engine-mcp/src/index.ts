@@ -1221,7 +1221,7 @@ export async function handleLine(line: string, manifestFile: string): Promise<st
 export async function runCli(
   argv: readonly string[],
   manifestFile = defaultManifestPath(),
-  io = {
+  io: { stderr: (text: string) => void; stdout: (text: string) => void } = {
     stderr: (text: string) => void process.stderr.write(text),
     stdout: (text: string) => void process.stdout.write(text),
   },
