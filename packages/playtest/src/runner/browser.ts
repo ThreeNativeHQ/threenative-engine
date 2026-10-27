@@ -23,9 +23,19 @@ export const PERFORMANCE_BROWSER_ARGS = [
  * the display's cadence: unthrottled, a game faster than 60 fps read the swapchain's back-pressure
  * (one ~17 ms wait every few callbacks) as a 17.5 ms interval p95. The completion window measures
  * unthrottled completion on the session display by design.
+ *
+ * A game drawing from a worker (PRD-752) keeps the frame-rate limit: Xvfb's compositor does not
+ * pace a worker's OffscreenCanvas frames, and `--disable-frame-rate-limit` throttled them (the
+ * shooter presented 36 ms frames with it, 16.7 ms without), the opposite of its effect on a page.
  */
-export function measurementBrowserArgs(performance: boolean, completion: boolean, display: "real" | "virtual"): readonly string[] {
-  return completion || (performance && display === "virtual") ? PERFORMANCE_BROWSER_ARGS : [];
+export function measurementBrowserArgs(
+  performance: boolean,
+  completion: boolean,
+  display: "real" | "virtual",
+  gameThread: "page" | "worker" = "page",
+): readonly string[] {
+  const args = completion || (performance && display === "virtual") ? PERFORMANCE_BROWSER_ARGS : [];
+  return gameThread === "worker" ? args.filter((argument) => argument !== "--disable-frame-rate-limit") : args;
 }
 
 export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] {
