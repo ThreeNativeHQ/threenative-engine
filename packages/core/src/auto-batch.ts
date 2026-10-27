@@ -272,13 +272,6 @@ function flagKey(mesh: Mesh): string {
   return `${mesh.castShadow}|${mesh.receiveShadow}|${mesh.layers.mask}|${mesh.renderOrder}|${mesh.frustumCulled}|${uv}${normal}`;
 }
 
-/** Changes when something is added to or removed from the scene's top two levels. */
-function fingerprint(scene: Object3D): number {
-  let hash = scene.children.length;
-  for (const child of scene.children) hash = (hash * 31 + child.children.length + 1) | 0;
-  return hash;
-}
-
 function countMeshes(root: Object3D): number {
   let count = 0;
   root.traverse((object) => {
@@ -335,6 +328,19 @@ export class AutoBatch {
   #staleFrames = 1;
   readonly #entities: Registry | undefined;
   readonly #everyFrame: boolean;
+  /** Adds and removes counted at the scene's top two levels; see {@link AutoBatch.#shape}. */
+  #shapeChanges = 0;
+  /** Top-level children whose own `childadded` and `childremoved` are counted. */
+  readonly #levelOne = new Set<Object3D>();
+  /** Children added to or removed from the scene since the last frame, to start or stop counting. */
+  #arrived: Object3D[] = [];
+  readonly #onTopChild = (event: { child: Object3D }): void => {
+    this.#shapeChanges += 1;
+    this.#arrived.push(event.child);
+  };
+  readonly #onChild = (): void => {
+    this.#shapeChanges += 1;
+  };
 
   constructor(scene: Object3D, options: IAutoBatchOptions = {}) {
     this.#scene = scene;
@@ -343,6 +349,10 @@ export class AutoBatch {
     this.#settleFrames = options.settleFrames ?? SETTLE_FRAMES;
     this.#entities = options.entities;
     this.#everyFrame = options.guard === "everyFrame";
+    if (!this.#enabled) return;
+    scene.addEventListener("childadded", this.#onTopChild);
+    scene.addEventListener("childremoved", this.#onTopChild);
+    this.#arrived = [...scene.children];
   }
 
   get census(): IAutoBatchCensus {
@@ -371,7 +381,7 @@ export class AutoBatch {
       return;
     }
     this.#verify();
-    const shape = fingerprint(this.#scene);
+    const shape = this.#shape();
     if (this.#state === "idle") {
       if (shape === this.#known) return;
       this.#state = "quiet";
@@ -409,7 +419,7 @@ export class AutoBatch {
     if (!this.#enabled) return;
     const meshes = this.#snapshot();
     if (meshes.size >= 2) this.#merge([...meshes.keys()]);
-    this.#known = fingerprint(this.#scene);
+    this.#known = this.#shape();
     this.#state = "idle";
   }
 
@@ -421,6 +431,28 @@ export class AutoBatch {
     this.#watched.clear();
     this.#state = "idle";
     this.#known = Number.NaN;
+  }
+
+  /**
+   * Changes when something is added to or removed from the scene's top two levels. three's own graph
+   * events count it, so a still frame reads no `children` list: on the native engine each read wraps
+   * every child across the bridge, and polling the shooter town's shape cost 10 ms a frame.
+   */
+  #shape(): number {
+    for (const child of this.#arrived.splice(0)) {
+      const top = child.parent === this.#scene;
+      if (top === this.#levelOne.has(child)) continue;
+      if (top) {
+        child.addEventListener("childadded", this.#onChild);
+        child.addEventListener("childremoved", this.#onChild);
+        this.#levelOne.add(child);
+      } else {
+        child.removeEventListener("childadded", this.#onChild);
+        child.removeEventListener("childremoved", this.#onChild);
+        this.#levelOne.delete(child);
+      }
+    }
+    return this.#shapeChanges;
   }
 
   /** Eligible meshes with the world matrix they were drawn at. */
@@ -479,7 +511,7 @@ export class AutoBatch {
     this.#unsettled = moved;
     this.#watched = new Map();
     this.#merge([...stable.keys()]);
-    this.#known = fingerprint(this.#scene);
+    this.#known = this.#shape();
     this.#state = "idle";
   }
 

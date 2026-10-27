@@ -296,6 +296,39 @@ describe("AutoBatch", () => {
     expect(report.candidates).toBe(2);
   });
 
+  it("reads no children list on a still frame, and still merges what the game adds later", () => {
+    // On the native engine every `children` read wraps each child across the bridge: the shooter
+    // town's 8,000 meshes cost 10 ms a frame when the pass polled the scene's shape.
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    town(10, group);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(10);
+    let reads = 0;
+    const watched = [scene, ...scene.children];
+    for (const node of watched) {
+      const list = node.children;
+      Object.defineProperty(node, "children", {
+        configurable: true,
+        get: () => {
+          reads += 1;
+          return list;
+        },
+      });
+    }
+    run(batch, 20);
+    expect(reads).toBe(0);
+    for (const node of watched) {
+      const list = node.children;
+      Object.defineProperty(node, "children", { configurable: true, writable: true, value: list });
+    }
+    town(4, group);
+    run(batch, 8);
+    expect(batch.census.meshes).toBe(14);
+  });
+
   it("does nothing when disabled, and says so", () => {
     const scene = new Scene();
     const group = new Group();
