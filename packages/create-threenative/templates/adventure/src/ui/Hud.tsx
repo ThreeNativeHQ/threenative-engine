@@ -33,7 +33,7 @@ export function Hud() {
   });
   return (
     <div className="pointer-events-none absolute inset-0 p-6 text-sm font-bold text-text">
-      <div className="flex w-fit items-center gap-4 rounded-2xl border-2 border-line bg-panel/40 px-4 py-2 backdrop-blur-sm">
+      <div className="flex w-fit items-center gap-4 rounded-2xl border-2 border-line bg-panel/60 px-4 py-2 backdrop-blur-sm">
         <span
           aria-label={`${state.hearts} of ${state.capacity} hearts`}
           className="flex gap-0.5"
@@ -61,7 +61,7 @@ export function Hud() {
       ) : null}
       {state.toast !== "" ? (
         // Top left under the hearts, clear of the fight the camera frames in the middle.
-        <div className="absolute left-6 top-20 max-w-sm rounded-2xl border-2 border-line bg-panel/40 px-4 py-1 text-base font-bold text-lume backdrop-blur-sm">
+        <div className="absolute left-6 top-20 max-w-sm rounded-2xl border-2 border-line bg-panel/60 px-4 py-1 text-base font-bold text-lume backdrop-blur-sm">
           {state.toast}
         </div>
       ) : null}
