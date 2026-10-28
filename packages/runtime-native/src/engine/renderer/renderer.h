@@ -291,6 +291,9 @@ struct OutputState {
 std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
                                          std::string& refusal, shader::graph::Node custom = {});
 
+/** How many output passes (the tone-mapped image a frame presents) have been recorded in this process. */
+uint64_t outputPassesRecorded();
+
 /**
  * The native renderer's draw core (PRD-514): standard-material meshes into a linear RGBA16Float
  * scene target with depth, then three's output pass — tone mapping, then the output colour space —
@@ -393,6 +396,8 @@ public:
         sourceDepth_ = depth;
         if (replaced) rebuildGroups();
     }
+    /** A render target's renderer is read through `sceneColorView()` and `readProbePixels()`, never as a finished frame: its output pass would draw an image nothing reads. */
+    void skipOutputPass() { writesOutput_ = false; }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
@@ -461,8 +466,11 @@ public:
     uint32_t height() const { return height_; }
 
     /** The submission order, shared with batching so palette slots follow the exact draws. */
+    /** stateFirst (PRD-754): opaque draws order by program state, not depth, so a camera turn keeps the order and
+     *  the recorded bundle; it holds only when every opaque draw writes depth and colour (then order cannot change
+     *  a pixel but at exactly equal depth), else the frame keeps three's depth order. */
     static std::vector<std::pair<double, const DrawItem*>> sortDraws(std::span<const DrawItem> items,
-                                                                  const CameraState& camera);
+                                                                  const CameraState& camera, bool stateFirst = false);
 
     /**
      * Draws one frame and returns its render ID (every render call gets its own, from 1). Items are
@@ -625,7 +633,22 @@ public:
         /** The scene passes drawn for post targets besides colour and velocity (PRD-740: one, however many it writes),
          *  and the draws they and the velocity pass recorded this frame: zero while their cached bundles hold. */
         uint32_t auxPasses = 0, auxRecorded = 0;
+        /** PRD-754: the draws the main pass recorded into its bundle this frame (zero while it holds), why its key
+         *  moved (RecordCause), and the wall ms spent recording bundles and encoding the shadow passes directly. */
+        uint32_t mainRecorded = 0, shadowRecorded = 0;
+        uint8_t recordCause = 0;
+        double recordMs = 0, shadowEncodeMs = 0;
+        /** The shadow maps (sun or lamp, not virtual) kept from the last frame because nothing they draw changed: their
+         *  draws are neither encoded nor uploaded. And the bytes of per-draw uniforms the frame uploaded. */
+        uint32_t keptShadowMaps = 0;
+        uint64_t uniformBytes = 0;
     };
+    /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
+     *  another draw count, anything else (a first record included). */
+    enum RecordCause : uint8_t { RecordNone, RecordOrder, RecordOffset, RecordCount, RecordOther };
+    /** Each key's rows start at the matching offsets: one row per draw, its length set by the program's attributes. */
+    static RecordCause recordCause(const std::vector<uint64_t>& was, const std::vector<uint32_t>& wasRows,
+                                   const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows);
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
     /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
@@ -644,6 +667,27 @@ public:
      * set and reads it back, a cost every frame pays and only a caller of lastGpuMs wants.
      */
     void setGpuTimer(bool on) { passTimer_->enabled = on; }
+    /**
+     * PRD-754, native only and on by default: the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
+     * cull or a moved caster records no shadow pass. Off encodes them as before; a paired A/B runs from one build.
+     */
+#ifndef __EMSCRIPTEN__
+    void setStablePasses(bool on) {
+        if (on != stablePasses_) dropBundles();
+        stablePasses_ = on;
+    }
+#endif
+    /**
+     * PRD-754, native only and off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
+     * retained rows in state order, so a camera turn records nothing. State order swaps the winner of exactly coplanar
+     * draws (the shooter's door trim), and three's depth order cost more than it saved, so it waits for a fix there.
+     */
+#ifndef __EMSCRIPTEN__
+    void setStableRows(bool on) {
+        if (on != stableRows_) dropBundles();
+        stableRows_ = on;
+    }
+#endif
     /**
      * The caller's frame id for the next timed render, reported with its sample once the readback
      * lands. The caller owns the id: the engine's own render ids are not one per present.
@@ -723,8 +767,13 @@ private:
     struct Planned;
     struct ShadowPass;
     struct FrameJob;
+    struct PassRows;  // PRD-754: one pass's retained rows for a frame (renderer.cpp)
     void encodeFrame(FrameJob& job);
     std::unique_ptr<FrameJob> job_;
+    /** PRD-754: the main pass's draws, kept past the frames they are out of view (see renderer.cpp). */
+    struct MainRow;
+    struct MainRows;
+    std::unique_ptr<MainRows> mainRows_, auxRows_, velocityRows_;
     bool pendingEncode_ = false;
     std::atomic<bool> encoding_{false};
     mutable std::mutex frameMailMutex_;
@@ -908,6 +957,7 @@ private:
     // Moves whenever the per-draw bind groups (mapGroups_) are released, so a DrawCache's group
     // handles built under an older epoch are never reused.
     uint64_t groupEpoch_ = 0;
+    bool writesOutput_ = true;
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;
@@ -937,7 +987,7 @@ private:
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
-    std::map<std::size_t, uint64_t> lampSignatures_;
+    std::map<std::size_t, uint64_t> mapSignatures_;
     /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
     struct LampMotion { uint64_t pose = 0; int64_t movedAt = 0; };
     std::map<std::size_t, LampMotion> lampMotion_;
@@ -1093,10 +1143,38 @@ private:
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
+    WGPURenderBundle tailBundle_ = nullptr;  // PRD-754: the main pass's draws after its rows (transparent), else null
+    // PRD-754: each rows pass's rows first seen since its last sort, drawn after the sorted rows, else null
+    WGPURenderBundle mainDelta_ = nullptr, auxDelta_ = nullptr, velocityDelta_ = nullptr;
+    std::array<uint64_t, 3> mainDeltaKey_{}, auxDeltaKey_{}, velocityDeltaKey_{};
+    WGPURenderBundle auxTail_ = nullptr, velocityTail_ = nullptr;  // PRD-754: their transparent draws, else null
+    std::vector<uint64_t> auxTailKey_, velocityTailKey_;
+    std::vector<uint64_t> tailKey_;
     std::vector<uint64_t> mainBundleKey_;
+    std::vector<uint32_t> mainBundleRows_;
+    std::vector<uint64_t> viewportKey_;  // PRD-754: the viewport bundle's draws, recorded beside the main rows
     // The aux and TRAA velocity passes' draws, recorded once and replayed while their plans hold (PRD-740).
     WGPURenderBundle auxBundle_ = nullptr, velocityBundle_ = nullptr;
     std::vector<uint64_t> auxBundleKey_, velocityBundleKey_;
+    /** Each shadow pass's draws by pass index, recorded once and replayed while its key holds (PRD-754), with the
+     *  shadow counters its recording tallied. */
+    struct ShadowBundle {
+        WGPURenderBundle bundle = nullptr;
+        std::vector<uint64_t> key;
+        uint32_t draws = 0;
+        uint64_t triangles = 0;
+        FrameStats::SkinnedPass skinned;
+    };
+    std::vector<ShadowBundle> shadowBundles_;
+#ifdef __EMSCRIPTEN__
+    // The web engine compiles the stable passes out: the shooter's web camera turn recorded no less with them (PRD-754),
+    // and 4 MiB is its budget.
+    static constexpr bool stablePasses_ = false;
+    static constexpr bool stableRows_ = false;
+#else
+    bool stablePasses_ = true;
+    bool stableRows_ = false;
+#endif
     /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
     void dropBundles();
     FrameStats mainBundleStats_;
@@ -1124,6 +1202,16 @@ private:
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
+    /** PRD-754: each main draw's uniform blocks keep one place in frameUniforms_ (keyed by DrawItem::key and its
+     *  occurrence in the frame), so a reorder or a culled neighbour moves no offset and the bundle key holds. A slot
+     *  unseen for kSlotFrames frames is freed for the next block of its size. */
+    struct UniformSlot { uint64_t offset, bytes, seen; };
+    std::unordered_map<uint64_t, UniformSlot> uniformSlots_;
+    std::unordered_map<uint64_t, std::vector<uint64_t>> freeSlots_;  // freed offsets by block bytes
+    std::unordered_map<uint64_t, uint32_t> slotUses_;  // this frame's occurrences per key
+    uint64_t slotArena_ = 0, slotFrame_ = 0;
+    std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
+    static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
     // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index
@@ -1135,6 +1223,12 @@ private:
         std::vector<float> data;
         Handle buffer;
         uint64_t capacity = 0;
+        // The bytes last queued for this buffer at this offset: a frame that repeats them copies
+        // nothing. Bytes are exact (a hash could collide and hide a signed-zero/NaN change), and the
+        // buffer identity catches a reallocation whose old contents are gone.
+        std::vector<uint8_t> uploaded;
+        Handle uploadedBuffer;
+        uint64_t uploadedPrefix = 0;
     };
     struct ProbeTexture {
         WGPUTexture texture = nullptr;

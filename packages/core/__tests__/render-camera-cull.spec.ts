@@ -1,14 +1,19 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Frustum,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  Ray,
   Scene,
+  Sphere,
   SphereGeometry,
+  Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { formatProjectionWindow } from "../src/projection-marker.js";
@@ -16,7 +21,59 @@ import {
   DEFAULT_MINIMUM_PROJECTED_PIXELS,
   RenderCameraCull,
   alwaysRender,
+  inFrustum,
+  rayMeetsSphere,
+  setFrustumPlanes,
 } from "../src/render-camera-cull.js";
+
+// The camera pass tests its frustum and forward ray in plain numbers: on the web engine three's Frustum,
+// Ray and Sphere are engine objects, one boundary call per test, 70 a frame on the shooter.
+describe("the cull's plain frustum and ray math", () => {
+  it("answers as three's Frustum and Ray for cameras and spheres all around", () => {
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const planes = new Float64Array(24);
+    const screen = new Matrix4();
+    const frustum = new Frustum();
+    const ray = new Ray();
+    const sphere = new Sphere();
+    let inside = 0;
+    let hit = 0;
+    for (let view = 0; view < 40; view += 1) {
+      const camera = new PerspectiveCamera(30 + random() * 80, 0.5 + random() * 2, 0.1, 200);
+      camera.position.set(random() * 40 - 20, random() * 10, random() * 40 - 20);
+      camera.lookAt(random() * 40 - 20, random() * 4, random() * 40 - 20);
+      camera.updateMatrixWorld();
+      screen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(screen);
+      setFrustumPlanes(planes, screen.elements);
+      ray.origin.setFromMatrixPosition(camera.matrixWorld);
+      ray.direction.set(0, 0, -1).transformDirection(camera.matrixWorld);
+      const line = [...ray.origin.toArray(), ...ray.direction.toArray()];
+      for (let probe = 0; probe < 200; probe += 1) {
+        const center = new Vector3(random() * 120 - 60, random() * 30 - 5, random() * 120 - 60);
+        const radius = random() < 0.1 ? 0 : random() * 6;
+        sphere.set(center, radius);
+        const expected = frustum.intersectsSphere(sphere);
+        expect(inFrustum(planes, center.x, center.y, center.z, radius)).toBe(expected);
+        expect(inFrustum(planes, center.x, center.y, center.z, 0)).toBe(
+          frustum.containsPoint(center),
+        );
+        const meets = ray.intersectsSphere(sphere);
+        expect(rayMeetsSphere(line, center.x, center.y, center.z, radius)).toBe(meets);
+        inside += expected ? 1 : 0;
+        hit += meets ? 1 : 0;
+      }
+    }
+    // Both answers occur, so the sweep proves more than one branch.
+    expect(inside).toBeGreaterThan(400);
+    expect(inside).toBeLessThan(7600);
+    expect(hit).toBeGreaterThan(20);
+  });
+});
 
 /**
  * The projected-size gate.
@@ -279,6 +336,36 @@ describe("render camera cull", () => {
     },
   );
 
+  // On the Wasm engine each `attribute.version` read crosses the bridge. Adventure's rig parts share
+  // geometry, and every part read the version again in the same frame: 102 of 136 reads a frame were
+  // repeats, and the flicker scenario failed on TN_BRIDGE_WARNING.
+  it("reads a shared geometry's buffer version once per frame", () => {
+    const dynamic = dynamicMesh([0, 0, 0, 1, 0, 0, 0, 1, 0], -10);
+    const twins = [1, 2].map(() => {
+      const twin = new Mesh(dynamic.mesh.geometry, new MeshBasicMaterial());
+      twin.position.set(0, 0, -10);
+      return twin;
+    });
+    const scene = sceneWith(dynamic.mesh, ...twins);
+    const cull = new RenderCameraCull();
+    cull.apply(scene, camera(), 720);
+    let reads = 0;
+    let version = dynamic.attribute.version;
+    Object.defineProperty(dynamic.attribute, "version", {
+      configurable: true,
+      get: () => {
+        reads += 1;
+        return version;
+      },
+      set: (value: number) => {
+        version = value;
+      },
+    });
+    cull.prepareAnimation(scene, camera(), 720);
+    cull.apply(scene, camera(), 720);
+    expect(reads).toBe(1);
+  });
+
   it("culls a rewritten buffer again once it stops changing", () => {
     // The dynamic exemption is for a buffer that *is* rewritten every frame. One that settles has a
     // knowable bound again, and a startup burst of rewrites must not exempt it forever.
@@ -384,7 +471,6 @@ describe("render camera cull", () => {
         projecting: false,
         reasonCode: "belowMeshFloor",
         sourceRenderables: 2,
-        resultDrawCandidates: 2,
         projectedObjects: 0,
         batches: 0,
         instancedBatches: 0,
@@ -436,8 +522,11 @@ describe("render camera cull", () => {
     const matrix = view.projectionMatrix;
     const projection = vi.fn(() => matrix);
     Object.defineProperty(view, "projectionMatrix", { get: projection });
+    const traverse = vi.spyOn(view, "traverse");
     const cull = new RenderCameraCull();
     cull.apply(root, view, 720);
+    // The engine knows what hangs from the camera: collecting it here is a crossing per child, per frame.
+    expect(traverse).not.toHaveBeenCalled();
     // The JS frustum and camera position serve only the JS walk (asserted before the argument
     // match below, whose deep compare reads every camera property).
     expect(projection).not.toHaveBeenCalled();

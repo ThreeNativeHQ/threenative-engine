@@ -24,7 +24,7 @@ export function Commands() {
   const placing = state.mode.startsWith("build:") ? state.mode.slice(6) : "";
 
   return (
-    <section className="pointer-events-none absolute right-4 bottom-14 flex max-w-80 flex-col gap-2">
+    <section className="pointer-events-none flex max-w-80 flex-col gap-2">
       {producer === undefined ? null : (
         <div className="flex flex-wrap justify-end gap-1">
           {(card?.trains ?? []).map((type) => {

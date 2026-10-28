@@ -5,7 +5,7 @@ import tsPlugin from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 import type { Linter } from "eslint";
 import reactHooks from "eslint-plugin-react-hooks";
-import { hotCallbackAllocation } from "./hotCallbackAllocation.js";
+import { threenativePlugin } from "./plugin.js";
 
 export interface IQualityOptions {
   /** The project root: where `tsconfig.json` lives and the typed rules resolve from. */
@@ -29,10 +29,9 @@ function hasReact(root: string): boolean {
 }
 
 /** The default correctness gate for a generated game: TypeScript-aware async rules, React hook
- * rules when React is installed, scoped suppressions, and one advisory frame-callback warning.
+ * rules when React is installed, scoped suppressions, and the ThreeNative game rules (`threenative/*`: frame-callback cost, UI state use).
  * Formatting is Biome's job, not this config's. */
 export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
-  const tnPlugin = { rules: { "hot-callback-allocation": hotCallbackAllocation } };
   const config: Linter.Config[] = [
     { ignores: ["**/node_modules/**", "**/dist/**", "**/.threenative/**", "**/dist-native/**"] },
     {
@@ -45,7 +44,7 @@ export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
       plugins: {
         "@eslint-community/eslint-comments": eslintComments,
         "@typescript-eslint": asPlugin(tsPlugin),
-        threenative: tnPlugin,
+        threenative: threenativePlugin,
       },
       rules: {
         "no-debugger": "error",
@@ -59,6 +58,10 @@ export function qualityConfig({ root }: IQualityOptions): Linter.Config[] {
         ],
         "@eslint-community/eslint-comments/require-description": "error",
         "threenative/hot-callback-allocation": "warn",
+        "threenative/hot-callback-resource-creation": "error",
+        "threenative/hot-callback-scene-work": "error",
+        "threenative/startup-override-reason": "error",
+        "threenative/ui-state-selector": "warn",
       },
     },
   ];

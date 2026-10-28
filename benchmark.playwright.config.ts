@@ -12,7 +12,10 @@ export default defineConfig({
   reporter: "line",
   use: {
     baseURL: "http://127.0.0.1:4174",
-    headless: true,
+    // Headed, under scripts/xvfb.sh in CI. Headless Chromium destroys the WebGPU device at the
+    // first canvas present on SwiftShader ("Device was destroyed", reproduced on a blank page), so
+    // every frame here drew on a dead device and a buffer made after it throws from render().
+    headless: false,
     screenshot: "only-on-failure",
     launchOptions: {
       args: [...WEBGPU_BROWSER_ARGS],

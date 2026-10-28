@@ -16,6 +16,8 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
+    // `Player` reads `justPressed("jump")`; an action with no binding never fires.
+    jump: { buttons: [0], keys: ["Space"] },
   },
   // `playtest()` installs the bridge a scenario needs to observe entities and state. Without
   // it, semantic assertions fail closed with TN_PLAYTEST_BRIDGE_MISSING rather than passing.

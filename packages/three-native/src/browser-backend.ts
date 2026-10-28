@@ -12,6 +12,7 @@
  * collected wrapper releases its object.
  */
 
+import { ENGINE_COST_KNOB, createBridgeMeter } from "./bridge-meter.js";
 import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
@@ -82,6 +83,8 @@ export interface IBrowserRuntime {
   heapF64?(): Float64Array;
   /** The byte at `address` in the engine's memory; Wasm only. A registry field `[offset, 0]` is a byte flag. */
   readByte?(address: number): number;
+  /** The 32-bit word at `address` in the engine's memory (the hierarchy counter's low word); Wasm only. */
+  readWord?(address: number): number;
   /** Writes one double at `address` in the engine's memory; Wasm only. */
   writeDouble?(address: number, value: number): void;
   /**
@@ -124,6 +127,8 @@ export interface IBrowserEngine {
   collect(): void;
   /** Engine crossings so far (construct, get, set, invoke, engineReferences): a bench rung's bridgeCalls. */
   crossings(): number;
+  /** Running work totals by name (this back end's and the engine's), for TN_FRAME_BUDGET.counters.engine. */
+  counters(): Record<string, number>;
   /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
   wrap(ref: IEngineRef): object;
 }
@@ -132,6 +137,8 @@ export interface IBrowserEngine {
 const SETTLED_PASS = 64;
 
 const REF = Symbol("tn.engineRef");
+/** An engine object's address, kept on it after the first ask: every lane read and write needs it. */
+const ADDRESS = Symbol("tn.engineAddress");
 
 type TypedArray =
   | Float32Array
@@ -263,6 +270,9 @@ export const LANGUAGE_MEMBERS = [
 
 type TraverseCallback = (object: object) => void;
 
+/** The engine classes with their own raycast (`Mesh::raycast`, `Line::raycast`, `LOD::raycast`). */
+const RAYCASTERS = new Set(["Mesh", "Line", "Sprite", "LOD"]);
+
 /**
  * The `traverse` family, written over `children`, as three writes it. A class whose engine binding
  * has no `children` refuses by name instead of visiting only the root.
@@ -272,20 +282,32 @@ function defineTraversal(
   className: string,
   hasChildren: boolean,
   walks: boolean,
+  keep?: (object: object) => Record<string, unknown> | undefined,
+  visited?: (count: number) => void,
+  raycasts = true,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
     return (object as { children: object[] }).children;
   };
-  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`).
-  const walk = (object: object, visibleOnly: boolean): object[] =>
-    (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
+  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`). The whole walk
+  // depends on the hierarchy alone, so it is kept with `children` until the hierarchy counter moves;
+  // a visible-only walk reads the visible flags too, so it is asked each time.
+  const walk = (object: object, visibleOnly: boolean): object[] => {
+    const entry = visibleOnly ? undefined : keep?.(object);
+    if (entry !== undefined && entry.__walk !== undefined) return entry.__walk as object[];
+    const found = (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
+    if (entry !== undefined) entry.__walk = found;
+    visited?.(found.length);
+    return found;
+  };
   const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
     traverse(callback) {
       if (walks) {
         for (const object of walk(this, false)) callback(object);
         return;
       }
+      visited?.(1);
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverse(c: TraverseCallback): void }).traverse(callback);
@@ -296,6 +318,7 @@ function defineTraversal(
         return;
       }
       if ((this as { visible: boolean }).visible === false) return;
+      visited?.(1);
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverseVisible(c: TraverseCallback): void }).traverseVisible(callback);
@@ -338,17 +361,19 @@ function defineTraversal(
   for (const [name, value] of Object.entries(lookups))
     Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
   // three's Object3D.raycast(raycaster, intersects): push this object's own hits, no recursion. The engine
-  // answers them through Raycaster.intersectObject (the object's native raycast; a Group answers none).
+  // answers them through Raycaster.intersectObject (the object's native raycast). A class the engine
+  // raycasts nothing for (a Group, a Bone, a light) keeps three's empty raycast and crosses nothing.
+  const raycast = function (
+    this: object,
+    raycaster: { intersectObject(object: object, recursive: boolean): unknown[] },
+    intersects: unknown[],
+  ) {
+    intersects.push(...raycaster.intersectObject(this, false));
+  };
   Object.defineProperty(prototype, "raycast", {
     configurable: true,
     writable: true,
-    value(
-      this: object,
-      raycaster: { intersectObject(object: object, recursive: boolean): unknown[] },
-      intersects: unknown[],
-    ) {
-      intersects.push(...raycaster.intersectObject(this, false));
-    },
+    value: raycasts ? raycast : () => undefined,
   });
 }
 
@@ -362,31 +387,60 @@ export function defineBrowserClasses(
   catalog?: ICatalogShape,
 ): IBrowserEngine {
   // Every call into the engine counts, one increment each: the bench's crossing budget reads it per frame.
+  // A census frame (bridge-meter.ts) also records each one by name, so a redundant read is named.
   let crossings = 0;
-  const counted =
-    <A extends unknown[], R>(call: (...args: A) => R) =>
-    (...args: A): R => {
-      crossings++;
-      return call(...args);
-    };
+  const typeNames = new Map<number, string>();
+  const meter = createBridgeMeter({
+    now: () => performance.now(),
+    // One getter crossing, timed over a thousand on a scratch Group through the uncounted runtime.
+    crossingMicros() {
+      const ref = source.construct("Group", []);
+      const start = performance.now();
+      for (let i = 0; i < 1000; i++) source.get(ref, "name");
+      const micros = performance.now() - start;
+      source.release(ref);
+      return micros;
+    },
+    typeName: (type) => typeNames.get(type) ?? String(type),
+    stack: () => new Error().stack,
+    report: (line) => console.warn(line),
+  });
   const runtime: IBrowserRuntime = {
     ...source,
-    construct: counted(source.construct),
-    get: counted(source.get),
-    set: counted(source.set),
-    invoke: counted(source.invoke),
+    construct: (className, args) => {
+      crossings++;
+      return source.construct(className, args);
+    },
+    get: (self, path) => {
+      crossings++;
+      if (meter.counting) meter.record("get", self, path);
+      return source.get(self, path);
+    },
+    set: (self, path, value) => {
+      crossings++;
+      if (meter.counting) meter.record("set", self, path);
+      source.set(self, path, value);
+    },
+    invoke: (self, method, args) => {
+      crossings++;
+      if (meter.counting) meter.record("call", self, method);
+      return source.invoke(self, method, args);
+    },
     ...(source.engineReferences === undefined
       ? {}
-      : { engineReferences: counted(source.engineReferences) }),
+      : {
+          engineReferences: (refs: readonly IEngineRef[]) => {
+            crossings++;
+            return source.engineReferences?.(refs) ?? [];
+          },
+        }),
   };
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object; own?: readonly IOwnField[] }>();
-  const typeNames = new Map<number, string>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
   // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
   // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
   // Writes still go through the engine's setters, which it reacts to.
-  const addresses = new WeakMap<object, number>();
   // Each object's kept `rotation` Euler (or `quaternion`) -> the object, whose other form a write syncs.
   const rotations = new WeakMap<object, object>();
   const quaternions = new WeakMap<object, object>();
@@ -394,7 +448,7 @@ export function defineBrowserClasses(
   // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
   // geometry and material. The answer is kept until JS sets it or calls a method on that object.
   // ponytail: an engine call on another object that changes one of these is missed; none does today.
-  const labelled = new Set([
+  const legacyLabelled = new Set([
     "name",
     "type",
     "itemSize",
@@ -403,7 +457,147 @@ export function defineBrowserClasses(
     "geometry",
     "material",
   ]);
+  // The bridge-read mirror (PRD-748): more properties whose only writers are their own setter and the
+  // object's own methods, read from the bindings and every engine-side write (rg over src/engine), so
+  // a game that reads them per callback pays one crossing, not one a read. Object3D's flags
+  // (static_transform.cpp writes the two auto-update flags but nothing calls it), a light's shape and
+  // target, fog density, the scene's slots, and the material state no animation track drives.
+  // A fixed member with a setter (a light's or material's `color`) is a value the setter copies into,
+  // so its handle is kept too, and so is a material's texture slot (`map`, `normalMap`, ...).
+  const labelled = new Set([
+    ...legacyLabelled,
+    "id",
+    "uuid",
+    "renderOrder",
+    "frustumCulled",
+    "matrixAutoUpdate",
+    "matrixWorldAutoUpdate",
+    "static",
+    "__alwaysRender",
+    "distance",
+    "decay",
+    "angle",
+    "penumbra",
+    "sourceRadius",
+    "target",
+    "density",
+    "fog",
+    "background",
+    "environment",
+    "backgroundIntensity",
+    "backgroundBlurriness",
+    "environmentIntensity",
+    "side",
+    "shadowSide",
+    "transparent",
+    "depthTest",
+    "depthWrite",
+    "blending",
+    "toneMapped",
+    "vertexColors",
+    "flatShading",
+    "colorWrite",
+    "alphaHash",
+    "forceSinglePass",
+    "polygonOffset",
+    "polygonOffsetFactor",
+    "polygonOffsetUnits",
+    "envMapIntensity",
+    "aoMapIntensity",
+    "bumpScale",
+    // AnimationClip only: no setter, and no engine call rewrites a clip's length.
+    "duration",
+  ]);
+  // The numbers an animation track can also drive (animation/property_binding.cpp: a light's intensity,
+  // a perspective camera's lens, a material's numbers): kept like the rest, and dropped by any mixer or
+  // action call, since the mixer writes them in the engine. Colours are written in place, so they stay.
+  const animatedNames = new Set([
+    "intensity",
+    "fov",
+    "zoom",
+    "near",
+    "far",
+    "aspect",
+    "focus",
+    "opacity",
+    "alphaTest",
+    "emissiveIntensity",
+    "roughness",
+    "metalness",
+    "shininess",
+    "ior",
+    "specularIntensity",
+    // An action's and a mixer's own state (only these two classes carry the names): the mixer's update
+    // advances time, ends fades and warps, and finishes a clip, so the same rule holds.
+    "time",
+    "timeScale",
+    "weight",
+    "paused",
+    "enabled",
+    "loop",
+    "repetitions",
+    "clampWhenFinished",
+  ]);
+  const mirrored = (binding: IRegistryClass, property: string, setters: Set<string>): boolean =>
+    labelled.has(property) ||
+    animatedNames.has(property) ||
+    (setters.has(property) &&
+      (binding.fixedMembers?.includes(property) === true || /^(map|[a-z]+Map)$/u.test(property)));
   const labels = new WeakMap<object, Map<string, unknown>>();
+  let animated = new WeakMap<object, Map<string, unknown>>();
+  // An action's `isScheduled()`: the mixer's list of active actions, which only the action's own
+  // play/stop and the mixer's stopAllAction/uncache calls change (animation/mixer.cpp), never update,
+  // setTime or clipAction (a rifle asks clipAction each frame).
+  // core's AnimationPlayer asks it of every clip of every rig each step: 171 crossings a frame.
+  let scheduling = new WeakMap<object, unknown>();
+  // Object3D methods that move only the transform: the mirrored labels and numbers stay.
+  const transformOnly =
+    /^(updateMatrix|updateMatrixWorld|updateWorldMatrix|lookAt|rotate(X|Y|Z|OnAxis|OnWorldAxis)|translate(X|Y|Z|OnAxis)|apply(Matrix4|Quaternion)|setRotationFrom\w+|localToWorld|worldToLocal|updateProjectionMatrix)$/u;
+  // `__THREENATIVE_BRIDGE_CACHE__ = false` (a page global the worker host forwards) turns the mirror, the
+  // hierarchy cache and the JS Layers test off at the next safe point: the paired A/B knob.
+  const knob = "__THREENATIVE_BRIDGE_CACHE__";
+  const cacheWanted = () => (globalThis as Record<string, unknown>)[knob] !== false;
+  let caching = cacheWanted();
+  // Running totals a playtest bounds per frame (TN_FRAME_BUDGET.counters.engine): JS reads of
+  // `children` (core's auto batch read the scene's each still frame) and the objects a `traverse`
+  // visits (the projection window line walked 8,900 nodes every five seconds). One add each.
+  let childrenReads = 0;
+  let walkVisits = 0;
+  const walked = (count: number) => {
+    walkVisits += count;
+  };
+  // The glue's own entries, which the crossing count cannot see: a method wrapper and a property getter
+  // run whether the cache answers or the engine does, and the cache answers most of them. Counted only
+  // while a playtest bounds engine counters, so a shipped frame pays one branch and no store;
+  // `collect()` is the safe point that reads the flag.
+  let methodCalls = 0;
+  let propertyReads = 0;
+  let glueCounting = false;
+  // The hierarchy cache: `children`, `parent` and a whole-subtree walk are kept until the engine's
+  // process-wide hierarchy counter (Object3D::hierarchyVersion, read in place) moves. Every add,
+  // remove, attach, clear and destructor moves it, and nothing else in the engine writes a children
+  // list, so a kept answer is never stale. The table is replaced when the counter moves, so a kept
+  // array never holds a removed subtree alive past the next read or safe point.
+  let hierarchyAt: number | undefined;
+  let engineCountersAt: readonly (readonly [string, number])[] = [];
+  let keptVersion = -1;
+  let kept = new WeakMap<object, Record<string, unknown>>();
+  const readWord = source.readWord;
+  const hierarchyKept = (self: object): Record<string, unknown> | undefined => {
+    if (!caching || readWord === undefined) return undefined;
+    hierarchyAt ??= runtime.get(refOf(self), "__hierarchy") as number;
+    const version = readWord(hierarchyAt);
+    if (version !== keptVersion) {
+      keptVersion = version;
+      kept = new WeakMap();
+    }
+    let entry = kept.get(self);
+    if (entry === undefined) {
+      entry = {};
+      kept.set(self, entry);
+    }
+    return entry;
+  };
   const mixerStats = new WeakMap<object, object>();
   const fastGetter = (binding: IRegistryClass, property: string) => {
     const field = binding.fields?.[property];
@@ -416,9 +610,11 @@ export function defineBrowserClasses(
         return readByte === undefined
           ? undefined
           : function (this: object) {
+              if (glueCounting) propertyReads += 1;
               return readByte(addressOf(this) + offset) !== 0;
             };
       return function (this: object) {
+        if (glueCounting) propertyReads += 1;
         return read(addressOf(this) + offset, count);
       };
     }
@@ -427,6 +623,7 @@ export function defineBrowserClasses(
       // Object3D has it: every later read is a plain property load, never this getter (R5 reads
       // position and rotation three times per cube per frame).
       return function (this: object) {
+        if (glueCounting) propertyReads += 1;
         const member = fromEngine(runtime.get(refOf(this), property));
         Object.defineProperty(this, property, { value: member, writable: false });
         if (property === "rotation") rotations.set(member as object, this);
@@ -435,12 +632,12 @@ export function defineBrowserClasses(
       };
     return undefined;
   };
+  // An own property, not a WeakMap: `position.x` and every other lane access reads it (PRD-748).
   const addressOf = (self: object): number => {
-    let address = addresses.get(self);
-    if (address === undefined) {
-      address = runtime.get(refOf(self), "__address") as number;
-      addresses.set(self, address);
-    }
+    const known = (self as { [ADDRESS]?: number })[ADDRESS];
+    if (known !== undefined) return known;
+    const address = runtime.get(refOf(self), "__address") as number;
+    Object.defineProperty(self, ADDRESS, { value: address });
     return address;
   };
   // three's math values are JS (browser-math.ts): `new Vector3()` holds its own lanes. The engine's
@@ -479,6 +676,8 @@ export function defineBrowserClasses(
     args?(values: number[], make: (name: string, values: number[]) => IEngineRef): EngineValue[];
     /** A method argument becomes an engine object in place: whole-object lanes and output targets. */
     promote?: boolean;
+    /** Copies the lanes from one value to another with no list between: a loan's two copies. */
+    copy?(target: IValueLanes, source: IValueLanes): void;
   }
   interface IValueClass {
     name: string;
@@ -491,6 +690,9 @@ export function defineBrowserClasses(
   const defaultPlan = (lanes: readonly string[]): IValuePlan => ({
     lanes,
     drop: lanes,
+    copy: (target, source) => {
+      for (const lane of lanes) target[lane] = source[lane];
+    },
     read: (value) => lanes.map((lane) => value[lane] as number),
     write: (value, values) => {
       lanes.forEach((lane, index) => {
@@ -660,7 +862,8 @@ export function defineBrowserClasses(
     }
     info.top++;
     const lanes = scratch as IValueLanes;
-    info.plan.write(lanes, info.plan.read(value));
+    if (info.plan.copy !== undefined) info.plan.copy(lanes, value);
+    else info.plan.write(lanes, info.plan.read(value));
     loans.push([value, lanes, info]);
     return refOf(scratch);
   };
@@ -669,7 +872,8 @@ export function defineBrowserClasses(
     let result = returned;
     for (let i = loans.length - 1; i >= mark; i--) {
       const [value, scratch, info] = loans[i] as (typeof loans)[number];
-      info.plan.write(value, info.plan.read(scratch));
+      if (info.plan.copy !== undefined) info.plan.copy(value, scratch);
+      else info.plan.write(value, info.plan.read(scratch));
       info.top--;
       if (result === scratch) result = value;
     }
@@ -1096,6 +1300,19 @@ export function defineBrowserClasses(
     "setIndex",
   ]);
 
+  const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
+  // The engine raycasts a Mesh, a Line, a Sprite (each a Mesh in C++) and a LOD, and every kind of
+  // them; any other node answers no hits. Without a catalog the chain is unknown, so every node asks.
+  const raycasts = (name: string): boolean => {
+    if (catalog === undefined) return true;
+    for (
+      let link = entries.get(name);
+      link !== undefined;
+      link = link.extends ? entries.get(link.extends) : undefined
+    )
+      if (RAYCASTERS.has(link.name)) return true;
+    return false;
+  };
   for (const [name, binding] of Object.entries(registry.classes)) {
     const adopts =
       attributeWrite !== undefined &&
@@ -1106,6 +1323,7 @@ export function defineBrowserClasses(
     // material instance its accessors as own ones. `for...in`, `Object.keys` and `Object.values` find
     // them on the web too: core's node-twin copy loops and "dispose every texture" rely on that.
     const materialClass = name.endsWith("Material");
+    const hierarchyClass = readWord !== undefined && binding.getters.includes("__hierarchy");
     const own: IOwnField[] = [];
     const engineClass = class {
       constructor(...args: unknown[]) {
@@ -1119,6 +1337,16 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        // The hierarchy counter's address, asked once a process at the first scene node made, and the
+        // engine's work counts ("name@address,..."), each read in place per frame by counters().
+        if (hierarchyAt === undefined && hierarchyClass) {
+          hierarchyAt = runtime.get(refOf(this), "__hierarchy") as number;
+          if (binding.getters.includes("__engineCounters"))
+            engineCountersAt = String(runtime.get(refOf(this), "__engineCounters"))
+              .split(",")
+              .map((entry) => entry.split("@"))
+              .map(([counter, address]) => [String(counter), Number(address)] as const);
+        }
         if (materialClass) defineOwn(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
         // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
@@ -1168,10 +1396,25 @@ export function defineBrowserClasses(
       const rangeMethod = attributeClass && rangeMethods.has(method);
       const transformMethod = attributeClass && transformMethods.has(method);
       const geometryWrite = geometryClass && geometryWrites.has(method);
+      // A mixer or action call may write the tracks' targets (update, stop restoring originals).
+      const drives =
+        /^Animation(Mixer|Action|ObjectGroup)$/u.test(name) && !keeps && !/^is[A-Z]/u.test(method);
+      const transforms = hierarchyClass && transformOnly.test(method);
+      const schedule =
+        name === "AnimationAction" && method === "isScheduled"
+          ? "read"
+          : name === "AnimationAction" && drives
+            ? "own"
+            : drives && !/^(update|setTime|clipAction|existingAction)$/u.test(method)
+              ? "all"
+              : undefined;
+      // An action's clip and root are its construction arguments: kept like a geometry's attributes.
+      const lifelong = name === "AnimationAction" && (method === "getClip" || method === "getRoot");
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
+          if (glueCounting) methodCalls += 1;
           // three's toArray(array, offset) writes the lanes into the array it is given and answers that array; the
           // engine answers a new one, since a plain array crosses by value.
           if (method === "toArray" && args[0] !== undefined) {
@@ -1182,8 +1425,15 @@ export function defineBrowserClasses(
             return target;
           }
           const intersections = method === "intersectObject" || method === "intersectObjects";
-          const key = query ? `${method} ${String(args[0])}` : "";
-          if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
+          const kept = query || (lifelong && caching);
+          const key = kept ? `${method} ${String(args[0])}` : "";
+          if (kept && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
+          if (schedule === "read" && caching && scheduling.has(this)) return scheduling.get(this);
+          if (schedule === "own") {
+            scheduling.delete(this);
+            for (const arg of args)
+              if (typeof arg === "object" && arg !== null) scheduling.delete(arg);
+          } else if (schedule === "all") scheduling = new WeakMap();
           // A per-vertex setter writes its own range and reads no kept array, so a whole-shadow flush
           // would cost O(N) a call; it syncs just its range back below. Anything else flushes edits.
           if (pending.size > 0 && !rangeMethod) writeBack();
@@ -1212,7 +1462,10 @@ export function defineBrowserClasses(
               );
             }
           }
-          if (!keeps) labels.delete(this);
+          if (!keeps && !(transforms && caching)) {
+            labels.delete(this);
+            animated.delete(this);
+          }
           const mark = loans.length;
           let result: unknown;
           try {
@@ -1225,6 +1478,7 @@ export function defineBrowserClasses(
             );
           } finally {
             if (loans.length > mark) result = repay(mark, result);
+            if (drives) animated = new WeakMap();
           }
           // The engine wrote only this range: copy it back, so a later game edit to the shadow wins.
           if (rangeMethod) {
@@ -1244,9 +1498,29 @@ export function defineBrowserClasses(
             args[2].sort((a, b) => a.distance - b.distance);
             return args[2];
           }
-          if (query)
+          if (kept)
             labels.get(this)?.set(key, result) ?? labels.set(this, new Map([[key, result]]));
+          if (schedule === "read" && caching) scheduling.set(this, result);
           return result;
+        },
+      });
+    }
+    // three's `layers.test(other)` is one AND of two masks the engine holds in place (field `mask`): a
+    // game tests each light's layers against the camera's per callback, so it stays in JS.
+    if (
+      name === "Layers" &&
+      binding.fields?.mask !== undefined &&
+      Object.hasOwn(prototype, "test")
+    ) {
+      const engineTest = prototype.test as (this: object, other: unknown) => boolean;
+      Object.defineProperty(prototype, "test", {
+        configurable: true,
+        writable: true,
+        value(this: { mask: number }, other: unknown) {
+          if (!caching || other === null || typeof other !== "object")
+            return engineTest.call(this, other);
+          if (Object.getPrototypeOf(other) !== prototype) return engineTest.call(this, other);
+          return (this.mask & (other as { mask: number }).mask) !== 0;
         },
       });
     }
@@ -1407,6 +1681,9 @@ export function defineBrowserClasses(
         flagField !== undefined && flagField[1] === 0 && peek !== undefined
           ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
           : undefined;
+      // A geometry's bounds, once present, are one engine object the engine recomputes in place
+      // (BufferGeometry::computeBoundingSphere); only its setter, copy() or another method replaces it.
+      const bounds = geometryClass && (property === "boundingSphere" || property === "boundingBox");
       const accessor: PropertyDescriptor = {
         configurable: true,
         get:
@@ -1444,20 +1721,44 @@ export function defineBrowserClasses(
                 return stats;
               }
             : undefined) ??
-          (labelled.has(property)
+          ((property === "children" || property === "parent") &&
+          binding.getters.includes("__hierarchy")
             ? function (this: object) {
-                let known = labels.get(this);
-                if (known === undefined) {
-                  known = new Map();
-                  labels.set(this, known);
+                if (glueCounting) propertyReads += 1;
+                if (property === "children") {
+                  childrenReads += 1;
+                  // The census names who reads it, though the cache answers without a crossing.
+                  if (meter.counting) meter.record("read", refOf(this), "children");
                 }
-                if (!known.has(property))
-                  known.set(property, fromEngine(runtime.get(refOf(this), property)));
-                return known.get(property);
+                const entry = hierarchyKept(this);
+                if (entry === undefined) return fromEngine(runtime.get(refOf(this), property));
+                if (!(property in entry))
+                  entry[property] = fromEngine(runtime.get(refOf(this), property));
+                return entry[property];
               }
-            : function (this: object) {
-                return fromEngine(runtime.get(refOf(this), property));
-              }),
+            : mirrored(binding, property, setters) || bounds
+              ? function (this: object) {
+                  if (glueCounting) propertyReads += 1;
+                  const legacy = legacyLabelled.has(property);
+                  if (!caching && !legacy) return fromEngine(runtime.get(refOf(this), property));
+                  const table = !legacy && animatedNames.has(property) ? animated : labels;
+                  let known = table.get(this);
+                  if (known === undefined) {
+                    known = new Map();
+                    table.set(this, known);
+                  }
+                  if (!known.has(property)) {
+                    const value = fromEngine(runtime.get(refOf(this), property));
+                    // The renderer computes a missing bound itself, so only a present one is kept.
+                    if (bounds && value === null) return value;
+                    known.set(property, value);
+                  }
+                  return known.get(property);
+                }
+              : function (this: object) {
+                  if (glueCounting) propertyReads += 1;
+                  return fromEngine(runtime.get(refOf(this), property));
+                }),
         ...(lane !== undefined && write !== undefined
           ? {
               set(this: object, value: number) {
@@ -1471,7 +1772,25 @@ export function defineBrowserClasses(
                   // writes `visible` on hundreds of nodes a frame, so those stay out of the bridge.
                   if (flag !== undefined && typeof value === "boolean" && flag(this) === value)
                     return;
-                  labels.delete(this);
+                  if (caching && (mirrored(binding, property, setters) || bounds)) {
+                    // A mirrored property's setter writes only that property: the others stay kept,
+                    // and a write of the primitive the mirror holds changes nothing in the engine.
+                    const legacy = legacyLabelled.has(property);
+                    const known = (!legacy && animatedNames.has(property) ? animated : labels).get(
+                      this,
+                    );
+                    if (
+                      (value === null || typeof value !== "object") &&
+                      known?.has(property) &&
+                      known.get(property) === value
+                    )
+                      return;
+                    labels.get(this)?.delete(property);
+                    animated.get(this)?.delete(property);
+                  } else {
+                    labels.delete(this);
+                    animated.delete(this);
+                  }
                   runtime.set(refOf(this), property, toEngine(value));
                 },
               }
@@ -1678,6 +1997,9 @@ export function defineBrowserClasses(
         name,
         binding.members.includes("children") || binding.getters.includes("children"),
         binding.methods.includes("__walk"),
+        binding.getters.includes("__hierarchy") ? hierarchyKept : undefined,
+        walked,
+        raycasts(name),
       );
     }
     classes[name] = cls;
@@ -1727,7 +2049,6 @@ export function defineBrowserClasses(
         });
     }
   }
-  const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
   const isFlag = (field: { name: string; type: string; mutable?: boolean }) =>
     /^is[A-Z]/u.test(field.name) &&
     (field.type === "true" || (field.type === "boolean" && field.mutable === false));
@@ -1753,7 +2074,42 @@ export function defineBrowserClasses(
     classes,
     wrap,
     crossings: () => crossings,
+    // The back end's running totals, for TN_FRAME_BUDGET.counters.engine. `hierarchyMoves` is the
+    // engine's hierarchy counter itself: each move drops every cache keyed on it, here and in C++.
+    counters: () => {
+      // Crossings ride their own series, TN_FRAME_BUDGET.counters.bridgeCrossings (__tnCrossingCount).
+      // `methodCalls` and `propertyReads` are the glue entries that series cannot see: every wrapper
+      // entry, crossed or answered by the cache.
+      const totals: Record<string, number> = {
+        childrenReads,
+        methodCalls,
+        propertyReads,
+        walkVisits,
+      };
+      if (readWord === undefined) return totals;
+      if (hierarchyAt !== undefined) totals.hierarchyMoves = readWord(hierarchyAt);
+      // The low word of each 64-bit total: core takes per-frame differences, which stay exact.
+      for (const [counter, address] of engineCountersAt) totals[counter] = readWord(address) >>> 0;
+      return totals;
+    },
     collect() {
+      meter.frame();
+      glueCounting = (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
+      const wanted = cacheWanted();
+      // A setter or method drops an object's kept answers whether or not the cache is on, so turning it
+      // back on keeps nothing stale; the two tables that other calls drop are emptied anyway.
+      if (wanted !== caching) {
+        caching = wanted;
+        animated = new WeakMap();
+        scheduling = new WeakMap();
+        kept = new WeakMap();
+      }
+      if (
+        hierarchyAt !== undefined &&
+        readWord !== undefined &&
+        readWord(hierarchyAt) !== keptVersion
+      )
+        kept = new WeakMap();
       // A wrapper handed out since the last safe point is asked now: the engine either references it (it
       // settles) or does not (JS alone keeps it). A settled wrapper is asked again a sixty-fourth of the
       // settled set per safe point, round robin (a live Set iterator): Midway settles about 50,000
@@ -2139,10 +2495,23 @@ function countCall(kind: string, self: IEngineRef, name: string): void {
 }
 
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
-  let dataView = new DataView(abi.HEAPU8.buffer);
+  // The heap's views, made again only when the memory grows: Emscripten replaces HEAPU8 then, so one
+  // identity test per use stands in for reading two `.buffer`s, which every crossing paid (PRD-748).
+  let heap = abi.HEAPU8;
+  let dataView = new DataView(heap.buffer);
+  let words = new Uint32Array(heap.buffer);
+  const grown = () => {
+    heap = abi.HEAPU8;
+    dataView = new DataView(heap.buffer);
+    words = new Uint32Array(heap.buffer);
+  };
   const view = () => {
-    if (dataView.buffer !== abi.HEAPU8.buffer) dataView = new DataView(abi.HEAPU8.buffer);
+    if (abi.HEAPU8 !== heap) grown();
     return dataView;
+  };
+  const wordView = () => {
+    if (abi.HEAPU8 !== heap) grown();
+    return words;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
   // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
@@ -2160,10 +2529,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       arenaTop += aligned;
     } else {
       // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
-      pointer = abi._malloc(size) >>> 0;
+      pointer = abi._malloc(aligned) >>> 0;
       allocations.push(pointer);
     }
-    abi.HEAPU8.fill(0, pointer, pointer + size);
+    // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
+    // `wordView` first: a `_malloc` above may have grown the memory.
+    const w = wordView();
+    if (aligned > 64) heap.fill(0, pointer, pointer + aligned);
+    else for (let at = pointer >>> 2, end = (pointer + aligned) >>> 2; at < end; at++) w[at] = 0;
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
@@ -2172,7 +2545,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     try {
       return work();
     } finally {
-      for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      while (allocations.length > mark) abi._free(allocations.pop() as number);
       arenaTop = top;
     }
   };
@@ -2204,11 +2577,6 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   };
   // A handle is three words in memory: type and context as two halves of the first, then index and
   // generation. A ref made here keeps those words, so writing one back is three stores, no parse.
-  let words = new Uint32Array(abi.HEAPU8.buffer);
-  const wordView = () => {
-    if (words.buffer !== abi.HEAPU8.buffer) words = new Uint32Array(abi.HEAPU8.buffer);
-    return words;
-  };
   const keyOf = (pointer: number): IEngineRef => {
     const v = view();
     const type = v.getUint16(pointer, true);
@@ -2482,6 +2850,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         return refs.map((_, i) => v.getUint32(out + i * 4, true));
       }),
     readByte: (address) => abi.HEAPU8[address] as number,
+    readWord: (address) => view().getUint32(address, true),
     writeDouble: (address, value) => {
       abi.HEAPF64[address / 8] = value;
     },
@@ -2503,7 +2872,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     set: (self, path, value) =>
       scoped(() => {
         countCall("set", self, path);
-        const pointer = values([value]);
+        // One value written in place: no one-item list per write.
+        const pointer = alloc(VALUE);
+        writeValue(pointer, value);
         const diag = diagnostic();
         check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
       }),

@@ -63,6 +63,11 @@ test("a frame-time assertion unthrottles only the virtual display, so a real dis
   // The completion window measures unthrottled completion on the session display by design.
   expect(measurementBrowserArgs(false, true, "real")).toEqual(PERFORMANCE_BROWSER_ARGS);
   expect(measurementBrowserArgs(false, false, "virtual")).toEqual([]);
+  // PRD-752: Xvfb does not pace a worker's OffscreenCanvas frames, and an unlimited frame rate
+  // throttled them (shooter: 36 ms presented against 16.7 ms), so a worker game keeps the limit.
+  expect(measurementBrowserArgs(true, false, "virtual", "worker")).toEqual(["--disable-gpu-vsync"]);
+  expect(measurementBrowserArgs(false, true, "real", "worker")).toEqual(["--disable-gpu-vsync"]);
+  expect(measurementBrowserArgs(true, false, "virtual", "page")).toEqual(PERFORMANCE_BROWSER_ARGS);
 });
 
 test("browser module loads without Node process and keeps software adapter detection", () => {

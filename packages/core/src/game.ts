@@ -7,6 +7,7 @@ import {
   Vector2,
 } from "three";
 import { type IAssetLoaderOptions, createAssetLoader } from "./assets.js";
+import { AutoBatch, type IAutoBatchConfig } from "./auto-batch.js";
 import { CanvasLayer } from "./canvas-layer.js";
 import { updateClusteredMeshes } from "./clustered-mesh.js";
 import { ComputeDrivenRegistry, isComputeDriven } from "./compute-driven.js";
@@ -38,9 +39,14 @@ import { MatrixWorldPass } from "./matrix-world.js";
 import { updateModelLods } from "./model-lod.js";
 import { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
-import { getPlatform } from "./platform.js";
+import { getPlatform, hostDocument, hostWindow } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
-import { FrameCounters, counterDeviceOf } from "./profiling/FrameCounters.js";
+import {
+  FrameCounters,
+  counterDeviceOf,
+  createCrossingReader,
+  createEngineCounterReader,
+} from "./profiling/FrameCounters.js";
 import {
   SPANS,
   SpanRecorder,
@@ -108,6 +114,7 @@ import {
 } from "./startup-offscreen-bytes.js";
 import {
   STARTUP_COMPILE_BUDGET_MS,
+  STARTUP_STABLE_WINDOW_MS,
   STARTUP_STALL_MS,
   type StartupCompile,
   StartupReadiness,
@@ -124,6 +131,7 @@ import {
   type IUiBridge,
   UI_DEV_METRICS_MESSAGE,
   UI_READY_INTENT,
+  UI_STARTUP_MESSAGE,
   connectUiBridge,
 } from "./ui-bridge.js";
 import { type IUiStatePublisher, onUiIntent, publishUiState } from "./ui-state.js";
@@ -236,6 +244,8 @@ export interface IGamePluginRuntime {
    * must be reported rather than inferred from a phase that cannot distinguish the two.
    */
   readonly startupCompileSettled?: () => boolean;
+  /** The loading cover has lifted: the startup hand-off finished and page UI shows state. */
+  readonly startupRevealed?: () => boolean;
   /** When the startup milestones happened, for the playtest bridge's startup observation. */
   readonly startupTimeline?: () => IStartupTimeline;
   /** What the reveal waited for that the spawn camera does not show; absent until the reveal. */
@@ -411,6 +421,13 @@ export interface IGameConfig<
    * assertion, because turning a convention off must not turn its measurement off.
    */
   readonly frameBudget?: IFrameBudgetOptions | false;
+  /**
+   * Static meshes that share a material merge into one draw once the scene has settled, on by
+   * default and reported as `TN_AUTO_BATCH`. A mesh the game later moves, hides or re-materials
+   * comes back at once. `false` turns the pass off; `userData.batch = "off"` on a mesh or any
+   * ancestor keeps just that subtree out.
+   */
+  readonly autoBatch?: boolean | IAutoBatchConfig;
   readonly initialState?: TState;
   /**
    * The **pre-start** shader warm-up. Off by default, and that is not the same as no warm-up.
@@ -536,8 +553,11 @@ export interface IGame<
   readonly ui: IGameUi;
   /** Rebuilds the requested scene from its initial state, then merges an optional carry patch. */
   goto(name: string, options?: IGotoOptions<TState>): Promise<void>;
-  /** Boot into `name` instead of `config.start` on the next `start()`. Hot reload's restore path. */
-  resumeScene(name: string): void;
+  /**
+   * Boot into `name` instead of `config.start` on the next `start()`. Hot reload's restore path.
+   * `revealed`: the session already showed its HUD, so the restarted game keeps the cover lifted.
+   */
+  resumeScene(name: string, options?: { readonly revealed?: boolean }): void;
   start(): Promise<void>;
   pause(): void;
   resume(): void;
@@ -747,6 +767,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #loop: FixedStepLoop | undefined;
   #interpolation: PhysicsInterpolation | undefined;
   #projection: SceneRenderProjection | undefined;
+  #autoBatch: AutoBatch | undefined;
   #cameraCull: RenderCameraCull | undefined;
   #matrixWorld: MatrixWorldPass | undefined;
   #cleanup: Array<() => void> = [];
@@ -782,6 +803,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #uiBridge: IUiBridge | undefined;
   #uiPublisher: IUiStatePublisher | undefined;
   #uiReady = false;
+  /** The loading cover has lifted and page UI may show state; see `UI_STARTUP_MESSAGE`. */
+  #uiRevealed = false;
   // Flipped only by a diagnostics consumer announcing itself; see enableRuntimeDiagnostics().
   #renderMetricsEnabled = false;
   // Depth-coupled output needs the scene hook before its pass; ordinary scenes retain the
@@ -828,9 +851,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    * available here: it throws before `start()`, and it resets state to the destination's
    * `initialState`, which would discard the very state being restored.
    */
-  resumeScene(name: string): void {
+  resumeScene(name: string, options?: { readonly revealed?: boolean }): void {
     if (this.#config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
     this.#resumeScene = name;
+    // An edit restarts the game, and its HUD would blank until this startup lifted the cover
+    // again: seconds after every save on a slow GPU. A session that showed its HUD keeps it.
+    // The updated module may have connected its UI already and told a waiting HUD to hide.
+    if (options?.revealed !== true) return;
+    this.#uiRevealed = true;
+    if (this.#uiBridge?.hasPeer()) this.#postUiStartup();
   }
 
   get state(): GameStore<TState> {
@@ -859,10 +888,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#uiBridge = bridge;
     // The store already coalesces writes at flush. Deferring this again waits for the native
     // host's next microtask pump, after that frame's WebView event pump has already passed.
+    // Ahead of the first state, which `publishUiState` sends at once when a UI is already waiting.
+    if (bridge.hasPeer()) this.#postUiStartup();
     this.#uiPublisher = publishUiState(bridge, this.#state, { schedule: (flush) => flush() });
     onUiIntent(bridge, (intent) => {
       if (intent !== UI_READY_INTENT) return;
       this.#uiReady = true;
+      // Before the state: a UI that mounts after the reveal must learn the cover is gone, and one
+      // that mounts before it must learn to hide.
+      this.#postUiStartup();
       // Publish immediately: the UI has just rendered against nothing, and waiting for the store's
       // next change would leave a HUD showing its initial values for up to a tick.
       this.#uiPublisher?.publish();
@@ -870,7 +904,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     return bridge;
   }
 
+  #postUiStartup(): void {
+    this.#uiBridge?.post({
+      type: UI_STARTUP_MESSAGE,
+      phase: this.#uiRevealed ? "ready" : "covered",
+    });
+  }
+
   #disconnectUi(): void {
+    this.#uiRevealed = false;
     this.#uiPublisher?.stop();
     this.#uiPublisher = undefined;
     this.#uiReady = false;
@@ -924,6 +966,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // Put back anything the cull hid before the outgoing scene is cleared, so a scene change never
     // leaves an object invisible if the game keeps a reference to it.
     this.#cameraCull?.restore();
+    this.#autoBatch?.reset();
     clearScene(ctx.scene, this.#computeDriven);
     const scene = new SceneType();
     this.#scene = scene;
@@ -966,6 +1009,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#scene !== scene) return false;
     this.#sceneFrame = typeof frame === "function" ? frame : undefined;
     this.#sceneEntered = true;
+    // What `enter()` built is what the warm-up compiles and the first frame draws, so it merges
+    // now, before either: no frame is ever drawn unmerged, and the compile counts merged meshes,
+    // not every source. Anything that moves afterwards is given back by the guard.
+    this.#autoBatch?.settleNow();
     // Before the audit, so an opacity the convention made take effect is reported as a warning.
     const opacity = applyOpacityConvention(ctx.scene);
     if (opacity !== undefined) console.warn(opacity);
@@ -1076,6 +1123,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     return pendingStart;
   }
 
+  /**
+   * The game's own platform source, else the one a worker host installed on the global scope:
+   * worker mode runs the unchanged portable entry, so it cannot pass `platform` here (PRD-752).
+   */
+  get #platform(): IGamePlatformSource | undefined {
+    return (
+      this.#config.platform ??
+      (globalThis as { __tnGamePlatform?: IGamePlatformSource }).__tnGamePlatform
+    );
+  }
+
   async #boot(): Promise<void> {
     const bootSceneName = this.#resumeScene ?? this.#config.start;
     this.#resumeScene = undefined;
@@ -1108,7 +1166,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#config.renderer?.resolutionScale,
         getPlatform().os,
       ),
-      source: this.#config.renderer?.source ?? this.#config.platform?.renderer,
+      source: this.#config.renderer?.source ?? this.#platform?.renderer,
     });
     if (this.#aborted) {
       renderer.dispose();
@@ -1116,23 +1174,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     }
     this.#renderer = renderer;
     const canvas = renderer.domElement;
-    const platform = this.#config.platform;
+    const platform = this.#platform;
+    const page = hostDocument();
     if (platform !== undefined) platform.mountCanvas(canvas, this.#config.container);
     else if (
       this.#config.container !== undefined &&
       canvas.parentElement !== this.#config.container
     )
       this.#config.container.append(canvas);
-    else if (canvas.parentElement === null && typeof document !== "undefined")
-      document.body.append(canvas);
+    else if (canvas.parentElement === null && page !== undefined) page.body.append(canvas);
 
     const inputTarget =
       this.#config.inputTarget ??
-      (platform === undefined
-        ? typeof window === "undefined"
-          ? canvas
-          : window
-        : (platform.inputTarget ?? canvas));
+      (platform === undefined ? (hostWindow() ?? canvas) : (platform.inputTarget ?? canvas));
     this.#input = new InputMap(
       this.#config.input,
       inputTarget,
@@ -1211,6 +1265,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       matrixWorld: matrixWorldPass,
     });
     this.#projection = projection;
+    const autoBatchConfig = this.#config.autoBatch;
+    const autoBatch = new AutoBatch(threeScene, {
+      enabled: autoBatchConfig !== false,
+      entities,
+      ...(typeof autoBatchConfig === "object" ? autoBatchConfig : {}),
+      report: (line) =>
+        (this.#config.frameBudget === false ? undefined : this.#config.frameBudget?.report)?.(
+          line,
+        ) ?? console.info(line),
+    });
+    this.#autoBatch = autoBatch;
     // Do not submit what the render camera cannot resolve. On by default at a conservative 0.5 px,
     // and measured whether or not the game narrows or declines it. Its decision is per camera, so
     // a shadow caster and anything attached to the camera are never dropped on the main view alone.
@@ -1331,6 +1396,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           backend?: { device?: { lost?: Promise<{ reason?: string; message?: string }> } };
         }
       ).backend?.device,
+      () => this.#aborted || this.#renderer !== renderer,
     );
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
     // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
@@ -1638,12 +1704,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#entities = entities;
     this.#scheduler = scheduler;
     this.#afterPhysicsPhase = afterPhysicsPhase;
-    const devToolsHost =
-      platform === undefined
-        ? typeof window === "undefined"
-          ? undefined
-          : window
-        : platform.devToolsHost;
+    const devToolsHost = platform === undefined ? hostWindow() : platform.devToolsHost;
     this.#cleanup.push(
       installDevTools(
         entities,
@@ -1753,7 +1814,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               if (projection !== undefined) {
                 reportInfo(
                   formatProjectionWindow(
-                    projection.report,
+                    projection.windowReport,
                     reported.window,
                     lastWorldDrawCalls,
                     this.#cameraCull?.report,
@@ -1860,6 +1921,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // work a shipped build must not pay for a diagnostic it did not ask for.
     const frameCounters =
       spans === undefined ? undefined : FrameCounters.install(counterDeviceOf(renderer.raw));
+    // The engine's own ABI crossings ride every budget window, not the spans flag: one difference of
+    // two reads per frame, and the series a fix for repeated crossings is judged on.
+    const bridgeCrossings = createCrossingReader();
+    // Every engine work counter, per frame, when a playtest bounds them (PRD-748 engine-cost row).
+    const engineCounters = createEngineCounterReader();
     // The parity oracle for the static freeze. Off by default and expensive on purpose: it
     // recomputes every world matrix the long way and throws on the first that disagrees with what
     // the frame is about to draw.
@@ -1901,6 +1967,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       onRender: (alpha) => {
         observeCompilation();
+        // Before the first world pass compiles anything: the merged meshes it compiles are the ones
+        // the player will see. A scene that has not entered has nothing built to settle.
+        if (this.#sceneEntered) autoBatch.update();
         if (!projectionSettled) {
           for (const node of startupShadows) node.startupCovered = false;
           startupShadows.clear();
@@ -2248,8 +2317,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // The boundary counts ride the span flag, but the simulation tick does not need them: it is
         // fed every frame so a plain `TN_FRAME_BUDGET` log can join a window's start and end ticks
         // without `TN_FRAME_SPANS`. `addCounters` keeps the last tick a caller did provide.
+        const crossings = bridgeCrossings();
+        const engine = engineCounters();
         frameBudget?.addCounters({
           ...(frameCounters?.read() ?? {}),
+          ...(crossings === undefined ? {} : { bridgeCrossings: crossings }),
+          ...(engine === undefined ? {} : { engine }),
           simulationTick: gameLoop.tick(),
         });
         const uiHost = globalThis as { __tnUiCompositeMs?: () => number };
@@ -2317,7 +2390,30 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const declined = skips !== undefined && skips > readinessGateSkips;
         if (skips !== undefined) readinessGateSkips = skips;
         if (!declined) startupReadiness.observe(frameMs);
-        if (stateHandOffFrames > 0 && !declined) stateHandOffFrames -= 1;
+        // Bounded like every other startup wait: a renderer that retires no frame (hosted CI's
+        // SwiftShader declined 73 of 73 after readiness) would otherwise keep the HUD covered for
+        // the whole session. Past the window the cover lifts anyway, and says why.
+        const handOffWaitedMs = now() - (timeline.readyMs ?? now());
+        const handOffBounded = handOffWaitedMs >= STARTUP_STABLE_WINDOW_MS;
+        if (stateHandOffFrames > 0 && (!declined || handOffBounded)) {
+          if (handOffBounded) {
+            console.warn(
+              `TN_STARTUP_HANDOFF_BOUNDED:${JSON.stringify({
+                retiredFrames: STARTUP_HANDOFF_FRAMES - stateHandOffFrames,
+                requiredFrames: STARTUP_HANDOFF_FRAMES,
+                waitedMs: Math.round(handOffWaitedMs),
+                reason:
+                  "the GPU retired fewer frames than the hand-off needs; the cover lifted at the bound",
+              })}`,
+            );
+            stateHandOffFrames = 0;
+          } else stateHandOffFrames -= 1;
+          // The frame the held state publishes again is the frame the cover is gone.
+          if (stateHandOffFrames === 0) {
+            this.#uiRevealed = true;
+            if (this.#uiBridge?.hasPeer()) this.#postUiStartup();
+          }
+        }
       },
       step: this.#config.step,
     });
@@ -2369,6 +2465,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       rapier: null,
       seed: this.#config.seed ?? null,
       startupCompileSettled: () => startupReadiness.compileSettled,
+      startupRevealed: () => this.#uiRevealed,
       startupTimeline: () => ({ ...timeline }),
       startupOffscreenBytes: () => offscreenBytes,
       step: gameLoop.step,
@@ -2604,6 +2701,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         failures.push(error);
       }
     }
+    this.#autoBatch?.reset();
     if (ctx !== undefined) clearScene(ctx.scene, this.#computeDriven);
     this.#cameraCull?.dispose();
     this.#cameraCull = undefined;
@@ -2616,8 +2714,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const renderer = this.#renderer;
     renderer?.dispose();
     if (renderer !== undefined) {
-      if (this.#config.platform === undefined) renderer.domElement.remove?.();
-      else this.#config.platform.unmountCanvas(renderer.domElement);
+      const platform = this.#platform;
+      if (platform === undefined) renderer.domElement.remove?.();
+      else platform.unmountCanvas(renderer.domElement);
     }
     this.#renderer = undefined;
     this.#viewport = undefined;

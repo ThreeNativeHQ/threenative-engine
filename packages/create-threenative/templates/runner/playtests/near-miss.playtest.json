@@ -1,0 +1,48 @@
+{
+  "name": "runner-no-near-miss-on-empty-road",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "start", "waitTicks": 20, "release": true },
+    { "kind": "input", "label": "lane-left", "press": "KeyA", "holdTicks": 6, "release": true },
+    { "kind": "wait", "label": "left", "waitTicks": 30, "release": true },
+    { "kind": "input", "label": "lane-centre", "press": "KeyD", "holdTicks": 6, "release": true },
+    { "kind": "wait", "label": "centre", "waitTicks": 30, "release": true },
+    { "kind": "input", "label": "lane-right", "press": "KeyD", "holdTicks": 6, "release": true },
+    { "kind": "wait", "label": "right", "waitTicks": 30, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lane",
+        "atSteps": [
+          { "label": "left", "equals": 0 },
+          { "label": "centre", "equals": 1 },
+          { "label": "right", "equals": 2 }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "distance",
+        "lte": 44,
+        "allowTrivial": "Every lane change happens inside the first 44 m; the first chunk with obstacles starts at 48 m."
+      },
+      {
+        "id": "state",
+        "path": "nearMisses",
+        "equals": 0,
+        "allowTrivial": "No obstacle stands in the first 48 m, so changing lanes there is not a near miss."
+      }
+    ]
+  }
+}

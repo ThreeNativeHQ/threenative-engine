@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IGame, defineGame } from "../src/game.js";
 import { acceptHotUpdate } from "../src/hot.js";
 import { Scene } from "../src/scene.js";
+import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
+import { subscribeUiState } from "../src/ui-state.js";
 
 type State = Record<string, unknown>;
 type DisposeCallback = (data: Record<string, unknown>) => void;
@@ -85,6 +87,69 @@ describe("acceptHotUpdate", () => {
     const rebuilt = game({ screen: "menu" });
     expect(() => acceptHotUpdate(rebuilt, hot)).not.toThrow();
     expect(rebuilt.state.getState().screen).toBe("playing");
+  });
+
+  it.each([
+    ["ready", false],
+    ["collapsing", true],
+  ] as const)(
+    "a session whose startup phase was %s comes back with its HUD covered: %s",
+    (phase, covered) => {
+      // An edit restarts the game, and the restarted game covered its HUD again until its own
+      // startup lifted the cover: seconds of blank HUD after every save on a slow GPU, 35 s on
+      // SwiftShader. A session that already showed its HUD keeps showing it.
+      const hot = hotContext();
+      const current = twoSceneGame({ screen: "playing" });
+      Object.defineProperty(current, "sceneName", { get: () => "play" });
+      Object.defineProperty(current, "ctx", { get: () => ({ startup: { phase } }) });
+      acceptHotUpdate(current, hot);
+      hot.triggerDispose();
+
+      // The page's UI layer stays mounted across the update and announced itself once, to the
+      // old game. The updated module connects its game's UI before acceptHotUpdate runs, as a
+      // game that registers intents at module load does, and meets that UI already waiting.
+      const ui = connectUiBridge({ end: "ui" });
+      const mirror = subscribeUiState(ui);
+      ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+      const rebuilt = twoSceneGame({ screen: "menu" });
+      try {
+        void rebuilt.ui;
+        acceptHotUpdate(rebuilt, hot);
+        expect(mirror.covered()).toBe(covered);
+      } finally {
+        rebuilt.stop();
+        ui.close();
+      }
+    },
+  );
+
+  it("keeps the HUD through a second update that lands before the restarted startup is ready", () => {
+    // One save, two rebuilds: vite updated the module again 0.1 s after the first restart, whose
+    // own startup was still collapsing, and that restart covered the HUD for 15 s on SwiftShader.
+    const hot = hotContext();
+    const first = twoSceneGame({ screen: "playing" });
+    Object.defineProperty(first, "sceneName", { get: () => "play" });
+    Object.defineProperty(first, "ctx", { get: () => ({ startup: { phase: "ready" } }) });
+    acceptHotUpdate(first, hot);
+    hot.triggerDispose();
+    const second = twoSceneGame({ screen: "menu" });
+    Object.defineProperty(second, "sceneName", { get: () => "play" });
+    Object.defineProperty(second, "ctx", { get: () => ({ startup: { phase: "collapsing" } }) });
+    acceptHotUpdate(second, hot);
+    hot.triggerDispose();
+
+    const ui = connectUiBridge({ end: "ui" });
+    const mirror = subscribeUiState(ui);
+    ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+    const third = twoSceneGame({ screen: "menu" });
+    try {
+      void third.ui;
+      acceptHotUpdate(third, hot);
+      expect(mirror.covered()).toBe(false);
+    } finally {
+      third.stop();
+      ui.close();
+    }
   });
 
   it("should do nothing when import.meta.hot is undefined", () => {

@@ -303,7 +303,7 @@ Proves resource state after the scenario through equals, gte, lte, textIncludes,
 | `textIncludes` | string | no |
 | `changed` | boolean | no |
 | `throughoutSteps` | boolean | no |
-| `atSteps` | Array<{ label: string, equals?: json, textIncludes?: string }> | no |
+| `atSteps` | Array<{ label: string, equals?: json, lte?: number, textIncludes?: string }> | no |
 | `allowTrivial` | triviality reason | no |
 | `anyOf` | Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }> | no |
 
@@ -707,6 +707,7 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 | --- | --- | --- |
 | `entity` | string | no |
 | `clip` | string | no |
+| `atStep` | string | no |
 | `entered` | boolean | no |
 | `advancedFrames` | number | no |
 | `finished` | boolean | no |
@@ -814,6 +815,77 @@ Bounds how far a planted foot slides while the subject moves, measured every tic
       "maxSlip": 0.35
     }
   ]
+}
+```
+
+### `sightLine`
+
+Bounds the share of the run in which solid geometry stood between the camera and the subject's world bounds centre, so a camera that clips through a pillar or a wall that eats the framing fails. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** camera.observe, entity.observe
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `entity` | string | no |
+| `maxBlockedRatio` | number | yes |
+
+
+```json
+{
+  "sightLine": {
+    "maxBlockedRatio": 0.02
+  }
+}
+```
+
+### `engineCost`
+
+Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's counters.engine (and counters.bridgeCrossings): JS-to-Wasm crossings, children reads, scene-walk visits, hierarchy moves, matrix composes, handle shares, content classification, GPU allocations, physics crossings and any counter an engine module adds to globalThis.__tnEngineCost. Each window must hold every bound; a run with fewer windows than minWindows, or a window missing a bounded counter, fails closed. A failure names the counter, the window and the top caller of the TN_BRIDGE_CENSUS before it. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** browser.console
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `maxPerFrame` | { [counter: string]: number } | no |
+| `maxInFrame` | { [counter: string]: number } | no |
+| `minWindows` | positive integer | no |
+| `skipWindows` | non-negative integer | no |
+| `still` | { windows: positive integer, maxPerFrame: { [counter: string]: number } } | no |
+| `moving` | { maxPerFrame?: { [counter: string]: number }, maxInFrame?: { [counter: string]: number } } | no |
+| `source` | string | yes |
+
+
+```json
+{
+  "engineCost": {
+    "maxPerFrame": {
+      "bridgeCrossings": 2000,
+      "childrenReads": 60
+    },
+    "skipWindows": 1,
+    "source": "shooter after-value 1,024 per frame on 2026-10-27, about 2x headroom"
+  }
+}
+```
+
+### `hudAudit`
+
+Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** browser.dom
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `minContrast` | number | no |
+| `noDebugText` | true | no |
+
+
+```json
+{
+  "hudAudit": {
+    "minContrast": 3,
+    "noDebugText": true
+  }
 }
 ```
 

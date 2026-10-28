@@ -10,7 +10,7 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
-import { type IRunnerModel, Runner } from "../entities/Runner.js";
+import { HITBOX, type IRunnerModel, Runner } from "../entities/Runner.js";
 import type { RunnerPhysics } from "../physics.js";
 import { chaseRunner, setupCamera } from "../render/camera.js";
 import { createDustTrail } from "../render/dust.js";
@@ -24,10 +24,11 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
+import { OBSTACLE_SIZE } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
-import { CHUNK_LENGTH, LANE_X, Track } from "../track.js";
+import { Track } from "../track.js";
 
 export type GameCtx = ICtx<GameState, RunnerPhysics>;
 
@@ -35,6 +36,8 @@ const START_SPEED = 11;
 const TOP_SPEED = 26;
 /** Metres per second gained per second run. Reach top speed at about a minute. */
 const ACCELERATION = 0.25;
+/** Metres either side of an obstacle's centre where the runner is level with it (its depth plus the hitbox's). */
+const NEAR_MISS_REACH = (OBSTACLE_SIZE.depth + HITBOX.depth) / 2;
 
 export class Run extends Scene<GameState, RunnerPhysics> {
   static override readonly initialState = INITIAL_STATE;
@@ -176,14 +179,14 @@ export class Run extends Scene<GameState, RunnerPhysics> {
           status = "CRASHED";
           shake.trigger();
         } else {
-          // A near miss is an obstacle this chunk passed beside rather than through. Counting it
-          // once per obstacle is what stops a single block shaking the camera for a whole second.
+          // A near miss is an obstacle the runner passed beside rather than through. Counting it
+          // once per obstacle is what stops a single block shaking the camera for a whole second;
+          // testing real obstacles, not every lane, is what stops an empty road scoring one.
           for (const chunk of track.chunks) {
-            const passed = distance - chunk.start;
-            if (passed < 0 || passed > CHUNK_LENGTH) continue;
-            for (const lane of LANE_X) {
-              const key = `${chunk.start}:${lane}`;
-              if (scored.has(key) || !runner.isNearMiss(lane)) continue;
+            for (const [index, obstacle] of chunk.obstacles.entries()) {
+              if (Math.abs(distance - obstacle.distance) > NEAR_MISS_REACH) continue;
+              const key = `${chunk.start}:${index}`;
+              if (scored.has(key) || !runner.isNearMiss(obstacle.x)) continue;
               scored.add(key);
               runner.recordNearMiss();
               nearMisses = runner.nearMisses;

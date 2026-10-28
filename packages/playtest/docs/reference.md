@@ -77,7 +77,9 @@ means something on one target is a fork of the harness. `--live-clock` adds
 the game entry evaluates.
 
 A device target that cannot be reached fails `TN_PLAYTEST_DEVICE_FAILED`; it never degrades
-to a browser run. Desktop observes HTTP and asset fetch failures through the native host mailbox
+to a browser run. The iOS simulator launches only after `simctl listapps` lists the newly
+installed bundle, because `simctl install` returns while the replaced build is still listed; an install
+that stays unlisted for 60 s fails `TN_PLAYTEST_IOS_INSTALL_UNREGISTERED`. Desktop observes HTTP and asset fetch failures through the native host mailbox
 and checks network errors by default. Missing, malformed or overflowing observations fail closed.
 Android and iOS still lack a runner network observer; an explicit network assertion **errors and
 names the working target**, it does not skip.
@@ -304,6 +306,39 @@ subject under 0.5 m, fewer than 4 planted tick pairs, or a target other than the
 `clipGroundSpeed` has no foot plant for stride sync to match: `footSlip`, `strideSynced` and
 `maxFootSlide` all fail closed with `no foot plant found: stride sync is off`
 (`TN_PLAYTEST_STRIDE_NO_FOOT_PLANT`).
+
+`assert.sightLine: { maxBlockedRatio, entity? }` watches the camera instead: every sample casts a ray
+from the camera's world position to the subject's world bounds centre and reports whether solid
+geometry is in the way. A rope or a rail (thin in two axes, crossed in under 15 cm) does not count. A cutout (`alphaTest`), a transparent surface that writes no depth and a mostly
+transparent surface are not solid. `maxBlockedRatio` (0..1) is the share of samples that may be blocked, and
+`entity` defaults to the scenario subject. A blocked sample names the five nearest blockers; a run
+over the share fails `TN_PLAYTEST_SIGHT_LINE_BLOCKED`. The check runs on the browser target only and
+fails `TN_PLAYTEST_SIGHT_LINE_UNOBSERVED` when it sampled nothing.
+
+`assert.engineCost: { maxPerFrame?, maxInFrame?, minWindows?, skipWindows?, still?, moving?, source }` bounds the
+engine's own work counters. The runner sets `__THREENATIVE_ENGINE_COST__`, and core then puts each
+frame's counts into every `TN_FRAME_BUDGET` window as `counters.engine` (a per-frame summary per name):
+the web back end's `childrenReads`, `walkVisits` and `hierarchyMoves`, the engine's `matrixEvaluations`,
+`share`, `shareHits`, `shareMints`, `contentClassOf`, `contentVersionKeys`, `classify`, `buffers` and
+`textures`, and every name a module adds to `globalThis.__tnEngineCost` (core's `cullRigRebuilds` and
+`cullRigWalks`, physics' `physicsTransformReads` and `physicsForceResets`). `counters.bridgeCrossings`
+joins as `bridgeCrossings`. `maxPerFrame` bounds a window's mean and `maxInFrame` its largest frame.
+`skipWindows` (default 0) leaves the first windows, the boot, unbounded. Every later window must hold
+every top-level bound; `still: { windows, maxPerFrame }` bounds only the first `windows` of them, which
+the scenario keeps still, and `moving: { maxPerFrame?, maxInFrame? }` only the
+windows after them. Fewer windows than `minWindows` (default 1), an unreadable window, or a bounded
+counter a window omits fails `TN_PLAYTEST_ENGINE_COST_UNOBSERVED` or `TN_PLAYTEST_ENGINE_COST_OVER_BOUND`;
+an over-bound message names the counter, the window and the top caller of the three-native
+`TN_BRIDGE_CENSUS` printed before it. `source` states where each bound came from.
+
+`assert.hudAudit: { noDebugText?, minContrast? }` reads the text the page draws after the last step.
+`noDebugText` (only `true`) fails when an item reads like developer copy — debug, TODO, FIXME,
+lorem ipsum, placeholder, probe, raycast, hitbox, wall ray, an unresolved `undefined`, `null` or
+`NaN`, or a coerced `[object Object]` — as `TN_PLAYTEST_HUD_DEBUG_TEXT`. `minContrast` (1..21) is a
+WCAG 2.x floor on the ratio between the text colour and the colour composited behind it; text over
+the canvas (background alpha under 0.5) is counted as `unjudged`, not guessed at, and a judged item
+below the floor fails `TN_PLAYTEST_HUD_CONTRAST`. At least one key is required, the check runs on
+the browser target only, and a run that reported no text fails `TN_PLAYTEST_HUD_AUDIT_UNOBSERVED`.
 
 **The frame budget is 60 fps on every tier.** A `performance` assertion without `maxFrameMsP95`
 holds the run to 16.7 ms at nearest-rank p95, on a discrete, integrated or mobile GPU alike; the

@@ -7,6 +7,8 @@
 #include "check.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/scene/lights.h"
+#include "engine/scene/material.h"
+#include "engine/scene/raycaster.h"
 
 #include <bit>
 #include <cinttypes>
@@ -174,6 +176,42 @@ void cloneLights() {
     CHECK(std::dynamic_pointer_cast<AmbientLight>(cloneObject(ambient, true, error)) != nullptr);
 }
 
+// A raycast's triangle tree is built from stored positions; a SkinnedMesh poses them through its bones,
+// so a tree would cull the posed triangle. A ray at the posed triangle hits it, as the brute-force path does.
+void raycastPosedSkin() {
+    // 16 triangles in a row along x (k spans [k-8, k-7]), enough that the tree splits them at x = 0. The bone
+    // moves every vertex +4 in x, so triangle 4 (bind pose x [-4, -3]) lands under x = 0.5, inside the bind
+    // pose bounds but in the other half of the tree.
+    std::vector<double> positions, skinIndex, skinWeight;
+    for (int k = 0; k < 16; ++k) {
+        positions.insert(positions.end(), {k - 8.0, -1, 0, k - 7.0, -1, 0, k - 7.5, 1, 0});
+        for (int v = 0; v < 3; ++v) {
+            skinIndex.insert(skinIndex.end(), {0, 0, 0, 0});
+            skinWeight.insert(skinWeight.end(), {1, 0, 0, 0});
+        }
+    }
+    auto geometry = std::make_shared<BufferGeometry>();
+    geometry->setAttribute("position", BufferAttribute::fromFloats(positions, 3));
+    geometry->setAttribute("skinIndex", BufferAttribute::fromFloats(skinIndex, 4));
+    geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(skinWeight, 4));
+    SkinnedMesh mesh(geometry, std::make_shared<Material>(MaterialType::Basic));
+    auto bone = std::make_shared<Bone>();
+    mesh.add(*bone);
+    mesh.updateMatrixWorld(true);
+    mesh.bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}, std::vector<Matrix4>{}));
+    bone->position.set(4, 0, 0);
+    mesh.updateMatrixWorld(true);
+    mesh.skeleton->update();
+    for (const bool brute : {true, false}) {
+        Raycaster caster({0.5, 0, 5}, {0, 0, -1});
+        caster.meshBruteForceForTesting = brute;
+        const auto hits = caster.intersectObject(mesh, false);
+        std::printf("posed skin raycast (%s): %zu hits\n", brute ? "brute" : "tree", hits.size());
+        CHECK(hits.size() == 1);
+    }
+}
+
 } // namespace
 
-TN_TEST_MAIN({"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds}, {"clone_lights", cloneLights})
+TN_TEST_MAIN({"skeleton_pose", skeletonPose}, {"clone_bounds", cloneBounds}, {"clone_lights", cloneLights},
+             {"raycast_posed_skin", raycastPosedSkin})

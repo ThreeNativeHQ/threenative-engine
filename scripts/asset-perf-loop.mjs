@@ -6,13 +6,12 @@
 //   node scripts/asset-perf-loop.mjs discard --iteration 3 --reason "dirty tree"
 //   node scripts/asset-perf-loop.mjs decide --iteration 5 --decision keep|reject --reason "..."
 //   node scripts/asset-perf-loop.mjs snapshot   # the built packages/assets becomes the --pair control
-//   node scripts/asset-perf-loop.mjs report
-//   node scripts/asset-perf-loop.mjs serve [--port 8767]   # live page, reloads when the ledger changes
+//   pnpm dashboard   # the Asset perf tab renders the ledger live and reloads when it changes (PRD-751)
 //
 // `measure` copies the shipped template assets (the corpus) into a fresh temporary project, runs a
 // cold `compileAssets` with the arm's config and records what the bake shipped. Build
 // `@threenative/assets` first: `pnpm --filter "@threenative/assets..." build`. docs/asset-perf/ledger.json
-// is the durable record and docs/asset-perf/index.html is generated from it, as in the CI speed loop.
+// is the durable record; the hub's Asset perf tab renders it, as in the CI speed loop.
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
@@ -23,7 +22,6 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { createServer } from "node:http";
 import { hostname, tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -41,7 +39,6 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = resolve(ROOT, "docs/asset-perf/ledger.json");
-const HTML = resolve(ROOT, "docs/asset-perf/index.html");
 /** The ledger is a checked-in file, so it is written the way `biome format` prints it. */
 function writeLedger(ledger) {
   writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
@@ -344,7 +341,7 @@ let seen;
 async function tick() {
   const live = document.getElementById("live");
   try {
-    const state = await (await fetch("/state", { cache: "no-store" })).json();
+    const state = await (await fetch("/api/asset-perf", { cache: "no-store" })).json();
     if (seen !== undefined && state.version !== seen) location.reload();
     seen = state.version;
     live.textContent = state.running
@@ -424,7 +421,7 @@ svg{width:100%;height:auto}
 tr.out td{opacity:.55;text-decoration:line-through}tr.out td small{text-decoration:none}
 </style></head><body><main>
 <h1>Asset pipeline performance</h1>
-<p class="dim">${header} Snapshot ${esc(now.toISOString())}. Regenerate with <code>node scripts/asset-perf-loop.mjs report</code>; the page is a static render of <code>docs/asset-perf/ledger.json</code>. Goal: the template corpus ships as few bytes as it can and preloads to GPU-ready as fast as it can, with no texture below its quality floor (PRD-729).</p>
+<p class="dim">${header} Snapshot ${esc(now.toISOString())}. The <code>pnpm dashboard</code> Asset perf tab renders <code>docs/asset-perf/ledger.json</code> on each load. Goal: the template corpus ships as few bytes as it can and preloads to GPU-ready as fast as it can, with no texture below its quality floor (PRD-729).</p>
 <h2>Progress toward the goal</h2>
 <div class="scroll"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Now</th><th>Goal</th><th>Progress</th><th></th></tr></thead><tbody>${strip}</tbody></table></div>
 <h2>Where the bytes go</h2>
@@ -459,21 +456,12 @@ function running() {
   }
 }
 
-function serve(port) {
-  createServer((req, res) => {
-    if (req.url?.startsWith("/state")) {
-      const version = statSync(LEDGER, { throwIfNoEntry: false })?.mtimeMs ?? 0;
-      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify({ version, running: running() }));
-    } else {
-      res.writeHead(200, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-store",
-      });
-      res.end(renderHtml(readLedger(LEDGER), new Date(), { serving: true }));
-    }
-  }).listen(port, "127.0.0.1", () => console.log(`asset perf live: http://127.0.0.1:${port}`));
+/** What the hub's Asset perf tab polls: the ledger version and a running `measure`. */
+export function liveState() {
+  return { version: statSync(LEDGER, { throwIfNoEntry: false })?.mtimeMs ?? 0, running: running() };
 }
+
+export { readLedger };
 
 /** `measure`: cook one arm, print it and, unless `--dry-run`, append it to the ledger. */
 async function measureCommand(ledger, argv, get) {
@@ -509,7 +497,6 @@ async function measureCommand(ledger, argv, get) {
     dirty: git("status", "--porcelain", "--", "packages/assets") !== "",
   });
   writeLedger(next);
-  writeAtomic(HTML, renderHtml(next));
 }
 
 async function main(argv) {
@@ -518,7 +505,6 @@ async function main(argv) {
   let ledger = readLedger(LEDGER);
   if (command === "measure") return measureCommand(ledger, argv, get);
   if (command === "show") return show(ledger);
-  if (command === "serve") return serve(Number(get("--port") ?? 8767));
   if (command === "decide") {
     const next = decideIteration(
       ledger,
@@ -527,7 +513,6 @@ async function main(argv) {
       get("--reason"),
     );
     writeLedger(next);
-    writeAtomic(HTML, renderHtml(next));
     return console.log(`iteration ${get("--iteration")}: ${get("--decision")}`);
   }
   if (command === "snapshot") {
@@ -537,13 +522,10 @@ async function main(argv) {
   }
   if (command === "discard") {
     ledger = discardIteration(ledger, Number(get("--iteration")), get("--reason"));
-    writeLedger(ledger);
-  } else if (command !== "report") {
-    console.error("usage: asset-perf-loop.mjs measure|show|discard|decide|report|serve|snapshot");
-    process.exit(2);
+    return writeLedger(ledger);
   }
-  writeAtomic(HTML, renderHtml(ledger));
-  console.log(`wrote ${HTML} (${String(ledger.iterations.length)} iterations)`);
+  console.error("usage: asset-perf-loop.mjs measure|show|discard|decide|snapshot");
+  process.exit(2);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

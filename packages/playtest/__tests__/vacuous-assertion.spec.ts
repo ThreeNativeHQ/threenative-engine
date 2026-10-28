@@ -180,7 +180,7 @@ test("the six held-value assertion kinds reject boolean and short triviality opt
 });
 
 test("every registry entry carries rationale and the audit reclassifies the six held-value kinds", () => {
-  expect(PLAYTEST_ASSERTION_REGISTRY).toHaveLength(32);
+  expect(PLAYTEST_ASSERTION_REGISTRY).toHaveLength(35);
   expect(PLAYTEST_ASSERTION_REGISTRY.every(({ trivialityRationale }) => trivialityRationale.trim().length > 0)).toBe(true);
   expect(PLAYTEST_ASSERTION_REGISTRY.filter(({ triviality }) => triviality === "reject-initial-value").map(({ kind }) => kind)).toEqual([
     "components",

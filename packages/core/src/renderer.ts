@@ -33,6 +33,7 @@ import {
   type PipelineCensus,
   createPipelineCensus,
 } from "./pipeline-census.js";
+import { hostDocument, hostResizeObserver } from "./platform.js";
 import { type ITimestampQueryPool, RenderPassBudget } from "./render-pass-budget.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
@@ -573,8 +574,9 @@ export function readCanvasSize(canvas: HTMLCanvasElement): readonly [number, num
 }
 
 export function observeCanvasResize(canvas: HTMLCanvasElement, resize: () => void): () => void {
-  if (typeof ResizeObserver !== "undefined") {
-    const observer = new ResizeObserver(resize);
+  const Observer = hostResizeObserver();
+  if (Observer !== undefined) {
+    const observer = new Observer(resize);
     observer.observe(canvas);
     return () => observer.disconnect();
   }
@@ -1910,6 +1912,15 @@ function restoresRendererState(): boolean {
   }
 }
 
+function newPageCanvas(): HTMLCanvasElement {
+  const page = hostDocument();
+  if (page === undefined)
+    throw new Error(
+      "TN_RENDERER_NO_CANVAS: no canvas was given and this host has no document; pass options.canvas",
+    );
+  return page.createElement("canvas");
+}
+
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const gpuTimestampFrameInterval =
@@ -1929,7 +1940,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   if (!Number.isFinite(resolutionScale) || resolutionScale <= 0)
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
-  const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
+  const canvas = options.canvas ?? source?.createCanvas() ?? newPageCanvas();
   // An intrinsic canvas follows its width/height attributes. Scaling that buffer then changes
   // clientWidth, so ResizeObserver scales it again until it is one pixel. Own the layout only
   // for the browser canvas we created; supplied canvases and platform surfaces own theirs.
@@ -1955,6 +1966,9 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       sampleCount: () => resolveSampleCount(raw),
     });
   let renderer: IRendererLike | undefined;
+  // Why WebGPU did not start, when it was tried: the boot failure must name it, or a fault in the
+  // WebGPU path (PRD-752: a DOM-only canvas call in a worker) reads as a device without WebGPU.
+  let webgpuFailure: string | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
@@ -1997,6 +2011,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // A facade and Wasm engine from two builds is an install fault, not a device without
       // WebGPU: falling back would report TN_NO_RENDERER and hide the fix.
       if (error instanceof Error && error.message.startsWith("TN_WASM_ABI_MISMATCH")) throw error;
+      webgpuFailure = error instanceof Error ? error.message : String(error);
       renderer = undefined;
     }
   }
@@ -2015,7 +2030,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // verbatim would show an internal "uncatalogued" code; a browser with no context throws
       // three's own message. Neither belongs in front of a player, so both become one named failure.
       throw new Error(
-        "TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.",
+        `TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.${webgpuFailure === undefined ? "" : ` WebGPU failed: ${webgpuFailure}`}`,
         { cause: error },
       );
     }

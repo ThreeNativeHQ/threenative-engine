@@ -768,6 +768,10 @@ int Session::initialize() {
     const uint32_t width = presenter ? presenter->width() : surfaceConfig().width;
     const uint32_t height = presenter ? presenter->height() : surfaceConfig().height;
     renderer->setGpuTimer(gpuTiming);
+    // PRD-754's A/B knobs, for a paired run from one build: TN_STABLE_PASSES=0 encodes the shadow passes directly, and
+    // TN_STABLE_ROWS=1 also replays the main, aux and velocity passes from state-ordered rows (off: it moves coplanar pixels).
+    if (const char* flag = std::getenv("TN_STABLE_PASSES"); flag && std::strcmp(flag, "0") == 0) renderer->setStablePasses(false);
+    if (const char* flag = std::getenv("TN_STABLE_ROWS"); flag && std::strcmp(flag, "1") == 0) renderer->setStableRows(true);
     renderer->setSize(width, height);
     renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
 #if !defined(__ANDROID__)
@@ -1124,6 +1128,14 @@ int Session::initialize() {
                     members.emplace_back("prepareBatchMs", json::Value::makeNumber(split[2]));
                     members.emplace_back("prepareOtherMs", json::Value::makeNumber(split[3]));
                     members.emplace_back("drawItems", json::Value::makeNumber(double(database.drawn().size())));
+                    const auto& frame = renderer->lastFrame();  // PRD-754: what the passes recorded or encoded directly
+                    members.emplace_back("mainRecorded", json::Value::makeNumber(double(frame.mainRecorded)));
+                    members.emplace_back("recordCause", json::Value::makeNumber(double(frame.recordCause)));
+                    members.emplace_back("auxRecorded", json::Value::makeNumber(double(frame.auxRecorded)));
+                    members.emplace_back("shadowDraws", json::Value::makeNumber(double(frame.shadowDraws)));
+                    members.emplace_back("shadowRecorded", json::Value::makeNumber(double(frame.shadowRecorded)));
+                    members.emplace_back("recordMs", json::Value::makeNumber(frame.recordMs));
+                    members.emplace_back("shadowEncodeMs", json::Value::makeNumber(frame.shadowEncodeMs));
                     members.emplace_back("batchGroups", json::Value::makeNumber(double(groups)));
                     members.emplace_back("batchMembers", json::Value::makeNumber(double(batched)));
                     members.emplace_back("geometryUploadBytes", json::Value::makeNumber(double(geometryBytes - lastGeometryBytes)));

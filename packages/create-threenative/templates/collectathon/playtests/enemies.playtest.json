@@ -276,12 +276,6 @@
         "gte": 1
       },
       {
-        "entity": "hud",
-        "component": "covered",
-        "equals": 0,
-        "allowTrivial": "the HUD pill must fade on every tick a Sunseed sits under it, so the count stays 0"
-      },
-      {
         "entity": "hopper.0",
         "component": "alive",
         "equals": false

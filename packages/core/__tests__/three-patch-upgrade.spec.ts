@@ -36,6 +36,13 @@ const RESOURCE_LIFETIME_PREDECESSORS = JSON.parse(
   ).toString("utf8"),
 ) as Record<string, string>;
 
+// Exact develop-shipped files keyed `path:blob`, for predecessors the legacy hunks cannot rebuild.
+const DEVELOP_REFRESH_PREDECESSORS = JSON.parse(
+  brotliDecompressSync(
+    readFileSync(join(testDir, "fixtures", "develop-refresh-predecessors.json.br")),
+  ).toString("utf8"),
+) as Record<string, string>;
+
 const GENERATED_UPGRADE = JSON.parse(
   readFileSync(
     join(resolve("packages/core"), "patches", "three@0.185.1-prd269-upgrade.patch"),
@@ -674,6 +681,13 @@ const RESOURCE_LIFETIME_PREDECESSOR_BLOBS = {
   "src/renderers/common/RenderObjects.js": "72569d0339314d26eb7a35ff2a8462a803c852a6",
 };
 
+// Exact blobs at PR #574 f4a53547, before each skeleton read its own previous bones.
+const SHARED_SKIN_HISTORY_BLOBS = {
+  "build/three.webgpu.js": "d835e23ec85acea5fd8ba15a2b76c83b83561c3c",
+  "build/three.webgpu.nodes.js": "d030da8cf893d8f222330d437b45297e3a06c0d0",
+  "src/nodes/accessors/Skinning.js": "76303e765bc29853cfd7f139dd3ec76545b70798",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -734,6 +748,11 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
   const blocks = migration.split(/(?=^diff --git )/mu);
   const selected: string[] = [];
   for (const [file, initialHash] of Object.entries(priorBlobs)) {
+    const recorded = DEVELOP_REFRESH_PREDECESSORS[`${file}:${initialHash}`];
+    if (recorded !== undefined) {
+      await writeFile(join(threeRoot, file), recorded, "utf8");
+      continue;
+    }
     let hash = initialHash;
     const chain: string[] = [];
     for (;;) {
@@ -774,6 +793,7 @@ describe.each([
   ["published PR398 63aa4b9b", TEMPORAL_PUBLISHED_BLOBS],
   ["develop fluid c2e051df", FLUID_DEVELOP_BLOBS],
   ["published PR398 4e86 /7036a173", CURRENT_RECONSTRUCTION_BLOBS],
+  ["PR574 f4a53547 shared skin history", SHARED_SKIN_HISTORY_BLOBS],
 ])("actual previously shipped Three files (%s)", (_name, priorBlobs) => {
   it.each([false, true])(
     "upgrades the exact prior patch and remains idempotent (CRLF=%s)",

@@ -14,6 +14,8 @@ const DIFFERING_SHARE = 0.25;
  * page painted before the canvas lifted the cover. Half a percent is a 200 x 40 px pill at 720p.
  */
 const UI_OVER_COVER_SHARE = 0.005;
+/** Half a 60 Hz frame: a screencast stamp may precede the page's first-paint stamp by this much. */
+const FIRST_PAINT_SLACK_MS = 8;
 /** Frames recorded past readiness, so the hand-off to the world is in the recording. */
 const HANDOFF_FRAMES = 30;
 
@@ -77,8 +79,15 @@ function uiShare(frame: IStartupCoverFrame, cover: IStartupCoverFrame, world: IS
  * the cover is listed in `uiOverCover`. No frame reports `frames: 0`, which the evaluator fails as
  * unobserved; no world frame after readiness leaves `worldMs` absent, which it fails too.
  */
-export function compareStartupFrames(frames: readonly IStartupCoverFrame[], readyMs = Number.POSITIVE_INFINITY): IPlaytestStartupCoverObservation {
-  const startup = frames.filter((frame) => frame.ms < readyMs);
+export function compareStartupFrames(
+  frames: readonly IStartupCoverFrame[],
+  readyMs = Number.POSITIVE_INFINITY,
+  firstPaintMs = 0,
+): IPlaytestStartupCoverObservation {
+  // Until the page paints once, the screen still shows the blank tab the runner opened: Chromium holds
+  // the previous content after navigation starts. Those frames are not the game's; its own are kept,
+  // with half a 60 Hz frame of slack for the screencast stamp against the paint timing stamp.
+  const startup = frames.filter((frame) => frame.ms >= firstPaintMs - FIRST_PAINT_SLACK_MS && frame.ms < readyMs);
   const handOff = frames.filter((frame) => frame.ms >= readyMs);
   const reference = startup.at(-1);
   if (reference === undefined) return { differing: [], frames: 0, reference: [0, 0, 0], uiOverCover: [] };
@@ -126,14 +135,17 @@ export async function recordStartupCover(page: Page): Promise<IStartupCoverRecor
       await waitFrames(page, HANDOFF_FRAMES).catch(() => undefined);
       await cdp.send("Page.stopScreencast").catch(() => undefined);
       await cdp.detach().catch(() => undefined);
-      const origin = await page.evaluate(() => performance.timeOrigin);
+      const [origin, firstPaint] = await page.evaluate(() => [
+        performance.timeOrigin,
+        performance.getEntriesByName("first-paint")[0]?.startTime ?? 0,
+      ]);
       const startup = frames
         .filter(({ epochMs }) => epochMs >= origin)
         .map(({ epochMs, png }) => {
           const image = PNG.sync.read(png);
           return { data: image.data, height: image.height, ms: epochMs - origin, width: image.width };
         });
-      return compareStartupFrames(startup, readyMs);
+      return compareStartupFrames(startup, readyMs, firstPaint);
     },
   };
 }

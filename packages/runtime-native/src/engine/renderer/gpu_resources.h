@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>  // TN_WORKER_ONLY: GpuThread parks its worker and joins one frame
 #include <cstdint>
 #include <deque>
@@ -114,6 +115,10 @@ public:
 
     /** The handle dies now; the GPU object lives until every submission so far has completed. */
     GpuStatus destroy(Handle resource);
+    /** Every destroy any table was asked for of a resource a draw can bind (a vertex, index, uniform, storage or indirect
+     *  buffer, or a sampled texture). A cache that holds handles past their frame (PRD-754's retained rows) drops what it
+     *  holds when this moves, since a recorded bundle must not bind a destroyed resource. */
+    static inline std::atomic<uint64_t> destroyRequests{0};
     /** One serial with `other`, a table on the same queue: a destroy here waits for its submissions too. */
     void shareSubmissions(const GpuResources& other) { shared_ = other.shared_; }
 
@@ -174,15 +179,25 @@ private:
     // The render thread submits and destroys while the game thread drains completions (PRD-613):
     // `mutex` guards the serials and the pending list; collect() runs with it held.
     struct Shared {
+        struct IdleStaging {
+            WGPUBuffer buffer;
+            uint64_t size;
+        };
         std::shared_ptr<GpuThread> thread;
         mutable std::mutex mutex;
         uint64_t submitted = 0;
         uint64_t completed = 0;
         std::vector<PendingDestroy> pending;
+        // Completed readback leases wait here, by exact size, until the next read of that size.
+        std::mutex stagingMutex;
+        std::vector<IdleStaging> idleStaging;
+        ~Shared();
         void collect();
     };
 
     static void release(Record& record);
+    static void recycleStaging(const std::shared_ptr<Shared>& shared, WGPUBuffer staging, uint64_t size);
+    WGPUBuffer leaseStaging(uint64_t size);
     static void complete(const std::shared_ptr<void>& owner, uint64_t serial);
     bool waitingMayRead(WGPUBuffer buffer) const;
     uint64_t submit(WGPUCommandBuffer commands, bool batch, std::vector<WGPUBuffer>* reads);

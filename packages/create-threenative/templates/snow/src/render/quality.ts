@@ -19,10 +19,14 @@
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
 //
-// **This template runs neither SSGI nor SSR at any tier.** Its frame cost is the snow — a dense
-// deforming heightfield mesh and tens of thousands of flakes — not the post chain, and snow is
-// already the brightest thing on screen, so the chain is tonemapping alone at every tier and the
-// sun glints come from the snow material.
+// **The preset is core's Unreal look plus this game's exposure policy**, with one named cost
+// override reported as `TN_RENDER_CHAIN_COST_OVERRIDE`: no final gather, SSGI or SSR, no
+// temporal AA or motion blur, no bloom and no local exposure. The frame is the snow — a dense deforming heightfield mesh and tens
+// of thousands of flakes. The screen-probe gather took the performance scenario to 38.8 ms GPU
+// p95 against its 16.7 ms budget, and the flakes are GPU-computed sprites with no velocity, so
+// both temporal stages trail and smear them. Snow fills the frame with bright pixels, so bloom
+// lays a veil over everything and lifts the explorer's darkest pixel from 18 to 49. Local exposure
+// lifts the explorer's shadows the same way and flattens it against the snow.
 import {
   type IWorldEnvironmentOptions,
   qualityPreset as coreQualityPreset,
@@ -42,101 +46,37 @@ import type { QualityTier } from "@threenative/core";
  */
 export const resolveQualityTier = qualityTiers.resolve;
 
-const legacyDefaults: IWorldEnvironmentOptions = {
-  // PRD-723: preserve the vendored look until this kit earns IMPROVEMENT. Cost: unmeasured.
-  autoExposureEnabled: false,
-  // Bloom cost: unmeasured; preserve the vendored stage until this kit is judged.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.7,
-  bloomThreshold: 0.2,
-  exposure: 1,
-  finalGatherMethod: "none",
-  gtaoEnabled: false,
-  gtaoRadius: 0.25,
-  gtaoSamples: 16,
-  gtaoDistanceExponent: 1,
-  gtaoDistanceFalloff: 1,
-  gtaoIndirectOnly: false,
-  localExposureEnabled: false,
-  motionBlurEnabled: false,
-  ssgiEnabled: false,
-  ssgiRadius: 12,
-  ssgiResolutionScale: 0.5,
-  ssrEnabled: false,
-  ssrResolutionScale: 0.5,
-  temporalAA: false,
-  tonemapMode: "aces",
-  unrealBloomEnabled: false,
-  vignetteAmount: 0,
-};
-
-const high: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  // Off. Snow is the brightest thing on screen, and at the default 0.2 threshold every lit
-  // pixel blooms and the glade sinks into a white haze. A 0.92 threshold kept only the glints on
-  // the web but left the native desktop frame blank behind the HUD (Dawn/Vulkan, 2026-10-01), so
-  // the glints live in the snow material's emissive term instead. Turn it back on here.
-  bloomEnabled: false,
-  // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
-  denoiseEnabled: false,
-  autoExposureEnabled: false,
-  // Unreal's default anti-aliasing is temporal, and the engine offers it as `temporalAA: true`. It is off here: the engine
-  // draws no velocity for instanced or sprite draws, and tens of thousands of flakes could trail. The scene keeps 4x
-  // multisampling. Turn it on after you have watched the flakes with it.
-  temporalAA: false,
-  exposure: 0.95,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
 /**
- * The rung in between. With no screen-space stage and no bloom at any tier, the post chain is the
- * same everywhere; the tier only reaches the measured chain as `renderChainTier`. What a phone
- * saves is decided in `src/scenes/Snow.ts` (fewer flakes), and the snow mesh resolution in
- * `src/terrain.ts` is where the frame actually goes.
+ * The stages and strengths a tier turns on: the core preset, this game's exposure policy and the
+ * one named cost override from the header: no final gather, no temporal AA, no motion blur. The
+ * snowfield and its flakes are the frame; the gather alone took the performance scenario to
+ * 38.8 ms GPU p95, and the flakes have no velocity for the temporal stages. Remove an override
+ * and read `TN_FRAME_BUDGET` when the snow gets cheaper.
  */
-const medium: IWorldEnvironmentOptions = { ...high, renderChainTier: "medium" };
-
-/**
- * What a phone gets: this template's shipped mobile look, unchanged.
- */
-const low: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  // Off, as at the high tier.
-  bloomEnabled: false,
-  exposure: 0.95,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  renderChainTier: "low",
-  tonemapMode: "aces",
-};
-
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
-
-/** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  const preset = QUALITY_PRESETS[tier as QualityTier];
-  if (preset === undefined) {
-    throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
-    );
-  }
+  console.info(
+    `TN_RENDER_CHAIN_COST_OVERRIDE ${JSON.stringify({
+      reason:
+        "Snow: the snowfield is the frame; the core gather took the performance scenario past 16.7 ms GPU p95, temporal AA and motion blur trail the GPU-computed flakes that have no velocity, bloom veils the white glade and lifts the explorer's blacks, and local exposure lifts the explorer's shadows and flattens it against the snow",
+      finalGatherMethod: "none",
+      ssgiEnabled: false,
+      ssrEnabled: false,
+      temporalAA: false,
+      motionBlurEnabled: false,
+      bloomEnabled: false,
+      localExposureEnabled: false,
+    })}`,
+  );
   return {
     ...coreQualityPreset(tier),
-    ...legacyDefaults,
-    ...preset,
     exposurePolicy: exposureSettings,
-    samples: preset.samples ?? 4,
+    finalGatherMethod: "none",
+    ssgiEnabled: false,
+    ssrEnabled: false,
+    temporalAA: false,
+    motionBlurEnabled: false,
+    bloomEnabled: false,
+    localExposureEnabled: false,
   };
 }
 

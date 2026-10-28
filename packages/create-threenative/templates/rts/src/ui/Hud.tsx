@@ -72,8 +72,8 @@ export function Hud() {
           />
         </div>
         <div className="mt-1 flex justify-between text-[10px] uppercase tracking-[0.14em] text-dim">
-          <span id="health">
-            {state.primaryMaxHp} / {state.primaryMaxHp}
+          <span data-value={state.primaryHp} id="health">
+            {state.primaryHp} / {state.primaryMaxHp}
           </span>
           <span id="selection-position">
             {state.selectionX.toFixed(0)} · {state.selectionZ.toFixed(0)}
@@ -121,15 +121,30 @@ export function Hud() {
       <p className="sr-only" id="selection-live">
         {`${state.selection} selected, orders ${state.selectionOrder}`}
       </p>
+      {/* The match result is the screen, not a tag in the corner: the command column covers that. */}
+      {state.result === "" ? null : (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="pointer-events-auto flex flex-col items-center gap-3 border border-line bg-black/80 px-8 py-5">
+            <span className="text-2xl uppercase tracking-[0.2em] text-warn" id="result">
+              {state.result}
+            </span>
+            <button
+              className="border border-line bg-black/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
+              data-tn-interactive
+              data-testid="restart"
+              onClick={() => send("restart")}
+              type="button"
+            >
+              play again
+            </button>
+          </div>
+        </div>
+      )}
       <div className="pointer-events-none absolute right-4 bottom-4 flex flex-col items-end gap-1">
-        {state.result === "" ? null : (
-          <span className="bg-black/80 px-3 py-1 text-xs uppercase tracking-[0.2em] text-warn">
-            {state.result}
-          </span>
-        )}
         <button
           className="pointer-events-auto border border-line bg-black/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
           data-tn-interactive
+          data-testid="pause-toggle"
           onClick={() => send(state.paused ? "resume" : "pause")}
           type="button"
         >

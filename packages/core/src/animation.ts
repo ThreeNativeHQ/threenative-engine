@@ -46,6 +46,10 @@ export interface IAnimationPlayerOptions {
    * way. Set `false` to keep the authored rate; the measurement below stays live either way and
    * says that it was overridden. The convention re-times locomotion only: a `"once"` clip — a
    * death, a flinch — always plays at its authored rate.
+   *
+   * Left unset, a rig carried by a camera (first-person hands, a held weapon) keeps its authored
+   * rate: the camera moves it, and a mouse turn sweeps its root metres a second, which read as
+   * stride played the hands at the 3x ceiling. `stride.cameraCarried` reports it; `true` syncs anyway.
    */
   readonly strideSync?: boolean;
   /**
@@ -58,6 +62,7 @@ export interface IAnimationPlayerOptions {
   readonly strideRoot?: Object3D;
   /**
    * Evaluate by measured screen size by default; a positive integer names a frame interval.
+   * A stride-synced walk at 32 px or more evaluates every frame.
    * Public mixer listeners/speed overrides stay full-rate; action speed interpolations do until settled.
    */
   readonly updateRate?: "auto" | number;
@@ -95,6 +100,8 @@ export interface IStrideReport {
   readonly synced: boolean;
   /** True when a rate was measured and deliberately not applied. */
   readonly overridden: boolean;
+  /** True when a camera carries the rig, so an unset `strideSync` keeps the authored rate. */
+  readonly cameraCarried: boolean;
   /**
    * True when the clip carries no root motion and its stride was read off the feet instead.
    *
@@ -126,6 +133,14 @@ const STRIDE_RATE_MAX = 3;
 const STRIDE_SPEED_FLOOR = 1e-4;
 /** A clip carrying less ground than this per second is not locomotion. */
 const CLIP_GROUND_FLOOR = 1e-3;
+
+/** True when `object` is a camera or sits under one: the camera moves it, not its own clip. */
+function cameraCarried(object: Object3D): boolean {
+  for (let node: Object3D | null = object; node !== null; node = node.parent) {
+    if ((node as { isCamera?: boolean }).isCamera === true) return true;
+  }
+  return false;
+}
 /** Poses taken across one cycle when reading an in-place clip's stride off its feet. */
 const PLANT_SAMPLES = 64;
 /** A contact bone is one that reaches this near the lowest point the rig visits. */
@@ -476,6 +491,12 @@ export interface IAnimationPlayOptions {
    * also keeps its authored rate — stride sync re-times locomotion, not events.
    */
   readonly mode?: "loop" | "once";
+  /**
+   * The playback rate of this play of a `"once"` clip, like Godot's `play(name, blend, speed)`.
+   * `1` (the default) is the authored rate; the next play without it returns to `1`. A looping clip
+   * keeps its stride-synced rate and ignores it.
+   */
+  readonly speed?: number;
 }
 
 type AnimationMode = "loop" | "once";
@@ -609,8 +630,9 @@ export class AnimationPlayer {
   #blendElapsed = 0;
   #blendStarts = new Map<string, number>();
   #preparation: RigPreparation | undefined;
-  #strideSync: boolean;
+  #strideSync: boolean | undefined;
   #strideRoot: Object3D;
+  #cameraCarried = false;
   #lastRootPosition = new Vector3();
   #hasLastRootPosition = false;
   /**
@@ -644,7 +666,7 @@ export class AnimationPlayer {
       this.#onFinished,
     );
     this.#preparation = options.preparation;
-    this.#strideSync = options.strideSync ?? true;
+    this.#strideSync = options.strideSync;
     this.#strideRoot = options.strideRoot ?? options.root;
     for (const clip of options.clips) {
       if (this.#actions.has(clip.name))
@@ -695,11 +717,12 @@ export class AnimationPlayer {
   }
 
   get updateRateReport(): IAnimationUpdateRateReport {
+    const rate = this.#effectiveUpdateRate();
     return {
-      rate: this.#effectiveUpdateRate(),
+      rate,
       overridden: this.#updateRate !== "auto",
       evaluated: this.#evaluated,
-      boneRate: this.#boneRate(this.#effectiveUpdateRate()),
+      boneRate: this.#boneRate(rate),
     };
   }
 
@@ -710,9 +733,9 @@ export class AnimationPlayer {
       : rate;
   }
 
-  #effectiveUpdateRate(): number {
+  #effectiveUpdateRate(mixerScale = this.mixer.timeScale): number {
     // Public mixer speed overrides and observed events retain ordinary Three.js tick semantics.
-    if (this.mixer.timeScale !== 1) return 1;
+    if (mixerScale !== 1) return 1;
     // Event deadlines and changing blend weights remain exactly on the gameplay tick.
     if (
       this.#mode === "once" ||
@@ -725,7 +748,13 @@ export class AnimationPlayer {
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
     if (state.source === undefined) return 1;
-    return state.frame === state.source.animationFrame ? state.rate : 8;
+    // A held pose rides on a moving body, so a stride-synced walk in the 32-128 px band evaluates
+    // every frame, or its planted foot slides by the body's travel; smaller rigs keep the band rate.
+    return state.frame === state.source.animationFrame
+      ? state.rate === 2 && this.#strideSynced && this.#strideGroundSpeed >= STRIDE_SPEED_FLOOR
+        ? 1
+        : state.rate
+      : 8;
   }
 
   #observeTimeScaleInterpolation(action: AnimationAction): void {
@@ -777,6 +806,7 @@ export class AnimationPlayer {
       clipGroundSpeed: measured?.groundSpeed ?? 0,
       groundSpeed: this.#strideGroundSpeed,
       inPlace: measured?.inPlace ?? this.#strideInPlace,
+      cameraCarried: this.#cameraCarried,
       overridden: this.#strideOverridden,
       rate: this.#strideRate,
       synced: this.#strideSynced,
@@ -897,12 +927,14 @@ export class AnimationPlayer {
       : 0;
     this.#lastRootPosition.copy(scratchWorld);
     this.#hasLastRootPosition = true;
+    this.#cameraCarried = cameraCarried(this.#strideRoot);
     if (name === undefined || action === undefined || dt <= 0) return;
+    const strideSync = this.#strideSync ?? !this.#cameraCarried;
     const measured = this.#measureOf(name);
     const clipGroundSpeed = measured.groundSpeed;
     const groundSpeed = moved / dt;
     // A dominant idle must not leave a contributing walk at its authored speed.
-    if (this.#blendTargets !== undefined && this.#strideSync && this.#mode === "loop")
+    if (this.#blendTargets !== undefined && strideSync && this.#mode === "loop")
       this.#syncBlendParticipants(groundSpeed);
     if (clipGroundSpeed < CLIP_GROUND_FLOOR) {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
@@ -929,12 +961,12 @@ export class AnimationPlayer {
     // re-timing it against a stationary body only slows the event down. A travelling death clip
     // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
     const applies =
-      this.#strideSync && this.#mode === "loop" && !this.#timeScaleInterpolations.has(action);
-    if (applies) action.setEffectiveTimeScale(rate);
+      strideSync && this.#mode === "loop" && !this.#timeScaleInterpolations.has(action);
+    if (applies && action.timeScale !== rate) action.setEffectiveTimeScale(rate);
     this.#strideGroundSpeed = groundSpeed;
     this.#strideRate = rate;
     this.#strideSynced = applies;
-    this.#strideOverridden = !this.#strideSync;
+    this.#strideOverridden = !strideSync;
     this.#strideInPlace = measured.inPlace;
     this.#strideReportOnlyFor = !applies && this.#blendTargets === undefined ? name : undefined;
   }
@@ -952,11 +984,12 @@ export class AnimationPlayer {
       const ground = this.#measureOf(name).groundSpeed;
       if (ground < CLIP_GROUND_FLOOR || this.#timeScaleInterpolations.has(action)) continue;
       const wanted = groundSpeed < STRIDE_SPEED_FLOOR ? STRIDE_RATE_MIN : groundSpeed / ground;
-      action.setEffectiveTimeScale(Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted)));
+      const rate = Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted));
+      if (action.timeScale !== rate) action.setEffectiveTimeScale(rate);
     }
   }
 
-  #playAction(action: AnimationAction, mode: AnimationMode, weight: number): void {
+  #playAction(action: AnimationAction, mode: AnimationMode, weight: number, speed: number): void {
     const once = mode === "once";
     action
       .reset()
@@ -964,29 +997,35 @@ export class AnimationPlayer {
       .setEffectiveWeight(weight)
       .play();
     action.clampWhenFinished = once;
+    if (once) action.setEffectiveTimeScale(speed);
   }
 
-  #replayCurrent(action: AnimationAction, mode: AnimationMode): void {
+  #replayCurrent(action: AnimationAction, mode: AnimationMode, speed: number): void {
     for (const entry of this.#fadeOut) entry.action.stop();
     this.#fadeOut = [];
     for (const other of this.#actions.values()) {
       if (other !== action) other.setEffectiveWeight(0).stop();
     }
-    this.#playAction(action, mode, 1);
+    this.#playAction(action, mode, 1, speed);
     this.#mode = mode;
     this.#finished = false;
     this.#advancedFrames = 0;
   }
 
-  #playCurrent(action: AnimationAction, requestedMode: AnimationMode | undefined): void {
+  #playCurrent(
+    action: AnimationAction,
+    requestedMode: AnimationMode | undefined,
+    speed: number,
+  ): void {
     const mode = requestedMode ?? "loop";
     if (!this.#finished && mode === this.#mode) return;
-    this.#replayCurrent(action, mode);
+    this.#replayCurrent(action, mode, speed);
   }
 
   #playNext(name: string, next: AnimationAction, options: IAnimationPlayOptions): void {
     const fade = Math.max(0, options.fade ?? 0);
     const once = options.mode === "once";
+    const speed = options.speed ?? 1;
     const from = fade > 0 && next.isScheduled() ? next.getEffectiveWeight() : 0;
     // A loop that is still visible keeps its gait; explicit one-shots and mode changes replay.
     const time = from > 0 && !once && next.loop === LoopRepeat ? next.time : 0;
@@ -1005,7 +1044,12 @@ export class AnimationPlayer {
       else action.setEffectiveWeight(0).stop();
     }
 
-    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? from : 1);
+    this.#playAction(
+      next,
+      once ? "once" : "loop",
+      fade > 0 && outgoing.length > 0 ? from : 1,
+      speed,
+    );
     next.time = time;
     if (outgoing.length === 0 || fade === 0) {
       for (const entry of outgoing) entry.action.setEffectiveWeight(0).stop();
@@ -1049,6 +1093,9 @@ export class AnimationPlayer {
   }
 
   #start(name: string, options: IAnimationPlayOptions): void {
+    const speed = options.speed ?? 1;
+    if (!(Number.isFinite(speed) && speed > 0))
+      throw new Error(`Animation play speed must be a positive finite number, got ${speed}.`);
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
     if (this.#current !== name || this.#finished || (options.mode ?? "loop") !== this.#mode)
@@ -1065,7 +1112,7 @@ export class AnimationPlayer {
         const keepPhase = this.#mode === "loop" && options.mode !== "once";
         this.#playNext(name, next, options);
         if (keepPhase) next.time = time;
-      } else this.#playCurrent(next, options.mode);
+      } else this.#playCurrent(next, options.mode, speed);
       return;
     }
     this.#playNext(name, next, options);
@@ -1225,15 +1272,10 @@ export class AnimationPlayer {
   update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
-    if (this.mixer.timeScale !== 1) this.#flushPending();
-    const elapsed = dt * this.mixer.timeScale;
-    this.#pendingDt += elapsed;
-    for (const action of this.#actions.values()) {
-      if (!action.isScheduled()) continue;
-      const time = action.paused ? 0 : action.timeScale * elapsed;
-      this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
-    }
-    const rate = this.#effectiveUpdateRate();
+    const mixerScale = this.mixer.timeScale;
+    if (mixerScale !== 1) this.#flushPending();
+    const elapsed = dt * mixerScale;
+    const rate = this.#effectiveUpdateRate(mixerScale);
     this.#rateState.effectiveRate = force ? 1 : rate;
     this.#updateFrame += 1;
     this.#skippedFrames += 1;
@@ -1243,7 +1285,23 @@ export class AnimationPlayer {
       force ||
       (this.#updateFrame + this.#staggerOffset) % boneRate === 0 ||
       this.#skippedFrames >= boneRate;
-    if (this.#evaluated) this.#evaluate(dt);
+    // A full-rate tick with no held time advances through the mixer's own actions; only deferred
+    // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
+    // costs every full-rate rig every frame.
+    if (
+      !this.#evaluated ||
+      this.#pendingDt !== 0 ||
+      this.#pendingActionTimes.size !== 0 ||
+      rate !== 1
+    ) {
+      for (const action of this.#actions.values()) {
+        if (!action.isScheduled()) continue;
+        const time = action.paused ? 0 : action.timeScale * elapsed;
+        this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
+      }
+    }
+    this.#pendingDt += elapsed;
+    if (this.#evaluated) this.#evaluate(dt, mixerScale);
     // Measure the body's movement on every tick, including skipped pose evaluations. A held tick of
     // a clip whose measurement only reports banks its dt: the average speed over the interval is
     // the same number, measured once.
@@ -1389,17 +1447,17 @@ export class AnimationPlayer {
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
   }
 
-  #evaluate(dt: number): void {
+  #evaluate(dt: number, mixerScale = this.mixer.timeScale): void {
     // Read before mixer.update(): the "finished" listener fires inside it for a completing
     // once-clip, and that final frame still counts as advancement.
     const wasFinished = this.#finished;
     const before = this.mixer.time;
     const elapsed = this.#pendingDt;
-    const mixerScale = this.mixer.timeScale;
     const direct =
       this.#skippedFrames === 1 &&
       elapsed === dt * mixerScale &&
-      (mixerScale !== 1 ||
+      (this.#pendingActionTimes.size === 0 ||
+        mixerScale !== 1 ||
         (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners));
     if (!direct) {
       this.mixer.timeScale = 1;

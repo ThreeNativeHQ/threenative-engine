@@ -86,8 +86,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_gpu_async_only=async_only
         native_engine_gpu_thread_ordering=gpu_thread_ordering
         native_engine_lifetime_deferred_gpu=lifetime_deferred_gpu
-        native_engine_gpu_batched_submits=batched_submits)
+        native_engine_gpu_batched_submits=batched_submits
+        native_engine_gpu_readback_reuses_staging=readback_reuses_staging)
     target_link_libraries(tn-native-engine-gpu-resources-test PRIVATE tn_engine_renderer tn_host_services)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND MYSTRAL_USE_DAWN)
+        # Counts staging allocations and forces one map failure without a seam in GpuResources.
+        target_compile_definitions(tn-native-engine-gpu-resources-test PRIVATE TN_TEST_BUFFER_WRAP TN_TEST_MAP_WRAP)
+        target_link_options(tn-native-engine-gpu-resources-test PRIVATE
+            "-Wl,--wrap=wgpuDeviceCreateBuffer" "-Wl,--wrap=wgpuBufferMapAsync")
+    endif()
     # A real window, so the ctest runs it under the repository's private Xvfb with SDL's dummy audio.
     add_executable(tn-native-engine-presentation-test EXCLUDE_FROM_ALL tests/native-engine/presentation_test.cpp)
     target_link_libraries(tn-native-engine-presentation-test PRIVATE tn_engine_renderer tn_host_services ${SDL3_STATIC_TARGET})
@@ -123,6 +130,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_history_depth_rows=history_depth_rows
         native_engine_raw_target_scene_only=raw_target_scene_only
         native_engine_renderer_resize_readback=resize_readback
+        native_engine_renderer_camera_turn_records=camera_turn_records
+        native_engine_renderer_coplanar_keeps_winner=coplanar_keeps_winner
+        native_engine_renderer_cull_keeps_main_bundle=cull_keeps_main_bundle
         native_engine_renderer_emissive_target=emissive_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
@@ -142,6 +152,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_reset_seed=traa_reset_seed
         native_engine_traa_camera_velocity=traa_camera_velocity
         native_engine_traa_skinned_velocity=traa_skinned_velocity
+        native_engine_traa_camera_held_skinned_velocity=traa_camera_held_skinned_velocity
+        native_engine_renderer_frame_delta_skips_compiles=frame_delta_skips_compiles
         native_engine_traa_instanced_velocity=traa_instanced_velocity
         native_engine_traa_alpha_tested_velocity=traa_alpha_tested_velocity
         native_engine_traa_manual_jitter=traa_manual_jitter
@@ -269,6 +281,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
         native_engine_gpu_joint_production=gpu_joint_production
+        native_engine_unchanged_frame_storage=unchanged_frame_storage
         native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups
@@ -300,6 +313,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_callback=render_callback
         native_engine_renderer_instanced=instanced
         native_engine_batched_vs_unbatched=batched_vs_unbatched
+        native_engine_stable_passes_match_direct=stable_passes_match_direct
+        native_engine_camera_cull_keeps_bundle=camera_cull_keeps_bundle
         native_engine_skinned_batched_vs_unbatched=skinned_crowd
         native_engine_skinned_decline_cadence=skinned_decline_cadence
         native_engine_skinned_projecting_cadence=skinned_projecting_cadence
@@ -319,6 +334,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_flat_shading_needs_no_normals=flat_shading_needs_no_normals
         native_engine_renderer_map_sampleability_changes=map_sampleability_changes
         native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put
+        native_engine_renderer_batch_keeps_member_id=batch_keeps_member_id
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow
@@ -338,6 +354,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_sun_level_sizes=virtual_sun_level_sizes
         native_engine_virtual_sun_auto_map_size=virtual_sun_auto_map_size
         native_engine_lamp_cache=lamp_cache
+        native_engine_cached_lamp_has_no_uniform_upload=cached_lamp_has_no_uniform_upload
+        native_engine_sun_cache=sun_cache
         native_engine_lamp_atlas=lamp_atlas
         native_engine_gpu_timer_splits_lamp_shadows=gpu_timer_splits_lamp_shadows
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
@@ -387,6 +405,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_geometry_cache=geometry
         native_engine_renderer_pipeline_cache=pipelines
         native_engine_renderer_sibling_pipelines=sibling_pipelines
+        native_engine_renderer_sibling_texture_change=sibling_texture_change
         native_engine_renderer_pipeline_compile_async=compile_before_render
         native_engine_renderer_init_texture=init_texture
         native_engine_renderer_recent_bind_groups=recent_bind_groups

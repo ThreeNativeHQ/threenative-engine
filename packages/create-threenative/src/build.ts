@@ -1064,8 +1064,7 @@ function uiBuildDriver(cwd: string, page: string, output: string, cssSourcemaps 
     "",
     `const root = ${literal(cwd)};`,
     `const loaded = await loadConfigFromFile({ command: "build", mode: "production" }, undefined, root);`,
-    "await build(",
-    "  mergeConfig(loaded?.config ?? {}, {",
+    "const config = mergeConfig(loaded?.config ?? {}, {",
     "    root,",
     '    base: "./",',
     // The UI is a HUD page, not the game: it must not carry the game's `public/`. Vite copies
@@ -1091,8 +1090,14 @@ function uiBuildDriver(cwd: string, page: string, output: string, cssSourcemaps 
     "      emptyOutDir: true,",
     `      rollupOptions: { input: { index: ${literal(page)} } },`,
     "    },",
-    "  }),",
-    ");",
+    "});",
+    // Set, not merged: `mergeConfig` merges `input` objects, so a project that names its own pages
+    // (a worker kit's `index.html` and `main.html`) bundled the whole game into the HUD build.
+    // Vite 8 reads `rolldownOptions` and keeps `rollupOptions` as its alias.
+    "for (const options of [config.build.rollupOptions, config.build.rolldownOptions])",
+    `  if (options) options.input = { index: ${literal(page)} };`,
+    // The config is loaded above; a second load from the file would merge its `input` back in.
+    "await build({ ...config, configFile: false });",
   ].join("\n")}\n`;
 }
 

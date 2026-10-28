@@ -370,6 +370,16 @@
       "path": "build/three.webgpu.nodes.js",
       "oldHash": "b344d27b52f8be09a0e6c7fef999c87b16377c9c",
       "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "d835e23ec85acea5fd8ba15a2b76c83b83561c3c",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "d030da8cf893d8f222330d437b45297e3a06c0d0",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
     }
   ],
   "baseFinalHashes": {

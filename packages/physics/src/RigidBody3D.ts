@@ -10,7 +10,7 @@ import {
   effectiveContinuousCollision,
   requirePhysicsSimulation,
 } from "./simulation.js";
-import { bulkTransformValue } from "./transformRecord.js";
+import { bulkTransformValue, setRotationIfChanged } from "./transformRecord.js";
 
 export type RigidBodyType = "dynamic" | "fixed" | "kinematic";
 
@@ -221,7 +221,8 @@ export class RigidBody3D {
     const transform = this.#simulation.readBodyTransform(this.body.id);
     if (transform === undefined) return;
     object.position.set(transform.position.x, transform.position.y, transform.position.z);
-    object.quaternion.set(
+    setRotationIfChanged(
+      object.quaternion,
       transform.rotation.x,
       transform.rotation.y,
       transform.rotation.z,
@@ -244,7 +245,7 @@ export class RigidBody3D {
     const object = this.#object;
     if (object === undefined) return;
     object.position.set(x, y, z);
-    object.quaternion.set(qx, qy, qz, qw);
+    setRotationIfChanged(object.quaternion, qx, qy, qz, qw);
     this.#lastPosition.x = x;
     this.#lastPosition.y = y;
     this.#lastPosition.z = z;

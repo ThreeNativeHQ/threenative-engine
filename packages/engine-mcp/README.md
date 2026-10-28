@@ -37,6 +37,12 @@ The save tool returns a `gh issue create` command for a POSIX shell; run it in t
 It does not send the contribution. Reference guardrail: mechanics and feel only, with pinned
 `file:line` sources; no code, level layouts, character names or art.
 
+## One call from the command line
+
+A session started outside the game folder never loads its `.mcp.json`. It calls a tool once
+instead: `node <game>/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities
+'{"situation":"triple jump"}'` prints the tool's answer and exits 0, or names the error and exits 1.
+
 ## Which manifest the server reads
 
 The first that exists wins, so the manifest can never drift from the engine the project runs:

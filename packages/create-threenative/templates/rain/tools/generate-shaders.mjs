@@ -117,8 +117,8 @@ const SHADERS = [
         // because a flip on one and not the other would put the reflections somewhere the sky they
         // mirror is not.
         what: "the pass-texture sample coordinate",
-        find: /uSky\.sample\(\s*(\w+)\s*\)/g,
-        replace: "uSky.sample(vec2($1.x,$1.y.oneMinus()))",
+        find: /(uSky|uHeight|uBase)\.sample\(\s*(\w+)\s*\)/g,
+        replace: "$1.sample(vec2($2.x,$2.y.oneMinus()))",
         imports: ["oneMinus"],
       },
     ],

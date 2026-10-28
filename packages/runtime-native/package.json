@@ -29,6 +29,8 @@
   "files": [
     "build/web/tn-native-engine-web.mjs",
     "build/web/tn-native-engine-web.wasm",
+    "build/web/tn-native-engine-web-threads.mjs",
+    "build/web/tn-native-engine-web-threads.wasm",
     "LICENSE",
     "NOTICE",
     "README.md",

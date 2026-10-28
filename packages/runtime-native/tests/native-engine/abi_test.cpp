@@ -194,6 +194,37 @@ void generic() {
     tn_value_t copyX{};
     CHECK(tn_get(result.handle, "x", &copyX, &d.value) == TN_OK && copyX.number == 11);
 
+    // Restating a texture field is no change. The shooter's sky restates its mapping and colour space
+    // on every enter; each one moved the version, which retired the retained environment bake, and a
+    // restart on SwiftShader waited 15 s to bake an unchanged sky again.
+    {
+        tn_handle_t texture{};
+        CHECK(tn_construct(ctx, "Texture", nullptr, 0, &texture, &d.value) == TN_OK);
+        auto version = [&] {
+            tn_value_t out{};
+            CHECK(tn_get(texture, "version", &out, &d.value) == TN_OK);
+            return out.number;
+        };
+        tn_value_t value{};
+        const double before = version();
+        for (const char* field : {"mapping", "wrapS", "minFilter", "rotation", "repeat.x", "flipY"}) {
+            CHECK(tn_get(texture, field, &value, &d.value) == TN_OK);
+            CHECK(tn_set(texture, field, &value, &d.value) == TN_OK);
+        }
+        tn_value_t space{};
+        CHECK(tn_get(texture, "colorSpace", &space, &d.value) == TN_OK);
+        const std::string restated = text(space);
+        tn_value_t same_space{};
+        same_space.kind = TN_VALUE_STRING;
+        same_space.text = restated.c_str();
+        same_space.count = restated.size();
+        CHECK(tn_set(texture, "colorSpace", &same_space, &d.value) == TN_OK);
+        CHECK(version() == before);
+        const tn_value_t reflection = num(303);  // EquirectangularReflectionMapping: a real change
+        CHECK(tn_set(texture, "mapping", &reflection, &d.value) == TN_OK);
+        CHECK(version() == before + 1);
+    }
+
     // Particle culling passes the camera's live projection conventions into Frustum.
     for (const char* cls : {"Camera", "PerspectiveCamera", "OrthographicCamera"}) {
         tn_handle_t camera{};
@@ -770,6 +801,136 @@ void walk_parents() {
         CHECK(result.values[2 * i].kind == TN_VALUE_HANDLE && same(result.values[2 * i].handle, order[i]));
         CHECK(result.values[2 * i + 1].kind == TN_VALUE_NUMBER && result.values[2 * i + 1].number == parents[i]);
     }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// `__hierarchyRevision` is the engine's count of adds, removes, attaches and destroys: core keeps a walk
+// that only finds who is under whom while it holds still, so it moves on each of those and nothing else.
+// core's AutoBatch guard on the engine: a watched source that moves, hides or changes material is
+// answered once by index; one held still never is, and a limit checks that many from where it stopped.
+void source_guard() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, meshes[3]{}, other{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    tn_value_t result{};
+    for (auto& mesh : meshes) {
+        CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+        const tn_value_t child = ref(mesh);
+        CHECK(tn_invoke(scene, "add", &child, 1, &result, &d.value) == TN_OK);
+    }
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &other, &d.value) == TN_OK);
+    const tn_value_t items[3] = {ref(meshes[0]), ref(meshes[1]), ref(meshes[2])};
+    tn_value_t list{};
+    list.kind = TN_VALUE_ARRAY;
+    list.count = 3;
+    list.values = items;
+    CHECK(tn_invoke(scene, "__tnGuardWatch", &list, 1, &result, &d.value) == TN_OK && result.number == 3);
+    const auto changed = [&](double limit) {
+        const tn_value_t arg = num(limit);
+        tn_value_t out{};
+        CHECK(tn_invoke(scene, "__tnGuardCheck", &arg, 1, &out, &d.value) == TN_OK);
+        CHECK(out.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(out.numbers, out.numbers + out.count);
+    };
+    CHECK(changed(10).empty());
+    const tn_value_t moved = num(0.5), hidden = boolean(false), material = ref(other);
+    CHECK(tn_set(meshes[1], "position.x", &moved, &d.value) == TN_OK);
+    CHECK((changed(10) == std::vector<double>{1}));
+    CHECK(changed(10).empty());  // answered once, then no longer watched
+    CHECK(tn_set(meshes[2], "visible", &hidden, &d.value) == TN_OK);
+    CHECK(tn_set(meshes[0], "material", &material, &d.value) == TN_OK);
+    // A limit checks that many sources from where the last check stopped.
+    CHECK((changed(1) == std::vector<double>{0}));
+    CHECK(changed(1).empty());  // source 1 is no longer watched
+    CHECK((changed(1) == std::vector<double>{2}));
+    CHECK(tn_invoke(scene, "__tnGuardWatch", &list, 1, &result, &d.value) == TN_OK);
+    CHECK(changed(3).empty());  // rewatched as they are now
+    const tn_value_t zero = num(0), far = num(4);
+    CHECK(tn_set(meshes[0], "position.x", &zero, &d.value) == TN_OK);  // the value it holds: still
+    CHECK(tn_set(meshes[2], "position.x", &far, &d.value) == TN_OK);
+    CHECK(changed(2).empty());  // sources 0 and 1
+    CHECK((changed(2) == std::vector<double>{2}));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+void matrix_evaluations() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, group{}, mesh{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    const auto composes = [&]() {
+        tn_value_t out{};
+        CHECK(tn_get(scene, "__matrixEvaluations", &out, &d.value) == TN_OK && out.kind == TN_VALUE_NUMBER);
+        return out.number;
+    };
+    tn_value_t result{};
+    const tn_value_t groupRef = ref(group), meshRef = ref(mesh), hidden = boolean(false);
+    CHECK(tn_invoke(scene, "add", &groupRef, 1, &result, &d.value) == TN_OK);
+    CHECK(tn_invoke(group, "add", &meshRef, 1, &result, &d.value) == TN_OK);
+    CHECK(tn_set(mesh, "visible", &hidden, &d.value) == TN_OK);
+    const tn_value_t pruned[2] = {boolean(true), boolean(true)}, full[2] = {boolean(true), boolean(false)};
+    double before = composes();
+    CHECK(tn_invoke(scene, "__tnUpdateMatrixWorld", pruned, 2, &result, &d.value) == TN_OK);
+    CHECK(composes() - before == 2);  // scene and group: the hidden mesh composes when it shows
+    before = composes();
+    CHECK(tn_invoke(scene, "__tnUpdateMatrixWorld", full, 2, &result, &d.value) == TN_OK);
+    CHECK(composes() - before == 3);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+void hierarchy_revision() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, group{}, mesh{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+    const auto revision = [&](tn_handle_t object) {
+        tn_value_t out{};
+        CHECK(tn_get(object, "__hierarchyRevision", &out, &d.value) == TN_OK && out.kind == TN_VALUE_NUMBER);
+        return out.number;
+    };
+    tn_value_t result{};
+    const double start = revision(scene);
+    CHECK(revision(mesh) == start);
+    const tn_value_t groupRef = ref(group), meshRef = ref(mesh);
+    CHECK(tn_invoke(scene, "add", &groupRef, 1, &result, &d.value) == TN_OK);
+    const double added = revision(scene);
+    CHECK(added > start);
+    const tn_value_t hidden = boolean(false);
+    CHECK(tn_set(mesh, "visible", &hidden, &d.value) == TN_OK);
+    CHECK(revision(scene) == added);
+    CHECK(tn_invoke(group, "add", &meshRef, 1, &result, &d.value) == TN_OK);
+    const double nested = revision(scene);
+    CHECK(nested > added);
+    CHECK(tn_invoke(scene, "attach", &meshRef, 1, &result, &d.value) == TN_OK);
+    const double attached = revision(scene);
+    CHECK(attached > nested);
+    // Per subtree: a walk kept under one root (a rig) holds while another subtree changes. A shot crate's
+    // shards added under the scene re-walked every rig in the shooter (573 nodes in one frame).
+    const double rig = revision(group);
+    tn_handle_t shard{};
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &shard, &d.value) == TN_OK);
+    const tn_value_t shardRef = ref(shard);
+    CHECK(tn_invoke(scene, "add", &shardRef, 1, &result, &d.value) == TN_OK);
+    CHECK(revision(scene) > attached);
+    CHECK(revision(group) == rig);
+    CHECK(tn_invoke(group, "add", &shardRef, 1, &result, &d.value) == TN_OK);
+    CHECK(revision(group) > rig);
+    const double moved = revision(scene);
+    CHECK(moved > attached);
+    CHECK(tn_invoke(shard, "removeFromParent", nullptr, 0, &result, &d.value) == TN_OK);
+    CHECK(revision(scene) > moved);
+    std::printf("TN_HIERARCHY_REVISION rig %g after an unrelated add under the scene, %g after one under the rig\n", rig, revision(group));
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -2782,7 +2943,7 @@ void tsl_mat4_element() {
 }
 
 TN_TEST_MAIN({"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
-             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
+             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

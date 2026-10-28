@@ -18,6 +18,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     },
     dash: { buttons: [7], keys: ["ShiftLeft", "ShiftRight"] },
     jump: { buttons: [0], keys: ["Space"] },
+    restart: { keys: ["KeyR"] },
   },
   plugins: [rapier({ gravity: { x: 0, y: -38, z: 0 } }), playtest({ events })],
   display: config.display,

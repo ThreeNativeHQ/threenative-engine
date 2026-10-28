@@ -40,7 +40,6 @@ import {
   addDoorsAndShutters,
   addRoofLife,
   createFacade,
-  finishFacade,
   visibleFaces,
 } from "./facade.js";
 import { worldGridUVs } from "./materials.js";
@@ -966,11 +965,9 @@ export function buildTown(materials: TownMaterials): Town {
   // Raised deck footprints, for the under-the-deck observation.
   const decks: DeckFootprint[] = [BACK_PLAT_DECK, HEAVEN_DECK, CATWALK_DECK];
 
-  // One merge for the whole town's joinery, parapets and rooftop clutter.
-  finishFacade(facade);
-
-  // Every solid now exists carrying its final material — merged facade batches
-  // included — so this one walk can tag them all. Must stay after the merge.
+  // Every solid now exists carrying its final material, so this one walk can
+  // tag them all — while a crate is still called "crate": the engine
+  // merges the settled town later, and a hit still names the authored mesh.
   tagSurfaces(hittable, materials);
 
   return {

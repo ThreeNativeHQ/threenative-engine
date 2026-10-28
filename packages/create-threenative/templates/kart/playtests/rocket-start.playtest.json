@@ -1,0 +1,56 @@
+{
+  "name": "kart-rocket-start-toast",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "lights", "waitTicks": 176, "release": true },
+    {
+      "kind": "input",
+      "label": "pedal-just-before-go",
+      "press": "KeyW",
+      "holdTicks": 8,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "after-go-clears",
+      "press": "KeyW",
+      "holdTicks": 76,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "race",
+        "component": "rocket",
+        "equals": true,
+        "changed": true
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "countdown",
+        "atSteps": [{ "label": "after-go-clears", "equals": -1 }]
+      },
+      {
+        "id": "state",
+        "path": "toast",
+        "atSteps": [{ "label": "after-go-clears", "equals": "ROCKET START!" }]
+      }
+    ]
+  }
+}

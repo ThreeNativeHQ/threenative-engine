@@ -17,6 +17,17 @@ describe("shipped web Wasm engine size budget", () => {
     );
   });
 
+  it("holds the threaded engine to the same budget", async () => {
+    const root = await wasmFixture(4_194_304);
+    await writeFile(
+      path.join(root, "packages/runtime-native/build/web/tn-native-engine-web-threads.wasm"),
+      Buffer.alloc(4_194_305),
+    );
+    await expect(enforceBudgets(root)).rejects.toThrow(
+      "TN_WEB_ENGINE_OVER_BUDGET: measured 4194305 bytes, allowed 4194304 bytes",
+    );
+  });
+
   it("skips an unbuilt Wasm engine", async () => {
     const root = await makeTempDir("threenative-wasm-budget-");
     await expect(enforceBudgets(root)).resolves.toBeDefined();

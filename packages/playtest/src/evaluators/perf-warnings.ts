@@ -1,4 +1,6 @@
 const SCENE_WARNING = "TN_SCENE_WARNING";
+/** three-native's bridge census: a property read again and again in one frame across JS to Wasm. */
+const BRIDGE_WARNING = "TN_BRIDGE_WARNING";
 const PROJECTION = "TN_RENDER_PROJECTION:";
 
 interface IProjectionLine {
@@ -10,7 +12,8 @@ interface IProjectionLine {
 }
 
 /**
- * The engine's own performance warnings, read off the console: each `TN_SCENE_WARNING` line, and each
+ * The engine's own performance warnings, read off the console: each `TN_SCENE_WARNING` and
+ * `TN_BRIDGE_WARNING` line, and each
  * `TN_RENDER_PROJECTION` line that declined to project. A run with one is not a pass.
  *
  * Two declines are not defects: `reasonCode: "disabled"` is the game's named `renderer.projection:
@@ -24,8 +27,10 @@ export function perfWarnings(consoleLines: readonly string[]): string[] {
   const found: string[] = [];
   for (const line of consoleLines) {
     if (typeof line !== "string") continue;
-    const warning = line.indexOf(SCENE_WARNING);
-    if (warning !== -1) found.push(line.slice(warning).trim());
+    for (const marker of [SCENE_WARNING, BRIDGE_WARNING]) {
+      const warning = line.indexOf(marker);
+      if (warning !== -1) found.push(line.slice(warning).trim());
+    }
     const at = line.indexOf(PROJECTION);
     if (at === -1) continue;
     const text = line.slice(at).trim();

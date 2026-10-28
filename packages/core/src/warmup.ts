@@ -1,6 +1,7 @@
 import type { Camera, Object3D, Texture } from "three";
 import { pmremTexture } from "three/tsl";
 
+import { isAutoBatchSource } from "./auto-batch.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { STARTUP_HOLD_BUDGET_MS } from "./startup-readiness.js";
 
@@ -670,7 +671,12 @@ function collectRenderables(root: Object3D): Object3D[] {
   const stack: Object3D[] = [root];
   while (stack.length > 0) {
     const object = stack.pop() as Object3D;
-    if ((object as Object3D & { material?: unknown }).material !== undefined) found.push(object);
+    // A source the engine merged draws through its merged mesh, which is counted in its place.
+    if (
+      (object as Object3D & { material?: unknown }).material !== undefined &&
+      !isAutoBatchSource(object)
+    )
+      found.push(object);
     // A structural stand-in for a scene may carry no children at all; count what is there.
     const children = object.children ?? [];
     for (let index = children.length - 1; index >= 0; index -= 1) {
@@ -929,7 +935,12 @@ async function renderWarmPasses(
     }
     // The root's own visibility is forced below whether or not hidden objects are included, so it
     // is not counted here; a hidden child or group is.
-    if (includeHidden && object !== scene && object.visible === false) {
+    if (
+      includeHidden &&
+      object !== scene &&
+      object.visible === false &&
+      !isAutoBatchSource(object)
+    ) {
       entry.visible = false;
       object.visible = true;
       visibilityForced += 1;

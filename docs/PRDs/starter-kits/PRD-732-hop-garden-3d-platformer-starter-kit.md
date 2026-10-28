@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-732 — Hop Garden: a 3D collectathon starter kit with an SM64-style moveset
 
-**Status:** PARTIAL — Phases 1 and 2 done; Phase 3 (gates, native, judge) open
+**Status:** PARTIAL — Phases 1 and 2 done, Phase 4's retro work done; Phase 3 (gates, native, judge) and AC-8 open
 **Priority:** P2 — new genre kit: Phase 3's registration gates, native run and visual judge (AC-8..AC-10) are open.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2); risk override: none. The kit is game code in one template; no `packages/` API changes.
 **Owner:** João
@@ -44,6 +44,28 @@ its logic at 30 Hz. Mario's hitbox is 160 units tall (`src/game/mario.c:1652`), 
 | Dive | B in the air at speed: `fwd + 15` capped 48 (`mario.c:856-860`, `mario_actions_airborne.c:110`) | +4.5 m/s, cap 14.4 m/s |
 | Ground pound | Z in the air: hang, then fall at −50 (`mario_actions_airborne.c:446-453`, `:918-944`) | 15 m/s fall |
 | Ledge grab | probe 60 units past the wall from 160 units up; grab when the ledge is ≤ 100 units above (`mario_step.c:348-377`) | probe 0.6 m, grab ≤ 1.0 m |
+
+### Reference cards read through the MCP (2026-10-27)
+
+`engine_search_references` and `engine_reference_detail` return the SM64 cards pinned at
+`n64decomp/sm64` sha `9921382a68bb0c865e5e45eb594d9c64db59b1af` (11 cards). Each row below is the
+card's own `source` path:line and the kit constant that borrows it, so a reader can re-derive every
+number without the transcript. The flutter-kick card is the one card this kit does not use: it has
+no water. The camera-follow card informs the orbit rig but its distances are the reference's
+special behind-camera mode, not its default chase, so the kit keeps its own arm (see Decisions).
+
+| Card | Reference constant (card source) | Kit constant |
+| --- | --- | --- |
+| jump | `groundImpulse` 42 units/frame, `forwardSpeedBonus` 0.25, `forwardSpeedRetain` 0.8 (`src/game/mario.c:824-825`) | `jumpSpeed` 12.6 m/s, `jumpForwardLift` 0.25, `jumpForwardKeep` 0.8 (`src/entities/Hero.ts:48-51`) |
+| double-jump | `launchImpulse` 52, `landingFrames` 4, `chainTimer` 5 (`src/game/mario.c:786`, `src/game/mario_actions_moving.c:27`) | `doubleJumpSpeed` 15.6 m/s, `chainWindow` 0.3 s, `jumpBuffer` 0.12 s (`src/entities/Hero.ts:52,61,67`) |
+| triple-jump | `launchImpulse` 69, `minForwardSpeed` 20 (`src/game/mario.c:797`, `src/game/mario.c:1051`) | `tripleJumpSpeed` 20.7 m/s, `tripleMinSpeed` 6 m/s (`src/entities/Hero.ts:53-54`) |
+| long-jump | `launchImpulse` 30, `speedMultiplier` 1.5, `maxForwardSpeed` 48, `slideWindow` 30 frames (`src/game/mario.c:865`, `:870`, `src/game/mario_actions_moving.c:1459`) | `longJumpSpeed` 9 m/s, `longJumpScale` 1.5, `longJumpWindow` 0.5 s, `longJumpGravity` 18 m/s² (`src/entities/Hero.ts:82-85`) |
+| backflip | `launchImpulse` 62, `backwardSpeed` −16 (`src/game/mario.c:792-793`) | `backflipSpeed` 18.6 m/s, `backflipBack` 4.8 m/s (`src/entities/Hero.ts:75-76`) |
+| side-flip | `launchImpulse` 62, `forwardSpeed` 8 (`src/game/mario.c:838-839`) | `sideflipSpeed` 18.6 m/s, `sideflipForward` 2.4 m/s (`src/entities/Hero.ts:77-78`) |
+| wall-kick | `earlyWindow` 2 frames, `kickTimer` 5 frames, `launchImpulse` 62, `minForwardSpeed` 24 (`src/game/mario_actions_airborne.c:1314`, `:1321`, `src/game/mario.c:830-832`) | `wallKickWindow` 0.167 s, `wallKickSpeed` 18.6 m/s, `wallKickForward` 7.2 m/s (`src/entities/Hero.ts:88-90`) |
+| ground-pound | `riseFrames` 10, `slamSpeed` −50 (`src/game/mario_actions_airborne.c:925`, `:934`) | `poundHang` 0.25 s, `poundSpeed` 15 m/s (`src/entities/Hero.ts:95-96`) |
+| dive | `speedBoost` 15, `maxForwardSpeed` 48 (`src/game/mario.c:857`) | `diveBoost` 4.5 m/s, `hardCap` 14.4 m/s (`src/entities/Hero.ts:91`, `:29`) |
+| camera-follow | `focusHorizontalSpeed` 0.8, `focusVerticalSpeed` 0.3, `positionSpeed` 0.3 (`src/game/camera.c:2947-2949`) | `CAMERA_RIG` smoothing in `src/render/camera.ts` (the kit's own arm and pull-in, see Decisions) |
 
 ### Capability lookups actually run (2026-10-23, `threenative-engine` MCP)
 
@@ -566,6 +588,24 @@ defeat, the rotating-platform carry, the camera pull-in.
 - [x] AC-5: a scripted route collects the 8 red gems and the summit Sunseed, and the HUD state shows `seeds: 2`, and coins heal a damaged meter by one wedge each. proof: `playtests/collect.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; gems 0→8, seeds 0→2, 10 `collected` signals; two walker hits then one coin: wedges 8→6→7, coins 1.
 - [x] AC-6: a walker touch costs one wedge, while a stomp, a ground pound or a dive each defeat a walker with no wedge lost. proof: `playtests/combat.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; stomped, pounded, dived 1 each, defeated 3, wedges 8 at `after-three`; then one touch: hurt 1, wedges 7.
 - [x] AC-7: with a wall between the hero and the default camera spot, the hero stays inside the frame and the camera-to-hero ray hits nothing. proof: `playtests/camera.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; pulledIn false→true, arm 9→6.31 m, `rayClear` true, `camera` follows the player with the target in the viewport. The Phase 1 four, rerun on the same build: all exit 0.
+
+#### Phase 4: The PRD-750 row-3 retro, applied to this kit
+
+**Status:** PARTIAL — the three retro items are done; AC-8 (registration gates) still open
+**Files:** `src/scenes/Play.ts`, `src/state.ts`, `src/ui/Hud.tsx`,
+`playtests/win.playtest.json` (new), the kit's `AGENTS.md`.
+**Why here:** PRD-750's loop records one row per cold build and fixes that row's top frictions
+before the next author step. Row 3's retro named two kit-layer frictions (no win state at three
+Sunseeds; a 22 KB `AGENTS.md` read twice) and AC-3 of PRD-750 asks this kit to carry the reference
+citations. All three land in this phase so the next cold build measures them.
+
+- [x] The kit ends: the third Sunseed publishes `won`, draws COURSE CLEAR with the run's coins and gems, and emits a `won` signal. proof: `playtests/win.playtest.json` on a scaffolded collectathon
+(branch tarballs, `--genre mario`, headed, `--browser-recipe webgpu`) — red on the pre-change kit
+(exit 2, `TN_PLAYTEST_OBSERVATION_UNAVAILABLE`: the `won` path did not exist), green after (pass
+true, `seeds: 3`, `won: true`, `toast: "COURSE CLEAR!"`, one `won` signal).
+- [x] The kit `AGENTS.md` stops restating the installed references: the asset-cook paragraph a kit with no authored asset never runs, the eighteen-path recipe list and one CI-collector paragraph are gone (22,455 B -> 20,103 B, 58 lines either side) and no engine rule is lost. proof: `pnpm sync:agents` mirror, `scaffold.spec` + `template.spec` 126/126 on the rebased head.
+- [x] The SM64 reference cards are cited with their pinned sources, one row per card with the kit constant it became. proof: the card table above (`engine_search_references` / `engine_reference_detail`, `n64decomp/sm64` sha `9921382a`).
+- [ ] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets` (green, 2026-10-28) and the doc/CI-structure specs 200/200 are done; `TN_TEMPLATE_ONLY=collectathon pnpm test:templates` is owed on an idle host — the first attempt ran beside five CI legs on the same machine and failed only its performance rows (`TN_PLAYTEST_PERF_WARNING`, `TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED` at load 52).
 
 #### Phase 3: Registered, native and judged
 

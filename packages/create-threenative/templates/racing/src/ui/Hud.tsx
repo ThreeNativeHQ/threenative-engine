@@ -42,7 +42,7 @@ export function Hud() {
         <div>
           <div className="text-[10px] text-muted">speed</div>
           <div className="mt-1 text-[26px] leading-none text-white">
-            <span id="speed">{Math.round(state.speed * 10)}</span>
+            <span id="speed">{Math.round(state.speed * 3.6)}</span>
             <span className="text-[11px] text-muted"> km/h</span>
           </div>
         </div>
@@ -55,7 +55,7 @@ export function Hud() {
         <div className={state.boostActive ? "text-accent" : "text-muted"}>
           <div className="text-[10px]">boost</div>
           <div className="mt-1 text-[18px] leading-none" id="boost">
-            {state.boostActive ? "ACTIVE" : `${state.boostUses} READY`}
+            {state.boostActive ? "ACTIVE" : "READY"}
           </div>
         </div>
       </div>
@@ -63,7 +63,12 @@ export function Hud() {
         <div
           className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border px-8 py-5 text-center ${state.raceStatus === "WON" ? "border-win/70 bg-panel" : "border-danger/70 bg-panel"}`}
         >
-          <div className={`text-[28px] tracking-[0.28em] ${statusClass}`}>{state.raceStatus}</div>
+          <div className={`text-[28px] tracking-[0.28em] ${statusClass}`} id="outcome">
+            {/* Every lap done behind the rival is a loss, but not a "did not finish": name the place. */}
+            {state.raceStatus === "DNF" && state.completedLaps >= state.totalLaps
+              ? `P${state.place}`
+              : state.raceStatus}
+          </div>
           <div className="mt-2 text-[10px] text-muted">press R to restart</div>
         </div>
       )}

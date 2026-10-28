@@ -1,0 +1,78 @@
+{
+  "name": "replay-keeps-the-players-progress",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "fall-and-settle",
+      "waitTicks": 400,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shove",
+      "press": "ArrowRight",
+      "holdTicks": 110,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "crate-comes-to-rest",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "start-the-check",
+      "press": "KeyV",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "both-passes",
+      "waitTicks": 480,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "back-in-play",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "replayPhase",
+        "equals": "done",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "pushedCrates",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "replayBodies",
+        "equals": 3,
+        "changed": true
+      }
+    ]
+  }
+}

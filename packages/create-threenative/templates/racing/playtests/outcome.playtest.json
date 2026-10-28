@@ -27,6 +27,12 @@
       "label": "observe-dnf",
       "waitTicks": 20,
       "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after-finish",
+      "waitTicks": 600,
+      "release": true
     }
   ],
   "assert": {
@@ -64,6 +70,19 @@
             "equals": "DNF"
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "elapsed",
+        "lte": 177.5,
+        "allowTrivial": "The race ended inside 10,620 ticks (177 s); ten seconds later the clock still reads the finishing time, not a clock that kept running."
+      }
+    ],
+    "hud": [
+      {
+        "id": "outcome",
+        "equals": "P2",
+        "allowTrivial": "The player finished every lap behind the rival: the panel names the place, not DNF, which reads as did-not-finish."
       }
     ]
   }

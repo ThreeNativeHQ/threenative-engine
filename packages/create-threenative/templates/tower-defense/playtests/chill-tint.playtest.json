@@ -1,0 +1,387 @@
+{
+  "name": "tower-defense-chill-tint",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "faster",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fastest",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-cryo",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-cryo",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "auto",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-0",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-1",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-2",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-3",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-4",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-5",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-6",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-7",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-8",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-9",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-10",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-11",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-12",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-13",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-14",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-15",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-16",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-17",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-18",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-19",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-20",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-21",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-22",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-23",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-24",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-25",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-26",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-27",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-28",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-sample-29",
+      "waitTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "wave",
+        "gte": 3,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "towers",
+        "equals": 2,
+        "changed": true
+      }
+    ],
+    "components": [
+      {
+        "entity": "battle",
+        "component": "barTintMismatches",
+        "atSteps": [
+          {
+            "label": "wave-sample-0",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-1",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-2",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-3",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-4",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-5",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-6",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-7",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-8",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-9",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-10",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-11",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-12",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-13",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-14",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-15",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-16",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-17",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-18",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-19",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-20",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-21",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-22",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-23",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-24",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-25",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-26",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-27",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-28",
+            "equals": 0
+          },
+          {
+            "label": "wave-sample-29",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "Zero mismatches is the held invariant: a pooled walker must start each life with an untinted bar."
+      }
+    ]
+  }
+}

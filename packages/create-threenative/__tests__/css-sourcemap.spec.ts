@@ -359,3 +359,20 @@ describe("actual production CSS provenance", () => {
     ).toBe(original[index]);
   }, 60_000);
 });
+
+describe("the UI build's entry", () => {
+  it("builds src/ui alone when the project names its own page inputs", async () => {
+    // A worker kit's vite.config.ts names `index.html` and `main.html`; `mergeConfig` merged those
+    // into the UI build, so `main.html` bundled the whole game, its engine included.
+    const { root } = await fixture(false, {
+      rollupOptions: { input: { index: "index.html", main: "main.html" } },
+    });
+    await writeFile(
+      path.join(root, "main.html"),
+      '<script type="module" src="/src/game.ts"></script>',
+    );
+    await writeFile(path.join(root, "src/game.ts"), 'import "engine-that-is-not-installed";\n');
+    const built = await buildUi(root, web);
+    expect((await readdir(built)).filter((name) => name.endsWith(".html"))).toEqual(["index.html"]);
+  }, 60_000);
+});

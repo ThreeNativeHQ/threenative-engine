@@ -158,6 +158,12 @@ async function main(): Promise<void> {
         : { statusShape: Object.keys(JSON.parse(statusText) as Record<string, unknown>).sort() }),
     };
     writeFileSync(SNAPSHOT, `${JSON.stringify(snapshot, null, 2)}\n`);
+    // Biome formats JSON arrays differently from JSON.stringify, and `pnpm lint` checks this file.
+    // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
+    execFileSync("pnpm", ["exec", "biome", "format", "--write", path.relative(REPO, SNAPSHOT)], {
+      cwd: REPO,
+      stdio: "ignore",
+    });
     process.stdout.write(`${SELECTED.label} MCP surface: ${tools.length} tool(s) -> ${SNAPSHOT}\n`);
   } finally {
     child.kill();

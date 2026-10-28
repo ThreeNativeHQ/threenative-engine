@@ -19,6 +19,31 @@ struct Device {
     bool ok = context.initializeHeadless();
 };
 
+#ifdef TN_TEST_BUFFER_WRAP
+extern "C" WGPUBuffer __real_wgpuDeviceCreateBuffer(WGPUDevice, const WGPUBufferDescriptor*);
+int stagingAllocations = 0;
+extern "C" WGPUBuffer __wrap_wgpuDeviceCreateBuffer(WGPUDevice device, const WGPUBufferDescriptor* desc) {
+    if ((desc->usage & (WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst)) ==
+        (WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst)) {
+        ++stagingAllocations;
+    }
+    return __real_wgpuDeviceCreateBuffer(device, desc);
+}
+#endif
+#ifdef TN_TEST_MAP_WRAP
+extern "C" WGPUFuture __real_wgpuBufferMapAsync(WGPUBuffer, WGPUMapMode, size_t, size_t, WGPUBufferMapCallbackInfo);
+bool failNextMap = false;
+extern "C" WGPUFuture __wrap_wgpuBufferMapAsync(WGPUBuffer buffer, WGPUMapMode mode, size_t offset, size_t size,
+                                                WGPUBufferMapCallbackInfo info) {
+    if (failNextMap) {
+        failNextMap = false;
+        if (info.callback) info.callback(WGPUMapAsyncStatus_Error, WGPUStringView{}, info.userdata1, info.userdata2);
+        return WGPUFuture{0};
+    }
+    return __real_wgpuBufferMapAsync(buffer, mode, offset, size, info);
+}
+#endif
+
 // The test may wait; the engine never does. Polls until `done` or about two seconds pass.
 template <typename Done>
 bool pump(GpuResources& gpu, EventQueue& events, Done done) {
@@ -283,5 +308,150 @@ void batchedSubmits() {
     CHECK(readDispatch == a);
 }
 
+// A completed read returns its staging lease to the owner's idle pool, so serial reads of one size
+// allocate once. In-flight, failed and differently sized reads never share a lease.
+void readbackReusesStaging() {
+    Device device;
+    CHECK(device.ok);
+    if (!device.ok) return;
+    GpuResources gpu(device.context.getInstance(), device.context.getDevice(), device.context.getQueue(),
+                     device.events, 1);
+    const uint64_t size = 64;
+    std::vector<uint8_t> bytes(size);
+    for (uint64_t i = 0; i < size; ++i) bytes[i] = static_cast<uint8_t>(i * 5 + 7);
+    const Handle source = gpu.createBuffer(size, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+    CHECK(gpu.writeBuffer(source, 0, bytes.data(), bytes.size()) == GpuStatus::Ok);
+
+#ifdef TN_TEST_BUFFER_WRAP
+    const int baseline = stagingAllocations;
+#endif
+    std::vector<uint8_t> warm;
+    int warmCalls = 0;
+    bool warmDone = false;
+    CHECK(gpu.readBuffer(source, 0, size, [&](GpuStatus s, std::vector<uint8_t> out) {
+        CHECK(s == GpuStatus::Ok);
+        warm = std::move(out);
+        ++warmCalls;
+        warmDone = true;
+    }) == GpuStatus::Ok);
+    CHECK(!warmDone);  // never inside the call
+    CHECK(pump(gpu, device.events, [&] { return warmDone; }));
+    CHECK(warm == bytes);
+    CHECK(warmCalls == 1);
+#ifdef TN_TEST_BUFFER_WRAP
+    CHECK(stagingAllocations == baseline + 1);  // the warm read allocated its lease
+    const int warmed = stagingAllocations;
+#endif
+
+    for (int i = 0; i < 4; ++i) {
+        std::vector<uint8_t> serial;
+        int serialCalls = 0;
+        bool serialDone = false;
+        CHECK(gpu.readBuffer(source, 0, size, [&](GpuStatus s, std::vector<uint8_t> out) {
+            CHECK(s == GpuStatus::Ok);
+            serial = std::move(out);
+            ++serialCalls;
+            serialDone = true;
+        }) == GpuStatus::Ok);
+        CHECK(!serialDone);
+        CHECK(pump(gpu, device.events, [&] { return serialDone; }));
+        CHECK(serial == bytes);
+        CHECK(serialCalls == 1);
+    }
+#ifdef TN_TEST_BUFFER_WRAP
+    CHECK(stagingAllocations == warmed);  // no staging buffer after the warm read
+#endif
+
+    // Two reads in flight at once lease distinct buffers; both still deliver their bytes exactly once.
+    std::vector<uint8_t> firstOverlap, secondOverlap;
+    int overlapCalls = 0;
+    bool firstDone = false, secondDone = false;
+    CHECK(gpu.readBuffer(source, 0, size, [&](GpuStatus s, std::vector<uint8_t> out) {
+        CHECK(s == GpuStatus::Ok);
+        firstOverlap = std::move(out);
+        ++overlapCalls;
+        firstDone = true;
+    }) == GpuStatus::Ok);
+    CHECK(gpu.readBuffer(source, 0, size, [&](GpuStatus s, std::vector<uint8_t> out) {
+        CHECK(s == GpuStatus::Ok);
+        secondOverlap = std::move(out);
+        ++overlapCalls;
+        secondDone = true;
+    }) == GpuStatus::Ok);
+    CHECK(!firstDone && !secondDone);
+    CHECK(pump(gpu, device.events, [&] { return firstDone && secondDone; }));
+    CHECK(firstOverlap == bytes && secondOverlap == bytes);
+    CHECK(overlapCalls == 2);
+#ifdef TN_TEST_BUFFER_WRAP
+    CHECK(stagingAllocations == warmed + 1);  // the second in-flight read cannot lease the mapped one
+    const int smallReads = stagingAllocations;
+#endif
+
+    // A read of another size allocates once and then reuses that capacity, never the larger lease.
+    for (int i = 0; i < 2; ++i) {
+        std::vector<uint8_t> small;
+        bool smallDone = false;
+        CHECK(gpu.readBuffer(source, 0, 16, [&](GpuStatus s, std::vector<uint8_t> out) {
+            CHECK(s == GpuStatus::Ok);
+            small = std::move(out);
+            smallDone = true;
+        }) == GpuStatus::Ok);
+        CHECK(pump(gpu, device.events, [&] { return smallDone; }));
+        CHECK(small == std::vector<uint8_t>(bytes.begin(), bytes.begin() + 16));
+    }
+#ifdef TN_TEST_BUFFER_WRAP
+    CHECK(stagingAllocations == smallReads + 1);
+#endif
+
+#ifdef TN_TEST_MAP_WRAP
+    // A failed map releases its lease instead of pooling it: the next same-size read allocates again.
+    const int beforeFailure = stagingAllocations;
+    failNextMap = true;
+    GpuStatus failedStatus = GpuStatus::Ok;
+    std::vector<uint8_t> failedBytes(1, 0xaa);
+    bool failed = false;
+    CHECK(gpu.readBuffer(source, 0, 32, [&](GpuStatus s, std::vector<uint8_t> out) {
+        failedStatus = s;
+        failedBytes = std::move(out);
+        failed = true;
+    }) == GpuStatus::Ok);
+    CHECK(pump(gpu, device.events, [&] { return failed; }));
+    CHECK(failedStatus == GpuStatus::DeviceError);
+    CHECK(failedBytes.empty());
+    CHECK(stagingAllocations == beforeFailure + 1);
+
+    std::vector<uint8_t> recovered;
+    bool recoveredDone = false;
+    CHECK(gpu.readBuffer(source, 0, 32, [&](GpuStatus s, std::vector<uint8_t> out) {
+        CHECK(s == GpuStatus::Ok);
+        recovered = std::move(out);
+        recoveredDone = true;
+    }) == GpuStatus::Ok);
+    CHECK(pump(gpu, device.events, [&] { return recoveredDone; }));
+    CHECK(recovered == std::vector<uint8_t>(bytes.begin(), bytes.begin() + 32));
+    CHECK(stagingAllocations == beforeFailure + 2);
+#endif
+
+    // A table destroyed with a read in flight leaves that lease to the late callback: the bytes are
+    // never delivered to the dead table and the callback must not touch its pool.
+    int lateCalls = 0;
+    {
+        GpuResources dying(device.context.getInstance(), device.context.getDevice(), device.context.getQueue(),
+                           device.events, 1);
+        const Handle late = dying.createBuffer(size, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+        CHECK(dying.writeBuffer(late, 0, bytes.data(), bytes.size()) == GpuStatus::Ok);
+        CHECK(dying.readBuffer(late, 0, size, [&](GpuStatus, std::vector<uint8_t>) { ++lateCalls; }) == GpuStatus::Ok);
+    }
+    GpuResources survivor(device.context.getInstance(), device.context.getDevice(), device.context.getQueue(),
+                          device.events, 1);
+    for (int i = 0; i < 50; ++i) {
+        survivor.poll();
+        device.events.drain();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(lateCalls == 0);
+}
+
 TN_TEST_MAIN({"upload_readback", uploadReadback}, {"deferred_destroy", deferredDestroy}, {"async_only", asyncOnly}, {"gpu_thread_ordering", gpuThreadOrdering},
-             {"lifetime_deferred_gpu", lifetimeDeferredGpu}, {"batched_submits", batchedSubmits})
+             {"lifetime_deferred_gpu", lifetimeDeferredGpu}, {"batched_submits", batchedSubmits},
+             {"readback_reuses_staging", readbackReusesStaging})

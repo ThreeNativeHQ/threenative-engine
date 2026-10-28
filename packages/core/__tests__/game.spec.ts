@@ -303,13 +303,23 @@ describe("IGame", () => {
       const ui = connectUiBridge({ end: "ui" });
       const mirror = subscribeUiState<{ score: number }>(ui);
       const observed: number[] = [];
-      mirror.subscribe(() => observed.push(mirror.get()?.score ?? -1));
+      let wasCovered = mirror.covered();
+      mirror.subscribe(() => {
+        // A cover change is not a state publication; this test counts publications.
+        if (mirror.covered() !== wasCovered) {
+          wasCovered = mirror.covered();
+          return;
+        }
+        observed.push(mirror.get()?.score ?? -1);
+      });
       ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
       try {
         await game.start();
         await Promise.resolve();
         observed.length = 0;
         if (frame === undefined) throw new Error("Game did not start its loop.");
+        // The page UI reads nothing behind the loading cover; the mirror learns it over the bridge.
+        expect(mirror.covered()).toBe(true);
         let lagging = 0;
         for (let count = 1; count <= 64; count++) {
           frame(count * 16);
@@ -318,6 +328,7 @@ describe("IGame", () => {
         }
         // Startup may hold the world while still presenting loader frames. Count actual renders.
         expect(renderedFrames).toBeGreaterThanOrEqual(8);
+        expect(mirror.covered()).toBe(false);
         if (stateFlushMs === undefined) {
           // Every frame publishes, except the startup hand-off's three held frames, once.
           expect(lagging).toBeGreaterThan(0);
@@ -1472,6 +1483,8 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -1676,6 +1689,8 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -3123,6 +3138,8 @@ describe("IGame", () => {
       },
     });
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -3200,6 +3217,8 @@ describe("IGame", () => {
       },
     });
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -3726,6 +3745,58 @@ describe("IGame", () => {
         Object.defineProperty(globalThis, "document", documentDescriptor);
       if (windowDescriptor !== undefined)
         Object.defineProperty(globalThis, "window", windowDescriptor);
+    }
+  });
+
+  it("takes the platform source a worker host installs when the game names none (PRD-752)", async () => {
+    // Worker mode: game.ts is the unchanged portable entry, so the worker host cannot pass
+    // `platform` to defineGame. It installs the source on the global scope before start().
+    const canvas = new EventTarget() as HTMLCanvasElement;
+    let mounted = 0;
+    let unmounted = 0;
+    const platform: IGamePlatformSource = {
+      input: () => [],
+      inputTarget: new EventTarget(),
+      mountCanvas: () => {
+        mounted += 1;
+      },
+      renderer: {
+        createCanvas: () => canvas,
+        hasWebGPU: () => false,
+        observeResize: () => () => undefined,
+        readSize: () => [320, 180],
+      },
+      unmountCanvas: () => {
+        unmounted += 1;
+      },
+      viewport: {
+        observeResize: () => () => undefined,
+        readSize: () => ({ aspect: 16 / 9, height: 180, width: 320 }),
+      },
+    };
+    vi.stubGlobal("__tnGamePlatform", platform);
+    const game = defineGame({
+      renderer: {
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: EmptyScene },
+      start: "test",
+    });
+    try {
+      await game.start();
+      expect(mounted).toBe(1);
+      expect(game.ctx?.viewport.size).toEqual({ aspect: 16 / 9, height: 180, width: 320 });
+      game.stop();
+      expect(unmounted).toBe(1);
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
     }
   });
 

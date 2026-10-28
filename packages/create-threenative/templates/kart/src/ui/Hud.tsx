@@ -72,10 +72,10 @@ export function Hud() {
           : "";
   return (
     <div className="pointer-events-none absolute inset-0 select-none font-black text-text drop-shadow-[0_2px_0_rgba(0,0,0,0.55)]">
-      <div className="absolute left-5 top-4 text-2xl italic tracking-wide">
+      <div className="absolute left-5 top-4 text-2xl italic tracking-wide rounded-lg bg-panel/60 px-3 py-1">
         LAP <span className="text-4xl text-lume">{state.lap}</span>/{state.laps}
       </div>
-      <div className="absolute right-5 top-4 text-right">
+      <div className="absolute right-5 top-4 text-right rounded-lg bg-panel/60 px-3 py-1">
         <div className="text-xs tracking-widest text-dim">TIME</div>
         <div className="text-2xl tabular-nums">{clock(state.time)}</div>
         {state.lapTimes.map((t, i) => (
@@ -93,13 +93,19 @@ export function Hud() {
         >
           <ItemIcon item={state.item} />
         </svg>
+        {/* The key that uses the item in hand: without it a held item looked like it did nothing.
+            A touch screen has its own item pad, so only a fine pointer shows the keys. */}
+        {state.item !== "" && state.item !== "rolling" ? (
+          <div className="hidden pb-1 text-center text-xs text-dim pointer-fine:block">E / X</div>
+        ) : null}
       </div>
-      {/* A dark halo keeps the place legible over the kart's flames and sparks. */}
-      <div className="absolute bottom-4 left-5 italic leading-none drop-shadow-[0_0_3px_rgba(0,0,0,0.85)]">
+      {/* A dark halo keeps the place legible over the kart's flames and sparks. The corner panels sit
+          on the kit's panel colour: bare orange on the bright sky read at 1.45:1. */}
+      <div className="absolute bottom-4 left-5 italic leading-none drop-shadow-[0_0_3px_rgba(0,0,0,0.85)] rounded-lg bg-panel/60 px-3 py-1">
         <span className="text-7xl text-lume">{state.place}</span>
         <span className="text-3xl">{ordinal(state.place)}</span>
       </div>
-      <div className="absolute bottom-5 right-5 text-right italic">
+      <div className="absolute bottom-5 right-5 text-right italic rounded-lg bg-panel/60 px-3 py-1">
         <span className="text-3xl tabular-nums">{state.speed}</span>
         <span className="text-sm"> km/h</span>
         {state.driftStage > 0 ? (
@@ -158,6 +164,7 @@ export function Hud() {
               <span className="tabular-nums">{r.time > 0 ? clock(r.time) : "--"}</span>
             </div>
           ))}
+          <div className="mt-2 text-center text-xs text-dim">press R to race again</div>
         </div>
       ) : null}
     </div>

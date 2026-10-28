@@ -79,6 +79,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+          # Integration scope reads commits, a name-only diff and two workflow files (`git show`,
+          # fetched on demand from the public repository), so it fetches no history blobs: every
+          # blob of the 3.9 GB history outlasted 5- and 10-minute jobs on PR #574.
+          filter: blob:none
           ref: ${{ inputs.candidate_sha }}
       - id: filter
         env:
@@ -1090,6 +1094,8 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.candidate_sha }}
           fetch-depth: 0
+          # The receipt collector reads artifacts and the Actions API, never git history blobs.
+          filter: blob:none
       - uses: actions/download-artifact@v7
         if: needs.paths.outputs.required_jobs != '[]'
         with:

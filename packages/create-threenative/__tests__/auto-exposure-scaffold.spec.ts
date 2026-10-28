@@ -33,7 +33,11 @@ describe("generated eye adaptation", () => {
       "utf8",
     );
     const instructions = await readFile(path.join(directory, "AGENTS.md"), "utf8");
-    if (policy.includes("coreExposureSettings")) {
+    if (policy.includes("kitExposureSettings")) {
+      // The starter kits' shared meter, itself a spread of core's (kit-exposure.spec.ts).
+      expect(policy).toContain('from "./kitExposure.js"');
+      expect(policy).toContain("...kitExposureSettings");
+    } else if (policy.includes("coreExposureSettings")) {
       expect(policy).toContain('from "@threenative/core"');
       expect(policy).toContain("exposureSettings as coreExposureSettings");
       expect(policy).toContain("...coreExposureSettings");

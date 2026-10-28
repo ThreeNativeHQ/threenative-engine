@@ -2,6 +2,7 @@
 
 import { audioRuntimeSnapshot } from "./audio.js";
 import type { IGame } from "./game.js";
+import { hostDocument, hostWindow } from "./platform.js";
 export interface IHotDiagnostics {
   readonly reloads: number;
   readonly entities: number;
@@ -15,6 +16,8 @@ type HotData = {
   readonly reloads: number;
   /** The scene the session was in. Absent for data written before scene resume existed. */
   readonly sceneName?: string | undefined;
+  /** The session's startup had lifted its cover, so its HUD was showing. */
+  readonly revealed?: boolean;
 };
 const isDev =
   (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
@@ -48,16 +51,22 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   // game and boots it at `config.start` — so a session that was playing came back holding its own
   // state on the main menu, with every entity and its physics world gone, and the store insisting
   // the screen was still "playing". Resuming the scene is what makes the restored state true.
+  // Whether this session's HUD is showing: carried from a restart that kept it, else this
+  // startup's own reveal. One save can update the module twice, the second before this startup
+  // is ready, and that update must not cover a HUD the player is looking at.
+  let revealed = false;
   if (carried?.sceneName !== undefined) {
     try {
-      game.resumeScene(carried.sceneName);
+      game.resumeScene(carried.sceneName, { revealed: carried.revealed === true });
+      revealed = carried.revealed === true;
     } catch {
       // A scene that no longer exists in the updated module is not a reason to lose the reload;
       // the game boots at its start scene, which is what it would have done anyway.
     }
   }
-  if (isDev && typeof window !== "undefined") {
-    const host = window as unknown as Record<string, unknown> &
+  const page = hostWindow();
+  if (isDev && page !== undefined) {
+    const host = page as unknown as Record<string, unknown> &
       Partial<Record<"__THREENATIVE__", Record<string, unknown> & { hot?: () => IHotDiagnostics }>>;
     host.__THREENATIVE__ = {
       ...host.__THREENATIVE__,
@@ -73,7 +82,12 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
       game.state.flush();
       const state = game.state.getState();
       assertPortableState(state);
-      data.threenative = { reloads: reloads + 1, sceneName: game.sceneName, state };
+      data.threenative = {
+        reloads: reloads + 1,
+        revealed: revealed || game.ctx?.startup.phase === "ready",
+        sceneName: game.sceneName,
+        state,
+      };
     } catch (error) {
       data.threenative = undefined;
       hot.invalidate(error instanceof Error ? error.message : String(error));
@@ -115,7 +129,7 @@ function diagnostics<TState extends Record<string, unknown>, TPhysics>(
     reloads,
     entities: ctx === undefined ? 0 : Object.keys(ctx.entities.snapshot()).length,
     sceneObjects,
-    canvases: typeof document === "undefined" ? 0 : document.querySelectorAll("canvas").length,
+    canvases: hostDocument()?.querySelectorAll("canvas").length ?? 0,
     audio: audioRuntimeSnapshot(),
     physics: typeof physics?.numBodies === "function" ? physics.numBodies() : null,
   };

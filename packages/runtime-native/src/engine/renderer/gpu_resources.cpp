@@ -5,6 +5,8 @@
 #include <cstring>
 #include <utility>
 
+#include "engine/foundation/waste_counters.h"
+
 #include "mystral/webgpu_compat.h"
 
 #if defined(MYSTRAL_WEBGPU_WGPU)
@@ -24,6 +26,10 @@ namespace tn::engine {
 namespace {
 
 constexpr uint32_t kBytesPerPixel = 4;
+
+// Idle readback leases kept per owner; a readback of another size is a different lease.
+constexpr size_t kMaxIdleStaging = 4;
+constexpr uint64_t kMaxIdleStagingBytes = 8u << 20;
 
 // The formats this table uploads: RGBA8 (4 bytes), RGBA16Float (8) and RGBA32Float (16). Anything
 // else keeps 4 so a new format fails its size check rather than writing a wrong row pitch.
@@ -151,6 +157,7 @@ Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage) {
 }
 
 Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const void* data, uint64_t bytes) {
+    waste::count(waste::counters().bufferAllocs);
     WGPUBufferDescriptor desc = {};
     desc.size = size;
     desc.usage = usage;
@@ -175,6 +182,7 @@ Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const vo
 
 Handle GpuResources::createTexture(uint32_t width, uint32_t height, WGPUTextureFormat format,
                                    WGPUTextureUsage usage) {
+    waste::count(waste::counters().textureAllocs);
     WGPUTextureDescriptor desc = {};
     desc.dimension = WGPUTextureDimension_2D;
     desc.size = {width, height, 1};
@@ -261,6 +269,39 @@ GpuStatus GpuResources::writeTexture(Handle texture, const void* pixels, uint64_
     return GpuStatus::Ok;
 }
 
+GpuResources::Shared::~Shared() {
+    for (const IdleStaging& entry : idleStaging) wgpuBufferRelease(entry.buffer);
+}
+
+WGPUBuffer GpuResources::leaseStaging(uint64_t size) {
+    {
+        std::lock_guard lock(shared_->stagingMutex);
+        auto& idle = shared_->idleStaging;
+        for (auto it = idle.begin(); it != idle.end(); ++it) {
+            if (it->size != size) continue;
+            WGPUBuffer buffer = it->buffer;
+            idle.erase(it);
+            return buffer;
+        }
+    }
+    WGPUBufferDescriptor desc = {};
+    desc.size = size;
+    desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
+    return wgpuDeviceCreateBuffer(device_, &desc);
+}
+
+void GpuResources::recycleStaging(const std::shared_ptr<Shared>& shared, WGPUBuffer staging, uint64_t size) {
+    std::lock_guard lock(shared->stagingMutex);
+    auto& idle = shared->idleStaging;
+    uint64_t bytes = 0;
+    for (const Shared::IdleStaging& entry : idle) bytes += entry.size;
+    if (idle.size() >= kMaxIdleStaging || bytes + size > kMaxIdleStagingBytes) {
+        wgpuBufferRelease(staging);
+        return;
+    }
+    idle.push_back(Shared::IdleStaging{staging, size});
+}
+
 void GpuResources::readInto(WGPUCommandEncoder encoder, WGPUBuffer staging, uint64_t size,
                             std::function<void(const uint8_t*)> unpack, ReadbackCallback done) {
     WGPUCommandBufferDescriptor commandDesc = {};
@@ -300,7 +341,9 @@ void GpuResources::readInto(WGPUCommandEncoder encoder, WGPUBuffer staging, uint
                 wgpuBufferGetConstMappedRange(request->staging, 0, request->size));
             request->unpack(bytes);
             wgpuBufferUnmap(request->staging);
-            wgpuBufferRelease(request->staging);
+            // Idle only after the unmap: a concurrent read must never lease a mapped buffer.
+            if (auto shared = request->owner.lock()) recycleStaging(shared, request->staging, request->size);
+            else wgpuBufferRelease(request->staging);
         });
     };
     // After the submit that fills it: mapping a buffer an unsubmitted copy still writes is an error.
@@ -314,10 +357,7 @@ GpuStatus GpuResources::readBuffer(Handle buffer, uint64_t offset, uint64_t size
     if (offset > source->size || size > source->size - offset || size % 4 != 0 || offset % 4 != 0) {
         return GpuStatus::OutOfRange;
     }
-    WGPUBufferDescriptor stagingDesc = {};
-    stagingDesc.size = size;
-    stagingDesc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-    WGPUBuffer staging = wgpuDeviceCreateBuffer(device_, &stagingDesc);
+    WGPUBuffer staging = leaseStaging(size);
     if (!staging) return GpuStatus::DeviceError;
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
@@ -341,10 +381,7 @@ GpuStatus GpuResources::readTexture(Handle texture, ReadbackCallback done) {
     const uint32_t paddedRow = alignedRow(width, bpp);
     const uint64_t stagingSize = uint64_t{paddedRow} * height;
 
-    WGPUBufferDescriptor stagingDesc = {};
-    stagingDesc.size = stagingSize;
-    stagingDesc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-    WGPUBuffer staging = wgpuDeviceCreateBuffer(device_, &stagingDesc);
+    WGPUBuffer staging = leaseStaging(stagingSize);
     if (!staging) return GpuStatus::DeviceError;
 
     WGPUCommandEncoderDescriptor encoderDesc = {};
@@ -377,6 +414,12 @@ GpuStatus GpuResources::destroy(Handle resource) {
     GpuStatus status;
     Record* target = record(resource, resource.type, status);
     if (!target) return status;
+    // Only a resource a draw can bind can leave a kept draw row pointing at it: staging and readback copies do not count.
+    constexpr WGPUBufferUsage bindable = WGPUBufferUsage_Vertex | WGPUBufferUsage_Index | WGPUBufferUsage_Uniform |
+                                         WGPUBufferUsage_Storage | WGPUBufferUsage_Indirect;
+    if (target->buffer ? (wgpuBufferGetUsage(target->buffer) & bindable) != 0
+                       : target->texture && (wgpuTextureGetUsage(target->texture) & WGPUTextureUsage_TextureBinding) != 0)
+        destroyRequests.fetch_add(1, std::memory_order_relaxed);
     handles_.release(resource);
     // Any submission so far may read it; it is freed once the last of them has completed.
     {

@@ -85,6 +85,7 @@ export type BudgetReport = {
   frameworkLoc: number;
   frameworkLocByPackage: FrameworkPackageLoc[];
   nativeRuntimeLoc: number;
+  /** The largest built web engine file (single-thread or threaded); null when neither is built. */
   webEngineBytes: number | null;
   prdFiles: number;
   templates: { name: string; loc: number }[];
@@ -332,14 +333,19 @@ export async function measureNativeCensusAreas(root: string): Promise<INativeCen
 }
 
 export async function collectBudgets(root: string): Promise<BudgetReport> {
-  const webEngineBytes = await stat(
-    path.join(root, NATIVE_RUNTIME_PACKAGE, "build", "web", "tn-native-engine-web.wasm"),
-  )
-    .then((file) => file.size)
-    .catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
+  // Each web engine file has the budget: the single-thread one and the threaded one (PRD-752 phase 4).
+  const webEngineSizes = await Promise.all(
+    ["tn-native-engine-web.wasm", "tn-native-engine-web-threads.wasm"].map((name) =>
+      stat(path.join(root, NATIVE_RUNTIME_PACKAGE, "build", "web", name))
+        .then((file) => file.size)
+        .catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        }),
+    ),
+  );
+  const builtSizes = webEngineSizes.filter((size): size is number => size !== null);
+  const webEngineBytes = builtSizes.length === 0 ? null : Math.max(...builtSizes);
   const packageEntries = await readdir(path.join(root, "packages"), { withFileTypes: true }).catch(
     () => [],
   );

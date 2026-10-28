@@ -67,14 +67,17 @@ export class TrackSector {
    * `speed` is the car's measured speed in m/s. It is what makes a **beached** car recoverable: a
    * ray-cast chassis that has nosed into a barrier is still standing on the road, so the off-road
    * ray keeps hitting and a car pinned against a hoarding would sit there for the rest of the race.
+   * `driving` says the engine is pushing: only a car that is driven and still not moving is beached.
+   * A car the player brought to a stop is parked, and four rescues of a parked car end the race.
    */
-  update(position: Vector3, heading: Vector3, dt: number, speed = 0): boolean {
+  update(position: Vector3, heading: Vector3, dt: number, speed = 0, driving = true): boolean {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("TrackSector.update requires a finite non-negative dt.");
     if (Math.abs(speed) >= this.#stallSpeed) {
       this.#stalledTime = 0;
       this.#hasMoved = true;
-    } else if (this.#hasMoved) this.#stalledTime += dt;
+    } else if (!driving) this.#stalledTime = 0;
+    else if (this.#hasMoved) this.#stalledTime += dt;
     const origin = this.#origin.copy(position);
     origin.y += this.#rayHeight;
     const hit = this.#intersectRay(origin, this.#direction, this.#rayHeight + 2);

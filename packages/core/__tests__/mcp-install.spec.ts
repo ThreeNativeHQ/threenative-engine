@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -638,4 +638,29 @@ describe("the sculpt server the engine ships", () => {
     },
     30_000,
   );
+
+  // Authoring-layer regression guard (PRD-750 row 1): a session started outside the game never
+  // loads .mcp.json, and the scaffold tells it to call the shim by absolute path instead.
+  it("answers one engine call through the shim from outside the project, and fails closed", () => {
+    const outside = makeTempDirSync("engine-cli-cwd");
+    const shim = path.join(packageRoot, "mcp", "engine.mjs");
+    const env = { ...process.env, THREENATIVE_ENGINE_MCP_LOG: "off" };
+    const call = (...args: string[]) =>
+      spawnSync(process.execPath, [shim, ...args], {
+        cwd: outside,
+        encoding: "utf8",
+        env,
+        input: "",
+        timeout: 20_000,
+      });
+    const found = call(
+      "engine_search_capabilities",
+      '{"situation":"make me a game like super mario 64"}',
+    );
+    expect(found.status, found.stderr).toBe(0);
+    expect(JSON.parse(found.stdout).starterKits?.[0]?.name).toBe("collectathon");
+    const unknown = call("engine_no_such_tool", "{}");
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toMatch(/engine_no_such_tool/u);
+  }, 30_000);
 });

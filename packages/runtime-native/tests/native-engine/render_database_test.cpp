@@ -995,6 +995,97 @@ void instanceCounts() {
     }
 }
 
+// Packed frame storage is uploaded once for the bytes it holds: a frame that repeats the same
+// instance matrices on the same buffer copies nothing, and a frame that moves one instance copies
+// the whole packed block once. Count and layout stay fixed, so only the bytes decide.
+void unchangedFrameStorage() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    camera.position.set(0, 0, 20);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    material->roughness = 0.6;
+    constexpr uint32_t count = 8, capacity = 1024;  // room to grow the destination later
+    auto mesh = std::make_shared<InstancedMesh>(makeBoxGeometry(), material, capacity);
+    mesh->count = count;
+    mesh->frustumCulled = false;
+    for (uint32_t i = 0; i < capacity; ++i) {
+        Matrix4 placement;
+        placement.makeTranslation(double(i % 4) * 2.0 - 3.0, double(i / 4) * 2.0 - 1.0, 0);
+        mesh->setMatrixAt(i, placement);
+    }
+    mesh->instanceMatrix->setNeedsUpdate();
+    scene.add(*mesh);
+    DirectionalLight light{Color().setHex(0xffffff), 3};  // no shadows: one plain instanced draw
+    light.position.set(3, 5, 8);
+    scene.add(light);
+    // One skinned draw on the CPU palette path: its flat palette is a storage too, and an untracked
+    // bone keeps the rig out of GPU joints, so a moved bone changes bytes in `boneMatrices`.
+    auto skinGeometry = makeBoxGeometry();
+    const uint64_t skinVertices = skinGeometry->attributes.at("position")->count();
+    skinGeometry->setAttribute("skinIndex",
+        BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(skinVertices * 4, 0), 4));
+    std::vector<double> skinWeights(skinVertices * 4, 0);
+    for (std::size_t i = 0; i < skinVertices; ++i) skinWeights[i * 4] = 1;
+    skinGeometry->setAttribute("skinWeight", BufferAttribute::fromFloats(skinWeights, 4));
+    auto rig = std::make_shared<SkinnedMesh>(skinGeometry, std::make_shared<Material>(MaterialType::Standard));
+    auto root = std::make_shared<Object3D>();
+    auto bone = std::make_shared<Bone>();
+    bone->position.set(0.3, 0.5, 0);
+    root->add(*rig);
+    root->add(*bone);
+    scene.add(*root);
+    root->updateMatrixWorld(true);
+    rig->bind(std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone}));
+    RenderDatabase database;
+    const auto frameUpload = [&] {
+        const uint64_t before = renderer.gpu().queueWriteBytes();
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        return renderer.gpu().queueWriteBytes() - before;
+    };
+    for (int warm = 0; warm < 4; ++warm) {  // capacity, storage buffers and pipelines ready
+        frameUpload();
+        renderer.poll();
+        events.drain();
+    }
+    const uint64_t unchanged = frameUpload();  // same bytes, same destination
+    renderer.poll();
+    events.drain();
+    Matrix4 moved;
+    moved.makeTranslation(6, 0, 0);
+    mesh->setMatrixAt(0, moved);
+    mesh->instanceMatrix->setNeedsUpdate();
+    const uint64_t changed = frameUpload();
+    const uint64_t packed = uint64_t{count} * 20 * sizeof(float);  // matrix, colour and pad, per instance
+    const uint64_t steadyMoved = frameUpload();
+    mesh->count = capacity - 24;  // 1000 instances: the packed range grows past the 64 KiB buffer
+    const uint64_t grown = frameUpload();
+    const uint64_t grownPacked = uint64_t{capacity - 24} * 20 * sizeof(float);
+    const uint64_t steadyGrown = frameUpload();
+    bone->rotation.z = 0.4;  // palette bytes change, with the same bones and base
+    const uint64_t palette = frameUpload();
+    const uint64_t paletteBytes = 16 * sizeof(float);  // one bone's 4x4, packed as floats
+    std::printf("frame storage upload: unchanged %llu, changed %llu (block %llu), grown %llu (block %llu), "
+                "moved palette %llu (block %llu)\n",
+                static_cast<unsigned long long>(unchanged), static_cast<unsigned long long>(changed),
+                static_cast<unsigned long long>(packed), static_cast<unsigned long long>(grown),
+                static_cast<unsigned long long>(grownPacked), static_cast<unsigned long long>(palette),
+                static_cast<unsigned long long>(paletteBytes));
+    CHECK(changed == unchanged + packed);
+    CHECK(steadyMoved == unchanged);
+    // PRD-754's main-pass rows (off by default) would also rewrite their indirect records, five words per draw.
+    CHECK(grown == steadyMoved + grownPacked);
+    CHECK(steadyGrown == unchanged);
+    CHECK(palette == steadyGrown + paletteBytes);
+}
+
 // The flat lane's compact fast path (RenderDatabase::projectCompact) must decide exactly what the
 // general project() decides. The same population, flat and then made non-flat by one parented
 // object, must give the same draws: hidden, other-layer, transparent, mirrored, callback and
@@ -1531,9 +1622,13 @@ void renderTarget() {
     scene.updateMatrixWorld(true);
     RenderDatabase database;
     const auto frame = [&] {
+        const uint64_t outputs = outputPassesRecorded();
         const auto refused = renderToTarget(renderer, *target, inner, innerCamera, {0.25, 0.5, 0.75, 1}, false);
         CHECK(refused.empty());
+        // The target is read as linear scene colour: a tone-mapped output image of it would be drawn and never read.
+        CHECK(outputPassesRecorded() == outputs);
         database.render(renderer, scene, camera, {0, 0, 0, 1});
+        CHECK(outputPassesRecorded() == outputs + 1);
     };
     frame();
     // The target's own pixels: a corner is the clear colour, the middle is the red square.
@@ -2701,6 +2796,188 @@ void batchedVsUnbatched() {
     CHECK(database.diagnostics().empty());
 }
 
+// PRD-754: the passes a frame replays from recorded bundles draw the pixels the same commands draw when encoded
+// directly (setStablePasses(false)), on a lit, shadowed scene across a camera turn that also moves a caster; and the
+// turn replays the shadow pass's bundle, since a moved caster is a uniform write.
+void stablePassesMatchDirect() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Scene scene;
+    auto sun = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 2.2);
+    sun->position.set(2, 6, 4);
+    sun->setCastShadow(true);
+    scene.add(*sun);
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(12, 0.2, 12), std::make_shared<Material>(MaterialType::Standard));
+    ground->position.set(0, -1, 0);
+    ground->setReceiveShadow(true);
+    scene.add(*ground);
+    auto sphere = makeSphereGeometry(0.5, 20, 14);
+    auto box = makeBoxGeometry(0.8, 0.8, 0.8);
+    std::vector<std::shared_ptr<Mesh>> casters;
+    for (int i = 0; i < 5; ++i) {
+        auto material = std::make_shared<Material>(i % 2 ? MaterialType::Lambert : MaterialType::Standard);
+        material->color.setHex(0x335577u + 0x221100u * uint32_t(i));
+        auto mesh = std::make_shared<Mesh>(i % 2 ? box : sphere, material);
+        mesh->position.set(-4 + i * 2.0, 0.2 * i, -1 + 0.5 * i);
+        mesh->setCastShadow(true);
+        mesh->setReceiveShadow(true);
+        scene.add(*mesh);
+        casters.push_back(mesh);
+    }
+    PerspectiveCamera camera(55, 4.0 / 3, 0.1, 100);
+    const auto pose = [&](int k) {
+        camera.position.set(0, 3, 13);
+        camera.lookAt(k ? 1.5 : 0, 0, 0);
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+        casters[2]->position.set(0, k ? 0.9 : 0.4, 0);
+    };
+    const auto frames = [&](bool stable) {
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(200, 150);
+        renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        database.batching = false;
+        std::vector<std::vector<uint8_t>> pixels;
+        std::vector<Renderer::FrameStats> stats;
+        for (int k : {0, 1, 1}) {
+            pose(k);
+            database.render(renderer, scene, camera);
+            stats.push_back(renderer.lastFrame());
+            pixels.push_back(read(renderer, events));
+        }
+        return std::pair{pixels, stats};
+    };
+    const auto [direct, directStats] = frames(false);
+    const auto [stable, stableStats] = frames(true);
+    std::size_t differ = 0, covered = 0;
+    for (std::size_t f = 0; f < direct.size(); ++f) {
+        CHECK(direct[f].size() == stable[f].size() && !direct[f].empty());
+        for (std::size_t p = 0; p + 3 < direct[f].size() && direct[f].size() == stable[f].size(); p += 4) {
+            differ += direct[f][p] != stable[f][p] || direct[f][p + 1] != stable[f][p + 1] || direct[f][p + 2] != stable[f][p + 2];
+            covered += f == 0 && direct[f][p] + direct[f][p + 1] + direct[f][p + 2] > 0;
+        }
+    }
+    std::printf("stable passes vs direct: %zu covered pixels, %zu differ; shadow draws %u/%u, recorded %u then %u, %u\n",
+                covered, differ, stableStats[1].shadowDraws, directStats[1].shadowDraws, stableStats[0].shadowRecorded,
+                stableStats[1].shadowRecorded, stableStats[2].shadowRecorded);
+    CHECK(covered > 2000 && differ == 0);
+    // The third frame repeats the second's pose, so the sun keeps its map (#574) and neither arm draws a caster.
+    CHECK(stableStats[2].keptShadowMaps == 1 && directStats[2].keptShadowMaps == 1 && stableStats[2].shadowDraws == 0);
+    for (std::size_t f = 0; f < 3; ++f) {
+        CHECK(stableStats[f].shadowDraws == directStats[f].shadowDraws && (f == 2 || stableStats[f].shadowDraws >= 5));
+        CHECK(stableStats[f].shadowTriangles == directStats[f].shadowTriangles);
+        CHECK(directStats[f].shadowRecorded == 0);
+    }
+    CHECK(stableStats[0].shadowRecorded == stableStats[0].shadowDraws);
+    CHECK(stableStats[1].shadowRecorded == 0 && stableStats[2].shadowRecorded == 0);
+}
+
+// PRD-754: a camera that turns in place culls meshes in and out of view, batched and unbatched. Once each draw has
+// been seen, a second lap records nothing in the main pass (rows out of view keep their place with no instances), and
+// every frame draws the pixels and three's Info of the depth-order path that re-records.
+void cameraCull() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Scene scene;
+    auto light = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 2.0);
+    light->position.set(2, 6, 4);
+    scene.add(*light);
+    auto box = makeBoxGeometry(0.6, 0.6, 0.6);
+    auto shared = std::make_shared<Material>(MaterialType::Standard);
+    shared->color.setHex(0x88aacc);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 48; ++i) {  // one batch per material: a ring of boxes around the camera
+        const double a = i * 2 * M_PI / 48 + 0.35 * std::sin(i * 1.7);  // uneven, so each step sees another count
+        auto mesh = std::make_shared<Mesh>(box, i % 3 ? shared : std::make_shared<Material>(MaterialType::Lambert));
+        mesh->position.set(8 * std::cos(a), 0.3 * (i % 4), 8 * std::sin(a));
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    for (int i = 0; i < 6; ++i) {  // unbatched: each its own geometry
+        const double a = (i + 0.5) * 2 * M_PI / 6;
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setHex(0x553311u + 0x112233u * uint32_t(i));
+        auto mesh = std::make_shared<Mesh>(makeSphereGeometry(0.4 + 0.1 * i, 12, 8), material);
+        mesh->position.set(5 * std::cos(a), 1, 5 * std::sin(a));
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    PerspectiveCamera camera(50, 4.0 / 3, 0.1, 100);
+    const auto pose = [&](int step) {
+        const double yaw = step * 2 * M_PI / 16;
+        camera.position.set(0, 1, 0);
+        camera.lookAt(std::cos(yaw), 1, std::sin(yaw));
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+    };
+    struct Frame { std::vector<uint8_t> pixels; Renderer::FrameStats stats; std::size_t batches; };
+    const auto laps = [&](bool stable, bool post = false) {
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(160, 120);
+        renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
+        if (post) {  // the velocity pass, and a post graph that reads the normal target
+            namespace g = shader::graph;
+            renderer.setTraa(TraaOptions{});
+            renderer.setPostGraph(g::bloom(g::vec4({g::swizzle(g::texture("normal", g::uv()), "x"), g::float_(0), g::float_(0),
+                                                    g::float_(0)}), 0, 0, 0));
+        }
+        RenderDatabase database;
+        std::vector<Frame> frames;
+        for (int step = 0; step < 32; ++step) {
+            pose(step % 16);
+            database.render(renderer, scene, camera);
+            frames.push_back({read(renderer, events), renderer.lastFrame(), database.lastBatches().first});
+        }
+        return frames;
+    };
+    const auto direct = laps(false), stable = laps(true);
+    std::size_t differ = 0, covered = 0;
+    uint32_t firstLap = 0, secondLap = 0, directRecorded = 0, batches = 0;
+    for (std::size_t f = 0; f < direct.size(); ++f) {
+        CHECK(direct[f].pixels.size() == stable[f].pixels.size() && !direct[f].pixels.empty());
+        for (std::size_t p = 0; p + 3 < direct[f].pixels.size() && direct[f].pixels.size() == stable[f].pixels.size(); p += 4) {
+            const auto& d = direct[f].pixels;
+            const auto& t = stable[f].pixels;
+            differ += d[p] != t[p] || d[p + 1] != t[p + 1] || d[p + 2] != t[p + 2];
+            covered += d[p] + d[p + 1] + d[p + 2] > 0;
+        }
+        CHECK(direct[f].stats.draws == stable[f].stats.draws && direct[f].stats.triangles == stable[f].stats.triangles);
+        (f < 16 ? firstLap : secondLap) += stable[f].stats.mainRecorded;
+        if (f >= 16) directRecorded += direct[f].stats.mainRecorded;
+        batches += uint32_t(stable[f].batches);
+    }
+    std::printf("camera cull: %zu covered pixels, %zu differ; second lap records %u stable, %u direct (first lap %u); %u batch draws\n",
+                covered, differ, secondLap, directRecorded, firstLap, batches);
+    CHECK(covered > 20000 && differ == 0);
+    CHECK(directRecorded > 0);
+    CHECK(secondLap == 0);
+    // With the velocity and normal passes on, they replay their bundles too: the second lap records no aux draw.
+    const auto postDirect = laps(false, true), postStable = laps(true, true);
+    std::size_t postDiffer = 0;
+    uint32_t auxSecond = 0, auxDirect = 0, mainSecond = 0;
+    for (std::size_t f = 0; f < postDirect.size(); ++f) {
+        CHECK(postDirect[f].pixels.size() == postStable[f].pixels.size());
+        for (std::size_t p = 0; p + 3 < postDirect[f].pixels.size() && postDirect[f].pixels.size() == postStable[f].pixels.size(); ++p)
+            postDiffer += postDirect[f].pixels[p] != postStable[f].pixels[p];
+        CHECK(postDirect[f].stats.auxPasses == 1 && postStable[f].stats.auxPasses == 1);
+        if (f >= 16) {
+            auxSecond += postStable[f].stats.auxRecorded;
+            auxDirect += postDirect[f].stats.auxRecorded;
+            mainSecond += postStable[f].stats.mainRecorded;
+        }
+    }
+    std::printf("camera cull, velocity and normal passes: %zu bytes differ; second lap records %u aux draws stable "
+                "(%u main), %u direct\n", postDiffer, auxSecond, mainSecond, auxDirect);
+    CHECK(postDiffer == 0);
+    CHECK(auxSecond == 0 && mainSecond == 0);
+}
+
 // PRD-518 box 38: the same animated poses and refusals, with batching on and off, including shadows.
 void skinnedCrowdPixels() {
     mystral::webgpu::Context context;
@@ -3220,6 +3497,11 @@ void gpuTimerSplitsLampShadows() {
     box.position.set(1.5, 1, 0);
     box.setCastShadow(true);
     scene.add(box);
+    // A caster beyond the spot's range that moves: the sun's map redraws while the lamp's stays cached.
+    Mesh far{makeBoxGeometry(0.2, 0.2, 0.2), white};
+    far.position.set(-4, 0.3, -2.5);  // 6.6 m from the spot (range 6), inside the sun's shadow camera
+    far.setCastShadow(true);
+    scene.add(far);
     RenderDatabase database;
     database.shadowMapEnabled = true;
     renderer.setGpuTimer(true);
@@ -3242,6 +3524,7 @@ void gpuTimerSplitsLampShadows() {
     std::printf("lamp gpu: first frame sun %.4f ms, lamps %.4f ms (%u maps)\n", first[0], first[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
     CHECK(renderer.lastFrame().lampRedraws == 1);
     CHECK(first[0] > 0 && first[kGpuLampShadowSegment] > 0);
+    far.position.x = -4.1;
     const auto cached = timed();
     std::printf("lamp gpu: cached frame sun %.4f ms, lamps %.4f ms (%u maps)\n", cached[0], cached[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
     CHECK(renderer.lastFrame().lampRedraws == 0);
@@ -3275,7 +3558,8 @@ void gpuTimerCoversOffscreen() {
         }
         CHECK(renderer.gpuSamples() == before + 1);
         CHECK(renderer.gpuSourceFrame() == (deferred ? 42 : 41));
-        // Raw targets expose the scene directly; only the main renderer encodes an output pass.
+        // Two scene passes and one output pass: the offscreen sibling's image is read through its
+        // scene colour, so it records no output pass of its own (a0ecc6f0d).
         CHECK(renderer.gpuTimestampPasses() == 3);
         CHECK(renderer.lastGpuMs() > 0);
         const auto segments = renderer.lastGpuSegments();
@@ -3748,6 +4032,32 @@ void batchCachesStayPut() {
     for (std::size_t i = 0; i < first.size(); ++i) moved += first[i].cache != second[i].cache;
     std::printf("batch caches moved between frames: %zu of %zu\n", moved, first.size());
     CHECK(moved == 0);
+}
+
+// A batch's id breaks the opaque depth ties, so it stays a member mesh's id as three's would: a group-derived id
+// changed which of two exactly coplanar draws wins (PRD-754 review).
+void batchKeepsMemberId() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(4, 20, 50);
+    camera.lookAt(4, 0, 4);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    std::vector<uint64_t> ids;
+    for (int g = 0; g < 8; ++g) {
+        const auto geometry = makeBoxGeometry();
+        geometry->scale(1, 1 + g / 100.0, 1); // distinct bytes: equal boxes would batch as one group
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        for (int i = 0; i < 4; ++i) {
+            auto mesh = std::make_shared<Mesh>(geometry, material);
+            mesh->position.set(g, 0, i);
+            scene.add(*mesh); meshes.push_back(mesh); ids.push_back(mesh->id());
+        }
+    }
+    const auto& items = database.prepare(scene, camera, lights);
+    std::size_t foreign = 0;
+    for (const DrawItem& d : items) foreign += std::find(ids.begin(), ids.end(), d.id) == ids.end();
+    std::printf("batch draws: %zu, ids that are no member's: %zu\n", items.size(), foreign);
+    CHECK(items.size() == 8);
+    CHECK(foreign == 0);
 }
 
 // three's projectObject frustum-culls each Mesh, Line, Sprite and InstancedMesh (its instance-aware
@@ -4523,6 +4833,177 @@ void lampCache() {
                 renderer.lastFrame().lampShadowDraws, renderer.lastFrame().lampRedraws);
     CHECK(renderer.lastFrame().lampRedraws >= 1);
     CHECK(renderer.lastFrame().lampShadowDraws > 0 && renderer.lastFrame().lampShadowDraws < both);
+}
+
+// PRD-650: a lamp whose map is cached must not pack or upload its casters' uniform slices. One
+// shadow-only caster under a still spot light is compared with an empty control renderer of the
+// same output state: the cached frame uploads the control's bytes and draws no shadow.
+void cachedLampHasNoUniformUpload() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    Renderer control(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    const auto configure = [](Renderer& r) {
+        r.setSize(96, 96);
+        r.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    };
+    configure(renderer);
+    configure(control);
+    CameraState camera;
+    const double near = 0.1, far = 10, cz = -far / (far - near), d = -far * near / (far - near);
+    camera.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -6, 1};
+    camera.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 6, 1};
+    camera.projectionMatrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, cz, -1, 0, 0, d, 0};
+    shader::StandardMaterial material;
+    BufferStore positions(Scalar::F32, 9);
+    const float triangle[] = {-1, -1, 0.5f, 1, -1, 0.5f, 0, 1, 0.5f};
+    positions.write(0, triangle, sizeof triangle);
+    DrawItem caster;
+    caster.key = caster.id = 1;
+    caster.positions = &positions;
+    caster.material = &material;
+    caster.mainPass = false;
+    caster.castShadow = true;
+    caster.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const std::span<const DrawItem> items(&caster, 1);
+    LightState lights;
+    DirectLight spot;
+    spot.id = 1;
+    spot.kind = DirectLight::Kind::Spot;
+    spot.position = {0, 3, 0};
+    spot.direction = {0, 1, 0};
+    spot.coneCos = 0.5;
+    spot.penumbraCos = 0.4;
+    DirectLight::Shadow shadow;
+    shadow.width = shadow.height = 256;  // the game's fixed size, so the footprint rule leaves it alone
+    shadow.view = camera.matrixWorldInverse;
+    shadow.projection = camera.projectionMatrix;
+    shadow.matrix = camera.matrixWorldInverse;
+    shadow.near = near;
+    shadow.far = far;
+    shadow.layersMask = 1;
+    spot.shadow = shadow;
+    lights.direct.push_back(spot);
+    const std::array<double, 4> clear{0.05, 0.06, 0.08, 1};
+    const auto framePair = [&] {
+        const auto upload = [&](Renderer& r, std::span<const DrawItem> draws) {
+            const uint64_t before = r.gpu().queueWriteBytes();
+            r.render(draws, camera, lights, clear);
+            return r.gpu().queueWriteBytes() - before;
+        };
+        const uint64_t bytes = upload(renderer, items), baseline = upload(control, {});
+        renderer.poll();
+        control.poll();
+        events.drain();
+        return std::pair{bytes, baseline};
+    };
+    for (int warm = 0; warm < 4; ++warm) framePair();
+    const auto [cached, baseline] = framePair();
+    std::printf("cached lamp upload: caster %llu bytes, empty control %llu bytes, %u shadow draws\n",
+                static_cast<unsigned long long>(cached), static_cast<unsigned long long>(baseline),
+                renderer.lastFrame().shadowDraws);
+    CHECK(renderer.lastFrame().shadowDraws == 0);
+    CHECK(cached == baseline);
+    // The signature still redraws on a changed material cut and on a resized map, and caches again.
+    material.alphaTest = 0.5f;
+    const auto cut = framePair().first;
+    std::printf("cached lamp upload: changed cut %llu bytes, %u shadow draws\n",
+                static_cast<unsigned long long>(cut), renderer.lastFrame().shadowDraws);
+    CHECK(renderer.lastFrame().shadowDraws > 0);
+    const auto [cutCached, cutBaseline] = framePair();
+    CHECK(renderer.lastFrame().shadowDraws == 0);
+    CHECK(cutCached == cutBaseline);
+    lights.direct[0].shadow->width = lights.direct[0].shadow->height = 128;
+    const auto resized = framePair().first;
+    std::printf("cached lamp upload: resized map %llu bytes, %u shadow draws\n",
+                static_cast<unsigned long long>(resized), renderer.lastFrame().shadowDraws);
+    CHECK(renderer.lastFrame().shadowDraws > 0);
+    const auto [resizedCached, resizedBaseline] = framePair();
+    CHECK(renderer.lastFrame().shadowDraws == 0);
+    CHECK(resizedCached == resizedBaseline);
+}
+
+void sunCache() {
+    // An ordinary sun map is kept like a lamp's while nothing it draws changed: no shadow draw is encoded and
+    // none of their uniforms is uploaded, and the kept map shades the frame the same. A caster or the light moving redraws it.
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    box.position.set(0, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto frame = [&] {
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        return renderer.lastFrame().shadowDraws;
+    };
+    const auto pixels = [&] {
+        std::vector<uint8_t> out;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) out = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(out.size() == size_t{96} * 96 * 4);
+        return out;
+    };
+    const uint64_t first = frame();
+    const uint64_t drawnBytes = renderer.lastFrame().uniformBytes;
+    CHECK(first > 0 && renderer.lastFrame().keptShadowMaps == 0);
+    const std::vector<uint8_t> fresh = pixels();
+    uint64_t still = 0;
+    for (int i = 0; i < 60; ++i) still += frame();
+    std::printf("sun cache: first %llu draws %llu uniform bytes, 60 still frames %llu draws %llu bytes, %u kept\n",
+                (unsigned long long)first, (unsigned long long)drawnBytes, (unsigned long long)still,
+                (unsigned long long)renderer.lastFrame().uniformBytes, renderer.lastFrame().keptShadowMaps);
+    CHECK(still == 0);
+    CHECK(renderer.lastFrame().keptShadowMaps == 1);
+    CHECK(renderer.lastFrame().uniformBytes < drawnBytes);
+    const std::vector<uint8_t> kept = pixels();
+    int differ = 0;
+    for (size_t k = 0; k < kept.size(); ++k) differ += std::abs(int(kept[k]) - int(fresh[k])) > 2;
+    std::printf("sun cache: kept map differs on %d channels\n", differ);
+    CHECK(differ == 0);
+    box.position.x = 0.5;
+    const uint64_t moved = frame();
+    std::printf("sun cache: caster moved %llu\n", (unsigned long long)moved);
+    CHECK(moved > 0 && renderer.lastFrame().keptShadowMaps == 0);
+    const std::vector<uint8_t> shifted = pixels();
+    differ = 0;
+    for (size_t k = 0; k < shifted.size(); ++k) differ += std::abs(int(shifted[k]) - int(fresh[k])) > 2;
+    CHECK(differ > 0);  // the shadow followed the box
+    CHECK(frame() == 0);
+    // The mirror position flips the signs of the view's x terms in pairs, which a word-wise FNV signature cancelled.
+    sun.position.set(-2, 8, 1);
+    const uint64_t lit = frame();
+    std::printf("sun cache: light moved to its mirror image %llu\n", (unsigned long long)lit);
+    CHECK(lit > 0);
+    CHECK(frame() == 0);
 }
 
 void lampAtlas() {
@@ -6022,7 +6503,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -6030,8 +6511,8 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_lod_rung", virtualSunLodRung},
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

@@ -202,6 +202,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
   "animation": Object.freeze({
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "clip": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "entered": (value: unknown) => typeof value === "boolean",
     "advancedFrames": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "finished": (value: unknown) => typeof value === "boolean",
@@ -233,6 +234,23 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxSlideSpeed": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
     "stepSeconds": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
+  }),
+  "sightLine": Object.freeze({
+    "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "maxBlockedRatio": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+  }),
+  "engineCost": Object.freeze({
+    "maxPerFrame": (value: unknown) => isRecord(value),
+    "maxInFrame": (value: unknown) => isRecord(value),
+    "minWindows": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value > 0,
+    "skipWindows": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "still": (value: unknown) => isRecord(value),
+    "moving": (value: unknown) => isRecord(value),
+    "source": (value: unknown) => typeof value === "string" && value.trim() !== "",
+  }),
+  "hudAudit": Object.freeze({
+    "minContrast": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "noDebugText": (value: unknown) => value === true,
   }),
   "causedBy": Object.freeze({
     "cause": (value: unknown) => isRecord(value),

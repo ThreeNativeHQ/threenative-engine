@@ -345,6 +345,35 @@ describe("AnimationPlayer", () => {
     expect(root.position.x).toBeCloseTo(0.25);
   });
 
+  it("plays a one-shot at the requested speed and returns to the authored rate on the next play", () => {
+    const root = new Object3D();
+    const clip = new AnimationClip("roll", 1, [
+      new NumberKeyframeTrack(".position[x]", [0, 1], [0, 1]),
+    ]);
+    const player = new AnimationPlayer({ clips: [clip], root });
+
+    // Godot's `play(name, blend, speed)`: a 1.47 s roll fits a 0.5 s dodge without a cut.
+    player.play("roll", { mode: "once", speed: 2 });
+    player.update(0.25);
+    expect(root.position.x).toBeCloseTo(0.5);
+    player.update(0.3);
+    expect(player.finished).toBe(true);
+    expect(root.position.x).toBeCloseTo(1);
+
+    player.play("roll", { mode: "once" });
+    player.update(0.25);
+    expect(root.position.x).toBeCloseTo(0.25);
+  });
+
+  it("rejects a play speed that is not a positive finite number", () => {
+    const root = new Object3D();
+    const clip = new AnimationClip("roll", 1, []);
+    const player = new AnimationPlayer({ clips: [clip], root });
+    for (const speed of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => player.play("roll", { mode: "once", speed })).toThrow(/speed/);
+    }
+  });
+
   it("defaults a finished one-shot replay to looping", () => {
     const root = new Object3D();
     const clip = new AnimationClip("clip", 1, [
@@ -529,6 +558,51 @@ describe("AnimationPlayer stride sync", () => {
     expect(later).not.toBe(retained);
     expect(retained.groundSpeed).toBe(0);
     expect(later.groundSpeed).toBeCloseTo(2, 1);
+  });
+
+  it("leaves a stable stride rate on the action for repeated held ticks", () => {
+    const { player } = character({ clips: [walkClip()] });
+    const action = player.mixer.clipAction(player.clip("walk"));
+    player.play("walk");
+    player.update(1 / 60);
+    expect(action.getEffectiveTimeScale()).toBeCloseTo(0.15, 6);
+    const playhead = action.time;
+    const setRate = vi.spyOn(action, "setEffectiveTimeScale");
+
+    for (let tick = 0; tick < 20; tick++) player.update(1 / 60);
+
+    expect(setRate).not.toHaveBeenCalled();
+    expect(action.time).toBeGreaterThan(playhead);
+    expect(player.stride.rate).toBeCloseTo(0.15, 6);
+    expect(player.stride.groundSpeed).toBe(0);
+    expect(player.stride.synced).toBe(true);
+    setRate.mockRestore();
+    player.dispose();
+  });
+
+  it("reapplies the stride rate when the movement changes or the action is retimed", () => {
+    const { body, player } = character({ clips: [walkClip()] });
+    const action = player.mixer.clipAction(player.clip("walk"));
+    player.play("walk");
+    player.update(1 / 60);
+    expect(action.getEffectiveTimeScale()).toBeCloseTo(0.15, 6);
+    const setRate = vi.spyOn(action, "setEffectiveTimeScale");
+
+    body.position.z += 2 * (1 / 60);
+    player.update(1 / 60);
+    expect(setRate).toHaveBeenCalledTimes(1);
+    expect(action.getEffectiveTimeScale()).toBeCloseTo(2, 1);
+
+    player.update(1 / 60);
+    expect(setRate).toHaveBeenCalledTimes(2);
+    expect(action.getEffectiveTimeScale()).toBeCloseTo(0.15, 6);
+
+    action.timeScale = 1;
+    player.update(1 / 60);
+    expect(setRate).toHaveBeenCalledTimes(3);
+    expect(action.getEffectiveTimeScale()).toBeCloseTo(0.15, 6);
+    setRate.mockRestore();
+    player.dispose();
   });
 });
 

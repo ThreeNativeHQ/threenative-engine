@@ -361,6 +361,21 @@ test("a rendered fixed-step advance draws one world frame per tick and lets the 
   expect(page.evaluate).toHaveBeenCalledTimes(9);
 });
 
+test("a live-clock hold counts the ticks the game ran, not the requests (PRD-752)", async () => {
+  // A 30 fps host on a 60 Hz step runs two ticks per frame, so each one-tick wall-clock request
+  // returns two. Counting requests held a 169-tick key for about 338 ticks.
+  let ran = 0;
+  const bridge = {
+    advance: vi.fn(async (_ticks: number) => {
+      ran += 2;
+      return 2;
+    }),
+  };
+  await advanceFixedStep({} as Page, bridge, 10);
+  expect(bridge.advance).toHaveBeenCalledTimes(5);
+  expect(ran).toBe(10);
+});
+
 test.each([0, -1, 1.5, Number.NaN])("fixed-step driving rejects invalid tick count %s", async (ticks) => {
   const bridge = { advance: vi.fn() };
   await expect(advanceFixedStep({} as Page, bridge, ticks)).rejects.toThrow("positive integer");

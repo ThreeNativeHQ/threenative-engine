@@ -665,8 +665,12 @@ void registerHemisphereLight(ClassBinding& b) {
 template <typename Owner, typename T>
 void textureNumber(ClassBinding& b, const char* name, T Owner::*member) {
     b.getters[name] = [member](void* self) { return Value::of(double(as<Owner>(self)->*member)); };
+    // Only a change moves the version: a restated value would retire every bake keyed by it (the
+    // retained environment of a sky a scene restates on each enter).
     b.setters[name] = [member](void* self, const Value& v) {
-        as<Owner>(self)->*member = static_cast<T>(number(v));
+        const T next = static_cast<T>(number(v));
+        if (as<Owner>(self)->*member == next) return;
+        as<Owner>(self)->*member = next;
         as<Owner>(self)->needsUpdate();
     };
 }
@@ -683,7 +687,9 @@ void textureVector2(ClassBinding& b, const char* field, Vector2 Owner::*member) 
         };
         b.setters[path] = [member, i](void* self, const Value& value) {
             Vector2& v = as<Owner>(self)->*member;
-            (i == 0 ? v.x : v.y) = number(value);
+            const double next = number(value);
+            if ((i == 0 ? v.x : v.y) == next) return;
+            (i == 0 ? v.x : v.y) = next;
             as<Owner>(self)->needsUpdate();
         };
     }
@@ -725,7 +731,11 @@ void registerTextureFields(ClassBinding& b, const char* cls) {
         as<Texture>(self)->anisotropy = anisotropy;
     };
     b.getters["flipY"] = [](void* self) { return Value::of(as<Texture>(self)->flipY); };
-    b.setters["flipY"] = [](void* self, const Value& v) { as<Texture>(self)->flipY = flag(v); as<Texture>(self)->needsUpdate(); };
+    b.setters["flipY"] = [](void* self, const Value& v) {
+        if (as<Texture>(self)->flipY == flag(v)) return;
+        as<Texture>(self)->flipY = flag(v);
+        as<Texture>(self)->needsUpdate();
+    };
     // three's `texture.type` and `format` (UnsignedByteType, HalfFloatType, FloatType; RGBAFormat): fixed
     // by the constructor or the render target that owns the texture. Writing the value a texture already
     // has is accepted (the rain template restates them); another value is refused by name.
@@ -753,7 +763,9 @@ void registerTextureFields(ClassBinding& b, const char* cls) {
     b.getters["colorSpace"] = [](void* self) { return string(as<Texture>(self)->isSRGB() ? "srgb" : ""); };
     b.setters["colorSpace"] = [](void* self, const Value& v) {
         if (v.kind != Value::Kind::String) throw Unsupported{"colorSpace must be a string"};
-        as<Texture>(self)->colorSpace = v.text == "srgb" ? TextureColorSpace::SRGB : TextureColorSpace::None;
+        const TextureColorSpace next = v.text == "srgb" ? TextureColorSpace::SRGB : TextureColorSpace::None;
+        if (as<Texture>(self)->colorSpace == next) return;
+        as<Texture>(self)->colorSpace = next;
         as<Texture>(self)->needsUpdate();
     };
 }

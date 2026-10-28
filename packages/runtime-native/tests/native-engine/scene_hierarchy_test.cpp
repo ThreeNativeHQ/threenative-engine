@@ -11,9 +11,12 @@
 
 #include "engine/abi/bindings.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/scene/camera.h"
 #include "engine/scene/geometries.h"
+#include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
+#include "engine/scene/raycaster.h"
 
 #include <algorithm>
 #include <array>
@@ -1378,9 +1381,70 @@ void needs_update_setter() {
     CHECK(mesh->matrixWorld.elements[12] == 9 && !mesh->matrixWorldNeedsUpdate);
 }
 
+// core's "visible" walk leaves a hidden node where it stands, its own compose included: the shooter's 8,300
+// hidden auto-batch sources each composed a world matrix every frame (TN_PROJECTION 9,387 visits for ~150 draws).
+void pruned_walk() {
+    Object3D root, parent, hidden, leaf;
+    root.add(parent);
+    parent.add(hidden);
+    hidden.add(leaf);
+    root.updateMatrixWorldVisible(true, true);
+    hidden.setVisible(false);
+    root.updateMatrixWorldVisible(false, true);
+    parent.position.x = 3;
+    hidden.position.y = 2;
+    const auto before = Object3D::matrixEvaluations();
+    CHECK(root.updateMatrixWorldVisible(false, true) == 3);
+    CHECK(Object3D::matrixEvaluations() - before == 2);  // root and parent, not the hidden node
+    CHECK(hidden.matrixWorld.elements[12] == 0);  // where it stood
+    hidden.setVisible(true);
+    root.updateMatrixWorldVisible(false, true);
+    CHECK(hidden.matrixWorld.elements[12] == 3 && hidden.matrixWorld.elements[13] == 2);
+    CHECK(leaf.matrixWorld.elements[12] == 3 && leaf.matrixWorld.elements[13] == 2);
+    // A camera renders from its world matrix whatever its flag, so a hidden one is still walked.
+    PerspectiveCamera camera;
+    root.add(camera);
+    camera.setVisible(false);
+    camera.position.z = 5;
+    root.updateMatrixWorldVisible(false, true);
+    CHECK(camera.matrixWorld.elements[14] == 5 && camera.matrixWorldInverse.elements[14] == -5);
+}
+
+// An object no graph holds changes no children list when it dies, so the hierarchy counter holds still.
+// InstancedMesh::raycast builds a scratch Mesh per ray: each one moved the counter and dropped every
+// cache keyed on it, once per ray (the adventure camera arm: 136,264 bridge crossings in one frame).
+void unlinked_destruction() {
+    Object3D root;
+    auto instanced = std::make_shared<InstancedMesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard), 4);
+    root.add(*instanced);
+    root.updateMatrixWorld();
+    const uint64_t before = Object3D::hierarchyVersion();
+    { Mesh scratch; }
+    CHECK(Object3D::hierarchyVersion() == before);
+    Raycaster caster(Vector3(0, 0, 5), Vector3(0, 0, -1));
+    CHECK(!caster.intersectObject(root).empty());
+    CHECK(Object3D::hierarchyVersion() == before);
+    // A linked object's death still moves it: the parent's children list changed.
+    {
+        auto child = std::make_unique<Object3D>();
+        root.add(*child);
+    }
+    CHECK(root.children.size() == 1);
+    CHECK(Object3D::hierarchyVersion() > before);
+    // So does a parent's: its children lose their parent.
+    const uint64_t linked = Object3D::hierarchyVersion();
+    auto orphan = std::make_unique<Object3D>();
+    {
+        Object3D holder;
+        holder.add(*orphan);
+    }
+    CHECK(orphan->parent == nullptr && Object3D::hierarchyVersion() > linked);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
+TN_TEST_MAIN({"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
              {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
              {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
-             {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter})
+             {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter},
+             {"unlinked_destruction", unlinked_destruction})
