@@ -206,6 +206,59 @@ export function releaseOrder(packages: readonly { name: string; manifest: string
   return ordered;
 }
 
+export interface IReleaseArtifactSteps {
+  /** True when both web engine modules exist and their stamps name this tree's sources. */
+  readonly webEngineCurrent: (runtimeRoot: string) => boolean;
+  readonly buildWebEngine: () => void;
+  readonly ensureGradleWrapper: (output: string) => Promise<unknown>;
+}
+
+async function defaultArtifactSteps(): Promise<IReleaseArtifactSteps> {
+  const stamp = (await import(
+    new URL("../packages/runtime-native/scripts/web-engine-stamp.mjs", import.meta.url).href
+  )) as {
+    readonly MODULES: readonly string[];
+    readonly assertEngineStampCurrent: (root: string) => void;
+  };
+  const android = (await import(
+    new URL("../packages/runtime-native/scripts/package-android.mjs", import.meta.url).href
+  )) as { readonly ensureGradleWrapper: (options: { output: string }) => Promise<string> };
+  return {
+    webEngineCurrent: (runtimeRoot) => {
+      const built = stamp.MODULES.every((name) =>
+        fs.existsSync(path.join(runtimeRoot, "build", "web", `${name}.wasm`)),
+      );
+      if (!built) return false;
+      try {
+        stamp.assertEngineStampCurrent(runtimeRoot);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    buildWebEngine: () => run("pnpm", ["wasm:build"], "pnpm wasm:build"),
+    ensureGradleWrapper: (output) => android.ensureGradleWrapper({ output }),
+  };
+}
+
+/**
+ * Produce the runtime-native `files` entries git does not carry: the web Wasm engine pair and the
+ * Gradle wrapper jar. A fresh checkout has neither, `pnpm pack` drops a missing entry without an
+ * error, and the publish preflight then refused every release prep from a clean worktree until
+ * someone built them by hand. The engine rebuilds only when absent or stale.
+ */
+export async function provisionReleaseArtifacts(
+  repo = REPO,
+  steps?: IReleaseArtifactSteps,
+): Promise<void> {
+  const resolved = steps ?? (await defaultArtifactSteps());
+  const runtimeRoot = path.join(repo, "packages", "runtime-native");
+  if (!resolved.webEngineCurrent(runtimeRoot)) resolved.buildWebEngine();
+  await resolved.ensureGradleWrapper(
+    path.join(runtimeRoot, "android", "gradle", "wrapper", "gradle-wrapper.jar"),
+  );
+}
+
 function run(command: string, args: readonly string[], label: string): void {
   process.stdout.write(`\n▸ ${label}\n`);
   try {
@@ -398,6 +451,7 @@ async function main(args: readonly string[]): Promise<void> {
   // `publish:check` then reports the package as needing a bump, because its source "moved"
   // after the publish. There is no way to tell, later, which source a published tarball was.
   if (publish) assertCleanPackageTree(REPO);
+  await provisionReleaseArtifacts(REPO);
 
   const packages = publishSet(REPO);
   const cohort = validateReleaseCohort(REPO, packages);
