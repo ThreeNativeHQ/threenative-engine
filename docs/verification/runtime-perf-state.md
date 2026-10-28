@@ -5424,3 +5424,17 @@ and the machine is uncontended.
 
 Candidate rows (`L1-*`, `L2-*`, `L3-*`) begin after `L0-06` is measured. Rejected and inconclusive
 candidates stay in this section with their measured values and commit ids.
+
+## Performance loop — PRD-754
+
+Recorded passes survive a camera turn. Judge: recording plus shadow encode CPU per frame (`TN_PLAYER_METRICS`,
+`TN_RENDER_PREPARE_SPLIT`; web: the Wasm meter in a turn probe), paired knob off/on from one build, host load recorded.
+
+| id | hypothesis | files | target: baseline → candidate (band) | other metrics | verdict | commit |
+| --- | --- | --- | --- | --- | --- | --- |
+| L1-01 | state-first opaque rows, persistent uniform slots, indirect counts; shadow/normal/velocity bundles | renderer.cpp/.h | Midway native 0.110/0.137/0.131 → 0.035/0.041/0.037 ms (load 4-13) | order rebuilds ~601 → 0; judge in L1-05 | keep | bcf00660c |
+| L1-02 | transparent draws keep slot rows in a kept sequence | renderer.cpp | native shooter 0.153 → 0.151 ms (2 pairs) | main records 18k → 8k | reject (bookkeeping = savings) | b29914d5b, 11351dc0d |
+| L1-03 | a destroy evicts rows only when it was bindable | gpu_resources.cpp | native shooter recorded rows 2 → 0 (test) | web unchanged | keep | f1c4403b8 |
+| L1-04 | transparent draws record their own tail bundle; rows reuse last positions | renderer.cpp/.h | native shooter 0.142/0.143 → 0.115/0.116 ms (load 3-6) | Midway ratio unchanged (68%) | keep | 7f78a57f4 |
+| L1-05 | Phase 3 at 7f78a57f4 | — | Midway 0.180 → 0.066 ms mean (63%); shooter web turn 0.516 → 0.211 ms (59%); gate 80% | judge NEUTRAL; frame p50 not shown | gate deferred | 7f78a57f4 |
+

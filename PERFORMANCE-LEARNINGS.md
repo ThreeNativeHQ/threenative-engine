@@ -87,6 +87,24 @@ no COOP/COEP); that lane is open.
 
 ## Levers
 
+### 2026-10-27 — Recorded passes survive a camera turn (cached draw rows, indirect counts) — KEEP, gate DEFERRED
+- Where: `packages/runtime-native/src/engine/renderer/renderer.cpp`, PRD-754 (PRD-573 v3.2), branch
+  `lane/perf-stable-passes`, head `7f78a57f4`. Knob: `TN_STABLE_PASSES=0` (native), `?tnStablePasses=0` (web).
+- Port: UE 5.8.3 cached mesh draw commands. Opaque draws keep a row each (state-first order, a persistent uniform slot
+  per draw), out-of-view rows stay with 0 instances through `drawIndexedIndirect`, and the shadow, normal and velocity
+  passes replay bundles keyed like the main pass.
+- Ceiling: recording plus shadow encode, 0.33 ms a frame on Midway native and 0.85-1.16 ms on the shooter web turn.
+- Result (3 pairs, knob off then on): Midway native 0.164/0.165/0.212 → 0.044/0.061/0.094 ms (63%), order rebuilds
+  about 630 → 0; shooter web turn 0.721/0.387/0.440 → 0.243/0.163/0.228 ms (59%), order rebuilds 80-100 → 0.
+  `--gpu-calls` 184 → 46 WebGPU calls a frame. Judge NEUTRAL. The PRD gate asks an 80% fall, so it is Deferred.
+- Rejected inside the lever: keeping transparent draws as rows. Their depth order moves every turn, and the row
+  bookkeeping cost what the recording saved (native shooter 0.151 against 0.153 ms). They now record their own
+  bundle keyed as direct encode keys them (native shooter 0.115 against 0.142 ms).
+- Insight: a retained-row cache pays only where rows hold still. Count the share of draws whose order the camera can
+  move (transparent, depth-sorted) before porting a cache: for those, recording again is the cheaper path.
+- Left: the shooter's render database alternates its transparent batches between batched and unbatched frames, which
+  re-records the tail and adds first-seen rows (PRD-753). Frame p50/p95 needs quiet-host pairs.
+
 ### 2026-10-27 — Web engine bridge: keep what game code reads again (three-native back end) — KEEP
 - Where: `packages/three-native/src/browser-backend.ts`, PRD-748; commits `b088dc46f` (round 1) and the round-3 commit beside this entry.
 - Ceiling: the shooter census read 2,054 crossings per idle frame, at about 0.8 µs each; the top classes were
