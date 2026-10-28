@@ -78,7 +78,8 @@ using tn::engine::isSimilarityTransform;
 /**
  * PRD-753 sizing: each caller's full-scene walks, the nodes they visit and what sent them. Always counted
  * (an add per walk); `TN_PROJECTION_WALKS=1` (or a build with that definition, for the web Wasm) prints one
- * `TN_PROJECTION_WALKS {json}` line per 1,000 calls of a caller and starts its next window.
+ * `TN_PROJECTION_WALKS {json}` line per 1,000 calls of a caller and starts its next window; a larger value
+ * (`TN_PROJECTION_WALKS=200`) sets the window, for a host that renders too few frames to fill 1,000.
  */
 struct WalkCounters {
     enum Trigger { Hierarchy, Cadence, MinMeshes, Structure, Scene, Rig, kTriggers };
@@ -95,18 +96,24 @@ inline uint64_t& walkedNodes() {
     static uint64_t nodes = 0;
     return nodes;
 }
-inline bool walksReported() {
+/** The calls per printed window, or 0 when walks are not reported. */
+inline uint64_t walksWindow() {
 #ifdef TN_PROJECTION_WALKS
-    return true;
+    return 1000;
 #else
-    static const bool on = [] { const char* flag = std::getenv("TN_PROJECTION_WALKS"); return flag && std::strcmp(flag, "0") != 0; }();
-    return on;
+    static const uint64_t window = [] {
+        const char* flag = std::getenv("TN_PROJECTION_WALKS");
+        const long long n = flag ? std::atoll(flag) : 0;
+        return n <= 0 ? uint64_t(0) : n == 1 ? uint64_t(1000) : uint64_t(n);
+    }();
+    return window;
 #endif
 }
-/** Counts one call of `caller`; every 1,000th prints the window when reporting is on, then clears it. */
+/** Counts one call of `caller`; the window's last call prints it when reporting is on, then clears it. */
 inline void countWalkCall(WalkCaller caller) {
     WalkCounters& c = walkCounters(caller);
-    if (++c.calls < 1000 || !walksReported()) return;
+    const uint64_t window = walksWindow();
+    if (++c.calls < window || window == 0) return;
     static const char* names[] = {"hierarchy", "cadence", "minMeshes", "structure", "scene", "rig"};
     std::string by[2];
     for (int k = 0; k < 2; ++k) {
