@@ -349,6 +349,17 @@ test("preserves starter state and stays flat across ten real HMR updates", async
       }`,
     );
   }
+  // The HUD reads nothing until the first boot lifts its startup cover (PRD-748), tens of seconds
+  // after the player lands on a software rasteriser: wait for it, as the playtest runner does,
+  // before the score is read.
+  await page.waitForFunction(() => {
+    const bridge = (
+      window as Window & {
+        __THREENATIVE_PLAYTEST_BRIDGE__?: { ready?: () => { startup?: { revealed?: boolean } } };
+      }
+    ).__THREENATIVE_PLAYTEST_BRIDGE__;
+    return bridge?.ready?.().startup?.revealed !== false;
+  });
   await page.keyboard.down("ArrowRight");
   try {
     await advanceFixedTicks(page, 150);
