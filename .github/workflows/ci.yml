@@ -1481,6 +1481,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # As in scope: this job reads commits and a few workflow files (`git show`, fetched on
+          # demand), so it fetches no history blobs and fits its 5 minutes on a loaded runner.
+          filter: blob:none
           ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - name: Reject every unsuccessful or missing selected job
         env:
