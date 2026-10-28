@@ -104,6 +104,8 @@ export class FpsPlayer {
   /** Set by the scene: fired each time a stride completes, so footsteps keep pace with speed. */
   onFootstep: ((sprinting: boolean) => void) | undefined;
   #camera: PerspectiveCamera;
+  #aimOrigin = new Vector3();
+  #aimDirection = new Vector3(0, 0, -1);
   #fov: number = FIRST_PERSON.hipFov;
   #lastX: number = SPAWN.x;
   #lastZ: number = SPAWN.z;
@@ -145,13 +147,14 @@ export class FpsPlayer {
     };
   }
 
-  /** The camera basis is the single source of aim truth, including hit shake. */
+  /**
+   * The camera basis is the single source of aim truth, including hit shake. It is the pose
+   * `syncCamera` last placed the camera at, kept here: the camera hangs off the scene root, so its
+   * placement is its world pose, and reading it back walked the camera and the viewmodel under it.
+   * `recordFiringDirection` still reads the camera itself, so `aimDivergenceDeg` checks this copy.
+   */
   aimRay(): { origin: Vector3; direction: Vector3 } {
-    this.#camera.updateMatrixWorld(true);
-    return {
-      origin: this.#camera.getWorldPosition(new Vector3()),
-      direction: this.#camera.getWorldDirection(new Vector3()).normalize(),
-    };
+    return { origin: this.#aimOrigin.clone(), direction: this.#aimDirection.clone() };
   }
 
   /** Capture the direction actually used for a shot and the camera basis at that same instant. */
@@ -170,7 +173,7 @@ export class FpsPlayer {
       this.viewRisePeak = Math.max(this.viewRisePeak, Math.abs(this.#view.y - before));
     }
     this.#viewOffset = this.#view.y - bodyY;
-    applyFirstPerson(this.#camera, {
+    const rotation = applyFirstPerson(this.#camera, {
       ...eye,
       y: eye.y + this.#viewOffset,
       yaw: this.look.yaw,
@@ -178,6 +181,8 @@ export class FpsPlayer {
       shake: this.#shake,
       phase: this.#shakePhase,
     });
+    this.#aimOrigin.set(eye.x, eye.y + this.#viewOffset, eye.z);
+    this.#aimDirection.set(0, 0, -1).applyEuler(rotation);
   }
 
   update(ctx: GameCtx, dt: number, canAim: boolean): void {

@@ -2,9 +2,11 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  Camera,
   Group,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
   OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
@@ -51,6 +53,7 @@ const COMBAT_CLIPS = [
 ] as const;
 
 const probeState = vi.hoisted(() => ({
+  colliderReads: 0,
   vector2Allocations: 0,
   vector3Allocations: 0,
   vector3Clones: 0,
@@ -89,8 +92,37 @@ vi.mock("@threenative/core", async (importOriginal) => {
   return { ...actual, AudioBus: FixtureAudioBus };
 });
 vi.mock("@threenative/physics", () => import("../../physics/src/index.js"));
+// Every read of a town collider's bounds, so a navigation query's scan of the whole town shows.
+vi.mock("../templates/shooter/src/render/town.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../templates/shooter/src/render/town.js")>();
+  const counted = <T extends object>(value: T): T =>
+    new Proxy(value, {
+      get(target, key, receiver) {
+        if (key === "min" || key === "max") probeState.colliderReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+  return {
+    ...actual,
+    buildTown: (...args: Parameters<typeof actual.buildTown>) => {
+      const town = actual.buildTown(...args);
+      return { ...town, colliders: town.colliders.map(counted) };
+    },
+  };
+});
 
 const WARMUP_FRAMES = 30;
+/** The `Object3D` calls that walk a node's ancestors, which on the engine are each a crossing. */
+const WORLD_WALKS = [
+  "getWorldDirection",
+  "getWorldPosition",
+  "getWorldQuaternion",
+  "getWorldScale",
+  "localToWorld",
+  "updateMatrixWorld",
+  "updateWorldMatrix",
+  "worldToLocal",
+] as const;
 const MEASURED_FRAMES = 600;
 const DT = 1 / 60;
 
@@ -713,6 +745,63 @@ describe("generated template ordinary-frame runtime cost", () => {
       );
     } finally {
       defensePhysics.dispose();
+    }
+  });
+
+  it("runs the shooter's firefight frame without engine walks for constants", async () => {
+    const { Play } = await import("../templates/shooter/src/scenes/Play.js");
+    const { ENEMY_CLIPS } = await import("../templates/shooter/src/entities/Enemy.js");
+    const physics = await physicsFixture();
+    const entities = new Registry();
+    const base = sceneContext(physics.physics, Play.initialState);
+    const viewport = { ...base.viewport, size: { height: 900, width: 1600 } };
+    const context = { ...base, entities, viewport };
+    const play = new Play();
+    try {
+      await play.load({
+        ...context,
+        assets: {
+          ...context.assets,
+          model: async <T>(): Promise<T> => templatedRig(ENEMY_CLIPS) as T,
+        },
+      } as never);
+      const frame = play.enter(context as never);
+      // On the engine each of these is a call into Wasm that walks the node's ancestors. Count the
+      // ones the kit's own code starts, by the kit line that starts them.
+      const walks = new Map<string, number>();
+      const restore: Array<() => void> = [];
+      // `Camera` overrides two of them, so its own copies are counted too.
+      for (const owner of [Object3D.prototype, Camera.prototype] as Record<string, unknown>[]) {
+        for (const name of WORLD_WALKS) {
+          if (!Object.hasOwn(owner, name)) continue;
+          const original = owner[name] as (...args: unknown[]) => unknown;
+          owner[name] = function (this: unknown, ...args: unknown[]) {
+            const caller = new Error().stack?.split("\n")[2] ?? "";
+            const site = /at (\S+) .*templates\/shooter\/src\/(.+?):(\d+)/.exec(caller);
+            if (site !== null) {
+              const key = `${name} ${site[1]} ${site[2]}:${site[3]}`;
+              walks.set(key, (walks.get(key) ?? 0) + 1);
+            }
+            return original.apply(this, args);
+          };
+          restore.push(() => {
+            owner[name] = original;
+          });
+        }
+      }
+      try {
+        runSceneFrames(frame, context, () => {
+          walks.clear();
+          probeState.colliderReads = 0;
+        });
+      } finally {
+        for (const undo of restore) undo();
+      }
+      console.log("PROBE", probeState.colliderReads / MEASURED_FRAMES, [...walks].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${(v / MEASURED_FRAMES).toFixed(2)} ${k}`));
+    } finally {
+      play.exit();
+      entities.clear();
+      physics.dispose();
     }
   });
 
