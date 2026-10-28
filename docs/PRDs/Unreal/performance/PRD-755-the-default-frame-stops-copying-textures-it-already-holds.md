@@ -26,8 +26,8 @@ The resolve and the post targets do the same work with no history copy and no ex
 
 ### Phase 1: The resolve swaps its history
 
-- [ ] The colour history and the motion mask are swapped each frame instead of copied, and the resolve writes the next history directly. A counter reports the resolve's texture copies per frame. proof: a new ctest, red at 3 copies a frame, green at 0 (or 1 if the scene depth stays a copy, with the reason here); every `native_engine_traa_*` ctest passes with unchanged metric values.
-- [ ] The resolved frame is bit-identical to the copy path over 60 frames of a moving scene. proof: a ctest that reads back both paths.
+- [x] The colour history and the motion mask are swapped each frame instead of copied, and the resolve writes the next history directly. A counter reports the resolve's texture copies per frame. proof: a new ctest, red at 3 copies a frame, green at 0 (or 1 if the scene depth stays a copy, with the reason here); every `native_engine_traa_*` ctest passes with unchanged metric values. Result (`aecafb9ba`): `native_engine_traa_history_swap` red `steady=3 (colour 1, depth 1, mask 1)`, green `steady=1 (colour 0, depth 1, mask 0)`, also into a caller's target. The depth stays one copy: it is the caller's scene depth, which the resolve only samples. With a caller target, the next history is a third colour attachment (one 8 B/px write in place of an 8 B/px read plus write). `ctest -R "native_engine_traa|native_engine_renderer|velocity_needs_traa"` 95/95 (93/93 before, metric lines unchanged), rerun by the lead.
+- [x] The resolved frame is bit-identical to the copy path over 60 frames of a moving scene. proof: a ctest that reads back both paths. Result: `native_engine_traa_history_swap_is_bit_identical` `120 frames compared, 0 differing`; with the swap undone, 118 differ, so the check is not vacuous.
 
 ### Phase 2: A post target draws without the extra output pass
 
@@ -44,5 +44,7 @@ The resolve and the post targets do the same work with no history copy and no ex
 Every box above is ticked.
 
 ## Decisions
+
+- 2026-10-27, lead: with no caller target the resolve still writes a third attachment beside `resolve_`. Resolving straight into the next history slot would remove that write too, at the cost of a second pipeline. Left for Phase 3's measurement to price.
 
 ## Blocked on
