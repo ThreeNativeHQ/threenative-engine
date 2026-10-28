@@ -2872,6 +2872,82 @@ void stablePassesMatchDirect() {
     CHECK(stableStats[1].shadowRecorded == 0 && stableStats[2].shadowRecorded == 0);
 }
 
+// PRD-754: a camera that turns in place culls meshes in and out of view, batched and unbatched. Once each draw has
+// been seen, a second lap records nothing in the main pass (rows out of view keep their place with no instances), and
+// every frame draws the pixels and three's Info of the depth-order path that re-records.
+void cameraCull() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Scene scene;
+    auto light = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 2.0);
+    light->position.set(2, 6, 4);
+    scene.add(*light);
+    auto box = makeBoxGeometry(0.6, 0.6, 0.6);
+    auto shared = std::make_shared<Material>(MaterialType::Standard);
+    shared->color.setHex(0x88aacc);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 48; ++i) {  // one batch per material: a ring of boxes around the camera
+        const double a = i * 2 * M_PI / 48 + 0.35 * std::sin(i * 1.7);  // uneven, so each step sees another count
+        auto mesh = std::make_shared<Mesh>(box, i % 3 ? shared : std::make_shared<Material>(MaterialType::Lambert));
+        mesh->position.set(8 * std::cos(a), 0.3 * (i % 4), 8 * std::sin(a));
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    for (int i = 0; i < 6; ++i) {  // unbatched: each its own geometry
+        const double a = (i + 0.5) * 2 * M_PI / 6;
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setHex(0x553311u + 0x112233u * uint32_t(i));
+        auto mesh = std::make_shared<Mesh>(makeSphereGeometry(0.4 + 0.1 * i, 12, 8), material);
+        mesh->position.set(5 * std::cos(a), 1, 5 * std::sin(a));
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    PerspectiveCamera camera(50, 4.0 / 3, 0.1, 100);
+    const auto pose = [&](int step) {
+        const double yaw = step * 2 * M_PI / 16;
+        camera.position.set(0, 1, 0);
+        camera.lookAt(std::cos(yaw), 1, std::sin(yaw));
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+    };
+    struct Frame { std::vector<uint8_t> pixels; Renderer::FrameStats stats; std::size_t batches; };
+    const auto laps = [&](bool stable) {
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(160, 120);
+        renderer.setStablePasses(stable);
+        RenderDatabase database;
+        std::vector<Frame> frames;
+        for (int step = 0; step < 32; ++step) {
+            pose(step % 16);
+            database.render(renderer, scene, camera);
+            frames.push_back({read(renderer, events), renderer.lastFrame(), database.lastBatches().first});
+        }
+        return frames;
+    };
+    const auto direct = laps(false), stable = laps(true);
+    std::size_t differ = 0, covered = 0;
+    uint32_t firstLap = 0, secondLap = 0, directRecorded = 0, batches = 0;
+    for (std::size_t f = 0; f < direct.size(); ++f) {
+        CHECK(direct[f].pixels.size() == stable[f].pixels.size() && !direct[f].pixels.empty());
+        for (std::size_t p = 0; p + 3 < direct[f].pixels.size() && direct[f].pixels.size() == stable[f].pixels.size(); p += 4) {
+            const auto& d = direct[f].pixels;
+            const auto& t = stable[f].pixels;
+            differ += d[p] != t[p] || d[p + 1] != t[p + 1] || d[p + 2] != t[p + 2];
+            covered += d[p] + d[p + 1] + d[p + 2] > 0;
+        }
+        CHECK(direct[f].stats.draws == stable[f].stats.draws && direct[f].stats.triangles == stable[f].stats.triangles);
+        (f < 16 ? firstLap : secondLap) += stable[f].stats.mainRecorded;
+        if (f >= 16) directRecorded += direct[f].stats.mainRecorded;
+        batches += uint32_t(stable[f].batches);
+    }
+    std::printf("camera cull: %zu covered pixels, %zu differ; second lap records %u stable, %u direct (first lap %u); %u batch draws\n",
+                covered, differ, secondLap, directRecorded, firstLap, batches);
+    CHECK(covered > 20000 && differ == 0);
+    CHECK(directRecorded > 0);
+    CHECK(secondLap == 0);
+}
+
 // PRD-518 box 38: the same animated poses and refusals, with batching on and off, including shadows.
 void skinnedCrowdPixels() {
     mystral::webgpu::Context context;
@@ -6291,7 +6367,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_lod_rung", virtualSunLodRung},
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 

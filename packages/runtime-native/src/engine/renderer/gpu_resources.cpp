@@ -410,6 +410,7 @@ GpuStatus GpuResources::destroy(Handle resource) {
     GpuStatus status;
     Record* target = record(resource, resource.type, status);
     if (!target) return status;
+    destroyRequests.fetch_add(1, std::memory_order_relaxed);
     handles_.release(resource);
     // Any submission so far may read it; it is freed once the last of them has completed.
     {

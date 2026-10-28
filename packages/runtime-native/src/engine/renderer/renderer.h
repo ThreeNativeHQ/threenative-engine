@@ -752,6 +752,10 @@ private:
     struct FrameJob;
     void encodeFrame(FrameJob& job);
     std::unique_ptr<FrameJob> job_;
+    /** PRD-754: the main pass's draws, kept past the frames they are out of view (see renderer.cpp). */
+    struct MainRow;
+    struct MainRows;
+    std::unique_ptr<MainRows> mainRows_;
     bool pendingEncode_ = false;
     std::atomic<bool> encoding_{false};
     mutable std::mutex frameMailMutex_;

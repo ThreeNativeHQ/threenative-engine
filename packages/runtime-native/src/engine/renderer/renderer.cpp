@@ -452,6 +452,44 @@ struct Renderer::Planned {
     double instanceBase = 0;  // a shadow draw's slice in the packed instance storage
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
+    uint64_t slot = 0;  // a main draw's uniform slot (PRD-754), 0 when its blocks were appended
+};
+
+/**
+ * PRD-754: one main-pass draw as the bundle records it, resolved from its Planned entry while that frame's stores were
+ * live. A draw out of view keeps its row with no instances, drawn through drawIndexedIndirect, so the bundle holds
+ * while the visible set changes (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/MeshDrawCommands.cpp keeps cached
+ * draw commands across frames and only the visible set and instance counts change). The handles are raw: the current
+ * bundle keeps every row's objects alive, and the rows out of view go when any GPU resource is destroyed.
+ */
+struct Renderer::MainRow {
+    bool background = false, transparent = false;
+    int renderOrder = 0;
+    MaterialKind kind = MaterialKind::Standard;
+    uint8_t side = 0;
+    uintptr_t material = 0, positions = 0, indices = 0;
+    uint64_t id = 0, slot = 0;
+    WGPURenderPipeline pipeline = nullptr;
+    WGPUBindGroup vertexGroup = nullptr, mapGroup = nullptr;
+    uint32_t vertexOffset = 0, fragmentOffset = 0;
+    bool fragmentBlock = false;
+    struct Vertex { uint32_t location; WGPUBuffer buffer; uint64_t offset, size; };
+    std::vector<Vertex> vertex;
+    WGPUBuffer index = nullptr;
+    WGPUIndexFormat indexFormat = WGPUIndexFormat_Undefined;
+    uint64_t indexSize = 0;
+    uint32_t count = 0;      // indices, or vertices for a non-indexed draw
+    uint32_t instances = 0;  // this frame's; 0 while out of view
+    uint64_t seen = 0;
+    // sortDraws' state order: the background first, then renderOrder, then state.
+    auto order() const { return std::make_tuple(!background, renderOrder, kind, side, material, positions, indices, id, slot); }
+};
+
+struct Renderer::MainRows {
+    std::unordered_map<uint64_t, MainRow> bySlot;
+    uint64_t frame = 0, destroys = 0;
+    Handle indirect{};
+    uint64_t capacity = 0;
 };
 
 struct Renderer::ShadowPass {
@@ -492,6 +530,13 @@ struct Renderer::FrameJob {
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
     std::vector<uint64_t> bundleKey, auxKey, velocityKey;
     std::vector<uint32_t> bundleRows;  // where each main draw's key row starts (Renderer::recordCause)
+    // PRD-754: the main pass as retained rows (state order, then transparent draws), and three's Info for its visible draws.
+    bool rowsMode = false;
+    std::vector<Renderer::MainRow> rows;
+    WGPUBuffer indirect = nullptr;
+    uint32_t rowDraws = 0;
+    uint64_t rowTriangles = 0;
+    Renderer::FrameStats::SkinnedPass rowSkinned{};
     std::vector<std::vector<uint64_t>> shadowKeys;
 };
 
@@ -1665,6 +1710,7 @@ void Renderer::dropBundles() {
     for (ShadowBundle& shadow : shadowBundles_)
         if (shadow.bundle) wgpuRenderBundleRelease(shadow.bundle);
     shadowBundles_.clear();
+    if (mainRows_) mainRows_->bySlot.clear();  // the main bundle kept their objects alive
 }
 
 void Renderer::releaseMaterialTextures() {
@@ -3120,13 +3166,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     } else {
         frameUniforms_.clear();
     }
-    const auto uniformBlocks = [&](uint64_t key, uint64_t bytes) -> uint64_t {
-        if (!stablePasses_ || key == 0) {
+    const auto uniformBlocks = [&](uint64_t slotKey, uint64_t bytes) -> uint64_t {
+        if (slotKey == 0) {
             const uint64_t at = frameUniforms_.size();
             frameUniforms_.resize(at + bytes, 0);
             return at;
         }
-        const uint64_t slotKey = key * 0x9e3779b97f4a7c15ull + slotUses_[key]++;
         auto slot = uniformSlots_.find(slotKey);
         if (slot != uniformSlots_.end() && slot->second.bytes != bytes) {
             freeSlots_[slot->second.bytes].push_back(slot->second.offset);
@@ -3187,7 +3232,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
             if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; }
         }
-        const uint64_t v = uniformBlocks(item.key, aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize));
+        const uint64_t slotKey = stablePasses_ && item.key ? item.key * 0x9e3779b97f4a7c15ull + slotUses_[item.key]++ : 0;
+        const uint64_t v = uniformBlocks(slotKey, aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize));
         const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
         const auto* vs = program.vertexSlots;
         const auto* fs = program.fragmentSlots;
@@ -3307,6 +3353,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
         putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
+        plan.back().slot = slotKey;
     }
 
     if (stablePasses_ && !compilation)
@@ -4111,6 +4158,108 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.bundleKey.push_back(static_cast<std::size_t>(
         std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
         plan.begin()));
+    // PRD-754: the main pass as retained rows, while every opaque draw is order-free and none reads the viewport.
+    job.rowsMode = false;
+    if (!mainRows_) mainRows_ = std::make_unique<MainRows>();
+    MainRows& retained = *mainRows_;
+    if (stablePasses_ && !compilation && job.bundleKey.back() == plan.size() &&
+        std::all_of(plan.begin(), plan.end(), [](const Planned& p) {
+            const DrawItem& i = *p.item;
+            return i.transparent || i.background || (i.depthWrite && i.colorWrite);
+        })) {
+        job.rowsMode = true;
+        const uint64_t destroys = GpuResources::destroyRequests.load(std::memory_order_relaxed);
+        const bool destroyed = destroys != retained.destroys;
+        retained.destroys = destroys;
+        ++retained.frame;
+        job.rowDraws = 0; job.rowTriangles = 0; job.rowSkinned = {};
+        std::vector<MainRow> loose;  // transparent draws and draws with no slot: this frame only, in plan order
+        for (const Planned& p : plan) {
+            const DrawItem& item = *p.item;
+            MainRow row;
+            row.background = item.background; row.transparent = item.transparent; row.renderOrder = item.renderOrder; row.kind = item.kind; row.side = item.side;
+            row.material = reinterpret_cast<uintptr_t>(item.material); row.positions = reinterpret_cast<uintptr_t>(item.positions);
+            row.indices = reinterpret_cast<uintptr_t>(item.indices); row.id = item.id; row.slot = p.slot;
+            row.pipeline = p.pipeline;
+            row.vertexGroup = p.vertexGroup ? p.vertexGroup : p.program->groups[0];
+            if (row.vertexGroup == nullptr && !p.program->vertex.bindings.empty())
+                throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no vertex bind group");
+            row.mapGroup = p.mapGroup ? p.mapGroup : p.program->groups[1];
+            if (row.mapGroup == nullptr && !p.program->fragment.bindings.empty())
+                throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no fragment bind group");
+            row.vertexOffset = p.vertexOffset; row.fragmentOffset = p.fragmentOffset;
+            row.fragmentBlock = p.program->fragment.uniformBlockSize != 0;
+            for (const shader::VertexAttribute& a : p.program->vertex.attributes) {
+                const bool column = a.name.rfind("instanceMatrix", 0) == 0;  // the columns of one buffer of mat4s
+                BufferStore* source = vertexSourceOf(item, a);
+                if (!source) throw std::runtime_error("TN_NATIVE_ATTRIBUTE_MISSING: " + a.name);
+                const uint64_t offset = column ? uint64_t(a.name.back() - '0') * 16 : 0;
+                const auto resolved = geometry_->cache.resolved(*source);
+                row.vertex.push_back({a.location, geometry_->gpu.buffer(resolved.buffer), offset, resolved.bytes - offset});
+            }
+            if (item.indices) {
+                const auto indices = geometry_->cache.resolved(*item.indices);
+                const bool wide = indices.scalar == Scalar::U32;
+                row.index = geometry_->gpu.buffer(indices.buffer);
+                row.indexFormat = wide ? WGPUIndexFormat_Uint32 : WGPUIndexFormat_Uint16;
+                row.indexSize = (indices.bytes + 3) & ~uint64_t{3};
+                row.count = static_cast<uint32_t>(indices.bytes / (wide ? 4 : 2));
+            } else {
+                row.count = static_cast<uint32_t>(geometry_->cache.resolved(*item.positions).bytes / 12);
+            }
+            row.instances = item.instanceCount;
+            row.seen = retained.frame;
+            // three's Info.update, as encode counts a recorded draw
+            ++job.rowDraws;
+            job.rowTriangles += uint64_t{item.instanceCount} * (row.count / 3);
+            if (item.boneMatrices) {
+                ++job.rowSkinned.draws;
+                if (item.boneStride) { ++job.rowSkinned.batches; job.rowSkinned.instances += item.instanceCount; }
+                else ++job.rowSkinned.exactDraws;
+            }
+            if (!item.transparent && p.slot) retained.bySlot[p.slot] = std::move(row);
+            else loose.push_back(std::move(row));
+        }
+        // A row out of view keeps its place with no instances, until it ages out or any GPU resource is destroyed.
+        for (auto it = retained.bySlot.begin(); it != retained.bySlot.end();) {
+            MainRow& row = it->second;
+            if (row.seen == retained.frame) { ++it; continue; }
+            if (destroyed || retained.frame - row.seen > kSlotFrames) { it = retained.bySlot.erase(it); continue; }
+            row.instances = 0;
+            ++it;
+        }
+        job.rows.clear();
+        for (const auto& [slot, row] : retained.bySlot) job.rows.push_back(row);
+        std::vector<MainRow> transparent;
+        for (MainRow& row : loose) (row.transparent ? transparent : job.rows).push_back(std::move(row));
+        std::sort(job.rows.begin(), job.rows.end(), [](const MainRow& a, const MainRow& b) { return a.order() < b.order(); });
+        for (MainRow& row : transparent) job.rows.push_back(std::move(row));
+        // One indirect record per row: count, instances, then zero first index, base vertex and first instance.
+        std::vector<uint32_t> args(job.rows.size() * 5, 0);
+        for (std::size_t r = 0; r < job.rows.size(); ++r) { args[r * 5] = job.rows[r].count; args[r * 5 + 1] = job.rows[r].instances; }
+        const uint64_t bytes = std::max<uint64_t>(args.size() * 4, 20);
+        if (bytes > retained.capacity) {
+            if (retained.capacity) gpu_.destroy(retained.indirect);
+            retained.capacity = std::max<uint64_t>(bytes * 2, 4096);
+            retained.indirect = gpu_.createBuffer(retained.capacity, WGPUBufferUsage_Indirect | WGPUBufferUsage_CopyDst);
+        }
+        job.indirect = gpu_.buffer(retained.indirect);
+        if (!args.empty()) gpu_.writeBuffer(retained.indirect, 0, args.data(), args.size() * 4);
+        // The key: each row's commands without its instance count, then the indirect buffer.
+        job.bundleKey.clear(); job.bundleRows.clear();
+        for (const MainRow& row : job.rows) {
+            job.bundleRows.push_back(static_cast<uint32_t>(job.bundleKey.size()));
+            job.bundleKey.insert(job.bundleKey.end(), {reinterpret_cast<uintptr_t>(row.pipeline),
+                reinterpret_cast<uintptr_t>(row.vertexGroup), reinterpret_cast<uintptr_t>(row.mapGroup),
+                row.vertexOffset, row.fragmentOffset, uint64_t(row.fragmentBlock),
+                reinterpret_cast<uintptr_t>(row.index), uint64_t(row.indexFormat), row.indexSize, row.count});
+            for (const auto& v : row.vertex)
+                job.bundleKey.insert(job.bundleKey.end(), {v.location, reinterpret_cast<uintptr_t>(v.buffer), v.offset, v.size});
+        }
+        job.bundleKey.push_back(reinterpret_cast<uintptr_t>(job.indirect));
+    } else {
+        retained.bySlot.clear();  // the next record may release what they hold
+    }
     // A post pass's resolution scale and uniform nodes are the game's to write: read them now, encode uses the copy.
     if (postEffects_ && postEffects_->syncScales()) releaseOutputGroup();
     for (const auto& target : rttTargets_) {
@@ -4386,7 +4535,56 @@ void Renderer::encodeFrame(FrameJob& job) {
         std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
         plan.begin());
     const std::vector<uint64_t>& bundleKey = job.bundleKey;
-    if (!mainBundle_ || bundleKey != mainBundleKey_) {
+    if (job.rowsMode) {
+        if (!mainBundle_ || viewportBundle_ || bundleKey != mainBundleKey_) {
+            const auto cause = recordCause(mainBundleKey_, mainBundleRows_, bundleKey, job.bundleRows);
+            const double recordStarted = meterMs();
+            WGPURenderBundleEncoderDescriptor descriptor{};
+            const WGPUTextureFormat color = sceneFormat_;
+            descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
+            descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
+            const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
+            WGPURenderPipeline pipeline = nullptr;
+            WGPUBuffer vertexBuffers[16] = {}, index = nullptr;
+            uint64_t vertexOffsets[16] = {};
+            for (std::size_t r = 0; r < job.rows.size(); ++r) {
+                const MainRow& row = job.rows[r];
+                if (row.pipeline != pipeline) {
+                    wgpuRenderBundleEncoderSetPipeline(bundle, pipeline = row.pipeline);
+                    std::fill(std::begin(vertexBuffers), std::end(vertexBuffers), nullptr);
+                    index = nullptr;
+                }
+                for (const auto& v : row.vertex) {
+                    if (v.location < 16 && vertexBuffers[v.location] == v.buffer && vertexOffsets[v.location] == v.offset) continue;
+                    wgpuRenderBundleEncoderSetVertexBuffer(bundle, v.location, v.buffer, v.offset, v.size);
+                    if (v.location < 16) { vertexBuffers[v.location] = v.buffer; vertexOffsets[v.location] = v.offset; }
+                }
+                wgpuRenderBundleEncoderSetBindGroup(bundle, 0, row.vertexGroup, 1, &row.vertexOffset);
+                wgpuRenderBundleEncoderSetBindGroup(bundle, 1, row.mapGroup, row.fragmentBlock ? 1 : 0, &row.fragmentOffset);
+                if (row.index) {
+                    if (index != row.index) wgpuRenderBundleEncoderSetIndexBuffer(bundle, index = row.index, row.indexFormat, 0, row.indexSize);
+                    wgpuRenderBundleEncoderDrawIndexedIndirect(bundle, job.indirect, r * 20);
+                } else {
+                    wgpuRenderBundleEncoderDrawIndirect(bundle, job.indirect, r * 20);
+                }
+            }
+            WGPURenderBundleDescriptor finish{};
+            const WGPURenderBundle recorded = wgpuRenderBundleEncoderFinish(bundle, &finish);
+            wgpuRenderBundleEncoderRelease(bundle);
+            if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);  // after the record: the new bundle holds the rows' objects
+            if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
+            mainBundle_ = recorded;
+            viewportBundle_ = nullptr;
+            lastFrame_.mainRecorded = uint32_t(job.rows.size());
+            lastFrame_.recordCause = cause;
+            lastFrame_.recordMs += meterMs() - recordStarted;
+            mainBundleKey_ = std::move(job.bundleKey);
+            mainBundleRows_ = std::move(job.bundleRows);
+        }
+        lastFrame_.draws = job.rowDraws;
+        lastFrame_.triangles = job.rowTriangles;
+        lastFrame_.mainSkinned = job.rowSkinned;
+    } else if (!mainBundle_ || bundleKey != mainBundleKey_) {
         if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
         if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
         mainBundle_ = viewportBundle_ = nullptr;

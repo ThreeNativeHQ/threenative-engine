@@ -2984,6 +2984,65 @@ void cameraTurnRecords() {
     }
 }
 
+// PRD-754: a draw that leaves the frame (the render database culled it) keeps its row in the main bundle with no
+// instances, so the visible set changing records nothing; the pixels and three's Info match the depth-order path that
+// re-records, and the draw coming back records nothing either.
+void cullKeepsMainBundle() {
+    using R = Renderer;
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const std::array geometries = {plane(1, 1), plane(1, 2), plane(2, 1)};
+    std::array<shader::StandardMaterial, 3> materials;
+    materials[0].color = {1, 0, 0}; materials[1].color = {0, 1, 0}; materials[2].color = {0, 0, 1};
+    std::array<DrawItem, 3> all;
+    const double x[3] = {-2.5, 0, 2.5};
+    for (int i = 0; i < 3; ++i) {
+        all[i].key = all[i].id = uint64_t(i + 1);
+        all[i].kind = MaterialKind::Basic;
+        all[i].positions = &geometries[i]->positions; all[i].indices = &geometries[i]->indices;
+        all[i].material = &materials[i];
+        all[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x[i], 0, 0, 1};
+    }
+    const std::vector<DrawItem> three(all.begin(), all.end()), two{all[0], all[2]};
+    struct Seen { std::vector<uint8_t> pixels; uint32_t recorded, draws; uint64_t triangles; };
+    const auto run = [&](bool stable) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(32, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setStablePasses(stable);
+        const auto frame = [&](const std::vector<DrawItem>& items) {
+            renderer.render(std::span<const DrawItem>(items), camera(1), LightState{}, {0, 0, 0, 1});
+            const auto& f = renderer.lastFrame();
+            return Seen{read(renderer, events), f.mainRecorded, f.draws, f.triangles};
+        };
+        for (int i = 0; i < 3; ++i) frame(three);
+        std::vector<Seen> seen{frame(two), frame(two), frame(three)};
+        return seen;
+    };
+    const auto direct = run(false), stable = run(true);
+    for (std::size_t k = 0; k < direct.size(); ++k) {
+        std::size_t covered = 0, differ = 0;
+        for (std::size_t p = 0; p + 3 < direct[k].pixels.size(); p += 4) {
+            const bool lit = direct[k].pixels[p] || direct[k].pixels[p + 1] || direct[k].pixels[p + 2];
+            covered += lit;
+            differ += !std::equal(direct[k].pixels.begin() + std::ptrdiff_t(p), direct[k].pixels.begin() + std::ptrdiff_t(p + 4),
+                                  stable[k].pixels.begin() + std::ptrdiff_t(p));
+        }
+        std::printf("cull frame %zu: %zu covered pixels, %zu differ; recorded %u direct, %u stable; draws %u/%u, triangles %llu/%llu\n",
+                    k, covered, differ, direct[k].recorded, stable[k].recorded, direct[k].draws, stable[k].draws,
+                    (unsigned long long)direct[k].triangles, (unsigned long long)stable[k].triangles);
+        CHECK(!direct[k].pixels.empty() && direct[k].pixels.size() == stable[k].pixels.size());
+        CHECK(covered > 0 && differ == 0);
+        CHECK(direct[k].draws == stable[k].draws && direct[k].triangles == stable[k].triangles);
+        CHECK(stable[k].recorded == 0);
+    }
+    CHECK(direct[0].recorded == 2 && direct[2].recorded == 3 && direct[2].draws == direct[0].draws + 1);
+    (void)sizeof(R);
+}
+
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }
 
@@ -3133,7 +3192,7 @@ void auxTargetsAlphaTested() {
 
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

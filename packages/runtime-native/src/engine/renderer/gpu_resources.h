@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>  // TN_WORKER_ONLY: GpuThread parks its worker and joins one frame
 #include <cstdint>
 #include <deque>
@@ -114,6 +115,9 @@ public:
 
     /** The handle dies now; the GPU object lives until every submission so far has completed. */
     GpuStatus destroy(Handle resource);
+    /** Every destroy any table was asked for. A cache that holds handles past their frame (PRD-754's retained main
+     *  rows) drops what it holds when this moves, since a recorded bundle must not bind a destroyed resource. */
+    static inline std::atomic<uint64_t> destroyRequests{0};
     /** One serial with `other`, a table on the same queue: a destroy here waits for its submissions too. */
     void shareSubmissions(const GpuResources& other) { shared_ = other.shared_; }
 

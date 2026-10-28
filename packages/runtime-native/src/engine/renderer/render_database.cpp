@@ -1067,7 +1067,6 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     }
     absorbed_.assign(items.size(), false);
     merged_.clear();
-    batchParams_.resize(batchGroupsList_.size());
     for (const std::vector<std::size_t>& g : batchGroupsList_) {
         const bool skinned = items[g.front()].skinnedRig != nullptr;
         if (!skinned && g.size() < kMinBatchMembers)
@@ -1079,9 +1078,9 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             palette = skinnedPalettes_.back().get();
             palette->begin();
         }
-        if (batchStores_.size() <= batchGroups_)
-            batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
-        const auto slot = batchGroups_++;
+        ++batchGroups_;
+        const auto slot = batchSlot(uint64_t{1} << 63 | uint64_t(&g - batchGroupsList_.data()));
+        while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         BufferStore& store = *batchStores_[slot];
         if (store.count() != g.size() * 16)
             store.resize(g.size() * 16);
@@ -1130,6 +1129,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (uniform) {
             batchColors_[slot]->needsUpdate();
             d.instanceColors = batchColors_[slot].get();
+            if (batchParams_.size() <= slot) batchParams_.resize(slot + 1);
             auto& params = batchParams_[slot];
             params = *d.material;
             params.color = {1, 1, 1};
@@ -1190,6 +1190,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
         const auto found = std::find_if(bucket.begin(), bucket.end(), same);
         if (found == bucket.end()) {
             group = meshGroupCount_++;
+            const uint64_t identity = uint64_t(hash) * 0x9e3779b97f4a7c15ull + bucket.size();
             bucket.push_back(group);
             if (group == meshGroups_.size()) meshGroups_.push_back({geometry, {}});
             else {
@@ -1198,6 +1199,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
                 reused.members.clear();
                 reused.orderedIds = true;
             }
+            meshGroups_[group].identity = identity;
         } else
             group = *found;
         lastMeshGroup_ = group;
@@ -1218,6 +1220,21 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
     batchRgb_.push_back({static_cast<float>(mesh.material->color.r), static_cast<float>(mesh.material->color.g),
                          static_cast<float>(mesh.material->color.b)});
     batchTransforms_.push_back(packed);
+}
+
+std::size_t RenderDatabase::batchSlot(uint64_t identity) {
+    auto [slot, fresh] = batchSlotOf_.try_emplace(identity, 0);
+    if (fresh) {
+        if (batchSlotFree_.empty()) {
+            slot->second = batchSlotSeen_.size();
+            batchSlotSeen_.push_back(0);
+        } else {
+            slot->second = batchSlotFree_.back();
+            batchSlotFree_.pop_back();
+        }
+    }
+    batchSlotSeen_[slot->second] = frame_;
+    return slot->second;
 }
 
 void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
@@ -1281,7 +1298,6 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             at = end;
         }
     }
-    batchParams_.resize(batchGroups_ + meshGroupCount_);
     for (std::size_t groupIndex = 0; groupIndex < meshGroupCount_; ++groupIndex) {
         const auto& group = meshGroups_[groupIndex];
         const auto& members = group.members;
@@ -1303,14 +1319,17 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.mainPass = firstMember.mainPass;
         d.castShadow = firstMember.shadowCaster;
         d.layers = firstMember.layers;
-        const auto slot = batchGroups_++;
+        // PRD-754: the group, not its nearest member, names the draw, so culling a member moves no uniform slot or row.
+        d.key = d.id = uint64_t{1} << 62 | (group.identity >> 2);
+        ++batchGroups_;
+        const auto slot = batchSlot(group.identity);
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
         d.cache = &batchCaches_[slot];
-        if (batchStores_.size() <= slot)
-            batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
+        while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         auto& matrices = *batchStores_[slot];
-        if (matrices.count() != members.size() * 16)
-            matrices.resize(members.size() * 16);
+        // Grow only, by half again: a member culled or back keeps the buffer, so the draw's vertex binding holds.
+        if (matrices.count() < members.size() * 16)
+            matrices.resize(members.size() * 24);
         auto* matrix = reinterpret_cast<float*>(matrices.data());
         const bool uniform = std::any_of(members.begin(), members.end(), [&](std::size_t i) {
             return batchMeshes_[i].material != first.material.get();
@@ -1319,8 +1338,8 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             batchColors_.resize(slot + 1);
         if (uniform && !batchColors_[slot])
             batchColors_[slot] = std::make_shared<BufferStore>(Scalar::F32, 0);
-        if (uniform && batchColors_[slot]->count() != members.size() * 3)
-            batchColors_[slot]->resize(members.size() * 3);
+        if (uniform && batchColors_[slot]->count() < members.size() * 3)
+            batchColors_[slot]->resize(members.size() * 9 / 2);
         auto* color = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
         for (std::size_t i = 0; i < members.size(); ++i) {
 #if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
@@ -1344,13 +1363,15 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &matrices;
         d.instanceCount = static_cast<uint32_t>(members.size());
+        // The slot's copy of the material, not the nearest member's: its address stays the draw's state key.
+        if (batchParams_.size() <= slot) batchParams_.resize(slot + 1);
+        batchParams_[slot] = *d.material;
         if (uniform) {
             batchColors_[slot]->needsUpdate();
             d.instanceColors = batchColors_[slot].get();
-            batchParams_[slot] = *d.material;
             batchParams_[slot].color = {1, 1, 1};
-            d.material = &batchParams_[slot];
         }
+        d.material = &batchParams_[slot];
         items.push_back(std::move(d));
         batchMembers_ += members.size();
     }
@@ -1513,9 +1534,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     }
     if (erased) std::fill(slotRecords_.begin(), slotRecords_.end(), nullptr);  // one of these may have been erased
     batchGroups_ = batchMembers_ = 0;
+    for (auto slot = batchSlotOf_.begin(); slot != batchSlotOf_.end();) {
+        if (frame_ - batchSlotSeen_[slot->second] <= 600) { ++slot; continue; }
+        batchSlotFree_.push_back(slot->second);
+        slot = batchSlotOf_.erase(slot);
+    }
     const auto beforeBatch = profiling ? Clock::now() : Clock::time_point{};
     if (batching) {
-        batchParams_.reserve(items.size() + meshGroupCount_);
         CameraState state;
         state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
         state.projectionMatrix = toArray(camera.projectionMatrix);
