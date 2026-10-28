@@ -13,7 +13,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,5 +51,11 @@ const env = {
   EMSDK: emsdk,
   PATH: `${join(emsdk, 'upstream', 'emscripten')}:${process.env.PATH ?? ''}`,
 };
+// A copied or moved checkout keeps the CMake cache of the old path, and CMake refuses it.
+const buildDir = join(ROOT, 'build', 'wasm');
+const cache = join(buildDir, 'CMakeCache.txt');
+if (existsSync(cache) && !readFileSync(cache, 'utf8').includes(`CMAKE_HOME_DIRECTORY:INTERNAL=${ROOT}\n`)) {
+  rmSync(buildDir, { recursive: true, force: true });
+}
 run('cmake', ['--preset', 'wasm'], env);
 run('cmake', ['--build', '--preset', 'wasm'], env);
