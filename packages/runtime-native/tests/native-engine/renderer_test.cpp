@@ -3021,6 +3021,8 @@ void cullKeepsMain(bool transparent) {
             return Seen{read(renderer, events), f.mainRecorded, f.draws, f.triangles};
         };
         for (int i = 0; i < 3; ++i) frame(three);
+        // A readback copy destroyed between frames binds to no draw, so it keeps the out-of-view row.
+        renderer.gpu().destroy(renderer.gpu().createBuffer(256, WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst));
         std::vector<Seen> seen{frame(two), frame(two), frame(three)};
         return seen;
     };

@@ -410,7 +410,12 @@ GpuStatus GpuResources::destroy(Handle resource) {
     GpuStatus status;
     Record* target = record(resource, resource.type, status);
     if (!target) return status;
-    destroyRequests.fetch_add(1, std::memory_order_relaxed);
+    // Only a resource a draw can bind can leave a kept draw row pointing at it: staging and readback copies do not count.
+    constexpr WGPUBufferUsage bindable = WGPUBufferUsage_Vertex | WGPUBufferUsage_Index | WGPUBufferUsage_Uniform |
+                                         WGPUBufferUsage_Storage | WGPUBufferUsage_Indirect;
+    if (target->buffer ? (wgpuBufferGetUsage(target->buffer) & bindable) != 0
+                       : target->texture && (wgpuTextureGetUsage(target->texture) & WGPUTextureUsage_TextureBinding) != 0)
+        destroyRequests.fetch_add(1, std::memory_order_relaxed);
     handles_.release(resource);
     // Any submission so far may read it; it is freed once the last of them has completed.
     {
