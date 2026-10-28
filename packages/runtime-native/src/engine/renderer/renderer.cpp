@@ -2706,7 +2706,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     depth.depthClearValue = 1.0f;
     const bool timed = ownsPassTimer_ && passTimer_->active();
 
-    const auto opaque = sortDraws(items, camera, stablePasses_);
+    const auto opaque = sortDraws(items, camera, stablePasses_ && stableRows_);
 
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
@@ -4490,7 +4490,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (auto* rows : {&mainRows_, &auxRows_, &velocityRows_})
         if (!*rows) *rows = std::make_unique<MainRows>();
     job.mainRows = job.auxRows = job.velocityRows = PassRows{};
-    if (stablePasses_ && !compilation &&
+    if (stablePasses_ && stableRows_ && !compilation &&
         std::all_of(plan.begin(), plan.end(), [](const Planned& p) {
             const DrawItem& i = *p.item;
             return i.transparent || i.background || (i.depthWrite && i.colorWrite);

@@ -668,13 +668,21 @@ public:
      */
     void setGpuTimer(bool on) { passTimer_->enabled = on; }
     /**
-     * PRD-754, off by default: on, the passes replay retained rows and recorded bundles, but the opaque rows draw in
-     * state order, which swaps the winner of exactly coplanar draws (the shooter's door trim). Off encodes them as
-     * before; a paired A/B runs from one build and a test compares the two.
+     * PRD-754, on by default: the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
+     * cull or a moved caster records no shadow pass. Off encodes them as before; a paired A/B runs from one build.
      */
     void setStablePasses(bool on) {
         if (on != stablePasses_) dropBundles();
         stablePasses_ = on;
+    }
+    /**
+     * PRD-754, off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
+     * retained rows in state order, so a camera turn records nothing. State order swaps the winner of exactly coplanar
+     * draws (the shooter's door trim), and three's depth order cost more than it saved, so it waits for a fix there.
+     */
+    void setStableRows(bool on) {
+        if (on != stableRows_) dropBundles();
+        stableRows_ = on;
     }
     /**
      * The caller's frame id for the next timed render, reported with its sample once the readback
@@ -1154,7 +1162,8 @@ private:
         FrameStats::SkinnedPass skinned;
     };
     std::vector<ShadowBundle> shadowBundles_;
-    bool stablePasses_ = false;
+    bool stablePasses_ = true;
+    bool stableRows_ = false;
     /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
     void dropBundles();
     FrameStats mainBundleStats_;

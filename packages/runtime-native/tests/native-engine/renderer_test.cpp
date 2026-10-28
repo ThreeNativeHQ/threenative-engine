@@ -2972,6 +2972,7 @@ void cameraTurnRecords() {
     // Depth order (setStablePasses(false)) re-records the turn for its order; the state-first order keeps the bundle.
     for (const bool stable : {false, true}) {
         renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
         for (int i = 0; i < 3; ++i) frame(0);
         CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
         frame(30 * kPi / 180);
@@ -2981,6 +2982,52 @@ void cameraTurnRecords() {
         else CHECK(renderer.lastFrame().mainRecorded == 2 && renderer.lastFrame().recordCause == R::RecordOrder);
         frame(30 * kPi / 180);
         CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+    }
+}
+
+// PRD-754: two exactly coplanar quads, where three's order (equal depth, then id) and a state order (material first)
+// disagree. At equal depth the draw order picks the winner (the shooter's door trim), so the stable passes keep three's
+// order: the pixels match direct encode over a camera turn.
+void coplanarKeepsWinner() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const auto geometry = plane(2, 2);
+    std::array<shader::StandardMaterial, 2> materials;
+    materials[0].color = {1, 0, 0}; materials[1].color = {0, 1, 0};
+    std::array<DrawItem, 2> items;
+    for (int i = 0; i < 2; ++i) {
+        items[i].key = items[i].id = uint64_t(i + 1);
+        items[i].kind = MaterialKind::Basic;
+        items[i].positions = &geometry->positions; items[i].indices = &geometry->indices;
+        items[i].material = &materials[1 - i];  // id order and material address order disagree
+        items[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    }
+    const auto run = [&](bool stable) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setStablePasses(stable);
+        std::vector<std::vector<uint8_t>> frames;
+        for (const double yaw : {0.0, 0.2, 0.4}) {
+            CameraState c = camera(1);
+            const double cs = std::cos(yaw), sn = std::sin(yaw);
+            c.matrixWorld = {cs, 0, -sn, 0, 0, 1, 0, 0, sn, 0, cs, 0, 0, 0, 4, 1};
+            c.matrixWorldInverse = {cs, 0, sn, 0, 0, 1, 0, 0, -sn, 0, cs, 0, 0, 0, -4, 1};
+            renderer.render(std::span<const DrawItem>(items), c, LightState{}, {0, 0, 0, 1});
+            frames.push_back(read(renderer, events));
+        }
+        return frames;
+    };
+    const auto direct = run(false), stable = run(true);
+    for (std::size_t k = 0; k < direct.size(); ++k) {
+        std::size_t differ = 0;
+        for (std::size_t p = 0; p + 3 < direct[k].size(); p += 4)
+            differ += !std::equal(direct[k].begin() + std::ptrdiff_t(p), direct[k].begin() + std::ptrdiff_t(p + 4), stable[k].begin() + std::ptrdiff_t(p));
+        std::printf("coplanar frame %zu: %zu pixels differ\n", k, differ);
+        CHECK(!direct[k].empty() && direct[k].size() == stable[k].size() && differ == 0);
     }
 }
 
@@ -3022,6 +3069,7 @@ void cullKeepsMain(bool transparent, bool firstSeen = false) {
         renderer.setSize(32, 16);
         renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
         renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
         const auto frame = [&](const std::vector<DrawItem>& items) {
             renderer.render(std::span<const DrawItem>(items), camera(1), LightState{}, {0, 0, 0, 1});
             const auto& f = renderer.lastFrame();
@@ -3093,6 +3141,7 @@ void transparentKeepsVelocityRows() {
         renderer.setTraa(TraaOptions{});
         renderer.setRenderScale(0.5f);  // upscaled: the transparent draw writes its responsive mark into the velocity target
         renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
         std::vector<Seen> seen;
         for (int frame = 0; frame < 6; ++frame) {
             items[2].material = frame % 2 ? &copies[2] : &materials[2];
@@ -3270,7 +3319,7 @@ void auxTargetsAlphaTested() {
 
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

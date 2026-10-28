@@ -2837,6 +2837,7 @@ void stablePassesMatchDirect() {
         Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
         renderer.setSize(200, 150);
         renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
         RenderDatabase database;
         database.shadowMapEnabled = true;
         database.batching = false;
@@ -2919,6 +2920,7 @@ void cameraCull() {
         Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
         renderer.setSize(160, 120);
         renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
         if (post) {  // the velocity pass, and a post graph that reads the normal target
             namespace g = shader::graph;
             renderer.setTraa(TraaOptions{});

@@ -700,7 +700,7 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * replaces the multisampling the renderer asked for.
  * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
  */
-/** PRD-754's A/B knob, off by default: 1 replays retained rows and recorded shadow bundles. */
+/** PRD-754's A/B knob, on by default: 0 encodes the shadow passes directly, without recorded bundles or uniform slots. */
 extern "C" void tnw_web_set_stable_passes(int on) {
     if (renderer) renderer->setStablePasses(on != 0);
 }

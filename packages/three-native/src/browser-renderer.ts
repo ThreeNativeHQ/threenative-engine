@@ -400,10 +400,11 @@ export function defineWebRenderer(
         // Honest, like the engine: a device without timestamp-query times no frame, so no caller
         // may be told timestamps are enabled. An explicit opt-out stays off.
         if (module._tnw_web_frame(10) === 0) this.backend.trackTimestamp = false;
-        // PRD-754's A/B knob, off by default: `?tnStablePasses=1` on the page (a worker game reads the page's query).
+        // PRD-754's A/B knob, on by default: `?tnStablePasses=0` on the page encodes the shadow passes directly (a worker
+        // game reads the page's query).
         const scope = globalThis as Record<string, unknown> & { location?: { search?: string } };
         const query = String(scope[PAGE_SEARCH] ?? scope.location?.search ?? "");
-        if (/[?&]tnStablePasses=(1|true)(&|$)/u.test(query)) module._tnw_web_set_stable_passes(1);
+        if (/[?&]tnStablePasses=(0|false)(&|$)/u.test(query)) module._tnw_web_set_stable_passes(0);
         return this;
       })();
       return this.#initialized;
