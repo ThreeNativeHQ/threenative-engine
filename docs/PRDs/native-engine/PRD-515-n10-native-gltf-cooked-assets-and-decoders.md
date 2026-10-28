@@ -53,5 +53,6 @@
 
 ## Decisions
 
+- 2026-10-19 (unreal-look epic, PR #541): the engine is now the default web renderer, and its glTF loader still refuses a whole model that uses `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_meshopt_compression`, `KHR_texture_basisu` or `EXT_texture_avif` (`TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED`; a test pins this in `gltf_hierarchy_test.cpp`, `4cb3aa03c`). A user model exported with compression therefore fails to load on the web by default, not only on mobile. The web decoder rows of the decoder matrix are user-facing.
 - cgltf is parser-only. Construction, extensions, decoding and lifetime stay owned code (§4).
 - Existing disabled native glTF files are references, not production code (§11.1).

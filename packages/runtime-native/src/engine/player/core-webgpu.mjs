@@ -1,14 +1,36 @@
 export * from "./core-three.mjs";
-import { BufferAttribute, Color, Material, NormalBlending } from "./core-three.mjs";
+export { ShadowBaseNode } from "../../../../three-native/src/shadow-node.ts";
+import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions, syncVirtualShadowLods } from "../../../../three-native/src/shadow-node.ts";
+// Native VSM configuration crosses the same LightShadow registry setter as the Wasm facade.
+for (const name of ["DirectionalLightShadow", "PointLightShadow", "SpotLightShadow"]) {
+  const prototype = globalThis[name]?.prototype;
+  for (const [property, translate] of [["shadowNode", virtualShadowOptions], ["filterNode", shadowFilterOptions]]) {
+    const set = prototype && Object.getOwnPropertyDescriptor(prototype, property)?.set;
+    if (!set) continue;
+    const nodes = new WeakMap();
+    Object.defineProperty(prototype, property, {
+      configurable: true,
+      get() { return nodes.get(this) ?? null; },
+      set(value) { if (property === "shadowNode" && nodes.get(this) === value) return; set.call(this, translate(value, (command) => set.call(this, command))); if (nodes.get(this) !== value) detachVirtualShadow(nodes.get(this)); nodes.set(this, value); },
+    });
+  }
+}
+import { BufferAttribute, Color, DataTexture, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
 import { readStorageBytes } from "../../../../three-native/src/storage.ts";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
+import { defineToneMappingLibrary } from "../../../../three-native/src/tone-mapping.ts";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
+import { defineSphereReflectionCapture } from "../../../../three-native/src/sphere-reflection-capture.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
+import { defineTempNode } from "../../../../three-native/src/temp-node.ts";
+import { defineRendererUtils } from "../../../../three-native/src/renderer-utils.ts";
+import { GPU_STAGES, SHADOW_STAGE } from "../../../../three-native/src/gpu-stages.ts";
 
-export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+Object.setPrototypeOf(StorageTexture.prototype, globalThis.Texture.prototype);
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
 Object.setPrototypeOf(MeshStandardNodeMaterial.prototype, globalThis.MeshStandardMaterial.prototype);
 Object.setPrototypeOf(SpriteNodeMaterial.prototype, globalThis.SpriteMaterial.prototype);
@@ -25,10 +47,23 @@ class NativeBackend {
   // Pipelines the player's renderer has compiled so far (three counts createRenderPipeline calls on its
   // backend; the engine counts its own pipeline cache). A window's compiles are the difference of two reads.
   pipelineCompiles = () => globalThis.tn.renderInfo().pipelineCompiles;
+  // The frame the newest resolved GPU time belongs to, as the Wasm backend reports it (core's `stageGpuReading` reads it).
+  // The first reader turns the player's frame timing on: an unread timer costs a query resolve and readback per frame.
+  #timing = false;
+  getTimestampFrames(type) {
+    if (type !== "render") return [];
+    if (!this.#timing) {
+      this.#timing = true;
+      globalThis.tn.setGpuTimer(true);
+    }
+    const { samples, source } = globalThis.tn.renderInfo().gpuTiming;
+    return samples > 0 ? [source] : [];
+  }
 }
 
 function drawTarget(renderer, target, root, camera, deferred) {
   syncUniforms();
+  renderer.library.apply(renderer.toneMapping);
   globalThis.tn.setRendererState(renderer);  // the target clears to the renderer's current clear colour
   if (deferred) globalThis.tn.renderTarget(target, root, camera, true);
   else globalThis.tn.renderTarget(target, root, camera);
@@ -37,12 +72,20 @@ function drawTarget(renderer, target, root, camera, deferred) {
 // Every offscreen PassNode plans its draw into its own target; the player records it in this frame, after the post
 // render-to-texture passes when the post graph samples the target, else ahead of the scene pass.
 function drawSecondaryPasses(renderer) {
+  syncVirtualShadowLods();
   updateSecondaryPasses(() => globalThis.tn.surfaceSize(), (target, root, camera) => drawTarget(renderer, target, root, camera, true));
 }
 
 export class WebGPURenderer {
   // The native scene pass draws to the player-owned surface, not a retained frame target.
   supportsRetainedTargetSubrect = false;
+  renderScale = 1;
+  get temporalUpscale() { return globalThis.tn.renderInfo().temporalUpscale === true; }
+  setRenderScale(scale) {
+    if (!Number.isFinite(scale) || scale < 0.25 || scale > 1)
+      throw new Error("renderScale must be finite and between 0.25 and 1.");
+    this.renderScale = scale;
+  }
   constructor({ canvas, antialias = false } = {}) {
     this.domElement = canvas;
     this.samples = antialias ? 4 : 0;
@@ -54,14 +97,36 @@ export class WebGPURenderer {
     render: {
       get drawCalls() { return globalThis.tn.renderInfo().drawCalls; },
       get calls() { return globalThis.tn.renderInfo().drawCalls; },
+      // The newest resolved GPU time of the whole frame in ms, 0 before one has (the timer starts at the first `getTimestampFrames`).
+      get timestamp() { return Math.max(0, globalThis.tn.renderInfo().gpuTiming.ms); },
       get triangles() { return globalThis.tn.renderInfo().triangles; },
     },
     compute: {},
+    // What the owned engine adds to three's info, as the Wasm engine does: the samples the scene draws with (1 while the
+    // temporal pass replaces multisampling) and that pass's live frame, history and jitter.
+    engine: {
+      get samples() { return globalThis.tn.renderInfo().samples; },
+      get temporal() { return globalThis.tn.renderInfo().temporal; },
+      // The GPU ms by named stage (gpu-stages.ts) of that sample; a stage that drew no pass is absent. Segments 0..3 are
+      // the shadow, scene, other and output passes, so the named stages follow them in `GPU_STAGES` order.
+      get gpuStages() {
+        const { segments } = globalThis.tn.renderInfo().gpuTiming;
+        const stages = {};
+        GPU_STAGES.forEach((name, index) => { if (segments[4 + index] > 0) stages[name] = segments[4 + index]; });
+        if (segments[0] > 0) stages[SHADOW_STAGE] = segments[0];
+        return stages;
+      },
+    },
     frame: 0,
     reset() {},
   };
   // WebGPURenderer's defaults; the player applies them before each frame it draws.
   shadowMap = new ShadowMap();
+  __customToneMapping = null;
+  library = defineToneMappingLibrary(
+    () => [globalThis.tsl.toneMappingColor(), globalThis.tsl.uniform(1).setName("toneMappingExposure")],
+    (node) => { this.__customToneMapping = node; },
+  );
   toneMapping = 0;
   toneMappingExposure = 1;
   outputColorSpace = "srgb";
@@ -76,6 +141,8 @@ export class WebGPURenderer {
   getClearAlpha() { return this.__clearColor[3]; }
   setClearAlpha(alpha) { this.__clearColor[3] = alpha; }
   setPixelRatio() {}
+  // The player draws at the surface it opened, so the drawing buffer is the CSS size.
+  getPixelRatio() { return 1; }
   // three's `await renderer.init()`: the player owns the GPU and has opened it before any script runs.
   async init() { return this; }
   // WebGPUCapabilities.getMaxAnisotropy: WebGPU samplers clamp maxAnisotropy to 16.
@@ -90,6 +157,7 @@ export class WebGPURenderer {
     return target.set(width, height);
   }
   render(scene, camera) {
+    updateTempNodes(this, scene, camera);
     drawSecondaryPasses(this);
     globalThis.__tnGameSpan?.(GAME_SPANS.transport, 0);
     try { syncUniforms(); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.transport, 1); }
@@ -97,13 +165,38 @@ export class WebGPURenderer {
     try {
       globalThis.tn.scene = scene;
       globalThis.tn.camera = camera;
+      this.library.apply(this.toneMapping);
       globalThis.tn.setRendererState(this);
     } finally { globalThis.__tnGameSpan?.(GAME_SPANS.publish, 1); }
+    this.__worldFrame = this.info.frame;
+  }
+  // core's canvas layer (a loading screen, a canvas HUD), drawn over this frame's world with no post and no temporal
+  // step (Renderer::overlayRenderer), and never published as tn.scene: as the world, it moved the world's temporal
+  // history and metered exposure. A frame core draws no world in (a held loader frame) draws the overlay alone;
+  // core advances info.frame once per frame.
+  renderOverlay(scene, camera) {
+    syncUniforms();
+    globalThis.tn.renderOverlay(scene, camera, this.__worldFrame === this.info.frame);
   }
   compileAsync(root, camera, scene) {
     syncUniforms();
+    this.library.apply(this.toneMapping);
     globalThis.tn.setRendererState(this);
     return globalThis.tn.compileAsync(root, camera, scene);
+  }
+  // Core warm-up's PMREM preparer (warmup.ts nativeEnvironmentPreparer): the player skips every frame
+  // whose environment is not baked yet, so startup waits for the bake instead of counting empty frames.
+  // True once baked; false at `deadlineMs` (a performance.now() time).
+  async prepareEnvironmentAsync(scene, camera, deadlineMs = Number.POSITIVE_INFINITY) {
+    syncUniforms();
+    this.library.apply(this.toneMapping);
+    globalThis.tn.setRendererState(this);
+    while (performance.now() < deadlineMs) {
+      if (globalThis.tn.prepareEnvironment(scene, camera)) return true;
+      // A macrotask: the GPU completion that advances the bake lands between tasks.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return false;
   }
   // PRD-620: three's compute(node | node[]) queues kernels in call order; the player runs them before the
   // frame's passes (and before a render target or a read of one). A dispatch size override has no native form.
@@ -131,6 +224,20 @@ defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
 // three's QuadMesh over the engine Mesh (shared with the Wasm back end).
 export const QuadMesh = defineQuadMesh(globalThis);
 
+// three's TempNode (shared with the Wasm back end): the V8 TSL adapter reads a game node's engine node
+// under `threenative.tslNode`, and each top-level render runs the FRAME nodes' updateBefore first. An
+// engine node carries its methods itself; the adapter calls them on the receiver's engine node.
+const tslNode = Symbol.for("threenative.tslNode");
+const nodeMethods = Object.defineProperties({}, Object.getOwnPropertyDescriptors(globalThis.tsl.float(0)));
+const tempNodes = defineTempNode(nodeMethods, tslNode, (output) => (tslNode in output ? output[tslNode] : output));
+export const { TempNode } = tempNodes;
+// The game's startup render() runs before the player opens its renderer and draws no frame, so its nodes
+// update on the first render() of a drawn frame.
+let tempFrame = 0;
+const updateTempNodes = (renderer, scene, camera) => {
+  if (globalThis.tn.hasRenderer()) tempNodes.update({ renderer, scene, camera, frameId: ++tempFrame });
+};
+
 // three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
 // (once per graph) and draws it with the renderer's settings.
 export class RenderPipeline {
@@ -145,8 +252,10 @@ export class RenderPipeline {
   render() {
     this.context.onBeforeRenderPipeline?.();
     try {
+    updateTempNodes(this.renderer, globalThis.tn.scene, globalThis.tn.camera);
     drawSecondaryPasses(this.renderer);
     syncUniforms();
+    this.renderer.library.apply(this.renderer.toneMapping);
     globalThis.tn.setRendererState(this.renderer);
     if (this._source !== this.outputNode) {
       this._source = this.outputNode;
@@ -193,15 +302,18 @@ export class BlendMode {
 // three's ReadbackBuffer (shared with the Wasm back end).
 export { ReadbackBuffer } from "../../../../three-native/src/storage.ts";
 
-// Game-authored node lifecycles and fullscreen node materials have no V8 renderer binding. They stay
-// importable, so a game that defines a node class or imports them runs; one that constructs or calls
-// them fails at that use, by name. TempNode is a real constructor so `class X extends TempNode` loads.
-export class TempNode {
-  constructor() {
-    throw new Error("TN_NATIVE_UNSUPPORTED_TEMPNODE: TempNode is not available on the native engine.");
-  }
-}
 export const NodeMaterial = globalThis.NodeMaterial;
 Object.setPrototypeOf(NodeMaterial.prototype, Material.prototype);
 NodeMaterial.prototype.isNodeMaterial = true;
-export const RendererUtils = unsupportedExport("RendererUtils");
+// three's RendererUtils state save/restore (shared with the Wasm back end).
+export const RendererUtils = defineRendererUtils(Color);
+// Refused at use: only VirtualShadowNode.setup builds one, and the engine draws that map in C++.
+export const AssignNode = unsupportedExport("AssignNode");
+
+WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
+  async (scene, x, y, z, size, face) => {
+    syncUniforms();
+    const bytes = await globalThis.tn.captureFace(scene, x, y, z, size, face);
+    return bytes === null ? null : new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+  }, DataTexture,
+);

@@ -1,4 +1,6 @@
 #include "output.h"
+#include "engine/shader/tsl/tsl.h"
+#include <stdexcept>
 
 namespace tn::engine::shader {
 
@@ -10,12 +12,17 @@ ExprId srgbTransferOetf(Program& p, ExprId linear) {
     return p.call("mix", {a, b, le});
 }
 
-ExprId renderOutput(Program& p, ExprId scene, std::optional<ToneMapping> toneMapping, bool srgb) {
+ExprId renderOutput(Program& p, ExprId scene, std::optional<ToneMapping> toneMapping, bool srgb, graph::Node custom) {
     // RenderOutputNode: unpremultiply before nonlinear transforms, then premultiply in output space.
     const ExprId alpha = p.call("clamp", {p.swizzle(scene, "w"), p.constant(0.0f), p.constant(1.0f)});
     ExprId rgb = p.select(p.equal(alpha, p.constant(0.0f)), p.construct(Type::vec(3), {p.constant(0.0f)}),
                          p.div(p.swizzle(scene, "xyz"), alpha));
-    if (toneMapping) rgb = toneMap(p, *toneMapping, rgb, p.uniform("toneMappingExposure", Type::f32()));
+    if (toneMapping == ToneMapping::Custom) {
+        if (!custom) throw std::runtime_error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: register a TSL tone-mapping function before using mode 5");
+        tsl::Build scope(p);
+        rgb = graph::lower(custom, p, {{"tnToneMappingColor", rgb}});
+        if (rgb == kInvalid || p.expr(rgb).type != Type::vec(3)) throw std::runtime_error("TN_NATIVE_CUSTOM_TONEMAPPING_TYPE: expected vec3");
+    } else if (toneMapping) rgb = toneMap(p, *toneMapping, rgb, p.uniform("toneMappingExposure", Type::f32()));
     if (srgb) rgb = srgbTransferOetf(p, rgb);
     return p.construct(Type::vec(4), {p.mul(rgb, alpha), alpha});
 }
@@ -24,7 +31,7 @@ OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, co
     return buildOutput(toneMapping, srgb, post, true);
 }
 
-OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post, bool outputTransform) {
+OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post, bool outputTransform, graph::Node custom) {
     OutputPrograms out;
     Program& v = out.vertex;
     const ExprId position = v.attribute("position", Type::vec(2));
@@ -42,7 +49,7 @@ OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, co
     for (const auto& [name, type] : f.varyings())
         if (name == "positionView" && !v.hasOutput(name)) v.output(name, v.construct(Type::vec(3), {position, v.constant(0.0f)}));
     if (!outputTransform || (post && !post->outputTransform)) { f.output("color", scene); return out; }
-    f.output("color", renderOutput(f, scene, toneMapping, srgb));
+    f.output("color", renderOutput(f, scene, toneMapping, srgb, custom));
     return out;
 }
 

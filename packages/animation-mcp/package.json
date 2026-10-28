@@ -1,0 +1,67 @@
+{
+  "name": "threenative-animation-mcp",
+  "version": "0.1.3",
+  "license": "MIT",
+  "description": "Author, repair and verify character animation through one MCP: inspect rigs, attach props, edit and verify clips, and open a calibrator view.",
+  "keywords": [
+    "threenative",
+    "mcp",
+    "model-context-protocol",
+    "animation",
+    "rig",
+    "gltf",
+    "agents"
+  ],
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "bugs": {
+    "url": "https://github.com/ThreeNativeHQ/threenative/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/animation-mcp"
+  },
+  "type": "module",
+  "files": ["dist", "README.md"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "threenative-animation-mcp": "./dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "publint --strict"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "catalog:",
+    "@gltf-transform/extensions": "catalog:",
+    "@modelcontextprotocol/server": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "three": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/three": "catalog:",
+    "@typescript/native": "catalog:",
+    "publint": "0.3.22",
+    "tsup": "8.5.1",
+    "typescript": "catalog:"
+  }
+}

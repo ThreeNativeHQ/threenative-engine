@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <stdexcept>
 #include <vector>
@@ -72,15 +73,15 @@ namespace {
 constexpr const char* kGameSpanNames[] = {
     "compute", "beforeRender", "sceneUpdate", "reconcile", "clustered", "lod", "cull",
     "mainPass", "shadowPass", "reflectionPass", "nestedPass", "projectObject", "sort", "draw",
-    "terrainBlock", "terrainSeam", "input", "scheduler", "plugins", "sceneCallbacks", "entities", "afterPhysics", "mixer",
+    "terrainBlock", "terrainSeam", "animationUpdate", "skinnedWrite", "input", "scheduler", "plugins", "sceneCallbacks", "entities", "afterPhysics", "mixer",
     "stride", "blend", "transport", "publish", "playtest", "hostUpdate", "hostFrame", "ui",
     "gc", "view", "loop", "state", "contacts", "transitions", "objectGraph", "physicsStep",
     "physicsRead", "physicsApply", "characterMove", "animationPlay", "inputVector", "graphVisit"};
 constexpr size_t kGameSpanCount = std::size(kGameSpanNames);
 // The host-owned spans (GAME_SPANS leaves them out); native-engine-game-spans.spec.ts pins these to the names.
-constexpr int kHostUpdateSpan = 28;
-constexpr int kHostFrameSpan = 29;
-constexpr int kGcSpan = 31;
+constexpr int kHostUpdateSpan = 30;
+constexpr int kHostFrameSpan = 31;
+constexpr int kGcSpan = 33;
 struct GameSpans {
     struct Entry { int id; std::chrono::steady_clock::time_point start; double childMs; };
     std::array<Entry, 64> stack{};
@@ -612,7 +613,8 @@ struct Session {
     double gpuThreadCpuMs = -1;  // the GPU thread's CPU for the previous frame's present job
     double gpuJobCpuMs = -1;     // written by that job; copied above only after a wait
     // PRD-613: the encode half of the frame (every pass, main and reflections) runs here, off the game
-    // thread, while the next frame's JS runs. TN_RENDER_THREAD=1 enables it; it needs the GPU thread.
+    // thread, while the next frame's JS runs. On by default; TN_RENDER_THREAD=0 turns it off and GPU timing runs
+    // keep it off. It needs the GPU thread.
     // The game thread touches the renderer only after waitRenderThread() and before it posts the next job.
     std::shared_ptr<GpuThread> renderThread;
     std::vector<std::function<void()>> encodeJobs;  // this frame's passes, in order; the job reads them, so they live here
@@ -664,6 +666,7 @@ struct Session {
     // queue them ahead of the next readback faster than a software GPU executes them.
     uint64_t lastRenderedTick = UINT64_MAX;
     bool hasRendered = false;
+    std::set<std::string> renderNotes;  // a renderer note (a skipped draw) prints once, not every frame
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
     double updateMixerCpuMs = 0;
     uint64_t updateMixerCalls = 0;
@@ -772,7 +775,7 @@ int Session::initialize() {
         gpuThread = std::make_shared<GpuThread>();
         renderer->gpu().setThread(gpuThread);
         // Only a game that fences its own renderer touches (setRenderBarrier) can share the renderer with a thread.
-        if (const char* rt = std::getenv("TN_RENDER_THREAD"); rt && std::strcmp(rt, "1") == 0 && game.setRenderBarrier) {
+        if (const char* rt = std::getenv("TN_RENDER_THREAD"); !gpuTiming && !(rt && std::strcmp(rt, "0") == 0) && game.setRenderBarrier) {
             renderThread = std::make_shared<GpuThread>();
             renderer->collectFrame();
             game.setRenderBarrier([this] { waitRenderThread(false); });
@@ -892,12 +895,16 @@ int Session::initialize() {
             if (game.uiResize) game.uiResize(int(window.width), int(window.height));
         }
         // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
-        if (scene == nullptr || camera == nullptr) {
+        const bool withoutView = scene == nullptr || camera == nullptr;
+        if (withoutView) {
             if (game.frameWithoutView) game.frameWithoutView();
-            if (spans) { gameSpan(kHostFrameSpan, 1); gameSpanTiming(0); }
-            renderer->poll();
-            events.drain();
-            return;
+            // A loading screen drawn before the world is published is still presented.
+            if (!game.overlay || game.overlay() == 0) {
+                if (spans) { gameSpan(kHostFrameSpan, 1); gameSpanTiming(0); }
+                renderer->poll();
+                events.drain();
+                return;
+            }
         }
         // core restores its projected cull inside beforeRender, before this C++ draw: hold it until the
         // frame ends so the draw sees the hides, as a browser draw inside render() does.
@@ -905,9 +912,10 @@ int Session::initialize() {
         struct ReleaseCull {
             ~ReleaseCull() { ProjectedCull::holdRestores(false); ProjectedCull::releaseHeld(); }
         } releaseCull;
-        if (game.beforeRender) game.beforeRender(*renderer, database);
+        if (!withoutView && game.beforeRender) game.beforeRender(*renderer, database);
         // Frame callbacks can replace the published view and release its previous owners.
-        if (!refreshView() || scene == nullptr || camera == nullptr) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
+        if (!withoutView && (!refreshView() || scene == nullptr || camera == nullptr)) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
+        const int overlay = withoutView ? 2 : game.overlay ? game.overlay() : 0;
         if (metrics && measuredFrames == 0) {
             const char* launch = std::getenv("TN_BENCH_LAUNCH_MS");
             if (launch) readyMs = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count() - std::strtod(launch, nullptr);
@@ -929,11 +937,14 @@ int Session::initialize() {
         const double renderCpuBegin = metrics ? threadCpuMs() : -1;
         std::array<double, 2> renderSplitMs{-1, -1};  // wall ms: {prepare, encode+submit}
         // The first frame, a resize and a surface-less run encode inline: they read the frame back at once.
-        const bool offThread = renderThread && presenter && !firstFrame && !resized;
+        // A frame with an overlay too: the overlay composites over the world frame, so the world encodes first.
+        const bool offThread = renderThread && presenter && !firstFrame && !resized && overlay == 0;
         if (renderThread && !offThread) ++renderFallbacks;
         encodeJobs.clear();
         database.encodeJobs = offThread ? &encodeJobs : nullptr;
-        try {
+        // ponytail: an overlay alone, or over a world frame the environment bake skipped, composites over the last
+        // output frame, so a translucent one builds up; core holds an opaque cover there, a clear pass if one is not.
+        if (overlay != 2) try {
             database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1},
                             metrics ? &renderSplitMs : nullptr);
         } catch (...) {
@@ -942,13 +953,14 @@ int Session::initialize() {
             encodeJobs.clear();
             throw;
         }
+        if (overlay != 0) game.drawOverlay(*renderer);
         if (renderThread && !offThread) renderer->collectFrame();
         const double renderMs = metrics ? elapsed(renderBegin) : 0;
         const double renderCpuMs = renderCpuBegin >= 0 ? threadCpuMs() - renderCpuBegin : -1;
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         for (const std::string& diagnostic : renderer->diagnostics())
-            std::printf("[Playtest] %s\n", diagnostic.c_str());
+            if (renderNotes.insert(diagnostic).second) std::printf("[Playtest] %s\n", diagnostic.c_str());
         lastRenderedTick = tick();
         hasRendered = true;
         if (presenter) {
@@ -1133,7 +1145,8 @@ int Session::initialize() {
                     {"fresh", json::Value::makeBool(samples > previousGpuSamples)},
                     {"elapsedMs", samples ? json::Value::makeNumber(renderer->lastGpuMs()) : json::Value::makeNull()},
                     {"segmentsMs", samples ? json::Value::makeArray({json::Value::makeNumber(segments[0]), json::Value::makeNumber(segments[1]),
-                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3])}) : json::Value::makeNull()}}));
+                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3]), json::Value::makeNumber(segments[4]),
+                        json::Value::makeNumber(segments[5])}) : json::Value::makeNull()}}));
                 previousGpuSamples = samples;
                 sample = json::Value::makeObject(std::move(members));
             }

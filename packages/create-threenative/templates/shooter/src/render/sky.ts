@@ -46,12 +46,15 @@ export function setupSky(scene: Scene, sky: Texture): void {
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
   scene.background = sky;
-  scene.backgroundIntensity = SKY_RANGE;
+  scene.backgroundIntensity = SKY_RANGE * 0.65;
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
   // It is what makes a standard material read as a material: sky-blue fill on faces the sun
   // misses, and a sky to reflect, sharper as roughness drops.
   scene.environment = sky;
-  scene.environmentIntensity = SKY_RANGE;
+  // The sky seen directly is 0.65 of its restored range, which deepens the blue the filmic curve
+  // would otherwise lift towards white; the fill it casts is 0.55 (`lighting.ts` holds the sun at 6.5),
+  // so shade reads blue and darker than the sunlit street.
+  scene.environmentIntensity = SKY_RANGE * 0.55;
   // Almost nothing inside the arena (1.4% at 30 m), and the ground plane gone into the horizon by
   // a kilometre — so the floor meets the sky instead of ending at a line.
   // `scene.fog` stays the distance term; `scene.fogNode` is what three applies and adds the height term.

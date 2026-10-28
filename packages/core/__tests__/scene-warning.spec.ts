@@ -96,6 +96,26 @@ describe("sceneWarning", () => {
     expect(sceneWarning(window, describeSceneShape(window, MIDWAY_CULL), 60)).toBeUndefined();
   });
 
+  it("stays silent when one first-use compile stall, not the scene's shape, lifts the mean", () => {
+    // The sailing kit's second window on a software adapter: four frames, three of them 3.8 ms and
+    // one 494 ms node build, with the GPU 13% of the frame. The mean is 126 ms; the typical frame fits.
+    const window = midwayWindow({
+      frames: 4,
+      phases: {
+        ...midwayWindow().phases,
+        render: { max: 494, mean: 126.32, p50: 3.8, p95: 494, p99: 494, samples: 4 },
+      },
+    });
+    expect(sceneWarning(window, describeSceneShape(window, MIDWAY_CULL), 60)).toBeUndefined();
+  });
+
+  it("refuses a verdict on a software adapter, whose rasteriser runs inside the render phase", () => {
+    const window = midwayWindow();
+    const shape = describeSceneShape(window, MIDWAY_CULL);
+    expect(sceneWarning(window, shape, 60)).toBeDefined();
+    expect(sceneWarning(window, shape, 60, "software")).toBeUndefined();
+  });
+
   it("refuses a verdict on a window whose GPU was never measured", () => {
     const { gpu: _gpu, ...rest } = midwayWindow();
     const window = rest as IFrameBudgetWindow;

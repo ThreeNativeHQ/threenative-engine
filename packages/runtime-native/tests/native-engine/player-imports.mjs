@@ -1,4 +1,4 @@
-// CPU-only integration of the game bundler, native import facade and real V8 player.
+// Integration of the game bundler, native import facade and real V8 player, with a scene MRT readback.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
+import { runComputeGame } from "./compute-harness.mjs";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
@@ -21,10 +22,11 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage",
-  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap"];
+  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap",
+  "LessEqualCompare", "GreaterEqualCompare", "CustomToneMapping", "AlwaysDepth", "VSMShadowMap"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "Euler", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
+  "CanvasTexture", "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "Euler", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
   "ExtrudeGeometry", "SpriteMaterial", "Line", "LineSegments", "LineBasicMaterial", ...constants];
 const panel = (T) => {
@@ -52,7 +54,7 @@ import { clone as cloneByExamplesPath } from "three/examples/jsm/utils/SkeletonU
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { Material } from "three";
-import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal } from "three/tsl";
+import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
 const camera = new THREE.PerspectiveCamera();
@@ -172,6 +174,23 @@ check(shadowRenderer.shadowMap.enabled && shadowRenderer.shadowMap.type === THRE
 // The settings reach the player with the renderer's others when it draws (tn.setRendererState).
 shadowRenderer.render(new THREE.Scene(), new THREE.PerspectiveCamera());
 check(shadowRenderer.getMaxAnisotropy() === 16, "WebGPU's maximum anisotropy");
+for (const texture of [new THREE.Texture(), new THREE.DataTexture(new Uint8Array([1, 2, 3, 255]), 1, 1), new THREE.CanvasTexture({
+  width: 1, height: 1, getContext: () => ({ getImageData: () => ({ data: new Uint8Array([1, 2, 3, 255]) }) }),
+})]) {
+  texture.name = "shared-image"; texture.repeat.set(2, 3); texture.offset.set(0.1, 0.2);
+  texture.center.set(0.3, 0.4); texture.rotation = 0.5; texture.wrapT = THREE.RepeatWrapping;
+  const clone = texture.clone();
+  check(clone !== texture && clone instanceof texture.constructor && clone.source === texture.source,
+    "texture clone preserves its class and shares its source");
+  check(clone.name === texture.name && clone.repeat.x === 2 && clone.offset.y === 0.2 &&
+    clone.center.x === 0.3 && clone.rotation === 0.5 && clone.wrapT === texture.wrapT &&
+    clone.minFilter === texture.minFilter && clone.flipY === texture.flipY && clone.type === texture.type,
+    "texture clone copies sampler and transform fields");
+  if (texture.image?.data) check(clone.image === texture.image, "texture clone shares its JS image");
+  clone.repeat.set(7, 8); clone.offset.set(0.7, 0.8); clone.center.set(0, 0); clone.wrapS = THREE.RepeatWrapping;
+  check(texture.repeat.x === 2 && texture.offset.y === 0.2 && texture.center.x === 0.3 &&
+    texture.wrapS === THREE.ClampToEdgeWrapping, "texture clone edits are independent");
+}
 paramTexture.anisotropy = 8;
 check(paramTexture.anisotropy === 8 && refuses(() => { paramTexture.anisotropy = 0; }, /anisotropy must be/), "texture anisotropy");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
@@ -223,7 +242,7 @@ basic.colorNode = color(new THREE.Color(0.1, 0.2, 0.3));
 basic.colorNode = color(0.1, 0.2, 0.3);
 basic.colorNode = reflect(vec3(1, -1, 0), vec3(0, 1, 0));
 basic.colorNode = textureLoad(source, ivec2(0, 0)).rgb;
-basic.colorNode = vec3(mx_noise_float(uv().mul(4), 0.5, 0.5), mx_worley_noise_vec2(uv().mul(3), 0.9).x, 0);
+basic.colorNode = vec3(mx_noise_float(uv().mul(4), 0.5, 0.5).add(mx_worley_noise_float()), mx_worley_noise_vec2(uv().mul(3), 0.9).x, 0);
 const sky = new THREE.DataTexture(new Uint8Array(64 * 32 * 4), 64, 32);
 sky.mapping = THREE.EquirectangularReflectionMapping;
 basic.colorNode = pmremTexture(sky, vec3(0, 1, 0), float(0.5));
@@ -479,6 +498,12 @@ check(record.value instanceof ArrayBuffer && String.fromCharCode(...new Uint8Arr
 let mismatch = false;
 try { globalThis.tn.loadAsset("audio", "sky.jpg"); } catch (error) { mismatch = /TN_NATIVE_ASSET_KIND_MISMATCH/.test(error.message); }
 check(mismatch, "a texture entry is not audio");
+// core's IAssetLoader on a native host: no disk cache (the files are installed), prefetch serves nothing.
+// The playtest bridge's state sample reads this report on every observation.
+const loader = createAssetLoader({ cache: false, backgroundFill: false });
+check(loader.cache.enabled === false && loader.cache.reason === "native host reads installed files" &&
+  loader.cache.bytesOnDisk === 0 && typeof loader.cache.clear === "function", "native asset cache report");
+check(typeof loader.prefetch === "function" && typeof loader.startBackgroundFill === "function", "native prefetch and fill");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
 // "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
@@ -543,6 +568,372 @@ await mkdir(resolve(work, "node_modules/@acme/viz/dist/three"), { recursive: tru
 await writeFile(resolve(work, "node_modules/@acme/viz/dist/three/index.js"), "export const mark = () => {};");
 await writeFile(resolve(work, "viz.ts"), 'import { Scene } from "three"; import { mark } from "./node_modules/@acme/viz/dist/three/index.js"; globalThis.tn.scene = new Scene(); mark();');
 await bundleNativeEngine({ entry: resolve(work, "viz.ts"), outfile: resolve(work, "viz.js"), boot: false });
+// Core's shadow filters, virtual shadow map and rough diffuse bundle and run (PRD-650, PRD-634, PRD-653):
+// the engine draws them in C++, so their three-only TSL bodies may name what the engine refuses
+// (cubeTexture, Stack, AssignNode) and never call it, and a refused class's prototype reads, as on Wasm.
+const coreLookEntry = resolve(work, "core-look.ts");
+const coreLookOut = resolve(work, "core-look.js");
+await writeFile(coreLookEntry, `
+import { DirectionalLight, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, PointLight, Scene, SpotLight } from "three";
+import { sourceAngleShadowFilter, sourceRadiusShadowFilter } from ${JSON.stringify(resolve(native, "../core/src/render/soft-shadow.ts"))};
+import { useRoughDiffuse } from ${JSON.stringify(resolve(native, "../core/src/render/rough-diffuse.ts"))};
+import { VirtualShadowNode } from ${JSON.stringify(resolve(native, "../core/src/render/virtual-shadow.ts"))};
+const scene = new Scene();
+const sun = new DirectionalLight(0xffffff, 3); sun.castShadow = true;
+sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels: 3 });
+const virtual = new VirtualShadowNode(sun, { clipExtents: [8], mapSize: 1024, marker: false });
+sun.shadow.shadowNode = virtual;
+if (sun.shadow.shadowNode !== virtual) throw new Error("the sun lost its virtual shadow");
+scene.add(sun, sun.target);
+const filter = sourceRadiusShadowFilter({ sourceRadius: 0.25 });
+const spot = new SpotLight(0xffffff, 40); spot.castShadow = true; spot.shadow.filterNode = filter;
+const point = new PointLight(0xffffff, 40); point.castShadow = true; point.shadow.filterNode = filter;
+scene.add(new Mesh(new PlaneGeometry(), new MeshStandardMaterial()), spot, point);
+if (useRoughDiffuse(scene) !== 1) throw new Error("rough diffuse marked no material");
+if (point.shadow.filterNode !== filter) throw new Error("the lamp lost its filter");
+globalThis.tn.scene = scene; globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry: coreLookEntry, outfile: coreLookOut, boot: false });
+const coreLook = spawnSync(resolve(executable), ["--check-game", coreLookOut], { encoding: "utf8" });
+assert.equal(coreLook.status, 0, coreLook.stderr);
+// A game TempNode (PRD-636's LocalExposureNode) on the V8 player: setup() builds its engine node once and
+// it is an operand and a receiver. A check has no renderer, as a game's startup has none, so render()
+// runs no FRAME node's updateBefore (its draws would have nothing to draw with); the local-exposure
+// parity row proves the per-frame update on the GPU. RendererUtils is bound.
+const tempEntry = resolve(work, "temp-node.ts");
+const tempOut = resolve(work, "temp-node.js");
+await writeFile(tempEntry, `
+import { PerspectiveCamera, RenderTarget, Scene } from "three";
+import { float } from "three/tsl";
+import { NodeUpdateType, RendererUtils, TempNode, WebGPURenderer } from "three/webgpu";
+let setups = 0;
+let updates = 0;
+class Exposure extends TempNode {
+  constructor() { super("float"); this.updateBeforeType = NodeUpdateType.FRAME; }
+  setup(builder) { super.setup(builder); setups += 1; return float(2); }
+  updateBefore({ renderer }) {
+    updates += 1;
+    const state = RendererUtils.resetRendererState(renderer);
+    try { renderer.setRenderTarget(target); } finally { RendererUtils.restoreRendererState(renderer, state); }
+  }
+}
+const target = new RenderTarget(4, 4);
+const node = new Exposure();
+if (typeof float(node).mul(node).add(node.mul(3)).toVar !== "function") throw new Error("a TempNode is no operand");
+const renderer = new WebGPURenderer({ canvas: { width: 64, height: 64 } });
+const scene = new Scene(); const camera = new PerspectiveCamera();
+renderer.render(scene, camera); renderer.render(scene, camera);
+if (setups !== 1 || updates !== 0) throw new Error("setup " + setups + " update " + updates);
+const state = RendererUtils.resetRendererState(renderer);
+renderer.setRenderTarget(target);
+RendererUtils.restoreRendererState(renderer, state);
+if (renderer.getRenderTarget() !== null) throw new Error("RendererUtils left the target set");
+node.dispose();
+let disposed = false;
+try { float(node); } catch (error) { disposed = /TN_NATIVE_TEMPNODE_DISPOSED/.test(error.message); }
+if (!disposed) throw new Error("a disposed TempNode was consumed");
+globalThis.tn.scene = scene; globalThis.tn.camera = camera; globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry: tempEntry, outfile: tempOut, boot: false });
+const temp = spawnSync(resolve(executable), ["--check-game", tempOut], { encoding: "utf8" });
+assert.equal(temp.status, 0, temp.stderr);
+for (const antialias of [false, true]) {
+// The post frame reads both names from one packed geometry target, with scalar outputs splatted.
+for (const target of ["material", "normal"]) {
+const targetReadback = await runComputeGame(executable, `
+import { Mesh, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene, Vector2 } from "three";
+import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+import { convertToTexture, metalness, mrt, output, pass, roughness, normalView, vec4 } from "three/tsl";
+let started = false;
+const waiting = [];
+const frames = (count) => new Promise((done) => waiting.push({ count, done }));
+globalThis.tn.onFrame(() => {
+  for (const wait of waiting.splice(0)) {
+    if (--wait.count === 0) wait.done(); else waiting.push(wait);
+  }
+});
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+  camera.position.z = 1;
+  const plane = new Mesh(new PlaneGeometry(2, 2), new MeshStandardMaterial({ metalness: 0.25, roughness: 0.75 }));
+  // A slope distinguishes pixel-centre depth from MSAA sample 0; a flat plane hides the bug.
+  plane.rotation.y = 0.3; scene.add(plane);
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 }, antialias: ${antialias} });
+  const scenePass = pass(scene, camera);
+  // An MRT with the normal target reads metalness and roughness from its alpha (3-bit metalness, the
+  // Unreal-look surface packing); without it they come from the exact material target this case checks.
+  scenePass.setMRT(mrt(${target === "material" ? "{ output, metalness, roughness }" : "{ output, normal: normalView, metalness, roughness }"}));
+  const metal = scenePass.getTextureNode("metalness"), rough = scenePass.getTextureNode("roughness");
+  const pipeline = new RenderPipeline(renderer);
+  pipeline.outputColorTransform = false;
+  // Read inside a post pass, as SSR does: an output-only graph has no pass to plan the targets for.
+  const normal = ${target === "material" ? "null" : 'scenePass.getTextureNode("normal")'};
+  pipeline.outputNode = convertToTexture(${target === "material" ? "vec4(metal.r, rough.g, metal.b, rough.a)" : "vec4(normal.xyz, 1)"});
+  pipeline.render();
+  // Pipelines compile asynchronously: read until the post pass has drawn (alpha non-zero), at most 120 frames.
+  const drawn = (left) => frames(3).then(() => globalThis.tn.readFrame()).then((pixels) => pixels.some((v, i) => i % 4 === 3 && v !== 0) || left === 0 ? pixels : drawn(left - 1));
+  drawn(40).then((pixels) => {
+    // The canvas size is a request: read the centre of the buffer the player drew, which the tilted plane covers.
+    const size = renderer.getDrawingBufferSize(new Vector2());
+    const at = (Math.floor(size.y / 2) * size.x + Math.floor(size.x / 2)) * 4;
+    const seen = Array.from(pixels.slice(at, at + 4));
+    const ok = seen.length === 4 && ${JSON.stringify(target === "material" ? [64, 191, 64, 191] : [Math.round(Math.sin(0.3) * 255), 0, Math.round(Math.cos(0.3) * 255), 255])}.every((value, i) => Math.abs(value - seen[i]) <= 2);
+    globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD ${target} MRT (MSAA=${antialias}) " + seen);
+  }).catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+});
+`);
+assert.equal(targetReadback.verdict, "COMPUTE_OK", targetReadback.output);
+}
+
+// Reflect the red front-face centre (0,1,1) across y=0. The camera-to-image line
+// meets the floor at (0,0,2.25); its reflected ray hits (0,1,1), not a tuned screen pixel.
+const ssrReadback = await runComputeGame(executable, `
+import { BoxGeometry, Mesh, MeshStandardMaterial, NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3 } from "three";
+import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+import { convertToTexture, metalness, mrt, normalView, output, pass, roughness } from "three/tsl";
+import { ssr } from "three/addons/tsl/display/SSRNode.js";
+let started = false;
+const waiting = [];
+const frames = (count) => new Promise((done) => waiting.push({ count, done }));
+globalThis.tn.onFrame(() => {
+  for (const wait of waiting.splice(0)) {
+    if (--wait.count === 0) wait.done(); else waiting.push(wait);
+  }
+});
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const renderer = new WebGPURenderer({ antialias: ${antialias} }); renderer.toneMapping = NoToneMapping;
+  const size = renderer.getDrawingBufferSize(new Vector2());
+  const camera = new PerspectiveCamera(60, size.x / size.y, 0.1, 50);
+  camera.position.set(0,3,6); camera.lookAt(0,0.5,0);
+  const floorMaterial = new MeshStandardMaterial({ color: 0x040404, metalness: 1, roughness: 0 });
+  const floor = new Mesh(new PlaneGeometry(20,20), floorMaterial);
+  floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  const box = new Mesh(new BoxGeometry(2,2,2), new MeshStandardMaterial({ color: 0, emissive: 0xff0000, metalness: 0, roughness: 1 }));
+  box.position.y = 1; scene.add(box);
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const scenePass = pass(scene,camera);
+  scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+  const base = convertToTexture(scenePass.getTextureNode());
+  const reflection = ssr(base, scenePass.getTextureNode("depth"), scenePass.getTextureNode("normal"), {
+    camera, metalnessNode: scenePass.getTextureNode("metalness").r,
+    roughnessNode: scenePass.getTextureNode("roughness").g, reflectNonMetals: true,
+  });
+  reflection.maxDistance.value = 30; reflection.quality.value = 1; reflection.resolutionScale = 0.5;
+  if (reflection.thickness.value !== Math.fround(0.1) || reflection.opacity.value !== 1)
+    throw Error("SSR defaults did not reach the native effect");
+  const pipeline = new RenderPipeline(renderer); pipeline.outputColorTransform = false;
+  const capture = async (node) => {
+    pipeline.outputNode = node; pipeline.render();
+    await frames(3);
+    const pixels = await globalThis.tn.readFrame();
+    if (pixels.length !== size.x * size.y * 4) throw Error("SSR frame readback is empty or has the wrong extent: " + pixels.length);
+    const sample = (point) => {
+      const projected = point.project(camera);
+      const x = Math.floor((projected.x * 0.5 + 0.5) * size.x);
+      const y = Math.floor((0.5 - projected.y * 0.5) * size.y);
+      if (x < 0 || x >= size.x || y < 0 || y >= size.y) throw Error("SSR geometry projects outside the frame");
+      return Array.from(pixels.slice((y * size.x + x) * 4, (y * size.x + x) * 4 + 4));
+    };
+    return { hit: sample(new Vector3(0,0,2.25)), far: sample(new Vector3(3,0,2.25)) };
+  };
+  (async () => {
+    const baseline = await capture(base);
+    const mirror = await capture(base.add(reflection));
+    // Ideal linear red = (1-1/30)^2 * 3.75^2/(3^2+3.75^2) = 0.570; >145/255.
+    // An 80-code rise allows raster/march error while excluding a missing reflection.
+    if (mirror.hit[0] - baseline.hit[0] < 80) throw Error("SSR mirror did not reflect red: " + JSON.stringify({baseline,mirror}));
+    if (mirror.far.some((v,i) => Math.abs(v - baseline.far[i]) > 2)) throw Error("SSR changed a floor pixel whose ray misses the box");
+    reflection.reflectNonMetals = false;
+    floorMaterial.metalness = 0; floorMaterial.roughness = 1;
+    const roughBaseline = await capture(base);
+    const roughFloor = await capture(base.add(reflection));
+    if (["hit","far"].some((key) => roughFloor[key].some((v,i) => Math.abs(v - roughBaseline[key][i]) > 2)))
+      throw Error("SSR reflected a rough non-metal: " + JSON.stringify({roughBaseline,roughFloor}));
+    globalThis.tn.log("COMPUTE_OK");
+  })().catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+});
+`);
+assert.equal(ssrReadback.verdict, "COMPUTE_OK", ssrReadback.output);
+
+}
+
+// Perspective depth must stay a depth resource in both intermediate and output graph programs.
+for (const postPass of [true, false]) {
+  const depthReadback = await runComputeGame(executable, `
+import { Mesh, MeshBasicMaterial, NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene } from "three";
+import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+import { convertToTexture, pass, vec4 } from "three/tsl";
+let started = false, remaining = 3;
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 20);
+  camera.position.z = 1;
+  const plane = new Mesh(new PlaneGeometry(20, 20), new MeshBasicMaterial());
+  plane.position.z = -3; scene.add(plane);
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const renderer = new WebGPURenderer(); renderer.toneMapping = NoToneMapping;
+  const scenePass = pass(scene, camera);
+  const distance = scenePass.getViewZNode().negate().div(10);
+  const linearDepth = vec4(distance, distance, distance, 1);
+  const pipeline = new RenderPipeline(renderer);
+  pipeline.outputNode = ${postPass ? "convertToTexture(linearDepth)" : "linearDepth"};
+  pipeline.render();
+  globalThis.tn.onFrame(() => {
+    if (--remaining !== 0) return;
+    globalThis.tn.readFrame().then((pixels) => {
+      const at = Math.floor(pixels.length / 8) * 4;
+      const seen = Array.from(pixels.slice(at, at + 4));
+      // Linear distance 4 / 10 is 170 in sRGB-encoded RGBA8.
+      const ok = seen.length === 4 && [170, 170, 170, 255].every((v, i) => Math.abs(v - seen[i]) <= 3);
+      globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD scene depth (post=${postPass}) " + seen);
+    }).catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+  });
+});
+`);
+  assert.equal(depthReadback.verdict, "COMPUTE_OK", depthReadback.output);
+}
+
+const worldMatrixReadback = await runComputeGame(executable, `
+import { Group, Mesh, NoToneMapping, OrthographicCamera, PlaneGeometry, Scene, Vector2 } from "three";
+import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
+import { modelWorldMatrix, positionLocal, vec3, vec4 } from "three/tsl";
+let started = false;
+let remaining = 0;
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const camera = new OrthographicCamera(-2, 2, 2, -2, 0.1, 10);
+  camera.position.z = 2;
+  const material = new MeshBasicNodeMaterial();
+  material.positionNode = positionLocal.add(vec3(modelWorldMatrix.element(3).x, 0, 0));
+  material.colorNode = vec3(modelWorldMatrix.mul(vec4(0, 0, 0, 1)).x.add(0.5), modelWorldMatrix.element(3).y, 0);
+  for (const direction of [-1, 1]) {
+    const parent = new Group(); parent.position.set(direction * 0.25, 0.25, 0);
+    const mesh = new Mesh(new PlaneGeometry(0.5, 0.5), material);
+    mesh.position.set(direction * 0.25, 0.25, 0);
+    parent.add(mesh); scene.add(parent);
+  }
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const renderer = new WebGPURenderer(); renderer.toneMapping = NoToneMapping;
+  remaining = 3;
+  globalThis.tn.onFrame(() => {
+    if (--remaining !== 0) return;
+    globalThis.tn.readFrame().then((pixels) => {
+      const size = renderer.getDrawingBufferSize(new Vector2());
+      const pixel = (x, y) => Array.from(pixels.slice((Math.floor(y * size.y) * size.x + Math.floor(x * size.x)) * 4,
+        (Math.floor(y * size.y) * size.x + Math.floor(x * size.x)) * 4 + 4));
+      const left = pixel(0.25, 0.375), right = pixel(0.75, 0.375), middle = pixel(0.5, 0.375);
+      const close = (seen, expected) => seen.length === 4 && expected.every((v, i) => Math.abs(seen[i] - v) <= 3);
+      const ok = close(left, [0, 188, 0, 255]) && close(right, [255, 188, 0, 255]) && close(middle, [0, 0, 0, 255]);
+      globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD modelWorldMatrix " + JSON.stringify({ left, right, middle, size }));
+    }).catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+  });
+});
+`);
+assert.equal(worldMatrixReadback.verdict, "COMPUTE_OK", worldMatrixReadback.output);
+
+// A real inline GLB, with a black base so only the scaled red emissive can contribute.
+function emissiveGlb(strength, required = "KHR_materials_emissive_strength") {
+  const positions = Buffer.from(new Float32Array([-1, -1, 0, 1, -1, 0, 0, 1, 0]).buffer);
+  const json = Buffer.from(JSON.stringify({ asset: { version: "2.0" }, scene: 0,
+    scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
+    buffers: [{ byteLength: positions.length }], bufferViews: [{ buffer: 0, byteLength: positions.length }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: "VEC3", min: [-1, -1, 0], max: [1, 1, 0] }],
+    extensionsUsed: [required], extensionsRequired: [required],
+    materials: [{ pbrMetallicRoughness: { baseColorFactor: [0, 0, 0, 1] }, emissiveFactor: [1, 0, 0],
+      extensions: { KHR_materials_emissive_strength: strength === undefined ? {} : { emissiveStrength: strength } } }],
+  }));
+  const padded = Math.ceil(json.length / 4) * 4;
+  const glb = Buffer.alloc(28 + padded + positions.length, 0x20);
+  glb.writeUInt32LE(0x46546c67, 0); glb.writeUInt32LE(2, 4); glb.writeUInt32LE(glb.length, 8);
+  glb.writeUInt32LE(padded, 12); glb.writeUInt32LE(0x4e4f534a, 16); json.copy(glb, 20);
+  glb.writeUInt32LE(positions.length, 20 + padded); glb.writeUInt32LE(0x004e4942, 24 + padded);
+  positions.copy(glb, 28 + padded);
+  return glb;
+}
+const emissivePackage = resolve(work, "emissive.tnpk");
+await writeFile(emissivePackage, writeNativePackage([
+  { name: "emissive.glb", kind: 6, data: emissiveGlb(2), uploadSize: 0 },
+  { name: "default.glb", kind: 6, data: emissiveGlb(undefined), uploadSize: 0 },
+  { name: "unknown.glb", kind: 6, data: emissiveGlb(2, "UNKNOWN_required_extension"), uploadSize: 0 },
+]));
+await writeFile(entry, `
+import { Scene, PerspectiveCamera } from "three";
+try {
+  for (const [name, expected] of [["emissive.glb", 2], ["default.glb", 1]]) {
+    const model = globalThis.tn.loadAsset("model", name).value;
+    let checked = 0;
+    model.scene.traverse((object) => {
+      if (!object.isMesh) return;
+      checked++;
+      const material = object.material;
+      if (material.emissiveIntensity !== expected || material.emissive.r !== 1 || material.emissive.g !== 0 || material.emissive.b !== 0)
+        throw Error("emissive strength not loaded: " + material.emissiveIntensity);
+    });
+    if (checked !== 1) throw Error("emissive fixture has no mesh");
+  }
+  let refused = "";
+  try { globalThis.tn.loadAsset("model", "unknown.glb"); } catch (error) { refused = error.message; }
+  if (!refused.includes("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED UNKNOWN_required_extension"))
+    throw Error("unknown required extension did not fail by name: " + refused);
+  globalThis.tn.log("EMISSIVE_STRENGTH_OK");
+} catch (error) {
+  if (${process.argv.includes("--imports-only")} && /TN_NATIVE_GLTF_UNAVAILABLE/.test(error.message))
+    globalThis.tn.log("EMISSIVE_STRENGTH_UNAVAILABLE: built without cgltf");
+  else throw error;
+}
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const emissiveRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
+  env: { ...process.env, TN_NATIVE_ASSET_PACKAGE: emissivePackage } });
+assert.equal(emissiveRun.status, 0, `${emissiveRun.stdout}\n${emissiveRun.stderr}`);
+assert.match(emissiveRun.stdout, /EMISSIVE_STRENGTH_(OK|UNAVAILABLE)/);
+console.log(emissiveRun.stdout.match(/EMISSIVE_STRENGTH_[^\n]*/)[0]);
+
+// Final loader release must not clear reusable TNPK cache entries: native owns no decoder workers.
+const disposalBytes = Buffer.alloc(16);
+disposalBytes.writeUInt32LE(1, 0); disposalBytes.writeUInt32LE(1, 4); disposalBytes.writeUInt32LE(19, 8);
+disposalBytes.set([255, 32, 16, 255], 12);
+const disposalPackage = resolve(work, "dispose-assets.tnpk");
+await writeFile(disposalPackage, writeNativePackage([
+  { name: "cache.rgba", kind: 2, data: disposalBytes, uploadSize: 4 },
+]));
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+const loader = createAssetLoader();
+loader.texture("cache.rgba").then(async (first) => {
+  loader.dispose(); loader.dispose();
+  if (await loader.texture("cache.rgba") !== first || loader.progress.requested !== 1)
+    throw Error("asset dispose cleared the reusable cache");
+  loader.clear(); await loader.texture("cache.rgba");
+  if (loader.progress.requested !== 2) throw Error("asset clear did not empty the cache");
+  loader.release("texture", "cache.rgba"); await loader.texture("cache.rgba");
+  if (loader.progress.requested !== 3) throw Error("asset release did not release its cache entry");
+  globalThis.tn.log("ASSET_DISPOSE_OK");
+}).catch((error) => { globalThis.tn.__startupError = error.stack; });
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const disposalRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
+  env: { ...process.env, TN_NATIVE_ASSET_PACKAGE: disposalPackage } });
+assert.equal(disposalRun.status, 0, `${disposalRun.stdout}\n${disposalRun.stderr}`);
+assert.match(disposalRun.stdout, /ASSET_DISPOSE_OK/);
+console.log("ASSET_DISPOSE_OK");
+
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);
@@ -593,8 +984,12 @@ renderer.toneMapping = 4; renderer.toneMappingExposure = 0.62; renderer.shadowMa
 renderer.render(scene, camera);
 renderer.toneMapping = 5;
 let customRefused = false;
-try { renderer.render(scene, camera); } catch (error) { customRefused = /TN_NATIVE_RENDERER_STATE: toneMapping 5/.test(error.message); }
-check(customRefused, "an unimplemented tone mapping refuses");
+try { renderer.render(scene, camera); } catch (error) { customRefused = /TN_NATIVE_CUSTOM_TONEMAPPING_MISSING/.test(error.message); }
+check(customRefused, "custom tone mapping without a registered curve refuses");
+renderer.toneMapping = 8;
+let unsupportedRefused = false;
+try { renderer.render(scene, camera); } catch (error) { unsupportedRefused = /TN_NATIVE_RENDERER_STATE: toneMapping 8/.test(error.message); }
+check(unsupportedRefused, "an unsupported tone mapping refuses");
 check(renderer.info.render.drawCalls === 0 && renderer.info.render.triangles === 0 && renderer.info.render.calls === 0,
   "renderer.info counts the last drawn frame (none in a check)");
 renderer.toneMapping = 4;
@@ -635,11 +1030,21 @@ const scenePass = pass(scene, camera);
 let refusedNormal = false;
 try { scenePass.getTextureNode("normal"); } catch (error) { refusedNormal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
 check(refusedNormal, "normals need the MRT that asks for them");
+for (const name of ["metalness", "roughness"]) {
+  let refused = false;
+  try { scenePass.getTextureNode(name); } catch (error) { refused = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+  check(refused, name + " needs its MRT output");
+}
 scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
 const sceneDepth = scenePass.getTextureNode("depth"), sceneNormal = scenePass.getTextureNode("normal");
-let refusedMetal = false;
-try { scenePass.getTextureNode("metalness"); } catch (error) { refusedMetal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
-check(refusedMetal && scenePass.isPassNode && scenePass.scene === scene, "the native scene pass has colour, depth and normals only");
+const sceneVelocity = scenePass.getTextureNode("velocity");
+pipeline.outputNode = sceneVelocity.sample(screenUV); pipeline.render();
+let refusedUnknown = false;
+try { scenePass.getTextureNode("unregistered-channel"); } catch (error) { refusedUnknown = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+check(refusedUnknown, "an unregistered scene-pass channel refuses");
+const sceneSurface = scenePass.getTextureNode("metalness");
+check(sceneVelocity && scenePass.getTextureNode("roughness") && scenePass.isPassNode && scenePass.scene === scene && sceneSurface.r !== undefined && sceneSurface.g !== undefined,
+  "the native scene pass has colour, depth, normals, sampleable temporal velocity and the surface (metalness r, roughness g)");
 const contact = ao(sceneDepth, sceneNormal, camera);
 contact.radius.value = 0.35; contact.resolutionScale = 0.5;
 check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");

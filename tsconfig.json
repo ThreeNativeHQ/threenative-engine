@@ -27,6 +27,7 @@
     "**/dist/**",
     "packages/runtime-native/scripts/**",
     "scripts/performance-regression/labs",
-    "examples/avbd-rigging"
+    "examples/avbd-rigging",
+    "scripts/unreal-look/scaffold"
   ]
 }

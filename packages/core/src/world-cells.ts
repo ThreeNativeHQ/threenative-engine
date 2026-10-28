@@ -366,6 +366,7 @@ function mainGpuShare(option: number | undefined): number {
  * @situation keep scattered props and hand-placed chunks resident around a moving player
  * @situation honour per-asset draw distances and hard streaming budgets without a mid-frame throw
  * @constraint surface is the game's; this class creates no material, colour or geometry
+ * @constraint a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first
  * @constraint budgets are hard caps that report pressure instead of over-committing
  * @constraint `whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate
  * @constraint model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell

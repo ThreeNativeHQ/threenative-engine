@@ -69,7 +69,7 @@ export function Minimap() {
   }, [fog, dots, cameraX, cameraZ, cameraZoom]);
 
   return (
-    <section className="pointer-events-none absolute right-4 bottom-56 bg-panel/80 p-2">
+    <section className="pointer-events-none absolute right-4 bottom-56 bg-black/80 p-2">
       <div className="mb-1 text-[9px] uppercase tracking-[0.18em] text-dim">tactical overview</div>
       <canvas
         aria-label="Tactical overview"

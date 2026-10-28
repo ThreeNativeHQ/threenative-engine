@@ -162,11 +162,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "AnimationAction": {
       "constructor": false,
@@ -259,9 +255,7 @@
       "callbacks": [],
       "events": ["finished", "loop"],
       "fixedMembers": [],
-      "fields": {
-        "time": [0, 1]
-      }
+      "fields": { "time": [0, 1] }
     },
     "BatchedMesh": {
       "constructor": true,
@@ -564,11 +558,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Bone": {
       "constructor": true,
@@ -721,11 +711,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Box3": {
       "constructor": true,
@@ -1145,17 +1131,15 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "CanvasTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1178,6 +1162,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1197,10 +1183,10 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "CapsuleGeometry": {
@@ -1430,11 +1416,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "b": [16, 1],
-        "g": [8, 1],
-        "r": [0, 1]
-      }
+      "fields": { "b": [16, 1], "g": [8, 1], "r": [0, 1] }
     },
     "ConeGeometry": {
       "constructor": true,
@@ -1600,9 +1582,11 @@
     },
     "Data3DTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1626,6 +1610,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1646,17 +1632,19 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DataTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1679,6 +1667,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1698,17 +1688,19 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DepthTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1731,6 +1723,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1749,10 +1743,10 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DirectionalLight": {
@@ -1951,17 +1945,13 @@
         "shadow",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "DirectionalLightShadow": {
       "constructor": false,
       "methods": [],
       "getters": ["bias", "intensity", "normalBias", "radius"],
-      "setters": ["bias", "intensity", "normalBias", "radius"],
+      "setters": ["bias", "filterNode", "intensity", "normalBias", "radius", "shadowNode"],
       "members": ["camera", "mapSize"],
       "callbacks": [],
       "events": [],
@@ -2069,12 +2059,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "__order": [24, 0],
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "__order": [24, 0], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "ExtrudeGeometry": {
       "constructor": true,
@@ -2217,7 +2202,7 @@
       "members": ["color"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": [],
+      "fixedMembers": ["color"],
       "fields": {}
     },
     "FogExp2": {
@@ -2228,7 +2213,7 @@
       "members": ["color"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": [],
+      "fixedMembers": ["color"],
       "fields": {}
     },
     "Frustum": {
@@ -2433,11 +2418,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "HemisphereLight": {
       "constructor": true,
@@ -2610,11 +2591,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "IcosahedronGeometry": {
       "constructor": true,
@@ -3008,6 +2985,7 @@
         "frustumCulled",
         "geometry",
         "instanceColor",
+        "instanceMatrix",
         "layers.mask",
         "material",
         "matrixAutoUpdate",
@@ -3134,11 +3112,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LOD": {
       "constructor": true,
@@ -3299,11 +3273,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LatheGeometry": {
       "constructor": true,
@@ -3404,9 +3374,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "mask": [0, 1]
-      }
+      "fields": { "mask": [0, 1] }
     },
     "Line": {
       "constructor": true,
@@ -3693,16 +3661,13 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "LineBasicMaterial": {
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -3719,6 +3684,7 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -3728,6 +3694,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -3746,6 +3713,7 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -4043,11 +4011,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "MathUtils": {
       "constructor": true,
@@ -4094,9 +4058,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "elements": [0, 9]
-      }
+      "fields": { "elements": [0, 9] }
     },
     "Matrix4": {
       "constructor": true,
@@ -4145,9 +4107,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "elements": [0, 16]
-      }
+      "fields": { "elements": [0, 16] }
     },
     "Mesh": {
       "constructor": true,
@@ -4435,16 +4395,13 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "MeshBasicMaterial": {
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -4461,6 +4418,7 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -4470,6 +4428,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -4488,6 +4447,7 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -4504,7 +4464,9 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
+        "aoNode",
         "blending",
         "color.b",
         "color.g",
@@ -4519,6 +4481,7 @@
         "forceSinglePass",
         "fragmentNode",
         "id",
+        "irradianceNode",
         "metalnessNode",
         "name",
         "normalNode",
@@ -4529,6 +4492,7 @@
         "polygonOffsetUnits",
         "positionNode",
         "roughnessNode",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -4539,7 +4503,9 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
+        "aoNode",
         "blending",
         "color",
         "color.b",
@@ -4554,6 +4520,7 @@
         "fog",
         "forceSinglePass",
         "fragmentNode",
+        "irradianceNode",
         "map",
         "metalnessNode",
         "name",
@@ -4566,6 +4533,7 @@
         "polygonOffsetUnits",
         "positionNode",
         "roughnessNode",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -4583,6 +4551,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -4604,15 +4573,18 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -4639,13 +4611,16 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "side",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
-      "members": ["color", "emissive", "map", "normalMap", "normalScale"],
+      "members": ["color", "emissive", "map", "normalMap", "normalScale", "subsurfaceColor"],
       "callbacks": [],
       "events": [],
       "fixedMembers": ["color", "emissive", "normalScale"],
@@ -4655,6 +4630,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -4676,6 +4652,7 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "shininess",
         "side",
         "specular.b",
@@ -4683,12 +4660,14 @@
         "specular.r",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -4715,18 +4694,29 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "shadowSide",
         "shininess",
         "side",
         "specular",
         "specular.b",
         "specular.g",
         "specular.r",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
-      "members": ["color", "emissive", "map", "normalMap", "normalScale", "specular"],
+      "members": [
+        "color",
+        "emissive",
+        "map",
+        "normalMap",
+        "normalScale",
+        "specular",
+        "subsurfaceColor"
+      ],
       "callbacks": [],
       "events": [],
       "fixedMembers": ["color", "emissive", "normalScale", "specular"],
@@ -4736,6 +4726,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "anisotropy",
         "aoMapIntensity",
@@ -4767,7 +4758,9 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "roughDiffuse",
         "roughness",
+        "shadowSide",
         "sheen",
         "side",
         "specularColor.b",
@@ -4777,12 +4770,14 @@
         "toneMapped",
         "transmission",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "anisotropy",
         "aoMap",
@@ -4828,8 +4823,10 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "roughDiffuse",
         "roughness",
         "roughnessMap",
+        "shadowSide",
         "sheen",
         "side",
         "specularColor",
@@ -4839,9 +4836,11 @@
         "specularColorMap",
         "specularIntensity",
         "specularIntensityMap",
+        "subsurfaceColor",
         "toneMapped",
         "transmission",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
@@ -4863,7 +4862,8 @@
         "roughnessMap",
         "specularColor",
         "specularColorMap",
-        "specularIntensityMap"
+        "specularIntensityMap",
+        "subsurfaceColor"
       ],
       "callbacks": [],
       "events": [],
@@ -4874,6 +4874,7 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "aoMapIntensity",
         "blending",
@@ -4899,16 +4900,20 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "roughDiffuse",
         "roughness",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "aoMap",
         "aoMapIntensity",
@@ -4944,11 +4949,15 @@
         "polygonOffset",
         "polygonOffsetFactor",
         "polygonOffsetUnits",
+        "roughDiffuse",
         "roughness",
         "roughnessMap",
+        "shadowSide",
         "side",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
@@ -4963,7 +4972,8 @@
         "metalnessMap",
         "normalMap",
         "normalScale",
-        "roughnessMap"
+        "roughnessMap",
+        "subsurfaceColor"
       ],
       "callbacks": [],
       "events": [],
@@ -4974,8 +4984,10 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "aoMapIntensity",
+        "aoNode",
         "blending",
         "bumpScale",
         "color.b",
@@ -4997,6 +5009,7 @@
         "forceSinglePass",
         "fragmentNode",
         "id",
+        "irradianceNode",
         "metalness",
         "metalnessNode",
         "name",
@@ -5007,11 +5020,14 @@
         "polygonOffsetFactor",
         "polygonOffsetUnits",
         "positionNode",
+        "roughDiffuse",
         "roughness",
         "roughnessNode",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
@@ -5019,9 +5035,11 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "aoMap",
         "aoMapIntensity",
+        "aoNode",
         "blending",
         "bumpMap",
         "bumpScale",
@@ -5047,6 +5065,7 @@
         "fog",
         "forceSinglePass",
         "fragmentNode",
+        "irradianceNode",
         "map",
         "metalness",
         "metalnessMap",
@@ -5062,12 +5081,16 @@
         "polygonOffsetFactor",
         "polygonOffsetUnits",
         "positionNode",
+        "roughDiffuse",
         "roughness",
         "roughnessMap",
         "roughnessNode",
+        "shadowSide",
         "side",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -5083,7 +5106,8 @@
         "metalnessMap",
         "normalMap",
         "normalScale",
-        "roughnessMap"
+        "roughnessMap",
+        "subsurfaceColor"
       ],
       "callbacks": [],
       "events": [],
@@ -5094,7 +5118,9 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
+        "aoNode",
         "blending",
         "colorNode",
         "colorWrite",
@@ -5105,6 +5131,7 @@
         "forceSinglePass",
         "fragmentNode",
         "id",
+        "irradianceNode",
         "name",
         "normalNode",
         "opacity",
@@ -5113,6 +5140,7 @@
         "polygonOffsetFactor",
         "polygonOffsetUnits",
         "positionNode",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -5123,7 +5151,9 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
+        "aoNode",
         "blending",
         "colorNode",
         "colorWrite",
@@ -5133,6 +5163,7 @@
         "fog",
         "forceSinglePass",
         "fragmentNode",
+        "irradianceNode",
         "name",
         "needsUpdate",
         "normalNode",
@@ -5142,6 +5173,7 @@
         "polygonOffsetFactor",
         "polygonOffsetUnits",
         "positionNode",
+        "shadowSide",
         "side",
         "toneMapped",
         "transparent",
@@ -5317,11 +5349,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "OctahedronGeometry": {
       "constructor": true,
@@ -5584,11 +5612,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Path": {
       "constructor": true,
@@ -5803,11 +5827,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Plane": {
       "constructor": true,
@@ -6019,6 +6039,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "sourceRadius",
         "static",
         "type",
         "up.x",
@@ -6073,6 +6094,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "sourceRadius",
         "static",
         "up.x",
         "up.y",
@@ -6108,17 +6130,13 @@
         "shadow",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "PointLightShadow": {
       "constructor": false,
       "methods": [],
       "getters": ["bias", "intensity", "normalBias", "radius"],
-      "setters": ["bias", "intensity", "normalBias", "radius"],
+      "setters": ["bias", "filterNode", "intensity", "normalBias", "radius", "shadowNode"],
       "members": ["camera", "mapSize"],
       "callbacks": [],
       "events": [],
@@ -6170,12 +6188,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "w": [24, 1],
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "w": [24, 1], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "QuaternionKeyframeTrack": {
       "constructor": true,
@@ -6460,6 +6473,7 @@
         "__alwaysRender",
         "backgroundBlurriness",
         "backgroundIntensity",
+        "backgroundNode",
         "backgroundRotation.x",
         "backgroundRotation.y",
         "backgroundRotation.z",
@@ -6511,6 +6525,7 @@
         "background",
         "backgroundBlurriness",
         "backgroundIntensity",
+        "backgroundNode",
         "backgroundRotation",
         "backgroundRotation.x",
         "backgroundRotation.y",
@@ -6585,11 +6600,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Shape": {
       "constructor": true,
@@ -7022,11 +7033,7 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "Source": {
       "constructor": false,
@@ -7066,9 +7073,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": ["center"],
-      "fields": {
-        "radius": [24, 1]
-      }
+      "fields": { "radius": [24, 1] }
     },
     "SphereGeometry": {
       "constructor": true,
@@ -7254,6 +7259,7 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "sourceRadius",
         "static",
         "type",
         "up.x",
@@ -7310,7 +7316,9 @@
         "shadow.mapSize.y",
         "shadow.normalBias",
         "shadow.radius",
+        "sourceRadius",
         "static",
+        "target",
         "up.x",
         "up.y",
         "up.z",
@@ -7344,20 +7352,15 @@
         "rotation",
         "scale",
         "shadow",
-        "target",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "SpotLightShadow": {
       "constructor": false,
       "methods": [],
       "getters": ["bias", "focus", "intensity", "normalBias", "radius"],
-      "setters": ["bias", "focus", "intensity", "normalBias", "radius"],
+      "setters": ["bias", "filterNode", "focus", "intensity", "normalBias", "radius", "shadowNode"],
       "members": ["camera", "mapSize"],
       "callbacks": [],
       "events": [],
@@ -7655,16 +7658,13 @@
         "scale",
         "up"
       ],
-      "fields": {
-        "castShadow": [1, 0],
-        "receiveShadow": [2, 0],
-        "visible": [0, 0]
-      }
+      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
     },
     "SpriteMaterial": {
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color.b",
@@ -7682,6 +7682,7 @@
         "polygonOffsetFactor",
         "polygonOffsetUnits",
         "rotation",
+        "shadowSide",
         "side",
         "sizeAttenuation",
         "toneMapped",
@@ -7692,6 +7693,7 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
         "blending",
         "color",
@@ -7711,6 +7713,7 @@
         "polygonOffsetFactor",
         "polygonOffsetUnits",
         "rotation",
+        "shadowSide",
         "side",
         "sizeAttenuation",
         "toneMapped",
@@ -7728,7 +7731,9 @@
       "constructor": true,
       "methods": ["clone", "copy", "dispose"],
       "getters": [
+        "alphaHash",
         "alphaTest",
+        "aoNode",
         "blending",
         "color.b",
         "color.g",
@@ -7743,6 +7748,7 @@
         "forceSinglePass",
         "fragmentNode",
         "id",
+        "irradianceNode",
         "metalnessNode",
         "name",
         "normalNode",
@@ -7756,6 +7762,7 @@
         "rotationNode",
         "roughnessNode",
         "scaleNode",
+        "shadowSide",
         "side",
         "sizeAttenuation",
         "toneMapped",
@@ -7767,7 +7774,9 @@
         "visible"
       ],
       "setters": [
+        "alphaHash",
         "alphaTest",
+        "aoNode",
         "blending",
         "color",
         "color.b",
@@ -7782,6 +7791,7 @@
         "fog",
         "forceSinglePass",
         "fragmentNode",
+        "irradianceNode",
         "map",
         "metalnessNode",
         "name",
@@ -7797,6 +7807,7 @@
         "rotationNode",
         "roughnessNode",
         "scaleNode",
+        "shadowSide",
         "side",
         "sizeAttenuation",
         "toneMapped",
@@ -7811,11 +7822,71 @@
       "fixedMembers": ["color"],
       "fields": {}
     },
-    "Texture": {
+    "StorageTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose", "setSize"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
+        "colorSpace",
+        "flipY",
+        "format",
+        "generateMipmaps",
+        "image.height",
+        "image.width",
+        "isStorageTexture",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "mipmapsAutoUpdate",
+        "name",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "type",
+        "version",
+        "wrapS",
+        "wrapT"
+      ],
+      "setters": [
+        "anisotropy",
+        "center.x",
+        "center.y",
+        "colorSpace",
+        "flipY",
+        "format",
+        "generateMipmaps",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "mipmapsAutoUpdate",
+        "name",
+        "needsUpdate",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "type",
+        "wrapS",
+        "wrapT"
+      ],
+      "members": ["center", "offset", "repeat", "source"],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
+      "fields": {}
+    },
+    "Texture": {
+      "constructor": true,
+      "methods": ["clone", "dispose"],
+      "getters": [
+        "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -7838,6 +7909,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -7856,10 +7929,10 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "TorusGeometry": {
@@ -8164,10 +8237,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "x": [0, 1],
-        "y": [8, 1]
-      }
+      "fields": { "x": [0, 1], "y": [8, 1] }
     },
     "Vector3": {
       "constructor": true,
@@ -8248,11 +8318,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "Vector4": {
       "constructor": true,
@@ -8311,12 +8377,7 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {
-        "w": [24, 1],
-        "x": [0, 1],
-        "y": [8, 1],
-        "z": [16, 1]
-      }
+      "fields": { "w": [24, 1], "x": [0, 1], "y": [8, 1], "z": [16, 1] }
     },
     "VectorKeyframeTrack": {
       "constructor": true,

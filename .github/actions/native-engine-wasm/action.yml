@@ -29,7 +29,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/packages/runtime-native/build/web
-        key: native-engine-web-wasm-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.emsdk-version }}-${{ hashFiles('packages/runtime-native/src/engine/**', 'packages/runtime-native/include/**', 'packages/runtime-native/cmake/**', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/native-deps.lock.json', 'packages/runtime-native/scripts/download-deps.mjs') }}
+        key: native-engine-web-wasm-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.emsdk-version }}-${{ hashFiles('packages/runtime-native/src/engine/**', 'packages/runtime-native/include/**', 'packages/runtime-native/cmake/**', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/native-deps.lock.json', 'packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/web-engine-stamp.mjs') }}
     - name: Build the web engine
       if: steps.wasm.outputs.cache-hit != 'true'
       shell: bash

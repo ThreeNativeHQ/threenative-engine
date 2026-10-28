@@ -1,0 +1,101 @@
+{
+  "name": "collectathon-clipped-probe",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": -22.5,
+          "y": 0.6,
+          "z": 18
+        },
+        "facing": {
+          "yaw": -1.5708
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "deck-sweeps",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hop",
+      "press": ["Space"],
+      "holdTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "run-off",
+      "press": ["KeyW"],
+      "holdTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "landings",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "player",
+        "component": "position",
+        "path": "0",
+        "gte": -200,
+        "lte": 200,
+        "allowTrivial": "The hero starts with its waist inside the orbiting platform's box collider, as when the rising deck sweeps through an airborne hero; a ray from inside a box reports a zero normal, and the position must stay finite (NaN fails every bound)."
+      },
+      {
+        "entity": "player",
+        "component": "position",
+        "path": "1",
+        "gte": -200,
+        "lte": 200,
+        "allowTrivial": "Finite height after the clipped start."
+      },
+      {
+        "entity": "player",
+        "component": "position",
+        "path": "2",
+        "gte": -200,
+        "lte": 200,
+        "allowTrivial": "Finite depth after the clipped start."
+      },
+      {
+        "entity": "player",
+        "component": "speed",
+        "gte": 0,
+        "lte": 30,
+        "allowTrivial": "Finite speed after the clipped start."
+      }
+    ]
+  }
+}

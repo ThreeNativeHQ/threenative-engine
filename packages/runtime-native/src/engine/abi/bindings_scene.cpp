@@ -215,38 +215,6 @@ void registerEvents(ClassBinding& b, EventDispatcher* (*dispatcher)(void*), std:
     }
 }
 
-// One number that changes whenever anything the projection's stability proof reads off the engine
-// changes (projection-stability.ts): the walk order, each node's visibility, and for a mesh its
-// geometry, material, flags, render order and layer mask. It walks the way that proof walks, so a
-// light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
-// the caller to its own exact walk.
-double structureStamp(Object3D& root) {
-    uint64_t h = 0xcbf29ce484222325ULL;
-    const auto mix = [&h](uint64_t v) {
-        h = (h ^ v) * 0x100000001b3ULL;
-        h ^= h >> 29;
-    };
-    std::vector<const Object3D*> stack(root.children.rbegin(), root.children.rend());
-    while (!stack.empty()) {
-        const Object3D* object = stack.back();
-        stack.pop_back();
-        const auto* mesh = dynamic_cast<const Mesh*>(object);
-        mix(object->id() * 2 + (object->visible() ? 1 : 0));
-        if (mesh != nullptr) {
-            mix(reinterpret_cast<uintptr_t>(mesh->geometry.get()));
-            mix(reinterpret_cast<uintptr_t>(mesh->material.get()));
-            mix(static_cast<uint64_t>(mesh->castShadow()) | static_cast<uint64_t>(mesh->receiveShadow()) << 1 |
-                static_cast<uint64_t>(mesh->frustumCulled) << 2);
-            mix(static_cast<uint64_t>(static_cast<int64_t>(mesh->renderOrder())));
-            mix(std::bit_cast<uint64_t>(mesh->layers().mask));
-        }
-        mix(object->children.size());
-        if (object->isLight() || object->type() == "LOD") continue;
-        for (auto it = object->children.rbegin(); it != object->children.rend(); ++it) stack.push_back(*it);
-    }
-    return static_cast<double>(h & ((1ULL << 53) - 1));
-}
-
 // core's host projection seam (renderProjection.ts): the verdict the native renderer's own batching gives a
 // root, in one call per frame. It is projection::decide, the port of core's scanProjection, kept while the
 // structure stamp it reads holds and re-judged on core's decline cadence (matrices move a verdict too: a
@@ -278,7 +246,7 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
     if (settled) {
         ++host.sinceDecide;
     } else {
-        const double stamp = structureStamp(root);
+        const double stamp = projection::structureStamp(root);
         if (stamp != host.stamp || minMeshes != host.minMeshes || ++host.sinceDecide >= kDeclineRescanFrames) {
             host.decision = projection::decide(root, minMeshes);
             host.stamp = stamp;
@@ -290,6 +258,18 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
     const projection::Decision& d = host.decision;
     std::vector<std::pair<std::string, Value>> exact;
     for (const auto& [reason, count] : d.exact) exact.emplace_back(reason, Value::of(double(count)));
+    if (!d.cause.empty())
+        return Value::record({{"projecting", Value::of(d.projecting)},
+                              {"reasonCode", Value{Value::Kind::String, 0, d.reasonCode}},
+                              {"sourceRenderables", Value::of(double(d.sourceRenderables))},
+                              {"projectedObjects", Value::of(0.0)},
+                              {"instancedBatches", Value::of(0.0)},
+                              {"materialBatches", Value::of(0.0)},
+                              {"skinnedBatches", Value::of(0.0)},
+                              {"exactObjects", Value::of(0.0)},
+                              {"exact", Value::record({})},
+                              {"cause", Value{Value::Kind::String, 0, d.cause}},
+                              {"causeMeshes", Value::of(double(d.causeMeshes))}});
     return Value::record({{"projecting", Value::of(d.projecting)},
                           {"reasonCode", Value{Value::Kind::String, 0, d.reasonCode}},
                           {"sourceRenderables", Value::of(double(d.sourceRenderables))},
@@ -549,7 +529,7 @@ void registerObject3D(ClassBinding& b) {
     };
     // core's projection-stability proof asks for this where it exists; three has no such method.
     b.methods["__tnStructureStamp"] = [](void* self, const Args&, Store&) {
-        return Value::of(structureStamp(*as<Object3D>(self)));
+        return Value::of(projection::structureStamp(*as<Object3D>(self)));
     };
     // core's SceneRenderProjection asks for this where it exists, instead of building a mirror: the native
     // renderer batches this scene itself, so one call answers what that batching will make of it.
@@ -873,6 +853,12 @@ void registerScene(ClassBinding& b) {
             scene->backgroundTexture = std::static_pointer_cast<Texture>(color->ptr); scene->background.reset();
         } else throw Unsupported{"background must be a Color, Texture or null"};
     };
+    b.getters["backgroundNode"] = [](void* self) { return Value::shaderNode(as<Scene>(self)->backgroundNode); };
+    b.setters["backgroundNode"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
+            throw Unsupported{"TN_NATIVE_BACKGROUND_NODE_INVALID: expected a TSL node or null"};
+        as<Scene>(self)->backgroundNode = v.node;
+    };
     // three's `scene.fogNode`: vec4(color, factor), a TSL node set through the TSL runtime (no ABI value carries it).
     b.getters["fogNode"] = [](void* self) { return Value::shaderNode(as<Scene>(self)->fogNode); };
     b.setters["fogNode"] = [](void* self, const Value& v) {
@@ -919,7 +905,7 @@ void registerFog(ClassBinding& b, bool exp2) {
         if (exp2) return std::make_shared<FogExp2>(color, optional(a, 1, 0.00025));
         return std::make_shared<Fog>(color, optional(a, 1, 1), optional(a, 2, 1000));
     };
-    b.members["color"] = memberAliasMethod(&Fog::color, "Color");
+    fixedMember(b, "color", memberAliasMethod(&Fog::color, "Color"));
     for (int i = 0; i < 3; ++i) {
         const std::string path = std::string("color.") + "rgb"[i];
         b.getters[path] = [i](void* self) { const auto& c = as<Fog>(self)->color; return Value::of(i == 0 ? c.r : i == 1 ? c.g : c.b); };
@@ -1712,6 +1698,13 @@ void registerInstancedMesh(ClassBinding& b) {
     };
     b.members["instanceMatrix"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("InstancedBufferAttribute", as<InstancedMesh>(self)->instanceMatrix);
+    };
+    // three's instanceMatrix is a plain property too: core's projection hands a stand-in the source's buffer, so the
+    // game's later setMatrixAt writes reach what draws.
+    b.setters["instanceMatrix"] = [](void* self, const Value& v, Store& store) {
+        std::shared_ptr<BufferAttribute> matrices = sharedAttributeArg(store, v);
+        if (matrices->itemSize != 16) throw Unsupported{"instanceMatrix needs 16 components per instance"};
+        as<InstancedMesh>(self)->instanceMatrix = std::move(matrices);
     };
     b.members["instanceColor"] = [](void* self, const Args&, Store& store) -> Value {
         const auto& colors = as<InstancedMesh>(self)->instanceColor;

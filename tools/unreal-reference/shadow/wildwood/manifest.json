@@ -1,0 +1,43 @@
+{
+  "note": "PRD-649 / PRD-651 shadow:wildwood: one tree, one bush and one ground plant, the smallest set that tests leaf shadows and the light on leaves. The assets are the Fab Landscape Pro GLBs of the sandbox wildwood game. They are licensed art, so no model, texture or other Fab binary is committed: this manifest names each file with its sha256, and the files are read from the folder in TN_WILDWOOD_ASSETS (scripts/unreal-look/wildwood.ts). Both engines place the same files at the transforms below: three.js frame, metres, Y up, the ground at y = 0, a turn about the vertical in degrees.",
+  "assets": [
+    {
+      "name": "green-tree01",
+      "file": "SM_green-tree01.glb",
+      "sha256": "577b394b07050f9620ed613e719d172875fa4e9daf19c9b4b308130db987dbaa"
+    },
+    {
+      "name": "bush01",
+      "file": "SM_bush01.glb",
+      "sha256": "e29161c093be2e4a1f414b527fced3cedfa0c3b5934613e0ffd7da9704f51b0a"
+    },
+    {
+      "name": "farn01",
+      "file": "SM_FarnGroup01.glb",
+      "sha256": "8ab77f8123538e66d29af316fe493048bf593680ab3003ebf6cba6dcefcc2cf2"
+    }
+  ],
+  "instances": [
+    {
+      "name": "GreenTree_1",
+      "asset": "green-tree01",
+      "position": [0.0, 0, 0.0],
+      "rotationYDeg": 0,
+      "scale": 1
+    },
+    {
+      "name": "Bush_1",
+      "asset": "bush01",
+      "position": [-2.9, 0, 1.9],
+      "rotationYDeg": 20,
+      "scale": 1
+    },
+    {
+      "name": "Fern_1",
+      "asset": "farn01",
+      "position": [-1.3, 0, 0.9],
+      "rotationYDeg": 0,
+      "scale": 1
+    }
+  ]
+}

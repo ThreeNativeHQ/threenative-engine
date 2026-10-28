@@ -367,9 +367,13 @@ describe("actual native receipt writer, collector and protected verdict", () => 
         path.join(repository, "packages/runtime-native/CMakePresets.json"),
         path.join(standalone, "packages/runtime-native/CMakePresets.json"),
       );
-      for (const name of readdirSync(
+      // Kits only: the templates folder also holds the kits' AGENTS.md and its CLAUDE.md mirror.
+      for (const entry of readdirSync(
         path.join(repository, "packages/create-threenative/templates"),
+        { withFileTypes: true },
       )) {
+        if (!entry.isDirectory()) continue;
+        const name = entry.name;
         const folder = path.join(standalone, "packages/create-threenative/templates", name);
         mkdirSync(folder, { recursive: true });
         cpSync(

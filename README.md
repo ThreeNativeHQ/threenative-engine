@@ -114,6 +114,9 @@ lifecycle.
 
 | Template | What you start with |
 | --- | --- |
+| `collectathon` | Hop Garden: a 3D platformer moveset (triple jump, long jump, wall kick, ledge grab, ground pound) on one island with three Sunseeds |
+| `adventure` | Lantern Vale: a 3D action-adventure with lock-on, a sword and shield, half-hearts, a push-block puzzle, a key and a locked door, and the Stone Warden |
+| `kart` | Clover Cup: a kart racer with a hop into a power-slide, three-stage mini-turbo sparks, boost pads, item boxes (burr, acorn, nitro can) and seven CPU drivers over three laps of a figure-8 |
 | `starter` *(default)* | A polished default project with a React HUD, physics, and a ready-to-edit scene |
 | `minimal` | The smallest project — core and physics only |
 | `platformer` | Jumping, patrols, pickups, camera follow |
@@ -144,6 +147,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/three-native` | The native engine's Three.js API catalog and the TypeScript sources the engine bundlers read |
 | `@threenative/ui` | React bindings for HUD and game state |
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
+| `threenative-animation-mcp` | Inspects, attaches, edits and verifies character animation through one MCP, as build-time edits of one GLB |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
 | `threenative-blender-mcp` | Drives an installed Blender headlessly so a downloaded `.fbx` becomes a loadable GLB — ships no Blender |
 
@@ -180,13 +184,13 @@ ported from what its source does, never from its code, under a PRD in
 Every Unreal 5.8.3 system that sets the look or the frame cost, split into 380 subsystems and
 measured in lines of the Unreal source. Each one maps to the ThreeNative PRD that ports it.
 
-**20% done · 20% in progress · 38% not started · 16% deferred · 5% with no PRD** (share of 676K Unreal lines; the tool-heavy Niagara, Landscape, World Partition, RHI and RenderCore modules are left out)
-· 68 open PRDs on this branch · 72 subsystems with no PRD
+**20% done · 24% in progress · 33% not started · 16% deferred · 5% with no PRD** (share of 676K Unreal lines; the tool-heavy Niagara, Landscape, World Partition, RHI and RenderCore modules are left out)
+· 82 open PRDs on this branch · 72 subsystems with no PRD
 
 [![Unreal port progress map](docs/PRDs/Unreal/research/unreal-port-status.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
-**Pace:** 110 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
-so at that pace the default look is done about **Nov 13, 2026**, and everything filed today about
+**Pace:** 118 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
+so at that pace the default look is done about **Nov 17, 2026**, and everything filed today about
 **Dec 8, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 
 [![Unreal port burn-up](docs/PRDs/Unreal/research/unreal-port-progress.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)

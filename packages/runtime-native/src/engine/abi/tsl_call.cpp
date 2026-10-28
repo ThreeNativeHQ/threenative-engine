@@ -11,6 +11,7 @@
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/graph/post_effects.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <functional>
@@ -78,7 +79,29 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     const auto arg = [&](size_t i) { return input(args.at(i)); };
     const auto lhs = [&] { return method ? input(*receiver) : arg(0); };
     const auto rhs = [&] { return arg(method ? 0 : 1); };
+    // three's convertToTexture: a texture stays as it is; any other node renders to a texture of its own.
+    const auto toTexture = [&](const g::Node& source) -> g::Node {
+        if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture) return source;
+        if (source->kind == g::Kind::PostEffect && source->post && source->post->kind == "TRAANode" &&
+            source->post->output != "scene") {
+            // A late resolve already owns a named texture; retain its producer without drawing a copy. An early resolve
+            // writes "scene", which a render target's material reads as the unresolved scene colour, so it keeps its copy.
+            auto texture = std::make_shared<g::NodeData>(*g::texture(source->name, g::uv()));
+            texture->otherwise = {source};
+            return texture;
+        }
+        auto target = std::make_shared<g::NodeData>();
+        target->kind = g::Kind::RenderTexture;
+        target->name = "native_rtt_" + std::to_string(++serial);
+        target->type = Type::vec(4);
+        target->args = {source, g::uv()};
+        return target;
+    };
 
+    if (!method && name == "toneMappingColor") {
+        arity(0);
+        return g::varying("tnToneMappingColor", Type::vec(3));
+    }
     if (!method && name == "lightShadowMatrix") {
         arity(1);
         if (args[0].kind != TslArg::Kind::Object || !args[0].object ||
@@ -162,6 +185,20 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             return selected;
         }
         throw std::runtime_error("struct:get: unknown member " + text(args[0]));
+    }
+
+    if (method && name == "element") {
+        arity(1);
+        const auto matrix = lhs();
+        if (matrix->type != Type::mat(4, 4)) throw std::runtime_error("element needs a mat4 node");
+        if (args[0].kind == TslArg::Kind::Number &&
+            (number(args[0]) < 0 || number(args[0]) > 3 || number(args[0]) != std::floor(number(args[0]))))
+            throw std::runtime_error("mat4 element index must be an integer in [0, 3]");
+        const auto index = g::uint_(arg(0));
+        const auto lane = [&](uint32_t column) {
+            return g::select(g::equal(index, g::uint_(column)), g::float_(1), g::float_(0));
+        };
+        return g::mul(matrix, g::vec4({lane(0), lane(1), lane(2), lane(3)}));
     }
 
     // PRD-540 (Wasm wrappers): the calls a back end without native wrappers makes by name.
@@ -262,11 +299,17 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // camera), denoise(input, depth, normal, camera), smaa(input), bloom(input, strength, radius,
     // threshold). The camera three takes is the render camera here: a pass reads its matrices each
     // frame. A missing normal (null) derives normals from depth, as three does.
+    if (name == "ssr") {
+        arity(5);
+        const auto optional = [&](size_t i) { return args[i].kind == TslArg::Kind::Other ? g::Node{} : arg(i); };
+        return g::effectNode(g::ssrEffect(arg(0), arg(1), arg(2), optional(3), optional(4)));
+    }
     if (name == "ao" || name == "denoise") {
         const bool denoise = name == "denoise";
         if (args.size() < (denoise ? 3u : 2u)) throw std::runtime_error("expected the effect's texture inputs");
         const auto optional = [&](size_t i) { return args[i].kind == TslArg::Kind::Node ? arg(i) : g::Node{}; };
-        const auto effect = denoise ? g::denoiseEffect(arg(0), arg(1), optional(2), static_cast<uint32_t>(++serial))
+        // three's denoise converts its input itself (DenoiseNode.js: convertToTexture(node)).
+        const auto effect = denoise ? g::denoiseEffect(toTexture(arg(0)), arg(1), optional(2), static_cast<uint32_t>(++serial))
                                     : g::gtaoEffect(arg(0), optional(1));
         return g::effectNode(effect);
     }
@@ -289,7 +332,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const size_t offset = method ? 0 : 1;
         if (args.size() > offset && args[offset].kind != TslArg::Kind::Other) {
             const double tone = number(args[offset]);
-            if (tone != 0 && tone != 1 && tone != 2 && tone != 3 && tone != 4 && tone != 6 && tone != 7)
+            if (tone != 0 && tone != 1 && tone != 2 && tone != 3 && tone != 4 && tone != 5 && tone != 6 && tone != 7)
                 throw std::runtime_error("renderOutput: unsupported toneMapping " + std::to_string(tone));
             node->bits = static_cast<uint64_t>(tone) + 1;
         }
@@ -329,7 +372,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "lut3D") {
         arity(4);
         const auto input = arg(0), lut = arg(1);
-        if (lut->kind != g::Kind::Texture || !lut->object)
+        if (lut->kind != g::Kind::Texture || !lut->textureObject())
             throw std::runtime_error("lut3D requires texture3D(engineTexture)");
         const double size = number(args[2]);
         if (size < 2 || size != std::floor(size)) throw std::runtime_error("lut3D size must be an integer >= 2");
@@ -347,15 +390,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     if (name == "traa") {
         arity(4);
-        // The existing pass runs before post effects and reads the scene attachments.
-        if (arg(0)->kind != g::Kind::Texture || arg(0)->name != "scene" ||
+        // The colour is the scene's own (resolved right after the scene pass, ahead of every effect) or a texture the
+        // graph drew (convertToTexture of the frame after its effects, resolved where that texture is ready). Depth and
+        // velocity are always the scene's attachments.
+        const auto beauty = arg(0);
+        const bool sceneColour = beauty->kind == g::Kind::Texture && beauty->name == "scene";
+        if ((!sceneColour && beauty->kind != g::Kind::RenderTexture) ||
             arg(1)->kind != g::Kind::Texture || arg(1)->name != "depth" ||
             arg(2)->kind != g::Kind::Texture || arg(2)->name != "velocity")
-            throw std::runtime_error("TN_NATIVE_TRAA_INPUT: traa requires the scene color, depth and velocity attachments; authored pre-resolve inputs are unbound");
+            throw std::runtime_error("TN_NATIVE_TRAA_INPUT: traa requires the scene color or a texture the graph drew, with the scene depth and velocity attachments");
         auto effect = std::make_shared<g::PostEffect>();
         effect->kind = "TRAANode";
-        effect->output = "scene";
-        effect->inputs = {arg(0), arg(1), arg(2)};
+        effect->output = sceneColour ? "scene" : "native_traa_" + std::to_string(++serial);
+        effect->inputs = {beauty, arg(1), arg(2)};
         effect->parameters = {{"depthThreshold", {0.0005f}}, {"edgeDepthDiff", {0.001f}},
                               {"maxVelocityLength", {128}}, {"useSubpixelCorrection", {1}}};
         return g::effectNode(effect);
@@ -408,6 +455,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             else throw std::runtime_error("color needs a Color, CSS string, hex or RGB components");
         } else if (!args.empty()) throw std::runtime_error("invalid color argument count");
         return g::vec3({g::float_(value.r), g::float_(value.g), g::float_(value.b)});
+    }
+    if (name == "uvec2") {
+        if (args.size() > 2) throw std::runtime_error("invalid uvec2 argument count");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Join; node->type = Type::vec(2, Type::Scalar::U32);
+        if (args.empty()) node->args = {g::float_(0)};
+        else for (size_t i = 0; i < args.size(); ++i) node->args.push_back(arg(i));
+        return node;
     }
     if (name == "ivec2") {
         if (args.size() > 2) throw std::runtime_error("invalid ivec2 argument count");
@@ -489,15 +544,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     // MaterialX noise (three's MaterialXNodes.js over mx_noise.js; the WGSL is materialx_noise.h).
     // mx_noise_float(texcoord = uv(), amplitude = 1, pivot = 0) is perlin * amplitude + pivot, and
-    // mx_worley_noise_vec2(texcoord = uv(), jitter = 1) uses metric 1, as three's wrapper does.
-    if (!method && (name == "mx_noise_float" || name == "mx_worley_noise_vec2")) {
-        const bool worley = name == "mx_worley_noise_vec2";
+    // mx_worley_noise_float/vec2(texcoord = uv(), jitter = 1) uses metric 1, as three's wrapper does.
+    if (!method && (name == "mx_noise_float" || name == "mx_worley_noise_float" || name == "mx_worley_noise_vec2")) {
+        const bool worley = name != "mx_noise_float";
         if (args.size() > (worley ? 2u : 3u)) throw std::runtime_error("too many arguments");
         auto node = std::make_shared<g::NodeData>();
         node->kind = g::Kind::Math;
-        node->name = worley ? "mx_worley_noise_vec2" : "mx_perlin_noise_float";
+        node->name = worley ? std::string(name) : "mx_perlin_noise_float";
         node->args = {args.empty() ? g::uv() : arg(0)};
-        node->type = worley ? Type::vec(2) : Type::f32();
+        node->type = name == "mx_worley_noise_vec2" ? Type::vec(2) : Type::f32();
         if (worley) {
             node->args.push_back(args.size() > 1 ? g::float_(arg(1)) : g::float_(1));
             node->args.push_back(g::int_(1));
@@ -505,8 +560,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         return g::add(g::mul(node, args.size() > 1 ? arg(1) : g::float_(1)), args.size() > 2 ? arg(2) : g::float_(0));
     }
-    if (name == "textureLoad") {
-        if (args.size() < 2 || args.size() > 3) throw std::runtime_error("expected texture, coordinates and optional level");
+    if (name == "textureLoad" || name == "textureSize") {
+        const bool dimensions = name == "textureSize";
+        if ((dimensions && method) || args.size() < (dimensions ? 1u : 2u) || args.size() > (dimensions ? 2u : 3u))
+            throw std::runtime_error(dimensions ? "expected texture and optional level" : "expected texture, coordinates and optional level");
         std::string label;
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
             const auto& texture = args[0].node;
@@ -518,13 +575,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         if (label.empty()) throw std::runtime_error("textureLoad needs a named texture");
         auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::TextureLoad; node->name = label; node->type = Type::vec(4);
+        node->kind = dimensions ? g::Kind::TextureSize : g::Kind::TextureLoad; node->name = label;
+        node->type = dimensions ? Type::vec(2, Type::Scalar::U32) : Type::vec(4);
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
-            node->object = args[0].node->object; node->bits = args[0].node->bits;
+            node->textureBinding = args[0].node->textureBinding; node->object = args[0].node->object; node->bits = args[0].node->bits;
             // Retain the target producer and the texture owner as graph dependencies.
-            if (node->object || args[0].node->kind == g::Kind::RenderTexture) node->otherwise = {args[0].node};
+            if (node->textureObject() || args[0].node->kind == g::Kind::RenderTexture || !args[0].node->otherwise.empty())
+                node->otherwise = {args[0].node};
         }
-        node->args = {arg(1)};
+        if (args.size() > 1) node->args = {dimensions ? tslCall("int", nullptr, {args[1]}, serial) : arg(1)};
         if (args.size() == 3) node->args.push_back(arg(2));
         return node;
     }
@@ -564,20 +623,45 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(2);
         return g::attribute(text(args[0]), type(text(args[1])));
     }
+    if (name == "textureValue") {
+        arity(1);
+        if (!method || !receiver->node || receiver->node->kind != g::Kind::Texture || !receiver->node->textureBinding)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an object texture node");
+        if (args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls.find("Texture") == std::string::npos)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an engine Texture");
+        const auto next = std::static_pointer_cast<const engine::Texture>(args[0].object);
+        const auto previous = std::static_pointer_cast<const engine::Texture>(receiver->node->textureObject());
+        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: replacement must preserve texture dimension and sample type");
+        receiver->node->textureBinding->object = args[0].object;
+        return receiver->node;
+    }
+    if (!method && name == "storageTexture") {
+        if (args.empty() || args.size() > 3 || args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls != "StorageTexture")
+            throw std::runtime_error("storageTexture needs an engine StorageTexture and optional coordinates and value");
+        const auto* texture = static_cast<const engine::Texture*>(args[0].object.get());
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::StorageTexture; node->type = Type::vec(4);
+        node->object = args[0].object; node->name = "nodeMap" + std::to_string(texture->ident.value());
+        node->lanes = texture->storageFormat();
+        for (size_t i = 1; i < args.size(); ++i) node->args.push_back(arg(i));
+        return node;
+    }
     if (name == "texture") {
         // three's texture(value, uvNode = uv()): the uv is optional.
         if (args.size() != 1) arity(2);
         const auto uvInput = [&] { return args.size() == 1 ? g::uv() : arg(1); };
         // An engine Texture with texels, or a render target's texture, samples itself under a binding
-        // named by its cache identity. ponytail: another imageless one keeps naming a map, as before;
-        // a texture whose texels arrive after the graph is built is not followed.
+        // named by its cache identity. An imageless texture with no name is three's placeholder
+        // (`texture(new Texture())`, later `.value = target.texture`): it binds as an object texture
+        // so `textureValue` can swap the real one in. ponytail: a named imageless one keeps naming a
+        // map, as before; a texture whose texels arrive after the graph is built is not followed.
         if (args[0].kind == TslArg::Kind::Object) {
             if (args[0].cls.find("Texture") == std::string::npos || !args[0].object)
                 throw std::runtime_error("texture needs an engine Texture");
             const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
-            if (source->sampleable())
-                return g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()), uvInput());
-            if (source->name.empty()) throw std::runtime_error("texture needs a name");
+            if (source->sampleable() || source->name.empty())
+                return g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial), uvInput());
             return g::texture(source->name, uvInput());
         }
         if (args[0].kind != TslArg::Kind::Named)
@@ -595,7 +679,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
         if (!source->sampleable()) throw std::runtime_error("texture3D needs a Data3DTexture with texels");
         const auto half = [] { return g::float_(0.5); };
-        auto node = g::objectTexture(args[0].object, "nodeMap" + std::to_string(source->ident.value()),
+        auto node = g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial),
                                      args.size() > 1 ? arg(1) : g::vec3({half(), half(), half()}));
         if (args.size() == 3) {
             auto level = std::make_shared<g::NodeData>(*node);
@@ -608,14 +692,32 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::uv();
     }
+    // TextureNode.bias(n): the same texture with a derivative-relative mip bias.
+    if (method && name == "bias") {
+        arity(1);
+        const auto source = lhs();
+        const bool rendered = source->kind == g::Kind::RenderTexture && source->args.size() == 2;
+        if (!rendered && (source->kind != g::Kind::Texture || source->args.size() != 1 ||
+            source->bits == 1 || (source->name == "depth" && !source->textureBinding)))
+            throw std::runtime_error("bias needs a nondepth texture node");
+        const auto bias = arg(0);
+        if (bias->type != Type::f32()) throw std::runtime_error("bias needs an f32 scalar");
+        auto node = std::make_shared<g::NodeData>(*source);
+        node->sampleBias = true;
+        node->args.push_back(bias);
+        return node;
+    }
     // TextureNode.level(n): the same texture read at an explicit mip level.
     if (method && name == "level") {
         arity(1);
         const auto source = lhs();
-        if (source->kind != g::Kind::Texture || source->args.size() != 1)
+        // A render texture (convertToTexture of a graph) reads at a level too: the level is the third argument.
+        const bool rendered = source->kind == g::Kind::RenderTexture && source->args.size() == 2;
+        if (!rendered && (source->kind != g::Kind::Texture || source->args.size() != 1))
             throw std::runtime_error("level needs a texture node");
         auto node = std::make_shared<g::NodeData>(*source);
-        node->args = {source->args[0], arg(0)};
+        node->args = rendered ? std::vector<g::Node>{source->args[0], source->args[1], arg(0)}
+                              : std::vector<g::Node>{source->args[0], arg(0)};
         return node;
     }
     // r185's camera accessors (accessors/Camera.js) for a single camera: render-group uniforms by
@@ -699,6 +801,11 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         arity(0);
         return g::normalize(g::varying("normalView", Type::vec(3)));
     }
+    // r185: positionLocal.transformDirection(modelWorldMatrix), interpolated then normalized.
+    if (name == "positionWorldDirection") {
+        arity(0);
+        return g::normalize(g::varying("positionWorldDirection", Type::vec(3)));
+    }
     // positionViewDirection = positionView.negate().toVarying().normalize().
     if (name == "positionViewDirection") {
         arity(0);
@@ -712,15 +819,6 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "normalGeometry" || name == "tangentGeometry") {
         arity(0);
         return name == "normalGeometry" ? g::attribute("normal", Type::vec(3)) : g::attribute("tangent", Type::vec(4));
-    }
-    // transformDirection(a, b): normalize((a * b).xyz), the non-matrix side widened to vec4(v, 0)
-    // (MathNode TRANSFORM_DIRECTION); `cameraViewMatrix.transformDirection(d)` is the method form.
-    if (name == "transformDirection") {
-        arity(method ? 1 : 2);
-        auto a = lhs(), b = rhs();
-        if (a->type.isMatrix()) b = g::vec4({b, g::float_(0)});
-        else a = g::vec4({a, g::float_(0)});
-        return g::normalize(g::swizzle(g::mul(a, b), "xyz"));
     }
     // varying(node, name?): `node` computed in the vertex stage and interpolated to the fragment.
     if (name == "varying") {
@@ -763,15 +861,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     if (name == "convertToTexture") {
         arity(1);
-        const auto source = arg(0);
-        if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture)
-            return source;
-        auto target = std::make_shared<g::NodeData>();
-        target->kind = g::Kind::RenderTexture;
-        target->name = "native_rtt_" + std::to_string(++serial);
-        target->type = Type::vec(4);
-        target->args = {source, g::uv()};
-        return target;
+        return toTexture(arg(0));
     }
     if (name == "sample") {
         arity(1);
@@ -809,6 +899,31 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // r185's mat2 (ConvertType): two column vectors; four plain numbers build a Matrix2, whose constructor is
     // row-major, so the columns are (a, c) and (b, d); four scalars with any node in them are WGSL's
     // column-major constructor.
+    if (!method && (name == "mat3" || name == "mat4")) {
+        const uint8_t n = name == "mat3" ? 3 : 4;
+        auto matrix = std::make_shared<g::NodeData>();
+        matrix->kind = g::Kind::Join; matrix->type = Type::mat(n, n);
+        if (args.empty()) {
+            for (size_t c = 0; c < n; ++c) {
+                auto column = std::make_shared<g::NodeData>(); column->kind = g::Kind::Join; column->type = Type::vec(n);
+                for (size_t r = 0; r < n; ++r) column->args.push_back(g::float_(r == c ? 1 : 0));
+                matrix->args.push_back(column);
+            }
+        } else if (args.size() == 1) {
+            auto converted = std::make_shared<g::NodeData>(); converted->kind = g::Kind::Convert;
+            converted->type = matrix->type; converted->args = {arg(0)};
+            return converted;
+        } else if (args.size() == n) { for (size_t i = 0; i < n; ++i) matrix->args.push_back(arg(i)); }
+        else if (args.size() == n * n) {
+            const bool numbers = std::all_of(args.begin(), args.end(), [](const TslArg& a) { return a.kind == TslArg::Kind::Number; });
+            for (size_t c = 0; c < n; ++c) {
+                auto column = std::make_shared<g::NodeData>(); column->kind = g::Kind::Join; column->type = Type::vec(n);
+                for (size_t r = 0; r < n; ++r) column->args.push_back(arg(numbers ? r * n + c : c * n + r));
+                matrix->args.push_back(column);
+            }
+        } else throw std::runtime_error("TN_NATIVE_TSL_TYPE: " + name + " requires columns or scalar components");
+        return matrix;
+    }
     if (name == "mat2") {
         if (args.size() != 2 && args.size() != 4) throw std::runtime_error("mat2 takes two columns or four scalars");
         if (args.size() == 2) return g::mat2({arg(0), arg(1)});
@@ -842,6 +957,31 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (method && name == "step") {
         arity(1);
         return g::step(arg(0), lhs());
+    }
+    // MathNode / OperatorNode names share one typed IR on Wasm, V8 and serialized graphs.
+    const auto math = [&](const std::string& operation, size_t operands) -> g::Node {
+        arity(operands - (method ? 1 : 0));
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Math;
+        node->name = operation;
+        if (method) node->args.push_back(lhs());
+        for (size_t i = 0; i < args.size(); ++i) node->args.push_back(arg(i));
+        return node;
+    };
+    for (const char* op : {"acos", "asin", "tan", "ceil", "round", "trunc", "inverseSqrt", "inversesqrt", "reciprocal", "radians", "degrees", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "saturate", "pow2", "pow3", "pow4", "transpose", "determinant", "inverse", "rand", "bitNot"})
+        if (name == op) return math(name, 1);
+    for (const char* op : {"difference", "transformDirection", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "xor", "bitAnd", "bitOr", "bitXor", "shiftLeft", "shiftRight", "stepElement"})
+        if (name == op) return math(name, 2);
+    for (const char* op : {"refract", "faceForward", "faceforward", "mixElement", "smoothstepElement"})
+        if (name == op) return math(name, 3);
+    if ((name == "add" || name == "sub" || name == "mul" || name == "div" || name == "min" || name == "max" ||
+         name == "and" || name == "or") && args.size() > (method ? 1u : 2u)) {
+        g::Node result = lhs();
+        for (size_t i = method ? 0 : 1; i < args.size(); ++i) {
+            const TslArg previous = TslArg::of(result);
+            result = tslCall(name, &previous, {args[i]}, serial);
+        }
+        return result;
     }
 #define BINARY(symbol)                                                                                                 \
     if (name == #symbol) {                                                                                             \
@@ -934,10 +1074,22 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
                         return {};
 }
 
+namespace {
+/** The stage a pass labels itself with (post_effects.h kStage*): a name the renderer times under its own segment. */
+uint8_t stageOf(double value) {
+    if (value != g::kStageNone && value != g::kStageScreenSpaceGi) throw std::runtime_error("unknown GPU stage " + std::to_string(value));
+    return uint8_t(value);
+}
+}  // namespace
+
 double tslEffectParameter(const g::Node& node, const std::string& name, const double* value) {
     if (node && node->rtt) {
         auto& r = *node->rtt;
         if (value && !std::isfinite(*value)) throw std::runtime_error("rtt parameter must be finite");
+        if (name == "stage") {
+            if (value) r.stage = stageOf(*value);
+            return r.stage;
+        }
         if (name == "resolutionScale") {
             if (value) {
                 if (*value <= 0 || *value > 8) throw std::runtime_error("rtt scale must be in (0, 8]");
@@ -1014,35 +1166,56 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
     }
     if (name == "resolutionScale") {
         if (value) {
-            if (!(*value > 0 && *value <= 8)) throw std::runtime_error("resolutionScale must be in (0, 8]");
+            const double maximum = effect.kind == "SSRNode" ? 1 : 8;
+            if (!std::isfinite(*value) || !(*value > 0 && *value <= maximum))
+                throw std::runtime_error("resolutionScale must be in (0, " + std::to_string(maximum) + "]");
             effect.resolutionScale = static_cast<float>(*value);
         }
         return effect.resolutionScale;
+    }
+    if (name == "stage") {
+        if (value) effect.stage = stageOf(*value);
+        return effect.stage;
     }
     const auto found = effect.parameters.find(name);
     if (found == effect.parameters.end() || found->second.size() != 1 || name.front() == '_')
         throw std::runtime_error(effect.kind + " has no scalar uniform " + name);
     if (value) {
         if (!std::isfinite(*value)) throw std::runtime_error("expected a finite number");
+        if (effect.kind == "SSRNode") {
+            if (!std::isfinite(static_cast<float>(*value))) throw std::runtime_error("TN_NATIVE_SSR_PARAMETER: " + name);
+            if ((name == "maxDistance" && *value <= 0) ||
+                ((name == "thickness" || name == "opacity" || name == "intensity" || name == "maxLuminance") && *value < 0) ||
+                (name == "quality" && (*value < 0 || *value > 1)) ||
+                (name == "maxSteps" && *value < 1) ||
+                (name == "blurQuality" && (*value < 1 || *value > 3 || *value != std::floor(*value))) ||
+                ((name == "reflectNonMetals" || name == "binaryRefine") && *value != 0 && *value != 1))
+                throw std::runtime_error("TN_NATIVE_SSR_PARAMETER: " + name);
+        }
         found->second[0] = static_cast<float>(*value);
     }
     return found->second[0];
 }
 
 std::vector<std::pair<std::string, g::Node>> tslConstants() {
-    std::vector<std::pair<std::string, g::Node>> constants{{"positionLocal", g::positionLocal()},
+    std::vector<std::pair<std::string, g::Node>> constants{{"EPSILON", g::float_(1e-6)}, {"INFINITY", g::float_(1e6)},
+            {"PI", g::float_(3.141592653589793)}, {"PI2", g::float_(6.283185307179586)},
+            {"TWO_PI", g::float_(6.283185307179586)}, {"HALF_PI", g::float_(1.5707963267948966)},
+            {"positionLocal", g::positionLocal()},
             {"positionWorld", g::varying("positionWorld", Type::vec(3))},
             {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
+            {"modelWorldMatrix", g::uniform("modelMatrix", Type::mat(4, 4))},
             {"instanceIndex", g::instanceIndex()},
             {"vertexIndex", g::builtin("vertexIndex")},
             {"screenUV", g::screenUV()},
             // three's materialColor is the material's colour, a vec3 (MaterialNode COLOR, type 'color').
-            // ponytail: the colour uniform only; three also multiplies in `map` when the material has one.
-            {"materialColor", g::swizzle(g::uniform("diffuse", Type::vec(4)), "xyz")},
-            {"materialEmissive", g::uniform("emissive", Type::vec(3))},
-            {"materialMetalness", g::uniform("metalness", Type::f32())},
-            {"materialRoughness", g::uniform("roughness", Type::f32())},
+            // Each is the material's uniform times its map, as MaterialNode builds it: the program that lowers the
+            // node supplies the map (standard.cpp materialInputs); with none the bare uniform stays.
+            {"materialColor", g::swizzle(g::materialInput("diffuse", Type::vec(4)), "xyz")},
+            {"materialEmissive", g::materialInput("emissive", Type::vec(3))},
+            {"materialMetalness", g::materialInput("metalness", Type::f32())},
+            {"materialRoughness", g::materialInput("roughness", Type::f32())},
             // three's time (utils/Timer.js): the frame's elapsed seconds, a uniform the renderer fills.
             {"time", g::uniform("time", Type::f32())},
             // three's deltaTime: seconds since the frame before, filled the same way.
@@ -1050,7 +1223,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
     // The node constants tslCall also answers by name; neither takes a serial.
     uint64_t serial = 0;
     for (const char* name : {"cameraPosition", "cameraProjectionMatrix", "cameraWorldMatrix", "cameraNear", "cameraFar", "screenSize", "depth",
-                             "positionGeometry", "normalWorld", "normalView", "positionViewDirection", "screenCoordinate",
+                             "positionGeometry", "normalWorld", "normalView", "positionWorldDirection", "positionViewDirection", "screenCoordinate",
                              "normalGeometry", "tangentGeometry", "normalLocal", "tangentLocal", "positionPrevious",
                              "normalWorldGeometry"})
         constants.emplace_back(name, tslCall(name, nullptr, {}, serial));
@@ -1116,6 +1289,22 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         out = node;
         return true;
     }
+    if (name == "textureStore") {
+        arity(3);
+        auto& statements = open().back().statements;
+        g::Node target;
+        if (args[0].kind == TslArg::Kind::Object) {
+            uint64_t serial = 0;
+            target = tslCall("storageTexture", nullptr, {args[0]}, serial);
+        } else target = input(args[0]);
+        if (!target || target->kind != g::Kind::StorageTexture || !target->object)
+            throw std::runtime_error("textureStore needs a StorageTexture or storageTexture node");
+        auto node = std::make_shared<g::NodeData>(*target);
+        node->kind = g::Kind::TextureStore; node->type = Type{};
+        node->args = {input(args[1]), input(args[2])};
+        statements.push_back(node); out = target;
+        return true;
+    }
     if (name == "atomicAdd" || name == "atomicStore") {
         arity(2);
         auto& statements = open().back().statements;
@@ -1128,6 +1317,25 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         node->kind = name == "atomicAdd" ? g::Kind::AtomicAdd : g::Kind::AtomicStore;
         node->type = name == "atomicAdd" ? target->type : Type{};
         node->args = {target, input(args[1])}; statements.push_back(node); out = node;
+        return true;
+    }
+    if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
+        if (receiver) arity(0); else arity(1);
+        const TslArg target = receiver ? *receiver : args[0];
+        if (target.kind != TslArg::Kind::Node || !target.node ||
+            (target.node->kind != g::Kind::Var && target.node->kind != g::Kind::StorageElement))
+            throw std::runtime_error("TN_NATIVE_TSL_TYPE: " + name + " requires a variable or storage element");
+        const bool before = name.ends_with("Before");
+        g::Node previous;
+        if (!before) {
+            uint64_t serial = 0;
+            const TslArg snapshot = TslArg::of(tslCall("int", nullptr, {target}, serial));
+            call("toVar", &snapshot, {}, previous);
+        }
+        uint64_t serial = 0;
+        const TslArg value = TslArg::of(tslCall(name.starts_with("increment") ? "add" : "sub", &target, {TslArg::of(1.0)}, serial));
+        call("assign", &target, {value}, out);
+        if (!before) out = previous;
         return true;
     }
     if (name == "toVar") {

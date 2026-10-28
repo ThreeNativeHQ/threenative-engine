@@ -1,13 +1,122 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { PerspectiveCamera, RenderTarget } from "three";
+import * as upstreamTsl from "three/tsl";
+import { NodeMaterial, QuadMesh } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { defineScreenSpaceGi } from "../src/addons/screen-space.js";
 import { TSL_NODE } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { definePass } from "../src/pass-node.js";
+import { defineRtt } from "../src/rtt.js";
+import { booleanUniforms, liveUniforms } from "../src/tsl-uniforms.js";
 
 interface INode {
   readonly [TSL_NODE]: number;
   mul(value: unknown): INode;
   add(value: unknown): INode;
 }
+
+it("the V8 facade preserves live boolean uniforms over numeric lanes", () => {
+  const comparison = vi.fn(() => ({}));
+  const nativeUniform = vi.fn((value: unknown, _type?: unknown) => {
+    if (typeof value === "boolean") throw new TypeError("native uniform needs numeric lanes");
+    return { notEqual: comparison };
+  });
+  const setUniform = vi.fn();
+  const live = liveUniforms(nativeUniform, setUniform);
+  // Execute the shipped V8 export against its real shared live-uniform wrapper.
+  const source = readFileSync(
+    new URL("../../runtime-native/src/engine/player/core-tsl.mjs", import.meta.url),
+    "utf8",
+  );
+  const expression = source.slice(
+    source.indexOf("export const uniform ="),
+    source.indexOf("\nexport const uniformArray"),
+  );
+  const uniform = new Function(
+    "live",
+    "booleanUniforms",
+    "globalThis",
+    expression.replace("export const uniform =", "return"),
+  )(live, booleanUniforms, {
+    tsl: {
+      notEqual: (scalar: { notEqual(value: number): unknown }, value: number) =>
+        scalar.notEqual(value),
+    },
+  });
+  const enabled = uniform(false);
+  expect(enabled.value).toBe(false);
+  expect(nativeUniform).toHaveBeenLastCalledWith(0);
+  expect(comparison).toHaveBeenCalledWith(0);
+  enabled.value = true;
+  expect(enabled.value).toBe(true);
+  expect(setUniform).toHaveBeenLastCalledWith(expect.any(Object), [1]);
+  expect(() => {
+    enabled.value = 1;
+  }).toThrow("expected a boolean");
+  expect(enabled.value).toBe(true);
+  expect(() => uniform(false, "float")).toThrow("requires bool type");
+  uniform(7, "uint");
+  expect(nativeUniform).toHaveBeenLastCalledWith(7, "uint");
+  uniform("gain");
+  expect(nativeUniform).toHaveBeenLastCalledWith("gain");
+  const vector = { x: 1, y: 2 };
+  uniform(vector);
+  expect(nativeUniform).toHaveBeenLastCalledWith(vector);
+});
+it("the V8 SSGI facade uses live camera uniforms when constructing its real graph", () => {
+  const rawUniform = (value: unknown) => {
+    if (typeof value !== "number") throw new TypeError("native camera uniform needs a number");
+    return Object.defineProperty(upstreamTsl.uniform(value), "onRenderUpdate", {
+      configurable: true,
+      value: undefined,
+    });
+  };
+  const setUniform = vi.fn();
+  const live = liveUniforms(rawUniform, setUniform);
+  const rawRtt = vi.fn((...args: unknown[]) => {
+    if (args.length !== 5) throw new TypeError("TN_TSL rtt: expected 5 arguments");
+    return Object.assign(upstreamTsl.vec4(0), { __effect: vi.fn(), __rtt: vi.fn() });
+  });
+  const rtt = defineRtt(rawRtt, { NodeMaterial, RenderTarget, QuadMesh });
+  const source = readFileSync(
+    new URL("../../runtime-native/src/engine/player/core-addons.mjs", import.meta.url),
+    "utf8",
+  );
+  const expression = source.slice(
+    source.indexOf("export const ssgi ="),
+    source.indexOf(";", source.indexOf("export const ssgi =")) + 1,
+  );
+  const ssgi = new Function(
+    "globalThis",
+    "defineScreenSpaceGi",
+    "uniform",
+    "rtt",
+    expression.replace("export const ssgi =", "return"),
+  )(
+    { tsl: { ...upstreamTsl, uniform: rawUniform, rtt: rawRtt } },
+    defineScreenSpaceGi,
+    live.uniform,
+    rtt,
+  );
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+  const input = upstreamTsl.vec4(0);
+  const node = ssgi(input, input, input, camera);
+  expect(node.getGINode().isNode).toBe(true);
+  expect(node.getAONode().isNode).toBe(true);
+  expect(rawRtt).toHaveBeenCalledWith(expect.any(Object), 0, 0, 1006, 1006);
+  camera.near = 0.25;
+  camera.fov = 45;
+  camera.updateProjectionMatrix();
+  live.sync();
+  expect(setUniform).toHaveBeenCalledWith(expect.any(Object), [0.25]);
+  expect(setUniform).toHaveBeenCalledWith(expect.any(Object), [
+    camera.projectionMatrix.elements[0],
+  ]);
+});
+
 interface ITslExports {
   Fn(callback: (parameters: never) => INode): (...args: unknown[]) => INode;
   vec2(...args: number[]): INode;
@@ -29,6 +138,38 @@ function setup() {
   };
   return { runtime, tsl: defineTsl(runtime).exports as unknown as ITslExports };
 }
+
+it("routes TextureNode.bias with an authored negative float", () => {
+  const { tsl, runtime } = setup();
+  const methods = tsl as unknown as {
+    texture(value: { name: string }): INode & { bias(value: number): INode };
+  };
+  const source = methods.texture({ name: "map" });
+  source.bias(-0.5);
+  expect(runtime.call).toHaveBeenLastCalledWith("bias", source[TSL_NODE], [
+    { kind: "number", number: -0.5 },
+  ]);
+});
+
+describe("Wasm modelWorldMatrix", () => {
+  it("uses one engine-provided mat4 node for multiplication and column selection", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as {
+      modelWorldMatrix: INode & { element(index: number): INode };
+      vec4(...args: number[]): INode;
+    };
+    const matrix = exports.modelWorldMatrix;
+    expect(exports.modelWorldMatrix).toBe(matrix);
+    matrix.mul(exports.vec4(0, 0, 0, 1));
+    matrix.element(3);
+    expect(runtime.call).toHaveBeenCalledWith("constant:modelWorldMatrix", null, []);
+    expect(runtime.call).toHaveBeenCalledWith("mul", matrix[TSL_NODE], expect.any(Array));
+    expect(runtime.call).toHaveBeenCalledWith("element", matrix[TSL_NODE], expect.any(Array));
+    expect(
+      vi.mocked(runtime.call).mock.calls.filter(([name]) => name === "constant:modelWorldMatrix"),
+    ).toHaveLength(1);
+  });
+});
 
 describe("Wasm TSL Fn parameters", () => {
   it("defers the blue-noise style destructuring callback until called", () => {
@@ -109,5 +250,159 @@ describe("Wasm TSL fog", () => {
     expect(typeof node[TSL_NODE]).toBe("number");
     expect(node.isFogNode).toBe(true);
     expect(runtime.call).toHaveBeenCalledWith("vec4", null, expect.any(Array));
+  });
+});
+
+describe("mutable texture values", () => {
+  it("retains the graph node and rebinds its replacement texture", () => {
+    const { runtime } = setup();
+    const { exports } = defineTsl(runtime);
+    const texture = exports.texture as (value: unknown) => { value: unknown; [TSL_NODE]: number };
+    const first = { name: "first" };
+    const second = { name: "second" };
+    const sampled = texture(first);
+    const id = sampled[TSL_NODE];
+    sampled.value = second;
+    expect(sampled.value).toBe(second);
+    expect(sampled[TSL_NODE]).toBe(id);
+    expect(runtime.call).toHaveBeenLastCalledWith("textureValue", id, [
+      { kind: "named", text: "second" },
+    ]);
+  });
+});
+
+describe("r185 math surface census", () => {
+  const root = resolve(
+    dirname(createRequire(import.meta.url).resolve("three")),
+    "../src/nodes/math",
+  );
+  for (const file of ["MathNode.js", "OperatorNode.js"]) {
+    const source = readFileSync(resolve(root, file), "utf8");
+    const exports = [...source.matchAll(/export const (\w+)/g)].map((match) => match[1] ?? "");
+    const methods = [...source.matchAll(/addMethodChaining\( '(\w+)'/g)].map(
+      (match) => match[1] ?? "",
+    );
+    it(`${file}: exposes every export`, () => {
+      const { tsl } = setup();
+      expect(
+        exports.filter((name) => {
+          const value = (tsl as unknown as Record<string, unknown>)[name];
+          return /^[A-Z_]+$/.test(name) || name === "PI2"
+            ? typeof value !== "object"
+            : typeof value !== "function";
+        }),
+      ).toEqual([]);
+    });
+    it(`${file}: keeps the V8 player exports and registrations in sync`, () => {
+      const player = readFileSync(
+        new URL("../../runtime-native/src/engine/player/core-tsl.mjs", import.meta.url),
+        "utf8",
+      );
+      const adapter = readFileSync(
+        new URL("../../runtime-native/src/adapters/v8/tsl.cpp", import.meta.url),
+        "utf8",
+      );
+      const playerExports = new Set(
+        [...player.matchAll(/export const \{([^}]+)\}/g)].flatMap(
+          (match) => (match[1] ?? "").match(/\w+/g) ?? [],
+        ),
+      );
+      expect(exports.filter((name) => !playerExports.has(name))).toEqual([]);
+      expect(methods.filter((name) => !adapter.includes(`"${name}"`))).toEqual([]);
+    });
+    it(`${file}: exposes every registered method`, () => {
+      const { tsl } = setup();
+      const node = tsl.float(0.5);
+      expect(
+        methods.filter(
+          (name) => typeof (node as unknown as Record<string, unknown>)[name] !== "function",
+        ),
+      ).toEqual([]);
+    });
+  }
+});
+
+describe("Wasm MaterialX scalar Worley noise", () => {
+  it("forwards omitted arguments and explicit zero jitter to the shared engine call", () => {
+    const { tsl, runtime } = setup();
+    const noise = (
+      tsl as unknown as { mx_worley_noise_float(position?: INode, jitter?: number): INode }
+    ).mx_worley_noise_float;
+    expect(noise()[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenLastCalledWith("mx_worley_noise_float", null, []);
+    const point = tsl.vec2(0.25, -0.75);
+    expect(noise(point, 0)[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenLastCalledWith("mx_worley_noise_float", null, [
+      { kind: "node", node: point[TSL_NODE] },
+      { kind: "number", number: 0 },
+    ]);
+  });
+});
+
+/**
+ * three's `material*` accessors each build `material.<value> * material.<map>` (MaterialNode.js). The engine
+ * bridges four, and `tsl_material_accessors_test.cpp` proves each samples its map. A bridged accessor that
+ * dropped its map left a bare factor: a glTF emissiveFactor of 1 beside a near-black emissiveMap drew a white part.
+ * A three accessor must be in one list: a new one fails here until it is bridged with its map or named unbridged.
+ */
+describe("MaterialNode accessor census", () => {
+  const MAP_AWARE = ["materialColor", "materialEmissive", "materialMetalness", "materialRoughness"];
+  // Not bridged: an import of one is refused by name (TN_NATIVE_UNCATALOGUED_<NAME>) at its use.
+  const UNBRIDGED = [
+    "materialAO",
+    "materialAlphaTest",
+    "materialAnisotropy",
+    "materialAnisotropyVector",
+    "materialAttenuationColor",
+    "materialAttenuationDistance",
+    "materialClearcoat",
+    "materialClearcoatNormal",
+    "materialClearcoatRoughness",
+    "materialDispersion",
+    "materialIOR",
+    "materialIridescence",
+    "materialIridescenceIOR",
+    "materialIridescenceThickness",
+    "materialLightMap",
+    "materialLineDashOffset",
+    "materialLineDashSize",
+    "materialLineGapSize",
+    "materialLineScale",
+    "materialLineWidth",
+    "materialNormal",
+    "materialOpacity",
+    "materialPointSize",
+    "materialReflectivity",
+    "materialRotation",
+    "materialSheen",
+    "materialSheenRoughness",
+    "materialShininess",
+    "materialSpecular",
+    "materialSpecularColor",
+    "materialSpecularIntensity",
+    "materialSpecularStrength",
+    "materialThickness",
+    "materialTransmission",
+  ];
+  const source = readFileSync(
+    resolve(
+      dirname(createRequire(import.meta.url).resolve("three")),
+      "../src/nodes/accessors/MaterialNode.js",
+    ),
+    "utf8",
+  );
+  const accessors = [...source.matchAll(/export const (material\w+)/g)].map(
+    (match) => match[1] ?? "",
+  );
+
+  it("lists every accessor three declares", () => {
+    expect(accessors.filter((name) => ![...MAP_AWARE, ...UNBRIDGED].includes(name))).toEqual([]);
+  });
+  it("bridges exactly the map-aware accessors", () => {
+    const { tsl } = setup();
+    const bridged = accessors.filter(
+      (name) => (tsl as unknown as Record<string, unknown>)[name] !== undefined,
+    );
+    expect(bridged.sort()).toEqual([...MAP_AWARE].sort());
   });
 });

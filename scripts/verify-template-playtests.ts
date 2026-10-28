@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -314,6 +314,24 @@ function isRecord(value: unknown): value is IJsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const WASM_ENGINE_FILES = ["tn-native-engine-web.mjs", "tn-native-engine-web.wasm"];
+
+/**
+ * Every template boots on the default web engine, which is built, not committed. Check the pair
+ * before the sweep packs anything, so a missing engine costs one line instead of eight failed builds.
+ */
+export async function assertWasmEngineBuilt(repoRoot: string = REPO_ROOT): Promise<void> {
+  const web = path.join(repoRoot, "packages/runtime-native/build/web");
+  for (const file of WASM_ENGINE_FILES) {
+    await access(path.join(web, file)).catch(() => {
+      throw new Error(
+        `TN_WASM_ENGINE_MISSING: ${path.join(web, file)} does not exist; run \`pnpm wasm:build\` from the repository root.`,
+      );
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-playtests-"));
   try {
@@ -327,6 +345,7 @@ async function main(): Promise<void> {
       if (unknown.length > 0)
         throw new Error(`TN_TEMPLATE_ONLY names no such template: ${unknown.join(", ")}`);
     }
+    await assertWasmEngineBuilt();
     const packageSources = await packageLocalFramework(root);
     await verifyTemplatePlaytests(only ?? TEMPLATE_PLAYTEST_NAMES, root, packageSources);
   } finally {

@@ -1,11 +1,19 @@
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { withFnBuilder } from "./fn-builder.js";
 import { markNormalTarget } from "./pass-node.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { type IRttClasses, defineRtt } from "./rtt.js";
-import { defineStorage } from "./storage.js";
+import { defineStorage, defineStorageTextures } from "./storage.js";
+import { type INodeFrame, NodeUpdateType, defineTempNode } from "./temp-node.js";
 import { defineTslExtras } from "./tsl-extras.js";
 import { defineStruct } from "./tsl-struct.js";
-import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
+import {
+  type ConstClasses,
+  booleanUniforms,
+  liveUniforms,
+  uniformLanes,
+  withConstValues,
+} from "./tsl-uniforms.js";
 import { defineWgslFn } from "./wgsl-fn.js";
 /**
  * TSL on the Wasm engine (PRD-540): three's `three/tsl` authoring functions and node methods as JS
@@ -37,6 +45,7 @@ export interface ITslRuntime {
   effectParameter(node: number, name: string, value?: number): number;
   /** three's RenderPipeline: the post graph the web host draws between scene and output, or none. */
   setPost(node: number | null): void;
+  setToneMapping?(node: number | null): void;
   /** three's `renderer.compute(node)`: queues the kernel; it runs ahead of the next draw or read. */
   compute(node: number): void;
   /** `renderer.getArrayBufferAsync(attribute)`: the storage buffer's bytes after every queued kernel. */
@@ -47,6 +56,7 @@ export interface ITslRuntime {
 
 /** Module functions the shared table answers (engine/abi/tsl_call.cpp). */
 const FUNCTIONS = [
+  "toneMappingColor",
   "float",
   "int",
   "uint",
@@ -107,7 +117,10 @@ const FUNCTIONS = [
   "nodeObject",
   "color",
   "ivec2",
+  "uvec2",
+  "storageTexture",
   "textureLoad",
+  "textureSize",
   "reflect",
   "dFdx",
   "dFdy",
@@ -120,6 +133,7 @@ const FUNCTIONS = [
   "varying",
   // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
   "ao",
+  "ssr",
   "denoise",
   "smaa",
   "bloom",
@@ -136,12 +150,62 @@ const FUNCTIONS = [
   "logarithmicDepthToViewZ",
   "oneMinus",
   "mx_noise_float",
+  "mx_worley_noise_float",
   "mx_worley_noise_vec2",
   "pmremTexture",
   "reflector",
   "transformDirection",
   "transformNormalToView",
   "property",
+  "radians",
+  "degrees",
+  "inverseSqrt",
+  "ceil",
+  "sinh",
+  "cosh",
+  "tan",
+  "tanh",
+  "asin",
+  "asinh",
+  "acos",
+  "acosh",
+  "atanh",
+  "sign",
+  "round",
+  "reciprocal",
+  "trunc",
+  "transpose",
+  "determinant",
+  "inverse",
+  "difference",
+  "pow2",
+  "pow3",
+  "pow4",
+  "transformNormalByViewMatrix",
+  "transformNormalByInverseViewMatrix",
+  "cbrt",
+  "saturate",
+  "refract",
+  "faceForward",
+  "rand",
+  "mixElement",
+  "smoothstepElement",
+  "stepElement",
+  "faceforward",
+  "inversesqrt",
+  "xor",
+  "bitAnd",
+  "bitNot",
+  "bitOr",
+  "bitXor",
+  "shiftLeft",
+  "shiftRight",
+  "incrementBefore",
+  "decrementBefore",
+  "increment",
+  "decrement",
+  "mat3",
+  "mat4",
 ] as const;
 /** The inputs TSL exports as values (tn::abi::tslConstants), each built once, when first read. */
 const CONSTANTS = [
@@ -160,8 +224,10 @@ const CONSTANTS = [
   "normalWorld",
   "positionLocal",
   "positionWorld",
+  "positionWorldDirection",
   "normalViewGeometry",
   "cameraViewMatrix",
+  "modelWorldMatrix",
   "instanceIndex",
   "vertexIndex",
   "screenUV",
@@ -177,9 +243,16 @@ const CONSTANTS = [
   "normalGeometry",
   "tangentGeometry",
   "normalWorldGeometry",
+  "EPSILON",
+  "INFINITY",
+  "PI",
+  "PI2",
+  "TWO_PI",
+  "HALF_PI",
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
+  "element",
   "compute",
   "add",
   "sub",
@@ -245,7 +318,48 @@ const METHODS = [
   "flipZ",
   "flipW",
   "level",
+  "bias",
   "transformDirection",
+  "radians",
+  "degrees",
+  "inverseSqrt",
+  "ceil",
+  "sinh",
+  "cosh",
+  "tan",
+  "tanh",
+  "asin",
+  "asinh",
+  "acos",
+  "acosh",
+  "atanh",
+  "round",
+  "reciprocal",
+  "trunc",
+  "pow2",
+  "pow3",
+  "pow4",
+  "transformNormalByViewMatrix",
+  "transformNormalByInverseViewMatrix",
+  "refract",
+  "faceForward",
+  "difference",
+  "saturate",
+  "transpose",
+  "determinant",
+  "inverse",
+  "rand",
+  "xor",
+  "bitAnd",
+  "bitNot",
+  "bitOr",
+  "bitXor",
+  "shiftLeft",
+  "shiftRight",
+  "incrementBefore",
+  "decrementBefore",
+  "increment",
+  "decrement",
 ] as const;
 /** three's swizzles: every 1-4 lane combination of xyzw, rgba or stpq, as xyzw lanes. */
 const SWIZZLES: Readonly<Record<string, string>> = (() => {
@@ -274,7 +388,11 @@ export function isTslNode(value: unknown): value is ITslNode {
 function takesEngineObject(name: string, index: number): boolean {
   return (
     (index === 0 &&
-      (name === "pmremTexture" || name === "texture3D" || name === "lightShadowMatrix")) ||
+      (name === "pmremTexture" ||
+        name === "texture3D" ||
+        name === "storageTexture" ||
+        name === "textureStore" ||
+        name === "lightShadowMatrix")) ||
     (index < 2 && (name === "reflector" || name === "__rtt"))
   );
 }
@@ -295,10 +413,11 @@ export function defineTsl(
   classes?: ConstClasses,
 ): {
   exports: Record<string, unknown>;
-  sync(frame?: { camera?: unknown; scene?: unknown }): void;
+  sync(frame?: INodeFrame): void;
 } {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
-  const prototype: Record<string, unknown> = {};
+  // three marks every node with `isNode`; framework code (Atmosphere.radiance) branches on it.
+  const prototype: Record<string, unknown> = { isNode: true };
   const wrap = (node: number): ITslNode => {
     const object = Object.create(prototype) as ITslNode;
     Object.defineProperty(object, TSL_NODE, { value: node, configurable: true });
@@ -322,12 +441,19 @@ export function defineTsl(
     // and textureLoad also takes a texture node.
     if (
       index === 0 &&
-      name === "texture" &&
+      (name === "texture" || name === "textureValue") &&
       typeof value === "object" &&
       engineRef(value) !== undefined
     )
       return { kind: "handle", ref: engineRef(value) as IEngineRef };
-    if (index === 0 && (name === "texture" || name === "textureLoad") && typeof value === "object")
+    if (
+      index === 0 &&
+      (name === "texture" ||
+        name === "textureLoad" ||
+        name === "textureSize" ||
+        name === "textureValue") &&
+      typeof value === "object"
+    )
       return { kind: "named", text: String((value as { name?: unknown } | null)?.name ?? "") };
     // A three value is the engine's (`mesh.position`) or JS's own (`new Vector3()`).
     if (typeof value === "object" && value !== null) {
@@ -438,9 +564,26 @@ export function defineTsl(
     runtime.release(previous);
     return this;
   };
+  const custom = defineTempNode(prototype);
   const exports: Record<string, unknown> = {};
+  exports.TempNode = custom.TempNode;
+  exports.NodeUpdateType = NodeUpdateType;
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  exports.nodeObject = (value: unknown) =>
+    isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
+  exports.texture = (initial: unknown, ...args: unknown[]) => {
+    let value = initial;
+    const node = wrap(call("texture", null, [value, ...args]));
+    return Object.defineProperty(node, "value", {
+      get: () => value,
+      set: (next: unknown) => {
+        if (next === value) return;
+        runtime.release(call("textureValue", node[TSL_NODE], [next]));
+        value = next;
+      },
+    });
+  };
   exports.rtt = defineRtt(
     exports.rtt as Parameters<typeof defineRtt>[0],
     classes && "Mesh" in classes
@@ -478,11 +621,17 @@ export function defineTsl(
     };
     return Object.assign(inline, { setLayout: () => inline });
   };
-  for (const name of ["atomicAdd", "atomicStore"])
+  exports.Fn = withFnBuilder(exports.Fn as Parameters<typeof withFnBuilder>[0]);
+  for (const name of ["atomicAdd", "atomicStore", "textureStore"])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));
     };
+  Object.assign(
+    exports,
+    // quality-allow: the export table is untyped; defineStorageTextures narrows it to the builders it reads.
+    defineStorageTextures(exports as unknown as Parameters<typeof defineStorageTextures>[0]),
+  );
   // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd).
   for (const name of ["Break", "Continue", "Return"])
     exports[name] = (...args: unknown[]) => {
@@ -634,7 +783,9 @@ export function defineTsl(
     exports.uniform as (value: unknown, type?: unknown) => ITslNode,
     (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
   );
-  exports.uniform = live.uniform;
+  exports.uniform = booleanUniforms(live.uniform, (scalar) =>
+    wrap(call("notEqual", scalar[TSL_NODE], [0])),
+  );
   exports.uniformArray = live.uniformArray;
   exports.reference = live.reference;
   if (classes !== undefined) withConstValues(exports, classes);
@@ -646,5 +797,11 @@ export function defineTsl(
     args.length === 2 && args[1] === 0
       ? (markNormalTarget(vec4, exports.normalView) as typeof vec4)(...args)
       : vec4(...args);
-  return { exports, sync: live.sync };
+  return {
+    exports,
+    sync(frame) {
+      custom.update(frame);
+      live.sync(frame);
+    },
+  };
 }

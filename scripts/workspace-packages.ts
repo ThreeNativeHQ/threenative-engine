@@ -216,6 +216,20 @@ export function workspacePackageArchives(
  * already added the flag on the CLI side. `package-list-drift.spec.ts` round-trips every workspace
  * package through `packageNameFromFlag`, so the two sides cannot disagree again.
  */
+/**
+ * `pnpm pack` drops a missing `files` entry without a word, so a runtime-native packed before its
+ * Wasm build gives every scaffold a project with no engine, and the only way out the build error
+ * offers is pinning upstream three. Local packers call this first; releases have
+ * `missingPackedFiles` in `check-publish-state.ts`.
+ */
+export function assertWebEngineBuilt(repo: string = REPO): void {
+  const wasm = path.join(repo, "packages/runtime-native/build/web/tn-native-engine-web.wasm");
+  if (!fs.existsSync(wasm))
+    throw new Error(
+      `TN_PACK_WEB_ENGINE_MISSING: ${wasm} is not built, so the packed runtime-native would hold no engine. In packages/runtime-native, with emsdk on PATH: cmake --preset wasm && cmake --build build/wasm --target tn-native-engine-web`,
+    );
+}
+
 export function workspacePackageSourceFlag(name: string): string {
   if (name === "create-threenative") return "--cli-package";
   if (name.startsWith("@threenative/")) {
@@ -239,7 +253,10 @@ function buildWorkspacePackages(repo: string): void {
   }
 }
 
-function packWorkspacePackages(repo: string, destination: string): void {
+export function packWorkspacePackages(repo: string, destination: string): void {
+  // runtime-native's prepack stamp check passes when build/web has no Wasm at all, so this pack
+  // shipped a tarball with no engine and exited 0.
+  assertWebEngineBuilt(repo);
   fs.mkdirSync(destination, { recursive: true });
   buildWorkspacePackages(repo);
   for (const item of workspaceBuildOrder(repo)) {

@@ -15,6 +15,7 @@ import { emitWorldGameplay } from "./evaluators/world-gameplay.js";
 import { emitRenderChain } from "./evaluators/render-chain.js";
 import { emitCausedBy } from "./evaluators/caused-by.js";
 import { emitSceneNodes } from "./evaluators/scene-nodes.js";
+import { emitFootSlip } from "./evaluators/foot-slip.js";
 import { emitScene } from "./evaluators/scene.js";
 import { emitStartup } from "./evaluators/startup.js";
 import { emitPipelineCensus } from "./evaluators/pipeline-census.js";
@@ -40,6 +41,7 @@ export function evaluateRichPlaytestAssertions(input: {
   emitPipelineCensus(ctx);
   emitScene(ctx);
   emitSceneNodes(ctx);
+  emitFootSlip(ctx);
   // A geometry request carries no bounds of its own, so its one result says the capture actually
   // happened: a missing or unavailable report fails rather than passing on a request alone.
   if (scenarioAssertions.geometry !== undefined) {

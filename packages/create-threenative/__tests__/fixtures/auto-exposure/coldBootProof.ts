@@ -121,7 +121,7 @@ function validateColdBootSamples(
         },
       },
       true,
-      3.0578835010528564,
+      2.8592607975006104,
       false,
     );
     previous = sample;

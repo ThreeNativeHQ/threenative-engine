@@ -67,21 +67,23 @@
       "perAdapter": {
         "integrated": {
           "contributions": {
-            "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
+            "graphOutputChanged": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "stages": {
-            "includes": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
-            "order": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
+            "includes": ["ambientOcclusion", "traa", "bloom", "vignette"],
+            "excludes": ["motionBlur", "grade", "grain"],
+            "order": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "tier": "medium"
         },
         "mobile-high": {
           "contributions": {
-            "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
+            "graphOutputChanged": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "stages": {
-            "includes": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
-            "order": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
+            "includes": ["ambientOcclusion", "traa", "bloom", "vignette"],
+            "excludes": ["motionBlur", "grade", "grain"],
+            "order": ["ambientOcclusion", "traa", "bloom", "vignette"]
           },
           "tier": "medium"
         },
@@ -90,9 +92,9 @@
             "graphOutputChanged": ["bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["bloom", "vignette", "antialias", "grade"],
-            "excludes": ["grain"],
-            "order": ["bloom", "vignette", "antialias", "grade"]
+            "includes": ["bloom", "vignette", "antialias"],
+            "excludes": ["traa", "motionBlur", "grade", "grain"],
+            "order": ["bloom", "vignette", "antialias"]
           },
           "tier": "low"
         },
@@ -101,9 +103,9 @@
             "graphOutputChanged": ["bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["bloom", "vignette", "antialias", "grade"],
-            "excludes": ["grain"],
-            "order": ["bloom", "vignette", "antialias", "grade"]
+            "includes": ["bloom", "vignette", "antialias"],
+            "excludes": ["traa", "motionBlur", "grade", "grain"],
+            "order": ["bloom", "vignette", "antialias"]
           },
           "tier": "low"
         },
@@ -112,19 +114,20 @@
             "graphOutputChanged": ["bloom", "vignette", "antialias"]
           },
           "stages": {
-            "includes": ["bloom", "vignette", "antialias", "grade"],
-            "excludes": ["grain"],
-            "order": ["bloom", "vignette", "antialias", "grade"]
+            "includes": ["bloom", "vignette", "antialias"],
+            "excludes": ["traa", "motionBlur", "grade", "grain"],
+            "order": ["bloom", "vignette", "antialias"]
           },
           "tier": "low"
         }
       },
       "stages": {
-        "includes": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
-        "order": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
+        "includes": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"],
+        "excludes": ["grade", "grain"],
+        "order": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"]
       },
       "contributions": {
-        "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette", "grade", "grain"]
+        "graphOutputChanged": ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"]
       }
     },
     "visibility": [
@@ -152,7 +155,6 @@
           "width": 1280,
           "height": 720,
           "minNonblankPixelRatio": 0.95,
-          "minDarkPixelRatio": 0.05,
           "maxDarkPixelRatio": 0.35,
           "maxLuminance": 0.25
         }
@@ -174,9 +176,48 @@
           "y": 180,
           "width": 640,
           "height": 420,
-          "minNonblankPixelRatio": 0.7,
-          "minDarkPixelRatio": 0.02,
-          "maxLuminance": 0.4
+          "minNonblankPixelRatio": 0.7
+        }
+      }
+    ],
+    "tone": [
+      {
+        "region": {
+          "x": 320,
+          "y": 180,
+          "width": 640,
+          "height": 420
+        },
+        "mean": {
+          "min": 100,
+          "max": 225
+        },
+        "p99": {
+          "max": 250
+        },
+        "clipFraction": {
+          "max": 0.005
+        },
+        "blackFraction": {
+          "max": 0.01
+        }
+      },
+      {
+        "region": {
+          "x": 525,
+          "y": 365,
+          "width": 50,
+          "height": 110
+        },
+        "compare": {
+          "region": {
+            "x": 960,
+            "y": 220,
+            "width": 240,
+            "height": 220
+          },
+          "metric": "p99",
+          "minDelta": 80
         }
       }
     ]

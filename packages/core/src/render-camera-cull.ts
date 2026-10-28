@@ -1,4 +1,4 @@
-import { type Camera, Frustum, Matrix4, type Object3D, Vector3 } from "three";
+import { type Camera, Frustum, Matrix4, type Object3D, Ray, Sphere, Vector3 } from "three";
 
 import { isRenderable } from "./projection-plan.js";
 
@@ -63,6 +63,7 @@ const DYNAMIC_BOUNDS = Symbol("render-camera-cull-dynamic-bounds");
 /** What the gate remembers about a geometry's position buffer between consults. */
 interface IPositionVersion {
   version: number;
+  frame: number;
   /** True when the previous consult also saw a change, so this one is the second in a row. */
   changedLastConsult: boolean;
   /** True when a rewrite was exempted without a rescan, so the cached sphere is stale. */
@@ -71,6 +72,57 @@ interface IPositionVersion {
 
 /** A sphere nearer than this to the camera would divide by zero; treat it as this far away. */
 const MIN_DISTANCE = 1e-4;
+
+/**
+ * Internal mirror metadata: a projection stand-in or a skinned batch observes the authored rigs it
+ * draws. A JS map, not `userData`: on the web engine every `userData` read crosses into Wasm, and the
+ * camera pass asked every object in the scene for it.
+ */
+export const animationRateSources = new WeakMap<Object3D, ReadonlyMap<Object3D, unknown>>();
+
+/** Internal observations shared with AnimationPlayer, owned by the root rather than the game. */
+export interface IAnimationRateState {
+  rate: number;
+  /** Cadence actually selected by the player on its last update; absent metadata stays stock. */
+  effectiveRate?: number;
+  frame: number;
+  source: RenderCameraCull | undefined;
+  evaluated: boolean;
+  evaluation: number;
+  /** Set by the player from its `gpuPose` option; the skinned batch evaluates no other rig on the GPU. */
+  gpuPoseEnabled?: boolean;
+  /** Set by the skinned batch while the GPU evaluates this rig's pose from keyframes and time. */
+  gpuPose?: boolean;
+  /** Set by the player: brings the CPU bones to the current playhead now. */
+  syncBones?: () => void;
+}
+export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
+/** The roots that may hold a rate state, so the camera pass walks the rigs instead of the scene. */
+const animationRateRoots = new Set<WeakRef<Object3D>>();
+const animationRateRootRefs = new WeakMap<Object3D, WeakRef<Object3D>>();
+/** The stand-ins named in {@link animationRateSources}, so the pass can reach them without a scene walk. */
+const animationRateCarriers = new Set<WeakRef<Object3D>>();
+
+/** A projection stand-in or skinned batch names the rigs it draws (see {@link animationRateSources}). */
+export function observeAnimationRates(
+  carrier: Object3D,
+  sources: ReadonlyMap<Object3D, unknown>,
+): void {
+  if (!animationRateSources.has(carrier)) animationRateCarriers.add(new WeakRef(carrier));
+  animationRateSources.set(carrier, sources);
+}
+
+/** AnimationPlayer's registration: the state the camera pass writes, and the root it is found on. */
+export function trackAnimationRate(root: Object3D, state: IAnimationRateState): void {
+  animationRateStates.set(root, state);
+  // One ref per root: a respawn's new player on the same root must not add a second walk of it.
+  let ref = animationRateRootRefs.get(root);
+  if (ref === undefined) {
+    ref = new WeakRef(root);
+    animationRateRootRefs.set(root, ref);
+  }
+  animationRateRoots.add(ref);
+}
 
 export interface IRenderCameraCullOptions {
   /**
@@ -172,13 +224,27 @@ function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
  * all owned by the instance.
  */
 export class RenderCameraCull {
+  #animationFrame = 0;
+  #animationPrepared = false;
+  readonly #animationSphere = new Sphere();
   readonly #enabled: boolean;
   readonly #minimumPixels: number;
   readonly #center = new Vector3();
   readonly #frustum = new Frustum();
   readonly #projectionScreen = new Matrix4();
   readonly #hidden: Object3D[] = [];
+  readonly #animationVisitor: (object: Object3D) => void;
   readonly #visitor: (object: Object3D) => void;
+  /**
+   * Every object under a live rate root this frame, with the states of the roots above it: only
+   * these can change a rate, and their states need no walk up the parents.
+   */
+  readonly #animated = new Map<Object3D, readonly IAnimationRateState[]>();
+  #collecting: readonly IAnimationRateState[] = [];
+  readonly #collectAnimated: (object: Object3D) => void;
+  /** The camera's descendants this frame, so camera attachment needs no walk up the parents. */
+  readonly #cameraParts = new Set<Object3D>();
+  readonly #collectCameraPart: (object: Object3D) => void;
   /** Last position-buffer version seen per geometry, so a rewritten dynamic bound is recomputed. */
   readonly #positionVersions = new WeakMap<object, IPositionVersion>();
   #hiddenCount = 0;
@@ -188,6 +254,9 @@ export class RenderCameraCull {
   #cameraZ = 0;
   #scale = 0;
   #cameraResolved = true;
+  readonly #animationRay = new Ray();
+  /** Per rig: [frame, x, y, z, radius] of the union of its parts' spheres so far this frame. */
+  readonly #rigSpheres = new WeakMap<IAnimationRateState, Float64Array>();
   #considered = 0;
   #culled = 0;
   #exemptCameraAttached = 0;
@@ -208,7 +277,32 @@ export class RenderCameraCull {
     }
     this.#enabled = requested !== false;
     this.#minimumPixels = requested === false ? DEFAULT_MINIMUM_PROJECTED_PIXELS : requested;
+    this.#animationVisitor = (object) => this.#visitAnimation(object);
     this.#visitor = (object) => this.#visit(object);
+    this.#collectAnimated = (object) => {
+      const outer = this.#animated.get(object);
+      // A rig nested in another rig answers to both roots.
+      this.#animated.set(
+        object,
+        outer === undefined ? this.#collecting : [...outer, ...this.#collecting],
+      );
+    };
+    this.#collectCameraPart = (object) => this.#cameraParts.add(object);
+  }
+
+  /** Rebuilds {@link #animated} from the live rate roots; false when no rig can take a rate. */
+  #prepareAnimated(): boolean {
+    this.#animated.clear();
+    for (const ref of animationRateRoots) {
+      const root = ref.deref();
+      if (root === undefined || !animationRateStates.has(root)) {
+        animationRateRoots.delete(ref);
+        continue;
+      }
+      this.#collecting = [animationRateStates.get(root) as IAnimationRateState];
+      root.traverse(this.#collectAnimated);
+    }
+    return this.#animated.size > 0;
   }
 
   get report(): IRenderCameraCullReport {
@@ -228,6 +322,62 @@ export class RenderCameraCull {
     };
   }
 
+  get animationFrame(): number {
+    return this.#animationFrame;
+  }
+
+  /**
+   * Publishes camera-driven animation metadata without changing draw visibility.
+   *
+   * The game calls this before scene `beforeRender` callbacks and projection packing, then calls
+   * {@link apply} after those phases for the one visibility cull that feeds the draw.
+   */
+  prepareAnimation(
+    root: { traverseVisible(callback: (object: Object3D) => void): void },
+    camera: Camera,
+    viewportHeight: number,
+  ): void {
+    this.restore();
+    this.#animationFrame += 1;
+    this.#animationPrepared = true;
+    this.#prepareCamera(camera, viewportHeight);
+    if (!this.#prepareAnimated()) return;
+    // Start at each rig and each stand-in that observes one, never at the scene: the walk then visits
+    // the same objects a scene walk would have acted on, and nothing else.
+    for (const ref of animationRateRoots) {
+      const rig = ref.deref();
+      if (rig !== undefined && this.#reaches(rig, root))
+        rig.traverseVisible(this.#animationVisitor);
+    }
+    for (const ref of animationRateCarriers) {
+      const carrier = ref.deref();
+      const sources = carrier === undefined ? undefined : animationRateSources.get(carrier);
+      if (carrier === undefined || sources === undefined) {
+        animationRateCarriers.delete(ref);
+        continue;
+      }
+      // A carrier inside a rig is visited by that rig's walk.
+      if (this.#animated.has(carrier)) continue;
+      let observes = false;
+      for (const source of sources.keys()) observes ||= this.#animated.has(source);
+      if (observes && this.#reaches(carrier, root)) carrier.traverseVisible(this.#animationVisitor);
+    }
+  }
+
+  /**
+   * True when a scene walk from `root` would visit `object`: it and every parent up to `root` are
+   * visible. A rate root above it answers false, since that root's own walk covers it.
+   */
+  #reaches(object: Object3D, root: unknown): boolean {
+    if (!object.visible) return false;
+    for (let node = object.parent; node !== null; node = node.parent) {
+      if (animationRateStates.has(node)) return false;
+      if (!node.visible) return false;
+      if (node === root) return true;
+    }
+    return object === root;
+  }
+
   /**
    * Hides every renderable under `root` that this camera resolves to fewer than the threshold,
    * then calls `restore` implicitly on the next call. Call {@link restore} after the render.
@@ -242,6 +392,11 @@ export class RenderCameraCull {
     viewportHeight: number,
   ): void {
     this.restore();
+    if (!this.#animationPrepared) {
+      this.#animationFrame += 1;
+      this.#prepareAnimated();
+    }
+    this.#animationPrepared = false;
     this.#considered = 0;
     this.#culled = 0;
     this.#exemptCameraAttached = 0;
@@ -250,13 +405,35 @@ export class RenderCameraCull {
     this.#exemptWithoutBounds = 0;
     this.#exemptDynamicBounds = 0;
     this.#exemptFrustumCulled = 0;
+    if (this.#prepareCamera(camera, viewportHeight, root)) return;
+    root.traverseVisible(this.#visitor);
+  }
+
+  /** Undoes every hide this gate made, leaving the authored scene as the game left it. */
+  restore(): void {
+    this.#engineRoot?.__restoreCull();
+    this.#engineRoot = undefined;
+    for (let index = 0; index < this.#hiddenCount; index += 1) {
+      (this.#hidden[index] as Object3D).visible = true;
+    }
+    this.#hiddenCount = 0;
+  }
+
+  dispose(): void {
+    this.restore();
+    this.#animationPrepared = false;
+    this.#camera = undefined;
+  }
+
+  /** Resolves the camera; returns true when the engine walked `root` itself and answered the counters. */
+  #prepareCamera(camera: Camera, viewportHeight: number, root?: unknown): boolean {
     this.#cameraResolved = true;
     this.#camera = undefined;
     // The walk runs whether or not the gate is enabled: turning the convention off must not turn
     // its measurement off, so a disabled gate still reports what it considered and would have
     // skipped. Only the hide below is gated by `#enabled`.
     const perspective = camera as Camera & { isPerspectiveCamera?: boolean; fov?: number };
-    const engine = engineCullRoot(root);
+    const engine = root === undefined ? undefined : engineCullRoot(root);
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
       this.#cameraResolved = false;
     } else if (
@@ -271,6 +448,9 @@ export class RenderCameraCull {
     } else {
       if (camera.matrixWorldAutoUpdate === true) camera.updateMatrixWorld();
       this.#camera = camera;
+      this.#cameraParts.clear();
+      camera.traverse(this.#collectCameraPart);
+      this.#cameraParts.delete(camera);
       this.#scale = viewportHeight / (2 * Math.tan((perspective.fov * Math.PI) / 360));
     }
     if (engine !== undefined) {
@@ -292,44 +472,59 @@ export class RenderCameraCull {
       this.#exemptDynamicBounds = counts[6] as number;
       this.#exemptFrustumCulled = counts[7] as number;
       this.#engineRoot = engine;
-      return;
+      return true;
     }
     if (this.#camera !== undefined) {
       const elements = camera.matrixWorld.elements;
       this.#cameraX = elements[12] as number;
       this.#cameraY = elements[13] as number;
       this.#cameraZ = elements[14] as number;
+      this.#animationRay.origin.set(this.#cameraX, this.#cameraY, this.#cameraZ);
+      this.#animationRay.direction
+        .set(-(elements[8] as number), -(elements[9] as number), -(elements[10] as number))
+        .normalize();
       // The main frustum is what tells an off-camera shadow caster from a visible but unresolvable
       // one. Perspective cameras keep `matrixWorldInverse` in step inside `updateMatrixWorld`.
       this.#projectionScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
       this.#frustum.setFromProjectionMatrix(this.#projectionScreen);
     }
-    root.traverseVisible(this.#visitor);
+    return false;
   }
 
-  /** Undoes every hide this gate made, leaving the authored scene as the game left it. */
-  restore(): void {
-    this.#engineRoot?.__restoreCull();
-    this.#engineRoot = undefined;
-    for (let index = 0; index < this.#hiddenCount; index += 1) {
-      (this.#hidden[index] as Object3D).visible = true;
+  #visitAnimation(object: Object3D): void {
+    // Only a rig's own parts and the stand-ins that observe rigs can change a rate; everything else
+    // is left unread (each read is an engine crossing on the web engine).
+    const animated = this.#animated.has(object);
+    if (!animated && !animationRateSources.has(object)) return;
+    if (!isRenderable(object)) return;
+    this.#observeAnimationSources(object);
+    if (!animated) return;
+    if (this.#isCameraAttached(object)) {
+      this.#observeAnimation(object, undefined);
+      return;
     }
-    this.#hiddenCount = 0;
-  }
-
-  dispose(): void {
-    this.restore();
-    this.#camera = undefined;
+    if (object.userData[ALWAYS_RENDER_KEY] === true) {
+      this.#observeAnimation(object, undefined);
+      return;
+    }
+    if (object.frustumCulled === false) {
+      this.#observeAnimation(object, undefined);
+      return;
+    }
+    this.#observeAnimation(object, boundsOf(object, this.#positionVersions, this.#animationFrame));
   }
 
   #visit(object: Object3D): void {
     if (!isRenderable(object)) return;
     this.#considered += 1;
+    this.#observeAnimationSources(object);
     if (this.#isCameraAttached(object)) {
+      this.#observeAnimation(object, undefined);
       this.#exemptCameraAttached += 1;
       return;
     }
     if (object.userData[ALWAYS_RENDER_KEY] === true) {
+      this.#observeAnimation(object, undefined);
       this.#exemptMarked += 1;
       return;
     }
@@ -337,6 +532,7 @@ export class RenderCameraCull {
     // trusted — the pooled tracer, particle and whitewater batches set it for exactly that
     // reason. A second, stricter cull does not get to override the opt-out.
     if (object.frustumCulled === false) {
+      this.#observeAnimation(object, undefined);
       this.#exemptFrustumCulled += 1;
       return;
     }
@@ -346,7 +542,8 @@ export class RenderCameraCull {
     // cheaply enumerable here, so where the gate cannot know, it keeps the caster. A caster the
     // main camera *can* see is ordinary geometry — its shadow is in view with it, and a
     // sub-resolution object casts a sub-resolution shadow.
-    const sphere = boundsOf(object, this.#positionVersions);
+    const sphere = boundsOf(object, this.#positionVersions, this.#animationFrame);
+    this.#observeAnimation(object, sphere);
     // A buffer rewritten every frame has extents the gate cannot know without a full scan each
     // frame, which costs more than the draw it might remove. Keep it drawn, like an opt-out.
     if (sphere === DYNAMIC_BOUNDS) {
@@ -374,8 +571,7 @@ export class RenderCameraCull {
     const dz = this.#center.z - this.#cameraZ;
     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const worldRadius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
-    const projectedDiameter =
-      (2 * worldRadius * this.#scale) / Math.max(distance - worldRadius, MIN_DISTANCE);
+    const projectedDiameter = projectedDiameterPixels(worldRadius, distance, this.#scale);
     if (projectedDiameter >= this.#minimumPixels) return;
     object.visible = false;
     this.#hidden[this.#hiddenCount] = object;
@@ -383,19 +579,140 @@ export class RenderCameraCull {
     this.#culled += 1;
   }
 
-  #isCameraAttached(object: Object3D): boolean {
-    const camera = this.#camera;
-    if (camera === undefined) return false;
-    for (let node = object.parent; node !== null; node = node.parent) {
-      if (node === camera) return true;
+  #observeAnimation(
+    object: Object3D,
+    sphere: IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined,
+    notRendered = false,
+  ): void {
+    // An object under no live rate root has no state above it.
+    const states = this.#animated.get(object);
+    if (states === undefined) return;
+    let rate = notRendered ? 8 : 1;
+    let radius = 0;
+    let banded = false;
+    if (
+      !notRendered &&
+      this.#cameraResolved &&
+      sphere !== undefined &&
+      sphere !== DYNAMIC_BOUNDS &&
+      Number.isFinite(sphere.radius) &&
+      sphere.radius > 0
+    ) {
+      this.#center.copy(sphere.center).applyMatrix4(object.matrixWorld);
+      radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
+      // A known bound on the camera's forward centre ray is the conservative observable target
+      // signal. Test each source independently so a nearer bound cannot hide a farther target.
+      banded = !this.#animationRay.intersectsSphere(
+        this.#animationSphere.set(this.#center, radius),
+      );
     }
-    return false;
+    const { x, y, z } = this.#center;
+    for (const state of states) {
+      // The pixel band reads the whole rig this frame, not this part: Lantern Vale's hero is 51 rigid
+      // parts, the largest 80 px at 720p while the hero stands 170 px, and per part it held every
+      // other pose. A one-mesh rig's union is its own sphere.
+      // A part scaled to nothing projects 0 px: it leaves the rig to its other parts.
+      if (banded) rate = radius > 0 ? this.#bandRate(this.#rigSphere(state, x, y, z, radius)) : 8;
+      if (state.source === this && state.frame === this.#animationFrame)
+        state.rate = Math.min(state.rate, rate);
+      else state.rate = rate;
+      state.source = this;
+      state.frame = this.#animationFrame;
+    }
   }
+
+  /** Grows `state`'s sphere for this frame to hold the part at `x, y, z` and `radius`, into `#animationSphere`. */
+  #rigSphere(state: IAnimationRateState, x: number, y: number, z: number, radius: number): Sphere {
+    let union = this.#rigSpheres.get(state);
+    if (union === undefined) {
+      union = new Float64Array(5);
+      this.#rigSpheres.set(state, union);
+    }
+    // In place, a part at a time each frame: no array literal and no typed-array destructuring.
+    if (union[0] !== this.#animationFrame) {
+      union[0] = this.#animationFrame;
+      union[1] = x;
+      union[2] = y;
+      union[3] = z;
+      union[4] = radius;
+    } else {
+      const ux = union[1] as number;
+      const uy = union[2] as number;
+      const uz = union[3] as number;
+      const ur = union[4] as number;
+      const distance = Math.hypot(x - ux, y - uy, z - uz);
+      if (distance + radius > ur) {
+        if (distance + ur <= radius) {
+          union[1] = x;
+          union[2] = y;
+          union[3] = z;
+          union[4] = radius;
+        } else {
+          const grown = (distance + ur + radius) / 2;
+          const shift = (grown - ur) / distance;
+          union[1] = ux + (x - ux) * shift;
+          union[2] = uy + (y - uy) * shift;
+          union[3] = uz + (z - uz) * shift;
+          union[4] = grown;
+        }
+      }
+    }
+    this.#center.set(union[1] as number, union[2] as number, union[3] as number);
+    return this.#animationSphere.set(this.#center, union[4] as number);
+  }
+
+  #bandRate(sphere: Sphere): number {
+    if (!this.#frustum.intersectsSphere(sphere)) return 8;
+    const { x, y, z } = sphere.center;
+    const distance = Math.hypot(x - this.#cameraX, y - this.#cameraY, z - this.#cameraZ);
+    const pixels = projectedDiameterPixels(sphere.radius, distance, this.#scale);
+    // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
+    return pixels >= 128 ? 1 : pixels >= 32 ? 2 : pixels >= 8 ? 4 : 8;
+  }
+
+  #observeAnimationSources(object: Object3D): void {
+    const sources = animationRateSources.get(object);
+    if (sources === undefined) return;
+    for (const source of sources.keys()) {
+      if (!this.#animated.has(source)) continue;
+      const visible = this.#isVisibleInWorld(source);
+      if (this.#isCameraAttached(source)) {
+        this.#observeAnimation(source, undefined);
+        continue;
+      }
+      this.#observeAnimation(
+        source,
+        visible ? boundsOf(source, this.#positionVersions, this.#animationFrame) : undefined,
+        !visible,
+      );
+    }
+  }
+
+  #isVisibleInWorld(object: Object3D): boolean {
+    for (let node: Object3D | null = object; node !== null; node = node.parent) {
+      if (!node.visible) return false;
+    }
+    return true;
+  }
+
+  #isCameraAttached(object: Object3D): boolean {
+    return this.#camera !== undefined && this.#cameraParts.has(object);
+  }
+}
+
+/** Pure projected-diameter formula shared by the draw gate and per-rig animation policy. */
+export function projectedDiameterPixels(
+  radius: number,
+  distance: number,
+  pixelsPerWorldUnit: number,
+): number {
+  return (2 * radius * pixelsPerWorldUnit) / Math.max(distance - radius, MIN_DISTANCE);
 }
 
 function boundsOf(
   object: Object3D,
   versions: WeakMap<object, IPositionVersion>,
+  frame: number,
 ): IBoundingSphereLike | typeof DYNAMIC_BOUNDS | undefined {
   const cullable = object as ICullable;
   // An `InstancedMesh` carries its own instance-aware bound; the geometry one is not it.
@@ -406,16 +723,20 @@ function boundsOf(
   if (geometry.boundingSphere == null) {
     geometry.computeBoundingSphere?.();
     if (version !== undefined)
-      versions.set(geometry, { version, changedLastConsult: false, stale: false });
+      versions.set(geometry, { version, frame, changedLastConsult: false, stale: false });
     return geometry.boundingSphere ?? undefined;
   }
   if (version === undefined) return geometry.boundingSphere ?? undefined;
   const known = versions.get(geometry);
   if (known === undefined) {
-    versions.set(geometry, { version, changedLastConsult: false, stale: false });
+    versions.set(geometry, { version, frame, changedLastConsult: false, stale: false });
     return geometry.boundingSphere ?? undefined;
   }
+  const sameFrame = known.frame === frame;
+  known.frame = frame;
   if (known.version === version) {
+    // Animation preparation and draw culling share one frame's observation.
+    if (sameFrame) return known.stale ? DYNAMIC_BOUNDS : (geometry.boundingSphere ?? undefined);
     // A buffer that settled after a per-frame rewrite has knowable extents again: scan it once and
     // cull it like any other, rather than exempting it for the rest of the run. Settling also lets
     // the next change count as a fresh one rather than as the second frame of a rewrite.

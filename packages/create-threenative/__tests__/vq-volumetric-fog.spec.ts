@@ -4,6 +4,7 @@ import {
   Box3,
   BoxGeometry,
   Color,
+  Data3DTexture,
   DepthTexture,
   DirectionalLight,
   FogExp2,
@@ -17,8 +18,14 @@ import {
   Texture,
   Vector3,
 } from "three";
-import { pass } from "three/tsl";
-import { type Node, WGSLNodeBuilder } from "three/webgpu";
+import { pass, texture3D } from "three/tsl";
+import {
+  ConditionalNode,
+  type Node,
+  type NodeBuilder,
+  OperatorNode,
+  WGSLNodeBuilder,
+} from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { setupSky } from "../templates/starter/src/render/sky.js";
 import {
@@ -26,7 +33,42 @@ import {
   createVolumetricFog,
 } from "../templates/starter/src/render/volumetricFog.js";
 
-import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
+import {
+  type OutputRenderer,
+  WorldEnvironment,
+} from "../../../test-support/isolated-world-environment.js";
+
+/**
+ * The owned engine's TSL front-end takes a node, a number, a string, a colour or a Vector2 to 4 as a uniform value
+ * (packages/three-native/src/browser-tsl.ts, `argument`). A Matrix4 or a Box3 stops the game at start with
+ * TN_TSL uniform, so every value the fog hands to `uniform()` is recorded here. The same front-end does not export
+ * `getViewPosition` (the catalog marks it unsupported), so a call to it is recorded too.
+ */
+const refused: string[] = [];
+vi.mock("three/tsl", async (importOriginal) => {
+  const real = await importOriginal<Record<string, (...args: unknown[]) => unknown>>();
+  return {
+    ...real,
+    getViewPosition: () => {
+      refused.push("getViewPosition");
+      return (real.vec3 as (...args: unknown[]) => unknown)(0);
+    },
+    uniform: (
+      value: { [flag: string]: unknown } | number | string | null | undefined,
+      ...rest: unknown[]
+    ) => {
+      const taken =
+        value == null ||
+        typeof value === "number" ||
+        typeof value === "string" ||
+        ["isNode", "isColor", "isVector2", "isVector3", "isVector4"].some(
+          (flag) => (value as { [flag: string]: unknown })[flag] === true,
+        );
+      if (!taken) refused.push(String((value as object).constructor.name));
+      return (real.uniform as (...args: unknown[]) => unknown)(value, ...rest);
+    },
+  };
+});
 
 function required<T>(value: T | undefined | null): T {
   if (value == null) throw new Error("Missing fixture value");
@@ -268,6 +310,143 @@ it.each([false, true])("builds the actual depth-clipped transport WGSL (lights=%
   fog.dispose();
   scenePass.dispose();
   options.sun?.shadow.map?.dispose();
+});
+
+/** The WGSL one fragment node builds to, on the same fake WebGPU renderer the transport tests use. */
+function fragmentCode(camera: PerspectiveCamera, node: Node, output: "vec4"): string {
+  const renderer = {
+    backend: {
+      isWebGPUBackend: true,
+      capabilities: { getUniformBufferLimit: () => 65_536 },
+      utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+    },
+    coordinateSystem: 2001,
+    hasCompatibility: () => true,
+    hasFeature: () => false,
+    getRenderTarget: () => null,
+    getOutputBufferType: () => 1016,
+    samples: 0,
+    getMRT: () => null,
+    library: { fromMaterial: () => null },
+    shadowMap: { enabled: true, type: 1 },
+  };
+  const builder = new WGSLNodeBuilder(
+    new Mesh(new BoxGeometry(), new MeshBasicMaterial()),
+    renderer as never,
+  ) as unknown as {
+    camera: PerspectiveCamera;
+    setShaderStage(stage: string): void;
+    flowStagesNode(node: Node, output: string): { code: string };
+  };
+  builder.camera = camera;
+  builder.setShaderStage("fragment");
+  return builder.flowStagesNode(node, output).code;
+}
+
+it("scatters a field read at every step when the air is given an ambient node (PRD-643)", () => {
+  const camera = new PerspectiveCamera();
+  const field = new Data3DTexture(new Float32Array(4), 1, 1, 1);
+  const wgsl = (ambientNode?: IVolumetricFogOptions["ambientNode"]): string => {
+    const fog = required(createVolumetricFog(new Scene(), camera, { ...settings(), ambientNode }));
+    const scenePass = pass(new Scene(), camera);
+    fog.compose(scenePass);
+    const code = fragmentCode(camera, required(fog.transport), "vec4");
+    fog.dispose();
+    scenePass.dispose();
+    return code;
+  };
+  const plain = wgsl();
+  const lit = wgsl((position) => texture3D(field).sample(position.mul(0.1)).rgb);
+  // A 3D read is the only `vec3<u32>` texture load in the march (the scene depth is 2D).
+  const read = /textureLoad\([^;]*vec3<u32>/;
+  expect(plain).not.toMatch(read);
+  // The field is read inside the march: after the loop header, not once before it.
+  expect(lit.search(read)).toBeGreaterThan(lit.indexOf("for ("));
+});
+
+it("reads the camera as vectors, not a matrix built from columns (PRD-643)", () => {
+  // The owned engine's TSL did not follow the pose through a mat4 of four vec4 uniforms: the fog drew black there.
+  const camera = new PerspectiveCamera();
+  const fog = required(createVolumetricFog(new Scene(), camera, settings()));
+  const scenePass = pass(new Scene(), camera);
+  fog.compose(scenePass);
+  const code = fragmentCode(camera, required(fog.transport), "vec4");
+  fog.dispose();
+  scenePass.dispose();
+  expect(code).not.toMatch(/mat4x4/);
+  // The march still reaches the surface behind each pixel: the depth texture is read to place its endpoint.
+  expect(code).toMatch(/textureLoad|textureSample/);
+});
+
+/** Builds the transport and the composed fog, at full and at half resolution (the half-resolution compose adds a depth test). */
+function buildBothGraphs(): void {
+  for (const resolutionScale of [1, 0.5]) {
+    const camera = new PerspectiveCamera();
+    const fog = required(
+      createVolumetricFog(new Scene(), camera, { ...settings(), resolutionScale }),
+    );
+    const scenePass = pass(new Scene(), camera);
+    const composed = fog.compose(scenePass);
+    // A TSL function body runs when the shader builds, so build both graphs the game draws.
+    fragmentCode(camera, required(fog.transport), "vec4");
+    fragmentCode(camera, composed, "vec4");
+    fog.dispose();
+    scenePass.dispose();
+  }
+}
+
+it("hands the owned engine's TSL only uniform values and functions it takes (PRD-643)", () => {
+  refused.length = 0;
+  buildBothGraphs();
+  expect(refused).toEqual([]);
+});
+
+/**
+ * The owned engine's shader IR compares two values of one type and selects on a bool scalar
+ * (packages/runtime-native/src/engine/shader/ir.cpp: `less`, `equal`, `select`, `greaterEqual`). Three's WGSL builder
+ * broadcasts a scalar against a vector, so the stock path builds what the owned engine refuses at its first draw:
+ * `TN_TSL_TYPE: greaterEqual: takes two equal numeric values`. Every comparison and select the fog builds is checked
+ * as it generates.
+ */
+it("compares two values of one type and selects on a bool scalar, as the owned engine's IR requires (PRD-643)", () => {
+  const comparison = new Set(["==", "!=", "<", ">", "<=", ">="]);
+  const wrong: string[] = [];
+  const seen = { comparisons: 0, selects: 0 };
+  const generateOperator = OperatorNode.prototype.generate;
+  const generateConditional = ConditionalNode.prototype.generate;
+  OperatorNode.prototype.generate = function (
+    this: OperatorNode,
+    builder: NodeBuilder,
+    output?: string | null,
+  ) {
+    if (comparison.has(this.op)) {
+      seen.comparisons += 1;
+      const a = this.aNode.getNodeType(builder);
+      const b = this.bNode.getNodeType(builder);
+      if (a !== b) wrong.push(`${a} ${this.op} ${b}`);
+    }
+    return generateOperator.call(this, builder, output);
+  };
+  ConditionalNode.prototype.generate = function (
+    this: ConditionalNode<string>,
+    builder: NodeBuilder,
+    output?: string | null,
+  ) {
+    seen.selects += 1;
+    const type = this.condNode.getNodeType(builder);
+    if (type !== "bool") wrong.push(`select on ${type}`);
+    return generateConditional.call(this, builder, output);
+  };
+  try {
+    buildBothGraphs();
+  } finally {
+    OperatorNode.prototype.generate = generateOperator;
+    ConditionalNode.prototype.generate = generateConditional;
+  }
+  expect(wrong).toEqual([]);
+  // Fail closed: a three upgrade that renames either method would otherwise leave this check empty.
+  expect(seen.comparisons).toBeGreaterThan(0);
+  expect(seen.selects).toBeGreaterThan(0);
 });
 
 /**

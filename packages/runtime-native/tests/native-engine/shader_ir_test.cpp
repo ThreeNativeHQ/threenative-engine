@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/shader/ir.h"
+#include "engine/shader/wgsl.h"
 
 #include <cstdio>
 #include <string>
@@ -7,6 +8,28 @@
 using namespace tn::engine::shader;
 
 namespace {
+
+void textureBias() {
+    Program p(Stage::Fragment);
+    const auto texture = p.texture2d("map");
+    const auto uv = p.construct(Type::vec(2), {p.constant(0.5f)});
+    const auto sample = p.sampleBias(texture, uv, p.constant(-0.5f));
+    p.output("color", sample);
+    CHECK(p.ok());
+    CHECK(p.dump().find("sampleBias:map(") != std::string::npos);
+    const auto module = WgslEmitter::emit(p);
+    CHECK(module.ok() && module.code.find("textureSampleBias(t_map, smp_map,") != std::string::npos);
+    CHECK(module.code.find("var smp_map: sampler") != std::string::npos);
+    for (int bad = 0; bad < 7; ++bad) {
+        Program invalid(bad == 0 ? Stage::Vertex : bad == 1 ? Stage::Compute : Stage::Fragment);
+        const auto tex = bad == 2 ? invalid.textureDepth("depth") : invalid.texture2d("map");
+        const auto at = invalid.construct(bad == 3 ? Type::vec(3) : Type::vec(2), {invalid.constant(0.5f)});
+        const auto bias = bad == 4 ? invalid.constant(int32_t(0)) : bad == 5
+            ? invalid.construct(Type::vec(2), {invalid.constant(0.5f)}) : invalid.constant(-0.5f);
+        CHECK(invalid.sampleBias(bad == 6 ? tex + 1 : tex, at, bias) == kInvalid);
+        CHECK(!invalid.ok() && invalid.diagnostics().size() == 1);
+    }
+}
 
 void order() {
     Program p(Stage::Compute);
@@ -66,6 +89,7 @@ void order() {
 
 // Each case must raise TN_TSL_TYPE at the line that authored it.
 void types() {
+    textureBias();
     struct Case {
         const char* name;
         Stage stage;
@@ -183,6 +207,37 @@ void unsupported() {
     CHECK(p.diagnostics()[1].code == "TN_TSL_UNSUPPORTED" && p.diagnostics()[1].node == "sampleMask");
 }
 
+
+void storageTextures() {
+    for (const std::string format : {"rgba16float", "rgba32float", "rgba8unorm"}) {
+        Program p(Stage::Compute);
+        const auto target = p.storageTexture2d("output", format);
+        CHECK(p.storageTexture2d("output", format) == target);
+        const auto coordinate = p.construct(Type::vec(2, Type::Scalar::U32), {p.construct(Type::u32(), {p.constant(int32_t(3))})});
+        const auto value = p.construct(Type::vec(4), {p.constant(0.5f)});
+        p.textureStore(target, coordinate, value);
+        CHECK(p.ok());
+        CHECK(p.dump().find("textureStore output[") != std::string::npos);
+        const auto module = WgslEmitter::emit(p);
+        CHECK(module.ok());
+        CHECK(module.code.find("texture_storage_2d<" + format + ", write>") != std::string::npos);
+        CHECK(module.code.find("textureStore(st_output,") != std::string::npos);
+    }
+    for (int bad = 0; bad < 5; ++bad) {
+        Program p(bad == 0 ? Stage::Fragment : Stage::Compute);
+        const auto target = p.storageTexture2d("output", "rgba16float");
+        const auto coordinate = p.construct(Type::vec(2, bad == 2 ? Type::Scalar::F32 : Type::Scalar::I32), {bad == 2 ? p.constant(0.0f) : p.constant(int32_t(0))});
+        const auto value = p.construct(bad == 3 ? Type::vec(3) : Type::vec(4), {p.constant(1.0f)});
+        p.textureStore(bad == 1 ? target + 1 : target, bad == 4 ? kInvalid : coordinate, value);
+        CHECK(!p.ok() && p.diagnostics().size() == 1);
+        if (!p.diagnostics().empty()) CHECK(p.diagnostics()[0].node == "textureStore");
+        CHECK(p.dump().find("textureStore output[") == std::string::npos);
+    }
+    Program p(Stage::Compute);
+    CHECK(p.storageTexture2d("bad", "r32float") == kInvalid);
+    CHECK(!p.ok() && p.diagnostics()[0].node == "storageTexture2d");
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"order", order}, {"types", types}, {"unsupported", unsupported})
+TN_TEST_MAIN({"storage_textures", storageTextures}, {"order", order}, {"types", types}, {"unsupported", unsupported})

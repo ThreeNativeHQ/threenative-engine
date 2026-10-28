@@ -24,6 +24,8 @@ const OUT = path.join(HERE, "projection_reference.json");
 export interface IGeometrySpec {
   id: string;
   kind: "box" | "sphere";
+  /** A sphere's radius (0.5): same layout and vertex count, different bytes. */
+  radius?: number;
   /** A morph target on position: the geometry carries morph attributes. */
   morph?: boolean;
   /** skinIndex/skinWeight attributes for a rig. */
@@ -53,6 +55,11 @@ export interface IObjectSpec {
   hook?: boolean;
   /** How many identical copies of this object to add. */
   repeat?: number;
+  /**
+   * Each copy builds its own geometry from the spec, as agent-written games do: "same" bytes in every
+   * copy, or "varied" (copy i scaled by 1 + i/100 in y: same vertex count, different data).
+   */
+  ownGeometry?: "same" | "varied";
   children?: IObjectSpec[];
 }
 export interface ISceneSpec {
@@ -65,7 +72,9 @@ export interface ISceneSpec {
 
 function geometryOf(spec: IGeometrySpec): three.BufferGeometry {
   const geometry =
-    spec.kind === "box" ? new three.BoxGeometry() : new three.SphereGeometry(0.5, 8, 6);
+    spec.kind === "box"
+      ? new three.BoxGeometry()
+      : new three.SphereGeometry(spec.radius ?? 0.5, 8, 6);
   const count = geometry.attributes.position.count;
   if (spec.morph) geometry.morphAttributes.position = [geometry.attributes.position.clone()];
   if (spec.skinned) {
@@ -95,9 +104,15 @@ function build(
   spec: IObjectSpec,
   geometries: Map<string, three.BufferGeometry>,
   materials: Map<string, three.Material>,
+  specs: Map<string, IGeometrySpec>,
+  copy = 0,
 ): three.Object3D {
   let object: three.Object3D;
-  const geometry = spec.geometry ? geometries.get(spec.geometry) : undefined;
+  let geometry = spec.geometry ? geometries.get(spec.geometry) : undefined;
+  if (spec.ownGeometry !== undefined && spec.geometry !== undefined) {
+    geometry = geometryOf(specs.get(spec.geometry) as IGeometrySpec);
+    if (spec.ownGeometry === "varied") geometry.scale(1, 1 + copy / 100, 1);
+  }
   const material = spec.material ? materials.get(spec.material) : undefined;
   if (spec.kind === "mesh") object = new three.Mesh(geometry, material);
   else if (spec.kind === "instanced")
@@ -124,7 +139,7 @@ function build(
   if (spec.hook) object.onBeforeRender = () => {};
   for (const child of spec.children ?? [])
     for (let i = 0; i < (child.repeat ?? 1); i += 1)
-      object.add(build(child, geometries, materials));
+      object.add(build(child, geometries, materials, specs, i));
   return object;
 }
 
@@ -132,10 +147,11 @@ function build(
 function decide(spec: ISceneSpec): Record<string, unknown> {
   const geometries = new Map(spec.geometries.map((g) => [g.id, geometryOf(g)]));
   const materials = new Map(spec.materials.map((m) => [m.id, materialOf(m)]));
+  const specs = new Map(spec.geometries.map((g) => [g.id, g]));
   const scene = new three.Scene();
   for (const object of spec.objects)
     for (let i = 0; i < (object.repeat ?? 1); i += 1)
-      scene.add(build(object, geometries, materials));
+      scene.add(build(object, geometries, materials, specs, i));
   scene.updateMatrixWorld(true);
   const projection = new SceneRenderProjection(
     scene,
@@ -154,6 +170,7 @@ function decide(spec: ISceneSpec): Record<string, unknown> {
     skinnedBatches: r.skinnedBatches,
     exactObjects: r.exactObjects,
     exact,
+    ...(r.cause === undefined ? {} : { cause: r.cause.code, causeMeshes: r.cause.meshes }),
   };
 }
 
@@ -277,7 +294,11 @@ export const SCENES: ISceneSpec[] = [
   },
   {
     name: "material-groups",
-    geometries: [box(), { id: "ball", kind: "sphere" }, { id: "ball2", kind: "sphere" }],
+    geometries: [
+      box(),
+      { id: "ball", kind: "sphere" },
+      { id: "ball2", kind: "sphere", radius: 0.6 },
+    ],
     materials: [std()],
     objects: [
       props(200),
@@ -320,6 +341,32 @@ export const SCENES: ISceneSpec[] = [
     objects: Array.from({ length: 200 }, (_, i) =>
       props(1, { geometry: `g${i}`, material: `m${i}` }),
     ),
+  },
+  // Forty copies that each built their own box with one material, as agents write them: the bytes
+  // are equal, so they are one instanced batch.
+  {
+    name: "per-copy-geometry",
+    minMeshes: 8,
+    geometries: [box()],
+    materials: [std()],
+    objects: [props(40, { ownGeometry: "same" })],
+  },
+  // The same forty with different data at the same vertex count: nothing merges, and the decline
+  // names the geometry.
+  {
+    name: "per-copy-geometry-varied",
+    minMeshes: 8,
+    geometries: [box()],
+    materials: [std()],
+    objects: [props(40, { ownGeometry: "varied" })],
+  },
+  // Per-copy geometry beside a shared one with the same bytes: one batch holds both.
+  {
+    name: "per-copy-and-shared",
+    minMeshes: 8,
+    geometries: [box()],
+    materials: [std()],
+    objects: [props(20), props(20, { ownGeometry: "same" })],
   },
 ];
 

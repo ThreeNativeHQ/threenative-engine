@@ -125,8 +125,12 @@ function quantize(value: number): number {
   return Math.round(value * 1e5) / 1e5;
 }
 
-/** Events that mean "something is moving and its published rect is now a frame behind". */
-const TRANSITION_START = ["transitionrun", "transitionstart", "animationstart"] as const;
+/**
+ * Events that mean "something is moving and its published rect is now a frame behind".
+ * `transitionrun` is deliberately absent: a browser emits it as well as `transitionstart` for the
+ * same transition, and only that pair balances one `transitionend`/`transitioncancel`.
+ */
+const TRANSITION_START = ["transitionstart", "animationstart"] as const;
 const TRANSITION_END = [
   "transitionend",
   "transitioncancel",

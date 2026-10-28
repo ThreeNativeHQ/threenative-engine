@@ -406,6 +406,7 @@
     "src/renderers/common/RenderPipeline.js": "ab3085cfdca456ffb3de6945d7e7f693e4ed33ae",
     "src/nodes/pmrem/PMREMNode.js": "c4c33cf3060d8c75398000589ed4e3f9a52ec285",
     "src/renderers/common/extras/PMREMGenerator.js": "ace19db76fab3f08ed4d581d1e272066a24c34aa",
-    "examples/jsm/tsl/display/SMAANode.js": "0bb036147379173ea3eb51774be72d4587b757b8"
+    "examples/jsm/tsl/display/SMAANode.js": "0bb036147379173ea3eb51774be72d4587b757b8",
+    "examples/jsm/tsl/display/SSRNode.js": "0188f96aeb1c4255b62d31598afb4a1def1b3a88"
   }
 }

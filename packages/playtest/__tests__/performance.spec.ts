@@ -66,6 +66,18 @@ function report(series: unknown[]) {
   };
 }
 
+/** A report whose frames carry the CPU split and whose meter read a GPU time: the cost the frame bound judges. */
+function costedReport(series: Record<string, unknown>[]) {
+  const base = report(series.map((sample) => ({ phases: { hostGap: 0, overlay: 0, render: 1, residual: 0, ui: 0, update: 0.1 }, ...sample })));
+  return {
+    ...base,
+    observations: {
+      ...base.observations,
+      console: [{ type: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` }],
+    },
+  };
+}
+
 interface TestRenderer {
   readonly domElement: HTMLCanvasElement;
   readonly info: { render: { calls?: number; triangles?: number } };
@@ -184,9 +196,9 @@ async function renderControl(
 }
 
 test("performance bounds pass against observed frame cost and renderer counts", async () => {
-  const loaded = await scenario({ maxDrawCalls: 10, maxFrameMsP95: 20, maxTriangles: 500 });
+  const loaded = await scenario({ maxDrawCalls: 10, maxFrameMsP95: 20, maxFrameMsReason: "fixture series reads 18 ms", maxTriangles: 500 });
   const evaluated = evaluateRichPlaytestAssertions({
-    report: report([
+    report: costedReport([
       { drawCalls: 4, frameMs: 16, triangles: 120 },
       { drawCalls: 5, frameMs: 18, triangles: 140 },
       { drawCalls: 3, frameMs: 17, triangles: 100 },
@@ -247,7 +259,7 @@ test("the permanent regressed-scene control fails closed when renderer counts di
 });
 
 test("an empty performance series fails closed instead of passing vacuously", async () => {
-  const loaded = await scenario({ maxFrameMsP95: 20 });
+  const loaded = await scenario({ maxFrameMsP95: 20, maxFrameMsReason: "fixture" });
   const evaluated = evaluateRichPlaytestAssertions({
     report: report([]),
     scenario: loaded,
@@ -349,7 +361,7 @@ const PASS_SERIES = [
     ],
   },
   {
-    frameMs: 17,
+    frameMs: 16.5,
     passes: [
       { draws: 120, kind: "main", triangles: 1200 },
       { draws: 45, kind: "shadow", triangles: 450 },
@@ -360,7 +372,7 @@ const PASS_SERIES = [
 
 test("a per-pass budget passes when every declared pass stays under it", async () => {
   const loaded = await scenario({ maxPassDrawCalls: { shadow: 50 }, maxPassTriangles: { reflection: 700 } });
-  const evaluated = evaluateRichPlaytestAssertions({ report: report(PASS_SERIES), scenario: loaded });
+  const evaluated = evaluateRichPlaytestAssertions({ report: costedReport(PASS_SERIES), scenario: loaded });
 
   expect(evaluated.assertions).toEqual(expect.arrayContaining([
     expect.objectContaining({ details: expect.objectContaining({ actual: 45, expected: 50, pass: "shadow" }), id: "performance.maxPassDrawCalls.shadow", pass: true }),
@@ -400,7 +412,7 @@ test("a per-pass ceiling fails closed when the run carries no pass split", async
 
 test("a budget with no per-pass bounds adds no per-pass assertion", async () => {
   const loaded = await scenario({ minFps: 30 });
-  const evaluated = evaluateRichPlaytestAssertions({ report: report(PASS_SERIES), scenario: loaded });
+  const evaluated = evaluateRichPlaytestAssertions({ report: costedReport(PASS_SERIES), scenario: loaded });
 
   expect(evaluated.assertions.some(({ id }) => id.startsWith("performance.maxPass"))).toBe(false);
   expect(evaluated.diagnostics).toEqual([]);

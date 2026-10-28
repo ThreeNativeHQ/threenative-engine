@@ -23,9 +23,11 @@
 #include "engine/scene/geometry.h"
 #include "engine/scene/projected_cull.h"
 
+#include <algorithm>
 #include <fstream>
 #include <cstdlib>
 #include <cmath>
+#include <limits>
 #include <cstring>
 #include <map>
 
@@ -652,6 +654,13 @@ void callbacks() {
     CHECK(first.args[2].kind == TN_VALUE_HANDLE && same(first.args[2].handle, camera));
     CHECK(first.args[3].kind == TN_VALUE_HANDLE && same(first.args[3].handle, geometry));
     CHECK(first.args[4].kind == TN_VALUE_HANDLE && same(first.args[4].handle, material));
+    // A camera the engine keeps on its stack (a probe capture's face) has no shared owner: the callback
+    // is handed null, never a handle that would dangle once the capture returns.
+    const tn::engine::PerspectiveCamera stackCamera(90, 1, 0.1, 10);
+    tn::engine::RenderCallbackArgs borrowed = args;
+    borrowed.camera = &stackCamera;
+    CHECK((*object->onBeforeRender)(borrowed, error));
+    CHECK(first.invoked == 2 && first.args[2].kind == TN_VALUE_NULL && first.args[1].kind == TN_VALUE_HANDLE);
     first.fail = true;
     CHECK(!(*object->onBeforeRender)(args, error) && error == "boom");
 
@@ -764,6 +773,74 @@ void walk_parents() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// A SpotLight's target is a shared-owned Object3D like a DirectionalLight's, so a scene that holds it as a
+// child hands it to a walk and a clear. A C++-owned target made both throw "not shared-owned" (lamp-room).
+void spot_target_in_scene() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, spot{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "SpotLight", nullptr, 0, &spot, &d.value) == TN_OK);
+    tn_value_t result{};
+    CHECK(tn_get(spot, "target", &result, &d.value) == TN_OK && result.kind == TN_VALUE_HANDLE);
+    const tn_handle_t target = result.handle;
+    const tn_value_t children[2] = {ref(spot), ref(target)};
+    CHECK(tn_invoke(scene, "add", children, 2, &result, &d.value) == TN_OK);
+    const tn_value_t args[2] = {boolean(false), boolean(true)};
+    CHECK(tn_invoke(scene, "__walk", args, 2, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_ARRAY && result.count == 6);
+    CHECK(tn_get(scene, "children", &result, &d.value) == TN_OK && result.kind == TN_VALUE_ARRAY && result.count == 2);
+    const tn_value_t targetRef = ref(target);
+    CHECK(tn_invoke(scene, "remove", &targetRef, 1, &result, &d.value) == TN_OK);
+    CHECK(tn_invoke(scene, "add", &targetRef, 1, &result, &d.value) == TN_OK);
+    CHECK(tn_invoke(scene, "clear", nullptr, 0, &result, &d.value) == TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// A light's shadow camera is shared-owned like any Object3D. It was a unique_ptr member read through an
+// alias, so a scene that held it as a child made __walk, children and clear throw "not shared-owned", and a
+// LOD level or a Raycaster camera kept a raw pointer that dangled once the light was freed.
+void shadow_camera_in_scene() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    for (const char* type : {"DirectionalLight", "PointLight", "SpotLight"}) {
+        tn_handle_t scene{}, light{}, lod{}, caster{};
+        CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+        CHECK(tn_construct(ctx, type, nullptr, 0, &light, &d.value) == TN_OK);
+        CHECK(tn_construct(ctx, "LOD", nullptr, 0, &lod, &d.value) == TN_OK);
+        CHECK(tn_construct(ctx, "Raycaster", nullptr, 0, &caster, &d.value) == TN_OK);
+        tn_value_t result{};
+        CHECK(tn_get(light, "shadow", &result, &d.value) == TN_OK && result.kind == TN_VALUE_HANDLE);
+        const tn_handle_t shadow = result.handle;
+        CHECK(tn_get(shadow, "camera", &result, &d.value) == TN_OK && result.kind == TN_VALUE_HANDLE);
+        const tn_handle_t camera = result.handle;
+        const tn_value_t cameraRef = ref(camera);
+        CHECK(tn_invoke(scene, "add", &cameraRef, 1, &result, &d.value) == TN_OK);
+        const tn_value_t args[2] = {boolean(false), boolean(true)};
+        CHECK(tn_invoke(scene, "__walk", args, 2, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_ARRAY && result.count == 4);
+        CHECK(tn_get(scene, "children", &result, &d.value) == TN_OK && result.kind == TN_VALUE_ARRAY && result.count == 1);
+        // The same camera is also a LOD level and a Raycaster's camera, then the light goes first.
+        const tn_value_t level[2] = {cameraRef, num(10)};
+        CHECK(tn_invoke(lod, "addLevel", level, 2, &result, &d.value) == TN_OK);
+        CHECK(tn_set(caster, "camera", &cameraRef, &d.value) == TN_OK);
+        CHECK(tn_object_release(shadow, &d.value) == TN_OK);
+        CHECK(tn_object_release(light, &d.value) == TN_OK);
+        CHECK(tn_object_release(camera, &d.value) == TN_OK);
+        CHECK(tn_invoke(scene, "__walk", args, 2, &result, &d.value) == TN_OK);
+        CHECK(result.kind == TN_VALUE_ARRAY && result.count == 2);  // the LOD took the camera from the scene
+        CHECK(tn_get(caster, "camera", &result, &d.value) == TN_OK && result.kind == TN_VALUE_HANDLE);
+        CHECK(tn_get(lod, "levels", &result, &d.value) == TN_OK && result.kind == TN_VALUE_ARRAY && result.count == 1);
+        CHECK(tn_invoke(lod, "clear", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(tn_invoke(scene, "clear", nullptr, 0, &result, &d.value) == TN_OK);
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // `__bind`: a PropertyBinding binds and answers its reason and target in one call.
 void property_bind() {
     const tn_version_info_t own = tn_engine_version();
@@ -825,6 +902,16 @@ void tsl_call() {
     CHECK(tn_tsl_call(ctx, "vec4", nullptr, parts, 3, &color, &d.value) == TN_OK);
     CHECK(tn_tsl_call(ctx, "noSuchNode", nullptr, nullptr, 0, &unknown, &d.value) == TN_ERROR_UNSUPPORTED && unknown == 0);
     tn_diagnostic_release(&d.value);
+    // three's denoise converts its input to a texture itself (DenoiseNode.js: convertToTexture(node)), so a
+    // computed node is a valid input: the template denoises SSGI's AO, which the engine's ssgi answers as vec4(1).
+    {
+        uint64_t depth = 0, denoised = 0;
+        const tn_tsl_arg_t source = nodeArg(color);
+        CHECK(tn_tsl_call(ctx, "convertToTexture", nullptr, &source, 1, &depth, &d.value) == TN_OK);
+        const tn_tsl_arg_t inputs[3] = {nodeArg(color), nodeArg(depth), nodeArg(depth)};
+        CHECK(tn_tsl_call(ctx, "denoise", nullptr, inputs, 3, &denoised, &d.value) == TN_OK && denoised != 0);
+        tn_diagnostic_release(&d.value);
+    }
     const tn_tsl_arg_t stale = nodeArg(999999);
     CHECK(tn_tsl_call(ctx, "sin", nullptr, &stale, 1, &unknown, &d.value) != TN_OK);
     tn_diagnostic_release(&d.value);
@@ -927,6 +1014,100 @@ void tsl_call() {
     CHECK(tn_tsl_call(ctx, "vec4", nullptr, opaque, 2, &lit, &d.value) == TN_OK);
     CHECK(tn_tsl_set(ctx, material, "colorNode", lit, &d.value) == TN_OK);
     CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    {
+        namespace g = tn::engine::shader::graph;
+        uint64_t serial = 0;
+        auto first = std::make_shared<tn::engine::Texture>();
+        auto second = std::make_shared<tn::engine::Texture>();
+        // Render-target textures are sampleable without CPU pixels.
+        auto target = tn::engine::RenderTarget::make(1, 1, 1009);
+        first = target->texture;
+        auto target2 = tn::engine::RenderTarget::make(1, 1, 1009);
+        second = target2->texture;
+        const auto texture = tn::abi::tslCall("texture", nullptr, {tn::abi::TslArg::objectOf("Texture", first)}, serial);
+        const auto other = tn::abi::tslCall("texture", nullptr, {tn::abi::TslArg::objectOf("Texture", first)}, serial);
+        auto copy = std::make_shared<g::NodeData>(*texture);
+        const auto key = g::key(texture);
+        const auto receiver = tn::abi::TslArg::of(texture);
+        CHECK(tn::abi::tslCall("textureValue", &receiver, {tn::abi::TslArg::objectOf("Texture", second)}, serial) == texture);
+        CHECK(texture->textureObject() == second && copy->textureObject() == second);
+        CHECK(other->textureObject() == first && other->name != texture->name);
+        CHECK(g::key(texture) == key);
+        // three's placeholder, `texture(new Texture())` then `.value = target.texture` (the exposure meter).
+        const auto placeholder = std::make_shared<tn::engine::Texture>();
+        const auto holder = tn::abi::tslCall("texture", nullptr, {tn::abi::TslArg::objectOf("Texture", placeholder)}, serial);
+        CHECK(holder && holder->textureObject() == placeholder);
+        const auto holderReceiver = tn::abi::TslArg::of(holder);
+        CHECK(tn::abi::tslCall("textureValue", &holderReceiver, {tn::abi::TslArg::objectOf("Texture", target->texture)}, serial) == holder);
+        CHECK(holder->textureObject() == target->texture);
+        // Dimensions must query the bound texture, retaining its owner and deferred producer.
+        using tn::abi::TslArg;
+        using namespace tn::engine::shader;
+        const auto biased = tn::abi::tslCall("bias", &holderReceiver, {TslArg::of(-0.5)}, serial);
+        CHECK(biased);
+        if (!biased) { tn_context_destroy(ctx, &d.value); return; }
+        CHECK(biased->textureObject() == holder->textureObject());
+        CHECK(biased->textureBinding == holder->textureBinding);
+        const auto biasedWgsl = [&](g::Node root) {
+            Program fragment(Stage::Fragment);
+            tn::engine::shader::tsl::Build scope(fragment);
+            fragment.output("color", g::lower(root, fragment));
+            const auto stage = buildStage(fragment);
+            CHECK(stage.wgsl.ok());
+            return stage.wgsl.code;
+        };
+        const auto biasedCode = biasedWgsl(biased);
+        CHECK(biasedCode.find("textureSampleBias(") != std::string::npos &&
+              biasedCode.find("-0.5") != std::string::npos);
+        CHECK(biasedWgsl(holder).find("textureSampleBias(") == std::string::npos);
+        const auto sameLevel = tn::abi::tslCall("level", &holderReceiver, {TslArg::of(-0.5)}, serial);
+        CHECK(g::key(biased) != g::key(sameLevel));
+        CHECK(biasedWgsl(sameLevel).find("textureSampleLevel(") != std::string::npos);
+        auto depth = std::make_shared<g::NodeData>(*holder);
+        depth->bits = 1;
+        for (const auto& wrongSource : {g::float_(1), g::Node(depth)}) {
+            const auto self = TslArg::of(wrongSource);
+            bool refused = false;
+            try { tn::abi::tslCall("bias", &self, {TslArg::of(-0.5)}, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
+        for (const auto& invalid : std::vector<std::vector<TslArg>>{{}, {TslArg::of(-0.5), TslArg::of(0.0)},
+                {TslArg::of(g::int_(0))}, {TslArg::of(g::vec2({g::float_(0)}))}}) {
+            bool refused = false;
+            try { tn::abi::tslCall("bias", &holderReceiver, invalid, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
+        const auto dimensions = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(holder)}, serial);
+        CHECK(dimensions);
+        if (!dimensions) { tn_context_destroy(ctx, &d.value); return; }
+        CHECK(dimensions->kind == g::Kind::TextureSize && dimensions->textureObject() == target->texture);
+        CHECK(dimensions->otherwise.size() == 1 && dimensions->otherwise[0] == holder);
+        const auto producer = tn::abi::tslCall("convertToTexture", nullptr, {TslArg::of(g::vec4({g::float_(1)}))}, serial);
+        const auto producedSize = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(producer), TslArg::of(0.0)}, serial);
+        CHECK(producedSize->otherwise.size() == 1 && producedSize->otherwise[0] == producer);
+        const auto producerSelf = TslArg::of(producer);
+        const auto biasedProducer = tn::abi::tslCall("bias", &producerSelf, {TslArg::of(-0.5)}, serial);
+        CHECK(biasedProducer && biasedProducer->args[0] == producer->args[0] &&
+              biasedProducer->rtt == producer->rtt && biasedProducer->name == producer->name);
+        CHECK(biasedWgsl(biasedProducer).find("textureSampleBias(") != std::string::npos);
+        const auto passes = g::postPasses(biasedProducer);
+        CHECK(passes.size() == 1 && passes[0].output == producer->name);
+
+        Program query(Stage::Fragment);
+        tn::engine::shader::tsl::Build queryScope(query);
+        query.output("color", g::lower(g::vec4({g::vec2({dimensions}), g::float_(0), g::float_(1)}), query));
+        const auto built = buildStage(query);
+        CHECK(built.wgsl.ok() && built.wgsl.code.find("textureDimensions(") != std::string::npos);
+        for (const auto& invalid : std::vector<std::vector<TslArg>>{{}, {TslArg::of(2.0)}, {TslArg::of(g::float_(1))},
+                {TslArg::of(holder), TslArg::of(g::int_(0)), TslArg::of(g::int_(0))}}) {
+            bool refused = false;
+            try { tn::abi::tslCall("textureSize", nullptr, invalid, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
+    }
     // A material is no texture, and a released handle is no object.
     const tn_tsl_arg_t wrong[3] = {handleArg(material), nodeArg(direction), number(0.5)};
     CHECK(tn_tsl_call(ctx, "pmremTexture", nullptr, wrong, 3, &unknown, &d.value) != TN_OK && unknown == 0);
@@ -939,6 +1120,55 @@ void tsl_call() {
 
 // PRD-540: a uniform's value is live. Midway writes `clock.value` every frame; the write reaches the
 // material's graph data without changing the program key, so nothing recompiles.
+// A mat4 built from four vec4 uniforms, as a game reads a camera matrix column by column, compiles and takes each
+// column's new value without a new program: the uniforms sit inside the matrix and the renderer reads them afresh.
+void tsl_matrix_columns() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto vector = [](double a, double b, double c, double e) {
+        tn_tsl_arg_t arg{};
+        arg.kind = TN_TSL_ARG_VECTOR;
+        arg.reserved = 4;
+        arg.numbers[0] = a, arg.numbers[1] = b, arg.numbers[2] = c, arg.numbers[3] = e;
+        return arg;
+    };
+    uint64_t columns[4]{};
+    tn_tsl_arg_t parts[4]{};
+    for (int i = 0; i < 4; ++i) {
+        const tn_tsl_arg_t zero = vector(0, 0, 0, 0);
+        CHECK(tn_tsl_call(ctx, "uniform", nullptr, &zero, 1, &columns[i], &d.value) == TN_OK);
+        parts[i].kind = TN_TSL_ARG_NODE;
+        parts[i].node = columns[i];
+    }
+    uint64_t matrix = 0, product = 0;
+    CHECK(tn_tsl_call(ctx, "mat4", nullptr, parts, 4, &matrix, &d.value) == TN_OK);
+    const tn_tsl_arg_t point = vector(1, 1, 1, 1);
+    CHECK(tn_tsl_call(ctx, "mul", &matrix, &point, 1, &product, &d.value) == TN_OK);
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", product, &d.value) == TN_OK);
+    CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    namespace g = tn::engine::shader::graph;
+    const auto graph = tn::abi::shaderNode(material, "colorNode");
+    const std::string key = g::key(graph);
+    // The four columns of a camera at (1, 2, 3), then at (4, 5, 6).
+    for (const double position : {1.0, 4.0}) {
+        const double axes[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {position, position + 1, position + 2, 1}};
+        for (int i = 0; i < 4; ++i) CHECK(tn_tsl_set_uniform(ctx, &columns[i], axes[i], 4, &d.value) == TN_OK);
+        std::vector<std::vector<double>> seen;
+        for (const auto& [name, values] : g::uniforms(graph)) seen.push_back(values);
+        std::sort(seen.begin(), seen.end());
+        std::vector<std::vector<double>> expected;
+        for (const auto& axis : axes) expected.emplace_back(axis, axis + 4);
+        std::sort(expected.begin(), expected.end());
+        CHECK(seen == expected);
+        CHECK(g::key(graph) == key);
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void tsl_uniform_value() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -1104,6 +1334,12 @@ void tsl_effect_parameter() {
     out = 0;
     CHECK(tn_tsl_effect_parameter(ctx, &ao, "radius", nullptr, &out, &d.value) == TN_OK && out == 0.5);
     CHECK(tn_tsl_effect_parameter(ctx, &ao, "noSuchUniform", nullptr, &out, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
+    // A live effect carries a GPU stage too (post_effects.h kStage*): 1 labels it, 7 is no stage.
+    const double gatherStage = 1, noStage = 7;
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "stage", &gatherStage, &out, &d.value) == TN_OK && out == 1);
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "stage", nullptr, &out, &d.value) == TN_OK && out == 1);
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "stage", &noStage, &out, &d.value) != TN_OK);
     tn_diagnostic_release(&d.value);
     CHECK(tn_tsl_call(ctx, "uv", nullptr, nullptr, 0, &plain, &d.value) == TN_OK);
     CHECK(tn_tsl_effect_parameter(ctx, &plain, "radius", nullptr, &out, &d.value) != TN_OK);  // not an effect
@@ -1331,6 +1567,54 @@ void typed_bytes() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// fromArray(array, offset) reads the lanes that start at offset, as three's does: a mat4 built from four vec4 columns
+// fills column k from offset 4k of the camera matrix, and every column read the first four lanes before this check.
+// A window that leaves the array is refused, where a read past the end used to take whatever followed it.
+void array_offset() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    double lanes[20];
+    for (int i = 0; i < 20; ++i) lanes[i] = i + 1;
+    const tn_value_t array = bytes("Float64Array", lanes, 20);
+    tn_value_t result_{};
+    const auto toArray = [&](tn_handle_t object) {
+        tn_value_t result{};
+        CHECK(tn_invoke(object, "toArray", nullptr, 0, &result, &d.value) == TN_OK && result.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(result.numbers, result.numbers + result.count);
+    };
+    const auto window = [&](double first, size_t count) {
+        std::vector<double> out;
+        for (size_t i = 0; i < count; ++i) out.push_back(first + static_cast<double>(i));
+        return out;
+    };
+    // class name, lane count: the offset 2 window starts at the third lane of 1, 2, 3, ...
+    const std::pair<const char*, size_t> classes[] = {{"Vector2", 2}, {"Vector3", 3}, {"Vector4", 4}, {"Quaternion", 4},
+                                                      {"Color", 3}, {"Matrix3", 9}, {"Matrix4", 16}};
+    for (const auto& [name, count] : classes) {
+        tn_handle_t object{};
+        CHECK(tn_construct(ctx, name, nullptr, 0, &object, &d.value) == TN_OK);
+        const tn_value_t args[2] = {array, num(2)};
+        CHECK(tn_invoke(object, "fromArray", args, 2, &result_, &d.value) == TN_OK);
+        CHECK(toArray(object) == window(3, count));
+        const tn_value_t start[2] = {array, num(static_cast<double>(20 - count))};
+        CHECK(tn_invoke(object, "fromArray", start, 2, &result_, &d.value) == TN_OK);
+        CHECK(toArray(object) == window(static_cast<double>(21 - count), count));
+        const tn_value_t past[2] = {array, num(static_cast<double>(21 - count))};
+        CHECK(tn_invoke(object, "fromArray", past, 2, &result_, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+        const tn_value_t negative[2] = {array, num(-1)};
+        CHECK(tn_invoke(object, "fromArray", negative, 2, &result_, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+        const tn_value_t fractional[2] = {array, num(0.5)};
+        CHECK(tn_invoke(object, "fromArray", fractional, 2, &result_, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+        // The refusals changed nothing, and no offset still means offset 0.
+        CHECK(toArray(object) == window(static_cast<double>(21 - count), count));
+        CHECK(tn_invoke(object, "fromArray", &array, 1, &result_, &d.value) == TN_OK);
+        CHECK(toArray(object) == window(1, count));
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // A DataTexture keeps a typed array's bytes when they are already its stored layout, as three
 // uploads them: a Float32Array's bits (a signalling NaN included), a Uint16Array's binary16 bits, a
 // Uint8Array's bytes. Any other array still converts value by value, and half floats still check.
@@ -1487,6 +1771,27 @@ void material_uuid() {
     tn_value_t out{};
     CHECK(tn_invoke(a, "clone", nullptr, 0, &out, &d.value) == TN_OK && out.kind == TN_VALUE_HANDLE);
     CHECK(uuidOf(out.handle) != ua);  // a clone is another material
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+void material_alpha_hash() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshStandardMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    tn_value_t value{};
+    CHECK(tn_get(material, "alphaHash", &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_BOOL && !value.boolean);
+    const tn_value_t enabled = boolean(true);
+    CHECK(tn_set(material, "alphaHash", &enabled, &d.value) == TN_OK);
+    CHECK(tn_get(material, "alphaHash", &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_BOOL && value.boolean);
+    CHECK(tn_invoke(material, "clone", nullptr, 0, &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_HANDLE);
+    CHECK(tn_get(value.handle, "alphaHash", &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_BOOL && value.boolean);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -1835,6 +2140,24 @@ void body_result_in_a_branch() {
     CHECK(assignments == 2);
 }
 
+// ivec2(a, b) and vec2(a, b) of whole-number parts: three's JoinNode casts each part to the vector's element
+// type, so the starter's auto exposure can load a texel at ivec2(i.mod(width), i.div(width)). The graph used to
+// refuse it as "construct vec2<f32>: part 0 is i32", which made the exposure pass throw inside the frame.
+void join_converts_integer_parts() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    using namespace tn::engine::shader;
+    uint64_t serial = 0;
+    const auto whole = [&](double value) { return tn::abi::tslCall("int", nullptr, {TslArg::of(value)}, serial); };
+    const auto texel = tn::abi::tslCall("ivec2", nullptr, {TslArg::of(whole(3)), TslArg::of(whole(4))}, serial);
+    const auto mixed = tn::abi::tslCall("vec2", nullptr, {TslArg::of(whole(5)), TslArg::of(0.5)}, serial);
+    const auto root = g::vec4({g::float_(g::swizzle(texel, "y")), g::swizzle(mixed, "x"), g::swizzle(mixed, "y"), g::float_(1)});
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    CHECK(buildStage(program).wgsl.ok());
+}
+
 void struct_function_return() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -1921,9 +2244,13 @@ void authored_output() {
     CHECK(!bloomPost.passes.empty());
     CHECK(bloomPost.passes.front().package.variants.at(0).stages[1].wgsl.code.find("pow(") != std::string::npos);
     bool refused = false;
-    try { tn::abi::tslCall("renderOutput", nullptr,
-        {TslArg::of(scene), TslArg::of(5.0), TslArg::of(std::string("srgb"))}, serial); }
-    catch (const std::exception& error) { refused = std::string(error.what()).find("renderOutput") != std::string::npos; }
+    try {
+        const auto custom = tn::abi::tslCall("renderOutput", nullptr,
+            {TslArg::of(scene), TslArg::of(5.0), TslArg::of(std::string("srgb"))}, serial);
+        const auto missing = g::serializedPost(custom);
+        tn::engine::shader::buildOutput(std::nullopt, false, &missing, false);
+    }
+    catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING") != std::string::npos; }
     CHECK(refused);
 }
 
@@ -2050,6 +2377,16 @@ void starter_post_bindings() {
     CHECK(tn::abi::tslEffectParameter(rtt, "textureNeedsUpdate", &yes) == yes);
     passes = g::postPasses(rtt);
     CHECK(passes[0].width == 80 && passes[0].resolutionScale == 0.5 && !passes[0].autoUpdate);
+    // The author labels a pass with a GPU stage; the pass carries it, and an unknown stage is refused.
+    const double gather = g::kStageScreenSpaceGi, unknown = 7;
+    CHECK(passes[0].stage == g::kStageNone);
+    CHECK(tn::abi::tslEffectParameter(rtt, "stage", &gather) == gather);
+    CHECK(tn::abi::tslEffectParameter(rtt, "stage", nullptr) == gather);
+    CHECK(g::postPasses(rtt)[0].stage == g::kStageScreenSpaceGi);
+    bool stageRefused = false;
+    try { tn::abi::tslEffectParameter(rtt, "stage", &unknown); } catch (const std::exception&) { stageRefused = true; }
+    CHECK(stageRefused);
+    CHECK(tn::abi::tslEffectParameter(rtt, "stage", nullptr) == gather);
     const auto actualTarget = tn::engine::RenderTarget::make(64, 32, 1016);
     CHECK(actualTarget->texture->minFilter == 1006);
     const auto quad = std::make_shared<tn::engine::Mesh>();
@@ -2118,6 +2455,34 @@ void starter_post_bindings() {
         CHECK(tn_object_release(depth, &diagnostic) == TN_OK);
         CHECK(tn_get(target, "depthTexture", &attached, &diagnostic) == TN_OK);
     }
+    {
+        // three's RenderTarget options: the exposure meter reads its 1x1 target with nearest filters.
+        const tn_value_t nearest[]{
+            {TN_VALUE_STRING, 0, 0, {}, 0, "type", 4, {}}, num(1015.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "minFilter", 9, {}}, num(1003.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "magFilter", 9, {}}, num(1003.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "depthBuffer", 11, {}}, boolean(false)};
+        tn_value_t options{};
+        options.kind = TN_VALUE_RECORD;
+        options.count = 4;
+        options.values = nearest;
+        const tn_value_t metered[]{num(1.0), num(1.0), options};
+        tn_handle_t meter{};
+        CHECK(tn_construct(context, "RenderTarget", metered, 3, &meter, &diagnostic) == TN_OK);
+        if (meter.type) {
+            const auto made = std::static_pointer_cast<tn::engine::RenderTarget>(tn::abi::objectOf(meter)->ptr);
+            CHECK(made->texture->minFilter == 1003 && made->texture->magFilter == 1003);
+        }
+        const tn_value_t mipmapped[]{{TN_VALUE_STRING, 0, 0, {}, 0, "minFilter", 9, {}}, num(1008.0)};
+        tn_value_t bad{};
+        bad.kind = TN_VALUE_RECORD;
+        bad.count = 1;
+        bad.values = mipmapped;
+        const tn_value_t rejected[]{num(1.0), num(1.0), bad};
+        tn_handle_t none{};
+        CHECK(tn_construct(context, "RenderTarget", rejected, 3, &none, &diagnostic) == TN_ERROR_UNSUPPORTED);
+        tn_diagnostic_release(&diagnostic);
+    }
     CHECK(tn_context_destroy(context, &diagnostic) == TN_OK);
     std::string authoredSource = "fn authoredArea(sample: u32, lo: vec2<f32>, hi: vec2<f32>) -> f32 { return f32(sample) + dot(hi-lo, hi-lo); }";
     std::string authoredName = "authoredArea";
@@ -2178,6 +2543,24 @@ void starter_post_bindings() {
     try { call("traa", {TslArg::of(g::mul(scene, g::float_(0.5))), TslArg::of(scene), TslArg::of(scene), TslArg::other()}); }
     catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_TRAA_INPUT") != std::string::npos; }
     CHECK(refused);
+    // Over a texture the graph drew (convertToTexture of a frame its effects changed) the resolve is a pass of the graph:
+    // the composite's own pass, then the resolve, which the renderer draws.
+    const auto composite = call("convertToTexture", {TslArg::of(g::mul(scene, g::float_(0.5)))});
+    if (!composite) return;
+    const auto late = call("traa", {TslArg::of(composite), TslArg::of(g::texture("depth", g::uv())),
+                                    TslArg::of(g::texture("velocity", g::uv())), TslArg::other()});
+    if (!late) return;
+    CHECK(g::traaEffect(late) == late->post);
+    CHECK(g::traaResolvesLate(*late->post));
+    CHECK(late->name != "scene" && late->name.starts_with("native_traa_"));
+    CHECK(!g::traaResolvesLate(*temporal->post));
+    const auto latePasses = g::postPasses(late);
+    CHECK(latePasses.size() == 2);
+    if (latePasses.size() == 2) {
+        CHECK(latePasses.back().host == "traa" && latePasses.back().output == late->name);
+        CHECK(latePasses.back().reads.at("beauty") == composite->name && latePasses.back().reads.at("depth") == "depth");
+        CHECK(latePasses.front().host.empty() && latePasses.front().output == composite->name);
+    }
     const auto compile = [&](g::Node root) {
         const auto post = g::serializedPost(root);
         auto programs = tn::engine::shader::buildOutput(std::nullopt, false, &post, false);
@@ -2186,6 +2569,35 @@ void starter_post_bindings() {
         CHECK(programs.fragment.diagnostics().empty());
         return fragment;
     };
+    // An early resolve's "scene" is the unresolved colour inside a render target, so it is drawn to a texture of its own.
+    CHECK(call("convertToTexture", {TslArg::of(temporal)})->kind == g::Kind::RenderTexture);
+    for (const auto& effect : {late}) {
+        const auto texture = call("convertToTexture", {TslArg::of(effect)});
+        CHECK(texture->kind == g::Kind::Texture && texture->name == effect->name);
+        CHECK(call("convertToTexture", {TslArg::of(texture)}) == texture);
+        const auto self = TslArg::of(texture);
+        const auto sampled = tn::abi::tslCall("sample", &self, {TslArg::of(g::uv())}, serial);
+        const auto texel = call("ivec2", {TslArg::of(0.0), TslArg::of(0.0)});
+        const auto loaded = call("textureLoad", {self, TslArg::of(texel)});
+        const auto size = call("textureSize", {self});
+        for (const auto& consumer : {texture, sampled, loaded, size}) {
+            CHECK(g::traaEffect(consumer) == effect->post);
+            const auto retained = g::postPasses(consumer);
+            CHECK(retained.size() == 2u);
+            if (retained.size() == 2)
+                CHECK(retained.back().host == "traa" && retained.back().output == effect->name);
+        }
+        compile(sampled);
+        compile(loaded);
+    }
+    // `.level(n)` on a render texture reads it at an explicit level, as the motion blur's loop does.
+    const auto compositeSelf = TslArg::of(composite);
+    const auto leveled = tn::abi::tslCall("level", &compositeSelf, {TslArg::of(g::float_(0))}, serial);
+    CHECK(leveled && leveled->kind == g::Kind::RenderTexture && leveled->args.size() == 3 &&
+          leveled->name == composite->name);
+    if (leveled)
+        CHECK(compile(leveled).wgsl.code.find("textureSampleLevel(t_" + composite->name) !=
+              std::string::npos);
     const auto intensity = g::uniform("grainIntensity", tn::engine::shader::Type::f32(), {0.2f});
     const auto film = call("film", {TslArg::of(scene), TslArg::of(intensity), TslArg::other()});
     if (!film) return;
@@ -2242,8 +2654,135 @@ void starter_post_bindings() {
 
 }
 
-TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
-             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
+
+void tsl_ssr_parameters() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto tex = TslArg::of(g::texture("scene", g::uv()));
+    const auto node = tn::abi::tslCall("ssr", nullptr, {tex, tex, tex, TslArg::other(), TslArg::other()}, serial);
+    CHECK(node && node->post->kind == "SSRNode" && !node->post->roughness);
+    const auto rough = tn::abi::tslCall("ssr", nullptr, {tex, tex, tex, TslArg::of(0.4), TslArg::of(0.2)}, serial);
+    CHECK(rough && rough->post->roughness);
+    // Unbounded by default, like the three patch's SSRNode.maxSteps; a quality tier caps the march.
+    CHECK(tn::abi::tslEffectParameter(node, "maxSteps", nullptr) == 1e6);
+    const std::pair<const char*, double> valid[]{{"maxDistance", 2}, {"thickness", 0}, {"opacity", 0.5},
+        {"quality", 1}, {"maxSteps", 8}, {"blurQuality", 3}, {"reflectNonMetals", 1}, {"binaryRefine", 1},
+        {"intensity", 2}, {"maxLuminance", 20}, {"resolutionScale", 0.5}};
+    for (const auto& [name, value] : valid) {
+        CHECK(tn::abi::tslEffectParameter(node, name, &value) == value);
+        CHECK(tn::abi::tslEffectParameter(node, name, nullptr) == value);
+    }
+    const std::pair<const char*, double> invalid[]{{"maxDistance", 0}, {"thickness", -1}, {"opacity", -1},
+        {"quality", -0.1}, {"quality", 1.1}, {"maxSteps", 0}, {"maxSteps", 0.5}, {"blurQuality", 0}, {"blurQuality", 4}, {"blurQuality", 1.5},
+        {"reflectNonMetals", 0.5}, {"binaryRefine", 2}, {"intensity", -1}, {"maxLuminance", -1},
+        {"maxDistance", std::numeric_limits<double>::max()}, {"resolutionScale", 0}, {"resolutionScale", 1.1}};
+    for (const auto& [name, value] : invalid) {
+        const double before = tn::abi::tslEffectParameter(node, name, nullptr);
+        bool refused = false;
+        try { tn::abi::tslEffectParameter(node, name, &value); }
+        catch (const std::runtime_error& e) {
+            refused = std::string(e.what()).find(std::string(name) == "resolutionScale" ? "resolutionScale" : "TN_NATIVE_SSR_PARAMETER") != std::string::npos;
+        }
+        CHECK(refused);
+        CHECK(tn::abi::tslEffectParameter(node, name, nullptr) == before);
+    }
+}
+
+void tsl_texture_store() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto texture = std::make_shared<tn::engine::Texture>();
+    texture->storageTexture = true;
+    texture->width = 16; texture->height = 8;
+    const auto object = TslArg::objectOf("StorageTexture", texture);
+    const auto target = tn::abi::tslCall("storageTexture", nullptr, {object}, serial);
+    CHECK(target && target->object == texture && target->lanes == "rgba8unorm");
+    const auto coord = tn::abi::tslCall("uvec2", nullptr, {TslArg::of(3.0), TslArg::of(5.0)}, serial);
+    CHECK(coord->type == Type::vec(2, Type::Scalar::U32));
+    const auto value = g::vec4({g::float_(0.25), g::float_(0.5), g::float_(0.75), g::float_(1)});
+    for (bool direct : {true, false}) {
+        tn::abi::TslScopes scopes;
+        g::Node out, body;
+        CHECK(scopes.call("scope:open", nullptr, {}, out));
+        CHECK(scopes.call("textureStore", nullptr, {direct ? object : TslArg::of(target), TslArg::of(coord), TslArg::of(value)}, out));
+        CHECK(out->object == texture && out->kind == g::Kind::StorageTexture);
+        CHECK(scopes.call("scope:close", nullptr, {}, body));
+        CHECK(body->body.size() == 1 && body->body[0]->kind == g::Kind::TextureStore);
+        CHECK(body->body[0]->args == std::vector<g::Node>({coord, value}));
+        Program p(Stage::Compute);
+        g::lower(body, p);
+        CHECK(p.ok());
+        CHECK(p.dump().find("textureStore " + target->name + "[") != std::string::npos);
+        const auto module = buildStage(p);
+        CHECK(module.wgsl.ok());
+        CHECK(module.wgsl.code.find("texture_storage_2d<rgba8unorm, write>") != std::string::npos);
+        CHECK(module.wgsl.code.find("textureStore(st_" + target->name + ",") != std::string::npos);
+        CHECK(module.bindings.size() == 1 && module.bindings[0].kind == BindingKind::StorageTexture);
+    }
+    for (const auto& bad : {TslArg::of(g::float_(1)), TslArg::of(g::texture("scene", g::uv()))}) {
+        tn::abi::TslScopes scopes;
+        g::Node out, body;
+        CHECK(scopes.call("scope:open", nullptr, {}, out));
+        bool refused = false;
+        try { scopes.call("textureStore", nullptr, {bad, TslArg::of(coord), TslArg::of(value)}, out); }
+        catch (const std::runtime_error& e) { refused = std::string(e.what()) == "textureStore needs a StorageTexture or storageTexture node"; }
+        CHECK(refused);
+        CHECK(scopes.call("scope:close", nullptr, {}, body));
+        CHECK(body->body.empty());
+    }
+    bool refused = false;
+    try { tn::abi::tslCall("storageTexture", nullptr, {TslArg::of(1.0)}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()).find("storageTexture needs an engine StorageTexture") != std::string::npos; }
+    CHECK(refused);
+}
+
+void tsl_mat4_element() {
+    namespace g = tn::engine::shader::graph;
+    using namespace tn::engine::shader;
+    using tn::abi::TslArg;
+    uint64_t serial = 0;
+    const auto matrix = g::uniform("authoredMatrix", Type::mat(4, 4));
+    const auto self = TslArg::of(matrix);
+    for (uint32_t index = 0; index < 4; ++index) {
+        const auto column = tn::abi::tslCall("element", &self, {TslArg::of(double(index))}, serial);
+        CHECK(column && column->binary == g::BinOp::Mul && column->args[0] == matrix);
+        const auto basis = column->args[1];
+        CHECK(basis->args.size() == 4);
+        for (uint32_t lane = 0; lane < 4; ++lane) {
+            const auto select = basis->args[lane];
+            CHECK(select->kind == g::Kind::Select);
+            CHECK(select->args[0]->binary == g::BinOp::Equal);
+            CHECK(g::key(select->args[0]->args[0]) == g::key(g::uint_(g::float_(index))));
+            CHECK(g::key(select->args[0]->args[1]) == g::key(g::uint_(lane)));
+            CHECK(g::key(select->args[1]) == g::key(g::float_(1)));
+            CHECK(g::key(select->args[2]) == g::key(g::float_(0)));
+        }
+        Program p(Stage::Fragment);
+        p.output("color", g::lower(column, p));
+        CHECK(p.ok());
+        const auto module = buildStage(p);
+        CHECK(module.wgsl.ok());
+        CHECK(module.wgsl.code.find("authoredMatrix") != std::string::npos);
+        CHECK(module.wgsl.code.find("select(") != std::string::npos);
+    }
+    for (double index : {-1.0, 4.0, 1.5}) {
+        bool refused = false;
+        try { tn::abi::tslCall("element", &self, {TslArg::of(index)}, serial); }
+        catch (const std::runtime_error& e) { refused = std::string(e.what()) == "mat4 element index must be an integer in [0, 3]"; }
+        CHECK(refused);
+    }
+    const auto scalar = TslArg::of(g::float_(1));
+    bool refused = false;
+    try { tn::abi::tslCall("element", &scalar, {TslArg::of(0.0)}, serial); }
+    catch (const std::runtime_error& e) { refused = std::string(e.what()) == "element needs a mat4 node"; }
+    CHECK(refused);
+}
+
+TN_TEST_MAIN({"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

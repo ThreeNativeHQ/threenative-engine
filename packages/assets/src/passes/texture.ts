@@ -123,13 +123,8 @@ export function texturePass(options: ITexturePassOptions = {}): IAssetPass {
     },
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "texture") return input;
-      const stats = textureStats(input);
-      if (stats.width <= 0 || stats.height <= 0) {
-        throw new Error(
-          `TN_ASSETS_TEXTURE_UNREADABLE: '${logicalPath}' has no readable PNG/JPEG header; the KTX2 pass cannot encode it.`,
-        );
-      }
       // Decode the source once; every encoder candidate and its quality check uses these pixels.
+      // The decoder reads PNG, JPEG and WebP and names the file for any other container.
       const decoded = await decodeImageBytes(input, logicalPath);
       const choice = texturePolicy(logicalPath, options);
       if (choice.codec === "none")

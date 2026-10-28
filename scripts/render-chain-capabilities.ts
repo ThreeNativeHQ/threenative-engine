@@ -92,23 +92,6 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
       "Strength above ~0.3 on an interior washes the mid-tones; the reference-matching band is lower than it looks.",
     ],
   }),
-  stage({
-    symbol: "WorldEnvironment",
-    importPath: "src/render/worldEnvironment.ts",
-    summary:
-      "The generated file that composes every lighting stage and prints TN_RENDER_CHAIN naming each one as applied or refused with a reason. It is the game's source, not the framework's — edit it.",
-    situations: [
-      "turn a lighting or post-processing effect on or off",
-      "find out why an effect you enabled is not visible",
-      "change how the scene is lit, graded, or tonemapped",
-      "match a reference image's lighting",
-    ],
-    constraints: [
-      "Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped.",
-      "A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it.",
-      "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.",
-    ],
-  }),
   // The `rain` template's generated source. Same reason as the stages above: these are functions in
   // files the game owns (`src/render/`, `src/audio/`), so no package export puts them in the manifest
   // and an agent searching "storm sky" or "thunder distance" had nowhere to land. Ordinary Three.js

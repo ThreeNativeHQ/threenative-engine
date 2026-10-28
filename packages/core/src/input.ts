@@ -559,6 +559,17 @@ export class InputMap {
   }
 
   #wheelEvent(event: Event): void {
+    // The game's wheel listener lives on the window so a game with no HUD still zooms anywhere.
+    // A wheel that landed on a DOM overlay (a scrollable settings list, say) belongs to that
+    // overlay: bubbling it into the game would zoom the camera while the player scrolls the HUD.
+    const eventTarget = event.target;
+    if (
+      eventTarget !== null &&
+      eventTarget !== undefined &&
+      eventTarget !== this.#target &&
+      eventTarget !== this.#pointerTarget
+    )
+      return;
     const wheel = event as Event & { deltaMode?: number; deltaY?: number };
     const deltaY = wheel.deltaY;
     if (deltaY === undefined || !Number.isFinite(deltaY)) return;
@@ -641,7 +652,12 @@ export class InputMap {
     } else if (edgeType === "up" || edgeType === "cancel") {
       this.#pointers.delete(id);
     } else if (tracked !== undefined) {
-      tracked.buttons = buttons;
+      // Under pointer lock Chromium sends a move that presses or releases nothing (`button` -1)
+      // with `buttons` 0 while a button is held, about every fifth frame: it released a held block
+      // or lock button. Locked, the pointer cannot leave the page, so its pointerup still arrives.
+      // Unlocked, the same move is what clears a button released outside the window.
+      const phantomRelease = this.raw.pointer.captured && buttons === 0 && pointer.button === -1;
+      if (!phantomRelease) tracked.buttons = buttons;
       tracked.position.set(x, y);
     }
     const primary = this.#pointers.values().next().value as IRawInputPointer | undefined;

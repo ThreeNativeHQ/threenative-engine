@@ -1,19 +1,25 @@
 import {
   InstancedBufferGeometry,
   type Material,
+  Matrix4,
   Mesh,
   type Object3D,
-  type Skeleton,
+  Skeleton,
   type SkinnedMesh,
 } from "three";
 import {
   Fn,
+  If,
   attribute,
+  cos,
+  float,
   instanceIndex,
+  mat4,
   normalGeometry,
   normalLocal,
   positionGeometry,
   positionPrevious,
+  sin,
   storage,
   tangentGeometry,
   tangentLocal,
@@ -32,6 +38,55 @@ import {
   type NodeMaterial,
   StorageBufferAttribute,
 } from "three/webgpu";
+
+import { animationPacketTimeReaders } from "./animation-packet-state.js";
+import {
+  type IAnimationPosePacket,
+  type IAnimationPoseVersion,
+  evaluateAnimationPoseFallback,
+  evaluateAnimationPosePacket,
+  readAnimationPosePacket,
+  readAnimationPosePacketTime,
+  refreshAnimationPosePacket,
+  skeletonUpdateIntact,
+} from "./animation-pose-packet.js";
+import { SPANS, beginSpan, endSpan } from "./profiling/Spans.js";
+import { observeAnimationRates } from "./render-camera-cull.js";
+
+const skeletonUpdate = Skeleton.prototype.update;
+interface IRawDisplaySlot {
+  current?: IAnimationPosePacket;
+  previous?: IAnimationPosePacket;
+  retired: boolean;
+  writeFrame?: number;
+  /** Evaluations that may reuse the captured packet before the next full source re-read. */
+  trusted?: number;
+  /** What the last full write saw, so a held tick can prove nothing moved with three comparisons. */
+  hot?: { skeleton: Skeleton; world: Matrix4; evaluation: number };
+  expectedCurrent?: Float32Array;
+  expectedPrevious?: Float32Array;
+}
+
+/** Evaluations a captured RAW packet is reused before every source field is read again. */
+const RAW_REVALIDATE_EVALUATIONS = 256;
+
+const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
+
+interface IAnimationRateStateLike {
+  readonly evaluated: boolean;
+  readonly effectiveRate?: number;
+  readonly evaluation: number;
+  readonly gpuPoseEnabled?: boolean;
+  gpuPose?: boolean;
+  syncBones?: () => void;
+}
+
+/** Hands the pose back to the CPU: the player refreshes the bones to the current playhead first. */
+function releaseGpuPose(state: IAnimationRateStateLike | undefined): void {
+  if (state?.gpuPose !== true) return;
+  state.gpuPose = false;
+  state.syncBones?.();
+}
 
 /**
  * The skinned lane of the render projection: every rig that shares a geometry and material is one
@@ -196,6 +251,7 @@ export class SkinnedBatch {
   readonly bones: number;
   readonly capacity: number;
   readonly instances = new Map<Object3D, number>();
+  readonly #slotRigs = new Map<number, Object3D>();
   readonly free: number[] = [];
   used = 0;
   readonly #current: Float32Array;
@@ -206,9 +262,27 @@ export class SkinnedBatch {
   readonly #fresh: number[] = [];
   readonly #bindScratch = new Float64Array(16);
   readonly #updated = new WeakMap<Skeleton, number>();
+  // A RAW refresh substitutes for stock's first update. Materialize its CPU basis only
+  // if a later same-frame stock write actually needs the shared skeleton cache.
+  readonly #rawUpdates = new WeakMap<Skeleton, { frame: number; version: IAnimationPoseVersion }>();
+  readonly #writtenEvaluations = new WeakMap<Object3D, number>();
+  readonly #writtenWorldMatrices = new WeakMap<Object3D, Matrix4>();
   #frame = 0;
   #dirty = false;
   #sourceVersion: number;
+  readonly #rawSlots = new Map<number, IRawDisplaySlot>();
+  readonly #ownedSkeletons = new Map<number, Skeleton>();
+  readonly #skeletonOwners = new Map<Skeleton, Set<number>>();
+  #observed = false;
+  #reconciling = false;
+  #rawFrame = -1;
+  #rawDirtyFrame = -1;
+  #rawMeta = new Float32Array(0);
+  #rawData = new Float32Array(0);
+  #rawPrevious = new Float32Array(0);
+  #rawRoots = new Float32Array(0);
+  #rawPreviousRoots = new Float32Array(0);
+  readonly #rawAttributes: StorageBufferAttribute[] = [];
 
   constructor(options: ISkinnedBatchOptions) {
     const { first, capacity, velocity } = options;
@@ -255,21 +329,148 @@ export class SkinnedBatch {
         .add(palette.element(base.add(boneIndex.y)).mul(weight.y))
         .add(palette.element(base.add(boneIndex.z)).mul(weight.z))
         .add(palette.element(base.add(boneIndex.w)).mul(weight.w));
+    // The admitted packet layout is fixed; every other rig retains the stock node.
+    let rawMatrix: ((previousFrame: boolean) => ReturnType<typeof blend>) | undefined;
+    let rawMeta: ReturnType<typeof storage<"vec4">> | undefined;
+    if (this.bones === 12) {
+      this.#rawMeta = new Float32Array(capacity * 4);
+      this.#rawData = new Float32Array(capacity * 12 * 48);
+      this.#rawPrevious = new Float32Array(this.#rawData.length);
+      this.#rawRoots = new Float32Array(capacity * 32);
+      this.#rawPreviousRoots = new Float32Array(this.#rawRoots.length);
+      const input = (array: Float32Array, size: number) => {
+        const a = new StorageBufferAttribute(array, size);
+        this.#rawAttributes.push(a);
+        return a;
+      };
+      const metadata = storage(input(this.#rawMeta, 4), "vec4", capacity).toReadOnly();
+      rawMeta = metadata;
+      const raw = storage(input(this.#rawData, 4), "vec4", capacity * 144).toReadOnly();
+      const oldRaw = storage(input(this.#rawPrevious, 4), "vec4", capacity * 144).toReadOnly();
+      const roots = storage(input(this.#rawRoots, 16), "mat4", capacity * 2).toReadOnly();
+      const oldRoots = storage(
+        input(this.#rawPreviousRoots, 16),
+        "mat4",
+        capacity * 2,
+      ).toReadOnly();
+      rawMatrix = (old) => {
+        const data = old ? oldRaw : raw;
+        const root = old ? oldRoots : roots;
+        const time = old ? metadata.element(instanceIndex).w : metadata.element(instanceIndex).y;
+        const start = instanceIndex.mul(uint(144));
+        let world: ReturnType<typeof blend> = mat4();
+        let blended: ReturnType<typeof blend> = mat4();
+        for (let b = 0; b < 12; b++) {
+          const offset = start.add(uint(b * 12));
+          const at = (n: number) => data.element(offset.add(uint(n)));
+          const position = at(8);
+          const scale = at(9);
+          const times = at(10);
+          const values = at(11);
+          const second = time.greaterThan(times.y);
+          const t0 = second.select(times.y, times.x);
+          const t1 = second.select(times.z, times.y);
+          const v0 = second.select(values.y, values.x);
+          const v1 = second.select(values.z, values.y);
+          const z = v0.add(v1.sub(v0).mul(time.sub(t0).div(t1.sub(t0))));
+          const c = cos(z);
+          const sn = sin(z);
+          const local =
+            b === 0
+              ? mat4(at(0), at(1), at(2), at(3))
+              : mat4(
+                  c.mul(scale.x),
+                  sn.mul(scale.x),
+                  0,
+                  0,
+                  sn.negate().mul(scale.y),
+                  c.mul(scale.y),
+                  0,
+                  0,
+                  0,
+                  0,
+                  scale.z,
+                  0,
+                  position.x,
+                  position.y,
+                  position.z,
+                  1,
+                );
+          world = (
+            b === 0 ? root.element(instanceIndex.mul(uint(2))).mul(local) : world.mul(local)
+          ).toVar();
+          const palette = world.mul(mat4(at(4), at(5), at(6), at(7)));
+          const w = boneIndex.x
+            .equal(uint(b))
+            .select(weight.x, float(0))
+            .add(boneIndex.y.equal(uint(b)).select(weight.y, float(0)))
+            .add(boneIndex.z.equal(uint(b)).select(weight.z, float(0)))
+            .add(boneIndex.w.equal(uint(b)).select(weight.w, float(0)));
+          blended = b === 0 ? palette.mul(w) : blended.add(palette.mul(w));
+        }
+        return root
+          .element(instanceIndex.mul(uint(2)))
+          .mul(root.element(instanceIndex.mul(uint(2)).add(uint(1))))
+          .mul(blended);
+      };
+    }
     const hasTangent = source.getAttribute("tangent") !== undefined;
     const material = new NodeClass();
     this.#syncMaterial(material);
     material.positionNode = Fn(() => {
-      const matrix = blend(current);
+      const matrix = mat4().toVar();
+      if (rawMatrix && rawMeta) {
+        const sample = rawMatrix;
+        If(rawMeta.element(instanceIndex).x.greaterThan(0), () => {
+          matrix.assign(sample(false));
+        }).Else(() => {
+          matrix.assign(blend(current));
+        });
+      } else matrix.assign(blend(current));
       normalLocal.assign(matrix.mul(vec4(normalGeometry, 0)).xyz);
       if (hasTangent) tangentLocal.assign(matrix.mul(vec4(tangentGeometry.xyz, 0)).xyz);
-      if (previous !== undefined)
-        positionPrevious.assign(blend(previous).mul(vec4(positionGeometry, 1)).xyz);
+      if (previous !== undefined) {
+        const oldMatrix = mat4().toVar();
+        if (rawMatrix && rawMeta) {
+          const sample = rawMatrix;
+          If(rawMeta.element(instanceIndex).z.greaterThan(0), () => {
+            oldMatrix.assign(sample(true));
+          }).Else(() => {
+            oldMatrix.assign(blend(previous));
+          });
+        } else oldMatrix.assign(blend(previous));
+        positionPrevious.assign(oldMatrix.mul(vec4(positionGeometry, 1)).xyz);
+      }
       return matrix.mul(vec4(positionGeometry, 1)).xyz;
     })();
     material.needsUpdate = true;
 
     this.mesh = new Mesh(geometry, material);
     this.mesh.matrixAutoUpdate = false;
+    observeAnimationRates(this.mesh, this.instances);
+    this.mesh.userData["threenative.animationPosePackets"] = () => ({
+      capacity: this.capacity,
+      bones: this.bones,
+      instanceCount: this.mesh.geometry.instanceCount,
+      previousEnabled: this.#previous !== undefined,
+      slots: [...this.instances].map(([rig, slot]) => {
+        const r = this.#rawSlots.get(slot);
+        const m = slot * 4;
+        return {
+          slot,
+          currentRaw: this.#rawMeta[m] === 1,
+          previousRaw: this.#rawMeta[m + 2] === 1,
+          currentTime: this.#rawMeta[m + 1] ?? 0,
+          previousTime: this.#rawMeta[m + 3] ?? 0,
+          retired: r?.retired === true,
+          ...(this.#writtenEvaluations.has(rig)
+            ? { currentEvaluation: this.#writtenEvaluations.get(rig) }
+            : {}),
+          ...(r?.previous ? { previousEvaluation: r.previous.version.evaluation } : {}),
+        };
+      }),
+      storage: { meta: Array.from(this.#rawMeta) },
+    });
     // The palette spans every rig; only the per-rig sources have meaningful bounds.
     this.mesh.frustumCulled = false;
     this.mesh.castShadow = first.castShadow;
@@ -282,16 +483,25 @@ export class SkinnedBatch {
    * before any rig writes, so every pass of the frame reads the same pair.
    */
   begin(): void {
+    this.#reconciling = false;
     this.#frame += 1;
     this.#syncMaterial(this.mesh.material);
     if (this.sourceMaterial.version !== this.#sourceVersion) {
       this.#sourceVersion = this.sourceMaterial.version;
       this.mesh.material.needsUpdate = true;
     }
+    this.#checkObservedEdits();
     if (this.#previous !== undefined) {
       this.#previous.set(this.#current);
       this.#dirty = true;
+      if (this.#observed)
+        for (const [slot, display] of this.#rawSlots)
+          display.expectedPrevious = this.#previous.slice(
+            slot * this.bones * 16,
+            (slot + 1) * this.bones * 16,
+          );
     }
+    this.#reconciling = true;
   }
 
   /** Copies the game's current material values onto the draw's twin, as three's own conversion does. */
@@ -313,7 +523,9 @@ export class SkinnedBatch {
       this.used += 1;
     }
     this.instances.set(rig, slot);
+    this.#slotRigs.set(slot, rig);
     this.#fresh.push(slot);
+    this.#trackSkeleton(slot, rig);
     return slot;
   }
 
@@ -321,32 +533,105 @@ export class SkinnedBatch {
   release(rig: Object3D): void {
     const slot = this.instances.get(rig);
     if (slot === undefined) return;
+    this.#untrackSkeleton(slot);
+    releaseGpuPose(animationRateStateOf(rig));
     this.instances.delete(rig);
+    this.#slotRigs.delete(slot);
+    this.#writtenEvaluations.delete(rig);
+    this.#writtenWorldMatrices.delete(rig);
     this.hide(slot);
+    this.#rawSlots.delete(slot);
     this.free.push(slot);
   }
 
   /** This frame's world-space bone matrices, `capacity × bones` of them in slot order. */
   get palette(): Float32Array {
+    this.#observe();
     return this.#current;
   }
 
   /** Last frame's palette, present only while a temporal stage asks for per-object history. */
   get history(): Float32Array | undefined {
+    if (this.#previous !== undefined) this.#observe();
     return this.#previous;
   }
 
   /** Marks a slot whose history must restart from its next pose. */
   restart(slot: number): void {
+    this.#invalidate(slot);
     this.#fresh.push(slot);
   }
 
   /** Collapses one slot for this frame; a hidden rig keeps its slot. */
   hide(slot: number): void {
+    this.#invalidate(slot);
     const stride = this.bones * 16;
     this.#current.fill(0, slot * stride, (slot + 1) * stride);
     this.#previous?.fill(0, slot * stride, (slot + 1) * stride);
+    const display = this.#rawSlots.get(slot);
+    if (display) {
+      display.current = undefined;
+      display.previous = undefined;
+    }
+    if (this.#rawMeta.length) {
+      this.#rawMeta.fill(0, slot * 4, slot * 4 + 4);
+      this.#markRawDirty();
+    }
     this.#dirty = true;
+  }
+
+  #invalidate(slot: number): void {
+    const rig = this.#slotRigs.get(slot);
+    if (rig === undefined) return;
+    this.#writtenEvaluations.delete(rig);
+    this.#writtenWorldMatrices.delete(rig);
+    const display = this.#rawSlots.get(slot);
+    if (display) display.hot = undefined;
+  }
+
+  /**
+   * A held tick of a trusted RAW rig: the pose, the skeleton and the world matrix are the ones the
+   * last full write saw, so the only thing that moved is the playhead. Anything else, an observed
+   * batch included, takes the full path.
+   */
+  #writeHeld(slot: number, rig: SkinnedMesh, state: IAnimationRateStateLike | undefined): boolean {
+    const display = this.#rawSlots.get(slot);
+    const hot = display?.hot;
+    if (
+      display === undefined ||
+      hot === undefined ||
+      display.current === undefined ||
+      display.retired ||
+      this.#observed ||
+      (display.trusted ?? 0) <= 0
+    )
+      return false;
+    if (
+      state === undefined ||
+      state.evaluated ||
+      state.evaluation !== hot.evaluation ||
+      (state.effectiveRate ?? 1) <= 1 ||
+      rig.skeleton !== hot.skeleton ||
+      !hot.world.equals(rig.matrixWorld) ||
+      !skeletonUpdateIntact(hot.skeleton) ||
+      (this.#skeletonOwners.get(hot.skeleton)?.size ?? 0) > 1 ||
+      this.#fresh.includes(slot)
+    )
+      return false;
+    const time = animationPacketTimeReaders.get(rig)?.();
+    if (time === undefined) return false;
+    this.#prepareRawFrame();
+    display.writeFrame = this.#frame;
+    this.#rawMeta[slot * 4] = 1;
+    this.#rawMeta[slot * 4 + 1] = time;
+    this.#markRawDirty();
+    return true;
+  }
+
+  /** A packet at the playhead the meta row holds: held ticks move the meta, not the packet. */
+  #timed(packet: IAnimationPosePacket, slot: number, previous: boolean): IAnimationPosePacket {
+    const time = this.#rawMeta[slot * 4 + (previous ? 3 : 1)] as number;
+    return time === packet.time ? packet : { ...packet, time };
   }
 
   /**
@@ -355,9 +640,304 @@ export class SkinnedBatch {
    * bind mode `matrixWorld · bindMatrixInverse` is the identity and is skipped.
    */
   write(slot: number, rig: SkinnedMesh): void {
+    beginSpan(SPANS.skinnedWrite);
+    try {
+      const state = animationRateStateOf(rig);
+      // Attachments follow CPU bones, so their character must keep the same stock pose.
+      const attached =
+        (state?.effectiveRate ?? 1) > 1 &&
+        this.bones === 12 &&
+        rig.skeleton.bones.some((bone, index, bones) =>
+          bone.children.some((child) => child !== bones[index + 1]),
+        );
+      if (!attached && this.#writeHeld(slot, rig, state)) return;
+      this.#checkObservedEdits(slot);
+      // Named rate1 and ordinary stock owners never pay the capture/query path.
+      if (this.#rawMeta.length && ((state?.effectiveRate ?? 1) > 1 || this.#rawSlots.has(slot))) {
+        this.#prepareRawFrame();
+        this.#trackSkeleton(slot, rig, true);
+        let display = this.#rawSlots.get(slot);
+        if (!display) {
+          display = { retired: false };
+          this.#rawSlots.set(slot, display);
+        }
+        const held =
+          state !== undefined &&
+          !state.evaluated &&
+          this.#writtenEvaluations.get(rig) === state.evaluation &&
+          this.#writtenWorldMatrices.get(rig)?.equals(rig.matrixWorld);
+        const skeleton: unknown = rig.skeleton;
+        const update =
+          skeleton instanceof Skeleton
+            ? skeletonUpdateIntact(skeleton)
+              ? skeletonUpdate
+              : this.#method(skeleton, "update")
+            : undefined;
+        const shared =
+          skeleton instanceof Skeleton && (this.#skeletonOwners.get(skeleton)?.size ?? 0) > 1;
+        // First eligibility on a held tick must wait for a genuine stock refresh.
+        if (held && !display.current && !display.retired && update === skeletonUpdate && !shared) {
+          this.#writeStock(slot, rig, state);
+          return;
+        }
+        const repeatedRefresh = !held && display.writeFrame === this.#frame;
+        const packet =
+          state?.gpuPoseEnabled === true &&
+          !attached &&
+          !repeatedRefresh &&
+          !display.retired &&
+          (state?.effectiveRate ?? 1) > 1 &&
+          update === skeletonUpdate &&
+          !shared
+            ? display.current && held
+              ? readAnimationPosePacketTime(rig, display.current.version)
+              : display.current &&
+                  (display.trusted ?? 0) > 0 &&
+                  this.#writtenWorldMatrices.get(rig)?.equals(rig.matrixWorld) === true
+                ? refreshAnimationPosePacket(rig, display.current.version)
+                : readAnimationPosePacket(rig)
+            : undefined;
+        if (packet && state && !held) {
+          const reused = display.current?.version.keys === packet.version.keys;
+          display.trusted = reused ? (display.trusted ?? 0) - 1 : RAW_REVALIDATE_EVALUATIONS;
+        }
+        if (packet && state) {
+          state.gpuPose = true;
+          display.writeFrame = this.#frame;
+          if (!held && skeleton instanceof Skeleton)
+            this.#rawUpdates.set(skeleton, { frame: this.#frame, version: packet.version });
+          const changed = display.current?.version.keys !== packet.version.keys;
+          display.current = packet;
+          this.#packRaw(slot, packet, false, changed);
+          if (this.#fresh.includes(slot)) this.#packRaw(slot, packet, true);
+          this.#writtenEvaluations.set(rig, state.evaluation);
+          const world = this.#writtenWorldMatrices.get(rig) ?? new Matrix4();
+          world.copy(rig.matrixWorld);
+          this.#writtenWorldMatrices.set(rig, world);
+          if (skeleton instanceof Skeleton) {
+            const hot = display.hot;
+            if (hot) {
+              hot.skeleton = skeleton;
+              hot.world = world;
+              hot.evaluation = state.evaluation;
+            } else display.hot = { skeleton, world, evaluation: state.evaluation };
+          }
+          this.#syncObserved(slot, display);
+          return;
+        }
+        // The next player update sees the flag drop and refreshes the bones; this tick keeps stock's
+        // held semantics, which an observed palette edit relies on.
+        if (state) state.gpuPose = false;
+        if (held && display.current)
+          this.#current.set(
+            evaluateAnimationPoseFallback(display.current.version),
+            slot * this.bones * 16,
+          );
+        display.current = undefined;
+        display.retired ||= (state?.effectiveRate ?? 1) > 1 || update !== skeletonUpdate || shared;
+        this.#rawMeta[slot * 4] = 0;
+        this.#rawMeta[slot * 4 + 1] = 0;
+        this.#markRawDirty();
+        this.#dirty = true;
+      }
+      this.#writeStock(slot, rig, state);
+      const display = this.#rawSlots.get(slot);
+      if (display) this.#syncObserved(slot, display);
+    } finally {
+      endSpan(SPANS.skinnedWrite);
+    }
+  }
+
+  #method(object: object, key: string): unknown {
+    for (let owner: object | null = object; owner !== null; owner = Object.getPrototypeOf(owner)) {
+      const d = Object.getOwnPropertyDescriptor(owner, key);
+      if (d) return Object.hasOwn(d, "value") ? d.value : undefined;
+    }
+    return undefined;
+  }
+
+  #prepareRawFrame(): void {
+    if (this.#rawFrame === this.#frame) return;
+    this.#rawFrame = this.#frame;
+    for (const [slot, display] of this.#rawSlots) {
+      if (display.current && display.previous?.version.keys !== display.current.version.keys) {
+        this.#rawPrevious.set(this.#rawData.subarray(slot * 576, (slot + 1) * 576), slot * 576);
+        this.#rawPreviousRoots.set(this.#rawRoots.subarray(slot * 32, (slot + 1) * 32), slot * 32);
+      }
+      display.previous = display.current;
+      this.#rawMeta[slot * 4 + 2] = this.#rawMeta[slot * 4] as number;
+      this.#rawMeta[slot * 4 + 3] = this.#rawMeta[slot * 4 + 1] as number;
+    }
+    this.#markRawDirty();
+  }
+
+  #markRawDirty(force = false): void {
+    if (!force && this.#rawDirtyFrame === this.#frame) return;
+    this.#rawDirtyFrame = this.#frame;
+    for (const attribute of this.#rawAttributes) attribute.needsUpdate = true;
+  }
+
+  #packRaw(slot: number, packet: IAnimationPosePacket, old: boolean, changed = true): void {
+    const data = old ? this.#rawPrevious : this.#rawData;
+    const roots = old ? this.#rawPreviousRoots : this.#rawRoots;
+    const meta = slot * 4 + (old ? 2 : 0);
+    const v = packet.version;
+    this.#rawMeta[meta] = 1;
+    this.#rawMeta[meta + 1] = packet.time;
+    if (changed) {
+      roots.set(v.rootWorld, slot * 32);
+      roots.set(v.bindInverse, slot * 32 + 16);
+      for (let b = 0; b < 12; b++) {
+        const at = (slot * 12 + b) * 48;
+        const rest = v.rest[b];
+        const key = v.keys[b];
+        const inverse = v.bindInverses[b];
+        if (!rest || !inverse) throw new Error("incomplete owned raw pose");
+        data.set(rest.local, at);
+        data.set(inverse, at + 16);
+        data.set([...rest.position, b === 0 ? 0 : 1, ...rest.scale, 0], at + 32);
+        data.set(key ? [...key.times, 0, ...key.values, 0] : [0, 1, 2, 0, 0, 0, 0, 0], at + 40);
+      }
+    }
+    this.#markRawDirty();
+  }
+
+  #checkObservedEdits(only?: number): void {
+    if (!this.#observed) return;
+    for (const [slot, display] of this.#rawSlots) {
+      if (only !== undefined && slot !== only) continue;
+      if (this.#rawMeta[slot * 4] !== 1 && this.#rawMeta[slot * 4 + 2] !== 1) continue;
+      const changed = (actual: Float32Array | undefined, expected: Float32Array | undefined) =>
+        expected !== undefined &&
+        actual !== undefined &&
+        expected.some((v, i) => !Object.is(v, actual[slot * this.bones * 16 + i]));
+      if (
+        !changed(this.#current, display.expectedCurrent) &&
+        !changed(this.#previous, display.expectedPrevious)
+      )
+        continue;
+      display.current = undefined;
+      display.previous = undefined;
+      display.retired = true;
+      display.expectedCurrent = undefined;
+      display.expectedPrevious = undefined;
+      this.#rawMeta.fill(0, slot * 4, slot * 4 + 4);
+      this.#markRawDirty(true);
+      this.#currentAttribute.needsUpdate = true;
+      if (this.#previousAttribute) this.#previousAttribute.needsUpdate = true;
+      this.#dirty = true;
+    }
+  }
+
+  #syncObserved(slot: number, display: IRawDisplaySlot): void {
+    if (!this.#observed) return;
+    const offset = slot * this.bones * 16;
+    if (display.current) {
+      const matrix = evaluateAnimationPosePacket(this.#timed(display.current, slot, false));
+      this.#current.set(matrix, offset);
+      display.expectedCurrent = matrix;
+    } else display.expectedCurrent = this.#current.slice(offset, offset + this.bones * 16);
+    display.expectedPrevious = this.#previous?.slice(offset, offset + this.bones * 16);
+    this.#dirty = true;
+  }
+
+  #observe(): void {
+    this.#checkObservedEdits();
+    if (this.#observed) return;
+    this.#prepareRawFrame();
+    for (const [slot, display] of this.#rawSlots) {
+      const offset = slot * this.bones * 16;
+      if (display.current)
+        this.#current.set(
+          evaluateAnimationPosePacket(this.#timed(display.current, slot, false)),
+          offset,
+        );
+      const previous =
+        display.previous ??
+        (!this.#fresh.includes(slot) && this.#rawMeta[slot * 4 + 2] === 1
+          ? display.current
+          : undefined);
+      if (previous && this.#previous)
+        this.#previous.set(
+          evaluateAnimationPosePacket(this.#timed(previous, slot, previous === display.previous)),
+          offset,
+        );
+      display.expectedCurrent = this.#current.slice(offset, offset + this.bones * 16);
+      display.expectedPrevious = this.#previous?.slice(offset, offset + this.bones * 16);
+    }
+    this.#observed = true;
+    this.#currentAttribute.needsUpdate = true;
+    if (this.#previousAttribute) this.#previousAttribute.needsUpdate = true;
+    this.#dirty = true;
+  }
+
+  #untrackSkeleton(slot: number): void {
+    const skeleton = this.#ownedSkeletons.get(slot);
+    if (!skeleton) return;
+    const owners = this.#skeletonOwners.get(skeleton);
+    owners?.delete(slot);
+    if (!owners?.size) this.#skeletonOwners.delete(skeleton);
+    this.#ownedSkeletons.delete(slot);
+  }
+
+  #trackSkeleton(slot: number, rig: Object3D, charged = false): void {
+    const skeleton = (rig as SkinnedMesh).skeleton as unknown;
+    if (this.#ownedSkeletons.get(slot) === skeleton && !charged) return;
+    if (this.#ownedSkeletons.get(slot) !== skeleton) this.#untrackSkeleton(slot);
+    if (!(skeleton instanceof Skeleton)) return;
+    this.#ownedSkeletons.set(slot, skeleton);
+    let owners = this.#skeletonOwners.get(skeleton);
+    if (!owners) {
+      owners = new Set();
+      this.#skeletonOwners.set(skeleton, owners);
+    }
+    owners.add(slot);
+    if (owners.size < 2 || ![...owners].some((owner) => this.#rawSlots.get(owner)?.current)) return;
+    // Between reconciles, retain the last published RAW pose until begin advances its history.
+    if (!charged && !this.#reconciling) return;
+    // Late sharing must also revoke an already-written RAW owner before this draw.
+    if (!charged) beginSpan(SPANS.skinnedWrite);
+    try {
+      this.#prepareRawFrame();
+      for (const owner of owners) {
+        const display = this.#rawSlots.get(owner);
+        if (!display) continue;
+        if (display.current)
+          this.#current.set(
+            evaluateAnimationPoseFallback(display.current.version),
+            owner * this.bones * 16,
+          );
+        display.current = undefined;
+        display.retired = true;
+        this.#syncObserved(owner, display);
+        this.#rawMeta[owner * 4] = 0;
+        this.#rawMeta[owner * 4 + 1] = 0;
+        this.#dirty = true;
+      }
+      this.#markRawDirty();
+    } finally {
+      if (!charged) endSpan(SPANS.skinnedWrite);
+    }
+  }
+
+  #writeStock(slot: number, rig: SkinnedMesh, state: IAnimationRateStateLike | undefined): void {
+    const writtenWorld = this.#writtenWorldMatrices.get(rig);
+    if (
+      state !== undefined &&
+      !state.evaluated &&
+      this.#writtenEvaluations.get(rig) === state.evaluation &&
+      writtenWorld?.equals(rig.matrixWorld)
+    )
+      return;
     const skeleton = rig.skeleton;
     if (this.#updated.get(skeleton) !== this.#frame) {
-      skeleton.update();
+      const captured = this.#rawUpdates.get(skeleton);
+      if (captured?.frame === this.#frame) {
+        (skeleton.boneMatrices as Float32Array).set(
+          evaluateAnimationPoseFallback(captured.version),
+        );
+        if (skeleton.boneTexture !== null) skeleton.boneTexture.needsUpdate = true;
+      } else skeleton.update();
       this.#updated.set(skeleton, this.#frame);
     }
     const bones = skeleton.boneMatrices as Float32Array;
@@ -385,10 +965,18 @@ export class SkinnedBatch {
       }
     }
     this.#dirty = true;
+    if (state !== undefined) {
+      this.#writtenEvaluations.set(rig, state.evaluation);
+      const nextWorld = writtenWorld ?? new Matrix4();
+      nextWorld.copy(rig.matrixWorld);
+      this.#writtenWorldMatrices.set(rig, nextWorld);
+    }
   }
 
   /** Ends one reconcile: brand-new slots get history equal to their pose, then the palette uploads. */
   end(): void {
+    this.#reconciling = false;
+    this.#checkObservedEdits();
     const stride = this.bones * 16;
     if (this.#previous !== undefined) {
       for (const slot of this.#fresh)
@@ -397,6 +985,12 @@ export class SkinnedBatch {
           slot * stride,
         );
     }
+    if (this.#observed && this.#previous)
+      for (const slot of this.#fresh) {
+        const display = this.#rawSlots.get(slot);
+        if (display)
+          display.expectedPrevious = this.#previous.slice(slot * stride, (slot + 1) * stride);
+      }
     this.#fresh.length = 0;
     this.mesh.geometry.instanceCount = this.used;
     if (!this.#dirty) return;
@@ -411,9 +1005,30 @@ export class SkinnedBatch {
    */
   dispose(): void {
     this.mesh.removeFromParent();
+    for (const rig of this.#slotRigs.values()) releaseGpuPose(animationRateStateOf(rig));
     this.#currentAttribute.dispose();
     this.#previousAttribute?.dispose();
+    for (const attribute of this.#rawAttributes) attribute.dispose();
     this.mesh.material.dispose();
     this.instances.clear();
+    this.#slotRigs.clear();
+    this.mesh.userData["threenative.animationPosePackets"] = undefined;
+    this.#rawSlots.clear();
+    this.#ownedSkeletons.clear();
+    this.#skeletonOwners.clear();
   }
+}
+
+function animationRateStateOf(object: Object3D): IAnimationRateStateLike | undefined {
+  for (let node: Object3D | null = object; node !== null; node = node.parent) {
+    const value = node.userData[ANIMATION_RATE_STATE_KEY];
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as IAnimationRateStateLike).evaluated === "boolean" &&
+      typeof (value as IAnimationRateStateLike).evaluation === "number"
+    )
+      return value as IAnimationRateStateLike;
+  }
+  return undefined;
 }

@@ -1,0 +1,294 @@
+{
+  "name": "kart-race",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "label": "countdown",
+      "waitForResource": {
+        "id": "state",
+        "path": "countdown",
+        "equals": 1
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot",
+      "press": ["KeyP"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "label": "lap-2",
+      "waitForResource": {
+        "id": "state",
+        "path": "lap",
+        "equals": 2
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "lap-3",
+      "waitForResource": {
+        "id": "state",
+        "path": "lap",
+        "equals": 3
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "player-finished",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "finished"
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "label": "all-finished",
+      "waitForResource": {
+        "id": "state",
+        "path": "finishedCount",
+        "equals": 8
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "results",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "race",
+        "component": "finishedCount",
+        "equals": 8,
+        "allowTrivial": "All eight karts, the player and seven CPUs, finished three laps."
+      },
+      {
+        "entity": "race",
+        "component": "stuckWorst",
+        "lte": 3,
+        "allowTrivial": "No CPU sat below 1.5 m/s for more than 3 s at any point of the race."
+      },
+      {
+        "entity": "race",
+        "component": "finishRankMismatches",
+        "equals": 0,
+        "allowTrivial": "Every kart crossed the line in the place the progress ranking showed."
+      },
+      {
+        "entity": "race",
+        "component": "itemsUsed",
+        "gte": 3,
+        "allowTrivial": "The CPUs and the autopilot took boxes and used their items during the race."
+      },
+      {
+        "entity": "cpu.1",
+        "component": "lap",
+        "equals": 3,
+        "allowTrivial": "Each CPU completed all three laps."
+      },
+      {
+        "entity": "cpu.2",
+        "component": "lap",
+        "equals": 3,
+        "allowTrivial": "Each CPU completed all three laps."
+      },
+      {
+        "entity": "cpu.3",
+        "component": "lap",
+        "equals": 3,
+        "allowTrivial": "Each CPU completed all three laps."
+      },
+      {
+        "entity": "cpu.4",
+        "component": "lap",
+        "equals": 3,
+        "allowTrivial": "Each CPU completed all three laps."
+      },
+      {
+        "entity": "cpu.5",
+        "component": "lap",
+        "equals": 3,
+        "allowTrivial": "Each CPU completed all three laps."
+      },
+      {
+        "entity": "cpu.6",
+        "component": "lap",
+        "equals": 3,
+        "allowTrivial": "Each CPU completed all three laps."
+      },
+      {
+        "entity": "cpu.7",
+        "component": "lap",
+        "equals": 3,
+        "allowTrivial": "Each CPU completed all three laps."
+      },
+      {
+        "entity": "cpu.1",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "No CPU's course index jumped more than the -3..+6 window in one tick."
+      },
+      {
+        "entity": "cpu.2",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "No CPU's course index jumped more than the -3..+6 window in one tick."
+      },
+      {
+        "entity": "cpu.3",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "No CPU's course index jumped more than the -3..+6 window in one tick."
+      },
+      {
+        "entity": "cpu.4",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "No CPU's course index jumped more than the -3..+6 window in one tick."
+      },
+      {
+        "entity": "cpu.5",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "No CPU's course index jumped more than the -3..+6 window in one tick."
+      },
+      {
+        "entity": "cpu.6",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "No CPU's course index jumped more than the -3..+6 window in one tick."
+      },
+      {
+        "entity": "cpu.7",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "No CPU's course index jumped more than the -3..+6 window in one tick."
+      },
+      {
+        "entity": "player",
+        "component": "finished",
+        "equals": true,
+        "allowTrivial": "The autopilot drove the player's kart over the line after three laps."
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "countdown",
+        "atSteps": [
+          {
+            "label": "countdown",
+            "equals": 1
+          },
+          {
+            "label": "go",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lap",
+        "atSteps": [
+          {
+            "label": "lap-2",
+            "equals": 2
+          },
+          {
+            "label": "results",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "go",
+            "equals": "race"
+          },
+          {
+            "label": "results",
+            "equals": "finished"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "finishedCount",
+        "equals": 8
+      },
+      {
+        "id": "state",
+        "path": "place",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "place",
+        "atSteps": [
+          {
+            "label": "countdown",
+            "equals": 8
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "results.7.time",
+        "gte": 60
+      },
+      {
+        "id": "state",
+        "path": "results.0.place",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "results.7.place",
+        "equals": 8
+      },
+      {
+        "id": "state",
+        "path": "lapTimes.2",
+        "gte": 20
+      }
+    ]
+  }
+}

@@ -23,6 +23,10 @@ export interface ISharedImage {
   /** `uastc`, `etc1s` or `none`, spelled into the filename so a cache hit knows what it found. */
   readonly codec: string;
   readonly mimeType: string;
+  /** Bytes KTX2 saved against the decoder-free container here, so a recall reports it too. */
+  readonly transcoderSavings?: number;
+  /** This image ships Basis KTX2 whatever the transcoder charge; replayed on a recall. */
+  readonly transcoderRequired?: true;
 }
 
 export interface ISharedImageStoreOptions {
@@ -77,6 +81,20 @@ function parseFileName(
   const mimeType = MIME_BY_EXTENSION[extension ?? ""];
   if (key === undefined || codec === undefined || mimeType === undefined) return undefined;
   return { codec, key, mimeType };
+}
+
+/** The transcoder fields a stored record adds, or nothing when it records none. */
+function readTranscoderRecord(
+  value: unknown,
+): Pick<ISharedImage, "transcoderSavings" | "transcoderRequired"> {
+  if (typeof value !== "object" || value === null) return {};
+  const record = value as { readonly savings?: unknown; readonly required?: unknown };
+  return {
+    ...(typeof record.savings === "number" && Number.isFinite(record.savings) && record.savings > 0
+      ? { transcoderSavings: record.savings }
+      : {}),
+    ...(record.required === true ? { transcoderRequired: true as const } : {}),
+  };
 }
 
 /**
@@ -188,6 +206,17 @@ export function createSharedImageStore(
             throw error;
           }
         })()),
+        ...(await (async () => {
+          try {
+            return readTranscoderRecord(
+              JSON.parse(await readFile(path.join(directory, `${name}.transcoder.json`), "utf8")),
+            );
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError)
+              return {};
+            throw error;
+          }
+        })()),
       };
       memory.set(key, image);
       return image;
@@ -198,7 +227,13 @@ export function createSharedImageStore(
       if (directory === undefined || options.writeThrough === false) return;
       const name = fileNameFor(key, image);
       const known = await onDisk();
-      if (known.has(key) && image.quality === undefined) return;
+      if (
+        known.has(key) &&
+        image.quality === undefined &&
+        image.transcoderSavings === undefined &&
+        image.transcoderRequired !== true
+      )
+        return;
       await mkdir(directory, { recursive: true });
       // Temp file + rename: a concurrent reader (another worker's get, a parallel build's) must
       // never observe a truncated image, and two writers of identical bytes must not be able to
@@ -219,6 +254,24 @@ export function createSharedImageStore(
           await rename(qualityTemporary, qualityTarget);
         } finally {
           await rm(qualityTemporary, { force: true }).catch(() => undefined);
+        }
+      }
+      if (image.transcoderSavings !== undefined || image.transcoderRequired === true) {
+        const transcoderTarget = `${target}.transcoder.json`;
+        const transcoderTemporary = `${transcoderTarget}.${process.pid}.${randomUUID()}.tmp`;
+        try {
+          await writeFile(
+            transcoderTemporary,
+            `${JSON.stringify({
+              ...(image.transcoderSavings === undefined
+                ? {}
+                : { savings: image.transcoderSavings }),
+              ...(image.transcoderRequired === true ? { required: true } : {}),
+            })}\n`,
+          );
+          await rename(transcoderTemporary, transcoderTarget);
+        } finally {
+          await rm(transcoderTemporary, { force: true }).catch(() => undefined);
         }
       }
       known.set(key, name);

@@ -5554,6 +5554,36 @@ index 7b550223936eedcbbe782ce0f7cef8d11388181e..0bb036147379173ea3eb51774be72d45
  
  		/**
  		 * A uniform texture node representing the weights pass.
+diff --git a/examples/jsm/tsl/display/SSRNode.js b/examples/jsm/tsl/display/SSRNode.js
+index e7905c59434ca3917b13ebb917051f7c5ea0d69b..0188f96aeb1c4255b62d31598afb4a1def1b3a88 100644
+--- a/examples/jsm/tsl/display/SSRNode.js
++++ b/examples/jsm/tsl/display/SSRNode.js
+@@ -228,6 +228,16 @@ class SSRNode extends TempNode {
+ 		 */
+ 		this.quality = uniform( 0.5 );
+ 
++		/**
++		 * The most raymarching steps the mirror trace (`stochastic: false`) takes. ThreeNative patch: Unreal
++		 * caps SSR steps per tier (UE 5.8.3 SSRTReflections.usf:198-216, BaseScalability.ini ReflectionQuality);
++		 * `quality` only scales the step count with the ray's screen length, so no setting gives a fixed cap.
++		 * The default leaves the stock count unbounded.
++		 *
++		 * @type {UniformNode<float>}
++		 */
++		this.maxSteps = uniform( 1e6 );
++
+ 		/**
+ 		 * Mirror bias for the stochastic GGX sampling. Concentrates the reflected rays toward
+ 		 * the lobe's narrow (near-mirror) core, trading a small amount of bias for less noise.
+@@ -1057,7 +1067,7 @@ class SSRNode extends TempNode {
+ 			// length (cheap for the short rays that dominate). Scatter needs a fixed, bounded count for
+ 			// coherent stochastic sampling; each step then spans the whole ray as rayVec / totalStep.
+ 			const totalStep = int( this.stochastic === false
+-				? trunc( max( abs( xLen ), abs( yLen ) ).mul( this.quality.clamp() ) ).max( int( 1 ) ).toConst()
++				? trunc( max( abs( xLen ), abs( yLen ) ).mul( this.quality.clamp() ).min( this.maxSteps ) ).max( int( 1 ) ).toConst()
+ 				: this.quality.clamp().mul( MAX_STEPS ).max( float( 1 ) ) ).toConst();
+ 
+ 			const xSpan = xLen.div( totalStep ).toVar();
 diff --git a/src/materials/nodes/manager/NodeMaterialObserver.js b/src/materials/nodes/manager/NodeMaterialObserver.js
 index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e3427711be7210 100644
 --- a/src/materials/nodes/manager/NodeMaterialObserver.js

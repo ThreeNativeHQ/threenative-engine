@@ -79,6 +79,8 @@ export type {
  * @situation find bodies inside a shape or point query
  * @alias hitscan camera
  * @constraint query results are bounded by the configured result limit
+ * @constraint intersectRay ignores a solid that contains the ray origin and returns the next real hit or none, like Godot hit_from_inside false
+ * @override hitFromInside: true returns the solid around the ray origin as a distance 0 hit with a zero normal
  * @example const space = new PhysicsDirectSpaceState3D(context);
  * @requires npm i @threenative/physics
  */

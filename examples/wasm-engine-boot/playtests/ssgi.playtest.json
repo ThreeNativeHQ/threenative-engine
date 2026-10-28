@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-ssgi",
+  "target": "web",
+  "subject": "wasm-ssgi",
+  "viewport": {
+    "width": 640,
+    "height": 360
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "rendered",
+      "waitTicks": 40
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-ssgi",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here: a refused stage or effect throws."
+      },
+      {
+        "entity": "wasm-ssgi",
+        "component": "probe",
+        "path": "frames",
+        "gte": 40
+      },
+      {
+        "entity": "wasm-ssgi",
+        "component": "probe",
+        "path": "draws",
+        "gte": 1,
+        "allowTrivial": "ready() resolves after the first engine frame."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 215,
+          "y": 195,
+          "width": 40,
+          "height": 30,
+          "minNonblankPixelRatio": 0.3
+        }
+      },
+      {
+        "region": {
+          "x": 520,
+          "y": 280,
+          "width": 100,
+          "height": 60,
+          "minNonblankPixelRatio": 0,
+          "minDarkPixelRatio": 0.98
+        }
+      }
+    ]
+  }
+}

@@ -74,6 +74,48 @@ describe("visual gate", () => {
     }
   });
 
+  it("follows a live core WorldEnvironment and keeps a local pipeline implementation", async () => {
+    const root = await makeTempDir("threenative-visual-core-world-");
+    const kit = path.join(root, "core-world-kit");
+    try {
+      await cp(path.resolve("packages/create-threenative/templates/platformer"), kit, {
+        recursive: true,
+      });
+      const manifest = JSON.parse(await readFile(path.join(kit, "kit.json"), "utf8")) as {
+        name: string;
+      };
+      await writeFile(
+        path.join(kit, "kit.json"),
+        `${JSON.stringify({ ...manifest, name: "core-world-kit" })}\n`,
+      );
+      const inspect = () =>
+        inspectAllTemplates(root).find(({ template }) => template === "core-world-kit");
+      expect(inspect()?.errors).toEqual([]);
+
+      const postPath = path.join(kit, "src/render/postprocessing.ts");
+      const post = await readFile(postPath, "utf8");
+      await writeFile(postPath, post.replaceAll("new WorldEnvironment(", "constructWorld("));
+      expect(inspect()?.errors).toContain("core-world-kit: render pipeline is missing toneMapping");
+
+      await writeFile(
+        postPath,
+        post.replace(
+          'import { WorldEnvironment } from "@threenative/core"',
+          'import { WorldEnvironment } from "./world-environment.js"',
+        ),
+      );
+      expect(inspect()?.errors).toContain("core-world-kit: render pipeline is missing toneMapping");
+
+      await writeFile(
+        path.join(kit, "src/render/worldEnvironment.ts"),
+        'export const markers = ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("];\n',
+      );
+      expect(inspect()?.errors).toEqual([]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("asks for soft shadow-map settings only from a light that casts a shadow", async () => {
     const root = await makeTempDir("threenative-visual-shadow-");
     const kit = path.join(root, "shadow-kit");
@@ -91,7 +133,13 @@ describe("visual gate", () => {
       const lightingPath = path.join(kit, "src/render/lighting.ts");
       const lighting = await readFile(lightingPath, "utf8");
       expect(lighting).toMatch(/castShadow\s*=\s*true/u);
-      const stripped = lighting.replaceAll("PCFSoftShadowMap", "PCFShadowMap");
+      // Plain PCF with a radius is the soft filter three honours, so it passes; PCF without one does not.
+      await writeFile(lightingPath, lighting.replaceAll("PCFSoftShadowMap", "PCFShadowMap"));
+      const widened = inspectAllTemplates(root).find(({ template }) => template === "shadow-kit");
+      expect(widened?.errors).not.toContain("shadow-kit: lighting.ts is missing PCFSoftShadowMap");
+      const stripped = lighting
+        .replaceAll("PCFSoftShadowMap", "PCFShadowMap")
+        .replaceAll(/key\.shadow\.radius\s*=\s*\d+;/gu, "");
       await writeFile(lightingPath, stripped);
       const casting = inspectAllTemplates(root).find(({ template }) => template === "shadow-kit");
       expect(casting?.errors).toContain("shadow-kit: lighting.ts is missing PCFSoftShadowMap");
@@ -127,6 +175,9 @@ describe("visual gate", () => {
         ({ template }) => template === "unregistered-broken",
       );
       expect(result?.errors).toContain("unregistered-broken: missing src/render/postprocessing.ts");
+      expect(result?.errors).toContain(
+        "unregistered-broken: render pipeline is missing toneMapping",
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

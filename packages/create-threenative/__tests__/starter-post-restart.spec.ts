@@ -17,7 +17,8 @@ vi.mock("three/addons/loaders/LUTCubeLoader.js", () => ({
     }
   },
 }));
-vi.mock("../templates/starter/src/render/worldEnvironment.js", () => ({
+vi.mock("@threenative/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@threenative/core")>()),
   WorldEnvironment: class {
     apply() {
       applied.push(applied.length);
@@ -30,7 +31,7 @@ const { setupPost } = await import("../templates/starter/src/render/postprocessi
 
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 const post = (): ReturnType<typeof setupPost> =>
-  setupPost({} as never, {} as never, {} as never, { tier: "low" });
+  setupPost({ kind: "webgpu", raw: {} } as never, {} as never, {} as never, { tier: "low" });
 
 describe("starter post chain across a restart (PRD-637)", () => {
   beforeEach(() => {

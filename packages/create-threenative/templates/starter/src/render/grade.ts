@@ -1,3 +1,4 @@
+import type { ChainStage } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // The last two stages of this game's frame: a colour grade, and the film grain over it. Both are
@@ -28,7 +29,6 @@ import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
 import { float, renderOutput, texture3D, time, uv } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { QualityTier } from "./quality.js";
-import type { ChainStage } from "./worldEnvironment.js";
 
 /**
  * What `TN_RENDER_CHAIN` prints when a stage is refused. Never blank, and never the same answer

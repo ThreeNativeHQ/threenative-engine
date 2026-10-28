@@ -170,7 +170,7 @@ Two questions decide whether something belongs in the framework at all, and they
 - Anything that decides how a frame looks, added to package code or a framework option.
 - A hand-edited `CLAUDE.md`. Those files are generated: edit `AGENTS.md`, then run
   `pnpm sync:agents`.
-- An IR, a scene format, an editor, a preset/genre system, a code-first ECS, or a bespoke CLI
+- An IR, a scene format, an editor, a code-first ECS, or a bespoke CLI
   vocabulary. These are closed with evidence and are not reopened in a pull request.
 
 None of these are judgements about the code — they are boundaries the project has already paid to

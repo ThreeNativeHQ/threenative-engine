@@ -23,7 +23,7 @@ it.each(Object.values(BIOMES))("sets $world shadow contact bias as intended", (b
   }
   if (biome.world === "coastal") {
     // Coastal stones showed a lit rim: one fine texel of normal bias and no footprint-wide slope bias.
-    expect(sky.sun.shadow.normalBias).toBe((2 * (clipExtents[0] ?? 0)) / mapSize);
+    expect(sky.sun.shadow.normalBias).toBe((2 * (clipExtents[0] ?? 0)) / (mapSize[0] ?? 0));
     expect(receiverPlaneBias).toBe(false);
   } else {
     // Other worlds keep their judged look until ground-level close-ups prove a change.

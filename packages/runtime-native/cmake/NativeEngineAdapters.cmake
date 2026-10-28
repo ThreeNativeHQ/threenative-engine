@@ -313,6 +313,11 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-render-target.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_render_target PROPERTIES LABELS "native-engine")
+    # core's canvas layer (renderOverlay) over the world frame, before the world and in a held loader frame.
+    add_test(NAME native_engine_player_overlay
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-overlay.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_overlay PROPERTIES LABELS "native-engine")
     # A render-target read settles from the GPU event drain; its continuation must run with the isolate entered.
     add_test(NAME native_engine_player_read_target_osr
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-read-target-osr.mjs
@@ -343,6 +348,24 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-batched-mesh.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_batched_mesh PROPERTIES LABELS "native-engine")
+    # PRD-636: temporal anti-aliasing on the player. The pass is live with history and a moving jitter, replaces 4x
+    # multisampling, and the player reports it through `info.engine` as the Wasm facade does.
+    add_test(NAME native_engine_player_temporal_aa
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-temporal-aa.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_temporal_aa PROPERTIES LABELS "native-engine" TIMEOUT 180)
+    # PRD-644 and PRD-652: the player publishes GPU stage times (`info.engine.gpuStages`) for GIBudget and
+    # ShadowFilterBudget, and starts timing only when a reader asks.
+    add_test(NAME native_engine_player_gpu_stages
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-gpu-stages.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_gpu_stages PROPERTIES LABELS "native-engine" TIMEOUT 180)
+    # PRD-644 and PRD-652: the frame-period rule (Unreal's DynamicRenderScaling) that BudgetLadder, ShadowFilterBudget
+    # and GIBudget decide with, on the player: 2 frames over the period step down, an idle GPU holds, GIBudget holds.
+    add_test(NAME native_engine_player_frame_rule
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-frame-rule.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_frame_rule PROPERTIES LABELS "native-engine" TIMEOUT 180)
     # PRD-573 v1.11: a settled R2 frame of 1,024 cubes costs at most 3.5 crossings per cube. Red until step 3 (host
     # projection) landed, green since: 10.26 per cube at step 0, 0.01 with the mirror gone.
     add_test(NAME native_engine_player_crossing_budget

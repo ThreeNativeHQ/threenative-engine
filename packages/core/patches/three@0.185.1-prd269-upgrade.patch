@@ -406,7 +406,8 @@
     "src/renderers/common/RenderPipeline.js": "ab3085cfdca456ffb3de6945d7e7f693e4ed33ae",
     "src/nodes/pmrem/PMREMNode.js": "c4c33cf3060d8c75398000589ed4e3f9a52ec285",
     "src/renderers/common/extras/PMREMGenerator.js": "ace19db76fab3f08ed4d581d1e272066a24c34aa",
-    "examples/jsm/tsl/display/SMAANode.js": "0bb036147379173ea3eb51774be72d4587b757b8"
+    "examples/jsm/tsl/display/SMAANode.js": "0bb036147379173ea3eb51774be72d4587b757b8",
+    "examples/jsm/tsl/display/SSRNode.js": "0188f96aeb1c4255b62d31598afb4a1def1b3a88"
   },
   "generatedFinalHashes": {
     "build/three.cjs": "b0f917241f1f2cd25baa21dec20edda32176ef6a",
@@ -414,6 +415,7 @@
     "build/three.webgpu.js": "c27d05e6cfb7637a4e1546e9338638813db4cc15",
     "build/three.webgpu.nodes.js": "2939a7ab73c74195f357fd145632bafc9624d811",
     "examples/jsm/tsl/display/SMAANode.js": "0bb036147379173ea3eb51774be72d4587b757b8",
+    "examples/jsm/tsl/display/SSRNode.js": "0188f96aeb1c4255b62d31598afb4a1def1b3a88",
     "src/materials/nodes/manager/NodeMaterialObserver.js": "7e2cb9926878b43aa2b8b3a146e3427711be7210",
     "src/nodes/accessors/Batch.js": "4a05be529b3a7adfd8b40e17cc10539671cfcca9",
     "src/nodes/accessors/Instance.js": "8d198299f7f82bdf8f67f0f854c21c5ced8f8bed",

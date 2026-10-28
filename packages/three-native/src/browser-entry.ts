@@ -20,7 +20,13 @@ import {
   createWasmRuntime,
   defineBrowserClasses,
 } from "./browser-backend.js";
-import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
+import { ColorManagement } from "./browser-math.js";
+import {
+  PIPELINE_POST,
+  RENDER_AGAIN,
+  defineWebRenderer,
+  isWebHostModule,
+} from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { withMathUtilsExtras } from "./math-utils.js";
@@ -34,6 +40,8 @@ import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { defineReflector } from "./reflector.js";
+import { defineRendererUtils } from "./renderer-utils.js";
+import { ShadowBaseNode } from "./shadow-node.js";
 import { ReadbackBuffer } from "./storage.js";
 import { defineTextureSources } from "./texture-sources.js";
 
@@ -157,7 +165,9 @@ export async function bindWebEngine(
     ...withTextureSources(classes, runtime),
     ...tsl?.exports,
   };
+  bound.RendererUtils = defineRendererUtils(classes.Color as never);
   bound.Material = Material;
+  bound.ShadowBaseNode = ShadowBaseNode;
   bound.ReadbackBuffer = ReadbackBuffer;
   // three's PropertyBinding statics and console function over the engine class (shared with V8).
   if (classes.PropertyBinding !== undefined)
@@ -186,17 +196,34 @@ export async function bindWebEngine(
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).
+  // The safe point and the audio pose run once per renderer frame: collect asks a sixty-fourth of the
+  // settled wrappers per call, sized for one call a frame, and a post chain renders about ten passes.
+  let updating = false;
+  let collectedFrame: number | undefined;
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(
       module,
       classes.Color as never,
       (frame) => {
-        collect();
-        tsl?.sync(frame);
-        audio.updateAudio();
+        // A compute dispatch passes no frame: it belongs to the frame already collected.
+        const frameId = frame?.frameId ?? collectedFrame;
+        if (updating || (frameId !== undefined && frameId === collectedFrame)) {
+          tsl?.sync(frame);
+          return;
+        }
+        collectedFrame = frameId;
+        updating = true;
+        try {
+          collect();
+          tsl?.sync(frame);
+          audio.updateAudio();
+        } finally {
+          updating = false;
+        }
       },
       runtime.tsl,
       (surface, draw) => drawSecondaryPasses(surface, draw),
+      bound.DataTexture as never,
     );
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;
@@ -235,17 +262,18 @@ export async function bindWebEngine(
 
 /**
  * The engine classes plus what plain JS adds over them: three's texture sources (typed array,
- * canvas, image, ImageBitmapLoader) and `DataUtils`, which touches no engine object at all.
+ * canvas, image, ImageBitmapLoader), `DataUtils`, and the `ColorManagement` singleton.
  */
 export function withTextureSources(
   classes: Readonly<Record<string, unknown>>,
   runtime: IBrowserRuntime,
 ): Record<string, unknown> {
-  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
+  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils, ColorManagement };
 }
 
 interface IPipelineRenderer {
   [RENDER_AGAIN]?: () => void;
+  [PIPELINE_POST]?: () => void;
   render?(scene: unknown, camera: unknown): void;
 }
 
@@ -254,7 +282,10 @@ interface IPipelineRenderer {
  * the web host, which draws it between the scene and the output, over the scene and camera the
  * graph's `pass(scene, camera)` points at (`target`), else the renderer's last scene.
  */
-function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camera?: unknown }) {
+export function defineRenderPipeline(
+  tsl: ITslRuntime,
+  target: { scene?: unknown; camera?: unknown },
+) {
   return class RenderPipeline {
     outputNode: unknown;
     outputColorTransform = true;
@@ -267,14 +298,21 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
     constructor(renderer: IPipelineRenderer, outputNode?: unknown) {
       this.renderer = renderer;
       this.outputNode = outputNode;
+      // The engine's post graph sets the main pass's sample count (TRAA draws it at 1x), so a warm-up
+      // that compiles before the first render() installs it too, or it builds a pass the game never draws.
+      renderer[PIPELINE_POST] = this.install;
     }
+
+    private readonly install = (): void => {
+      if (isTslNode(this.outputNode)) tsl.setPost(this.graph(this.outputNode[TSL_NODE]));
+    };
 
     render(): void {
       if (!isTslNode(this.outputNode))
         throw new TypeError("TN_WASM_POST: RenderPipeline.outputNode is not a TSL node");
       this.context.onBeforeRenderPipeline?.();
       try {
-        tsl.setPost(this.graph(this.outputNode[TSL_NODE]));
+        this.install();
         if (target.scene !== undefined && target.camera !== undefined && this.renderer.render)
           this.renderer.render(target.scene, target.camera);
         else this.renderer[RENDER_AGAIN]?.();
@@ -298,6 +336,7 @@ function defineRenderPipeline(tsl: ITslRuntime, target: { scene?: unknown; camer
     }
 
     dispose(): void {
+      if (this.renderer[PIPELINE_POST] === this.install) delete this.renderer[PIPELINE_POST];
       tsl.setPost(null);
       if (this.outputGraph !== undefined) tsl.release(this.outputGraph);
       this.outputGraph = undefined;

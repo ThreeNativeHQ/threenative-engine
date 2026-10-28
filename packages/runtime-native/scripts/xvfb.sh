@@ -16,6 +16,17 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
   *) exec "$@" ;;
 esac
 
+# Preserve the same explicit host-display opt-in as the playtest runner.
+case "${TN_PLAYTEST_HOST_DISPLAY:-}" in
+  1|[tT][rR][uU][eE])
+    if [ -z "${DISPLAY:-}" ]; then
+      echo "TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE: the requested host display requires DISPLAY." >&2
+      exit 2
+    fi
+    exec "$@"
+    ;;
+esac
+
 if ! command -v Xvfb >/dev/null 2>&1; then
   echo "scripts/xvfb.sh: Xvfb is required for headless Linux runs and is not installed." >&2
   echo "scripts/xvfb.sh: install it (Debian/Ubuntu 'xvfb', Arch 'xorg-server-xvfb', Fedora" >&2
@@ -114,11 +125,24 @@ for candidate in xcompmgr picom compton; do
 done
 
 # Owning _NET_WM_CM_S0 takes a moment, and a command that reaches the runtime first sees a display
-# with no compositing manager and gets the refusal. The same quarter second the runner's TypeScript
-# path waits, followed by the same liveness check: a compositor that already died is not one we can
-# report as running, and the refusal then names the real state.
+# with no compositing manager and gets the refusal. A compositor maps a window on the root as soon
+# as it is up, so poll xwininfo for one, bounded at 5 seconds; without xwininfo fall back to the
+# quarter second the runner's TypeScript path waits. Either way a compositor that already died is
+# not one we can report as running, and the refusal then names the real state.
 if [ -n "$compositor_pid" ]; then
-  sleep 0.25
+  if command -v xwininfo >/dev/null 2>&1; then
+    waited=0
+    while [ "$waited" -lt 50 ]; do
+      kill -0 "$compositor_pid" 2>/dev/null || break
+      case "$(xwininfo -root -children 2>/dev/null)" in
+        *[1-9]" child"*) break ;;
+      esac
+      sleep 0.1
+      waited=$((waited + 1))
+    done
+  else
+    sleep 0.25
+  fi
   if ! kill -0 "$compositor_pid" 2>/dev/null; then
     wait "$compositor_pid" 2>/dev/null || true
     compositor_pid=""

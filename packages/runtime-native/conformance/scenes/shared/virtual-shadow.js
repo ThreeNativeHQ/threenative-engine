@@ -15,7 +15,21 @@ export function assertVirtualShadowProof({ renderer, light, node }) {
 }
 
 export function startScene(canvas, dimensions) {
-  return startVisualScene(canvas, dimensions, "virtual-shadow", buildVirtualShadowScene);
+  return startVisualScene(canvas, dimensions, "virtual-shadow", (context) => {
+    const { renderer, scene, camera } = context;
+    const subject = buildVirtualShadowScene(context);
+    let frame = 0;
+    return {
+      ...subject,
+      detail: { ...subject.detail, automaticMover: true },
+      render() {
+        // Exercise automatic departure from the cache, then quiet-frame readmission at a fixed pose.
+        frame += 1;
+        if (frame <= 30) subject.ball.position.x = frame / 15;
+        renderer.render(scene, camera);
+      },
+    };
+  });
 }
 
 export function buildVirtualShadowScene({ renderer, scene, camera }) {

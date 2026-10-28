@@ -1,0 +1,130 @@
+{
+  "anchor": {
+    "id": "right-hand",
+    "label": "Right hand",
+    "node": "mixamorigRightHand_035",
+    "source": "detected"
+  },
+  "animations": {
+    "RifleIdle": {
+      "attachment": "attached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [188.2202, 439.6458, 144.7051],
+            "rotation": [-112.708, -30.378, -45.826],
+            "scale": [34.5157, 34.5157, 31.2312]
+          }
+        }
+      ]
+    },
+    "RifleWalk": {
+      "attachment": "attached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [-11.9183, 294.5358, 104.4656],
+            "rotation": [-99.046, -14.191, -103.546],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    },
+    "RifleCrouchWalk": {
+      "attachment": "attached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [-23.3305, 274.7849, 53.6152],
+            "rotation": [-106.891, -21.763, -115.469],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    },
+    "RifleCrouchWalkToIdle": {
+      "attachment": "attached",
+      "keyframes": [
+        {
+          "time": 0.863,
+          "transform": {
+            "position": [-23.3305, 274.7849, 53.6152],
+            "rotation": [-106.673, -21.153, -114.665],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    },
+    "HitReaction": {
+      "attachment": "attached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [-23.3305, 274.7849, 53.6152],
+            "rotation": [-91.054, -11.075, -93.276],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    },
+    "DeathFront": {
+      "attachment": "detached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [-23.3305, 274.7849, 53.6152],
+            "rotation": [-91.054, -11.075, -93.276],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    },
+    "DeathBack": {
+      "attachment": "detached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [-23.3305, 274.7849, 53.6152],
+            "rotation": [-91.054, -11.075, -93.276],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    },
+    "DeathHeadshot": {
+      "attachment": "detached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [-23.3305, 274.7849, 53.6152],
+            "rotation": [-91.054, -11.075, -93.276],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    },
+    "FiringRifle": {
+      "attachment": "attached",
+      "keyframes": [
+        {
+          "time": 0,
+          "transform": {
+            "position": [-23.3305, 274.7849, 53.6152],
+            "rotation": [-95.123, -0.777, -94.787],
+            "scale": [34.5157, 34.5157, 34.5157]
+          }
+        }
+      ]
+    }
+  },
+  "attached": "public/assets/weapon-ak47.glb",
+  "host": "public/assets/enemy-terrorist.glb",
+  "version": 3
+}

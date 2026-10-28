@@ -5,6 +5,7 @@
 // sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
 import type { Node } from "three/webgpu";
+import { ARENA, GROUND_Y } from "./arena.js";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
@@ -34,7 +35,12 @@ export function setupLighting<T extends Node = never>(
   key.shadow.radius = 2;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 80;
-  const extent = 14;
+  // Cover the arena's diagonal in light space, so a wall shadow cannot stop at the map edge.
+  const extent = Math.hypot(
+    ARENA.halfX + ARENA.thickness / 2,
+    ARENA.halfZ + ARENA.thickness / 2,
+    Math.max(Math.abs(GROUND_Y), Math.abs(ARENA.wallTop)),
+  );
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;
@@ -44,7 +50,7 @@ export function setupLighting<T extends Node = never>(
   key.shadow.normalBias = 0.005;
   // Named override for a world wider than the arena, such as a streamed forest. `shadowExtents`
   // are the wider windows in metres that the caller measures from its terrain. The finest window
-  // stays 14 m, so near shadows keep this map's texel and softness. Each level inherits the map
+  // stays the arena window above, so near shadows keep this map's texel and softness. Each level inherits the map
   // size, radius and biases above, re-renders when its window moves, and redraws only the region
   // an `invalidateRegion` names. Godrays need an ordinary shadow map and refuse this light by name.
   let shadows: T | undefined;

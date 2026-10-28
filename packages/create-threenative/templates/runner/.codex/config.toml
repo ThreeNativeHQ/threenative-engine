@@ -18,6 +18,10 @@ args = ["./node_modules/@threenative/core/mcp/engine.mjs"]
 command = "node"
 args = ["./node_modules/@threenative/core/mcp/blender.mjs"]
 
+[mcp_servers.threenative-animation]
+command = "node"
+args = ["./node_modules/@threenative/core/mcp/animation.mjs"]
+
 [mcp_servers.threenative-terrain]
 command = "node"
 args = ["./node_modules/@threenative/core/mcp/terrain.mjs"]

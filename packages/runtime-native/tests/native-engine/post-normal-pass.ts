@@ -9,13 +9,14 @@
  * A transparent box beside it must be skipped by name, not cost the frame.
  * Usage: post-normal-pass.ts <render-driver> <work-dir>
  */
+import { deepEqual, throws } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { PerspectiveCamera, Texture, Vector3 } from "three";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
-import { texture } from "three/tsl";
+import { Fn, texture, uniform, type uv } from "three/tsl";
 import type { FixtureOp, IFixture } from "../../../three-native/src/fixture-format.js";
 import { encodeFixture, parseReply } from "../../../three-native/src/fixture-protocol.js";
 import { exportTslGraph } from "../../scripts/tsl-export.js";
@@ -40,7 +41,29 @@ normal.name = "normal";
 const graph = path.join(directory, "gtao-normals.json");
 const occlusion = ao(texture(depth), texture(normal), camera);
 occlusion.radius.value = 1; // a unit box's contact shadow, not the default quarter metre
+// This upstream carrier exports native screen reach; it does not implement it in the browser.
+Reflect.set(occlusion, "reachPx", uniform(0));
+const reachExport = exportTslGraph(occlusion.getTextureNode());
+deepEqual(
+  reachExport.nodes.find((node) => node.kind === "GTAONode")?.post?.parameters.reachPx,
+  [0],
+);
 writeFileSync(graph, JSON.stringify(exportTslGraph(occlusion.getTextureNode())));
+const sampledGraph = path.join(directory, "gtao-sampled-normals.json");
+const sampledNormal = {
+  sample: Fn(([at]: [ReturnType<typeof uv>]) => texture(normal).sample(at).rgb),
+};
+const sampledOcclusion = ao(texture(depth), sampledNormal as never, camera);
+sampledOcclusion.radius.value = occlusion.radius.value;
+const sampledExport = exportTslGraph(sampledOcclusion.getTextureNode());
+const normalPasses = sampledExport.nodes.filter((node) => node.kind === "RTTNode");
+if (normalPasses.length !== 1 || normalPasses[0]?.scale !== 1)
+  throw new Error("TN_POST_NORMAL_SAMPLE_EXTENT: expected one full-resolution normal pass");
+writeFileSync(sampledGraph, JSON.stringify(sampledExport));
+throws(
+  () => exportTslGraph(ao(texture(depth), {} as never, camera).getTextureNode()),
+  /TN_TSL_EXPORT_INVALID: expected a real TSL node/,
+);
 
 function fixture(withBox: boolean): IFixture {
   const set = (id: string, field: string, value: number): FixtureOp => ({
@@ -176,14 +199,14 @@ function checkInvariantPositions(file: string): void {
 }
 
 /** Pixels whose red channel is below `level`, after the frame drew something at all. */
-function darkPixels(name: string, withBox: boolean, level: number): number {
+function darkPixels(name: string, withBox: boolean, level: number, postGraph = graph): number {
   const png = path.join(directory, `${name}.png`);
   const normals = path.join(directory, `${name}.normal`);
   const programs = path.join(directory, `${name}.programs`);
   const run = spawnSync(driver as string, [], {
     env: {
       ...process.env,
-      TN_FIXTURE_POST_GRAPH: graph,
+      TN_FIXTURE_POST_GRAPH: postGraph,
       ...(withBox ? { TN_FIXTURE_NORMAL_DUMP: normals, TN_FIXTURE_PROGRAM_DUMP: programs } : {}),
     },
     input: `${encodeFixture(fixture(withBox), png).join("\n")}\n`,
@@ -215,6 +238,14 @@ function darkPixels(name: string, withBox: boolean, level: number): number {
 const level = 200;
 const box = darkPixels("box", true, level);
 const plane = darkPixels("plane", false, level);
+for (const withBox of [true, false]) {
+  const name = withBox ? "box" : "plane";
+  darkPixels(`sampled-${name}`, withBox, level, sampledGraph);
+  const original = PNG.sync.read(readFileSync(path.join(directory, `${name}.png`))).data;
+  const sampled = PNG.sync.read(readFileSync(path.join(directory, `sampled-${name}.png`))).data;
+  if (!original.equals(sampled))
+    throw new Error(`TN_POST_NORMAL_SAMPLE_MISMATCH: ${name} changed after normal materialization`);
+}
 if (box < 100)
   throw new Error(`TN_POST_NORMAL_NO_OCCLUSION: only ${box} occluded pixels around the box`);
 if (plane > box / 20)

@@ -44,7 +44,7 @@ enum class Op : uint8_t {
     Add, Sub, Mul, Div, Neg, Less, Equal, Select,
     Swizzle, Construct, Call,
     // Ordered reads: pinned as statements where created, so they observe prior writes.
-    LoadVar, LoadStorage, Sample, SampleLevel, AtomicAdd, TextureSize, TextureLoad,
+    LoadVar, LoadStorage, Sample, SampleLevel, SampleBias, AtomicAdd, TextureSize, TextureLoad,
     // Integer bit operations: r185's `>>` and `^` on one integer type.
     ShiftRight, BitXor,
 };
@@ -127,6 +127,8 @@ public:
     ExprId atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     /** A sampled 2D float texture and its sampler, bound together. */
+    uint32_t storageTexture2d(std::string_view name, std::string_view format);
+    void textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where = Where::current());
     uint32_t texture2d(std::string_view name);
     uint32_t texture3d(std::string_view name);
     uint32_t textureCube(std::string_view name);
@@ -137,10 +139,14 @@ public:
      * tiles in one mip, so a bilinearCubeUV tap is always level 0 — three's `.grad(vec2(), vec2())`.
      */
     ExprId sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where = Where::current());
+    /** A fragment texture sample with an authored bias relative to its implicit derivative LOD. */
+    ExprId sampleBias(uint32_t texture, ExprId uv, ExprId bias, Where where = Where::current());
     ExprId textureSize(uint32_t texture, ExprId level, Where where = Where::current());
     ExprId textureLoad(uint32_t texture, ExprId coordinate, ExprId level, Where where = Where::current());
     /** A depth texture (2D, or a cube) and its comparison sampler, bound together: a shadow map. */
     uint32_t textureDepth(std::string_view name, bool cube = false);
+    /** A depth cube read for its stored depths (sampleLevel with an i32 level answers f32): a blocker search. */
+    uint32_t textureDepthCubeValues(std::string_view name);
     /** f32 in [0, 1]: `reference` compared against the depth texture at `uv` (vec3 for a cube), filtered. */
     ExprId sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where = Where::current());
     /** vec4: the four texels around `uv` (2D depth texture, offset by whole texels) each compared with
@@ -200,7 +206,7 @@ private:
     friend class WgslEmitter;
     friend StageModule buildStage(const Program& program, uint32_t group);
 
-    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output, Break, Continue, Return };
+    enum class StmtKind : uint8_t { Eval, Assign, Store, TextureStore, Discard, If, Loop, Output, Break, Continue, Return };
     struct Stmt {
         StmtKind kind;
         uint32_t a = 0;  // var, buffer, condition, or count
@@ -237,10 +243,14 @@ private:
     std::unordered_map<std::string, uint64_t> nameIndex_;
     std::vector<Var> vars_;
     std::unordered_map<std::string, std::string> authoredFunctions_;
+    struct StorageTexture { std::string name, format; };
+    std::vector<StorageTexture> storageTextures_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
-    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube };
+    // DepthCubeValues: a depth cube read for its stored values through a plain nearest sampler.
+    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube, DepthCubeValues };
     std::vector<TextureKind> textureKinds_; // per texture
+    bool textureNeedsSampler(uint32_t texture) const;
     struct OutputSlot {
         uint64_t name;
         Type type;

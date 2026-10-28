@@ -23,7 +23,22 @@ function makeModel(): Object3D {
 function cacheLoader(): IAssetLoader {
   return {
     audio: () => Promise.reject(new Error("unused")),
+    cache: {
+      backgroundFill: false,
+      bytesOnDisk: 0,
+      bytesTotal: 0,
+      clear: async () => {},
+      enabled: false,
+      filling: false,
+      hits: 0,
+      misses: 0,
+      persisted: false,
+      reason: "test double",
+    },
     clear: () => {},
+    dispose: () => undefined,
+    prefetch: async () => ({ requested: 0, requestedBytes: 0, settled: 0, settledBytes: 0 }),
+    startBackgroundFill: async () => undefined,
     model: (<T>() =>
       Promise.resolve({ scene: makeModel() } as unknown as T)) as IAssetLoader["model"],
     progress: { pending: [], requested: 0, requestedBytes: 0, settled: 0, settledBytes: 0 },

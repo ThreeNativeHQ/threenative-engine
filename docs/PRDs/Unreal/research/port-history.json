@@ -1,66 +1,130 @@
 [
- {
-  "date": "2026-09-06",
-  "done": 5,
-  "total": 44,
-  "lookDone": 0,
-  "lookTotal": 0,
-  "open": 1
- },
- {
-  "date": "2026-09-13",
-  "done": 5,
-  "total": 44,
-  "lookDone": 0,
-  "lookTotal": 0,
-  "open": 1
- },
- {
-  "date": "2026-09-20",
-  "done": 12,
-  "total": 52,
-  "lookDone": 0,
-  "lookTotal": 0,
-  "open": 2
- },
- {
-  "date": "2026-09-27",
-  "done": 12,
-  "total": 100,
-  "lookDone": 0,
-  "lookTotal": 0,
-  "open": 7
- },
- {
-  "date": "2026-10-04",
-  "done": 12,
-  "total": 186,
-  "lookDone": 0,
-  "lookTotal": 32,
-  "open": 18
- },
- {
-  "date": "2026-10-11",
-  "done": 102,
-  "total": 318,
-  "lookDone": 0,
-  "lookTotal": 44,
-  "open": 25
- },
- {
-  "date": "2026-10-18",
-  "done": 155,
-  "total": 421,
-  "lookDone": 0,
-  "lookTotal": 60,
-  "open": 28
- },
- {
-  "date": "2026-10-22",
-  "done": 294,
-  "total": 1035,
-  "lookDone": 81,
-  "lookTotal": 436,
-  "open": 84
- }
+  {
+    "date": "2026-09-06",
+    "done": 5,
+    "total": 44,
+    "lookDone": 0,
+    "lookTotal": 0,
+    "open": 1
+  },
+  {
+    "date": "2026-09-13",
+    "done": 5,
+    "total": 44,
+    "lookDone": 0,
+    "lookTotal": 0,
+    "open": 1
+  },
+  {
+    "date": "2026-09-20",
+    "done": 12,
+    "total": 52,
+    "lookDone": 0,
+    "lookTotal": 0,
+    "open": 2
+  },
+  {
+    "date": "2026-09-27",
+    "done": 12,
+    "total": 100,
+    "lookDone": 0,
+    "lookTotal": 0,
+    "open": 7
+  },
+  {
+    "date": "2026-10-04",
+    "done": 12,
+    "total": 186,
+    "lookDone": 0,
+    "lookTotal": 32,
+    "open": 18
+  },
+  {
+    "date": "2026-10-11",
+    "done": 102,
+    "total": 318,
+    "lookDone": 0,
+    "lookTotal": 44,
+    "open": 25
+  },
+  {
+    "date": "2026-10-18",
+    "done": 155,
+    "total": 421,
+    "lookDone": 0,
+    "lookTotal": 60,
+    "open": 28
+  },
+  {
+    "date": "2026-10-22",
+    "done": 361,
+    "total": 1076,
+    "lookDone": 134,
+    "lookTotal": 488,
+    "open": 83
+  },
+  {
+    "date": "2026-10-23",
+    "done": 369,
+    "total": 1079,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 83
+  },
+  {
+    "date": "2026-10-24",
+    "done": 378,
+    "total": 1085,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 83
+  },
+  {
+    "date": "2026-10-25",
+    "done": 383,
+    "total": 1085,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 83
+  },
+  {
+    "date": "2026-10-26",
+    "done": 384,
+    "total": 1085,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 83
+  },
+  {
+    "date": "2026-10-27",
+    "done": 388,
+    "total": 1088,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 82
+  },
+  {
+    "date": "2026-10-25",
+    "done": 363,
+    "total": 1076,
+    "lookDone": 123,
+    "lookTotal": 487,
+    "open": 83
+  },
+  {
+    "date": "2026-10-26",
+    "done": 363,
+    "total": 1087,
+    "lookDone": 123,
+    "lookTotal": 487,
+    "open": 84
+  },
+  {
+    "date": "2026-10-28",
+    "done": 388,
+    "total": 1088,
+    "lookDone": 138,
+    "lookTotal": 489,
+    "open": 82
+  }
 ]

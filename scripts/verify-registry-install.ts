@@ -244,11 +244,13 @@ export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
 }
 
 interface IMcpFixturePaths {
+  readonly glb?: string;
   readonly source?: string;
   readonly out?: string;
 }
 
 const MCP_SAFE_TOOLS: Readonly<Record<string, string>> = {
+  "threenative-animation": "animation_inspect",
   "threenative-assets": "asset_search_sources",
   "threenative-blender": "blender_status",
   "threenative-engine": "engine_search_capabilities",
@@ -269,16 +271,18 @@ function safeOperation(
   const argumentsValue: Record<string, unknown> =
     name === "asset_search_sources"
       ? { category: "all", query: "game" }
-      : name === "sculpt_grimoire"
-        ? { topic: "glossary/3d_vocabulary" }
-        : name === "engine_search_capabilities"
-          ? { scope: "mechanic", situation: "enemy walks around a wall" }
-          : name === "terrain_patch"
-            ? {
-                commands: [],
-                recipe: { config: { resolution: 17, seed: 1, size: 64 }, layers: [], version: 1 },
-              }
-            : {};
+      : name === "animation_inspect"
+        ? { file: fixture.glb }
+        : name === "sculpt_grimoire"
+          ? { topic: "glossary/3d_vocabulary" }
+          : name === "engine_search_capabilities"
+            ? { scope: "mechanic", situation: "enemy walks around a wall" }
+            : name === "terrain_patch"
+              ? {
+                  commands: [],
+                  recipe: { config: { resolution: 17, seed: 1, size: 64 }, layers: [], version: 1 },
+                }
+              : {};
   return { arguments: argumentsValue, name };
 }
 
@@ -1077,6 +1081,20 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+/** An empty glTF scene as a binary GLB: the smallest file `animation_inspect` can read, and one
+ * this script owns, so the check never depends on a model a game happens to ship. */
+function emptyGlb(): Buffer {
+  const json = Buffer.from('{"asset":{"version":"2.0"},"scene":0,"scenes":[{}]}');
+  const padded = Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, 0x20)]);
+  const header = Buffer.alloc(20);
+  header.write("glTF", 0, "ascii");
+  header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(20 + padded.length, 8);
+  header.writeUInt32LE(padded.length, 12);
+  header.write("JSON", 16, "ascii");
+  return Buffer.concat([header, padded]);
+}
+
 function mcpStep(project: string, runner: McpRunner): string {
   const configPath = path.join(project, ".mcp.json");
   if (!fs.existsSync(configPath)) throw new Error(`MCP configuration is missing: ${configPath}.`);
@@ -1114,7 +1132,13 @@ function mcpStep(project: string, runner: McpRunner): string {
               out: path.join(project, ".registry-mcp", "triangle.glb"),
               source: path.join(project, ".registry-mcp", "triangle.obj"),
             }
-          : {};
+          : name === "threenative-animation"
+            ? { glb: path.join(project, ".registry-mcp", "empty.glb") }
+            : {};
+      if (fixture.glb !== undefined) {
+        fs.mkdirSync(path.dirname(fixture.glb), { recursive: true });
+        fs.writeFileSync(fixture.glb, emptyGlb());
+      }
       if (fixture.source !== undefined && fixture.out !== undefined) {
         fs.mkdirSync(path.dirname(fixture.source), { recursive: true });
         fs.writeFileSync(
@@ -1146,6 +1170,10 @@ function mcpStep(project: string, runner: McpRunner): string {
             "asset_search_sources returned no source directory payload with sources and total.",
           );
         results.push(`${name}: initialize, tools/list and asset_search_sources ok`);
+      } else if (name === "threenative-animation") {
+        if (record === undefined || !Array.isArray(record.bones) || !Array.isArray(record.clips))
+          throw new Error("animation_inspect returned no report with bones and clips.");
+        results.push(`${name}: initialize, tools/list and animation_inspect ok`);
       } else if (name === "threenative-sculpt") {
         if (
           record === undefined ||

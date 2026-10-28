@@ -42,6 +42,7 @@ inline constexpr std::string_view kClipmapExtentsCode = "TN_SHADOWS_CLIPMAP_EXTE
 inline constexpr std::string_view kClipmapPagesCode = "TN_SHADOWS_CLIPMAP_PAGES";
 inline constexpr std::string_view kClipmapGuardCode = "TN_SHADOWS_CLIPMAP_GUARD";
 inline constexpr std::string_view kClipmapRefreshCode = "TN_SHADOWS_CLIPMAP_REFRESH";
+inline constexpr std::string_view kClipmapAspectCode = "TN_SHADOWS_CLIPMAP_ASPECT";
 inline constexpr std::string_view kGuardBandCode = "TN_SHADOWS_GUARD_BAND";
 
 /** A page's signed integer coordinates within one clip level, plus the reference's string key. */
@@ -159,6 +160,15 @@ struct DirectionalClipmapOptions {
     std::vector<double> selectionGuard{0.9};
     /** Like `selectionGuard`, in `[0, 1)`; default 0.125. */
     std::vector<double> refreshStep{0.125};
+    /**
+     * The smallest ratio of a window's light-space height to its width, `(0, 1]`; 1 keeps a window
+     * square. A low sun stretches a texel along the light's V axis over `1 / sin(elevation)` of floor,
+     * so the height shrinks to `sin(elevation)`, never under this, and a texel covers the same floor
+     * area at any sun height. A sun within 18 degrees of the zenith stays square.
+     */
+    double minAspect = 1;
+    /** Texels per edge of each level, finest first, the last standing in for the rest; empty: `pagesPerAxis`. */
+    std::vector<int> levelPages;
 };
 
 /** Inclusive integer page range an axis-aligned box covers on one level. */
@@ -185,11 +195,15 @@ class DirectionalClipmap {
     [[nodiscard]] const Vector3& basisU() const { return basisU_; }
     [[nodiscard]] const Vector3& basisV() const { return basisV_; }
     [[nodiscard]] const Vector3& basisW() const { return basisW_; }
+    /** Window height over width: `v` is metres along `basisV()` divided by this. */
+    [[nodiscard]] double vScale() const { return vScale_; }
 
     [[nodiscard]] LightSpacePoint project(const Vector3& worldPoint) const;
 
     /** Re-snaps every level's window around `worldPoint`; returns the current windows. */
     const std::vector<ClipWindow>& updateCenter(const Vector3& worldPoint);
+
+    void setRefreshStep(int level, double step) { refreshStep_.at(level) = step; }
 
     [[nodiscard]] bool containsPage(int level, int x, int y) const;
 
@@ -218,13 +232,14 @@ class DirectionalClipmap {
     [[nodiscard]] const ClipWindow& windowAt(int level) const;
 
     std::vector<double> clipExtents_;
-    int pagesPerAxis_ = 0;
+    std::vector<int> pagesPerAxis_;
     std::vector<double> refreshStep_;
     std::vector<double> selectionGuard_;
     int levelCount_ = 0;
     Vector3 basisU_{1, 0, 0};
     Vector3 basisV_{0, 0, 1};
     Vector3 basisW_{0, 1, 0};
+    double vScale_ = 1;
     Vector3 centerWorld_;
     LightSpacePoint centerLight_;
     std::vector<ClipWindow> windows_;

@@ -183,10 +183,38 @@ so every spectrogram written is named in both. Verdicts, parsing and analysis li
 The runtime stamps its startup milestones on its own clock — `loadStartedMs`, `enteredMs`,
 `compileSettledMs`, `readyMs`, in milliseconds since navigation — and publishes them as
 `observations.startup.timeline`. Scenarios bound them with `assert.startup`: `maxEnteredMs`,
-`maxCompileSettledMs`, `maxReadyMs`. A milestone the run never reached fails closed
+`maxCompileSettledMs`, `maxReadyMs`, `maxOffscreenBytes`. A milestone the run never reached fails closed
 (`TN_PLAYTEST_STARTUP_UNOBSERVABLE`); one past its ceiling fails
 `TN_PLAYTEST_STARTUP_TOO_SLOW` with the measured value. Before this, startup was a console
 anecdote read off `TN_STARTUP_WARMUP` after the fact.
+
+### Bytes the reveal waited for that the spawn camera does not show
+
+At the reveal the runtime measures which models the game awaited through `ctx.assets` and how many of
+their manifest bytes have no object visible to the spawn camera (in the frustum, not hidden), and
+publishes it as `observations.startup.offscreenBytes`: `awaitedBytes`, `visibleBytes`, `offscreenBytes`,
+`unattributedBytes` (textures and audio, which no scene object ties to a view), `unsizedFiles`, the
+five largest off-screen files with a reason (`outside-view`, `hidden`, `not-placed`), `warn` and the fix.
+It also logs `TN_STARTUP_OFFSCREEN_BYTES:{...}`. No fixed MB threshold: it warns when off-screen bytes
+exceed visible bytes, and informs on any other off-screen byte. A warning run carries the
+`TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES` warning diagnostic; the fix is to stream those files with
+`WorldCells`, or `ctx.assets.prefetch` them after the reveal, and keep awaiting everything the spawn camera
+sees. Never defer what the camera sees to lower `readyMs`. `assert.startup.maxOffscreenBytes` turns it
+into a gate (`0` means everything awaited is in view); it fails closed with
+`TN_PLAYTEST_STARTUP_UNOBSERVABLE` when the runtime reported nothing or no awaited file has a manifest
+size. `doctor --url` prints awaited and off-screen MB with the estimated download time at 20 Mbit/s.
+Proof fixture: `examples/startup-offscreen/`.
+
+`steadyCover: true` checks what the player saw instead. The browser runner records every
+compositor frame through Chromium's screencast (128 x 72) from before navigation until 30
+frames after `readyMs`, and compares each frame before readiness with the last one before
+readiness, the loading cover. A frame with more than a quarter of its pixels off by more than 48
+per channel fails `TN_PLAYTEST_STARTUP_COVER_BROKEN` with its time and mean colour, so a black
+frame, a blank page or a page background in a different colour fails. After readiness, the first
+frame that differs from the cover is the world frame. A frame before it with more than 0.5% of
+its pixels off the cover and on the world frame's colour shows page UI (a HUD) over the cover and
+fails `TN_PLAYTEST_STARTUP_UI_OVER_COVER`. No recorded frame, or no world frame after readiness,
+fails `TN_PLAYTEST_STARTUP_COVER_UNOBSERVED`; that includes every target except the browser.
 
 ## Device thermal, power and battery
 
@@ -261,6 +289,51 @@ Both fail closed, and each failure names which kind: `TN_PLAYTEST_STRIDE_UNOBSER
 producer reported no stride, reported half of one, or the body covered no ground to compare
 against; `TN_PLAYTEST_STRIDE_NOT_SYNCED`; `TN_PLAYTEST_FOOT_SLIDE` with both speeds and the
 ceiling. A game that does not measure stride has not measured zero slide.
+
+A procedural rig plays no clip, so it reports no stride. `assert.footSlip[]` measures the screen
+instead: `{ atStep, feet: ["footL", "footR"], maxSlip: 0.35, entity? }` advances the labelled step
+one tick at a time and samples the world position of the subject and of each named sole node
+after every tick. A foot is planted while it is in the lowest quarter of its height below the
+body, and its slip is planted-foot travel over body travel on those ticks: 0 is planted, about 1
+skates with the body. It fails `TN_PLAYTEST_FOOT_SLIP`. `maxSlideSpeed` (m/s) bounds the same
+planted-foot travel in metres per second instead of as a ratio, so a body that barely moves cannot
+hide a slide; it assumes `stepSeconds` (default 1/60) per tick, because the bridge does not report
+the game's step. Set `maxSlip`, `maxSlideSpeed` or both; one is required. A missing node, a step that moved the
+subject under 0.5 m, fewer than 4 planted tick pairs, or a target other than the browser fails
+`TN_PLAYTEST_FOOT_SLIP_UNOBSERVED`. A moving character whose clip is `inPlace` with a zero
+`clipGroundSpeed` has no foot plant for stride sync to match: `footSlip`, `strideSynced` and
+`maxFootSlide` all fail closed with `no foot plant found: stride sync is off`
+(`TN_PLAYTEST_STRIDE_NO_FOOT_PLANT`).
+
+**The frame budget is 60 fps on every tier.** A `performance` assertion without `maxFrameMsP95`
+holds the run to 16.7 ms at nearest-rank p95, on a discrete, integrated or mobile GPU alike; the
+`frameBudget` row detail says which budget applied. A software adapter is unmeasurable and fails
+`TN_PLAYTEST_PERFORMANCE_UNMEASURABLE`. A scenario may set a looser `maxFrameMsP95` only with
+`maxFrameMsReason`, which the report prints; without it the scenario throws at load. The runner
+reads no display period from the host today, so 16.7 ms is the whole rule.
+
+What 16.7 ms judges depends on the display. The runner paints on a private Xvfb unless
+`TN_PLAYTEST_HOST_DISPLAY=1` names the session's display, and a virtual display paces frames on its
+own timer, so its rAF interval is cadence, not game cost. On a **virtual display** the run is judged
+on the engine's own cost: the p95 of update plus render per frame, or the GPU p95 of the latest
+`TN_FRAME_BUDGET` window that measured it (the first window holds the startup shader compile) when
+that is larger. The interval p95 is still in the row details, marked `gated: false`
+with the reason. On a **real display** the interval p95 and the cost p95 must both hold 16.7 ms,
+because host gap only the interval sees is part of what a player feels. A run with no CPU split on
+its samples, or no GPU reading in any `TN_FRAME_BUDGET` window (an adapter without timestamp
+queries), fails closed: an unmeasured cost is not a zero. So does a judged GPU window that holds
+fewer than 3 GPU samples (`TN_PLAYTEST_PERF_FEW_GPU_SAMPLES`; the row prints `cost.gpuSamples`): the
+counted-tick clock advances ticks faster than frames draw, so a 300-tick window closes on about 50
+presented frames. A performance scenario sets `"clock": "wall-clock"` (target `web`; see
+[determinism.md](determinism.md)). Below 20 samples the p95 is the maximum. 3 is chosen, not measured:
+it is the least that stops one query deciding the verdict. There is no tolerance multiplier.
+
+**An engine performance warning fails the run.** Any `TN_SCENE_WARNING` console line, and any
+`TN_RENDER_PROJECTION` line with `projecting: false`, fails the `diagnostics` row with
+`TN_PLAYTEST_PERF_WARNING`, whatever the console-error policy. The report prints the marker text and,
+for a projection decline, the `cause` code (`uniqueGeometry` or `uniqueMaterial`) with its hint.
+Two lines are not defects: `reasonCode: "disabled"`, the game's `renderer.projection: false`, and
+`belowMeshFloor`, the engine's verdict that too few meshes are batchable for a mirror to pay.
 
 A scenario bounds the same numbers with `assert.scene`, so the check outlives whoever ran
 `doctor` once:
@@ -402,6 +475,16 @@ The runner samples the subject's current position, computes yaw/pitch toward the
 and applies them through the setup channel as quaternion data — no CDP mouse events and no
 OS-focus dependency. An `aimAt` step cannot also deliver input (`press`, pointers) or
 ignored holds (`holdTicks`/`holdFrames`); follow it with a `waitTicks` step to hold the pose.
+
+`{ kind: "explore", seed, ticks, move: [...keys], actions?: [...keys], pointer?: true, label? }`
+plays the way a player does, not the way the author thought to: at load it expands into seeded
+`input` steps of 10-59 ticks. Each holds a heading `move` key that usually carries on to the next
+step, sometimes a second `move` key, and half the time one or two `actions` keys pressed together;
+`pointer: true` also moves the mouse to a seeded spot each step. The same seed is the same run, it
+covers `ticks` exactly, and `label` lands on its last step. Because it is ordinary input it runs on
+every target an `input` step runs on. List one key for every bound action: an action left out is a
+control no exploration reaches. Pair it with `diagnostics` (a page error or a throw in the frame
+loop fails `noConsoleErrors`) and a bound on the subject's final state.
 
 Every requested override rides into the run report as `setup.requested` next to what
 applied (`setup.applied`). A run whose placement cannot apply fails with the reason named —

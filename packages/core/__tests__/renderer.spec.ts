@@ -4,7 +4,12 @@ import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { defineGame } from "../src/game.js";
 import { RenderChain } from "../src/render/chain.js";
-import { beginAsyncPipelines, createRenderer, prewarm } from "../src/renderer.js";
+import {
+  beginAsyncPipelines,
+  createRenderer,
+  drawPastFrameGate,
+  prewarm,
+} from "../src/renderer.js";
 import { RESOLUTION_SCALER, ResolutionScaler } from "../src/resolution-scaler.js";
 import { Scene as GameScene, type ICtx } from "../src/scene.js";
 
@@ -1019,6 +1024,29 @@ describe("createRenderer", () => {
     }
   });
 
+  it("reports a facade and Wasm engine of two web host ABIs as that, not as a device without WebGPU", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const mismatch = "TN_WASM_ABI_MISMATCH: this facade speaks web host ABI 2, the engine 1";
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: () => {
+            throw new Error("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER");
+          },
+          webgpuFactory: () => ({
+            init: () => Promise.reject(new Error(mismatch)),
+          }),
+        }),
+      ).rejects.toThrow(mismatch);
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
     const canvas = testCanvas();
     const sizes: Array<[number, number]> = [];
@@ -1631,6 +1659,8 @@ describe("createRenderer", () => {
 
       try {
         const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        // createRenderer starts a WebGPU renderer on the filmic default; the warm-up must restore whatever the game set.
+        raw.toneMapping = 17;
         const authoredScene = new Scene();
         const authoredCamera = new PerspectiveCamera();
         worldPass = pass(authoredScene, authoredCamera);
@@ -1784,6 +1814,42 @@ describe("createRenderer", () => {
 
       expect(calls).toEqual([{ autoClear: false, camera, scene }]);
       expect(raw.autoClear).toBe(true);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("hands the overlay to a backend's own renderOverlay, so it skips the world's post and temporal state", async () => {
+    // The owned engine drew the canvas layer through render(): the loading screen ran the world's temporal step
+    // and exposure meter, and the world came back ghosted after the cover lifted.
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const calls: string[] = [];
+    try {
+      const raw = {
+        compute: () => undefined,
+        domElement: canvas,
+        init: async () => undefined,
+        render: () => calls.push("render"),
+        renderOverlay: () => calls.push("renderOverlay"),
+        setSize: () => undefined,
+      };
+      const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      renderer.renderOverlay({} as never, {} as never);
+      renderer.renderOverlay({} as never, {} as never);
+      expect(calls).toEqual(["renderOverlay", "renderOverlay"]);
+      // UI composites after the tone curve, and says so once
+      const reports = log.mock.calls.filter(([line]) =>
+        String(line).startsWith("TN_CANVAS_LAYER:"),
+      );
+      expect(reports).toEqual([
+        ['TN_CANVAS_LAYER:{"toneMapping":"none","composite":"after the tone curve"}'],
+      ]);
+      log.mockRestore();
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
@@ -1968,5 +2034,68 @@ describe("beginAsyncPipelines", () => {
   it("does nothing on a renderer without async device creation", () => {
     expect(beginAsyncPipelines({})).toBeUndefined();
     expect(beginAsyncPipelines({ _pipelines: { getForRender: () => undefined } })).toBeUndefined();
+  });
+});
+
+describe("drawPastFrameGate", () => {
+  const gated = (declines: number) => {
+    const raw = { info: { engine: { frameGateSkips: 0 } } };
+    const draws: boolean[] = [];
+    const draw = () => {
+      const declined = draws.length < declines;
+      if (declined) raw.info.engine.frameGateSkips += 1;
+      draws.push(!declined);
+    };
+    return { raw, draws, draw };
+  };
+
+  it("draws a covered warm-up pass again until the frame gate takes it", async () => {
+    // Lantern Vale: the startup pass was declined, so its post pipelines compiled after the reveal.
+    const { raw, draws, draw } = gated(2);
+    await drawPastFrameGate(raw, draw);
+    expect(draws).toEqual([false, false, true]);
+  });
+
+  it("repaints the cover straight after the retry that draws, not only after the declined draw", async () => {
+    // Hop Garden: the 16 ms retry drew the covered world pass in a task of its own, and the cover was
+    // repainted only after the declined first call, so one world frame showed through the cover.
+    const { raw, draws, draw } = gated(1);
+    const events: string[] = [];
+    await drawPastFrameGate(
+      raw,
+      () => {
+        draw();
+        events.push(draws.at(-1) === true ? "drew" : "declined");
+      },
+      undefined,
+      () => events.push("cover"),
+    );
+    expect(events.at(-1)).toBe("cover");
+    expect(events.indexOf("cover", events.indexOf("drew"))).toBe(events.indexOf("drew") + 1);
+  });
+
+  it("returns the first draw's result unchanged when the renderer has no gate or takes it", () => {
+    const { raw, draws, draw } = gated(0);
+    expect(drawPastFrameGate(raw, draw)).toBeUndefined();
+    expect(drawPastFrameGate({}, () => undefined)).toBeUndefined();
+    expect(draws).toEqual([true]);
+  });
+
+  it("starts its wait once the declined draw settled, so a slow settle keeps its retries", async () => {
+    const { raw, draws, draw } = gated(1);
+    let first = true;
+    const slow = () => {
+      draw();
+      if (!first) return undefined;
+      first = false;
+      return new Promise<void>((resolve) => setTimeout(resolve, 80));
+    };
+    await drawPastFrameGate(raw, slow, 50);
+    expect(draws).toEqual([false, true]);
+  });
+
+  it("fails, naming the gate, when the GPU never takes a frame", async () => {
+    const { raw, draw } = gated(Number.POSITIVE_INFINITY);
+    await expect(drawPastFrameGate(raw, draw, 50)).rejects.toThrow("TN_WARMUP_FRAME_GATE");
   });
 });

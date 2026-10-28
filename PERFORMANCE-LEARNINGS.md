@@ -46,6 +46,14 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 
 ## Levers
 
+### 2026-10-27 — Batching holds a projecting decision; render thread on by default — KEEP
+- Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), `RenderDatabase::batch`, `player/run.cpp`.
+- Result (Midway desktop, matched CPU, 3 alternating pairs): main-thread CPU per frame falls 3.4 to 7.5 ms per
+  pose; instructions per frame 40-48 M to 29-34 M; parity PASS; visual judge NEUTRAL.
+- Cause: a projecting projection decision was judged again every frame (scene walk, content classes, group maps)
+  only to read the rigs' verdicts, about 11% of main-thread samples. The render thread alone moves about 0.6 ms of
+  encode, inside run-to-run noise in CPU ms; the instruction count shows it in every run.
+
 ### 2026-10-15 — Game thread pinned to the CPPC top-ranked core — REJECT
 - Where: PRD-610 AC-20, commit `6878c53ff` (superseded by `61c7c1d06` and `c4be636dc`, same `ThreadPlacement` in `player/run.cpp`).
 - Result: `q-place-auto-1` 10.65 / 11.07 / 15.56 ms against `q-place-off-1` 8.67 / 9.26 / 10.98 ms (IPC 0.46); load 12 to 16.
@@ -152,7 +160,7 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   message a third time.
 
 ### 2026-10-14 — PRD-613 Stage 0: render phase split — KEEP (diagnostic)
-- Where: [PRD-613](docs/PRDs/native-engine/PRD-613-native-render-thread.md), commit 4abe3d020.
+- Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), commit 4abe3d020.
 - Result (loaded host, shares only): the ocean reflection pass is about half the render wall at cockpit and rear
   gunner (0.85 / 2.67 / 4.32 ms); its encode costs about 2 ms for 8 items at cockpit, a per-pass fixed cost.
 - Cause: one reflection pass per frame re-runs prepare and encode for its own camera.

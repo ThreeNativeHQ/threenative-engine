@@ -1,0 +1,84 @@
+{
+  "name": "move",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run-north",
+      "press": "ArrowUp",
+      "holdTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stop",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "run-east",
+      "press": "ArrowRight",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reverse",
+      "press": "ArrowLeft",
+      "holdTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "zone",
+        "equals": "vale",
+        "allowTrivial": "The run stays in the clearing, so the outdoor run speed is the one measured."
+      },
+      {
+        "id": "state",
+        "path": "topSpeed",
+        "gte": 2.85,
+        "lte": 3.15
+      },
+      {
+        "id": "state",
+        "path": "stopSeconds",
+        "gte": 0.01,
+        "lte": 0.3
+      },
+      {
+        "id": "state",
+        "path": "turnSeconds",
+        "gte": 0.8,
+        "lte": 0.9
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 3
+    }
+  }
+}

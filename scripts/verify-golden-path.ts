@@ -40,6 +40,7 @@ export const MCP_SURFACES = [
   { name: "threenative-engine", file: "engine-mcp-tools.json" },
   { name: "threenative-blender", file: "blender-mcp-tools.json" },
   { name: "threenative-terrain", file: "terrain-mcp-tools.json" },
+  { name: "threenative-animation", file: "animation-mcp-tools.json" },
 ] as const;
 
 const AUTHORING_CAPABILITIES = [

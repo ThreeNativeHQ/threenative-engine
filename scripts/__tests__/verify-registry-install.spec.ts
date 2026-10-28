@@ -160,6 +160,7 @@ function happyRunner(): CommandRunner {
         path.join(project, ".mcp.json"),
         JSON.stringify({
           mcpServers: {
+            "threenative-animation": { command: "node", args: ["animation.mjs"] },
             "threenative-assets": { command: "node", args: ["assets.mjs"] },
             "threenative-blender": { command: "node", args: ["blender.mjs"] },
             "threenative-engine": { command: "node", args: ["engine.mjs"] },
@@ -320,6 +321,7 @@ function happyMcpRunner(): McpRunner {
     const operation = parsed.find((request) => request.method === "tools/call");
     const toolName = (operation?.params?.name as string | undefined) ?? "";
     const tools: Record<string, string[]> = {
+      "threenative-animation": ["animation_inspect"],
       "threenative-assets": ["asset_search_sources"],
       "threenative-blender": ["blender_status", "blender_convert"],
       "threenative-engine": ["engine_search_capabilities", "engine_capability_detail"],
@@ -329,66 +331,68 @@ function happyMcpRunner(): McpRunner {
     const result =
       toolName === "asset_search_sources"
         ? { content: [{ text: JSON.stringify({ sources: [{ id: "kenney" }], total: 1 }) }] }
-        : toolName === "sculpt_grimoire"
-          ? {
-              content: [
-                {
-                  text: JSON.stringify({
-                    text: "Use silhouette and readable geometry.",
-                    topic: "glossary/3d_vocabulary",
-                  }),
-                },
-              ],
-            }
-          : toolName === "terrain_patch"
+        : toolName === "animation_inspect"
+          ? { content: [{ text: JSON.stringify({ bones: [], clips: [] }) }] }
+          : toolName === "sculpt_grimoire"
             ? {
-                content: [{ text: JSON.stringify({ config: {}, layers: [], version: 1 }) }],
+                content: [
+                  {
+                    text: JSON.stringify({
+                      text: "Use silhouette and readable geometry.",
+                      topic: "glossary/3d_vocabulary",
+                    }),
+                  },
+                ],
               }
-            : toolName === "engine_search_capabilities"
+            : toolName === "terrain_patch"
               ? {
-                  content: [
-                    {
-                      text: JSON.stringify({
-                        guidance: "",
-                        results: [
-                          {
-                            constraints: ["requires a navigation world"],
-                            example: "const agent = new NavigationAgent3D(world);",
-                            importPath: "@threenative/physics/navigation",
-                            summary: "Move an agent around obstacles.",
-                            symbol: "NavigationAgent3D",
-                          },
-                        ],
-                      }),
-                    },
-                  ],
+                  content: [{ text: JSON.stringify({ config: {}, layers: [], version: 1 }) }],
                 }
-              : toolName === "engine_capability_detail"
+              : toolName === "engine_search_capabilities"
                 ? {
                     content: [
                       {
                         text: JSON.stringify({
-                          importPath: "@threenative/physics/navigation",
-                          symbol: "NavigationAgent3D",
+                          guidance: "",
+                          results: [
+                            {
+                              constraints: ["requires a navigation world"],
+                              example: "const agent = new NavigationAgent3D(world);",
+                              importPath: "@threenative/physics/navigation",
+                              summary: "Move an agent around obstacles.",
+                              symbol: "NavigationAgent3D",
+                            },
+                          ],
                         }),
                       },
                     ],
                   }
-                : toolName === "blender_status"
+                : toolName === "engine_capability_detail"
                   ? {
                       content: [
                         {
                           text: JSON.stringify({
-                            available: true,
-                            detail: "Blender 4.2",
-                            installCommand: "install Blender",
+                            importPath: "@threenative/physics/navigation",
+                            symbol: "NavigationAgent3D",
                           }),
                         },
                       ],
                     }
-                  : {
-                      content: [{ text: JSON.stringify({ ok: true }) }],
-                    };
+                  : toolName === "blender_status"
+                    ? {
+                        content: [
+                          {
+                            text: JSON.stringify({
+                              available: true,
+                              detail: "Blender 4.2",
+                              installCommand: "install Blender",
+                            }),
+                          },
+                        ],
+                      }
+                    : {
+                        content: [{ text: JSON.stringify({ ok: true }) }],
+                      };
     const output = [
       mcpMessage(1, { serverInfo: { name: serverName } }),
       mcpMessage(2, { tools: (tools[serverName] ?? []).map((name) => ({ name })) }),

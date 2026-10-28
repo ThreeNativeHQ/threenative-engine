@@ -213,3 +213,10 @@ examples/native-css-hud/bench/out/
 
 # Forest kit headless bake output (authored recipe and assets remain tracked).
 /packages/terrain/starter/forest/world/
+# Unreal reference project (PRD-631): run-time state and captures; only reference-stats.json and the baseline sheet are tracked
+tools/unreal-reference/Saved/
+tools/unreal-reference/Intermediate/
+tools/unreal-reference/DerivedDataCache/
+tools/unreal-reference/Content/
+tools/unreal-reference/captures/
+tools/unreal-reference/gi/**/__pycache__/

@@ -569,6 +569,23 @@
     {
       "aliases": [],
       "constraints": [
+        "the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material",
+        "the material needs `twoSidedFoliage = true` and a `subsurfaceColor`, or nothing is added and false is returned; backIrradiance is a vec3 node in the unit of `irradianceNode`; call once per material"
+      ],
+      "example": "addFoliageBackLight(leaf, backIrradiance);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function addFoliageBackLight(material: Material, backIrradiance: Node<\"vec3\">): boolean { … }",
+      "situations": ["add bounce light to the far face of a two sided foliage leaf"],
+      "summary": "Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.",
+      "supersedes": [],
+      "symbol": "addFoliageBackLight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the objects, and where each one goes, stay the game's; this decides only when each joins the graph",
         "input order is the attach order and cannot be changed",
         "a false `while` stops the run and is reported as `stopped`, never thrown"
@@ -746,13 +763,16 @@
       "constraints": [
         "name the body a game moves as strideRoot when the animated rig is a child of it",
         "a one-shot clip always plays at its authored rate; the matched rate re-times loops only",
+        "a foot mesh is measured at its lowest geometry point (the sole), never its origin; a skinned mesh is measured through its bones",
+        "`stride.inPlace: true` with `clipGroundSpeed: 0` means no foot plant was found and stride sync is not active; the playtest `stride` observation carries `inPlace`",
         "the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so"
       ],
       "example": "const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
-        "strideSync controls whether the matched rate is applied while stride is still measured"
+        "strideSync controls whether the matched rate is applied while stride is still measured",
+        "updateRate: \"auto\" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `\"loop\"` listener promotes effective evaluation to 1 to preserve event timing"
       ],
       "package": "@threenative/core",
       "signature": "export class AnimationPlayer { … }",
@@ -762,9 +782,11 @@
         "stop a walking character's feet from sliding or spinning",
         "match a walk or run cycle to how fast a character is moving",
         "match an in-place walk cycle with no root motion to the body's speed",
-        "find out what speed an animation clip was authored for"
+        "find out what speed an animation clip was authored for",
+        "reduce animation CPU for distant characters",
+        "inspect the effective animation evaluation rate"
       ],
-      "summary": "Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo \"in place\" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.",
+      "summary": "Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo \"in place\" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so. A mesh counts at its lowest geometry point, so a boot's origin may sit anywhere; an in-place clip with no foot plant reports `inPlace: true` and `clipGroundSpeed: 0`, and stride sync stays off. Evaluation is automatic by default: `updateRate: \"auto\"` follows measured camera visibility and projected size. `updateRate: 1` evaluates every frame; another positive safe integer names that frame interval. `updateRateReport` reports the effective rate, whether a named override is active, and whether the latest update evaluated. One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `\"loop\"` listener promotes the player to full-rate and observes only loop events after registration, so skipped pre-registration cycles are not replayed; `updateRateReport` reports that effective rate.",
       "supersedes": [],
       "symbol": "AnimationPlayer"
     },
@@ -870,6 +892,26 @@
       "summary": "Route effects through a named audio bus.",
       "supersedes": ["new Audio("],
       "symbol": "AudioBus"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so"
+      ],
+      "example": "const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class AutoExposureNode extends TempNode<\"float\"> { … }",
+      "situations": [
+        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change"
+      ],
+      "summary": "Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.",
+      "supersedes": [],
+      "symbol": "AutoExposureNode"
     },
     {
       "aliases": [],
@@ -1028,6 +1070,26 @@
       "summary": "Measure a rig's parent→child bone distances, in world space, as it stands right now.",
       "supersedes": [],
       "symbol": "boneLengths"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "levels are listed cheapest first, and the frame period is the game's own display target",
+        "a frame without a resolved GPU reading never moves the level"
+      ],
+      "example": "const ladder = new BudgetLadder({ levels: [\"low\", \"high\"], framePeriodMs: 1000 / 60, start: \"high\" }); const window = ladder.observe(stageMs, frameMs);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": ["explicit: true keeps the level and only reports a frame over the target"],
+      "package": "@threenative/core",
+      "signature": "export class BudgetLadder<L extends string> { … }",
+      "situations": [
+        "step a render stage down when the GPU frame goes over the frame period",
+        "pick a quality level from measured GPU time without oscillating"
+      ],
+      "summary": "A cost ladder for one render stage: the whole GPU frame against the frame period moves it, by Unreal's DynamicRenderScaling rule. A frame over the period for 2 frames in a row steps the level down at once, a frame over the period less 10% headroom steps it down after the 8-frame change period, and a frame with room steps it up. A stage steps only when it could absorb the overage at zero cost, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.",
+      "supersedes": [],
+      "symbol": "BudgetLadder"
     },
     {
       "aliases": [],
@@ -1258,16 +1320,24 @@
     {
       "aliases": ["different area props", "first playable screen external assets"],
       "constraints": [
-        "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches"
+        "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches",
+        "await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world",
+        "web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once"
       ],
       "example": "const assets = createAssetLoader({ basePath: \"/assets\" });\nconst rock = await assets.texture(\"rock.png\");",
       "importPath": "@threenative/core",
       "kind": "function",
-      "overrides": [],
+      "overrides": [
+        "`assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`"
+      ],
       "package": "@threenative/core",
       "signature": "export function createAssetLoader(options: IAssetLoaderOptions = { … }",
       "situations": [
         "preload models, textures, or audio before a scene enters",
+        "keep downloaded web assets on disk between visits",
+        "download the next scene before the player gets there",
+        "free the disk cache from a settings menu",
+        "prefetch assets into the Cache Storage disk cache of a large web game",
         "load assets from a nonstandard base path or a compiled asset manifest"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",
@@ -1536,6 +1606,66 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "every argument must be finite and greater than zero"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function ev100FromCamera(aperture: number, shutterSeconds: number, iso: number): number { … }",
+      "situations": [
+        "expose a frame lit in lux and nits with a physical camera exposure value",
+        "expose like a camera with an aperture, a shutter time and an ISO"
+      ],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "ev100FromCamera"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "multiplier must be finite and greater than zero"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function ev100FromExposure(multiplier: number): number { … }",
+      "situations": [
+        "expose a frame lit in lux and nits with a physical camera exposure value",
+        "report a hand-set exposure multiplier as an EV100"
+      ],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "ev100FromExposure"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "luminance must be finite and greater than zero"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function ev100FromLuminance(luminance: number): number { … }",
+      "situations": [
+        "expose a frame lit in lux and nits with a physical camera exposure value",
+        "meter a frame's average luminance in cd/m² into an exposure value"
+      ],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "ev100FromLuminance"
+    },
+    {
+      "aliases": [],
       "constraints": ["development builds only; a production build publishes nothing"],
       "example": "import { exposeDebug } from \"@threenative/core\";\nexposeDebug(\"player\", player);\n// then from the console: __THREENATIVE__.debug.player",
       "importPath": "@threenative/core",
@@ -1547,6 +1677,23 @@
       "summary": "Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.",
       "supersedes": [],
       "symbol": "exposeDebug"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0",
+        "ev100 must be finite; a unitless scene keeps its own multiplier instead"
+      ],
+      "example": "renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function exposureFromEv100(ev100: number): number { … }",
+      "situations": ["expose a frame lit in lux and nits with a physical camera exposure value"],
+      "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
+      "supersedes": [],
+      "symbol": "exposureFromEv100"
     },
     {
       "aliases": [],
@@ -1783,7 +1930,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -1799,6 +1948,49 @@
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
       "symbol": "getPlatform"
+    },
+    {
+      "aliases": ["lumen scalability", "sg.GlobalIlluminationQuality", "final gather method"],
+      "constraints": [
+        "the method never changes while the game runs: the primary resolution scale is the run-time lever",
+        "the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`",
+        "timestamp queries are needed: without them every window is unobserved"
+      ],
+      "example": "const gi = new GIBudget({ method: \"screenProbeGather\", stages: [\"SSGI\"], framePeriodMs: 1000 / 60 });\nctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class GIBudget { … }",
+      "situations": [
+        "global illumination costs too much on a weak GPU",
+        "see what share of the GPU frame the bounce light takes",
+        "quality tier for indirect lighting that follows the hardware"
+      ],
+      "summary": "Reports what a game's global illumination costs against the frame period: the GI share of the GPU frame and whether the frame fits its period less 10% headroom. The method (`none`, `irradianceField`, `screenProbeGather`) holds its level while the game runs, as Unreal's Lumen does: a frame over its period gets cheaper through the primary resolution scale, and the GI pass follows the lower resolution. The budget is the frame period, never a GI time in milliseconds, because a stage reading moves with the GPU clock.",
+      "supersedes": [],
+      "symbol": "GIBudget"
+    },
+    {
+      "aliases": ["lumen visualize", "indirect diffuse only", "r.Lumen.Visualize.IndirectDiffuse"],
+      "constraints": [
+        "the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else",
+        "a mode whose term the chain did not build throws instead of showing the finished frame"
+      ],
+      "example": "const view = new GIVisualize({ mode: \"indirectDiffuse\", beauty: frame, indirectDiffuse: albedo.mul(bounce) });\npipeline.outputNode = view.node;",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": ["mode: \"off\" returns the finished frame unchanged"],
+      "package": "@threenative/core",
+      "signature": "export class GIVisualize { … }",
+      "situations": [
+        "see only the bounce light of a frame",
+        "compare indirect lighting alone against Unreal",
+        "debug global illumination by looking at the indirect diffuse term"
+      ],
+      "summary": "Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap. The game's chain builds the term; this class selects it and fails when the term is missing.",
+      "supersedes": [],
+      "symbol": "GIVisualize"
     },
     {
       "aliases": [],
@@ -1927,6 +2119,24 @@
     {
       "aliases": [],
       "constraints": [
+        "WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`"
+      ],
+      "example": "const renderer = await createRenderer({ toneMapping: \"aces\" }); // the named override",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`createRenderer({ toneMapping: \"aces\" | \"agx\" | \"neutral\" | \"none\" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }",
+      "situations": ["the frame should tone map the way a fresh Unreal project does"],
+      "summary": "Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping.",
+      "supersedes": [],
+      "symbol": "installFilmicToneMapping"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns an uninstall that restores every wrapper, asserted by test",
         "a renderer whose internals have moved loses that span rather than throwing, and it is absent from the report rather than zero",
         "only the outermost `_projectObject` opens a span, because three's recurses per child"
@@ -1999,7 +2209,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -2020,7 +2232,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -2062,7 +2276,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -2083,7 +2299,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -2099,6 +2317,40 @@
       "summary": "Read the host platform without reaching for browser globals.",
       "supersedes": [],
       "symbol": "isWeb"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale"
+      ],
+      "example": "const tangent = lampPenumbraTangent(0.05, 2, 3);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }",
+      "situations": ["measure a lamp shadow's penumbra width without a GPU"],
+      "summary": "A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.",
+      "supersedes": [],
+      "symbol": "lampPenumbraTangent"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID"
+      ],
+      "example": "const line = lampShadowMarker(renderer, frame);\nif (line !== undefined) console.info(line);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lampShadowMarker( renderer: { … }",
+      "situations": [
+        "log lamp shadow redraws and GPU time apart from the sun's on the owned engine"
+      ],
+      "summary": "The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).",
+      "supersedes": [],
+      "symbol": "lampShadowMarker"
     },
     {
       "aliases": [],
@@ -2322,6 +2574,22 @@
     {
       "aliases": [],
       "constraints": [
+        "inputs must be finite and non-negative; sizes must be positive and angle < PI/2 radians"
+      ],
+      "example": "const radius = penumbraUv(10, angle, 40, 2048);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function penumbraUv( gapMetres: number, sourceAngleRad: number, frustumWidthMetres: number, mapSize: number, ): number { … }",
+      "situations": ["measure a source-angle shadow's filter radius without a GPU"],
+      "summary": "Convert world-space caster gap to a shadow UV radius, floored at one texel.",
+      "supersedes": [],
+      "symbol": "penumbraUv"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the capture is bounded and incomplete when the backend cannot expose an observation"
       ],
       "example": "const capture = game.runtime.pipelineCensus?.();\n// The game normally reaches this through `runtime.pipelineCensus`; direct construction exists\n// for renderer adapters and contract tests, not for gameplay.",
@@ -2394,11 +2662,12 @@
       "symbol": "prewarm"
     },
     {
-      "aliases": ["readable world lighting"],
+      "aliases": ["readable world lighting", "lumen translucency volume", "translucency gi"],
       "constraints": [
         "request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting",
         "add the volume with ctx.add() so its incremental work is measured in the render phase",
-        "call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour"
+        "call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour",
+        "a translucent material or a fog sample has no side that faces the light: it reads sampleNonDirectional(position), one atlas fetch, the same in every direction (divide by pi for a radiance)"
       ],
       "example": "const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);",
       "importPath": "@threenative/core",
@@ -2408,11 +2677,63 @@
       "signature": "export class ProbeVolume extends Object3D implements IComputeDriven { … }",
       "situations": [
         "light bouncing from a room I cannot see",
-        "light a wall with an off-screen emitter"
+        "light a wall with an off-screen emitter",
+        "glass or fog inside a room takes the room's bounce light"
       ],
       "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
       "supersedes": [],
       "symbol": "ProbeVolume"
+    },
+    {
+      "aliases": [],
+      "constraints": ["an unknown tier name throws with the names it expected"],
+      "example": "const world = new WorldEnvironment({ ...qualityPreset(qualityTiers.resolve({ gpuClass: renderer.gpuClass })), bloomEnabled: false });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `qualityTiers.resolve`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }",
+      "situations": [
+        "pick a start tier for the GPU class and read what that tier costs the look",
+        "build a `WorldEnvironment` for a weaker device from a named tier"
+      ],
+      "summary": "The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`. `qualityTiers` holds the tier tables: `resolve` picks a start tier from a GPU class, `gi` and `shadow` read a tier's settings.",
+      "supersedes": [],
+      "symbol": "qualityPreset"
+    },
+    {
+      "aliases": [],
+      "constraints": ["non-marker lines and malformed markers return `undefined`"],
+      "example": "const report = readGIMarker(line); if (report?.verdict === \"over\") console.log(report.reason);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readGIMarker(line: string): IGIBudgetReport | undefined { … }",
+      "situations": ["inspect which global illumination method ran and what the frame cost"],
+      "summary": "Parse a `TN_GI` console line back into its report, or `undefined`.",
+      "supersedes": [],
+      "symbol": "readGIMarker"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "non-marker lines and markers whose sun and lamp draws do not add up return `undefined`"
+      ],
+      "example": "const stats = readLampShadowMarker(line);\nif (stats !== undefined) console.log(stats.lamps.redraws);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }",
+      "situations": [
+        "count lamp shadow redraws from a renderer log, for example a moving-caster run"
+      ],
+      "summary": "Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.",
+      "supersedes": [],
+      "symbol": "readLampShadowMarker"
     },
     {
       "aliases": [],
@@ -2474,6 +2795,20 @@
       "summary": "Compose game-provided render nodes in a measured, fail-closed chain. Authored stages use an opaque id and anchor before or after a built-in or another supplied stage; the engine does not need to know the effect's visual vocabulary.",
       "supersedes": [],
       "symbol": "readRenderChainReport"
+    },
+    {
+      "aliases": [],
+      "constraints": ["non-marker lines and malformed markers return `undefined`"],
+      "example": "const report = readShadowTierMarker(line); if (report?.stepped) console.log(report.reason);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readShadowTierMarker(line: string): IShadowFilterReport | undefined { … }",
+      "situations": ["inspect which shadow filter tier ran and why it stepped"],
+      "summary": "Parse a `TN_SHADOW_TIER` console line back into its report, or `undefined`.",
+      "supersedes": [],
+      "symbol": "readShadowTierMarker"
     },
     {
       "aliases": [],
@@ -2857,7 +3192,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/core",
-      "signature": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, ): ISceneWarning | undefined { … }",
+      "signature": "export function sceneWarning( window: IFrameBudgetWindow, shape: ISceneShape | undefined, declaredTargetFps: number | undefined, gpuClass?: string, ): ISceneWarning | undefined { … }",
       "situations": [
         "find out whether a slow frame is the scene's shape or the device",
         "tell an authoring agent what to reduce before it promises a merge"
@@ -2932,6 +3267,30 @@
       "symbol": "setSpanRecorder"
     },
     {
+      "aliases": ["virtual shadow map scalability", "sg.ShadowQuality"],
+      "constraints": [
+        "the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing",
+        "timestamp queries are needed: without them every window is unobserved and the tier holds",
+        "the rule reads the whole GPU frame and the `Shadow` stage, which the receiver filter inside the colour pass is not part of"
+      ],
+      "example": "const filter = new ShadowFilterBudget({ tier: \"high\", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });\nctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "explicit: true keeps the game's own sample counts and reports an over-budget frame"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class ShadowFilterBudget { … }",
+      "situations": [
+        "soft shadow filter costs too much on a weak GPU",
+        "step the shadow quality tier when the GPU frame goes over the frame period",
+        "shadow quality tier that follows the hardware"
+      ],
+      "summary": "Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the whole GPU frame stays over the frame period, and back up when the frame has room, by the settings of Unreal's virtual shadow map budget (a linear model, 5% headroom). A frame that is slow for another reason keeps its shadows: the tier steps only when the shadow passes could absorb the overage. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.",
+      "supersedes": [],
+      "symbol": "ShadowFilterBudget"
+    },
+    {
       "aliases": [],
       "constraints": [
         "use strideRoot to name the body moved by game code when the rig is parented under it",
@@ -2942,7 +3301,8 @@
       "kind": "class",
       "overrides": [
         "strideSync controls whether locomotion playback rate matches ground covered",
-        "size normalises the instance to real-world metres with skin-aware measurement"
+        "size normalises the instance to real-world metres with skin-aware measurement",
+        "updateRate: \"auto\" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `\"loop\"` listener promotes effective evaluation to 1 to preserve event timing"
       ],
       "package": "@threenative/core",
       "signature": "export class SkeletalMesh3D extends AnimationPlayer { … }",
@@ -2951,9 +3311,11 @@
         "my imported character renders deformed",
         "instance an imported rigged character",
         "validate animation clips on a character rig at load time",
-        "prepare a skinned character with safe skeleton cloning and stride sync"
+        "prepare a skinned character with safe skeleton cloning and stride sync",
+        "reduce animation CPU for a crowd of imported rigs",
+        "inspect an imported rig's effective animation evaluation rate"
       ],
-      "summary": "Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting.",
+      "summary": "Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting. Animation evaluation inherits AnimationPlayer's automatic camera-based `updateRate: \"auto\"` default; `updateRate: 1` evaluates every frame, another positive safe integer requests that interval, and `updateRateReport` exposes the effective rate, override status and latest result. One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `\"loop\"` listener promotes effective evaluation to 1 and observes only loop events after registration, so skipped pre-registration cycles are not replayed.",
       "supersedes": [],
       "symbol": "SkeletalMesh3D"
     },
@@ -2973,6 +3335,40 @@
       "summary": "List the names of every bone in a character hierarchy.",
       "supersedes": [],
       "symbol": "skeletonBones"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "use an initialized WebGPURenderer; the game supplies the sky and assigns the texture",
+        "call update once per frame on an initialized WebGPURenderer; assign texture after it returns true",
+        "sky nodes use a world-space view direction; keep supplied sky resources alive until dispose"
+      ],
+      "example": "const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class SkyCapture { … }",
+      "situations": ["light a scene from a procedural sky when its sun moves"],
+      "summary": "Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.",
+      "supersedes": [],
+      "symbol": "SkyCapture"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "use an initialized WebGPURenderer; the game supplies the sky and assigns the texture"
+      ],
+      "example": "const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class SkyCaptureSchedule { … }",
+      "situations": ["light a scene from a procedural sky when its sun moves"],
+      "summary": "Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.",
+      "supersedes": [],
+      "symbol": "SkyCaptureSchedule"
     },
     {
       "aliases": [],
@@ -3070,6 +3466,38 @@
       "summary": "Calculate solar elevation and azimuth for one UTC date.",
       "supersedes": [],
       "symbol": "solarPositionAt"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "sourceAngleRad is required, in radians in [0, PI/2); orthographic depth shadows only, not VSM"
+      ],
+      "example": "sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: angle });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function sourceAngleShadowFilter( { … }",
+      "situations": ["soften a directional shadow as the caster-receiver gap grows"],
+      "summary": "Source-angle blocker search and variable-radius PCF on three's shadow map.",
+      "supersedes": [],
+      "symbol": "sourceAngleShadowFilter"
+    },
+    {
+      "aliases": ["PCSS soft shadows"],
+      "constraints": [
+        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only"
+      ],
+      "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["penumbraScale: 1 gives the geometric penumbra of a disk lamp"],
+      "package": "@threenative/core",
+      "signature": "export function sourceRadiusShadowFilter( { … }",
+      "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],
+      "summary": "Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.",
+      "supersedes": [],
+      "symbol": "sourceRadiusShadowFilter"
     },
     {
       "aliases": [],
@@ -3206,6 +3634,25 @@
     {
       "aliases": [],
       "constraints": [
+        "absent before a whole frame resolves and on an adapter without timestamp queries; the frame number counts each reading once"
+      ],
+      "example": "const reading = stageGpuReading(renderer); const ssgiMs = reading?.stages.SSGI;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined { … }",
+      "situations": [
+        "read the GPU cost of one post-processing stage",
+        "tell which render pass takes the GPU time"
+      ],
+      "summary": "Read the GPU milliseconds of each named render pass of the newest resolved frame, such as `SSGI` or `AO`, with the whole frame's total.",
+      "supersedes": [],
+      "symbol": "stageGpuReading"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
@@ -3223,6 +3670,70 @@
       "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
       "supersedes": [],
       "symbol": "staticTransformCensus"
+    },
+    {
+      "aliases": ["lumen surface cache", "lumen scene", "mesh cards"],
+      "constraints": [
+        "the materials are fixed when the cache is built; build a new one when a material or a map changes",
+        "a map whose image the runtime does not show to JavaScript (the owned engine's glTF maps) returns the flat colour and is listed in `report.fallbacks`; the `images` option hands over its pixels",
+        "the cache owns no colour, texture or light; the game's materials and lamps are the only source"
+      ],
+      "example": "const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "atlasSize and cardTexelDensityScale size the atlas; images supplies the pixels of a map the runtime hides"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SurfaceCache { … }",
+      "situations": ["give a traced bounce ray the texture colour and glow of the surface it hits"],
+      "summary": "The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.",
+      "supersedes": [],
+      "symbol": "SurfaceCache"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the cap skips the ninth-brightest lamp and every one after it, and counts them in `skipped`",
+        "the caller answers each shadow ray; the class owns no scene"
+      ],
+      "example": "const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": ["maxLights caps the lamps evaluated at one hit"],
+      "package": "@threenative/core",
+      "signature": "export class SurfaceLights { … }",
+      "situations": ["light the hit of a traced ray with the scene's point and spot lamps"],
+      "summary": "The local lamps at the hit of a traced ray: the point and spot lights whose range reaches it, the brightest eight, one shadow ray each. The Surface Cache gives the hit its colour; this gives it the lamps.",
+      "supersedes": [],
+      "symbol": "SurfaceLights"
+    },
+    {
+      "aliases": ["lumen reflections", "dedicated reflection rays"],
+      "constraints": [
+        "the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves",
+        "instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them",
+        "trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree",
+        "a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/",
+        "the pack needs a device with float32-filterable"
+      ],
+      "example": "const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "maxRoughnessToTrace, roughnessFadeLength, maxRoughnessToEvaluateRoughSpecular, roughSpecularFadeLength and maxSteps are game-owned choices"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class TracedReflections { … }",
+      "situations": [
+        "reflect what is behind the camera in a mirror or a chrome sphere",
+        "make a glossy or wet floor reflect objects that are off screen",
+        "trace a shadow ray from a reflected surface toward the sun",
+        "split a surface's specular by roughness into traced, radiance-cache and diffuse-GI shares"
+      ],
+      "summary": "Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.",
+      "supersedes": [],
+      "symbol": "TracedReflections"
     },
     {
       "aliases": [],
@@ -3342,6 +3853,26 @@
       "symbol": "updateModelLods"
     },
     {
+      "aliases": ["Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar"],
+      "constraints": [
+        "direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`"
+      ],
+      "example": "useRoughDiffuse(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function useRoughDiffuse(root: Object3D, enabled = true): number { … }",
+      "situations": [
+        "shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert"
+      ],
+      "summary": "Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.",
+      "supersedes": [],
+      "symbol": "useRoughDiffuse"
+    },
+    {
       "aliases": [],
       "constraints": [
         "off by default and expensive by construction — it does the work it is checking, twice",
@@ -3420,7 +3951,8 @@
       "overrides": [
         "bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement",
         "bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults",
-        "followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias"
+        "followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias",
+        "minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels"
       ],
       "package": "@threenative/core",
       "signature": "export class VirtualShadowNode extends ShadowBaseNode { … }",
@@ -3525,6 +4057,28 @@
       "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
       "supersedes": [],
       "symbol": "withVelocityContext"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`",
+        "an unknown option value throws instead of becoming the default"
+      ],
+      "example": "const world = new WorldEnvironment({ tonemapMode: \"aces\", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, view);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "every option on `IWorldEnvironmentOptions`: `tonemapMode: \"aces\" | \"agx\" | \"neutral\"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class WorldEnvironment { … }",
+      "situations": [
+        "a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand",
+        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look"
+      ],
+      "summary": "The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.",
+      "supersedes": [],
+      "symbol": "WorldEnvironment"
     },
     {
       "aliases": [],
@@ -4091,6 +4645,7 @@
       "aliases": [],
       "constraints": [
         "surface is the game's; this class creates no material, colour or geometry",
+        "a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first",
         "budgets are hard caps that report pressure instead of over-committing",
         "`whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
@@ -4426,11 +4981,16 @@
     },
     {
       "aliases": ["hitscan camera"],
-      "constraints": ["query results are bounded by the configured result limit"],
+      "constraints": [
+        "query results are bounded by the configured result limit",
+        "intersectRay ignores a solid that contains the ray origin and returns the next real hit or none, like Godot hit_from_inside false"
+      ],
       "example": "const space = new PhysicsDirectSpaceState3D(context);",
       "importPath": "@threenative/physics",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "hitFromInside: true returns the solid around the ray origin as a distance 0 hit with a zero normal"
+      ],
       "package": "@threenative/physics",
       "requires": ["npm i @threenative/physics"],
       "signature": "export class PhysicsDirectSpaceState3D { … }",
@@ -6242,6 +6802,23 @@
       "summary": "Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.",
       "supersedes": [],
       "symbol": "withBrowserCapture"
+    },
+    {
+      "aliases": [],
+      "constraints": ["invalid flags throw a named usage error"],
+      "example": "const config = parseStandalonePlaytestArgs(argv);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function withScenarioClock<T extends { … }",
+      "situations": [
+        "invoke the playtest CLI from a scaffold",
+        "validate runner flags before launching a browser"
+      ],
+      "summary": "Parse standalone playtest runner configuration.",
+      "supersedes": [],
+      "symbol": "withScenarioClock"
     },
     {
       "aliases": [],
@@ -8415,29 +8992,6 @@
       "aliases": []
     },
     {
-      "symbol": "WorldEnvironment",
-      "package": "three",
-      "importPath": "src/render/worldEnvironment.ts",
-      "kind": "class",
-      "signature": "class WorldEnvironment",
-      "summary": "The generated file that composes every lighting stage and prints TN_RENDER_CHAIN naming each one as applied or refused with a reason. It is the game's source, not the framework's — edit it.",
-      "situations": [
-        "turn a lighting or post-processing effect on or off",
-        "find out why an effect you enabled is not visible",
-        "change how the scene is lit, graded, or tonemapped",
-        "match a reference image's lighting"
-      ],
-      "example": "src/render/postprocessing.ts — edit the preset it passes to WorldEnvironment",
-      "constraints": [
-        "Read the TN_RENDER_CHAIN line before assuming a stage ran: it names every stage as applied or dropped, with the reason it was dropped.",
-        "A stage reported `applied` can still be invisible if its own inputs are wrong — the chain reports whether it built, not whether you can see it.",
-        "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks."
-      ],
-      "overrides": [],
-      "supersedes": [],
-      "aliases": []
-    },
-    {
       "symbol": "bloom",
       "package": "three",
       "importPath": "three/addons/tsl/display/BloomNode.js",
@@ -8769,6 +9323,92 @@
         "hand IK pose correction",
         "elbow limits during an aiming pose"
       ]
+    }
+  ],
+  "starterKits": [
+    {
+      "blurb": "A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet.",
+      "name": "action-rpg",
+      "title": "Action RPG",
+      "words": ["action-rpg"]
+    },
+    {
+      "blurb": "Wren crosses a sunlit clearing and a three-room moss dungeon with lock-on sword combat, a shield, a block-and-switch puzzle, a small key and the Stone Warden mini-boss.",
+      "name": "adventure",
+      "title": "Lantern Vale",
+      "words": ["adventure", "zelda", "ocarina", "action-adventure"]
+    },
+    {
+      "blurb": "A stout sprout-keeper in a knit beanie runs one free-roam island with a triple jump, long jump, backflip, side flip, wall kick, dive, ground pound and ledge grab, collecting three Sunseeds past bumblets, hoppers and spiked thornbacks.",
+      "name": "collectathon",
+      "title": "Hop Garden",
+      "words": ["collectathon", "mario", "sm64", "super-mario", "3d-platformer"]
+    },
+    {
+      "blurb": "Eight karts race three laps of Clover Loop, a figure-8 with a bridge, a jump over a creek and boost pads, with a hop into a power-slide, mini-turbo sparks, item boxes with burrs, acorns and nitro cans, and seven CPU drivers on a rubber band.",
+      "name": "kart",
+      "title": "Clover Cup",
+      "words": ["kart-racer", "mario-kart", "mariokart", "mk64", "kart"]
+    },
+    {
+      "blurb": "A fox runs ninety-seven metres of floating meadow, rope bridges and stompable walkers to a goal flag, with three hearts, five gems and a double jump.",
+      "name": "platformer",
+      "title": "Fox Dash",
+      "words": ["platformer"]
+    },
+    {
+      "blurb": "A forty-five body vault: shove the pile, walk through the glowing ward, and stand on the seal.",
+      "name": "puzzle",
+      "title": "Physics puzzle",
+      "words": ["physics-puzzle"]
+    },
+    {
+      "blurb": "Three laps, ordered checklines, rescue sectors, boost pads, and route-progress ranking.",
+      "name": "racing",
+      "title": "Circuit racing",
+      "words": ["racing"]
+    },
+    {
+      "blurb": "A real-time coastal weather study: shape rain, cloud, wind, fog and wetness, and watch a coastline answer.",
+      "name": "rain",
+      "title": "Rain",
+      "words": ["rain"]
+    },
+    {
+      "blurb": "Three commanders, a seeded world, fog of war and a deterministic 0.05 s simulation headless in src/sim/.",
+      "name": "rts",
+      "title": "Real-time strategy",
+      "words": ["rts"]
+    },
+    {
+      "blurb": "Three lanes, a track that builds itself ahead of you, and obstacles that end the run.",
+      "name": "runner",
+      "title": "Endless runner",
+      "words": ["endless-runner"]
+    },
+    {
+      "blurb": "A wind-and-wave sailing starter with buoyancy, ordered course buoys, and a ship you can reshape.",
+      "name": "sailing",
+      "title": "Sailing",
+      "words": ["sailing"]
+    },
+    {
+      "blurb": "Mouse look, a weapon in your hands, aim down the sights, reload, and targets that hunt you.",
+      "name": "shooter",
+      "title": "First-person shooter",
+      "words": ["shooter"]
+    },
+    {
+      "blurb": "Deformable snow that remembers every footstep, a ball that carves its own track, and weather you can turn into a blizzard.",
+      "name": "snow",
+      "title": "Snow glade",
+      "words": ["snow"]
+    },
+    {
+      "blurb": "Four towers with three upgrade levels, twelve waves, two bosses and an orbital strike on a mossy diorama.",
+      "name": "tower-defense",
+      "title": "Tower defense",
+      "words": ["strategy"]
     }
   ],
   "version": 2

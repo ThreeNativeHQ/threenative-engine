@@ -229,6 +229,22 @@ const allowedProductionCreators = new Map<string, string>([
     "The compiler CLI retains authored graphs, emitted modules and Tint outputs under its caller's build directory for diagnosis.",
   ],
   [
+    "packages/runtime-native/tests/native-engine/player-frame-rule.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-gpu-stages.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "packages/runtime-native/tests/native-engine/player-temporal-aa.mjs",
+    "The CTest probe stages its bundle and fixtures under the package's untracked build directory, not the OS temp directory.",
+  ],
+  [
+    "scripts/unreal-look/giLocks.ts",
+    "The offline compare root links a capture folder into a scratch root removed in finally.",
+  ],
+  [
     "packages/three-native/tests/compatibility/run-native.ts",
     "The conformance CLI retains captured frames because failed pixel-comparison reports name their paths.",
   ],

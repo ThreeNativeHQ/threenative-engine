@@ -22,9 +22,9 @@ inline void finishTraaDump(engine::TraaPass& pass, WGPUInstance instance,
     auto* debugDump_ = pass.debugDump();
     if (!debugDump_) return;
     std::filesystem::create_directories(directory);
-    const auto width_ = debugDump_->width, height_ = debugDump_->height;
     const std::string prefix = "frame-" + std::to_string(debugDump_->frame);
     for (const auto& texture : debugDump_->pending) {
+        const auto width_ = texture.width, height_ = texture.height;
         struct Map { bool done = false; WGPUMapAsyncStatus status{}; };
         auto mapped = std::make_shared<Map>();
         WGPUBufferMapCallbackInfo info{};

@@ -11,8 +11,10 @@ import {
   sameFixedStepPose,
   sideBySide,
   verdict,
+  waitForWorld,
   withBrowserWatchdogArtifact,
   withEngine,
+  worldDrawn,
 } from "../engine-parity.js";
 
 function frame(width: number, height: number, paint: (x: number, y: number) => number): PNG {
@@ -30,6 +32,55 @@ function frame(width: number, height: number, paint: (x: number, y: number) => n
 }
 
 describe("engine parity guard", () => {
+  it("reads the world as drawn once several recent render samples drew it", () => {
+    const frames = (...drawCalls: (number | undefined)[]) =>
+      drawCalls.map((drawCalls) => ({ drawCalls }));
+    expect(worldDrawn([])).toBe(false);
+    // Skipped frames and a lone full-screen pass are the black-world capture of the hosted runner.
+    expect(worldDrawn(frames(0, 0, 1, 0, 1, 0))).toBe(false);
+    expect(worldDrawn(frames(undefined, undefined, undefined))).toBe(false);
+    // One drawn frame among skipped ones is not yet a steady world.
+    expect(worldDrawn(frames(0, 0, 90, 0, 0))).toBe(false);
+    // A drawn world on the owned engine interleaves zero-draw samples while two frames are on the GPU.
+    expect(worldDrawn(frames(0, 0, 84, 0, 84, 84, 90))).toBe(true);
+    // The newest sample is the one the screenshot composites, so a skipped newest sample is a stale
+    // photograph of the frame before it, never a drawn world to photograph.
+    expect(worldDrawn(frames(0, 0, 84, 0, 84, 84, 0))).toBe(false);
+    // A partial draw below half the busiest sample is not the world.
+    expect(worldDrawn(frames(100, 30, 40, 0, 20))).toBe(false);
+    // Drawn frames older than the inspected window do not count.
+    expect(worldDrawn([...frames(90, 90), ...frames(0, 0, 0, 0, 0, 0, 0, 0)])).toBe(false);
+  });
+
+  it("waits for the world to draw, then fails closed when it never does", async () => {
+    const series = [
+      [{ drawCalls: 0 }],
+      [{ drawCalls: 1 }, { drawCalls: 0 }, { drawCalls: 1 }],
+      [0, 0, 90, 0, 90, 90].map((drawCalls) => ({ drawCalls })),
+    ];
+    let polls = 0;
+    const page = { evaluate: vi.fn(async () => undefined) };
+    const bridge = {
+      sample: vi.fn(async () => ({
+        runtimeDiagnosticsSeries: series[Math.min(polls++, series.length - 1)],
+      })),
+    };
+    const world = await waitForWorld({ bridge, page } as never);
+    expect(world.newestDrawCalls).toEqual([0, 0, 90, 0, 90, 90]);
+    expect(page.evaluate).toHaveBeenCalledTimes(2);
+    const blank = {
+      sample: async () => ({
+        runtimeDiagnosticsSeries: [{ drawCalls: 0 }, { drawCalls: 1 }, { drawCalls: 0 }],
+      }),
+    };
+    await expect(waitForWorld({ bridge: blank, page } as never, 0)).rejects.toThrow(
+      "TN_ENGINE_PARITY_WORLD_NOT_DRAWN",
+    );
+    await expect(
+      waitForWorld({ bridge: { sample: async () => ({}) }, page } as never),
+    ).rejects.toThrow("TN_ENGINE_PARITY_WORLD_UNOBSERVABLE");
+  });
+
   it("persists Chromium watchdog evidence when a capture fails, then rethrows that failure", async () => {
     const directory = await makeTempDir("engine-parity-watchdog-");
     let histogramRequests = 0;

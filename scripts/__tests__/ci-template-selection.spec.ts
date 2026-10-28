@@ -110,7 +110,8 @@ describe("impact-driven template coverage", () => {
         head,
         candidateSha: head,
         target: "develop",
-        eventName: "pull_request",
+        // PRD-731: the pull request runs the review lane; the queue owns this board.
+        eventName: "merge_group",
       });
       expect(plan.selection).toBe("full");
       expect(plan.templateMatrix.template).toEqual(
@@ -209,7 +210,8 @@ describe("impact-driven template coverage", () => {
         head,
         candidateSha: head,
         target: "develop",
-        eventName: "pull_request",
+        // PRD-731: the pull request runs the review lane; the queue owns this board.
+        eventName: "merge_group",
       });
       expect(plan.jobs["test-native"].required).toBe(true);
       expect(plan.jobs["native-platforms"].required).toBe(true);

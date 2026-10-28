@@ -345,6 +345,11 @@ async function main(): Promise<void> {
 
   run("pnpm", ["build"], "pnpm build");
   run("pnpm", ["tsx", "scripts/capture-blender-mcp-tools.ts"], "capture Blender MCP surface");
+  run(
+    "pnpm",
+    ["tsx", "scripts/capture-blender-mcp-tools.ts", "animation"],
+    "capture animation MCP surface",
+  );
 
   const report = await checkPublishState({
     allowCurrentPublishSetPins: true,

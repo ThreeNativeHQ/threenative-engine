@@ -5,7 +5,12 @@
  * before an upload. The V8 player's equivalent is `runtime-native/src/engine/player/core-textures.mjs`;
  * the browser decodes images itself, so no bitmap needs the engine decoder here.
  */
-import { type IBrowserRuntime, type IEngineRef, engineRef } from "./browser-backend.js";
+import {
+  type EngineValue,
+  type IBrowserRuntime,
+  type IEngineRef,
+  engineRef,
+} from "./browser-backend.js";
 
 type EngineClass = new (...args: unknown[]) => object;
 
@@ -72,6 +77,16 @@ export function defineTextureSources(
   if (BaseCanvas === undefined) throw new TypeError("TN_BROWSER_UNBOUND: CanvasTexture");
   const sources = new WeakMap<object, unknown>();
   const prototype = BaseData.prototype as object;
+  for (const Native of [BaseTexture, BaseData, BaseCanvas, BaseVolume]) {
+    if (Native === undefined) continue;
+    const target = Native.prototype as { clone(): object };
+    const clone = target.clone;
+    target.clone = function (this: object): object {
+      const result = clone.call(this);
+      if (sources.has(this)) sources.set(result, sources.get(this));
+      return result;
+    };
+  }
   /** `image` is the JS source; `needsUpdate` re-sends its pixels, as three re-reads `texture.image`. */
   const followSource = (target: object, name: string): void => {
     const needsUpdate = Object.getOwnPropertyDescriptor(target, "needsUpdate")?.set;
@@ -90,12 +105,16 @@ export function defineTextureSources(
         configurable: true,
         set(this: object, value: unknown) {
           const image = value ? sources.get(this) : undefined;
-          if (image !== undefined)
-            runtime.set(
-              engineRef(this) as IEngineRef,
-              "image.data",
-              Array.from(pixelsOf(image).data),
-            );
+          if (image !== undefined) {
+            const data = pixelsOf(image).data;
+            const pixels =
+              runtime.typedArrays === true &&
+              ArrayBuffer.isView(data) &&
+              !(data instanceof DataView)
+                ? (data as EngineValue)
+                : Array.from(data);
+            runtime.set(engineRef(this) as IEngineRef, "image.data", pixels);
+          }
           needsUpdate.call(this, value);
         },
       },
@@ -140,9 +159,12 @@ export function defineTextureSources(
     depth = 1,
   ) {
     if (BaseVolume === undefined) throw new TypeError("TN_BROWSER_UNBOUND: Data3DTexture");
+    // The engine's constructor takes bytes or floats. A Uint16Array holds half-float bits, so the engine
+    // gets zero floats of the same size and the bits go in on needsUpdate, after `type` says HalfFloat.
+    const bits = data instanceof Uint16Array;
     const texture = Reflect.construct(
       BaseVolume,
-      [data ?? undefined, width, height, depth],
+      [bits ? new Float32Array(data.length) : (data ?? undefined), width, height, depth],
       new.target ?? Data3DTexture,
     );
     sources.set(texture, { data: data ?? null, width, height, depth });

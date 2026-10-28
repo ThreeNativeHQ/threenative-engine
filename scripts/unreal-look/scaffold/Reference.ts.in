@@ -1,0 +1,531 @@
+// Written by scripts/unreal-look/capture-threenative.ts into a scaffolded copy of the starter
+// (PRD-631). It is scene setup only: every look decision comes from the copy's own
+// `src/render/`, and a layer below L9 only switches a system off. The URL picks the cell:
+//   ?tnRef=<ID|L0..L9>&sun=<elevation>,<azimuth>
+// and `window.__tnRef.pose(...)` frames one camera pose. Until then the page shows the first
+// capture pose, or `?pose=<name>`.
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  type ShadowFilterTier,
+  TracedReflections,
+  VirtualShadowNode,
+  sourceAngleShadowFilter,
+} from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
+import {
+  BackSide,
+  Box3,
+  Color,
+  DoubleSide,
+  FrontSide,
+  type Group,
+  Mesh,
+  MeshBasicMaterial,
+  type MeshStandardMaterial,
+  NoToneMapping,
+  type PerspectiveCamera,
+  Sphere,
+  type Texture,
+  Vector3,
+} from "three";
+import { setupLighting } from "../render/lighting.js";
+import { setupPost } from "../render/postprocessing.js";
+import { qualityPreset, resolveQualityTier } from "../render/quality.js";
+import { SUN_DIRECTION, setupSky } from "../render/sky.js";
+import { WorldEnvironment } from "../render/worldEnvironment.js";
+import type { GameState } from "../state.js";
+import { Play } from "./Play.js";
+import { FOLIAGE } from "./referenceFoliage.js";
+import { POSES } from "./referencePoses.js";
+import {
+  EMISSIVE_UNITS,
+  EPIC_SSGI,
+  type FinalGatherMethod,
+  type IGlbMaterialImages,
+  captureReflections,
+  fetchGlbMaterialImages,
+  giPreset,
+  installGi,
+  markTwoSidedFoliage,
+  reflectionTrace,
+  shadeLikeSubstrate,
+  shadowPreset,
+  unrealSunDiscScale,
+  watchGi,
+  watchShadowTier,
+} from "./tuning.js";
+
+type GameCtx = ICtx<GameState, IPhysicsContext>;
+type Pose = { position: number[]; target: number[]; hfovDeg: number };
+
+const params = new URLSearchParams(location.search);
+const LAYER = params.get("tnRef") ?? "L9";
+const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").split(",").map(Number);
+const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+// `tier=low|medium|high` (default high, which follows Unreal's Epic) is the quality tier the cell is drawn at:
+// its GI method and shadow filter come from `render/quality.ts` (PRD-644, PRD-652). Unreal's GI and shadow levels
+// are separate scalability groups, so `shadowTier=` draws the shadows at another tier than the GI.
+const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
+const GI = giPreset(TIER);
+const SHADOW_TIER = resolveQualityTier({ tier: params.get("shadowTier") ?? TIER });
+const SHADOW = shadowPreset(SHADOW_TIER);
+// From L7 the tier's final gather method decides the GI; below it there is none, as in Unreal's ladder.
+const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
+// `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
+const TUNED = params.get("baseline") !== "1";
+// `off=vsm,gpusky,clouds,gi,reflcap,traced,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
+// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`. `traced` is the
+// scene-triangle reflection trace (PRD-642): off, the screen march, the cube capture and the floor paint answer.
+// `pan=<rad/s>` turns the camera about the vertical axis after each pose, to give the velocity pass something to blur.
+// `panStep=<rad>&panArc=<rad>` sweeps it instead: `panStep` per drawn frame, back and forth across `panArc` either side of the
+// pose, so the scene stays in view and every frame moves the same number of pixels whatever the frame rate (ghosting proof).
+const PAN = Number(params.get("pan") ?? 0);
+const PAN_STEP = Number(params.get("panStep") ?? 0);
+const PAN_ARC = Number(params.get("panArc") ?? 0.15);
+const UP = new Vector3(0, 1, 0);
+let panToken = 0;
+const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
+// What each stage name turns off in the template's `high` preset.
+// Diagnosis: the contact occlusion's knobs by URL name, one table for every layer (PRD-635). ?gtaoR=M (metres) and
+// ?gtaoS=N are the short names of gtaoRadius and gtaoScale; ?gtaoReachPx=N sets the screen reach (Unreal's is 32);
+// ?gtaoIndirectOnly=0 lets the whole frame take the occlusion, as aoReach.ts does on the GI scenes.
+const GTAO_KNOBS: Record<string, string> = {
+  gtaoR: "gtaoRadius",
+  gtaoS: "gtaoScale",
+  gtaoRadius: "gtaoRadius",
+  gtaoReachPx: "gtaoReachPx",
+  gtaoSamples: "gtaoSamples",
+  gtaoScale: "gtaoScale",
+  gtaoDistanceExponent: "gtaoDistanceExponent",
+  gtaoDistanceFalloff: "gtaoDistanceFalloff",
+  gtaoThickness: "gtaoThickness",
+  gtaoDenoiseRadius: "gtaoDenoiseRadius",
+  gtaoMultiBounceAlbedo: "gtaoMultiBounceAlbedo",
+  gtaoIndirectOnly: "gtaoIndirectOnly",
+};
+const gtaoKnobs = (): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(GTAO_KNOBS)
+      .filter(([name]) => params.get(name) !== null)
+      .map(([name, option]) => [option, Number(params.get(name))]),
+  );
+
+const STAGE_OFF: Record<string, Record<string, unknown>> = {
+  autoexposure: { autoExposureEnabled: false },
+  bloom: { bloomEnabled: false, unrealBloomEnabled: false },
+  gtao: { gtaoEnabled: false },
+  localexposure: { localExposureEnabled: false },
+  motionblur: { motionBlurEnabled: false },
+  // `smaa` is the antialiasing the high tier shipped before temporal AA became its default (PRD-636 anti-aliasing).
+  smaa: { temporalAA: false },
+  // `noaa` leaves the edges raw, for attribution.
+  noaa: { screenSpaceAA: "disabled", temporalAA: false },
+  // The world pass without MSAA (`samples: 0`).
+  nomsaa: { samples: 0 },
+  ssgi: { ssgiEnabled: false },
+  ssr: { ssrEnabled: false },
+  // Three's own bloom at its best fit to Unreal's: no threshold, radius 0 (the heaviest weight on the narrowest mip)
+  // and 8.94 percent of the frame's energy (Unreal's tint sum 0.7951 / 6 x intensity 0.675 over the node's weight sum 3).
+  stockbloom: { bloomRadius: 0, bloomStrength: 0.0298, bloomThreshold: 0, unrealBloomEnabled: false },
+  vignette: { vignetteAmount: 0 },
+};
+// Unreal 5.8.3's sun source angle, from the live level dump (tools/unreal-reference/template-actors.json),
+// is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
+// the half angle: Unreal's shadow rays spread over sin(angle / 2).
+const SUN_SOURCE_ANGLE_RAD = (0.7357 * Math.PI) / 360;
+
+export class Reference extends Scene<GameState, IPhysicsContext> {
+  static override readonly initialState: GameState = Play.initialState;
+  #model: Group | undefined;
+  #sky: Texture | undefined;
+  #images: Map<string, IGlbMaterialImages> = new Map();
+  #dispose: (() => void) | undefined;
+  #gi: ReturnType<typeof watchGi> | undefined;
+  #shadow: ReturnType<typeof watchShadowTier> | undefined;
+  #reflectionsDispose: (() => void) | undefined;
+
+  override async load(ctx: GameCtx): Promise<void> {
+    // `model=<scene folder>`: a calibration scene lit by this reference's lighting (PRD-649).
+    const folder = params.get("model");
+    const file = folder
+      ? `unreal-reference/gi/${folder}/scene.glb`
+      : LAYER === "ID"
+        ? "unreal-reference/scene-id.glb"
+        : "unreal-reference/scene.glb";
+    const [model, sky] = await Promise.all([
+      ctx.assets.model<{ scene: Group }>(file),
+      ctx.assets.texture("sky.jpg"),
+    ]);
+    this.#model = model.scene;
+    this.#sky = sky;
+    // A calibration scene's maps for the GI cache's Surface Cache: the owned engine shows JavaScript only their size.
+    if (folder) {
+      const { images, tried } = await fetchGlbMaterialImages(await ctx.assets.resolve(file));
+      this.#images = images;
+      console.info(`TN_CALIBRATION_IMAGES ${JSON.stringify({ tried, materials: [...images.keys()] })}`);
+    }
+  }
+
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
+    const model = this.#model;
+    const sky = this.#sky;
+    if (model === undefined || sky === undefined) throw new Error("TN_REF_NOT_LOADED");
+    const el = (elevationDeg * Math.PI) / 180;
+    const az = (azimuthDeg * Math.PI) / 180;
+    SUN_DIRECTION.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+    // PRD-643: the leaves Unreal draws on its Two Sided Foliage model are `twoSidedFoliage` here, with the same Subsurface Color.
+    markTwoSidedFoliage(model, FOLIAGE[params.get("model") ?? ""]);
+    ctx.add(model);
+    const scene = ctx.scene;
+    const camera = ctx.camera as PerspectiveCamera;
+    const raw = ctx.renderer.raw as unknown as { toneMapping: number };
+    let reflections: Promise<() => void> | undefined;
+    // The L9 chain's own report (stages and dropped), read by the capture.
+    let postDebug: (() => unknown) | undefined;
+    // Draws the sun's shadow at another tier: what a `ShadowFilterBudget` step does, callable from the page.
+    let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
+
+    if (level <= 0) {
+      // ID and L0: unlit base colour, no post. Unreal: ShowFlag.Lighting 0, post off.
+      model.traverse((object) => {
+        if (!(object instanceof Mesh)) return;
+        const source = object.material as MeshStandardMaterial;
+        object.material = new MeshBasicMaterial({ color: source.color, toneMapped: false });
+      });
+      scene.background = new Color(0x000000);
+      scene.environment = null;
+      raw.toneMapping = NoToneMapping;
+    } else {
+      const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+      // PRD-653: the sun meets a rough surface as Unreal's Substrate does. Diagnosis knob off=roughDiffuse is plain Lambert.
+      if (TUNED && !OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
+      // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
+      key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && SHADOW.castShadows;
+      // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:
+      // a virtual page draws front faces, the classic map three's derived side. shadowSide=back is the
+      // BEFORE arm of the sun-seam fix, where back faces store the depth on a wall's inner surface.
+      const casterSide = { front: FrontSide, back: BackSide, double: DoubleSide }[
+        params.get("shadowSide") ?? ""
+      ];
+      // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
+      // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
+      const emissiveSeen = new Set<unknown>();
+      model.traverse((object) => {
+        if (object instanceof Mesh) {
+          object.castShadow = true;
+          // A two-sided material (a leaf card) casts from both faces: a card that faces away from the sun still shades.
+          if (casterSide !== undefined)
+            for (const m of [object.material].flat())
+              m.shadowSide = m.side === DoubleSide && !params.has("shadowSide") ? DoubleSide : casterSide;
+          object.receiveShadow = true;
+          // Unreal's emissive is radiance as it stands, the sun is lux / pi (EMISSIVE_UNITS).
+          const material = object.material as MeshStandardMaterial;
+          if (!emissiveSeen.has(material)) {
+            emissiveSeen.add(material);
+            material.emissiveIntensity *= EMISSIVE_UNITS;
+          }
+        }
+      });
+      // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
+      if (TUNED) {
+        // A shadow tier decides whether the sun casts and what its filter samples; `ShadowFilterBudget`
+        // moves it with the frame time when the URL asks for shadowAuto=1 (PRD-652).
+        const applyShadowTier = (next: ShadowFilterTier) => {
+          const preset = shadowPreset(next);
+          key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && preset.castShadows;
+          if (!OFF.has("vsm"))
+            (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
+              // Unreal's un-normalised sun disc by default (PRD-634, `unrealSunDiscScale`). Override vsmAngle=N:
+              // N times the nominal angular radius (1 = the normalised disc, the edge before PRD-634).
+              sourceAngleRad:
+                SUN_SOURCE_ANGLE_RAD *
+                (params.get("vsmAngle") === null || params.get("vsmAngle") === "ue"
+                  ? unrealSunDiscScale(SUN_DIRECTION)
+                  : Number(params.get("vsmAngle"))),
+              ...preset.filter,
+              // Diagnosis knob vsmMinPx: the filter disc's floor in screen pixels (absent = the engine's default).
+              ...(params.get("vsmMinPx") === null
+                ? {}
+                : { minPenumbraPixels: Number(params.get("vsmMinPx")) }),
+              // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
+              ...(params.get("sunBlockers") === null
+                ? {}
+                : { blockerSamples: Number(params.get("sunBlockers")) }),
+              ...(params.get("sunSamples") === null
+                ? {}
+                : { filterSamples: Number(params.get("sunSamples")) }),
+              // Diagnosis knob vsmRay: Unreal's shadow-ray samples per ray (0 = the full caster gap, the old edge).
+              ...(params.get("vsmRay") === null ? {} : { samplesPerRay: Number(params.get("vsmRay")) }),
+            });
+        };
+        applyShadowTier(SHADOW_TIER);
+        setShadowTier = applyShadowTier;
+        if (level >= 5) this.#shadow = watchShadowTier(ctx, { tier: SHADOW_TIER, apply: applyShadowTier });
+        // Unreal's directional light shadows the whole view with camera-centred virtual shadow
+        // maps. `VirtualShadowNode` is that: nested clip levels around the camera, each twice
+        // as wide as the last. The coarsest half-width is the scene's own diameter, so every
+        // point of the scene is inside it from any camera position in the scene; the finest is
+        // a quarter of the radius, which keeps the near field at millimetre texels.
+        const bounds = new Box3().setFromObject(model).getBoundingSphere(new Sphere());
+        const reach = bounds.radius;
+        key.target.position.copy(bounds.center);
+        scene.add(key.target);
+        key.position
+          .copy(SUN_DIRECTION)
+          .multiplyScalar(reach + 1)
+          .add(bounds.center);
+        // Each level's map size is Unreal's texel-per-pixel rule, measured by the engine on the pose's camera
+        // and viewport (2944 texels at hfov 60 and 1280 px); the engine fits the atlas to the device's
+        // texture limit. Diagnosis knob vsmMap=N holds every level at N (2048 was the fixed size before).
+        // Candidate knob sunBox=reach (PRD-634 Phase 1, with off=vsm): the one stock map widened to the scene.
+        if (OFF.has("vsm") && params.get("sunBox") === "reach") {
+          const box = key.shadow.camera;
+          box.left = box.bottom = -reach;
+          box.right = box.top = reach;
+          box.near = 0.5;
+          box.far = 2 * reach + 2;
+          box.updateProjectionMatrix();
+        }
+        if (!OFF.has("vsm"))
+          key.shadow.shadowNode = new VirtualShadowNode(key, {
+            // Diagnosis knobs vsmExt=<divisors of reach, finest first>, vsmMap, vsmMover: the clip levels.
+            clipExtents: (params.get("vsmExt") ?? "4,2,1,0.5").split(",").map((d) => reach / Number(d)),
+            ...(params.get("vsmMap") === null ? {} : { mapSize: Number(params.get("vsmMap")) }),
+            moverMapSize: Number(params.get("vsmMover") ?? 512),
+            // Diagnosis knob vsmAspect: the smallest light-space height over width of a level (1 = square).
+            ...(params.get("vsmAspect") === null ? {} : { minWindowAspect: Number(params.get("vsmAspect")) }),
+            // Diagnosis knob vsmLod=0: every level draws a chain's own geometry (no shadowLodBias).
+            ...(params.get("vsmLod") === "0" ? { shadowLodBias: false } : {}),
+            // Diagnosis knob vsmLodTexels=N: the rung error a level accepts, in texels (Infinity = the coarsest rung on every level).
+            ...(params.get("vsmLodTexels") === null ? {} : { shadowLodTexels: Number(params.get("vsmLodTexels")) }),
+            // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
+            receiverPlaneBias: params.get("recvBias") !== "0",
+            // Diagnosis knob shadowBias=N brackets the tier's directional resolution bias (PRD-652).
+            resolutionLodBiasDirectional: Number(
+              params.get("shadowBias") ?? SHADOW.resolutionLodBiasDirectional,
+            ),
+          });
+      }
+      if (level >= 2) {
+        setupSky(
+          scene,
+          sky,
+          ctx.renderer.softwareAdapter !== undefined,
+          level >= 3,
+          level >= 4 && !OFF.has("clouds"),
+        );
+        if (level < 3) {
+          scene.fog = null;
+          (scene as unknown as { fogNode: unknown }).fogNode = null;
+        }
+      } else {
+        scene.background = new Color(0x000000);
+        scene.environment = null;
+      }
+      // PRD-642: from L8 a reflection ray walks the scene's triangles (core's TracedReflections), so the painted
+      // floor, which stood in for what the screen cannot see, is not needed. The cube capture stays: a ray that
+      // misses sees the sky, and the capture draws the sky at a finer grain than the 64 x 32 environment.
+      const tracing = TUNED && level >= 8 && !OFF.has("traced");
+      if (tracing) reflectionTrace.current = new TracedReflections(model);
+      // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
+      // global illumination), the sun a surface returns (render/giCache.ts).
+      if (TUNED && level >= 2 && !OFF.has("gi"))
+        installGi(ctx, model, {
+          // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
+          paintGround: !tracing || params.get("paint") === "1",
+          // Diagnosis knob spill=1: an emissive sphere lights its neighbours below L7 too (the look before PRD-634's emitter rule).
+          emitterSpill: params.get("spill") === "1",
+          // PRD-642 Phase 3 (opt in, D10): past the trace's roughness cut-off, specular reads the radiance cache and, past
+          // 0.8, the diffuse GI. Off by default: the cache is an ambient cube per probe, a lobe far wider than a surface at
+          // roughness 0.5 needs, and its shade is brighter than Unreal's, so the read adds light that Unreal's lobes do not.
+          // Diagnosis knob roughSpec=1 turns it on.
+          ...(tracing && params.get("roughSpec") === "1"
+            ? {
+                roughSpecular: (roughness: number) =>
+                  reflectionTrace.current?.routeAt(roughness) ?? {
+                    traced: 1,
+                    roughSpecular: 0,
+                    diffuse: 0,
+                  },
+              }
+            : {}),
+          // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
+          stockRays: params.get("stockRays") === "1",
+          // A ray reads the map where it lands, as Lumen's surface cache holds each card's albedo (UE 5.8.3:
+          // Engine/Shaders/Private/Lumen/SurfaceCache/LumenSurfaceCache.ush, CombineFinalLighting). Without it a leaf
+          // card bounced its white colour factor, not its dark map (PRD-640). Diagnosis knob giMaps=0: the colour factor.
+          surfaceCache: params.get("giMaps") !== "0" && {
+            images: (material, slot) => this.#images.get(material.name ?? "")?.[slot],
+          },
+          // Diagnosis knob giBounces=N: the passes that carry surface light back into the cache (0 = the sky alone).
+          bounces: GI_METHOD === "none" ? 0 : Number(params.get("giBounces") ?? 5),
+          // The tier's sky light multiplier (Unreal's Low sets 0.8). Diagnosis knob skyMul=N brackets it.
+          skyIntensity: level >= 7 ? Number(params.get("skyMul") ?? GI.skylightIntensityMultiplier) : 1,
+          // Unreal without GI shadows its sky light with distance fields, up to 10 m. Its Low tier (L7) turns
+          // distance field AO off, so the sky light reaches an interior unoccluded: 0 m shadows nothing.
+          ...(GI_METHOD === "none"
+            ? { skyShadowDistance: level >= 7 && !GI.distanceFieldAO ? 0 : 10 }
+            : {}),
+          sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
+        });
+      // Diagnosis knob envMul=N scales the sky's diffuse and specular environment light (0 = no sky light but the GI cache).
+      if (params.get("envMul") !== null) scene.environmentIntensity = Number(params.get("envMul"));
+      if (TUNED && level >= 8 && !OFF.has("reflcap"))
+        reflections = captureReflections(
+          ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
+          scene,
+          model,
+        );
+      if (level >= 9) {
+        // setupPost reads the `high` preset by reference, so the ablation switches go there.
+        for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
+        Object.assign(qualityPreset("high"), gtaoKnobs());
+        const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
+        postDebug = () => post.debug();
+        this.#dispose = () => post.dispose();
+      } else {
+        // The template's own `high` chain with the L9-only stages off: bloom, vignette, the
+        // authored grade and grain, auto exposure. AO enters at L6, as in the Unreal ladder.
+        const build = (method: FinalGatherMethod) => {
+          this.#dispose?.();
+          const world = new WorldEnvironment({
+            ...qualityPreset("high"),
+            // The Epic gather is opt-in here: on the sunlit room it smooths the walls but lights the wall under the sill
+            // 30 levels above Unreal (PRD-638 judge round 2026-10-21), so the default stays medium until PRD-640's probes land.
+            ...(params.get("ssgiQuality") === "epic" ? EPIC_SSGI : {}),
+            // Diagnosis: ?ssgiQuality=<tier>, ?ssgiScale=N, ?ssgiIntensity=N and ?ssgiDenoise=N bracket the gather.
+            ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
+            ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+            ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+            ...(params.get("ssgiDenoise") === null ? {} : { ssgiDenoiseRadius: Number(params.get("ssgiDenoise")) }),
+            // Diagnosis: ?probes=1 gathers with screen probes (PRD-640).
+            // 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice Unreal's real-time 8 x 8
+            // (PRD-640 round 2026-10-21: sunlit-room dP50 0.129 against 0.140 for the per-pixel Epic gather). ?probeRays=N overrides.
+            ...(params.get("probes") === "1"
+              ? {
+                  ssgiScreenProbes: true,
+                  ssgiProbeRays: Number(params.get("probeRays") ?? 16),
+                  ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
+                }
+              : {}),
+            ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
+            ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
+            autoExposureEnabled: false,
+            bloomEnabled: false,
+            localExposureEnabled: false,
+            gtaoEnabled: level >= 6,
+            finalGatherMethod: method,
+            // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
+            ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
+            ...gtaoKnobs(),
+            vignetteAmount: 0,
+            // Diagnosis: ?exposure=N sets the exposure (pair it with ?linear=1 below).
+            ...(params.get("exposure") === null ? {} : { exposure: Number(params.get("exposure")) }),
+            // The same ablation switches as L9, for attributing a GI fault below it.
+            ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
+          });
+          this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
+        };
+        build(GI_METHOD);
+        // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+        // light a PRD-646 direct-light gap is measured in), as CalibrationScene does.
+        if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
+        // The tier's method holds; the GI watcher reports its share of the GPU frame (PRD-644).
+        if (GI_METHOD !== "none")
+          this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD });
+      }
+    }
+
+    const target = new Vector3();
+    const reference = {
+      // The live renderer, as the calibration scene exposes it: the capture's frame gate reads its draw counters and temporal state.
+      renderer: ctx.renderer.raw,
+      layer: LAYER,
+      tier: TIER,
+      finalGatherMethod: GI_METHOD,
+      shadowQuality: SHADOW.shadowQuality,
+      // The GI and shadow watchers' newest windows, for the perf run (PRD-644 AC-2, PRD-652).
+      giBudget: () => this.#gi?.lastReport(),
+      shadowBudget: () => this.#shadow?.lastReport(),
+      setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
+      // Only the owned engine's renderer carries `info.engine`; the capture refuses anything else.
+      engine:
+        "engine" in (ctx.renderer.raw as unknown as { info: object }).info
+          ? "threenative"
+          : "threejs",
+      // The renderer's MSAA samples and the engine's live temporal state beside the chain's own report.
+      debug: (): unknown => {
+        const info = (ctx.renderer.raw as unknown as { info: { engine?: { samples?: number; temporal?: unknown } } }).info;
+        return {
+          samples: { asked: (ctx.renderer.raw as unknown as { samples?: number }).samples, drawn: info.engine?.samples },
+          temporal: info.engine?.temporal,
+          post: postDebug?.(),
+        };
+      },
+      pose(pose: Pose): void {
+        const aspect = innerWidth / innerHeight;
+        const half = (pose.hfovDeg * Math.PI) / 360;
+        camera.fov = (2 * Math.atan(Math.tan(half) / aspect) * 180) / Math.PI;
+        camera.aspect = aspect;
+        camera.near = 0.1;
+        camera.far = 2000;
+        camera.position.fromArray(pose.position);
+        camera.lookAt(target.fromArray(pose.target));
+        camera.updateProjectionMatrix();
+        // `pan=<rad/s>` turns the camera about the vertical axis from this pose on: the motion blur proof.
+        // `panStep` sweeps it by a fixed angle per drawn frame instead.
+        if (PAN === 0 && PAN_STEP === 0) return;
+        const token = ++panToken;
+        const origin = camera.position.clone();
+        const offset = target.clone().sub(origin);
+        const start = performance.now();
+        let frames = 0;
+        const spin = () => {
+          if (token !== panToken) return;
+          frames += 1;
+          // A triangle wave of height `PAN_ARC`: constant speed, reversing at either end of the arc.
+          const sweep = PAN_ARC * (Math.abs((((PAN_STEP * frames) / PAN_ARC + 1) % 4) - 2) - 1);
+          const angle = PAN_STEP > 0 ? sweep : (PAN * (performance.now() - start)) / 1000;
+          camera.lookAt(origin.clone().add(offset.clone().applyAxisAngle(UP, angle)));
+          requestAnimationFrame(spin);
+        };
+        requestAnimationFrame(spin);
+      },
+    };
+    // Start at the capture's first pose (or ?pose=<name>). The framework camera starts at the
+    // origin, inside the floor plane, where the floor draws as a 1-px line across the frame.
+    const poses = POSES[params.get("model") ?? ""] ?? [];
+    const start = poses.find((pose) => pose.name === params.get("pose")) ?? poses[0];
+    if (start !== undefined) reference.pose(start);
+    const publishReference = () => {
+      (window as unknown as { __tnRef: unknown }).__tnRef = reference;
+    };
+    if (reflections === undefined) publishReference();
+    else {
+      const ready = reflections.then(async (dispose) => {
+        this.#reflectionsDispose = dispose;
+        const renderer = ctx.renderer.raw as unknown as {
+          prepareEnvironmentAsync?(scene: unknown, camera: unknown): Promise<boolean>;
+        };
+        if ((await renderer.prepareEnvironmentAsync?.(scene, camera)) === false)
+          throw new Error("TN_REFLECTION_CAPTURE_PMREM");
+        publishReference();
+      });
+      ctx.startup.hold("reflection-capture", ready, 180_000);
+      void ready.catch((error) => console.error("TN_REFLECTION_CAPTURE_FAILED", error));
+    }
+    return () => undefined;
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#reflectionsDispose?.();
+    this.#reflectionsDispose = undefined;
+    reflectionTrace.current?.dispose();
+    reflectionTrace.current = undefined;
+    this.#dispose?.();
+    this.#dispose = undefined;
+    super.exit(ctx);
+  }
+}

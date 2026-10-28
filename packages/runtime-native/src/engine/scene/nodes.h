@@ -50,6 +50,8 @@ class Scene : public Object3D {
     std::shared_ptr<Fog> fog;
     /** three's `scene.fogNode`: vec4(color, factor), applied to every fogged material in place of `fog`. */
     shader::graph::Node fogNode;
+    /** Per-pixel sky colour; takes precedence over the Color/Texture background. */
+    shader::graph::Node backgroundNode;
     void* overrideMaterial = nullptr;
 
     double backgroundBlurriness = 0;

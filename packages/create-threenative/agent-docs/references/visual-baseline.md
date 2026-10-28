@@ -9,8 +9,8 @@ Three.js source in this project, yours to rewrite or delete.
   not raw `BoxGeometry`.** A sharp box reads as Minecraft; the same box with a 0.14 corner
   radius reads as a toy, and that is most of the difference between a scene that looks
   designed and one that looks like a test harness. For the seeded randomness that varies a
-  run of meshes, the scene builds `createRandom(seed)` and passes it down — nothing in
-  `src/render/` may import a framework package, which is what keeps this folder portable.
+  run of meshes, the scene builds `createRandom(seed)` and passes it down.
+  `src/render/` imports shared Unreal look plumbing from `@threenative/core`; its lighting and materials stay game-owned.
 - `lighting.ts` — key, sky/ground bounce, **rim**, ambient, with soft shadows and a
   `normalBias` tuned for rounded geometry. The rim is what stops silhouettes reading as
   flat cut-outs; do not delete it while "simplifying".
@@ -18,8 +18,7 @@ Three.js source in this project, yours to rewrite or delete.
   **lead** are the framing: the default aims ahead of the character rather than centring it,
   because a level that runs one way puts half the picture behind the player otherwise.
 - `postprocessing.ts` — the editable presets and `setupPost` delegation.
-- `worldEnvironment.ts` — the editable Godot-named render chain: tone mapping/exposure and
-  optional TSL stages, with `createRenderChain` reporting applied or refused stages.
+- `WorldEnvironment` from `@threenative/core` — the shared Unreal render chain, with filmic tone mapping and metered exposure. Override options in `quality.ts`; `TN_RENDER_CHAIN` reports applied or refused stages.
 - `materials.ts` — `floorMaterial`, `structureMaterial` and `propMaterial`, over a `DataTexture`
   metre grid and a grain normal map. **Two greys and one saturated colour is the whole rule:**
   light grid where the player walks, dark grid on sides and structure, and a single saturated
@@ -135,6 +134,26 @@ reason** — `godraysEnabled is false`, `light 'sun' does not cast shadows`, `re
 stage you turned on that is not in that line as `applied: true` did not run, and the reason says
 why. An unknown `ssgiQuality` or `tonemapMode` throws at construction rather than quietly
 becoming the default.
+
+## Unreal's film curve and colour grade
+
+`tonemapMode: "filmic"` runs the curve and the defaults of a fresh Unreal Engine 5.8.3 project
+(`render/tonemap.ts`, your source). `tonemapMode: "aces"` is the named override. The curve takes
+`filmicCurve: { slope: 0.88, toe: 0.55, shoulder: 0.26, blackClip: 0, whiteClip: 0.04, ... }`, and
+the grade takes Unreal's controls under `colorGrade`:
+
+```ts
+colorGrade: {
+  whiteTemp: 5500, whiteTint: 0,           // Kelvin; "colorTemperature" in temperatureMode warms instead
+  global: { saturation: [1, 1, 1, 1.1] },  // [red, green, blue, master], like Unreal's panel
+  shadows: { gain: [1, 1, 1.05, 1] },      // also midtones and highlights; limits shadowsMax, highlightsMin/Max
+  toneCurveAmount: 1,                      // 0 = graded colour with no curve
+}
+```
+
+A control left out keeps Unreal's default and adds no shader code. Both options throw under any
+other `tonemapMode`. Unreal's colour LUT also clips each channel at 43.7 after exposure.
+That clip is off by default because it moves hot-emitter pixels; `filmicCurve: { lutClip: LUT_CLIP }` turns it on.
 
 ## Shafts of light — the one recipe that is easy to get wrong
 

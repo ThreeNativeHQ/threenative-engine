@@ -5,6 +5,7 @@ import {
   type IRenderPassSample,
   RenderPassBudget,
   shadowRedrawGpuMs,
+  stageGpuReading,
 } from "../src/render-pass-budget.js";
 
 /**
@@ -453,5 +454,53 @@ describe("render pass budget", () => {
     const main = budget.window().passes?.main;
     expect(main?.triangles.p50).toBe(338_000_000);
     expect(main?.gpuTriangles).toBe(402_000);
+  });
+
+  it("names the GPU time of each named nested pass, so a game can read one stage's cost", () => {
+    // Three names a post pass by the scene it renders (`SSGI`, `AO`). Those names are the only handle
+    // a stage has: the reading sums the nested passes that carry the name, per frame, once the whole
+    // frame has resolved. The shadow passes are one stage, `Shadow`, as the owned engine's shadow segment is.
+    const { pool, raw } = timestampRenderer(20);
+    const budget = RenderPassBudget.install(raw) as RenderPassBudget;
+    const gather: IFakeScene = { name: "SSGI", submissions: { draws: 1, triangles: 2 } };
+    const occlusion: IFakeScene = { name: "AO", submissions: { draws: 1, triangles: 2 } };
+    expect(stageGpuReading(raw)).toBeUndefined();
+    budget.beginFrame();
+    raw.render(
+      {
+        ...MAIN,
+        submissions: { draws: 10, triangles: 100 },
+        nested: [SHADOW, gather, gather, occlusion],
+      },
+      {},
+    );
+    const uids = [...pool.queryOffsets.keys()];
+    const ms = [2.25, 1.5, 0.75, 0.5, 5.5]; // shadow, SSGI, SSGI, AO, main
+    uids.forEach((uid, index) => pool.timestamps.set(uid, ms[index] ?? 0));
+    expect(budget.nextGpuFrame()).toMatchObject({ frame: 20, total: 10.5 });
+    expect(stageGpuReading(raw)).toEqual({
+      frame: 20,
+      stages: { AO: 0.5, SSGI: 2.25, Shadow: 2.25 },
+      total: 10.5,
+    });
+  });
+
+  it("leaves the stage reading absent until a whole frame resolves", () => {
+    const { pool, raw } = timestampRenderer(30);
+    const budget = RenderPassBudget.install(raw) as RenderPassBudget;
+    budget.beginFrame();
+    raw.render(
+      {
+        ...MAIN,
+        submissions: { draws: 10, triangles: 100 },
+        nested: [{ name: "SSGI", submissions: { draws: 1, triangles: 2 } }],
+      },
+      {},
+    );
+    const [gatherUid] = [...pool.queryOffsets.keys()];
+    if (gatherUid === undefined) throw new Error("fake backend allocated no timestamp uid");
+    pool.timestamps.set(gatherUid, 1.5);
+    expect(budget.nextGpuFrame()).toBeUndefined();
+    expect(stageGpuReading(raw)).toBeUndefined();
   });
 });

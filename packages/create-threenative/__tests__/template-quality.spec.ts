@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, symlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PerspectiveCamera, Scene } from "three";
@@ -10,6 +10,8 @@ import {
   presetLiteralsIn,
   templateNames,
 } from "../../../scripts/template-quality.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { createProject } from "../src/index.js";
 
 const templatesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "templates");
 
@@ -159,10 +161,22 @@ describe("template quality tiers", () => {
   it("should take the cheap tier through each template's own setupPost on a software adapter", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
+      const generatedRoot = await makeTempDir("template-quality-setup-post-");
       for (const name of names) {
-        const post = (await import(
-          path.join(templatesDir, name, "src", "render", "postprocessing.ts")
-        )) as {
+        const { target } = await createProject(
+          { install: false, target: name, template: name },
+          generatedRoot,
+        );
+        // Generate the canonical render sources that the installed kit receives.
+        for (const [dependency, source] of [
+          ["@threenative/core", path.resolve("packages/core")],
+          ["three", path.resolve("packages/create-threenative/node_modules/three")],
+        ] as const) {
+          const link = path.join(target, "node_modules", dependency);
+          await mkdir(path.dirname(link), { recursive: true });
+          await symlink(source, link, "dir");
+        }
+        const post = (await import(path.join(target, "src", "render", "postprocessing.ts"))) as {
           setupPost: (
             renderer: unknown,
             scene: unknown,
@@ -294,13 +308,16 @@ describe("template quality tiers", () => {
     ];
     const read: string[] = [];
     for (const name of names) {
-      const { resolveQualityTier } = await load(name);
+      const { qualityPreset, resolveQualityTier } = await load(name);
       for (const { chain, label } of await renderChains(name)) {
         read.push(label);
         for (const [adapter, request] of adapters) {
           const asserted = scenarioTier(chain, adapter);
           if (asserted === undefined) continue;
-          expect(asserted, `${label}: ${adapter} row`).toBe(resolveQualityTier(request));
+          const tier = resolveQualityTier(request);
+          expect(asserted, `${label}: ${adapter} row`).toBe(
+            name === "runner" ? qualityPreset(tier).renderChainTier : tier,
+          );
         }
       }
     }
@@ -318,6 +335,36 @@ describe("template quality tiers", () => {
   // `perAdapter.software: {tier: "low"}` was green anyway, because those are read off the tier the
   // game chose rather than off the chain that ran. The same gap sat in `medium` for ten kits: the
   // game resolved `medium` for an integrated or mobile-high GPU while the chain stayed on `high`.
+  it.each(QUALITY_TIERS)(
+    "Runner keeps SSR off at %s without changing its core curve or meter",
+    async (tier) => {
+      const { qualityPreset } = await load("runner");
+      expect(qualityPreset(tier)).toMatchObject({
+        ssrEnabled: false,
+        tonemapMode: "filmic",
+        autoExposureEnabled: true,
+        gtaoRadius: 0.35,
+        samples: 4,
+      });
+    },
+  );
+
+  it("Runner's measured cap preserves every non-overridden core medium option", async () => {
+    const { qualityPreset, resolveQualityTier } = await load("runner");
+    const core = await import("@threenative/core");
+    const { exposureSettings } = await import(
+      path.join(templatesDir, "runner/src/render/exposure.ts")
+    );
+    expect(resolveQualityTier({ tier: "high" })).toBe("high");
+    expect(qualityPreset("high")).toEqual({
+      ...core.qualityPreset("medium"),
+      ssrEnabled: false,
+      gtaoRadius: 0.35,
+      samples: 4,
+      exposurePolicy: exposureSettings,
+    });
+  });
+
   it("should request the chain tier it names in every template's preset", async () => {
     for (const name of names) {
       const { qualityPreset } = await load(name);
@@ -326,7 +373,7 @@ describe("template quality tiers", () => {
         expect(
           qualityPreset(tier).renderChainTier ?? "high",
           `${name}: ${tier} preset leaves the render chain on another tier`,
-        ).toBe(tier);
+        ).toBe(name === "runner" && tier === "high" ? "medium" : tier);
       }
     }
   });
@@ -344,9 +391,14 @@ describe("template quality tiers", () => {
   it("should give medium its own look, between the other two", async () => {
     for (const name of names) {
       const { qualityPreset } = await load(name);
-      expect(qualityPreset("medium"), `${name}: medium equals high`).not.toEqual(
-        qualityPreset("high"),
-      );
+      if (name === "runner")
+        expect(qualityPreset("high"), "Runner's measured high-to-medium cap").toEqual(
+          qualityPreset("medium"),
+        );
+      else
+        expect(qualityPreset("medium"), `${name}: medium equals high`).not.toEqual(
+          qualityPreset("high"),
+        );
       expect(qualityPreset("medium"), `${name}: medium equals low`).not.toEqual(
         qualityPreset("low"),
       );
@@ -876,6 +928,32 @@ describe("starter postprocessing lifecycle", () => {
     expect(missing).toMatchObject({ fallback: "gpu-unavailable", meter: "presented", window: 3 });
     expect(Object.hasOwn(missing, "gpuMs")).toBe(false);
     controller.dispose();
+  });
+
+  it("reports the engine's live temporal state while the chain's own temporal AA runs", async () => {
+    const post = await import("../templates/starter/src/render/postprocessing.js");
+    const temporal = { active: true, frame: 7, historyValid: true, jitter: [0.25, -0.25] };
+    const owned = {
+      kind: "webgpu",
+      raw: { info: { engine: { samples: 1, temporal } } },
+      createRenderChain: () => ({ applied: { stages: [], dropped: [] }, dispose() {} }),
+    } as Parameters<typeof post.setupPost>[0];
+    // `high` anti-aliases temporally, so the report is the engine's own, named for the method.
+    const high = post.setupPost(owned, new Scene(), new PerspectiveCamera(), {
+      mobile: false,
+      startupWindows: 0,
+      tier: "high",
+    });
+    expect(high.debug().temporal).toEqual({ method: "traa", ...temporal });
+    high.dispose();
+    // `low` keeps SMAA, so there is no temporal state to report and the key stays absent.
+    const low = post.setupPost(owned, new Scene(), new PerspectiveCamera(), {
+      mobile: false,
+      startupWindows: 0,
+      tier: "low",
+    });
+    expect(Object.hasOwn(low.debug(), "temporal")).toBe(false);
+    low.dispose();
   });
 
   it("replaces only changed graphs and stops consuming windows after scene disposal", async () => {

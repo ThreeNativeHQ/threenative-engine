@@ -73,7 +73,12 @@ path samples in groups of ten ticks. A counted group presents no extra observati
 standing still while a scenario watches it reports one boot window and nothing after it, because
 there was no second frame to close a window on.
 
-`--live-clock` (browser and desktop targets) is the opt-in, and it is the harness half of what the
+Browser assertions containing `maxFrameMsP95` or `minFps` select this live clock automatically:
+forced simulation batches do not measure normal frame pacing. An explicit `liveClock: false`
+run configuration retains counted ticks; draw-count-only assertions and other targets keep their
+existing default.
+
+`--live-clock` (browser and desktop targets) also opts in, and it is the harness half of what the
 native production profile's own `--live-clock` already does there. On the browser the runner puts
 `globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` in an `addInitScript` — ahead of every
 page script, so a request that lands after the game's module evaluated cannot happen — and on the
@@ -91,9 +96,17 @@ really runs on. An unrecognised value throws `TN_PLAYTEST_CLOCK_UNSUPPORTED` rat
 back — a misspelling that quietly left the loop frozen published a frame rate for a game that was
 not playing.
 
+A browser scenario can ask for it itself with `"clock": "wall-clock"` (target `web` only, any other value
+or target throws at load). The flag then applies to that scenario alone, so a kit's glob run
+(`--scenario "playtests/*.playtest.json"`) measures its `performance` scenario on the wall clock and
+leaves every other scenario on counted ticks. On the counted clock a 300-tick window of a kit
+performance run closed on 44 to 53 presented frames and held 1 to 3 GPU samples; on the wall clock the
+same windows held 17 to 38 (desktop RTX 2080 on a shared GPU, four kits). A performance judgment
+needs the second, and the frame bound fails closed with `TN_PLAYTEST_PERF_FEW_GPU_SAMPLES` without it.
+
 It is a measurement switch, not scenario semantics. `holdTicks` and `waitTicks` stay tick counts,
 the flag is refused on the device targets (their hosts take the request from the production
-profile's injected instrumentation, not from this runner), and a deterministic scenario that wants
-ticks asks for none. A value the host does not recognize is refused there too:
+profile's injected instrumentation, not from this runner). Ordinary deterministic scenarios retain
+counted ticks. A value the host does not recognize is refused there too:
 `TN_PLAYTEST_CLOCK_UNSUPPORTED` on stderr, and the launch fails rather than reporting a wall-clock
 run that never happened.

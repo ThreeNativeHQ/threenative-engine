@@ -101,6 +101,8 @@ pub struct TnPhysicsRayQuery {
     pub to_y: f32,
     pub to_z: f32,
     pub collision_mask: u32,
+    /// Godot `hit_from_inside`: 0 skips a solid that contains the origin, nonzero reports it.
+    pub hit_from_inside: u32,
 }
 
 #[repr(C)]
@@ -527,13 +529,15 @@ impl Simulation {
         if options.body_type == 0 {
             body = body.ccd_enabled(options.continuous_collision);
         }
-        if options.mass > 0.0 {
-            body = body.additional_mass(options.mass);
-        }
         let body = self.bodies.insert(body);
+        // Explicit mass is the body's total mass, not a bonus on top of the collider's
+        // density-derived mass. Zero keeps the automatic collider mass.
         let mut collider = collider
             .collision_groups(InteractionGroups::new(layer, mask))
             .sensor(options.sensor);
+        if options.mass > 0.0 {
+            collider = collider.mass(options.mass);
+        }
         collider = collider.active_events(ActiveEvents::COLLISION_EVENTS);
         let shape = collider.shape.clone();
         let collider = self
@@ -1145,7 +1149,10 @@ impl Simulation {
                 body.set_next_kinematic_translation(current + movement.translation);
                 body.set_next_kinematic_rotation(rotation);
                 let state = self.characters.get_mut(&id).expect("character was checked");
-                let grounded = movement.grounded && (walkable || contacts == 0);
+                // Standing still on a floor while pressing a wall records only the wall; the floor
+                // held the downward step in place, so Rapier's answer stands, as on the web backend.
+                let held = desired.y < -1e-4 && movement.translation.y.abs() < 1e-4;
+                let grounded = movement.grounded && (walkable || contacts == 0 || held);
                 state.grounded = grounded;
                 state.ground_collider = ground_collider
                     .or_else(|| grounded.then_some(state.ground_collider).flatten());
@@ -1393,26 +1400,41 @@ impl Simulation {
             point![query.from_x, query.from_y, query.from_z],
             scaled_direction / scaled_distance,
         );
-        let predicate = |handle: ColliderHandle, collider: &Collider| {
-            self.entries.values().any(|entry| entry.collider == handle)
-                && !collider.is_sensor()
-                && (collider.collision_groups().memberships.bits() & query.collision_mask) != 0
-        };
-        let filter = QueryFilter {
-            flags: QueryFilterFlags::EXCLUDE_SENSORS,
-            predicate: Some(&predicate),
-            ..QueryFilter::default()
-        };
-        let pipeline = self.broad_phase.as_query_pipeline(
-            self.narrow_phase.query_dispatcher(),
-            &self.bodies,
-            &self.colliders,
-            filter,
-        );
-        let Some((collider, intersection)) =
-            pipeline.cast_ray_and_get_normal(&ray, distance, true)
-        else {
-            return Ok(None);
+        // Rapier's solid cast reports a ray that starts inside a collider as time of impact 0
+        // with a zero normal. Godot's default (`hit_from_inside` false) skips that collider, so
+        // skip it and cast again: one pass per overlapping collider at most.
+        let mut skipped: Vec<ColliderHandle> = Vec::new();
+        let (collider, intersection) = loop {
+            let predicate = |handle: ColliderHandle, collider: &Collider| {
+                !skipped.contains(&handle)
+                    && self.entries.values().any(|entry| entry.collider == handle)
+                    && !collider.is_sensor()
+                    && (collider.collision_groups().memberships.bits() & query.collision_mask) != 0
+            };
+            let filter = QueryFilter {
+                flags: QueryFilterFlags::EXCLUDE_SENSORS,
+                predicate: Some(&predicate),
+                ..QueryFilter::default()
+            };
+            let pipeline = self.broad_phase.as_query_pipeline(
+                self.narrow_phase.query_dispatcher(),
+                &self.bodies,
+                &self.colliders,
+                filter,
+            );
+            let Some((collider, intersection)) =
+                pipeline.cast_ray_and_get_normal(&ray, distance, true)
+            else {
+                return Ok(None);
+            };
+            if query.hit_from_inside == 0
+                && intersection.time_of_impact == 0.0
+                && intersection.normal == vector![0.0, 0.0, 0.0]
+            {
+                skipped.push(collider);
+                continue;
+            }
+            break (collider, intersection);
         };
         let Some(body_id) = self
             .entries
@@ -2224,6 +2246,41 @@ mod tests {
     }
 
     #[test]
+    fn explicit_mass_is_the_total_body_mass_not_added_to_the_collider() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let mut explicit = fixed_box(1, 0.0, 0.0, 1);
+        explicit.body_type = 0;
+        explicit.shape_x = 1.0;
+        explicit.shape_y = 1.0;
+        explicit.shape_z = 1.0;
+        explicit.mass = 2.0;
+        assert!(simulation.add_body(explicit));
+        let mut automatic = fixed_box(2, 10.0, 0.0, 1);
+        automatic.body_type = 0;
+        automatic.shape_x = 1.0;
+        automatic.shape_y = 1.0;
+        automatic.shape_z = 1.0;
+        automatic.mass = 0.0;
+        assert!(simulation.add_body(automatic));
+
+        let explicit_mass = simulation.bodies[simulation.entries[&1].body].mass();
+        assert!(
+            (explicit_mass - 2.0).abs() < 1e-4,
+            "explicit mass was {explicit_mass} instead of 2"
+        );
+        let automatic_mass = simulation.bodies[simulation.entries[&2].body].mass();
+        assert!(
+            (automatic_mass - 8.0).abs() < 1e-3,
+            "automatic collider mass was {automatic_mass} instead of 8"
+        );
+    }
+
+    #[test]
     fn continuous_collision_stops_a_fast_body_and_opt_out_tunnels() {
         let mut simulation = Simulation::new(TnPhysicsWorldOptions {
             gravity_x: 0.0,
@@ -2337,6 +2394,7 @@ mod tests {
                 to_y: 0.0,
                 to_z: 2.0,
                 collision_mask: 1,
+                hit_from_inside: 0,
             })
             .expect("clear ray arithmetic");
         assert!(through.is_none(), "a ray through the opening must miss");
@@ -2349,6 +2407,7 @@ mod tests {
                 to_y: 0.0,
                 to_z: 2.0,
                 collision_mask: 1,
+                hit_from_inside: 0,
             })
             .expect("wall ray arithmetic")
             .expect("a ray into the intact wall must hit");
@@ -2421,6 +2480,7 @@ mod tests {
                 to_y: 0.0,
                 to_z: 0.0,
                 collision_mask: 1,
+                hit_from_inside: 0,
             })
             .expect("valid ray arithmetic")
             .expect("ray should hit the first box");
@@ -2439,6 +2499,7 @@ mod tests {
                 to_y: 0.0,
                 to_z: 0.0,
                 collision_mask: 1,
+                hit_from_inside: 0,
             })
             .expect("clear ray arithmetic")
             .is_none());
@@ -2451,6 +2512,7 @@ mod tests {
                 to_y: 20.0,
                 to_z: 0.0,
                 collision_mask: 1,
+                hit_from_inside: 0,
             })
             .expect("masked ray arithmetic")
             .is_none());
@@ -2576,6 +2638,7 @@ mod tests {
                 to_y: 0.0,
                 to_z: 0.0,
                 collision_mask: 1,
+                hit_from_inside: 1,
             })
             .expect("a nonzero short ray must have valid arithmetic")
             .expect("a nonzero short ray must reach the native query pipeline");
@@ -2591,8 +2654,57 @@ mod tests {
                     to_y: 0.0,
                     to_z: 0.0,
                     collision_mask: 1,
+                    hit_from_inside: 0,
                 })
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn a_ray_that_starts_inside_a_solid_follows_hit_from_inside() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(0, 0.0, 0.0, 1)));
+        assert!(simulation.add_body(fixed_box(1, 5.0, 0.0, 1)));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+        let ray = |to_x: f32, hit_from_inside: u32| TnPhysicsRayQuery {
+            from_x: 0.0,
+            from_y: 0.0,
+            from_z: 0.0,
+            to_x,
+            to_y: 0.0,
+            to_z: 0.0,
+            collision_mask: 1,
+            hit_from_inside,
+        };
+
+        let next = simulation
+            .intersect_ray(ray(10.0, 0))
+            .expect("valid ray arithmetic")
+            .expect("the default skips the box around the origin and hits the next one");
+        assert_eq!(next.body_id, 1);
+        assert!((next.distance - 4.5).abs() < 1.0e-6);
+        assert_eq!(next.normal_x, -1.0);
+        assert!(
+            simulation
+                .intersect_ray(ray(3.0, 0))
+                .expect("valid ray arithmetic")
+                .is_none(),
+            "no real hit is a miss, never a zero-normal hit"
+        );
+        let inside = simulation
+            .intersect_ray(ray(3.0, 1))
+            .expect("valid ray arithmetic")
+            .expect("hit_from_inside reports the box around the origin");
+        assert_eq!(inside.body_id, 0);
+        assert_eq!(inside.distance, 0.0);
+        assert_eq!(
+            (inside.normal_x, inside.normal_y, inside.normal_z),
+            (0.0, 0.0, 0.0)
         );
     }
 
@@ -2612,6 +2724,7 @@ mod tests {
             to_y: 0.0,
             to_z: 0.0,
             collision_mask: 1,
+            hit_from_inside: 0,
         };
         assert!(matches!(
             simulation.intersect_ray(query),
@@ -2786,6 +2899,98 @@ mod tests {
         let character = simulation.characters[&2].clone();
         assert!(character.grounded);
         assert_eq!(character.ground_collider, Some(1));
+    }
+
+    #[test]
+    fn character_stays_grounded_while_it_presses_a_push_block() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let body = |id, body_type, shape_type, [x, y, z]: [f32; 3], [sx, sy, sz]: [f32; 3]| {
+            TnPhysicsBodyOptions {
+                id,
+                body_type,
+                shape_type,
+                position_x: x,
+                position_y: y,
+                position_z: z,
+                rotation_x: 0.0,
+                rotation_y: 0.0,
+                rotation_z: 0.0,
+                rotation_w: 1.0,
+                shape_x: sx,
+                shape_y: sy,
+                shape_z: sz,
+                mass: 0.0,
+                collision_layer: 1,
+                collision_mask: u16::MAX.into(),
+                sensor: false,
+                continuous_collision: true,
+            }
+        };
+        assert!(simulation.add_body(body(1, 1, 0, [0.0, -0.1, 0.0], [5.0, 0.1, 2.0])));
+        assert!(simulation.add_body(body(2, 3, 2, [0.0, 0.86, 0.36], [0.55, 0.3, 0.0])));
+        assert!(simulation.add_body(body(3, 2, 0, [1.0, 0.5, 0.0], [0.5, 0.5, 0.5])));
+        assert!(simulation.configure_character(TnPhysicsCharacterOptions {
+            id: 2,
+            offset: 0.01,
+            max_slope_climb_angle: std::f32::consts::FRAC_PI_4,
+            autostep_enabled: true,
+            autostep_max_height: 0.3,
+            autostep_min_width: 0.2,
+            autostep_include_dynamic_bodies: false,
+            snap_to_ground_enabled: true,
+            snap_to_ground: 0.3,
+            one_way_layers: 0,
+            pushes_dynamic_bodies: false,
+        }));
+        let dt = 1.0 / 60.0;
+        let mut velocity_y = 0.0f32;
+        let mut block_x = 1.0f32;
+        let mut airborne = Vec::new();
+        for tick in 0..130 {
+            let at = *simulation.bodies[simulation.entries[&2].body].translation();
+            velocity_y -= 20.0 * dt;
+            let push = if tick >= 30 { 2.5 * dt } else { 0.0 };
+            // The block slides one metre away and stops, the way a pushed block does.
+            if (50..100).contains(&tick) {
+                block_x += 1.0 / 50.0;
+            }
+            assert!(simulation.step(
+                dt,
+                &[
+                    2.0,
+                    at.x + push,
+                    at.y + velocity_y * dt,
+                    at.z,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    3.0,
+                    block_x,
+                    0.5,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ],
+            ));
+            let grounded = simulation.characters[&2].grounded;
+            if grounded && velocity_y < 0.0 {
+                velocity_y = 0.0;
+            }
+            if tick >= 50 && !grounded {
+                airborne.push(tick);
+            }
+        }
+        assert!(airborne.is_empty(), "airborne at ticks {airborne:?}");
+        let at = *simulation.bodies[simulation.entries[&2].body].translation();
+        assert!(at.x > 1.1, "the character followed the block, x = {}", at.x);
     }
 
     // --- collision event delivery -------------------------------------------------------

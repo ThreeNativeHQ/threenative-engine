@@ -8,10 +8,21 @@ export interface IWebBrandVitePlugin {
   config(config: { readonly root?: string }): Promise<
     { optimizeDeps: { exclude: string[] } } | undefined
   >;
-  resolveId(source: string): string | null;
+  resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
   configResolved(config: { readonly root: string }): Promise<void>;
   transformIndexHtml(html: string): string;
+  configureServer(server: {
+    readonly middlewares: {
+      use(
+        handler: (
+          req: { url?: string },
+          res: { setHeader(key: string, value: string): void; end(body: string): void },
+          next: () => void,
+        ) => void,
+      ): void;
+    };
+  }): void;
   generateBundle(this: {
     emitFile(asset: { fileName: string; source: string; type: "asset" }): void;
   }): void;
@@ -124,8 +135,8 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
         };
       return undefined;
     },
-    resolveId(source) {
-      return engine?.resolveId(source) ?? null;
+    resolveId(source, importer) {
+      return engine?.resolveId(source, importer) ?? null;
     },
     async load(id) {
       return engine?.load(id) ?? null;
@@ -143,6 +154,16 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     transformIndexHtml(html) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
       return updateLaunchMarkup(root, config, html);
+    },
+    // Every page links the manifest, and only a build emits it: in dev Vite would answer the link
+    // with index.html, which the browser reports as a manifest syntax error on each load.
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.split("?")[0] !== "/manifest.webmanifest" || config === undefined)
+          return next();
+        res.setHeader("Content-Type", "application/manifest+json");
+        res.end(renderWebManifest(root, config));
+      });
     },
     generateBundle() {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");

@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 import { StartupReadiness } from "../src/startup-readiness.js";
 import {
   type IWarmUpProgress,
+  prepareSceneEnvironment,
   warmUpComputeNodes,
   warmUpScene,
   warmUpSceneWithCompletion,
@@ -232,6 +233,49 @@ describe("scene warm-up", () => {
     }
   });
 
+  test("should hand the loading cover's repaint to the covered world pass", async () => {
+    // Hop Garden on the RTX 2080: collectathon-survives showed one bare world frame under the loading
+    // cover about 400 ms before the hand-off. The covered world pass can draw in a later task (the
+    // frame gate's retry), so the pass itself must repaint the cover after the draw it makes.
+    const afterCoveredDraw = vi.fn();
+    const warmUpWorldPass = vi.fn((_scene, _camera, _target, afterDraw?: () => void) => {
+      afterDraw?.();
+    });
+    const report = await warmUpScene(
+      { compileAsync: vi.fn(async () => undefined), warmUpWorldPass },
+      sceneOf(1) as never,
+      {} as never,
+      { granularity: "scene", yieldFrame: () => Promise.resolve(), afterCoveredDraw },
+    );
+    expect(report.passes).toEqual(["main"]);
+    expect(warmUpWorldPass.mock.calls[0]?.[3]).toBe(afterCoveredDraw);
+    expect(afterCoveredDraw).toHaveBeenCalledTimes(1);
+  });
+
+  test("should give up on a WebGPU environment bake at its deadline, as the native preparer does", async () => {
+    // Action RPG restart on 2-CPU SwiftShader: the transition waited the whole sky bake (about 30 s)
+    // past its deadline, and the playtest's advance timed out at 20.25 s with no frame drawn.
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: () => new Promise<boolean>(() => undefined),
+    });
+    try {
+      const started = performance.now();
+      const prepared = await prepareSceneEnvironment(
+        { raw: { backend: { isWebGPUBackend: true } } },
+        { children: [], environment: { isTexture: true } } as never,
+        {} as never,
+        started + 30,
+      );
+      expect(prepared).toBe(false);
+      expect(performance.now() - started).toBeLessThan(1000);
+    } finally {
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
   test("should start the compile budget once a slow environment bake settles", async () => {
     // 3-CPU SwiftShader: the full-quality bake alone outlasts the 15 s compile budget, which left
     // warm-up timed out with nothing compiled (PRD-624). The bake has its own budget now.
@@ -298,6 +342,26 @@ describe("scene warm-up", () => {
     await promise;
     expect(events).toEqual(["bake", "compile", "covered-render"]);
     expect(raw.prepareEnvironmentAsync).toHaveBeenCalledTimes(1);
+  });
+
+  test("should hand the native environment bake the cover repaint to run after each draw", async () => {
+    const scene = { children: [], environment: { isTexture: true } } as never;
+    const afterCoveredDraw = vi.fn();
+    const raw = {
+      prepareEnvironmentAsync: vi.fn(
+        async (_scene: unknown, _camera: unknown, _deadlineMs: number, afterDraw?: () => void) => {
+          afterDraw?.();
+          return true;
+        },
+      ),
+    };
+    await warmUpScene({ raw, compileAsync: vi.fn(async () => undefined) }, scene, {} as never, {
+      afterCoveredDraw,
+      granularity: "scene",
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(raw.prepareEnvironmentAsync.mock.calls[0]?.[3]).toBe(afterCoveredDraw);
+    expect(afterCoveredDraw).toHaveBeenCalledTimes(1);
   });
 
   test("should prepare the target scene environment used by object compilation", async () => {
@@ -1038,6 +1102,37 @@ describe("scene warm-up", () => {
     });
     expect(report.passes).toEqual(["main"]);
     expect(calls).toBeLessThanOrEqual(21);
+  });
+
+  test("should read a shared node material's values once, however many objects draw with it", async () => {
+    // On the engine each field of a material is a call into the host, so a walk that reads a
+    // material once per object costs the object count times the field count.
+    let reads = 0;
+    const material = { isNodeMaterial: true };
+    Object.defineProperty(material, "roughness", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return 0.5;
+      },
+    });
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: true } },
+    };
+    const scene = group(
+      "scene",
+      Array.from({ length: 50 }, (_unused, index) => ({
+        children: [],
+        material,
+        name: `shared-${index}`,
+      })),
+    );
+    await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(reads).toBe(1);
   });
 
   test("should not render passes when renderPasses is false", async () => {

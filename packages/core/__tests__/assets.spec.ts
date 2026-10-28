@@ -1,4 +1,5 @@
 import {
+  Bone,
   Box3,
   BoxGeometry,
   BufferAttribute,
@@ -17,6 +18,8 @@ import {
   RGBA_S3TC_DXT1_Format,
   RepeatWrapping,
   SRGBColorSpace,
+  Skeleton,
+  SkinnedMesh,
   Texture,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -114,6 +117,25 @@ describe("IAssetLoader", () => {
     expect(geometryDispose).toHaveBeenCalledTimes(1);
     expect(materialDispose).toHaveBeenCalledTimes(1);
     expect(textureDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("should release a skinned model's allocated skeleton bone texture", async () => {
+    const bone = new Bone();
+    const skeleton = new Skeleton([bone]);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(new Float32Array(9), 3));
+    const mesh = new SkinnedMesh(geometry, new MeshBasicMaterial());
+    mesh.add(bone);
+    mesh.bind(skeleton);
+    skeleton.computeBoneTexture();
+    const boneTexture = skeleton.boneTexture;
+    if (boneTexture === null) throw new Error("skeleton did not allocate a bone texture");
+    const boneDispose = vi.spyOn(boneTexture, "dispose");
+    const assets = createAssetLoader({ model: async () => ({ scene: mesh }) });
+
+    await assets.model("rigged.glb");
+    expect(assets.release("model", "rigged.glb")).toBe(true);
+    expect(boneDispose).toHaveBeenCalledTimes(1);
   });
 
   it("should release one model's material texture once, spare another cached model's, and reload", async () => {
@@ -412,6 +434,27 @@ describe("IAssetLoader.texture options", () => {
     expect(second).toBe(cached);
     expect(assets.progress.requested).toBe(1);
   });
+
+  it("disposes the shared KTX2 decoder pool once on final dispose, never on clear", async () => {
+    const loaderDispose = vi.spyOn(KTX2Loader.prototype, "dispose");
+    try {
+      const assets = createAssetLoader({
+        renderer: {
+          isWebGPURenderer: true,
+          hasFeature: (name: string) => name === "texture-compression-astc",
+        },
+      });
+      await assets.compressedTextures?.ready;
+      assets.clear();
+      expect(loaderDispose).not.toHaveBeenCalled();
+      assets.dispose();
+      assets.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(loaderDispose).toHaveBeenCalledTimes(1);
+    } finally {
+      loaderDispose.mockRestore();
+    }
+  });
 });
 
 describe("IAssetLoader through the asset manifest", () => {
@@ -467,7 +510,8 @@ describe("IAssetLoader through the asset manifest", () => {
 
     await assets.texture("rock.png");
 
-    expect(assets.resolved.get("rock.png")).toEqual({
+    expect(assets.resolved.get("rock.png")).toMatchObject({
+      kind: "texture",
       url: "/assets/rock.a1b2c3.png",
       via: "manifest",
     });
@@ -623,7 +667,11 @@ describe("IAssetLoader through the asset manifest", () => {
 
     await assets.model("rock.png");
 
-    expect(assets.resolved.get("rock.png")).toEqual({ url: "/assets/rock.png", via: "source" });
+    expect(assets.resolved.get("rock.png")).toEqual({
+      kind: "model",
+      url: "/assets/rock.png",
+      via: "source",
+    });
   });
 
   it("should not reach for the source directory when the verbatim path works", async () => {

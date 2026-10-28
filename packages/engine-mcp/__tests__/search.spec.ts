@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as ts from "typescript";
@@ -22,10 +23,30 @@ function searchResults(
 }
 
 describe("threenative-engine-mcp", () => {
-  it("exposes exactly the two read-only capability tools", () => {
+  it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("global illumination quality")).toContain("GIBudget");
+    expect(symbols("lumen scalability")).toContain("GIBudget");
+    expect(symbols("sg.GlobalIlluminationQuality")).toContain("GIBudget");
+    expect(symbols("shadow quality")).toContain("ShadowFilterBudget");
+    expect(symbols("virtual shadow map scalability")).toContain("ShadowFilterBudget");
+    expect(symbols("sg.ShadowQuality")).toContain("ShadowFilterBudget");
+  });
+
+  it("finds the indirect diffuse visualize mode by Unreal's names", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("lumen visualize indirect diffuse")).toContain("GIVisualize");
+    expect(symbols("indirect diffuse only")).toContain("GIVisualize");
+    expect(symbols("r.Lumen.Visualize.IndirectDiffuse")).toContain("GIVisualize");
+  });
+
+  it("exposes capability and reference tools", () => {
     expect(toolDefinitions().map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",
       "engine_capability_detail",
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_save_reference",
     ]);
   });
 
@@ -100,6 +121,22 @@ describe("threenative-engine-mcp", () => {
     expect(replication.guidance).toContain("authoritative replication");
   });
 
+  it("finds the Surface Cache from Unreal's vocabulary (PRD-639)", () => {
+    for (const query of [
+      "lumen surface cache",
+      "lumen scene",
+      "mesh cards",
+      "give a traced bounce ray the texture colour and glow of the surface it hits",
+    ]) {
+      expect(
+        searchResults(query, workspaceManifest)
+          .slice(0, 3)
+          .map((result) => result.symbol),
+        query,
+      ).toContain("SurfaceCache");
+    }
+  });
+
   it("finds camera framing from third-person vocabulary", () => {
     const results = searchResults("third person camera follow", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("defineGame");
@@ -153,6 +190,11 @@ describe("threenative-engine-mcp", () => {
     expect(searchResults("hitscan camera", workspaceManifest)[0]?.symbol).toBe(
       "PhysicsDirectSpaceState3D",
     );
+  });
+
+  it("finds TracedReflections by Unreal's names for it, ahead of the screen-space stage", () => {
+    for (const phrase of ["lumen reflections", "dedicated reflection rays"])
+      expect(searchResults(phrase, workspaceManifest)[0]?.symbol, phrase).toBe("TracedReflections");
   });
 
   it("explains an alias hit with a readable situation", () => {
@@ -392,6 +434,102 @@ describe("threenative-engine-mcp", () => {
     expect(response.results).toEqual([]);
   });
 
+  describe("starter kits", () => {
+    // Copies the real manifest and injects two kits, so the test does not depend on which
+    // kit.json files exist when it runs.
+    async function kitManifest(): Promise<{ file: string; root: string }> {
+      const root = await makeTempDir("threenative-engine-mcp-starter-kits-");
+      const manifest = JSON.parse(readFileSync(workspaceManifest, "utf8")) as object;
+      const kit = (name: string, title: string, words: string[]) => ({
+        blurb: `${title} blurb`,
+        name,
+        title,
+        words,
+      });
+      const file = path.join(root, "capabilities.json");
+      await writeFile(
+        file,
+        JSON.stringify({
+          ...manifest,
+          starterKits: [
+            kit("adventure", "Lantern Vale", ["action-adventure", "zelda"]),
+            kit("collectathon", "Hop Garden", ["collectathon", "3d-platformer", "mario"]),
+            kit("kart", "Clover Cup", ["kart-racer", "mario-kart", "mk64", "kart"]),
+          ],
+        }),
+      );
+      return { file, root };
+    }
+
+    it("leads with the kit a request names and still returns its mechanics", async () => {
+      const { file, root } = await kitManifest();
+      try {
+        const bare = searchCapabilities("make me a game similar to mario", file);
+        expect(bare.verdict).toBe("starterKit");
+        expect(bare.starterKits).toEqual([
+          {
+            blurb: "Hop Garden blurb",
+            command: "npx create-threenative <dir> --template collectathon",
+            name: "collectathon",
+            title: "Hop Garden",
+          },
+        ]);
+        expect(Object.keys(bare)[0]).toBe("starterKits");
+        expect(bare.guidance).toContain("starter kit first");
+
+        const mixed = searchCapabilities(
+          "a mario platformer where the player aims a flashlight and drags a crate by clicking",
+          file,
+          "request",
+        );
+        expect(mixed.starterKits?.map(({ name }) => name)).toEqual(["collectathon"]);
+        expect(mixed.verdict).toBe("matched");
+        expect(mixed.results.length).toBeGreaterThan(0);
+        expect(mixed.results).toEqual(
+          searchCapabilities(
+            "a mario platformer where the player aims a flashlight and drags a crate by clicking",
+            workspaceManifest,
+            "request",
+          ).results,
+        );
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    });
+
+    it("routes zelda words to adventure, orders several kits by the request, and ignores others", async () => {
+      const { file, root } = await kitManifest();
+      try {
+        const names = (text: string) =>
+          searchCapabilities(text, file).starterKits?.map(({ name }) => name);
+        expect(names("a zelda-like")).toEqual(["adventure"]);
+        expect(names("something like Super Mario or Zelda")).toEqual(["collectathon", "adventure"]);
+        expect(names("a 3D platformer, zelda style")).toEqual(["collectathon", "adventure"]);
+        expect(names("a 3d-platformer")).toEqual(["collectathon"]);
+        expect(names("make a pirate game")).toBeUndefined();
+        expect(names("marionette puppets")).toBeUndefined();
+        expect(searchCapabilities("make a pirate game", file).verdict).toBe("none");
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    });
+
+    it("gives a longer kit phrase to its kit, not to the kit owning a word inside it", async () => {
+      const { file, root } = await kitManifest();
+      try {
+        const names = (text: string) =>
+          searchCapabilities(text, file).starterKits?.map(({ name }) => name);
+        expect(names("a game like mario kart")).toEqual(["kart"]);
+        expect(names("create me a Mario-Kart clone")).toEqual(["kart"]);
+        expect(names("a kart racer like mk64")).toEqual(["kart"]);
+        expect(names("mario, then mario kart")).toEqual(["collectathon", "kart"]);
+        expect(names("a game similar to mario")).toEqual(["collectathon"]);
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    });
+  });
+
   it("finds a cross-system set from a mechanically explicit complete request", () => {
     const results = searchResults(
       "sailing ship on ocean waves with buoyancy, cloth sails in wind, cannonball physics and smoke particles, crew navigating a deck with swords, islands and coastlines, and positional sound",
@@ -589,13 +727,20 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
-  it("answers that native ray tracing is unavailable until readable output interop exists", () => {
+  it("answers that native image ray tracing is unavailable until readable output interop exists", () => {
     const results = searchResults("can I raytrace on native", workspaceManifest);
     const platform = results.find((result) => result.symbol === "getPlatform");
     expect(platform).toBeDefined();
     expect(platform?.constraints.join(" ")).toContain("ray tracing is unavailable on native");
     expect(platform?.constraints.join(" ")).toContain("buffer-to-texture copy-out interop exists");
     expect(platform?.constraints.join(" ")).toContain("traceRays");
+  });
+
+  it("answers that a native desktop host with ray tracing hardware traces ray batches", () => {
+    const results = searchResults("can I raytrace on native", workspaceManifest);
+    const platform = results.find((result) => result.symbol === "getPlatform");
+    expect(platform?.constraints.join(" ")).toContain("mystralRT.traceRayBatch");
+    expect(platform?.constraints.join(" ")).toContain("mystralRT.capabilities().rayBatch");
   });
 
   it("ranks attachToBone for holding a rifle in a character's right hand", () => {

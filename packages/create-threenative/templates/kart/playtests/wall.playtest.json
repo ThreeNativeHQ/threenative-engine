@@ -1,0 +1,118 @@
+{
+  "name": "kart-wall",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 66.5,
+          "y": -1.62,
+          "z": -20.62
+        },
+        "facing": {
+          "yaw": 1.1132
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "into-wall",
+      "press": ["KeyW"],
+      "holdTicks": 210,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "autopilot",
+      "press": ["KeyW", "KeyP"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "over-jump",
+      "press": ["KeyW"],
+      "holdTicks": 480,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "wallHits",
+        "gte": 1,
+        "allowTrivial": "The kart drove into the wall."
+      },
+      {
+        "entity": "player",
+        "component": "maxLateral",
+        "lte": 10.16,
+        "allowTrivial": "Over the whole run the kart never passed the wall line, 11 m less half its width."
+      },
+      {
+        "entity": "player",
+        "component": "wallInto",
+        "gte": 2,
+        "allowTrivial": "The kart met the wall with speed into it."
+      },
+      {
+        "entity": "player",
+        "component": "wallAfter",
+        "lte": 0,
+        "allowTrivial": "After the contact no speed points into the wall: MK64 reflects it at half (`player_controller.c:1952`)."
+      },
+      {
+        "entity": "player",
+        "component": "wallThrottleDrop",
+        "equals": 18,
+        "allowTrivial": "Each contact tick cuts 18 from the throttle."
+      },
+      {
+        "entity": "player",
+        "component": "longestAir",
+        "gte": 0.4,
+        "allowTrivial": "The kicker before the creek throws the kart into the air for at least 0.4 s."
+      },
+      {
+        "entity": "player",
+        "component": "surface",
+        "equals": "road",
+        "allowTrivial": "After the jump the kart lands back on the road."
+      },
+      {
+        "entity": "player",
+        "component": "groundGap",
+        "gte": -0.05,
+        "lte": 0.05,
+        "allowTrivial": "On the ground at the end, not under the road."
+      }
+    ]
+  }
+}

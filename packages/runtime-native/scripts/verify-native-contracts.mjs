@@ -138,6 +138,11 @@ export const executionContracts = {
   "threenative-metahuman-bindings-test": {
     invocations: [{ args: [], passLine: "native metahuman bindings passed" }],
   },
+  // PRD-645. Needs no display. On a host with hardware ray tracing it traces 8192 rays through the
+  // Vulkan backend and checks each hit against a CPU reference; elsewhere it skips with its reason.
+  "threenative-raytracing-probe-test": {
+    invocations: [{ args: [], passLine: "raytracing probe passed" }],
+  },
   "threenative-rt-handle-allocation-test": {
     invocations: [{ args: [], passLine: "raytracing handle allocation contract passed" }],
   },

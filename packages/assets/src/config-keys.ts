@@ -41,6 +41,7 @@ export const MODEL_PASS_KEYS: readonly string[] = [
   "prune",
   "quantize",
   "reorder",
+  "restTracks",
 ];
 
 /** Every `assets.models.quantize` key this package parses. The loader must accept the same set. */

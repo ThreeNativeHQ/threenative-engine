@@ -7,11 +7,8 @@ export const WEBGPU_BROWSER_ARGS = [
   "--ignore-gpu-blocklist",
   // Keep Vulkan available on both hardware and software adapters.
   "--enable-features=Vulkan",
-  // Forced ANGLE/Vulkan selects NVIDIA locally but breaks hosted software adapters, especially headed.
-  // Apply that workaround only when the caller explicitly requests the host display.
-  ...(typeof process !== "undefined" && process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
-    ? ["--use-angle=vulkan", "--use-vulkan", "--disable-vulkan-surface"]
-    : []),
+  // No forced ANGLE/Vulkan (--use-angle=vulkan --use-vulkan --disable-vulkan-surface): on a KDE
+  // Xwayland host display it blacked out the sky while the same NVIDIA adapter drew it without them.
 ] as const;
 
 /** Allow performance probes to sample render work instead of Xvfb's compositor cadence. */
@@ -19,6 +16,17 @@ export const PERFORMANCE_BROWSER_ARGS = [
   "--disable-frame-rate-limit",
   "--disable-gpu-vsync",
 ] as const;
+
+/**
+ * What a run adds for its measurements. A frame-time assertion unthrottles only the private Xvfb,
+ * whose compositor timer would pace the frames. On a real display the gated rAF interval must stay
+ * the display's cadence: unthrottled, a game faster than 60 fps read the swapchain's back-pressure
+ * (one ~17 ms wait every few callbacks) as a 17.5 ms interval p95. The completion window measures
+ * unthrottled completion on the session display by design.
+ */
+export function measurementBrowserArgs(performance: boolean, completion: boolean, display: "real" | "virtual"): readonly string[] {
+  return completion || (performance && display === "virtual") ? PERFORMANCE_BROWSER_ARGS : [];
+}
 
 export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] {
   return [...(browserArgs ?? [])];

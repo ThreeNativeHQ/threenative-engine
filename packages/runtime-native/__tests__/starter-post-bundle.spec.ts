@@ -12,6 +12,19 @@ afterEach(async () => {
 });
 
 describe("starter post import bindings", () => {
+  it("bundles the current WorldEnvironment import surface", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(
+      entry,
+      `import { WorldEnvironment } from ${JSON.stringify(path.resolve("packages/core/src/look/world-environment.ts"))}; globalThis.bound = WorldEnvironment;`,
+    );
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
   it("bundles every added import without upstream Three.js or an unbound diagnostic", async () => {
     const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
     directories.push(directory);
@@ -41,6 +54,19 @@ describe("starter post import bindings", () => {
     await writeFile(
       entry,
       `import { defineGame } from "@threenative/core"; globalThis.bound = defineGame;`,
+    );
+    await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+    expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
+  });
+
+  it("bundles textureSize as a refusal for an unexecuted upstream-only branch", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    await writeFile(
+      entry,
+      `import { textureSize } from "three/tsl"; globalThis.bound = { textureSize };`,
     );
     await bundleNativeEngine({ entry, outfile, boot: false, host: false });
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");

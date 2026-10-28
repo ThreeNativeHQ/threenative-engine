@@ -1,8 +1,8 @@
 import { createWebBrandPlugin } from "create-threenative";
 import { defineConfig } from "vite";
 
-// Four pages: the core game (index.html), three alone on the Wasm renderer (renderer.html), the
-// minimal template's post chain on it (post.html) and TSL compute on it (compute.html).
+// Five pages: the core game (index.html), three alone on the Wasm renderer (renderer.html), the
+// minimal template's post chain on it (post.html), screen-space GI on it (ssgi.html) and TSL compute on it (compute.html).
 export default defineConfig({
   // As every template lists it: the brand plugin follows the config's engine, `pnpm dev` included.
   plugins: [createWebBrandPlugin()],
@@ -14,8 +14,8 @@ export default defineConfig({
     rollupOptions: {
       input:
         process.env.WASM_BOOT_PAGES === "renderer"
-          ? ["renderer.html", "post.html", "compute.html"]
-          : ["index.html", "renderer.html", "post.html", "compute.html"],
+          ? ["renderer.html", "post.html", "ssgi.html", "compute.html"]
+          : ["index.html", "renderer.html", "post.html", "ssgi.html", "compute.html"],
     },
   },
 });

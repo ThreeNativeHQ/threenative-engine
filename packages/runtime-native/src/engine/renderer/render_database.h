@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "engine/renderer/renderer.h"
+#include "engine/renderer/projection/plan.h"
 #include "engine/animation/skinning/palette.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometry.h"
@@ -44,6 +45,9 @@ class RenderDatabase {
 
     std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(Renderer& renderer, Object3D& root,
         Camera& camera, Object3D* targetScene = nullptr, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
+
+    /** Startup warm-up's PMREM step: advances the bake render() would gate on, draws nothing; true once every environment the scene samples is baked. */
+    bool prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera);
 
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
     const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene = nullptr, bool virtualShadows = false);
@@ -104,6 +108,8 @@ class RenderDatabase {
     static constexpr std::size_t kMinBatchMembers = 4;
     /** Draws the last render merged by batching: groups made and meshes they absorbed. */
     [[nodiscard]] std::pair<std::size_t, std::size_t> lastBatches() const { return {batchGroups_, batchMembers_}; }
+    /** How many projection decisions batching has made (PRD-613): a settled scene makes none per frame. */
+    [[nodiscard]] uint64_t batchDecisions() const { return batchDecisions_; }
 
   private:
     // A material's pmremTexture source and reflector, walked once per material version: the graph
@@ -111,10 +117,11 @@ class RenderDatabase {
     // ponytail: entries for released materials stay until the database goes; prune if materials churn.
     struct GraphSources {
         uint32_t version = 0;
-        std::array<const void*, 12> roots{};  // one per MaterialNodes::pointers()
+        std::array<const void*, 14> roots{};  // one per MaterialNodes::pointers()
         const Texture* texture = nullptr;
         std::shared_ptr<const void> reflector;  // an engine::Reflector
         std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples
+        std::vector<shader::graph::Node> textureNodes;
         std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads
     };
     std::unordered_map<const Material*, GraphSources> graphSources_;
@@ -143,6 +150,7 @@ class RenderDatabase {
                            std::array<double, 4> clear);
     std::shared_ptr<BufferGeometry> backgroundGeometry_;
     shader::StandardMaterial backgroundParams_;
+    Material backgroundNodeMaterial_{MaterialType::Basic, true};
     using GeometryKey = std::array<BufferStore*, 4>;
     struct alignas(64) Record {
         uint64_t geometryRevision = 0;
@@ -154,6 +162,8 @@ class RenderDatabase {
         // Held, so neither is released while the record's item points into it, and a new one can
         // never take its address and pass for it. The mesh is known by its id, never reused.
         std::shared_ptr<const BufferGeometry> geometry;
+        // What it draws from: `geometry`, or the member of its content class a batch draws for all.
+        std::shared_ptr<const BufferGeometry> canonical;
         std::shared_ptr<const Material> material;
         // The renderer's resolved program/pipeline/bind groups, reused while the variant is unchanged.
         // On the record, not its draw: a batched mesh's draw is rebuilt every frame but the record is not.
@@ -202,6 +212,12 @@ class RenderDatabase {
     // frame. Starts at the interval so the first batch always scans.
     static constexpr std::size_t kDeclineRescanFrames = 60;
     std::size_t framesSinceDeclineScan_ = kDeclineRescanFrames;
+    uint64_t batchDecisions_ = 0;
+    projection::Decision batchDecision_;  // the last one, held while its scene's structure holds
+    const Object3D* batchScene_ = nullptr;
+    uint64_t batchHierarchy_ = ~uint64_t(0);
+    double batchStamp_ = -1;
+    std::vector<std::pair<const SkinnedMesh*, uintptr_t>> batchRigs_;  // its rigs and their lane keys
     std::size_t batchGroups_ = 0, batchMembers_ = 0;
 
     std::vector<DrawItem> items_;

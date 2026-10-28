@@ -447,6 +447,29 @@ describe("assets.nativePackage", () => {
     expect(entry?.uploadSize).toBe(8 * 4 * 4);
   });
 
+  it("cooks a WebP into an RGBA8 Texture entry too, so a kit's .webp tiling textures reach the native player", async () => {
+    const root = await makeTempDir("threenative-native-package-webp-");
+    await mkdir(path.join(root, "assets"));
+    const sharp = (await import("sharp")).default;
+    await writeFile(
+      path.join(root, "assets", "grass.webp"),
+      await sharp(Buffer.alloc(8 * 4 * 4, 200), { raw: { channels: 4, height: 4, width: 8 } })
+        .webp({ lossless: true })
+        .toBuffer(),
+    );
+
+    await compileAssets({
+      config: { models: "none", nativePackage: true, textures: "none" },
+      cwd: root,
+    });
+    const output = await readFile(path.join(root, "public", "native", "assets.tnpk"));
+    const [entry] = readNativePackageManifest(output).entries;
+    expect(entry?.name).toBe("grass.webp");
+    expect(entry?.kind).toBe(NativeEntryKind.Texture);
+    expect(entry?.size).toBe(12 + 8 * 4 * 4);
+    expect(entry?.uploadSize).toBe(8 * 4 * 4);
+  });
+
   it("packages a web root laid out like Midway's under the URLs the game requests", async () => {
     // No source directory, every file hand-placed in public/assets and requested as `/assets/…`:
     // the web serves those URLs from the web root, so the package names them the same way.

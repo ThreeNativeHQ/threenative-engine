@@ -1,7 +1,14 @@
 /** PRD-526: execute the authored templates, export real r185 nodes, then compile in C++. */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
@@ -17,12 +24,13 @@ import {
   Texture,
 } from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
-import { ao } from "three/addons/tsl/display/GTAONode.js";
+import GTAONode, { ao } from "three/addons/tsl/display/GTAONode.js";
 import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
-import { float, texture, texture3D, vec2 } from "three/tsl";
+import { float, texture, texture3D, uniform, vec2 } from "three/tsl";
 import { TempNode } from "three/webgpu";
 import { type IRenderChainOptions, RenderChain } from "../../../core/src/render/chain.js";
+import { createProject } from "../../../create-threenative/src/index.js";
 import { exportTslGraph } from "../../scripts/tsl-export.js";
 import { functionFixtures } from "./tsl-function-fixtures.js";
 
@@ -68,6 +76,94 @@ const names = readdirSync(templates, { withFileTypes: true })
   .map((entry) => entry.name)
   .sort();
 if (names.length === 0) throw new Error(`TN_TEMPLATE_POST_EMPTY: ${templates}`);
+
+/**
+ * A template stage that is generated source driving its own render targets (the Unreal bloom's mip chain, local exposure's
+ * bilateral grid) runs on the host through the facade, so no single exported graph can say what it draws. The conformance row
+ * that draws it on the host and in the browser is its native proof. The sweep checks that the row is still required and
+ * desktop-gated, then lowers the rest of the chain with each such stage read from a host texture of its name. `lanes` is what
+ * the stage hands the chain: a float gain, or an rgb colour.
+ */
+const HOST_RUN: Record<string, { row: string; lanes: string }> = {
+  // Core's metered exposure: live render targets and per-frame texture swaps, run by the engine player.
+  AutoExposureNode: { row: "auto-exposure", lanes: "x" },
+  LocalExposureNode: { row: "local-exposure", lanes: "x" },
+  UnrealBloomNode: { row: "local-exposure", lanes: "xyz" },
+  // The owned engine's live screen-space effects (post_effects.cpp, not a cooked package): core's chain builds them for
+  // the kits that take the engine look, and each row draws the effect on the host as well as the browser.
+  SSGINode: { row: "realism-ssgi", lanes: "xyzw" },
+  SSRNode: { row: "realism-ssr", lanes: "xyzw" },
+};
+const registry = JSON.parse(
+  readFileSync(path.resolve(import.meta.dirname, "../../conformance/registry.json"), "utf8"),
+) as { tests: { id: string; status: string; required?: boolean; desktopGate?: boolean }[] };
+
+/** Rewrites the host-run stages of `exported` into reads of host textures, and names the parity rows that prove them. */
+function standIn(exported: ReturnType<typeof exportTslGraph>): string[] {
+  const rows = new Set<string>();
+  const count = exported.nodes.length;
+  // Owned Wasm/V8 parity proves real GI and neutral AO=1 separately; upstream SSGI parity remains distinct.
+  const giOwners = new Set(
+    exported.nodes.flatMap((node, id) => (node.kind === "SSGINode" ? [id] : [])),
+  );
+  for (const node of exported.nodes) {
+    if (node.kind !== "PassTextureNode" || !node.dependencies.some((id) => giOwners.has(id)))
+      continue;
+    if (node.name !== "SSGI_AO" && node.name !== "SSGI_GI")
+      throw new Error(`TN_TEMPLATE_POST_HOST_RUN: unknown SSGI output '${node.name}'`);
+    node.name = `host_${node.name}`;
+  }
+  for (let id = 0; id < count; id++) {
+    const node = exported.nodes[id];
+    if (node === undefined) continue;
+    // The chain's real-three context carries the temporal pass's velocity only so TRAANode can unjitter its projection.
+    // The host draws that velocity itself and the stages read it by the name `velocity`.
+    if (node.kind === "VelocityNode") {
+      Object.assign(node, { kind: "TextureNode", name: "velocity", args: [], dependencies: [] });
+      continue;
+    }
+    if (
+      node.kind === "ContextNode" &&
+      node.operation === "custom-context" &&
+      node.name === "velocity"
+    ) {
+      // Nothing else reads this context, so it is the node it wraps (JSON drops the undefined fields).
+      Object.assign(node, { operation: undefined, name: undefined });
+      continue;
+    }
+    const hosted = HOST_RUN[node.kind];
+    if (hosted === undefined) continue;
+    const row = registry.tests.find((test) => test.id === hosted.row);
+    if (!row || row.status !== "implemented" || row.required !== true || row.desktopGate !== true)
+      throw new Error(
+        `TN_TEMPLATE_POST_HOST_RUN: ${node.kind} has no required, desktop-gated parity row '${hosted.row}'`,
+      );
+    rows.add(`${node.kind} (${hosted.row})`);
+    exported.nodes.push({
+      kind: "TextureNode",
+      name: `host_${node.kind}`,
+      args: [],
+      dependencies: [],
+    });
+    Object.assign(node, {
+      kind: "SplitNode",
+      lanes: hosted.lanes,
+      args: [exported.nodes.length - 1],
+      dependencies: [],
+    });
+  }
+  return [...rows];
+}
+
+// The owned engine's GTAO takes Unreal's screen reach as `reachPx` (three-native post-effects.ts); upstream three's has
+// no such uniform, so the sweep adds it to the node the chain builds and the export cooks it (post_effects.cpp reads it).
+Object.defineProperty(GTAONode.prototype, "reachPx", {
+  configurable: true,
+  get(this: { _reachPx?: { value: number } }) {
+    this._reachPx ??= { value: 0 };
+    return this._reachPx;
+  },
+});
 
 class UnloweredPostNode extends TempNode {
   static get type(): string {
@@ -123,10 +219,11 @@ function checkPostModules(name: string, modules: string[]): void {
   }
 }
 
-async function compile(name: string, output: unknown): Promise<boolean> {
+async function compile(name: string, output: unknown, hosted = false): Promise<boolean> {
   const input = path.join(directory, `${name}.json`);
   const prefix = path.join(directory, name);
   const exported = exportTslGraph(output);
+  const accounted = hosted ? standIn(exported) : [];
   if (name === "SMAANode") checkSmaaTables(exported);
   writeFileSync(input, JSON.stringify(exported));
   const compiled = await run(native as string, [name, input, prefix]);
@@ -140,6 +237,18 @@ async function compile(name: string, output: unknown): Promise<boolean> {
   const expected = { FnNode: 2, RTTNode: 4, BloomNode: 26, SharpenNode: 4 }[name];
   if (expected !== undefined && modules.length !== expected)
     throw new Error(`${name}: expected ${expected} native modules, got ${modules.length}`);
+  // A loop body reads at an explicit mip; a plain sample there has no implicit derivatives to pick one.
+  // The fixture's loop body holds one read, so the package holds one: a statement the importer lowered twice would sum it twice.
+  if (name === "TextureLevel") {
+    const reads = modules.reduce(
+      (count, m) => count + (readFileSync(m, "utf8").match(/textureSampleLevel\(/gu)?.length ?? 0),
+      0,
+    );
+    if (reads !== 1)
+      throw new Error(
+        `TextureLevel: expected 1 explicit-level sample in the native package, got ${reads}`,
+      );
+  }
   if (name === "FnNode") {
     const shader = readFileSync(modules[1] as string, "utf8");
     for (const operation of ["for (", "if (", " = "])
@@ -166,6 +275,8 @@ async function compile(name: string, output: unknown): Promise<boolean> {
     }
   }
   console.info(`${name}: native package + Tint (${modules.length} modules)`);
+  if (accounted.length > 0)
+    console.info(`${name}: host-run stages, proven by their parity row: ${accounted.join(", ")}`);
   return true;
 }
 
@@ -244,9 +355,26 @@ if (lowering) {
   process.exit(failures === 0 ? 0 : 1);
 }
 let noPostChains = 0;
+// Native-export carrier only: the real native importer/shader implements reachPx; upstream Three does not.
+Object.defineProperty(GTAONode.prototype, "reachPx", {
+  configurable: true,
+  get() {
+    const value = uniform(0);
+    Object.defineProperty(this, "reachPx", { value });
+    return value;
+  },
+});
 for (const name of names) {
+  // Compile the same complete authored source tree a user receives, including canonical shared files.
+  const generated = path.join(directory, "generated", name);
+  await createProject({ target: generated, template: name, install: false }, directory, templates);
+  symlinkSync(
+    path.join(root, "packages/create-threenative/node_modules"),
+    path.join(generated, "node_modules"),
+    "dir",
+  );
   const authored = await import(
-    pathToFileURL(path.join(templates, name, "src/render/postprocessing.ts")).href
+    pathToFileURL(path.join(generated, "src/render/postprocessing.ts")).href
   );
   for (const tier of ["high", "medium", "low"] as const) {
     const label = `${name}-${tier}`;
@@ -254,7 +382,7 @@ for (const name of names) {
     let pendingTable = false;
     const renderer = {
       kind: "webgpu" as const,
-      raw: { toneMapping: 0, toneMappingExposure: 1 },
+      raw: { toneMapping: 0, toneMappingExposure: 1, info: {} },
       width: 320,
       height: 240,
       setOutputNode(node: unknown) {
@@ -289,7 +417,7 @@ for (const name of names) {
     let controller: { dispose(): void } | undefined;
     // `FileLoader` fetches a URL relative to a page; read the template's `public/` file instead.
     FileLoader.prototype.load = function load(url, onLoad) {
-      const text = readFileSync(path.join(templates, name, "public", url), "utf8");
+      const text = readFileSync(path.join(generated, "public", url), "utf8");
       queueMicrotask(() => onLoad?.(text));
     };
     try {
@@ -304,7 +432,7 @@ for (const name of names) {
         // postprocessing.ts:44 calls WorldEnvironment.apply; worldEnvironment.ts:480-483
         // returns before building a pass when no stages/baseColour/auto-exposure run.
         const quality = await import(
-          pathToFileURL(path.join(templates, name, "src/render/quality.ts")).href
+          pathToFileURL(path.join(generated, "src/render/quality.ts")).href
         );
         const preset = quality.qualityPreset(tier);
         if (
@@ -330,7 +458,7 @@ for (const name of names) {
       if (output === undefined)
         throw new Error("TN_TEMPLATE_POST_EMPTY: no output graph installed");
       if (process.env.TN_POST_RED_CONTROL === "1") output = new UnloweredPostNode(output);
-      if (!(await compile(label, output))) failures++;
+      if (!(await compile(label, output, true))) failures++;
     } catch (error) {
       failures++;
       console.error(`${label}: ${error instanceof Error ? error.message : String(error)}`);

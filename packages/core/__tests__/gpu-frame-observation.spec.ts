@@ -679,3 +679,17 @@ it("rejects a timestamp-capable factory with no callable resolver", async () => 
     t.renderer.dispose();
   }
 });
+
+// Lantern Vale on the owned web engine: the facade backend has no timestamp query pool, and the observer
+// waited on one forever, reporting zero expected frames and no failure. Observation fails closed instead.
+it("refuses observation on a backend with no timestamp query pool", async () => {
+  const t = await wrapped();
+  try {
+    Reflect.deleteProperty(t.raw.backend, "timestampQueryPool");
+    expect(() => observe(t.renderer, { maxFrames: 4, maxQueries: 16 })).toThrow(
+      "TN_GPU_FRAME_OBSERVATION_UNSUPPORTED",
+    );
+  } finally {
+    t.renderer.dispose();
+  }
+});

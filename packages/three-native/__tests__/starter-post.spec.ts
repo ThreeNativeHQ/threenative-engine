@@ -89,6 +89,7 @@ describe("starter post bindings", () => {
     const make = () => vi.fn(() => effect);
     const tsl = {
       ao: make(),
+      ssr: make(),
       denoise: make(),
       smaa: make(),
       bloom: make(),
@@ -108,6 +109,17 @@ describe("starter post bindings", () => {
     expect(tsl.film).toHaveBeenCalledWith(input, intensity, uv);
     effects.lut3D(input, lut, 9, intensity);
     expect(tsl.lut3D).toHaveBeenCalledWith(input, lut, 9, intensity);
+    const filter = effects.denoise(input, depth, null, camera) as unknown as { gpuStage?: string };
+    expect(filter.gpuStage).toBeUndefined();
+    filter.gpuStage = "SSGI";
+    expect(values.get("stage")).toBe(1);
+    expect(filter.gpuStage).toBe("SSGI");
+    expect(() => {
+      filter.gpuStage = "AO";
+    }).toThrow("TN_GPU_STAGE");
+    // GTAO's filter runs at the AO resolution on the owned engine, so the scale reaches the native pass.
+    (filter as unknown as { resolutionScale: number }).resolutionScale = 0.5;
+    expect(values.get("resolutionScale")).toBe(0.5);
     const temporal = effects.traa(input, depth, velocity, camera) as unknown as {
       depthThreshold: number;
       useSubpixelCorrection: boolean;
@@ -146,6 +158,7 @@ describe("starter post bindings", () => {
       const make = () => effect;
       const temporal = definePostEffects({
         ao: make,
+        ssr: make,
         denoise: make,
         smaa: make,
         bloom: make,
@@ -247,6 +260,48 @@ describe("starter post bindings", () => {
     expect(() =>
       defineRtt(make, { NodeMaterial, QuadMesh, RenderTarget })({}, 1, 1, { samples: 4 }),
     ).toThrow("TN_TSL_RTT_OPTION");
+  });
+
+  it("labels an RTT pass with a GPU stage, keeps the label off the render target, and refuses an unknown one", () => {
+    const state = new Map<string, number>();
+    const effect = vi.fn((name: string, value?: number) => {
+      if (value !== undefined) state.set(name, value);
+      return state.get(name) ?? 0;
+    });
+    const make = vi.fn(() => ({ __effect: effect, __rtt: vi.fn() }));
+    const options = { type: 1016, gpuStage: "SSGI" };
+    defineRtt(make, { NodeMaterial, QuadMesh, RenderTarget })({}, null, null, options);
+    expect(state.get("stage")).toBe(1);
+    const unlabelled = new Map<string, number>();
+    defineRtt(
+      () => ({
+        __effect: (name: string, value?: number) => {
+          if (value !== undefined) unlabelled.set(name, value);
+          return 0;
+        },
+        __rtt: vi.fn(),
+      }),
+      { NodeMaterial, QuadMesh, RenderTarget },
+    )({}, null, null, { type: 1016 });
+    expect(unlabelled.has("stage")).toBe(false);
+    // An explicit `gpuStage: undefined` is no label, as an absent one is (a screen-probe pass left out of `timedPass`).
+    defineRtt(
+      () => ({
+        __effect: (name: string, value?: number) => {
+          if (value !== undefined) unlabelled.set(name, value);
+          return 0;
+        },
+        __rtt: vi.fn(),
+      }),
+      { NodeMaterial, QuadMesh, RenderTarget },
+    )({}, null, null, { type: 1016, gpuStage: undefined });
+    expect(unlabelled.has("stage")).toBe(false);
+    expect(() =>
+      defineRtt(make, { NodeMaterial, QuadMesh, RenderTarget })({}, null, null, {
+        type: 1016,
+        gpuStage: "Bloom",
+      }),
+    ).toThrow("TN_GPU_STAGE");
   });
 
   it("uses a real quad material and follows upstream manual RTT updates", () => {

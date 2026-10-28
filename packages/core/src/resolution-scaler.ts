@@ -32,12 +32,17 @@ export const RESOLUTION_SCALER = {
    * The ladder above is the device arm's, and it ends at 0.23 because a phone buys the pixels back
    * differently. A desktop has nothing: no temporal stage, no reconstruction, just 5% of the
    * pixels stretched across the panel, which is blocky mush rather than a slow frame — and the
-   * report at that point claims the budget was met. 0.61 is where surrendering more pixels stops
-   * buying frame time worth what it costs to look at, and it is reported as `atFloor` rather than
-   * passed in silence. A host whose chain *does* reconstruct the frame says so, and the deep
-   * rungs come back; `renderer-config.ts` decides which floor a platform starts with.
+   * report at that point claims the budget was met. The floor was 0.61 until 2026-10-24, when the
+   * owner played Hop Garden at 30 fps on a faster panel and read the stretched 0.61 frame as a
+   * blur over everything. Unreal ships dynamic resolution off (UE 5.8.3:
+   * Engine/Source/Runtime/Engine/Private/UnrealEngine.cpp:538-542, `r.DynamicRes.OperationMode`
+   * 0; GameUserSettings.cpp:329, `bUseDynamicResolution = false`) and only drops pixels under a
+   * temporal upscaler, so a desktop holds full resolution and reports `atFloor` and one
+   * `TN_RESOLUTION_FLOOR` line rather than a met budget. A host whose chain *does* reconstruct the
+   * frame says so, and the rungs come back; `renderer-config.ts` decides which floor a platform
+   * starts with, and a pinned `renderer.resolutionScale` still lowers it on purpose.
    */
-  desktopFloorScale: 0.61,
+  desktopFloorScale: 1,
   /**
    * The rung a class of adapter starts on instead of the ceiling; a class not named here starts at
    * 1.0. Only `mobile-low` moves: one rung down is 0.85, close to the 0.8 content scale Unreal's
@@ -170,6 +175,8 @@ export const RESOLUTION_SCALER = {
 
 /** Printed when a downward step is refunded because the frame did not respond to the pixels. */
 export const RESOLUTION_SCALE_INSENSITIVE_MARKER = "TN_RESOLUTION_SCALE_INSENSITIVE";
+/** Printed once, the first window the scaler is out of room, with the floor's reason. */
+export const RESOLUTION_FLOOR_MARKER = "TN_RESOLUTION_FLOOR";
 
 /** Pixels retained per rung: 0.85 linear on each axis. */
 const RUNG_PIXEL_RATIO = 0.85 * 0.85;
@@ -217,6 +224,12 @@ export interface IScalerWindow {
   readonly fps: number;
   /** Loop frames represented by this closed window, used for the sub-rectangle cadence guard. */
   readonly frames?: number;
+  /**
+   * Loop frames of the window whose render the renderer declined (the Wasm web engine's gate while
+   * two frames are on the GPU). A declined frame shows nothing new, so the rate the panel saw is
+   * `fps * (frames - renderSkips) / frames`, and `presented`, the loop's cadence, does not show them.
+   */
+  readonly renderSkips?: number;
   /** Current drawing surface, used to quantize a continuous estimate to eight pixels. */
   readonly surface?: {
     readonly drawingBufferWidth: number;
@@ -255,6 +268,7 @@ export class ResolutionScaler {
   /** The lowest rung this platform may take; the whole ladder's last index when it states none. */
   readonly #minIndex: number;
   readonly #temporalUpscale: (() => boolean) | undefined;
+  #hadTemporalUpscale = false;
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
   #cooldown = 0;
@@ -331,7 +345,10 @@ export class ResolutionScaler {
    * as the render chain reconstructs the frame from the pixels it is being asked to surrender.
    */
   get #limitIndex(): number {
-    return this.#temporalUpscale?.() === true ? RESOLUTION_SCALER.rungs.length - 1 : this.#minIndex;
+    // UE 5.8.3 SceneView.h:2280: temporal upsampling admits fractions >= 0.25.
+    return this.#temporalUpscale?.() === true
+      ? RESOLUTION_SCALER.rungs.indexOf(0.27)
+      : this.#minIndex;
   }
 
   get scaleSource(): Exclude<ScaleSource, "pinned"> {
@@ -353,6 +370,31 @@ export class ResolutionScaler {
    * step, `undefined` otherwise. Allocation-free: no object is constructed on the steady path.
    */
   observe(window: IScalerWindow): number | undefined {
+    const step = this.#observeWindow(window);
+    if (this.#atFloor && !this.#floorReported) {
+      this.#floorReported = true;
+      // The platform's own floor holds above the ladder's end only where nothing reconstructs.
+      const reason =
+        this.#limitIndex < RESOLUTION_SCALER.rungs.length - 1 ? "no-reconstruction" : "ladder-end";
+      console.info(
+        `${RESOLUTION_FLOOR_MARKER} scale=${String(this.scale)} reason=${reason} override=renderer.resolutionScale`,
+      );
+    }
+    return step;
+  }
+  #floorReported = false;
+
+  #observeWindow(observed: IScalerWindow): number | undefined {
+    const window = drawnWindow(observed);
+    const temporal = this.#temporalUpscale?.() === true;
+    const removed = this.#hadTemporalUpscale && !temporal;
+    this.#hadTemporalUpscale = temporal;
+    if (removed && this.scale < (RESOLUTION_SCALER.rungs[this.#minIndex] ?? 0.23)) {
+      // Losing the reconstructor restores the platform floor even during cooldown or an automatic pin.
+      this.#scaleSource = "auto";
+      this.#pinWindows = 0;
+      return this.#step(this.#minIndex - this.#index, false);
+    }
     this.#windowIndex += 1;
     const frames = window.frames;
     this.#continuousFrames +=
@@ -727,7 +769,12 @@ export class ResolutionScaler {
   }
 
   #overBudget(window: IScalerWindow): boolean {
-    return window.presented.p50 > this.budgetMs || window.presented.p95 > this.tailMs;
+    return (
+      window.presented.p50 > this.budgetMs ||
+      window.presented.p95 > this.tailMs ||
+      // The loop kept the cadence by declining draws: the drawn frames' mean interval is the cost.
+      ((window.renderSkips ?? 0) > 0 && 1000 / window.fps > this.budgetMs)
+    );
   }
 
   #freshGpuMs({ gpu, gpuMs, gpuAgeFrames }: IScalerWindow): number | undefined {
@@ -816,4 +863,15 @@ export class ResolutionScaler {
     this.#scaleSource = "auto-pinned";
     this.#pinWindows = RESOLUTION_SCALER.oscillationWindows;
   }
+}
+
+/**
+ * The window as the panel saw it: `fps` of the frames drawn, not of the loop. Lantern Vale on Iris
+ * Xe declined 105 of 300 renders at 25 ms of GPU each; the loop's 59.88 fps held the scale at 1.
+ */
+function drawnWindow(window: IScalerWindow): IScalerWindow {
+  const { frames, renderSkips } = window;
+  if (renderSkips === undefined || renderSkips <= 0 || frames === undefined || !(frames > 0))
+    return window;
+  return { ...window, fps: (window.fps * Math.max(0, frames - renderSkips)) / frames };
 }

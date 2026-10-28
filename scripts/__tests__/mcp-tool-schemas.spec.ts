@@ -61,7 +61,11 @@ describe("recorded MCP tool schemas", () => {
   // to a served response — `verify-golden-path.ts` does that. What is checked here is the contract
   // the site relies on: every tool in the snapshot carries the arguments it takes, so no page has to
   // describe an argument by hand.
-  for (const name of ["asset-mcp-tools.json", "sculpt-mcp-tools.json"]) {
+  for (const name of [
+    "asset-mcp-tools.json",
+    "sculpt-mcp-tools.json",
+    "animation-mcp-tools.json",
+  ]) {
     it(`${name} records an argument list for every tool it lists`, () => {
       const snapshot = JSON.parse(
         readFileSync(path.join(SNAPSHOT_DIR, name), "utf8"),

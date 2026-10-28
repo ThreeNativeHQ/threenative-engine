@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { VirtualShadowNode } from "@threenative/core";
+import { qualityPreset as coreQualityPreset } from "@threenative/core";
 import {
   Color,
   DataUtils,
@@ -39,16 +40,18 @@ const requiredBootErrorDeclarations = [
 const bootErrorColour = /^(?:#[\da-f]{6}|var\(--[\w-]+\))$/iu;
 
 describe("starter visual floor", () => {
-  it("should provide readable dynamic-range defaults without framework imports", async () => {
+  it("should provide readable dynamic-range defaults through core", async () => {
     const files = await Promise.all(
-      ["lighting.ts", "postprocessing.ts", "worldEnvironment.ts", "materials.ts"].map((file) =>
+      ["lighting.ts", "postprocessing.ts", "quality.ts", "materials.ts"].map((file) =>
         readFile(path.join(starter, "src/render", file), "utf8"),
       ),
     );
     const source = files.join("\n");
     expect(source).toContain("shadow");
-    expect(source).toContain("ACESFilmicToneMapping");
-    expect(source).not.toContain("@threenative/");
+    for (const tier of ["high", "medium", "low"] as const) {
+      expect(qualityPreset(tier).tonemapMode, tier).toBe("filmic");
+    }
+    expect(source).toContain("@threenative/core");
   });
 
   it("should keep one arena shadow map unless a world names cached shadow extents", () => {
@@ -56,19 +59,21 @@ describe("starter visual floor", () => {
     const renderer = { shadowMap: { enabled: false, type: 0 } };
     const arena = setupLighting(scene, renderer);
     expect(arena.key.shadow.mapSize.width).toBe(4096);
-    expect(arena.key.shadow.camera.right).toBe(14);
+    // The arena window covers the arena diagonal (starter-shadow-coverage.spec.ts owns its size).
+    const arenaExtent = arena.key.shadow.camera.right;
+    expect(arenaExtent).toBeGreaterThan(14);
     expect(arena.key.shadow.shadowNode).toBeUndefined();
     expect(arena.shadows).toBeUndefined();
     arena.dispose();
     expect(arena.key.parent).toBeNull();
 
-    // The phone map size and the 14 m near window carry over; the world names only the wider ones.
+    // The phone map size and the arena near window carry over; the world names only the wider ones.
     const forest = setupLighting(scene, renderer, true, [48, 160], VirtualShadowNode);
     const shadows = forest.shadows;
     if (shadows === undefined) throw new Error("expected the cached shadow override");
     expect(forest.key.shadow.shadowNode).toBe(shadows);
-    expect(shadows.options.clipExtents).toEqual([14, 48, 160]);
-    expect(shadows.options.mapSize).toBe(2048);
+    expect(shadows.options.clipExtents).toEqual([arenaExtent, 48, 160]);
+    expect(shadows.options.mapSize).toEqual([2048, 2048, 2048]);
     const disposeShadows = vi.spyOn(shadows, "dispose");
     forest.dispose();
     expect(disposeShadows).toHaveBeenCalledOnce();
@@ -84,7 +89,7 @@ describe("starter visual floor", () => {
   it("should route setupPost through the framework output node", async () => {
     const [post, environment] = await Promise.all([
       readFile(path.join(starter, "src/render/postprocessing.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.resolve("packages/core/src/look/world-environment.ts"), "utf8"),
     ]);
     const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
     expect(`${post}\n${environment}`).toContain("createRenderChain");
@@ -98,7 +103,7 @@ describe("starter visual floor", () => {
     // one place. What replaced the authored paint stages is the grid: three materials, two greys
     // and one saturated colour, with world-metre UVs.
     const [environment, materials, arena] = await Promise.all([
-      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.resolve("packages/core/src/look/world-environment.ts"), "utf8"),
       readFile(path.join(starter, "src/render/materials.ts"), "utf8"),
       readFile(path.join(starter, "src/render/arena.ts"), "utf8"),
     ]);
@@ -121,9 +126,11 @@ describe("starter visual floor", () => {
         new RegExp(`${stage}[A-Za-z]*(?:Enabled|Stage|Stages)\\b`, "u"),
       );
     }
-    expect(quality).toContain("gtaoEnabled: true");
-    expect(quality).toContain("bloomEnabled: true");
-    expect(quality).toContain("vignetteAmount:");
+    expect(quality).toContain("coreQualityPreset");
+    const high = qualityPreset("high");
+    for (const field of ["gtaoEnabled", "bloomEnabled", "vignetteAmount"] as const) {
+      expect(high[field], field).toBe(coreQualityPreset("high")[field]);
+    }
   });
 
   it("should keep the metre grid on the same byte layout minimal ships", async () => {
@@ -147,13 +154,11 @@ describe("starter visual floor", () => {
     expect(await definitions(starter)).toEqual(await definitions(minimal));
   });
 
-  it("should gather occlusion with fewer samples on medium than high", () => {
+  it("should inherit core occlusion sampling on high and medium", () => {
     const highPreset = qualityPreset("high");
     const mediumPreset = qualityPreset("medium");
-    const highSamples = highPreset.gtaoSamples ?? 16;
-    expect(highSamples).toBe(16);
-    expect(mediumPreset.gtaoSamples).toBe(8);
-    expect(mediumPreset.gtaoSamples).toBeLessThan(highSamples);
+    expect(highPreset.gtaoSamples).toBe(coreQualityPreset("high").gtaoSamples);
+    expect(mediumPreset.gtaoSamples).toBe(coreQualityPreset("medium").gtaoSamples);
   });
 
   it("should ship no contrast-reducing stage at any tier", () => {
@@ -208,7 +213,10 @@ describe("starter visual floor", () => {
     );
     for (const entries of files) {
       for (const [name, source] of entries) {
-        expect(source, name).not.toContain("@threenative/");
+        expect(
+          source.replaceAll('from "@threenative/core"', 'from "shared-core"'),
+          name,
+        ).not.toContain("@threenative/");
         // Loading is the one generated surface that carries real startup behavior: safe-area
         // layout, texture crops, truthful progress and disposal. Its source stays game-owned; the
         // old 200-line smell cap must not reject that behavior.
@@ -218,10 +226,17 @@ describe("starter visual floor", () => {
         // AutoExposureNode sequences five GPU passes (meter, reduce, histogram tiles, histogram
         // bins, adapt) with their disposal. It stays plain Three.js the game can rewrite, so the
         // ownership check above is the rule that matters for it.
+        // LocalExposureNode (a bilateral grid and its blur) and UnrealBloomNode (six Gaussian stages on a
+        // downsample chain) are multi-pass nodes of the same kind, and each file is the whole stage.
+        // The filmic tone curve is one TSL graph (gamut, blue correction, glow, red modifier, the curve and an
+        // output dither), with the same maths on plain numbers for a test or a capture script.
         if (
           !name.endsWith("loading.ts") &&
           !name.endsWith("worldEnvironment.ts") &&
-          !name.endsWith("autoExposure.ts")
+          !name.endsWith("autoExposure.ts") &&
+          !name.endsWith("localExposure.ts") &&
+          !name.endsWith("tonemap.ts") &&
+          !name.endsWith("unrealBloom.ts")
         )
           expect(source.trimEnd().split("\n").length, name).toBeLessThan(200);
       }
@@ -237,19 +252,12 @@ describe("starter visual floor", () => {
     //
     // The stage list's contract is that an unavailable stage is refused **by name, with a
     // reason**, leaving the rest of the chain intact. Guarding the map is what keeps that promise.
-    const templateRoot = path.join(starter, "..");
-    const templates = (await readdir(templateRoot, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-    expect(templates.length).toBeGreaterThan(0);
-    for (const template of templates) {
-      const source = await readFile(
-        path.join(templateRoot, template, "src/render/worldEnvironment.ts"),
-        "utf8",
-      );
-      const guard = source.slice(source.indexOf('name: "godRays"'));
-      expect(guard.slice(0, guard.indexOf("build:")), template).toContain("shadow?.map == null");
-    }
+    const source = await readFile(
+      path.resolve("packages/core/src/look/world-environment.ts"),
+      "utf8",
+    );
+    const guard = source.slice(source.indexOf('name: "godRays"'));
+    expect(guard.slice(0, guard.indexOf("build:"))).toContain("shadow?.map == null");
   });
 
   it("should ship a rounded-geometry floor rather than raw boxes", async () => {
@@ -288,12 +296,19 @@ describe("starter visual floor", () => {
         movement?: { entity?: string; minDistance?: number };
         renderChain?: {
           contributions?: Record<string, string[]>;
-          stages?: { includes?: string[] };
+          stages?: { excludes?: string[]; includes?: string[] };
         };
         resources?: Array<{
           atSteps?: Array<{ label: string; textIncludes?: string }>;
           id?: string;
           path?: string;
+        }>;
+        tone?: Array<{
+          clipFraction?: { max?: number };
+          compare?: { metric?: string; minDelta?: number };
+          mean?: { max?: number };
+          p99?: { max?: number };
+          region?: { height?: number; width?: number; x?: number; y?: number };
         }>;
         visual?: Array<{ region?: { maxDarkPixelRatio?: number; minNonblankPixelRatio?: number } }>;
       };
@@ -315,16 +330,17 @@ describe("starter visual floor", () => {
     });
     expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
     expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
-    // AO, bloom and vignette are the chain this kit ships, `grade` and `grain` are the two stages
-    // its own `src/render/grade.ts` adds, and each one is proved to have changed the graph output
-    // rather than being reported as applied.
+    // AO, temporal AA, motion blur, bloom and vignette are the chain this kit ships, and each one is
+    // proved to have changed the graph output rather than being reported as applied. `grade` and
+    // `grain` run at intensity 0 (the Unreal defaults), so the scenario asserts the chain refuses both.
     expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
       "ambientOcclusion",
+      "traa",
+      "motionBlur",
       "bloom",
       "vignette",
-      "grade",
-      "grain",
     ]);
+    expect(scenario.assert?.renderChain?.stages?.excludes).toEqual(["grade", "grain"]);
     expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
       "graphOutputChanged",
     ]);
@@ -337,11 +353,7 @@ describe("starter visual floor", () => {
         }),
       ]),
     );
-    // The frame is graded, not black. `maxLuminance` is the guard that matters: a black or
-    // unlit capture still counts as "non-blank", so the dark-pixel ceiling is a design bound —
-    // this is a dark-grid arena, and its walls, pillar and platform flanks are a quarter of the
-    // frame by design. The floor is the other half of that: a frame that lost its dark structure
-    // is as wrong as one that drowned in it.
+    // Keep black-pixel ceilings; meter headroom and player contrast replace near-black occupancy.
     const regions = (scenario.assert?.visual ?? [])
       .flatMap((entry) => (entry.region === undefined ? [] : [entry.region]))
       .filter((region): region is NonNullable<typeof region> => region !== undefined);
@@ -358,12 +370,21 @@ describe("starter visual floor", () => {
     ];
     expect(whole?.minNonblankPixelRatio).toBeGreaterThan(0.9);
     expect(whole?.maxLuminance).toBeLessThan(0.3);
-    expect(whole?.minDarkPixelRatio).toBeGreaterThan(0);
     expect(whole?.maxDarkPixelRatio).toBeGreaterThan(0.3);
     expect(sky?.minNonblankPixelRatio).toBeGreaterThan(0.9);
     expect(sky?.maxLuminance).toBeLessThan(0.3);
     expect(sky?.maxDarkPixelRatio).toBeGreaterThan(0.2);
     expect(middle?.minNonblankPixelRatio).toBeGreaterThan(0.5);
+    // Two tone guards replace the old near-black occupancy floor: the world keeps exposure
+    // headroom and the player stays separated from the wall behind it.
+    const tone = scenario.assert?.tone ?? [];
+    expect(tone).toHaveLength(2);
+    const [headroom, contrast] = tone;
+    expect(headroom?.mean?.max).toBeLessThan(255);
+    expect(headroom?.p99?.max).toBeLessThan(255);
+    expect(headroom?.clipFraction?.max).toBeLessThanOrEqual(0.005);
+    expect(contrast?.compare).toMatchObject({ metric: "p99" });
+    expect(contrast?.compare?.minDelta).toBeGreaterThanOrEqual(80);
   });
 
   it("should tell the generated project what the arena is and what replaced the coast", async () => {

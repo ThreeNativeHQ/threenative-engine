@@ -37,6 +37,12 @@ export const MCP_SERVERS = Object.freeze({
     command: "node",
     args: Object.freeze(["./node_modules/@threenative/core/mcp/terrain.mjs"]),
   }),
+  // Inspects, attaches, edits and verifies character animation. Every operation is a build-time
+  // edit of one GLB, so a game that animates nothing pays for nothing.
+  "threenative-animation": Object.freeze({
+    command: "node",
+    args: Object.freeze(["./node_modules/@threenative/core/mcp/animation.mjs"]),
+  }),
 });
 
 /** The external package each shim launches. Core installs asset and sculpt transitively and bundles
@@ -49,6 +55,7 @@ export const MCP_PACKAGES = Object.freeze({
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
   engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.6" }),
   blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.6" }),
+  animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.3" }),
 });
 
 /** How one host spells a stdio MCP server. Hosts agree on what to run and disagree on where to

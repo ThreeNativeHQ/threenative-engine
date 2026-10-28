@@ -67,7 +67,11 @@ import { decodeImageBytes } from "./passes/decode-image.js";
 import { globMatch } from "./passes/glob.js";
 import { createLightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
-import { TEXTURE_SIZE_SLOTS, type TextureMaxSize } from "./passes/model-textures.js";
+import {
+  BASIS_TRANSCODER_BYTES,
+  TEXTURE_SIZE_SLOTS,
+  type TextureMaxSize,
+} from "./passes/model-textures.js";
 import { modelPass } from "./passes/model.js";
 import type {
   IModelPassOptions,
@@ -309,6 +313,12 @@ export interface IAssetCompileOptions {
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
+  /**
+   * Internal: the bytes an embedded model image must save before KTX2 pays for the shared Basis
+   * transcoder. Absent charges the measured default; a caller that already ships the transcoder
+   * passes 0.
+   */
+  readonly modelTranscoderBytes?: number;
 }
 
 export interface IBasisTranscoder {
@@ -360,6 +370,13 @@ export interface IBakeReceipt {
   readonly pipelineVersion: number;
 }
 
+interface ISharedImageManifestEntry extends Readonly<Record<string, unknown>> {
+  readonly key?: string;
+  readonly output?: string;
+  readonly transcoderRequired?: boolean;
+  readonly transcoderSavings?: number;
+}
+
 interface IAssetManifestEntry {
   readonly quality?: import("./image-quality.js").ITextureQuality;
   readonly compressionSkipped?: TextureSkipReason;
@@ -389,6 +406,7 @@ interface IAssetManifestEntry {
   readonly lightmaps?: readonly Readonly<Record<string, unknown>>[];
   readonly output: string;
   readonly passes: string[];
+  readonly sharedImages?: readonly ISharedImageManifestEntry[];
   /** Triangle count of the compiled output (model pass). */
   readonly triangles?: number;
   readonly transcodeTargets?: readonly string[];
@@ -822,6 +840,10 @@ function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefined {
     gpuBytesAfter: value.gpuBytesAfter as number,
     gpuBytesBefore: value.gpuBytesBefore as number,
     resized: value.resized as number,
+    ...(typeof value.transcoderSavings === "number" && value.transcoderSavings > 0
+      ? { transcoderSavings: value.transcoderSavings }
+      : {}),
+    ...(value.transcoderRequired === true ? { transcoderRequired: true as const } : {}),
   };
 }
 
@@ -1760,7 +1782,18 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           : { ...models, vertexLayout: "separate" as const };
       // `assets.lod` is top-level, not under `models`, but it drives the model pass. It rides in
       // the pass options (and its spec) so it is part of the compile cache key.
-      const modelOptionsWithLod = { ...modelOptions, lod: configuredLod };
+      const modelOptionsWithLod = {
+        ...modelOptions,
+        lod: configuredLod,
+        ...(options.modelTranscoderBytes === undefined || modelOptions.textures === "none"
+          ? {}
+          : {
+              textures: {
+                ...(modelOptions.textures ?? {}),
+                transcoderBytes: options.modelTranscoderBytes,
+              },
+            }),
+      };
       const pass = modelPass({
         ...modelOptionsWithLod,
         preserveLightmapUv: lightmap !== undefined,
@@ -2282,14 +2315,18 @@ async function writeOutput(
   await writeFile(outputAbsolute, buffer);
 }
 
-/** A decoded PNG or JPEG as a TNPK v1 Texture entry, or undefined for any other container. */
+/** A decoded PNG, JPEG or WebP as a TNPK v1 Texture entry, or undefined for any other container. */
 async function nativeTextureEntry(
   name: string,
   data: Buffer,
 ): Promise<INativePackageEntry | undefined> {
-  // PNG or JPEG: decoded here to RGBA8. KTX2 and other containers need a runtime transcoder.
+  // PNG, JPEG or WebP: decoded here to RGBA8. KTX2 and other containers need a runtime transcoder.
   const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
-  if (!jpeg && parsePng(data) === undefined) return undefined;
+  const webp =
+    data.length >= 12 &&
+    data.toString("ascii", 0, 4) === "RIFF" &&
+    data.toString("ascii", 8, 12) === "WEBP";
+  if (!jpeg && !webp && parsePng(data) === undefined) return undefined;
   const image = await decodeImageBytes(data, name);
   const header = Buffer.alloc(12);
   header.writeUInt32LE(image.width, 0);
@@ -2322,12 +2359,12 @@ function isLeftover(relative: string): boolean {
  * Gathers the native package's entries from the files already on disk.
  *
  * Cooked outputs enter under their logical path: one Buffer entry per cooked binary buffer
- * (audio/other), as CPU data at its exact length, and one Texture entry per cooked PNG or JPEG,
+ * (audio/other), as CPU data at its exact length, and one Texture entry per cooked PNG, JPEG or WebP,
  * decoded to RGBA8, and one Scene entry per cooked model. A KTX2 texture is not a v1 entry.
  *
  * Every other file in the output root (the web root) enters under its web URL, `/` plus its path
  * there, because that is the URL a game requests it by on the web (`/assets/sky.hdr` is served
- * from `public/assets/sky.hdr`). PNG and JPEG become Texture entries, a binary glTF a Scene entry,
+ * from `public/assets/sky.hdr`). PNG, JPEG and WebP become Texture entries, a binary glTF a Scene entry,
  * anything else a CPU Buffer. Cook outputs (this bake's or a previous one's), the manifest, the
  * receipts, the package itself and editor leftovers are not web-root files. An empty file is left
  * out and counted, never silently padded.
@@ -2596,9 +2633,99 @@ async function copyBasisTranscoder(
   }
 }
 
+/**
+ * The Basis transcoder is one download per build, so whether model images may use KTX2 is decided
+ * for the whole build: free when a standalone texture or a required model image already ships it,
+ * or when the KTX2 savings summed over every model repay it; otherwise each image pays it alone.
+ */
+interface ITranscoderChargeState {
+  readonly countedImages: Set<string>;
+  readonly countedOutputs: Set<string>;
+  needsSharedRecount: boolean;
+  paid: boolean;
+  savings: number;
+}
+
+function addTranscoderCharge(entry: IAssetManifestEntry, state: ITranscoderChargeState): void {
+  if (entry.kind === "texture" && entry.format !== undefined) {
+    if (entry.format !== "none" && entry.format !== "astc4x4") state.paid = true;
+    return;
+  }
+  const row = entry.embeddedTextures;
+  // Content-identical sources share one output; its images download once.
+  if (row === undefined || state.countedOutputs.has(entry.output)) return;
+  state.countedOutputs.add(entry.output);
+  state.paid ||= row.transcoderRequired === true;
+  const images = entry.sharedImages;
+  if (images === undefined || images.length === 0) {
+    state.savings += row.transcoderSavings ?? 0;
+    return;
+  }
+  const detailed = images.filter(isAccountedSharedImage);
+  if (detailed.length !== images.length) {
+    // Probe with KTX2 so the recook writes per-image savings, then settle from that manifest.
+    state.needsSharedRecount ||= (row.transcoderSavings ?? 0) > 0;
+    return;
+  }
+  for (const image of detailed) {
+    if (state.countedImages.has(image.key)) continue;
+    state.countedImages.add(image.key);
+    state.paid ||= image.transcoderRequired;
+    state.savings += image.transcoderSavings;
+  }
+}
+
+export function modelTranscoderCharge(
+  entries: Readonly<Record<string, IAssetManifestEntry>>,
+): 0 | undefined | "either" {
+  const state: ITranscoderChargeState = {
+    countedImages: new Set(),
+    countedOutputs: new Set(),
+    needsSharedRecount: false,
+    paid: false,
+    savings: 0,
+  };
+  for (const entry of Object.values(entries)) addTranscoderCharge(entry, state);
+  if (state.needsSharedRecount) return 0;
+  // No model image would save bytes as KTX2, so the charge changes nothing.
+  if (state.savings === 0) return "either";
+  return state.paid || state.savings >= BASIS_TRANSCODER_BYTES ? 0 : undefined;
+}
+
+function isAccountedSharedImage(value: unknown): value is ISharedImageManifestEntry & {
+  readonly key: string;
+  readonly transcoderRequired: boolean;
+  readonly transcoderSavings: number;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.key === "string" &&
+    typeof value.transcoderRequired === "boolean" &&
+    typeof value.transcoderSavings === "number"
+  );
+}
+
 export async function compileAssets(
   options: IAssetCompileOptions = {},
 ): Promise<IAssetCompileResult> {
+  if (options.modelTranscoderBytes !== undefined) return compileOnce(options);
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  const manifestPath = path.join(resolveLayout(cwd, options).outputRoot, MANIFEST_NAME);
+  const charge = async () =>
+    modelTranscoderCharge((await readExistingManifest(manifestPath)).entries);
+  // The last bake's manifest predicts the decision, so a warm build cooks once.
+  const predicted = await charge();
+  const used = predicted === "either" ? undefined : predicted;
+  const result = await compileOnce({ ...options, modelTranscoderBytes: used });
+  const decided = await charge();
+  if (decided === "either" || decided === used) return result;
+  // ponytail: a build whose decision flips cooks its models twice, once; the manifest then
+  // carries the decision. Decide inside one cook if cold builds of large projects hurt.
+  const second = await compileOnce({ ...options, modelTranscoderBytes: decided });
+  return { ...second, written: result.written + second.written };
+}
+
+async function compileOnce(options: IAssetCompileOptions): Promise<IAssetCompileResult> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const layout = resolveLayout(cwd, options);
   const receiptPath = path.join(layout.outputRoot, RECEIPT_NAME);
@@ -2812,7 +2939,14 @@ export async function compileAssets(
           modelPass({
             vertexLayout: "separate",
             compact: false,
-            passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+            passes: {
+              dedup: false,
+              meshopt: false,
+              prune: false,
+              quantize: false,
+              reorder: false,
+              restTracks: false,
+            },
             textures: "none",
             virtual: "none",
             lod: false,
@@ -2833,6 +2967,7 @@ export async function compileAssets(
   /** Cooked bytes the content-identical model sources saved by sharing one output. */
   let dedupeSavedBytes = 0;
   let textureCount = 0;
+  let ktx2TextureCount = 0;
   let compressedModelCount = 0;
 
   // Asset-free projects still serve the manifest the runtime loader requests.
@@ -2948,6 +3083,9 @@ export async function compileAssets(
         logicalPath: logical,
       });
       textureCount += 1;
+      // Raw ASTC is a KTX2 container but needs no Basis transcoder. Any Basis codec does.
+      if (entry.format !== undefined && entry.format !== "none" && entry.format !== "astc4x4")
+        ktx2TextureCount += 1;
     }
   };
 
@@ -3192,11 +3330,11 @@ export async function compileAssets(
   }
 
   // The transcoder ships once per build next to the compiled assets; the runtime loader points
-  // at `<basePath>basis/` by convention. Copied when anything (re)encoded, and restored when a
-  // cleaned public/ still lists textures, so a served manifest never lacks its transcoder. A
-  // project with no standalone texture at all still needs it once a model publishes
-  // KHR_texture_basisu — otherwise GLTFLoader gets a KTX2Loader pointed at a 404.
-  if ((layout.texturesActive && textureCount > 0) || compressedModelCount > 0) {
+  // at `<basePath>basis/` by convention. Copied only when an output is actually Basis-encoded:
+  // a JPEG or PNG texture, and a model whose images stayed in their authored container, do not
+  // need it. Restored when a cleaned public/ still lists KTX2 outputs, so a served manifest never
+  // lacks its transcoder.
+  if (ktx2TextureCount > 0 || compressedModelCount > 0) {
     const basisJs = path.join(layout.outputRoot, BASIS_DIRECTORY, "basis_transcoder.js");
     if (written > 0 || !(await outputExists(basisJs))) {
       await recordPendingOutputs([
