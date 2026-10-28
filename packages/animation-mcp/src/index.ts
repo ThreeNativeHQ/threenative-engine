@@ -14,9 +14,13 @@ import {
   type KeyOp,
   appendOp,
   logPathFor,
+  readLog,
   upgradeLog,
   writeLog,
 } from "./ops/log.js";
+import { renderLog } from "./ops/render.js";
+import { verifyClip } from "./ops/verify.js";
+import { writeFilmstrip } from "./report/filmstrip.js";
 import { startPoseLab } from "./server.js";
 
 const TransformSchema = z.object({
@@ -87,6 +91,76 @@ const AttachOutputSchema = z.object({
   node: z.string(),
 });
 
+const VerifyInputSchema = z.object({
+  clip: z.string().min(1).max(200),
+  file: z.string().min(1),
+  filmstrip: z.string().min(1).optional(),
+  fps: z.number().int().min(1).max(240).default(30),
+  scale: z.number().positive().default(1),
+});
+
+const VerifyOutputSchema = z.object({
+  bones: z.number(),
+  clip: z.string(),
+  filmstrip: z.string().nullable(),
+  defects: z.array(
+    z.object({
+      bone: z.string(),
+      detail: z.string(),
+      fromFrame: z.number(),
+      fromTime: z.number(),
+      kind: z.enum(["bone-stretch", "foot-skate", "ground-penetration", "jitter", "loop-seam"]),
+      limit: z.number(),
+      measured: z.number(),
+      toFrame: z.number(),
+      toTime: z.number(),
+    }),
+  ),
+  duration: z.number(),
+  file: z.string(),
+  fps: z.number(),
+  frames: z.number(),
+  passed: z.boolean(),
+  scale: z.number(),
+  thresholds: z.object({
+    contact: z.number(),
+    jitter: z.number(),
+    penetration: z.number(),
+    seam: z.number(),
+    skate: z.number(),
+    stretch: z.number(),
+  }),
+});
+
+const ClipEditSchema = z.discriminatedUnion("kind", [
+  z.object({ end: z.number().min(0), kind: z.literal("trim"), start: z.number().min(0) }),
+  z.object({ kind: z.literal("retime"), speed: z.number().positive() }),
+  z.object({ kind: z.literal("loop-point"), time: z.number().min(0) }),
+  z.object({ fps: z.number().positive(), kind: z.literal("resample") }),
+  z.object({ kind: z.literal("mirror") }),
+  z.object({
+    contact: z.number().min(0).default(0.03),
+    feet: z.array(z.string().min(1)).max(8).default([]),
+    kind: z.literal("foot-lock"),
+  }),
+]);
+
+const ModifyInputSchema = z.object({
+  clip: z.string().min(1).max(200),
+  edits: z.array(ClipEditSchema).min(1).max(64),
+  file: z.string().min(1),
+  log: z.string().min(1).optional(),
+  output: z.string().min(1).optional(),
+});
+
+const ModifyOutputSchema = z.object({
+  clips: z.array(z.string()),
+  edits: z.number(),
+  file: z.string(),
+  log: z.string(),
+  modified: z.array(z.string()),
+});
+
 const ViewInputSchema = z.object({
   anchor: AnchorIdSchema.default("right-hand"),
   attach: z.string().min(1).optional(),
@@ -133,6 +207,17 @@ function transformOf(value: z.output<typeof TransformSchema>): TransformValue {
 function defaultOutputFor(host: string): string {
   const parsed = path.parse(host);
   return path.join(parsed.dir, `${parsed.name}.anim.glb`);
+}
+
+async function filmstripFor(parsed: z.output<typeof VerifyInputSchema>): Promise<string | null> {
+  if (parsed.filmstrip === undefined) return null;
+  await writeFilmstrip({
+    clip: parsed.clip,
+    file: parsed.file,
+    fps: parsed.fps,
+    output: parsed.filmstrip,
+  });
+  return path.resolve(parsed.filmstrip);
 }
 
 async function attach(
@@ -233,6 +318,68 @@ export function createAnimationServer(): McpServer {
     async (input) => {
       try {
         const result = AttachOutputSchema.parse(await attach(AttachInputSchema.parse(input)));
+        return { content: text(result), structuredContent: result };
+      } catch (error) {
+        return {
+          content: text({ message: error instanceof Error ? error.message : String(error) }),
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "animation_verify",
+    {
+      annotations: annotations(true),
+      description:
+        "Measure one clip for the defects a still frame cannot show: a planted foot that slides (2 cm), ground penetration (1 cm), a loop seam (5°), a one-frame jitter spike, and bones whose length changes. Every defect names the bone and the frame range it spans. Thresholds are in metres; pass `scale` for a model that is not (Mixamo and Quaternius are centimetres: 0.01).",
+      inputSchema: VerifyInputSchema,
+      outputSchema: VerifyOutputSchema,
+      title: "Verify a clip's motion",
+    },
+    async (input) => {
+      try {
+        const parsed = VerifyInputSchema.parse(input);
+        const report = VerifyOutputSchema.parse({
+          ...(await verifyClip(parsed.file, parsed.clip, { fps: parsed.fps, scale: parsed.scale })),
+          filmstrip: await filmstripFor(parsed),
+        });
+        return { content: text(report), structuredContent: report };
+      } catch (error) {
+        return {
+          content: text({ message: error instanceof Error ? error.message : String(error) }),
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "animation_modify",
+    {
+      annotations: annotations(false),
+      description:
+        "Edit one clip — trim, retime, move the loop point, resample, mirror, lock planted feet — writing each edit into the op log and rendering the result from the source GLB. Rendering twice from one log gives the same bytes, so the log is the change and the GLB is derived.",
+      inputSchema: ModifyInputSchema,
+      outputSchema: ModifyOutputSchema,
+      title: "Edit a clip and render it from the log",
+    },
+    async (input) => {
+      try {
+        const parsed = ModifyInputSchema.parse(input);
+        const logFile = parsed.log ?? logPathFor(parsed.file);
+        const existing = await readLog(logFile).catch(async () => {
+          // A file with no log yet starts one at this clip's source.
+          const fresh: AnimationLog = { host: parsed.file, ops: [], version: 4 };
+          return fresh;
+        });
+        let log = existing;
+        for (const edit of parsed.edits)
+          log = appendOp(log, { clip: parsed.clip, edit, op: "modify" });
+        await writeLog(logFile, log);
+        const rendered = await renderLog(log, parsed.output ?? defaultOutputFor(parsed.file));
+        const result = ModifyOutputSchema.parse({ ...rendered, log: path.resolve(logFile) });
         return { content: text(result), structuredContent: result };
       } catch (error) {
         return {

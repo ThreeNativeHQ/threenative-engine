@@ -20,8 +20,9 @@ servers.
 | `animation_inspect` | bones, skeleton landmarks, clips with durations, root-motion travel, in-place detection | shipped |
 | `animation_attach` | prop on a bone with per-clip keyed offsets, baked into a GLB | shipped |
 | `animation_open_view` | the calibrator page, live over the op log | shipped |
+| `animation_verify` | planted-foot skate, ground penetration, loop seam, jitter spike, bone stretch — each named by bone and frame range | shipped; the filmstrip PNG is not written yet |
 | `animation_auto_rig`, `animation_ik_retarget`, `animation_preview` | the four tools the asset MCP still owns | moved once their code is relicensed |
-| `animation_modify`, `animation_verify` | trim, retime, loop point, mirror, resample, root motion, foot lock; foot skate, ground penetration, loop seam, jitter, bone stretch | phase 2 |
+| `animation_modify` | trim, retime, loop point, mirror, resample, root motion, foot lock | phase 2 |
 | `animation_pose`, `animation_bake`, `animation_find_clip` | constraint intents solved into a pose, a pose sequence baked into a clip, Quaternius library search | phase 3 |
 
 ## The op log

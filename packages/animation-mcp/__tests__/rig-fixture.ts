@@ -172,3 +172,71 @@ export async function writeRigFixture(
 
   return { host, prop, walk: walkPath };
 }
+
+export interface IPoseJoint {
+  readonly name: string;
+  readonly parent?: string;
+  readonly translation: [number, number, number];
+}
+
+export interface IPoseChannel {
+  readonly node: string;
+  readonly path: "rotation" | "translation";
+  readonly times: readonly number[];
+  /** One vector per time: three numbers for translation, four for rotation. */
+  readonly values: readonly (readonly number[])[];
+}
+
+export interface IPoseFixture {
+  readonly clip: string;
+  readonly joints: readonly IPoseJoint[];
+  readonly channels?: readonly IPoseChannel[];
+}
+
+/** A skeleton and one clip, with exactly the channels a spec wants — the shape `animation_verify`
+ * reads: no skin, no mesh, no textures. */
+export async function writePoseFixture(directory: string, options: IPoseFixture): Promise<string> {
+  await mkdir(directory, { recursive: true });
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene("Scene");
+  const nodes = new Map<string, Node>();
+  for (const joint of options.joints)
+    nodes.set(joint.name, document.createNode(joint.name).setTranslation([...joint.translation]));
+  for (const joint of options.joints) {
+    const node = nodes.get(joint.name) as Node;
+    const parent = joint.parent === undefined ? undefined : nodes.get(joint.parent);
+    (parent ?? scene).addChild(node);
+  }
+  if (options.channels !== undefined && options.channels.length > 0) {
+    const animation = document.createAnimation(options.clip);
+    for (const channel of options.channels) {
+      const times = document
+        .createAccessor(`${channel.node}.${channel.path}.time`)
+        .setType("SCALAR")
+        .setArray(new Float32Array(channel.times))
+        .setBuffer(buffer);
+      const width = channel.path === "rotation" ? 4 : 3;
+      const values = document
+        .createAccessor(`${channel.node}.${channel.path}`)
+        .setType(width === 4 ? "VEC4" : "VEC3")
+        .setArray(new Float32Array(channel.values.flat()))
+        .setBuffer(buffer);
+      const sampler = document
+        .createAnimationSampler()
+        .setInput(times)
+        .setOutput(values)
+        .setInterpolation("LINEAR");
+      animation.addSampler(sampler).addChannel(
+        document
+          .createAnimationChannel()
+          .setTargetNode(nodes.get(channel.node) as Node)
+          .setTargetPath(channel.path)
+          .setSampler(sampler),
+      );
+    }
+  }
+  const file = path.join(directory, "pose.glb");
+  await reader().write(file, document);
+  return file;
+}

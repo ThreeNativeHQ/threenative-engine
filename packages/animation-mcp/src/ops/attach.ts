@@ -120,10 +120,19 @@ function writeTrack(
  * translation, rotation and scale track per clip. Nothing at runtime needs the offsets, the pose
  * log, or this package.
  */
-export async function bakeAttachment(log: AnimationLog, outputFile: string): Promise<BakeResult> {
+export interface AttachmentResult {
+  readonly anchor: string;
+  readonly attached: string;
+  readonly clips: string[];
+  readonly detached: string[];
+  readonly node: string;
+}
+
+/** Puts the log's prop on its bone inside `document`, with one track per held clip. Shared by the
+ * bake and by a full log render, so the two can never disagree about what attaching means. */
+export async function attachInto(document: Document, log: AnimationLog): Promise<AttachmentResult> {
   const posed = replayOps(log);
   const reader = () => new NodeIO().registerExtensions(ALL_EXTENSIONS);
-  const document = await reader().read(log.host);
   const attached = await reader().read(posed.attached);
   const anchor = document
     .getRoot()
@@ -161,15 +170,19 @@ export async function bakeAttachment(log: AnimationLog, outputFile: string): Pro
     clips.push(name);
     writeTrack(document, animation, node, track);
   }
-
-  await mkdir(path.dirname(path.resolve(outputFile)), { recursive: true });
-  await reader().write(outputFile, document);
   return {
     anchor: anchor.getName(),
     attached: posed.attached,
     clips,
     detached,
-    file: path.resolve(outputFile),
     node: node.getName(),
   };
+}
+
+export async function bakeAttachment(log: AnimationLog, outputFile: string): Promise<BakeResult> {
+  const document = await new NodeIO().registerExtensions(ALL_EXTENSIONS).read(log.host);
+  const attached = await attachInto(document, log);
+  await mkdir(path.dirname(path.resolve(outputFile)), { recursive: true });
+  await new NodeIO().registerExtensions(ALL_EXTENSIONS).write(outputFile, document);
+  return { ...attached, file: path.resolve(outputFile) };
 }
