@@ -4309,7 +4309,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             row->kind = item.kind; row->side = item.side; row->material = reinterpret_cast<uintptr_t>(item.material);
             row->positions = reinterpret_cast<uintptr_t>(item.positions); row->indices = reinterpret_cast<uintptr_t>(item.indices);
             row->id = item.id; row->slot = p.slot;
-            changed |= k < split && row->order() != before;
+            // A transparent row's place is the transparent sequence's, and its sort fields record nothing.
+            changed |= k < split && !item.transparent && row->order() != before;
             row->instances = item.instanceCount;
             row->seen = retained.frame;
             // three's Info.update, as encode counts a recorded draw

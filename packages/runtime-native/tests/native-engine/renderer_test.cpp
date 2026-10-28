@@ -3008,6 +3008,11 @@ void cullKeepsMain(bool transparent) {
         all[i].transparent = transparent;
     }
     const std::vector<DrawItem> three(all.begin(), all.end()), two{all[0], all[2]};
+    // The same draws through copied materials: a batch's material pointer can move between frames.
+    const std::array<shader::StandardMaterial, 3> copies = materials;
+    std::vector<DrawItem> copied = two;  // and a cull in the same frame, so the frame is not the last one again
+    copied[0].material = &copies[0];
+    copied[1].material = &copies[2];
     struct Seen { std::vector<uint8_t> pixels; uint32_t recorded, draws; uint64_t triangles; };
     const auto run = [&](bool stable) {
         EventQueue events;
@@ -3024,6 +3029,7 @@ void cullKeepsMain(bool transparent) {
         // A readback copy destroyed between frames binds to no draw, so it keeps the out-of-view row.
         renderer.gpu().destroy(renderer.gpu().createBuffer(256, WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst));
         std::vector<Seen> seen{frame(two), frame(two), frame(three)};
+        if (transparent) seen.push_back(frame(copied));
         return seen;
     };
     const auto direct = run(false), stable = run(true);
