@@ -478,14 +478,14 @@ async function packLocalPackage(directory, destination) {
   return join(destination, archive);
 }
 
-function packageSourceFlag(name) {
+export function packageSourceFlag(name) {
   if (name === 'create-threenative') return '--cli-package';
-  if (name === 'threenative-blender-mcp') return '--blender-mcp-package';
-  if (name === 'threenative-engine-mcp') return '--engine-mcp-package';
   if (name.startsWith('@threenative/')) {
     const suffix = name.slice('@threenative/'.length);
     return `--threenative-${suffix}-package`;
   }
+  // scripts/workspace-packages.ts workspacePackageSourceFlag: an unscoped tool package drops its prefix.
+  if (name.startsWith('threenative-')) return `--${name.slice('threenative-'.length)}-package`;
   throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
