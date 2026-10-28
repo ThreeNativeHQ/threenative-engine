@@ -150,6 +150,7 @@ export function upgradeLog(value: unknown): AnimationLog {
     return { host: value.host, ops: value.ops.map((entry) => op(entry)), version: 4 };
   }
   if (value.version === 3 || value.version === 2)
+    // quality-allow: a v2 or v3 recipe is Pose Lab's own output and the version check above picks its shape; a malformed one throws in fromRecipe and is never rewritten.
     return fromRecipe(migrateRecipe(value as unknown as Parameters<typeof migrateRecipe>[0]));
   throw new Error(`Unsupported animation log version '${String(value.version)}'.`);
 }

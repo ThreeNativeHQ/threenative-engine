@@ -213,6 +213,7 @@ const CORE_PACKAGE_VERSION = "0.3.6";
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
   "threenative-blender",
+  "threenative-animation",
 ]);
 
 export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SERVERS).map(
