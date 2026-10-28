@@ -1,6 +1,6 @@
 # PRD-756 — The temporal resolve feeds one shared post chain and keeps a half-size history
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 Deferred (0.44 ms removable, under its 1 ms bar)
 **Priority:** P1 — on Iris Xe at the 0.72 tier start, the TRAA resolve (4.36 ms), bloom at display size (1.55 + 1.21 ms) and local exposure (2.9-3.2 ms) are most of the 14.0 ms that does not scale with resolution ([PRD-741](../../done/PRD-741-the-owned-engine-shades-fewer-pixels-and-its-temporal-resolve-writes-the-display-frame.md), measured per pass).
 **Complexity:** 6 (MEDIUM) — the resolve outputs and the native post passes (+2), core's bloom and local exposure nodes (+1), a history format with an adapter fallback (+1), visual judge rounds (+2).
 **Owner:** João
@@ -27,7 +27,21 @@ The default frame on Iris Xe loses at least 1.5 ms of GPU time with a NEUTRAL or
 
 ### Phase 1: One shared post chain
 
-- [ ] Size it: the bloom chain, the display-size bloom passes and the local exposure passes, per pass, on the current build, and what a shared chain removes. If that is under 1 ms, this phase moves to Deferred with the number. proof: `?tnGpuPasses=1` on Iris Xe, two runs, table here.
+- [x] Size it: the bloom chain, the display-size bloom passes and the local exposure passes, per pass, on the current build, and what a shared chain removes. If that is under 1 ms, this phase moves to Deferred with the number. proof: `?tnGpuPasses=1` on Iris Xe, two runs, table here.
+  Result (2026-10-28, Iris Xe, Hop Garden medium at 0.72, PR #574 head `916682671`, runs PB1 and PB2, 3614 and 3514 steady frames, frame-total p50 19.56 and 19.25 ms):
+
+  | group | PB1 ms | PB2 ms |
+  | --- | --- | --- |
+  | scene (1382x778) | 4.239 | 4.234 |
+  | traaResolve (1920x1080) | 4.546 | 4.532 |
+  | bloom chain (960x540 to 30x17 and back) | 1.623 | 1.621 |
+  | display-size bloom | 0.596 | 0.596 |
+  | local exposure and small chain | 2.892 | 2.888 |
+  | auto-exposure meters | 0.180 | 0.180 |
+  | output (1920x1080) | 1.475 | 1.475 |
+  | other (aux, velocity, input-size post, shadow) | 3.248 | 3.223 |
+
+  A shared chain removes at most the bloom chain's own downsample from the display frame: 960x540 0.312, 480x270 0.068, 240x135 0.029, 120x68 0.014, 60x34 0.010, 30x17 0.008 ms, **0.44 ms** in all (PB2). The local exposure passes are a bilateral grid at input size, not a mip chain, so they would not read the shared levels (inference from their extents: 240x576, 240x540, 480x9). Under 1 ms: Phase 1 is **Deferred**.
 - [ ] The resolve writes a half-resolution colour, and bloom and local exposure start from one shared chain. proof: ctests for the chain levels; the core look specs pass.
 - [ ] Visual judge NEUTRAL or IMPROVEMENT on Hop Garden, Lantern Vale and the shooter, two runs per arm. proof: the verdict here and the sheets on the follow-up PR.
 
@@ -46,5 +60,7 @@ The default frame on Iris Xe loses at least 1.5 ms of GPU time with a NEUTRAL or
 Every box is ticked, or a phase is Deferred with its measured number.
 
 ## Decisions
+
+- 2026-10-28, lead: Phase 1 is Deferred with its number, as its sizing box set: a shared chain removes at most 0.44 ms on Iris Xe at 0.72. Revisit when a `?tnGpuPasses=1` profile shows the display-frame downsample levels at 1 ms or more, for example at a 4K display. The larger cost is the resolve itself (4.5 ms), which is Phase 2's target.
 
 ## Blocked on
