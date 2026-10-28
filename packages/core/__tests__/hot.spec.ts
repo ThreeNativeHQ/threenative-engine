@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IGame, defineGame } from "../src/game.js";
 import { acceptHotUpdate } from "../src/hot.js";
 import { Scene } from "../src/scene.js";
+import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
+import { subscribeUiState } from "../src/ui-state.js";
 
 type State = Record<string, unknown>;
 type DisposeCallback = (data: Record<string, unknown>) => void;
@@ -86,6 +88,37 @@ describe("acceptHotUpdate", () => {
     expect(() => acceptHotUpdate(rebuilt, hot)).not.toThrow();
     expect(rebuilt.state.getState().screen).toBe("playing");
   });
+
+  it.each([
+    ["ready", false],
+    ["collapsing", true],
+  ] as const)(
+    "a session whose startup phase was %s comes back with its HUD covered: %s",
+    (phase, covered) => {
+      // An edit restarts the game, and the restarted game covered its HUD again until its own
+      // startup lifted the cover: seconds of blank HUD after every save on a slow GPU, 35 s on
+      // SwiftShader. A session that already showed its HUD keeps showing it.
+      const hot = hotContext();
+      const current = twoSceneGame({ screen: "playing" });
+      Object.defineProperty(current, "sceneName", { get: () => "play" });
+      Object.defineProperty(current, "ctx", { get: () => ({ startup: { phase } }) });
+      acceptHotUpdate(current, hot);
+      hot.triggerDispose();
+
+      const rebuilt = twoSceneGame({ screen: "menu" });
+      acceptHotUpdate(rebuilt, hot);
+      const ui = connectUiBridge({ end: "ui" });
+      const mirror = subscribeUiState(ui);
+      try {
+        void rebuilt.ui;
+        ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+        expect(mirror.covered()).toBe(covered);
+      } finally {
+        rebuilt.stop();
+        ui.close();
+      }
+    },
+  );
 
   it("should do nothing when import.meta.hot is undefined", () => {
     const hot = hotContext();

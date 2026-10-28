@@ -16,6 +16,8 @@ type HotData = {
   readonly reloads: number;
   /** The scene the session was in. Absent for data written before scene resume existed. */
   readonly sceneName?: string | undefined;
+  /** The session's startup had lifted its cover, so its HUD was showing. */
+  readonly revealed?: boolean;
 };
 const isDev =
   (import.meta as ImportMeta & { env?: Record<"DEV", boolean | undefined> }).env?.DEV === true;
@@ -51,7 +53,7 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   // the screen was still "playing". Resuming the scene is what makes the restored state true.
   if (carried?.sceneName !== undefined) {
     try {
-      game.resumeScene(carried.sceneName);
+      game.resumeScene(carried.sceneName, { revealed: carried.revealed === true });
     } catch {
       // A scene that no longer exists in the updated module is not a reason to lose the reload;
       // the game boots at its start scene, which is what it would have done anyway.
@@ -75,7 +77,12 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
       game.state.flush();
       const state = game.state.getState();
       assertPortableState(state);
-      data.threenative = { reloads: reloads + 1, sceneName: game.sceneName, state };
+      data.threenative = {
+        reloads: reloads + 1,
+        revealed: game.ctx?.startup.phase === "ready",
+        sceneName: game.sceneName,
+        state,
+      };
     } catch (error) {
       data.threenative = undefined;
       hot.invalidate(error instanceof Error ? error.message : String(error));

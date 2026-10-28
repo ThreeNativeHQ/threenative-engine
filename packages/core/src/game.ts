@@ -541,8 +541,11 @@ export interface IGame<
   readonly ui: IGameUi;
   /** Rebuilds the requested scene from its initial state, then merges an optional carry patch. */
   goto(name: string, options?: IGotoOptions<TState>): Promise<void>;
-  /** Boot into `name` instead of `config.start` on the next `start()`. Hot reload's restore path. */
-  resumeScene(name: string): void;
+  /**
+   * Boot into `name` instead of `config.start` on the next `start()`. Hot reload's restore path.
+   * `revealed`: the session already showed its HUD, so the restarted game keeps the cover lifted.
+   */
+  resumeScene(name: string, options?: { readonly revealed?: boolean }): void;
   start(): Promise<void>;
   pause(): void;
   resume(): void;
@@ -836,9 +839,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    * available here: it throws before `start()`, and it resets state to the destination's
    * `initialState`, which would discard the very state being restored.
    */
-  resumeScene(name: string): void {
+  resumeScene(name: string, options?: { readonly revealed?: boolean }): void {
     if (this.#config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
     this.#resumeScene = name;
+    // An edit restarts the game, and its HUD would blank until this startup lifted the cover
+    // again: seconds after every save on a slow GPU. A session that showed its HUD keeps it.
+    if (options?.revealed === true) this.#uiRevealed = true;
   }
 
   get state(): GameStore<TState> {
