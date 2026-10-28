@@ -524,6 +524,8 @@ export function defineWebRenderer(
       passes.auxRecorded = module._tnw_web_frame(38);
       passes.recordMs = module._tnw_web_frame(39);
       passes.shadowEncodeMs = module._tnw_web_frame(40);
+      // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
+      (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */
