@@ -26,6 +26,8 @@ interface IWorkerInitMessage {
   dpr: number;
   pageUrl: string;
   globals: Record<string, string | number | boolean>;
+  /** The page's navigator facts: a WorkerNavigator has no maxTouchPoints, so a phone read as touchless. */
+  navigator: Record<string, unknown>;
   ui: MessagePort;
   /** The page's AudioContext, served over its own port; absent where the page has none. */
   audio?: { port: MessagePort; sampleRate: number; currentTime: number };
@@ -237,6 +239,8 @@ export function serveWorkerGame(
       size.dpr = message.dpr;
       scope.devicePixelRatio = message.dpr;
       for (const [key, value] of Object.entries(message.globals)) scope[key] = value;
+      // Read by platform detection (`isMobile`, `isTouchscreenAvailable`) in place of the worker's own.
+      scope.__tnPageNavigator = message.navigator;
 
       // A worker resolves relative URLs against its own script, so the page's URL is the base.
       const pageUrl = message.pageUrl;
@@ -603,6 +607,19 @@ export function startWorkerGame(
     ResizeObserverCtor === undefined ? undefined : new ResizeObserverCtor(() => postResize());
   observer?.observe(canvas);
 
+  const pageNavigator = (source: Navigator | undefined): Record<string, unknown> => {
+    const agent = (source as { userAgentData?: { mobile?: unknown; platform?: unknown } })
+      ?.userAgentData;
+    return {
+      maxTouchPoints: source?.maxTouchPoints,
+      platform: source?.platform,
+      userAgent: source?.userAgent,
+      ...(agent === undefined
+        ? {}
+        : { userAgentData: { mobile: agent.mobile, platform: agent.platform } }),
+    };
+  };
+
   const pageGlobals = (): Record<string, string | number | boolean> => {
     const globals: Record<string, string | number | boolean> = {};
     for (const key of Object.keys(page)) {
@@ -671,6 +688,7 @@ export function startWorkerGame(
       dpr: windowHost.devicePixelRatio ?? 1,
       globals: pageGlobals(),
       height: Math.max(1, canvas.clientHeight),
+      navigator: pageNavigator(windowHost.navigator),
       pageUrl: windowHost.location.href,
       type: "tn-worker-init",
       ui: gamePort,

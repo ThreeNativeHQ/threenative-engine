@@ -1,4 +1,4 @@
-import { type Camera, Frustum, Matrix4, type Object3D, Ray, Sphere, Vector3 } from "three";
+import { type Camera, Matrix4, type Object3D, Vector3 } from "three";
 
 import { isRenderable } from "./projection-plan.js";
 
@@ -217,6 +217,16 @@ function hierarchyRevision(object: Object3D): number | undefined {
   return typeof revision === "number" ? revision : undefined;
 }
 
+/**
+ * Counts one costly step by name in `globalThis.__tnEngineCost`, the bag a playtest reads per frame
+ * (three-native reports it as TN_ENGINE_COST), so a kit that brings back a per-frame walk fails its bound.
+ */
+function countEngineCost(name: string): void {
+  const host = globalThis as { __tnEngineCost?: Record<string, number> };
+  host.__tnEngineCost ??= {};
+  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + 1;
+}
+
 /** The native engine's one-call answer to "is it and every parent visible" (bindings_scene.cpp). */
 function visibleInWorld(object: unknown): boolean | undefined {
   const host = (object as { __tnVisibleInWorld?: () => boolean }).__tnVisibleInWorld;
@@ -242,11 +252,15 @@ function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
 export class RenderCameraCull {
   #animationFrame = 0;
   #animationPrepared = false;
-  readonly #animationSphere = new Sphere();
   readonly #enabled: boolean;
   readonly #minimumPixels: number;
   readonly #center = new Vector3();
-  readonly #frustum = new Frustum();
+  /**
+   * The main camera's six frustum planes, [nx, ny, nz, constant] each, as three's
+   * `Frustum.setFromProjectionMatrix` makes them. Plain numbers, so a test against them never crosses
+   * into the engine (its Frustum, Ray and Sphere are engine objects: one call per test).
+   */
+  readonly #planes = new Float64Array(24);
   readonly #projectionScreen = new Matrix4();
   readonly #hidden: Object3D[] = [];
   readonly #animationVisitor: (object: Object3D) => void;
@@ -277,7 +291,8 @@ export class RenderCameraCull {
   #cameraZ = 0;
   #scale = 0;
   #cameraResolved = true;
-  readonly #animationRay = new Ray();
+  /** The camera's forward centre ray, [ox, oy, oz, dx, dy, dz]: the camera position and unit direction. */
+  readonly #ray = new Float64Array([0, 0, 0, 0, 0, -1]);
   /** Per rig: [frame, x, y, z, radius] of the union of its parts' spheres so far this frame. */
   readonly #rigSpheres = new WeakMap<IAnimationRateState, Float64Array>();
   #considered = 0;
@@ -340,6 +355,7 @@ export class RenderCameraCull {
       at += 3;
     }
     if (same && at === this.#animatedFrom.length) return this.#animated.size > 0;
+    countEngineCost("cullRigRebuilds");
     this.#animated.clear();
     this.#animatedFrom.length = 0;
     this.#rigParts.clear();
@@ -426,6 +442,7 @@ export class RenderCameraCull {
       parts === undefined ||
       typeof (rig as { __tnVisibleInWorld?: unknown }).__tnVisibleInWorld !== "function"
     ) {
+      countEngineCost("cullRigWalks");
       rig.traverseVisible(this.#animationVisitor);
       return;
     }
@@ -553,14 +570,22 @@ export class RenderCameraCull {
       this.#cameraX = elements[12] as number;
       this.#cameraY = elements[13] as number;
       this.#cameraZ = elements[14] as number;
-      this.#animationRay.origin.set(this.#cameraX, this.#cameraY, this.#cameraZ);
-      this.#animationRay.direction
-        .set(-(elements[8] as number), -(elements[9] as number), -(elements[10] as number))
-        .normalize();
+      const fx = -(elements[8] as number);
+      const fy = -(elements[9] as number);
+      const fz = -(elements[10] as number);
+      const length = Math.hypot(fx, fy, fz) || 1;
+      this.#ray.set([
+        this.#cameraX,
+        this.#cameraY,
+        this.#cameraZ,
+        fx / length,
+        fy / length,
+        fz / length,
+      ]);
       // The main frustum is what tells an off-camera shadow caster from a visible but unresolvable
       // one. Perspective cameras keep `matrixWorldInverse` in step inside `updateMatrixWorld`.
       this.#projectionScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-      this.#frustum.setFromProjectionMatrix(this.#projectionScreen);
+      setFrustumPlanes(this.#planes, this.#projectionScreen.elements);
     }
     return false;
   }
@@ -634,7 +659,8 @@ export class RenderCameraCull {
     this.#center.copy(sphere.center).applyMatrix4(object.matrixWorld);
     if (
       object.castShadow === true &&
-      (!this.#cameraResolved || !this.#frustum.containsPoint(this.#center))
+      (!this.#cameraResolved ||
+        !inFrustum(this.#planes, this.#center.x, this.#center.y, this.#center.z, 0))
     ) {
       this.#exemptShadowCasters += 1;
       return;
@@ -676,9 +702,7 @@ export class RenderCameraCull {
       radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
       // A known bound on the camera's forward centre ray is the conservative observable target
       // signal. Test each source independently so a nearer bound cannot hide a farther target.
-      banded = !this.#animationRay.intersectsSphere(
-        this.#animationSphere.set(this.#center, radius),
-      );
+      banded = !rayMeetsSphere(this.#ray, this.#center.x, this.#center.y, this.#center.z, radius);
     }
     const { x, y, z } = this.#center;
     for (const state of states) {
@@ -695,8 +719,14 @@ export class RenderCameraCull {
     }
   }
 
-  /** Grows `state`'s sphere for this frame to hold the part at `x, y, z` and `radius`, into `#animationSphere`. */
-  #rigSphere(state: IAnimationRateState, x: number, y: number, z: number, radius: number): Sphere {
+  /** Grows `state`'s sphere for this frame to hold the part at `x, y, z` and `radius`: [frame, x, y, z, radius]. */
+  #rigSphere(
+    state: IAnimationRateState,
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+  ): Float64Array {
     let union = this.#rigSpheres.get(state);
     if (union === undefined) {
       union = new Float64Array(5);
@@ -731,15 +761,17 @@ export class RenderCameraCull {
         }
       }
     }
-    this.#center.set(union[1] as number, union[2] as number, union[3] as number);
-    return this.#animationSphere.set(this.#center, union[4] as number);
+    return union;
   }
 
-  #bandRate(sphere: Sphere): number {
-    if (!this.#frustum.intersectsSphere(sphere)) return 8;
-    const { x, y, z } = sphere.center;
+  #bandRate(sphere: Float64Array): number {
+    const x = sphere[1] as number;
+    const y = sphere[2] as number;
+    const z = sphere[3] as number;
+    const radius = sphere[4] as number;
+    if (!inFrustum(this.#planes, x, y, z, radius)) return 8;
     const distance = Math.hypot(x - this.#cameraX, y - this.#cameraY, z - this.#cameraZ);
-    const pixels = projectedDiameterPixels(sphere.radius, distance, this.#scale);
+    const pixels = projectedDiameterPixels(radius, distance, this.#scale);
     // PRD-570's provisional pixel bands; the visual gate still has to earn these thresholds.
     return pixels >= 128 ? 1 : pixels >= 32 ? 2 : pixels >= 8 ? 4 : 8;
   }
@@ -788,6 +820,69 @@ export class RenderCameraCull {
   #isCameraAttached(object: Object3D): boolean {
     return this.#camera !== undefined && this.#cameraParts.has(object);
   }
+}
+
+/**
+ * three's `Ray.intersectsSphere`: the ray `[ox, oy, oz, dx, dy, dz]` (unit direction) passes within
+ * `radius` of the centre.
+ */
+export function rayMeetsSphere(
+  ray: ArrayLike<number>,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+): boolean {
+  if (radius < 0) return false;
+  const dx = x - (ray[0] as number);
+  const dy = y - (ray[1] as number);
+  const dz = z - (ray[2] as number);
+  const rx = ray[3] as number;
+  const ry = ray[4] as number;
+  const rz = ray[5] as number;
+  const along = dx * rx + dy * ry + dz * rz;
+  if (along < 0) return dx * dx + dy * dy + dz * dz <= radius * radius;
+  const ox = dx - rx * along;
+  const oy = dy - ry * along;
+  const oz = dz - rz * along;
+  return ox * ox + oy * oy + oz * oz <= radius * radius;
+}
+
+/** three's `Frustum.setFromProjectionMatrix(m)` (WebGL clip space, forward depth) into six [nx, ny, nz, d]. */
+export function setFrustumPlanes(planes: Float64Array, me: ArrayLike<number>): void {
+  const row = (i: number, a: number, b: number, c: number, d: number) => {
+    const length = Math.hypot(a, b, c);
+    planes[i] = a / length;
+    planes[i + 1] = b / length;
+    planes[i + 2] = c / length;
+    planes[i + 3] = d / length;
+  };
+  const m = (index: number) => me[index] as number;
+  row(0, m(3) - m(0), m(7) - m(4), m(11) - m(8), m(15) - m(12));
+  row(4, m(3) + m(0), m(7) + m(4), m(11) + m(8), m(15) + m(12));
+  row(8, m(3) + m(1), m(7) + m(5), m(11) + m(9), m(15) + m(13));
+  row(12, m(3) - m(1), m(7) - m(5), m(11) - m(9), m(15) - m(13));
+  row(16, m(3) - m(2), m(7) - m(6), m(11) - m(10), m(15) - m(14));
+  row(20, m(3) + m(2), m(7) + m(6), m(11) + m(10), m(15) + m(14));
+}
+
+/** three's `Frustum.intersectsSphere` (`radius` 0: `containsPoint`) over {@link setFrustumPlanes}' planes. */
+export function inFrustum(
+  planes: Float64Array,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+): boolean {
+  for (let i = 0; i < 24; i += 4) {
+    const distance =
+      (planes[i] as number) * x +
+      (planes[i + 1] as number) * y +
+      (planes[i + 2] as number) * z +
+      (planes[i + 3] as number);
+    if (distance < -radius) return false;
+  }
+  return true;
 }
 
 /** Pure projected-diameter formula shared by the draw gate and per-rig animation policy. */

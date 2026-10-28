@@ -198,11 +198,12 @@ export function addPreflightDiagnostic(
  * The console cascade a lost WebGPU device leaves behind: core's `TN_DEVICE_LOST` report, three's
  * own `WebGPU Device Lost` line, the `mapAsync` rejections from the timestamp-query pool once the
  * device is gone, and Chromium's `OperationError: Instance dropped` messages from three's WebGPU
- * backend when the fallback adapter's instance is dropped under SwiftShader. A device loss is one
+ * backend when the fallback adapter's instance is dropped under SwiftShader, and the Wasm engine's
+ * `TN_WASM_DEVICE_LOST`, which its renderer report and a dropped readback carry. A device loss is one
  * event with several error lines, and they must be read as one so a declared software lane can
  * record it rather than fail on each derived line.
  */
-const SOFTWARE_DEVICE_LOSS = /TN_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists|Instance dropped (?:in popErrorScope|error in getCompilationInfo)/iu;
+const SOFTWARE_DEVICE_LOSS = /TN_DEVICE_LOST|TN_WASM_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists|Instance dropped (?:in popErrorScope|error in getCompilationInfo)/iu;
 
 function isSoftwareDeviceLossEntry(entry: IRunnerConsoleEntry): boolean {
   return (entry.type === "error" || entry.type === "assert" || entry.type === "pageerror")

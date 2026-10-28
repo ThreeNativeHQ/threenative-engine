@@ -184,7 +184,11 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       assertJsonSafe(startup);
       return { ready: true, startup };
     },
-    sample: (request) => {
+    // The observer's scene walk is not the game's: three-native's bridge census
+    // (TN_BRIDGE_WARNING) leaves reads made under this mark out.
+    sample: (request) => observing(() => sampleNow(request)),
+  };
+  function sampleNow(request: Parameters<IPlaytestBridgeV1["sample"]>[0]) {
       const resourceOnly = isResourceOnlySample(request);
       if (!resourceOnly) syncEntities(registry, options.entities);
       const sightLineSubject = resourceOnly || request.sightLine === undefined
@@ -215,8 +219,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
         : { ...withComponents, physicsDebugSeries: recorder.sample(request, options.tick!()) };
       assertJsonSafe(result);
       return result;
-    },
-  };
+  }
   host[PLAYTEST_BRIDGE_GLOBAL] = bridge;
   const endpoint = readPlaytestEndpoint();
   let device: IDeviceBridgeInstallation | undefined;
@@ -271,4 +274,17 @@ function applySetup(
     resourceIds.push(id);
   });
   return { entities, resources: resourceIds };
+}
+
+/** Read by three-native's bridge census, which counts no crossing made while it is above zero. */
+const OBSERVING_GLOBAL = "__tnPlaytestObserving";
+
+function observing<T>(work: () => T): T {
+  const host = globalThis as Record<string, unknown>;
+  host[OBSERVING_GLOBAL] = ((host[OBSERVING_GLOBAL] as number | undefined) ?? 0) + 1;
+  try {
+    return work();
+  } finally {
+    host[OBSERVING_GLOBAL] = (host[OBSERVING_GLOBAL] as number) - 1;
+  }
 }

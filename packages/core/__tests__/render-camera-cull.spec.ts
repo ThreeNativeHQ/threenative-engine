@@ -1,14 +1,19 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Frustum,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  Ray,
   Scene,
+  Sphere,
   SphereGeometry,
+  Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { formatProjectionWindow } from "../src/projection-marker.js";
@@ -16,7 +21,59 @@ import {
   DEFAULT_MINIMUM_PROJECTED_PIXELS,
   RenderCameraCull,
   alwaysRender,
+  inFrustum,
+  rayMeetsSphere,
+  setFrustumPlanes,
 } from "../src/render-camera-cull.js";
+
+// The camera pass tests its frustum and forward ray in plain numbers: on the web engine three's Frustum,
+// Ray and Sphere are engine objects, one boundary call per test, 70 a frame on the shooter.
+describe("the cull's plain frustum and ray math", () => {
+  it("answers as three's Frustum and Ray for cameras and spheres all around", () => {
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const planes = new Float64Array(24);
+    const screen = new Matrix4();
+    const frustum = new Frustum();
+    const ray = new Ray();
+    const sphere = new Sphere();
+    let inside = 0;
+    let hit = 0;
+    for (let view = 0; view < 40; view += 1) {
+      const camera = new PerspectiveCamera(30 + random() * 80, 0.5 + random() * 2, 0.1, 200);
+      camera.position.set(random() * 40 - 20, random() * 10, random() * 40 - 20);
+      camera.lookAt(random() * 40 - 20, random() * 4, random() * 40 - 20);
+      camera.updateMatrixWorld();
+      screen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(screen);
+      setFrustumPlanes(planes, screen.elements);
+      ray.origin.setFromMatrixPosition(camera.matrixWorld);
+      ray.direction.set(0, 0, -1).transformDirection(camera.matrixWorld);
+      const line = [...ray.origin.toArray(), ...ray.direction.toArray()];
+      for (let probe = 0; probe < 200; probe += 1) {
+        const center = new Vector3(random() * 120 - 60, random() * 30 - 5, random() * 120 - 60);
+        const radius = random() < 0.1 ? 0 : random() * 6;
+        sphere.set(center, radius);
+        const expected = frustum.intersectsSphere(sphere);
+        expect(inFrustum(planes, center.x, center.y, center.z, radius)).toBe(expected);
+        expect(inFrustum(planes, center.x, center.y, center.z, 0)).toBe(
+          frustum.containsPoint(center),
+        );
+        const meets = ray.intersectsSphere(sphere);
+        expect(rayMeetsSphere(line, center.x, center.y, center.z, radius)).toBe(meets);
+        inside += expected ? 1 : 0;
+        hit += meets ? 1 : 0;
+      }
+    }
+    // Both answers occur, so the sweep proves more than one branch.
+    expect(inside).toBeGreaterThan(400);
+    expect(inside).toBeLessThan(7600);
+    expect(hit).toBeGreaterThan(20);
+  });
+});
 
 /**
  * The projected-size gate.

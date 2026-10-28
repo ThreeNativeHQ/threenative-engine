@@ -156,6 +156,9 @@ export function playtest<
           ...(runtime?.startupCompileSettled === undefined
             ? {}
             : { compileSettled: runtime.startupCompileSettled() }),
+          ...(runtime?.startupRevealed === undefined
+            ? {}
+            : { revealed: runtime.startupRevealed() }),
           // Wall-clock milestones, so a scenario asserts startup time as an observation instead
           // of reading it off a console marker after the fact.
           ...(runtime?.startupTimeline === undefined

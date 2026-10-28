@@ -54,6 +54,31 @@ test("resource-only polls leave scene, entity and component observers for the fu
   }
 });
 
+test("marks the sample as the observer's, so a bridge census leaves its scene walk out", async () => {
+  // three-native's census (TN_BRIDGE_WARNING) failed hosted CI's adventure runs on the sample's
+  // own material count and bounds walk, reads that no player run makes.
+  const host = globalThis as { __tnPlaytestObserving?: number };
+  const seen: (number | undefined)[] = [];
+  const installation = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    renderer,
+    scene: new Scene(),
+    resources: {
+      read: () => {
+        seen.push(host.__tnPlaytestObserving);
+        throw new Error("a failing observer still ends the scope");
+      },
+    },
+  });
+  try {
+    await expect((async () => installation.bridge.sample({ include: ["resources"], resources: ["state"] }))()).rejects.toThrow();
+    expect(seen).toEqual([1]);
+    expect(host.__tnPlaytestObserving ?? 0).toBe(0);
+  } finally {
+    installation.dispose();
+  }
+});
+
 test("resource-only polls still reject non-JSON observations", async () => {
   const installation = installThreePlaytestBridge({
     camera: new PerspectiveCamera(),

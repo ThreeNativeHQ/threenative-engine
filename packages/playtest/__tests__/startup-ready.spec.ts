@@ -56,6 +56,24 @@ test("holds until the application reports its world is safe to observe", async (
   expect(pumped).toBe(3);
 });
 
+test("holds past readiness until the UI cover has lifted, where the game reports it", async () => {
+  // Hosted CI's puzzle and starter pause runs pressed Tab at tick 600 while the loading cover still
+  // hid the HUD (the hand-off waits for frames to leave a software GPU), so the pause button did
+  // not exist and the player walked on. A player cannot press a button the cover still hides.
+  const covered = { ...ready, revealed: false };
+  const revealed = { ...ready, revealed: true };
+  const bridge = source(["runtime.startup"], [collapsing, covered, covered, revealed]);
+  let pumped = 0;
+  const observed = await waitForStartupReady({
+    bridge,
+    pump: async () => {
+      pumped += 1;
+    },
+  });
+  expect(observed).toEqual({ rule: "sustained-frames", startup: revealed });
+  expect(pumped).toBe(3);
+});
+
 test("a game that never finishes starting fails with it named, never silently observed", async () => {
   let clock = 0;
   await expect(

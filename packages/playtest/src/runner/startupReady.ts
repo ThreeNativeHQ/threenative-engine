@@ -126,7 +126,9 @@ export async function waitForStartupReady(
       // mid-load: the runs then assert against a half-built world and fail on state that never had a
       // chance to arrive. The bounded frame window still expires on a CPU rasteriser, so this is at
       // most `STARTUP_STABLE_WINDOW_MS` more per scenario, not a wait the lane can never meet.
-      while (observed === BUSY || observed.phase !== "ready") {
+      // And past readiness until the UI cover lifts: a scenario drives the HUD the player sees, and
+      // the pause button behind the cover does not exist yet (hosted CI's pause runs, PR #574).
+      while (observed === BUSY || observed.phase !== "ready" || observed.revealed === false) {
         if (settled) throw timeoutError();
         if (aborted()) throw abortedDuringStartup();
         // Only an unreadable bridge asks the question: a host that answers is running by definition,

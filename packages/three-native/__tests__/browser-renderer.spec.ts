@@ -482,6 +482,41 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(secondary).toHaveBeenCalledTimes(1);
   });
 
+  it("names a device lost while the frame gate declines, on backend.device.lost as three's backend does", async () => {
+    // Hosted CI's SwiftShader lost the device with two frames still on the GPU: the gate declined every
+    // later frame, no draw ever returned a status, and nothing named the loss (73 of 73 frames skipped).
+    let hostState = 1;
+    const { Renderer, canvas, scene, camera, module } = host(
+      (field) => (field === 11 ? 1 : 0),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => hostState,
+    );
+    Reflect.set(module, "UTF8ToString", () => "TN_WASM_DEVICE_LOST: GPU connection lost");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const renderer = new Renderer({ canvas }) as {
+      backend: { device?: { lost: Promise<{ reason: string; message: string }> } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    hostState = 2;
+    for (let frame = 0; frame < 5; frame += 1) renderer.render(scene, camera);
+    await expect(renderer.backend.device?.lost).resolves.toEqual({
+      reason: "unknown",
+      message: "TN_WASM_DEVICE_LOST: GPU connection lost",
+    });
+    const named = errors.mock.calls.filter((call) =>
+      String(call[0]).startsWith("TN_WASM_RENDERER_LOST"),
+    );
+    expect(named).toHaveLength(1);
+    errors.mockRestore();
+  });
+
   it("draws renderOverlay as the host's overlay, so the canvas layer skips the world's post and temporal state", async () => {
     // Through render(), core's loading screen ran the world renderer's post chain and temporal step: the world
     // came back ghosted and blurred after the cover lifted (Lantern Vale, Hop Garden).
@@ -846,6 +881,53 @@ describe("the Wasm engine's WebGPURenderer across a hot update", () => {
       renderer.dispose();
     }
     expect(initCalls).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the clear colour", () => {
+  it("converts a repeated number clear colour once, as every post pass resets it to 0", () => {
+    const { module, canvas } = host();
+    let made = 0;
+    class CountingColor {
+      r: number;
+      g: number;
+      b: number;
+      constructor(hex: number) {
+        made += 1;
+        this.r = ((hex >> 16) & 255) / 255;
+        this.g = ((hex >> 8) & 255) / 255;
+        this.b = (hex & 255) / 255;
+      }
+    }
+    const Renderer = defineWebRenderer(module, CountingColor as never);
+    const renderer = new Renderer({ canvas }) as {
+      setClearColor(color: unknown, alpha?: number): void;
+      getClearColor<T>(target: T): T;
+      getClearAlpha(): number;
+    };
+    const out = {
+      r: -1,
+      g: -1,
+      b: -1,
+      setRGB(r: number, g: number, b: number) {
+        Object.assign(this, { r, g, b });
+        return this;
+      },
+    };
+    const cost: Record<string, number> = {};
+    (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost = cost;
+    for (let index = 0; index < 3; index += 1) renderer.setClearColor(0, 1);
+    expect(made).toBe(1);
+    expect(cost).toEqual({ clearColorConversions: 1 });
+    renderer.setClearColor(0xff0000, 0.5);
+    expect(made).toBe(2);
+    expect(renderer.getClearColor(out)).toMatchObject({ r: 1, g: 0, b: 0 });
+    expect(renderer.getClearAlpha()).toBe(0.5);
+    renderer.setClearColor({ r: 0, g: 1, b: 0 }, 1);
+    expect(renderer.getClearColor(out)).toMatchObject({ r: 0, g: 1, b: 0 });
+    renderer.setClearColor(0xff0000, 1);
+    expect(made).toBe(2);
+    expect(renderer.getClearColor(out)).toMatchObject({ r: 1, g: 0, b: 0 });
   });
 });
 

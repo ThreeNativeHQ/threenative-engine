@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IGamePlatformSource } from "../src/game.js";
+import { detectPlatform } from "../src/platform.js";
 import { serveWorkerGame, startWorkerGame } from "../src/worker.js";
 
 // PRD-752: a web game runs in a dedicated worker on an OffscreenCanvas. The page keeps the DOM, the
@@ -795,6 +796,37 @@ describe("worker game host (PRD-752)", () => {
     );
     await handle.ready;
     expect(clock).toBe("wall-clock");
+    handle.stop();
+  });
+
+  it("copies the page's navigator facts into the worker before start", async () => {
+    const { scope, worker } = link();
+    const { container, view } = page();
+    view.navigator = {
+      maxTouchPoints: 5,
+      platform: "Linux armv8l",
+      userAgent: "Mozilla/5.0 (Linux; Android 14)",
+      userAgentData: { mobile: true, platform: "Android" },
+    };
+    let seen: unknown;
+    serveWorkerGame(
+      {
+        start: async () => {
+          seen = scope.__tnPageNavigator;
+        },
+      },
+      scope,
+    );
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    expect(seen).toEqual(view.navigator);
+    expect(detectPlatform({ navigator: seen })).toMatchObject({
+      formFactor: "mobile",
+      maxTouchPoints: 5,
+    });
     handle.stop();
   });
 

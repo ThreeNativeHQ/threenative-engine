@@ -103,6 +103,7 @@ import {
 } from "./startup-offscreen-bytes.js";
 import {
   STARTUP_COMPILE_BUDGET_MS,
+  STARTUP_STABLE_WINDOW_MS,
   STARTUP_STALL_MS,
   type StartupCompile,
   StartupReadiness,
@@ -231,6 +232,8 @@ export interface IGamePluginRuntime {
    * must be reported rather than inferred from a phase that cannot distinguish the two.
    */
   readonly startupCompileSettled?: () => boolean;
+  /** The loading cover has lifted: the startup hand-off finished and page UI shows state. */
+  readonly startupRevealed?: () => boolean;
   /** When the startup milestones happened, for the playtest bridge's startup observation. */
   readonly startupTimeline?: () => IStartupTimeline;
   /** What the reveal waited for that the spawn camera does not show; absent until the reveal. */
@@ -1357,6 +1360,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           backend?: { device?: { lost?: Promise<{ reason?: string; message?: string }> } };
         }
       ).backend?.device,
+      () => this.#aborted || this.#renderer !== renderer,
     );
     // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
     // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the
@@ -2263,8 +2267,24 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const declined = skips !== undefined && skips > readinessGateSkips;
         if (skips !== undefined) readinessGateSkips = skips;
         if (!declined) startupReadiness.observe(frameMs);
-        if (stateHandOffFrames > 0 && !declined) {
-          stateHandOffFrames -= 1;
+        // Bounded like every other startup wait: a renderer that retires no frame (hosted CI's
+        // SwiftShader declined 73 of 73 after readiness) would otherwise keep the HUD covered for
+        // the whole session. Past the window the cover lifts anyway, and says why.
+        const handOffWaitedMs = now() - (timeline.readyMs ?? now());
+        const handOffBounded = handOffWaitedMs >= STARTUP_STABLE_WINDOW_MS;
+        if (stateHandOffFrames > 0 && (!declined || handOffBounded)) {
+          if (handOffBounded) {
+            console.warn(
+              `TN_STARTUP_HANDOFF_BOUNDED:${JSON.stringify({
+                retiredFrames: STARTUP_HANDOFF_FRAMES - stateHandOffFrames,
+                requiredFrames: STARTUP_HANDOFF_FRAMES,
+                waitedMs: Math.round(handOffWaitedMs),
+                reason:
+                  "the GPU retired fewer frames than the hand-off needs; the cover lifted at the bound",
+              })}`,
+            );
+            stateHandOffFrames = 0;
+          } else stateHandOffFrames -= 1;
           // The frame the held state publishes again is the frame the cover is gone.
           if (stateHandOffFrames === 0) {
             this.#uiRevealed = true;
@@ -2322,6 +2342,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       rapier: null,
       seed: this.#config.seed ?? null,
       startupCompileSettled: () => startupReadiness.compileSettled,
+      startupRevealed: () => this.#uiRevealed,
       startupTimeline: () => ({ ...timeline }),
       startupOffscreenBytes: () => offscreenBytes,
       step: gameLoop.step,
