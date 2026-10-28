@@ -87,7 +87,7 @@ no COOP/COEP); that lane is open.
 
 ## Levers
 
-### 2026-10-27 — Recorded passes survive a camera turn (cached draw rows, indirect counts) — KEEP, gate DEFERRED
+### 2026-10-27 — Recorded passes survive a camera turn (cached draw rows, indirect counts) — KNOB OFF, owner decision
 - Where: `packages/runtime-native/src/engine/renderer/renderer.cpp`, PRD-754 (PRD-573 v3.2), branch
   `lane/perf-stable-passes`, head `7f78a57f4`. Knob: `TN_STABLE_PASSES=0` (native), `?tnStablePasses=0` (web).
 - Port: UE 5.8.3 cached mesh draw commands. Opaque draws keep a row each (state-first order, a persistent uniform slot
@@ -102,6 +102,13 @@ no COOP/COEP); that lane is open.
   0.317 → 0.144 ms (55%), frame p50/p95 no worse, judge NEUTRAL again. Midway's remainder is mostly cost both arms
   pay (shadow pass setup 0.017 ms, transparent re-sorts); the web remainder is a pass that still records about 119
   draws on a third of the turn frames.
+- 2026-10-28, head `c58d8f16f`: that pass was the velocity pass's transparent responsive marks (a batch's material
+  pointer moves every frame); they now record their own tail (web 78%, Midway 75%). A slot asked for after the frame's
+  appended blocks overwrote a transparent draw's block for one frame under TRAA; fixed. Then a third judge read
+  REGRESSION: the state order swaps exactly coplanar draws (the shooter's door trim), and the first two judges missed
+  it. Depth-ordered rows keep the pixels but record 105 rows a camera lap against 57 direct. The knob is off by default.
+- Insight: "order is free under the depth test" is false at exactly equal depth. Before porting UE's state order,
+  diff BEFORE/AFTER per pixel against all BEFORE runs (pixels where every AFTER differs from every BEFORE), not by eye.
 - Rejected inside the lever: keeping transparent draws as rows. Their depth order moves every turn, and the row
   bookkeeping cost what the recording saved (native shooter 0.151 against 0.153 ms). They now record their own
   bundle keyed as direct encode keys them (native shooter 0.115 against 0.142 ms).
