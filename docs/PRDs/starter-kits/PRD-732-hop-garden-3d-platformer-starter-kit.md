@@ -45,6 +45,28 @@ its logic at 30 Hz. Mario's hitbox is 160 units tall (`src/game/mario.c:1652`), 
 | Ground pound | Z in the air: hang, then fall at −50 (`mario_actions_airborne.c:446-453`, `:918-944`) | 15 m/s fall |
 | Ledge grab | probe 60 units past the wall from 160 units up; grab when the ledge is ≤ 100 units above (`mario_step.c:348-377`) | probe 0.6 m, grab ≤ 1.0 m |
 
+### Reference cards read through the MCP (2026-10-27)
+
+`engine_search_references` and `engine_reference_detail` return the SM64 cards pinned at
+`n64decomp/sm64` sha `9921382a68bb0c865e5e45eb594d9c64db59b1af` (11 cards). Each row below is the
+card's own `source` path:line and the kit constant that borrows it, so a reader can re-derive every
+number without the transcript. The flutter-kick card is the one card this kit does not use: it has
+no water. The camera-follow card informs the orbit rig but its distances are the reference's
+special behind-camera mode, not its default chase, so the kit keeps its own arm (see Decisions).
+
+| Card | Reference constant (card source) | Kit constant |
+| --- | --- | --- |
+| jump | `groundImpulse` 42 units/frame, `forwardSpeedBonus` 0.25, `forwardSpeedRetain` 0.8 (`src/game/mario.c:824-825`) | `jumpSpeed` 12.6 m/s, `jumpForwardLift` 0.25, `jumpForwardKeep` 0.8 (`src/entities/Hero.ts:48-51`) |
+| double-jump | `launchImpulse` 52, `landingFrames` 4, `chainTimer` 5 (`src/game/mario.c:786`, `src/game/mario_actions_moving.c:27`) | `doubleJumpSpeed` 15.6 m/s, `chainWindow` 0.3 s, `jumpBuffer` 0.12 s (`src/entities/Hero.ts:52,61,67`) |
+| triple-jump | `launchImpulse` 69, `minForwardSpeed` 20 (`src/game/mario.c:797`, `src/game/mario.c:1051`) | `tripleJumpSpeed` 20.7 m/s, `tripleMinSpeed` 6 m/s (`src/entities/Hero.ts:53-54`) |
+| long-jump | `launchImpulse` 30, `speedMultiplier` 1.5, `maxForwardSpeed` 48, `slideWindow` 30 frames (`src/game/mario.c:865`, `:870`, `src/game/mario_actions_moving.c:1459`) | `longJumpSpeed` 9 m/s, `longJumpScale` 1.5, `longJumpWindow` 0.5 s, `longJumpGravity` 18 m/s² (`src/entities/Hero.ts:82-85`) |
+| backflip | `launchImpulse` 62, `backwardSpeed` −16 (`src/game/mario.c:792-793`) | `backflipSpeed` 18.6 m/s, `backflipBack` 4.8 m/s (`src/entities/Hero.ts:75-76`) |
+| side-flip | `launchImpulse` 62, `forwardSpeed` 8 (`src/game/mario.c:838-839`) | `sideflipSpeed` 18.6 m/s, `sideflipForward` 2.4 m/s (`src/entities/Hero.ts:77-78`) |
+| wall-kick | `earlyWindow` 2 frames, `kickTimer` 5 frames, `launchImpulse` 62, `minForwardSpeed` 24 (`src/game/mario_actions_airborne.c:1314`, `:1321`, `src/game/mario.c:830-832`) | `wallKickWindow` 0.167 s, `wallKickSpeed` 18.6 m/s, `wallKickForward` 7.2 m/s (`src/entities/Hero.ts:88-90`) |
+| ground-pound | `riseFrames` 10, `slamSpeed` −50 (`src/game/mario_actions_airborne.c:925`, `:934`) | `poundHang` 0.25 s, `poundSpeed` 15 m/s (`src/entities/Hero.ts:95-96`) |
+| dive | `speedBoost` 15, `maxForwardSpeed` 48 (`src/game/mario.c:857`) | `diveBoost` 4.5 m/s, `hardCap` 14.4 m/s (`src/entities/Hero.ts:91`, `:29`) |
+| camera-follow | `focusHorizontalSpeed` 0.8, `focusVerticalSpeed` 0.3, `positionSpeed` 0.3 (`src/game/camera.c:2947-2949`) | `CAMERA_RIG` smoothing in `src/render/camera.ts` (the kit's own arm and pull-in, see Decisions) |
+
 ### Capability lookups actually run (2026-10-23, `threenative-engine` MCP)
 
 | Query (scope) | Result |
