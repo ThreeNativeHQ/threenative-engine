@@ -94,6 +94,34 @@ async function drawn(parameters: Record<string, unknown>) {
   return { samples: renderer.samples, handed: state.mock.calls.at(-1)?.[5] };
 }
 
+describe("the owned engine's temporal render scale", () => {
+  it("sends input scale while keeping the display-sized canvas", async () => {
+    const fields: Record<number, number> = {};
+    const { Renderer, canvas, scene, camera, state } = host((field) => fields[field] ?? 0);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      setSize(width: number, height: number): void;
+      setRenderScale(scale: number): void;
+      readonly temporalUpscale: boolean;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.setSize(1920, 1080);
+    expect(renderer.temporalUpscale).toBe(false);
+    fields[34] = 1;
+    expect(renderer.temporalUpscale).toBe(true);
+    renderer.setRenderScale(0.72);
+    renderer.render(scene, camera);
+    expect(state.mock.calls.at(-1)?.[6]).toBe(0.72);
+    expect([canvas.width, canvas.height]).toEqual([1920, 1080]);
+    for (const scale of [0, 0.23, 1.1, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(() => renderer.setRenderScale(scale)).toThrow(/renderScale/u);
+    renderer.setRenderScale(1);
+    renderer.render(scene, camera);
+    expect(state.mock.calls.at(-1)?.[6]).toBe(1);
+  });
+});
+
 describe("the Wasm engine's web host ABI", () => {
   async function init(engine: (() => number) | undefined) {
     const { Renderer, canvas, initCalls, module } = host();
@@ -134,7 +162,22 @@ describe("the Wasm engine's temporal pass readout", () => {
 
   it("reads the engine's frame, history, jitter and counted history rejection while a traa() effect is in the graph", async () => {
     expect(
-      await readout({ 13: 1, 14: 7, 15: 1, 16: 0.25, 17: -0.5, 30: 12, 31: 7, 32: 3072, 33: 48 }),
+      await readout({
+        13: 1,
+        14: 7,
+        15: 1,
+        16: 0.25,
+        17: -0.5,
+        30: 12,
+        31: 7,
+        32: 3072,
+        33: 48,
+        35: 1280,
+        36: 720,
+        37: 31,
+        38: 1920,
+        39: 1080,
+      }),
     ).toEqual({
       active: true,
       frame: 7,
@@ -144,6 +187,11 @@ describe("the Wasm engine's temporal pass readout", () => {
       clamped: 7,
       pixels: 3072,
       countedFrame: 48,
+      inputWidth: 1280,
+      inputHeight: 720,
+      outputWidth: 1920,
+      outputHeight: 1080,
+      jitterLength: 31,
     });
   });
 
@@ -173,6 +221,11 @@ describe("the Wasm engine's temporal pass readout", () => {
       clamped: 0,
       pixels: 0,
       countedFrame: 0,
+      inputWidth: 0,
+      inputHeight: 0,
+      outputWidth: 0,
+      outputHeight: 0,
+      jitterLength: 0,
     });
   });
 });

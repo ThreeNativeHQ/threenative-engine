@@ -11,6 +11,7 @@ import {
   If,
   Loop,
   float,
+  int,
   mix,
   nodeObject,
   texture,
@@ -81,6 +82,7 @@ export function localExposureSizes(
   readonly rows: readonly [number, number];
   readonly grid: readonly [number, number];
   readonly blurRadius: number;
+  readonly rangeStride: number;
 } {
   const half = [Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2))] as const;
   const blur = [
@@ -102,6 +104,7 @@ export function localExposureSizes(
     rows: [(cells[0] * DEPTH) / 2, cells[1] * CELL],
     grid: [cells[0] * DEPTH, cells[1]],
     blurRadius,
+    rangeStride: Math.ceil((cells[0] * half[1]) / (blur[0] * blur[1])),
   };
 }
 
@@ -135,6 +138,7 @@ export class LocalExposureNode extends TempNode<"float"> {
   readonly #cells = uniform(new Vector2(1, 1));
   readonly #blurSize = uniform(new Vector2(1, 1));
   readonly #blurRadius = uniform(BLUR_RADIUS);
+  readonly #rangeStride = uniform(1);
   readonly #quad = new QuadMesh();
   readonly #logMaterial = new NodeMaterial();
   readonly #lumMaterial = new NodeMaterial();
@@ -210,7 +214,50 @@ export class LocalExposureNode extends TempNode<"float"> {
       const luminance = exposureMeter(vec4(sum.div(BLUR_DOWNSAMPLE * BLUR_DOWNSAMPLE), 1), c).x.max(
         2 ** LOG_MIN,
       );
-      return vec4(luminance.log2(), 0, 0, 1);
+      // Reuse G/B for conservative row-bin bounds; the blur reads only the unchanged R.
+      const group = c.y.mul(blurSize.y).floor().mul(blurSize.x).add(c.x.mul(blurSize.x).floor());
+      const minimum = float(DEPTH - 1).toVar();
+      const maximum = float(0).toVar();
+      // 1 while every sampled raw log is finite in range, so invalid input widens instead of pruning.
+      // Two rows is the maximum this pass proves; a larger stride widens to the full range.
+      const finite = this.#rangeStride.lessThanEqual(2).select(1, 0).toVar();
+      Loop(2 * (CELL / PACK), ({ i }) => {
+        const row = group.mul(this.#rangeStride).add(
+          float(i)
+            .div(CELL / PACK)
+            .floor(),
+        );
+        const packed = row
+          .mod(this.#cells.x)
+          .mul(CELL / PACK)
+          .add(float(i).mod(CELL / PACK));
+        const y = row.div(this.#cells.x).floor();
+        // Clamp to the real texels: a partial last cell or short row must not sample outside them.
+        const px = packed.min(this.#logSize.x.sub(1));
+        const py = y.min(half.y.sub(1));
+        const logs = this.#logTexture
+          .sample(vec2(px.add(0.5).div(this.#logSize.x), py.add(0.5).div(half.y)))
+          .level(float(0));
+        // 128 bounds log2 of finite f32 luminance. Invalid samples disable pruning, preserving propagation.
+        const inRange = logs
+          .greaterThanEqual(vec4(LOG_MIN))
+          .all()
+          .and(logs.lessThanEqual(vec4(128)).all());
+        finite.assign(finite.mul(inRange.select(1, 0)));
+        const position = logs
+          .sub(LOG_MIN)
+          .div(LOG_SPAN)
+          .clamp(0, 1)
+          .mul(DEPTH - 1);
+        minimum.assign(minimum.min(position.x).min(position.y).min(position.z).min(position.w));
+        maximum.assign(maximum.max(position.x).max(position.y).max(position.z).max(position.w));
+      });
+      return vec4(
+        luminance.log2(),
+        mix(float(0), minimum, finite),
+        mix(float(DEPTH - 1), maximum, finite),
+        1,
+      );
     })();
 
     // Passes 3 and 4: the Gaussian of that log luminance, one axis each, mirror addressed, with the
@@ -255,24 +302,36 @@ export class LocalExposureNode extends TempNode<"float"> {
       const cell = column.div(DEPTH / 2).floor();
       const bin = column.sub(cell.mul(DEPTH / 2)).mul(2);
       const sums = vec4(0).toVar();
-      Loop(CELL / PACK, ({ i }) => {
-        const packed = cell.mul(CELL / PACK).add(float(i));
-        const logs = this.#logTexture
-          .sample(vec2(packed.add(0.5).div(this.#logSize.x), y.add(0.5).div(half.y)))
-          .level(float(0));
-        for (const [k, lane] of (["x", "y", "z", "w"] as const).entries()) {
-          If(packed.mul(PACK).add(k).lessThan(half.x).and(y.lessThan(half.y)), () => {
-            const log = logs[lane];
-            const position = log
-              .sub(LOG_MIN)
-              .div(LOG_SPAN)
-              .clamp(0, 1)
-              .mul(DEPTH - 1);
-            const low = position.sub(bin).abs().oneMinus().max(0);
-            const high = position.sub(bin.add(1)).abs().oneMinus().max(0);
-            sums.addAssign(vec4(low.mul(log), low, high.mul(log), high));
+      If(y.lessThan(half.y), () => {
+        // +0.5 keeps float division from rounding an exact multiple down to the previous slot.
+        const group = y.mul(this.#cells.x).add(cell).add(0.5).div(this.#rangeStride).floor();
+        const lumY = group.add(0.5).div(blurSize.x).floor();
+        const lumX = group.sub(lumY.mul(blurSize.x));
+        const bounds = this.#lumTexture
+          .sample(vec2(lumX.add(0.5).div(blurSize.x), lumY.add(0.5).div(blurSize.y)))
+          .level(float(0)).gb;
+        // A pair has nonzero triangular weight only inside (bin - 1, bin + 2).
+        If(bounds.y.greaterThan(bin.sub(1)).and(bounds.x.lessThan(bin.add(2))), () => {
+          Loop(CELL / PACK, ({ i }) => {
+            const packed = cell.mul(CELL / PACK).add(float(i));
+            const logs = this.#logTexture
+              .sample(vec2(packed.add(0.5).div(this.#logSize.x), y.add(0.5).div(half.y)))
+              .level(float(0));
+            for (const [k, lane] of (["x", "y", "z", "w"] as const).entries()) {
+              If(packed.mul(PACK).add(k).lessThan(half.x).and(y.lessThan(half.y)), () => {
+                const log = logs[lane];
+                const position = log
+                  .sub(LOG_MIN)
+                  .div(LOG_SPAN)
+                  .clamp(0, 1)
+                  .mul(DEPTH - 1);
+                const low = position.sub(bin).abs().oneMinus().max(0);
+                const high = position.sub(bin.add(1)).abs().oneMinus().max(0);
+                sums.addAssign(vec4(low.mul(log), low, high.mul(log), high));
+              });
+            }
           });
-        }
+        });
       });
       return sums;
     })();
@@ -387,6 +446,7 @@ export class LocalExposureNode extends TempNode<"float"> {
     this.#rows.value.set(rowsWidth, rowsHeight);
     this.#blurSize.value.set(blurWidth, blurHeight);
     this.#blurRadius.value = sizes.blurRadius;
+    this.#rangeStride.value = sizes.rangeStride;
     this.#cells.value.set(cellsX, cellsY);
     this.#grid.value.set(gridWidth, gridHeight);
     this.#logTarget.setSize(logWidth, logHeight);

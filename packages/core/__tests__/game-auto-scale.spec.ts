@@ -438,4 +438,77 @@ describe('resolutionScale: "auto"', () => {
       });
     }
   });
+
+  it("keeps the measured display budget when a late scene recreates the scaler", async () => {
+    // A late temporal chain must retain the measured 120 Hz budget instead of the startup 60 Hz fallback.
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    const surfaces: number[] = [];
+    const rawRenderer = {
+      domElement: canvas,
+      render: () => undefined,
+      setRenderScale: () => undefined,
+      setSize: () => undefined,
+      temporalUpscale: false,
+    };
+    const game = defineGame({
+      step: 0.001,
+      frameBudget: {
+        report: () => {},
+        reportEvery: 1,
+        onWindow: (window) => {
+          if (window.surface !== undefined) surfaces.push(window.surface.resolutionScale);
+        },
+      },
+      render: { resolutionScale: "auto" },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => rawRenderer,
+      },
+      scenes: { test: Empty },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      const drive = frame;
+      let time = performance.now();
+      const stepBy = (ms: number): void => {
+        time += ms;
+        drive(time);
+      };
+      // Establish the faster display target before the chain exists.
+      for (let index = 0; index < 10; index += 1) {
+        stepBy(8);
+        await Promise.resolve();
+      }
+      await game.ctx?.startup.whenReady();
+      for (let index = 0; index < 2; index += 1) stepBy(8);
+      // The late scene installs temporal upsampling; the next frame recreates the scaler.
+      rawRenderer.temporalUpscale = true;
+      surfaces.length = 0;
+      // 9 ms exceeds the measured 120 Hz budget but fits 60 Hz: keep probing down instead of climbing to 1.
+      for (let index = 0; index < 6; index += 1) {
+        stepBy(9);
+        await Promise.resolve();
+      }
+      expect(surfaces).toContain(0.72);
+      expect(surfaces).not.toContain(1);
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
 });

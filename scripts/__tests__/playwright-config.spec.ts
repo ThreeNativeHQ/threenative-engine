@@ -68,6 +68,17 @@ describe("root Playwright lane contracts", () => {
     expect(benchmark).toContain('globalSetup: "./test-support/benchmark-playwright-setup.ts"');
   });
 
+  it("runs the benchmark browser headed on a display, where SwiftShader keeps its device", async () => {
+    // Headless Chromium destroys the WebGPU device at the first canvas present on SwiftShader.
+    const { default: benchmark } = await import("../../benchmark.playwright.config.js");
+    const workflow = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+
+    expect(benchmark.use?.headless).toBe(false);
+    expect(workflow).toContain(
+      "run: sh scripts/xvfb.sh pnpm exec playwright test --config=benchmark.playwright.config.ts",
+    );
+  });
+
   it("allows the CI software adapter for the starter-look smoke runner", async () => {
     const browser = await readFile(path.join(repo, "playwright.config.ts"), "utf8");
     const start = browser.indexOf("async function runStarterLookScenario");

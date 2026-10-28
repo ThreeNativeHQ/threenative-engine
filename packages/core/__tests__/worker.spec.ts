@@ -465,7 +465,11 @@ describe("worker game host (PRD-752)", () => {
       );
       const errors: string[] = [];
       void handle.ready.catch((error: Error) => errors.push(error.message));
-      await tick(20);
+      // The page's bridge proxy appears after the worker's announce round trip; poll for it, since a
+      // fixed wait loses that race on a loaded host.
+      await vi.waitFor(() => expect(view.__THREENATIVE_PLAYTEST_BRIDGE__).toBeDefined(), {
+        timeout: 2_000,
+      });
       const bridge = view.__THREENATIVE_PLAYTEST_BRIDGE__ as { wait(): Promise<unknown> };
       void bridge.wait().catch((error: Error) => errors.push(error.message));
       await tick();

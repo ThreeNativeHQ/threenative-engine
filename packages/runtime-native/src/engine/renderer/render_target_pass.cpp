@@ -31,7 +31,7 @@ float halfToFloat(uint16_t bits) {
 TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
     if (!target.gpu) {
         auto gpu = std::make_shared<TargetGpu>();
-        gpu->renderer = main.sibling();
+        gpu->renderer = main.sibling(true);
         gpu->renderer->skipOutputPass();
         gpu->renderer->gpu().batchSubmits();  // its draw reaches the queue with the frame's next submit
         // A FloatType target keeps float32: a half float rounds a value fed back each frame (auto exposure).

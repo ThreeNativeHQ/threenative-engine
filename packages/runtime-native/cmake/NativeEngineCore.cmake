@@ -680,7 +680,8 @@ tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hier
     native_engine_scene_transform_lease=transform_lease
     native_engine_scene_raw_writes=raw_writes
     native_engine_scene_needs_update_setter=needs_update_setter
-    native_engine_scene_pruned_walk=pruned_walk)
+    native_engine_scene_pruned_walk=pruned_walk
+    native_engine_scene_unlinked_destruction=unlinked_destruction)
 # The alias case drives the fixture driver's Store as well, which is the other implementor of it.
 target_link_libraries(tn-native-engine-scene-test PRIVATE tn_engine_scene tn_fixture_driver)
 
@@ -983,7 +984,7 @@ if(EMSCRIPTEN)
     add_custom_command(TARGET tn-native-engine-web POST_BUILD
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-host-abi.mjs
         VERBATIM)
-    target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
+    target_link_options(tn-native-engine-web PRIVATE -Os --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
         # The whole 32-bit address space: a game the size of Midway (161 MB of GLBs, decoded on the
         # engine side) ran past emscripten's 2 GB default maximum and failed with std::bad_alloc.
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue

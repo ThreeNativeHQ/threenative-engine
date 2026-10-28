@@ -139,6 +139,18 @@ function setup() {
   return { runtime, tsl: defineTsl(runtime).exports as unknown as ITslExports };
 }
 
+it("routes TextureNode.bias with an authored negative float", () => {
+  const { tsl, runtime } = setup();
+  const methods = tsl as unknown as {
+    texture(value: { name: string }): INode & { bias(value: number): INode };
+  };
+  const source = methods.texture({ name: "map" });
+  source.bias(-0.5);
+  expect(runtime.call).toHaveBeenLastCalledWith("bias", source[TSL_NODE], [
+    { kind: "number", number: -0.5 },
+  ]);
+});
+
 describe("Wasm modelWorldMatrix", () => {
   it("uses one engine-provided mat4 node for multiplication and column selection", () => {
     const { tsl, runtime } = setup();

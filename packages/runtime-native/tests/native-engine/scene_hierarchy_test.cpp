@@ -13,8 +13,10 @@
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometries.h"
+#include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/object3d.h"
+#include "engine/scene/raycaster.h"
 
 #include <algorithm>
 #include <array>
@@ -1408,9 +1410,41 @@ void pruned_walk() {
     CHECK(camera.matrixWorld.elements[14] == 5 && camera.matrixWorldInverse.elements[14] == -5);
 }
 
+// An object no graph holds changes no children list when it dies, so the hierarchy counter holds still.
+// InstancedMesh::raycast builds a scratch Mesh per ray: each one moved the counter and dropped every
+// cache keyed on it, once per ray (the adventure camera arm: 136,264 bridge crossings in one frame).
+void unlinked_destruction() {
+    Object3D root;
+    auto instanced = std::make_shared<InstancedMesh>(makeBoxGeometry(), std::make_shared<Material>(MaterialType::Standard), 4);
+    root.add(*instanced);
+    root.updateMatrixWorld();
+    const uint64_t before = Object3D::hierarchyVersion();
+    { Mesh scratch; }
+    CHECK(Object3D::hierarchyVersion() == before);
+    Raycaster caster(Vector3(0, 0, 5), Vector3(0, 0, -1));
+    CHECK(!caster.intersectObject(root).empty());
+    CHECK(Object3D::hierarchyVersion() == before);
+    // A linked object's death still moves it: the parent's children list changed.
+    {
+        auto child = std::make_unique<Object3D>();
+        root.add(*child);
+    }
+    CHECK(root.children.size() == 1);
+    CHECK(Object3D::hierarchyVersion() > before);
+    // So does a parent's: its children lose their parent.
+    const uint64_t linked = Object3D::hierarchyVersion();
+    auto orphan = std::make_unique<Object3D>();
+    {
+        Object3D holder;
+        holder.add(*orphan);
+    }
+    CHECK(orphan->parent == nullptr && Object3D::hierarchyVersion() > linked);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
              {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
              {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
-             {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter})
+             {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter},
+             {"unlinked_destruction", unlinked_destruction})

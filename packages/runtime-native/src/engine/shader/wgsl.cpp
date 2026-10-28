@@ -1,3 +1,4 @@
+#include "engine/shader/wgsl_strip.h"
 #include <algorithm>
 #include <atomic>
 #include "wgsl.h"
@@ -12,7 +13,7 @@ namespace tn::engine::shader {
 
 namespace {
 // r185 WGSLNodeBuilder.js inverse helpers, unchanged.
-constexpr const char* kMathInverseWGSL = R"WGSL(
+TN_WGSL_STRIPPED(kMathInverseWGSL, R"WGSL(
 fn tsl_inverse_mat2( m : mat2x2<f32> ) -> mat2x2<f32> {
 
 	let det = m[ 0 ][ 0 ] * m[ 1 ][ 1 ] - m[ 0 ][ 1 ] * m[ 1 ][ 0 ];
@@ -86,7 +87,7 @@ fn tsl_inverse_mat4( m : mat4x4<f32> ) -> mat4x4<f32> {
 	) * ( 1.0 / det );
 
 }
-)WGSL";
+)WGSL");
 
 
 struct BuiltinName {
@@ -204,6 +205,10 @@ std::string WgslEmitter::inlined(ExprId id) const {
             return "textureDimensions(t_" + p_.textures_[e.immediate] + ", " + expr(e.args[0]) + ")";
         case Op::TextureLoad:
             return "textureLoad(t_" + p_.textures_[e.immediate] + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
+        case Op::SampleBias: {
+            const std::string& name = p_.textures_[e.immediate];
+            return "textureSampleBias(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
+        }
         case Op::SampleLevel: {
             const std::string& name = p_.textures_[e.immediate];
             return "textureSampleLevel(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";

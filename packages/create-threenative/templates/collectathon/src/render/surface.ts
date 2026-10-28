@@ -10,14 +10,7 @@
 // - `macro` multiplies a brightness and hue drift from two scales of world-space noise (9 m, 37 m),
 //   which breaks up the repeat of the structured textures (stone, tiles) that cannot be offset.
 // - `triplanar` maps the rock from three axes on cliffs and slopes, where a top-down UV stretches.
-import {
-  type DataTexture,
-  LinearFilter,
-  MeshStandardMaterial,
-  RepeatWrapping,
-  type Texture,
-  Vector2,
-} from "three";
+import { type DataTexture, LinearFilter, RepeatWrapping, type Texture, Vector2 } from "three";
 import {
   abs,
   attribute,
@@ -35,6 +28,7 @@ import {
   sin,
   smoothstep,
   texture,
+  uniform,
   uv,
   vec2,
   vec3,
@@ -43,6 +37,35 @@ import {
 import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { valueNoise } from "./ground.js";
 import { paintedTexture } from "./materials.js";
+
+/** Game-owned texture detail: an explicit mipBias overrides the temporal sampling convention. */
+export const surfaceSampling: { mipBias: "auto" | number } = { mipBias: "auto" };
+const surfaceMipBias = uniform(0);
+const reportedMipBias = new Set<number>();
+
+export function updateSurfaceSampling(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 1)
+    throw new Error("Surface sampling scale must be finite and in (0, 1].");
+  const requested = surfaceSampling.mipBias;
+  if (requested !== "auto" && !Number.isFinite(requested))
+    throw new Error("Surface sampling mipBias must be auto or a finite number.");
+  // UE 5.8.3: SceneVisibility.cpp:5338–5352, defaults :180–193; preserve full-resolution sampling.
+  const bias = Math.max(
+    -4,
+    Math.min(
+      4,
+      requested === "auto" ? (scale === 1 ? 0 : Math.max(-2, Math.log2(scale) - 0.3)) : requested,
+    ),
+  );
+  surfaceMipBias.value = bias;
+  if (requested !== "auto" && !reportedMipBias.has(requested)) {
+    console.info(
+      `TN_SURFACE_SAMPLING:${JSON.stringify({ mipBias: requested, appliedMipBias: bias })}`,
+    );
+    reportedMipBias.add(requested);
+  }
+  return bias;
+}
 
 type TextureLoader = {
   texture(
@@ -119,6 +142,7 @@ export function stochastic(map: Texture, noise: Texture, at: Node<"vec2">, size:
   const short = min(dot(dx, dx), dot(dy, dy));
   const level = max(log2(long).mul(0.5).sub(2), log2(long).add(log2(short)).mul(0.25))
     .add(Math.log2(size))
+    .add(surfaceMipBias)
     .max(0);
   // One noise texel spans about a tile; eight offsets per unit of noise.
   const index = texture(noise, at.mul(1 / 48)).x.mul(8);
@@ -147,9 +171,10 @@ export function triplanar(map: Texture, tile: number) {
   const w = n.mul(n).mul(n).mul(n);
   const sum = w.x.add(w.y).add(w.z);
   return texture(map, p.zy)
+    .bias(surfaceMipBias)
     .xyz.mul(w.x)
-    .add(texture(map, p.xz).xyz.mul(w.y))
-    .add(texture(map, p.xy).xyz.mul(w.z))
+    .add(texture(map, p.xz).bias(surfaceMipBias).xyz.mul(w.y))
+    .add(texture(map, p.xy).bias(surfaceMipBias).xyz.mul(w.z))
     .div(sum);
 }
 
@@ -202,7 +227,7 @@ export function lawnMaterial(s: ISurfaces): MeshStandardNodeMaterial {
 export function masonryMaterial(s: ISurfaces, foot: number): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial({ roughness: 0.88 });
   const grime = smoothstep(foot, foot + 1.6, positionWorld.y).oneMinus();
-  const stone = texture(s.albedo["stone-wall"] as Texture, uv()).xyz;
+  const stone = texture(s.albedo["stone-wall"] as Texture, uv()).bias(surfaceMipBias).xyz;
   material.colorNode = mix(stone, stone.mul(vec3(0.62, 0.66, 0.52)), grime.mul(0.7)).mul(
     macro(s.noise, positionWorld.xz.add(positionWorld.y)),
   );
@@ -225,15 +250,17 @@ export function texturedMaterial(
   s: ISurfaces,
   name: string,
   options: { roughness?: number; normalScale?: number; doubleSided?: boolean } = {},
-): MeshStandardMaterial {
+): MeshStandardNodeMaterial {
   const normal = s.normal[name];
-  return new MeshStandardMaterial({
+  const material = new MeshStandardNodeMaterial({
     map: s.albedo[name] as Texture,
     normalMap: normal ?? null,
     normalScale: new Vector2(options.normalScale ?? 1, options.normalScale ?? 1),
     roughness: options.roughness ?? 0.85,
     side: options.doubleSided === true ? 2 : 0,
   });
+  material.colorNode = texture(s.albedo[name] as Texture).bias(surfaceMipBias);
+  return material;
 }
 
 /** A named vec3 vertex attribute as a node. */

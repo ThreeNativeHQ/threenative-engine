@@ -66,8 +66,11 @@ assert.doesNotMatch(source.slice(source.indexOf("void TraaPass::resolve(")), /co
 console.log("TRAA reset copies previous beauty before the scene render");
 assert.match(source, /textureSampleLevel\(beauty, linearSampler, input\.uv, 0\.0\)/);
 assert.match(source, /textureSampleLevel\(history, linearSampler, historyUV, 0\.0\)/);
-function expression(name, values) {
-  const match = source.match(new RegExp(`(?:let|var) ${name} = ([^;]+);`));
+// The high-quality upsampling path has its own bounds; this oracle pins Three's full-resolution variance branch.
+const varianceBranch = source.match(/if \(highClamp\) \{[\s\S]*?\} else \{([\s\S]*?)\n\s*\}/)?.[1];
+assert.ok(varianceBranch, "missing full-resolution variance branch");
+function expression(name, values, scope = source) {
+  const match = scope.match(new RegExp(`(?:let |var )?${name} = ([^;]+);`));
   assert.ok(match, `missing resolve expression: ${name}`);
   return evaluate(match[1], values);
 }
@@ -84,13 +87,13 @@ function blend(current, old, neighbours) {
   values.gamma = expression("gamma", values);
   values.moment1 = current + neighbours.reduce((a, b) => a + b, 0);
   values.moment2 = current * current + neighbours.reduce((a, b) => a + b * b, 0);
-  for (const name of ["mean", "variance", "low", "high"]) values[name] = expression(name, values);
+  for (const name of ["mean", "variance", "low", "high"]) values[name] = expression(name, values, varianceBranch);
   values.clipped = Math.min(values.high, Math.max(values.low, old));
   for (const name of ["compressedCurrent", "compressedHistory", "historyWeight"]) values[name] = expression(name, { ...values, luminance: 1 });
   values.currentWeight /= values.compressedCurrent + 1;
-  const result = source.match(/return \(current \* currentWeight \+ clipped \* historyWeight\) \/ max\(currentWeight \+ historyWeight, 0\.00001\);/);
+  const result = source.match(/return Resolved\((\(current \* currentWeight \+ clipped \* historyWeight\) \/ max\(currentWeight \+ historyWeight, 0\.00001\)),/);
   assert.ok(result, "production flicker reduction changed");
-  return (current * values.currentWeight + values.clipped * values.historyWeight) / Math.max(values.currentWeight + values.historyWeight, 0.00001);
+  return evaluate(result[1], values);
 }
 assert.equal(blend(0.5, 0.5, Array(8).fill(0.5)), 0.5);
 assert.ok(Math.abs(blend(0.8, 0.2, [0, 1, 0, 1, 0, 1, 0, 1]) - 578 / 2575) < 1e-12);

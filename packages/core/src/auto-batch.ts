@@ -213,8 +213,8 @@ function writeStamp(object: Object3D, into: Float64Array): void {
     into.fill(0, 16);
     return;
   }
-  for (let element = 0; element < 16; element += 1)
-    into[16 + element] = object.matrix.elements[element] ?? 0;
+  const elements = object.matrix.elements;
+  for (let element = 0; element < 16; element += 1) into[16 + element] = elements[element] ?? 0;
 }
 
 function stampMatches(object: Object3D, stamp: Float64Array): boolean {

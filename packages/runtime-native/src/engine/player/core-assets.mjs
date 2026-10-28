@@ -55,6 +55,9 @@ export function createAssetLoader(options = {}) {
     resolve: async (path) => [resolved.get(path)?.url ?? `tnpk:${path}`],
     release: (kind, path) => cache.delete(`${kind}:${path}`),
     clear() { cache.clear(); resolved.clear(); },
+    // Final disposal releases decoder worker pools in core; the TNPK host owns no such pool.
+    // Keep this idempotent contract separate from clear(), which empties the reusable cache.
+    dispose() {},
     // core's disk cache (PRD-743) is web-only: a native game reads its installed package, so the report
     // says so and prefetch and the background fill have nothing to fetch. `cache: false` changes nothing here.
     get cache() {

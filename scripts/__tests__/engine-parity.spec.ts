@@ -42,7 +42,10 @@ describe("engine parity guard", () => {
     // One drawn frame among skipped ones is not yet a steady world.
     expect(worldDrawn(frames(0, 0, 90, 0, 0))).toBe(false);
     // A drawn world on the owned engine interleaves zero-draw samples while two frames are on the GPU.
-    expect(worldDrawn(frames(0, 0, 84, 0, 84, 84, 0))).toBe(true);
+    expect(worldDrawn(frames(0, 0, 84, 0, 84, 84, 90))).toBe(true);
+    // The newest sample is the one the screenshot composites, so a skipped newest sample is a stale
+    // photograph of the frame before it, never a drawn world to photograph.
+    expect(worldDrawn(frames(0, 0, 84, 0, 84, 84, 0))).toBe(false);
     // A partial draw below half the busiest sample is not the world.
     expect(worldDrawn(frames(100, 30, 40, 0, 20))).toBe(false);
     // Drawn frames older than the inspected window do not count.
@@ -53,7 +56,7 @@ describe("engine parity guard", () => {
     const series = [
       [{ drawCalls: 0 }],
       [{ drawCalls: 1 }, { drawCalls: 0 }, { drawCalls: 1 }],
-      [0, 0, 90, 0, 90, 0].map((drawCalls) => ({ drawCalls })),
+      [0, 0, 90, 0, 90, 90].map((drawCalls) => ({ drawCalls })),
     ];
     let polls = 0;
     const page = { evaluate: vi.fn(async () => undefined) };
@@ -63,7 +66,7 @@ describe("engine parity guard", () => {
       })),
     };
     const world = await waitForWorld({ bridge, page } as never);
-    expect(world.newestDrawCalls).toEqual([0, 0, 90, 0, 90, 0]);
+    expect(world.newestDrawCalls).toEqual([0, 0, 90, 0, 90, 90]);
     expect(page.evaluate).toHaveBeenCalledTimes(2);
     const blank = {
       sample: async () => ({

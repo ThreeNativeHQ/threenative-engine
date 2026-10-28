@@ -9,6 +9,28 @@ using namespace tn::engine::shader;
 
 namespace {
 
+void textureBias() {
+    Program p(Stage::Fragment);
+    const auto texture = p.texture2d("map");
+    const auto uv = p.construct(Type::vec(2), {p.constant(0.5f)});
+    const auto sample = p.sampleBias(texture, uv, p.constant(-0.5f));
+    p.output("color", sample);
+    CHECK(p.ok());
+    CHECK(p.dump().find("sampleBias:map(") != std::string::npos);
+    const auto module = WgslEmitter::emit(p);
+    CHECK(module.ok() && module.code.find("textureSampleBias(t_map, smp_map,") != std::string::npos);
+    CHECK(module.code.find("var smp_map: sampler") != std::string::npos);
+    for (int bad = 0; bad < 7; ++bad) {
+        Program invalid(bad == 0 ? Stage::Vertex : bad == 1 ? Stage::Compute : Stage::Fragment);
+        const auto tex = bad == 2 ? invalid.textureDepth("depth") : invalid.texture2d("map");
+        const auto at = invalid.construct(bad == 3 ? Type::vec(3) : Type::vec(2), {invalid.constant(0.5f)});
+        const auto bias = bad == 4 ? invalid.constant(int32_t(0)) : bad == 5
+            ? invalid.construct(Type::vec(2), {invalid.constant(0.5f)}) : invalid.constant(-0.5f);
+        CHECK(invalid.sampleBias(bad == 6 ? tex + 1 : tex, at, bias) == kInvalid);
+        CHECK(!invalid.ok() && invalid.diagnostics().size() == 1);
+    }
+}
+
 void order() {
     Program p(Stage::Compute);
     const uint32_t out = p.storageBuffer("out", Type::f32());
@@ -67,6 +89,7 @@ void order() {
 
 // Each case must raise TN_TSL_TYPE at the line that authored it.
 void types() {
+    textureBias();
     struct Case {
         const char* name;
         Stage stage;

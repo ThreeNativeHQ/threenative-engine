@@ -563,8 +563,14 @@ jobs:
       needs.android-v8-source.result == 'success'
     # Hosted, measured: SwiftShader renders the emulator's GPU on the CPU, and on a 4-thread tn-local
     # slot run 37082733117 spent 41 min of this job's 45 still running APKs (hosted finishes in ~30).
+    # 45 was then 4 min of headroom and it ran out: on 2026-10-27 run 40564599524 the leg finished its
+    # work — it uploaded native-android-emulator-parity.zip and a receipt reading conclusion
+    # "success" at 44m55s — and the timeout killed it in the post-job cache save, so GitHub recorded
+    # `cancelled` and `--collect` refused the receipt with CI_NATIVE_JOB_IDENTITY. A budget that
+    # records a passing leg as cancelled is a false red, not a board trimmed: the leg's own
+    # assertions still fail the job, and a hung emulator still dies here.
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       # The page size this lane qualifies, as data rather than a literal inside a script step.

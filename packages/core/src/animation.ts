@@ -717,11 +717,12 @@ export class AnimationPlayer {
   }
 
   get updateRateReport(): IAnimationUpdateRateReport {
+    const rate = this.#effectiveUpdateRate();
     return {
-      rate: this.#effectiveUpdateRate(),
+      rate,
       overridden: this.#updateRate !== "auto",
       evaluated: this.#evaluated,
-      boneRate: this.#boneRate(this.#effectiveUpdateRate()),
+      boneRate: this.#boneRate(rate),
     };
   }
 
@@ -732,9 +733,9 @@ export class AnimationPlayer {
       : rate;
   }
 
-  #effectiveUpdateRate(): number {
+  #effectiveUpdateRate(mixerScale = this.mixer.timeScale): number {
     // Public mixer speed overrides and observed events retain ordinary Three.js tick semantics.
-    if (this.mixer.timeScale !== 1) return 1;
+    if (mixerScale !== 1) return 1;
     // Event deadlines and changing blend weights remain exactly on the gameplay tick.
     if (
       this.#mode === "once" ||
@@ -1270,15 +1271,10 @@ export class AnimationPlayer {
   update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
-    if (this.mixer.timeScale !== 1) this.#flushPending();
-    const elapsed = dt * this.mixer.timeScale;
-    this.#pendingDt += elapsed;
-    for (const action of this.#actions.values()) {
-      if (!action.isScheduled()) continue;
-      const time = action.paused ? 0 : action.timeScale * elapsed;
-      this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
-    }
-    const rate = this.#effectiveUpdateRate();
+    const mixerScale = this.mixer.timeScale;
+    if (mixerScale !== 1) this.#flushPending();
+    const elapsed = dt * mixerScale;
+    const rate = this.#effectiveUpdateRate(mixerScale);
     this.#rateState.effectiveRate = force ? 1 : rate;
     this.#updateFrame += 1;
     this.#skippedFrames += 1;
@@ -1288,7 +1284,23 @@ export class AnimationPlayer {
       force ||
       (this.#updateFrame + this.#staggerOffset) % boneRate === 0 ||
       this.#skippedFrames >= boneRate;
-    if (this.#evaluated) this.#evaluate(dt);
+    // A full-rate tick with no held time advances through the mixer's own actions; only deferred
+    // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
+    // costs every full-rate rig every frame.
+    if (
+      !this.#evaluated ||
+      this.#pendingDt !== 0 ||
+      this.#pendingActionTimes.size !== 0 ||
+      rate !== 1
+    ) {
+      for (const action of this.#actions.values()) {
+        if (!action.isScheduled()) continue;
+        const time = action.paused ? 0 : action.timeScale * elapsed;
+        this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
+      }
+    }
+    this.#pendingDt += elapsed;
+    if (this.#evaluated) this.#evaluate(dt, mixerScale);
     // Measure the body's movement on every tick, including skipped pose evaluations. A held tick of
     // a clip whose measurement only reports banks its dt: the average speed over the interval is
     // the same number, measured once.
@@ -1434,17 +1446,17 @@ export class AnimationPlayer {
     if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
   }
 
-  #evaluate(dt: number): void {
+  #evaluate(dt: number, mixerScale = this.mixer.timeScale): void {
     // Read before mixer.update(): the "finished" listener fires inside it for a completing
     // once-clip, and that final frame still counts as advancement.
     const wasFinished = this.#finished;
     const before = this.mixer.time;
     const elapsed = this.#pendingDt;
-    const mixerScale = this.mixer.timeScale;
     const direct =
       this.#skippedFrames === 1 &&
       elapsed === dt * mixerScale &&
-      (mixerScale !== 1 ||
+      (this.#pendingActionTimes.size === 0 ||
+        mixerScale !== 1 ||
         (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners));
     if (!direct) {
       this.mixer.timeScale = 1;

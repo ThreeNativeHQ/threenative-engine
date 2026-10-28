@@ -69,13 +69,65 @@ All levers are engine-layer, each with a spec that fails before the fix. Paired 
 | Kit backlight reads its controls once per render (12 kits) | `b430a9756` | 0.93 → 0.48 ms; the bridge cache now covers this class | KEEP |
 | Camera cull keeps its rig map while the hierarchy holds still | `4fb0c6f26` | cull 2.47-2.69 → 1.85-1.92 ms (laptop, uncapped) | KEEP |
 | Bridge cache: `children`/`parent` and JS-only properties read from JS; meter; lint | `b088dc46f` | crossings 3,190 → 1,810, p50 9.95 → 8.9 ms, p95 19.55 → 13.45 ms | KEEP |
+| Rapier: a fixed or sleeping body's pose is read once, not every step; forces cleared only on dynamic bodies (same change as bughunt 05, `f683c14ca`) | `8501273d2` | Rapier calls 2,260 → 240 a step (the 144 walls were 95%); `readVisibleTransforms` 93 → 8 µs (node); worker physics update 455/459/448 → 366/389/362 µs a step (laptop Iris Xe, uncapped, load 2, 3 pairs); frame p50 and drawn fps inside noise (GPU-bound at 30-35 fps) | KEEP |
 | `kMaxFramesOnGpu` 2 → 3 | not built | absorbs ~40 ms GPU stalls at +1 frame of latency; stalls come from outside the engine | REJECT |
+
+Rapier export names lie: wasm-bindgen folds identical getters into one export, so `rawintegrationparameters_dt`,
+`rawkinematiccharactercontroller_offset` and `rawcollidershapecasthit_time_of_impact` (about 320 a step each) were
+`RawVector`/`RawRotation` `x`/`y`/`z` reads from `translation()`/`rotation()`. Resolve an export to its JS caller in
+`rapier_wasm3d.js` before naming a class. Left after the Rapier fix and closed below the 0.3 ms bar: character pose
+replay (about 66 calls, 7 µs a step) and the shooter enemies' per-step `teleport` of a hit-proxy `CharacterBody3D`
+(5 zero-motion controller moves, about 35 µs a step). Ceiling: the laptop split after the fix is character
+controller 76-188 µs, `world.step` 77-99 µs and JS glue about 150 µs a step, so no physics bucket reaches 0.3 ms a
+frame at one step a frame.
 
 Not causes, ruled out by counts: readback staging buffers (steady while skips swing), pipeline or shader creation
 (zero after the first frames), heap growth (floor 76.9 MB across 13 major GCs). Wasm threads were off (no `-pthread`,
 no COOP/COEP); that lane is open.
 
 ## Levers
+
+### 2026-10-27 — Web engine bridge: keep what game code reads again (three-native back end) — KEEP
+- Where: `packages/three-native/src/browser-backend.ts`, PRD-748; commits `b088dc46f` (round 1) and the round-3 commit beside this entry.
+- Ceiling: the shooter census read 2,054 crossings per idle frame, at about 0.8 µs each; the top classes were
+  JS-written or mixer-written properties read again (light intensity 454, colour 227, `matrixAutoUpdate` 205,
+  `parent`/`renderOrder` 102), `AnimationAction.isScheduled` 171, `Layers.test` 51 and geometry bounds 70.
+- Round 1 (property mirror, `children`/`parent`/walk kept until `Object3D::hierarchyVersion` moves, JS `Layers.test`):
+  idle census 2,022 → 661 crossings per frame; shooter route, 3 pairs, load 10-18: 3,249/3,092/3,241 → 1,557/2,228/1,641
+  crossings per frame, worker update+render mean 11.03/9.71/10.37 → 9.16/7.79/8.85 ms.
+- Round 3 (an action's schedule kept until its own play/stop or a mixer-wide call; transform-only Object3D methods keep
+  the mirror; a mirrored setter drops only its own property and skips a write of the value held; a present geometry
+  bound kept): route crossings 3,168/3,448/3,645 → 797/846/1,024 per frame (shooter), 1,443/1,673/1,839 → 997/1,134/1,030
+  (adventure). Frame time in that batch is inconclusive: load 15-26, pairs split 1:2 and 1:2.
+- Ceiling reached: a quiet shooter frame now makes about 190 crossings, all engine writes (opacity, intensity, lookAt,
+  the post chain's quad material and render-target size), world-matrix queries the engine owns (`getWorldPosition`,
+  `updateWorldMatrix`), the mixer's per-step calls, and core's camera cull math on engine Ray/Frustum objects
+  (`intersectsSphere` 70, attribute `version` 35, render-camera-cull.ts). The two last levers measured (schedule table,
+  clipAction exemption) took 825 and 340 crossings; the next candidates are each under 40 per frame.
+- Knob: `__THREENATIVE_BRIDGE_CACHE__ = false` turns the whole cache off for a paired A/B in one code state.
+
+### 2026-10-27 — A scratch object's death leaves the hierarchy counter alone (native engine) — KEEP
+- Where: `runtime-native/src/engine/scene/object3d.cpp` `Object3D::~Object3D`, PRD-748.
+- Cause: the destructor moved `hierarchyVersion` on every destruction, and `InstancedMesh::raycast` builds a stack
+  `Mesh` per call. Each ray at an InstancedMesh dropped every cache keyed on the counter: the bridge's `children`
+  cache, render_database's shadow lights and batch decision, projected_cull's node list. Adventure's camera arm casts
+  at its `lens` instanced meshes each tick: one counted-tick census frame made 136,264 crossings (27,540 each of
+  `children`, `updateMatrixWorld`, `intersectObject`).
+- Result: only a linked object's death (a parent or children) moves the counter. `native_engine_scene_unlinked_destruction`
+  red on the old destructor (2 CHECKs), green after; ctest -L native-engine 215/215. Adventure engine-cost probe,
+  SwiftShader, one drawn frame per tick, moving windows: redundant reads 112 -> 6 per frame, crossings 746/938 ->
+  503/665 per frame. Web Wasm 4,146,125 bytes.
+- Insight: a global "anything changed" counter is only as good as its rarest bump. Next: core's ScenePicker still
+  crosses twice per target object per ray (`updateMatrixWorld`, `intersectObject`, 108 each a frame on adventure); one
+  engine call for the target set would remove that class.
+
+### 2026-10-27 — Interned engine refs per slot index (`keyOf`) — REJECT
+- Where: `createWasmRuntime` `keyOf`, three-native; candidate not committed.
+- Result: real Wasm microbench, a `parent` read with the cache off, 4/4 alternating pairs faster: 946/918/1,293/987 →
+  883/737/1,042/778 ns (load 25-33).
+- Cause: after the bridge cache, a quiet shooter frame makes only tens of handle-returning crossings, so the ceiling is
+  a few microseconds a frame. A per-call speedup inside a crossing does not remove the crossing (see the 2026-10-14 decode
+  reuse entry). Revisit only with a measured class of handle reads that the cache cannot keep.
 
 ### 2026-10-27 — Batching holds a projecting decision; render thread on by default — KEEP
 - Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), `RenderDatabase::batch`, `player/run.cpp`.

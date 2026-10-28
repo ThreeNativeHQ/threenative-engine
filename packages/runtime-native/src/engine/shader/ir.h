@@ -44,7 +44,7 @@ enum class Op : uint8_t {
     Add, Sub, Mul, Div, Neg, Less, Equal, Select,
     Swizzle, Construct, Call,
     // Ordered reads: pinned as statements where created, so they observe prior writes.
-    LoadVar, LoadStorage, Sample, SampleLevel, AtomicAdd, TextureSize, TextureLoad,
+    LoadVar, LoadStorage, Sample, SampleLevel, SampleBias, AtomicAdd, TextureSize, TextureLoad,
     // Integer bit operations: r185's `>>` and `^` on one integer type.
     ShiftRight, BitXor,
 };
@@ -139,6 +139,8 @@ public:
      * tiles in one mip, so a bilinearCubeUV tap is always level 0 — three's `.grad(vec2(), vec2())`.
      */
     ExprId sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where = Where::current());
+    /** A fragment texture sample with an authored bias relative to its implicit derivative LOD. */
+    ExprId sampleBias(uint32_t texture, ExprId uv, ExprId bias, Where where = Where::current());
     ExprId textureSize(uint32_t texture, ExprId level, Where where = Where::current());
     ExprId textureLoad(uint32_t texture, ExprId coordinate, ExprId level, Where where = Where::current());
     /** A depth texture (2D, or a cube) and its comparison sampler, bound together: a shadow map. */

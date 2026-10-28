@@ -492,6 +492,8 @@ export function defineBrowserClasses(
     "envMapIntensity",
     "aoMapIntensity",
     "bumpScale",
+    // AnimationClip only: no setter, and no engine call rewrites a clip's length.
+    "duration",
   ]);
   // The numbers an animation track can also drive (animation/property_binding.cpp: a light's intensity,
   // a perspective camera's lens, a material's numbers): kept like the rest, and dropped by any mixer or
@@ -512,6 +514,16 @@ export function defineBrowserClasses(
     "shininess",
     "ior",
     "specularIntensity",
+    // An action's and a mixer's own state (only these two classes carry the names): the mixer's update
+    // advances time, ends fades and warps, and finishes a clip, so the same rule holds.
+    "time",
+    "timeScale",
+    "weight",
+    "paused",
+    "enabled",
+    "loop",
+    "repetitions",
+    "clampWhenFinished",
   ]);
   const mirrored = (binding: IRegistryClass, property: string, setters: Set<string>): boolean =>
     labelled.has(property) ||
@@ -520,6 +532,14 @@ export function defineBrowserClasses(
       (binding.fixedMembers?.includes(property) === true || /^(map|[a-z]+Map)$/u.test(property)));
   const labels = new WeakMap<object, Map<string, unknown>>();
   let animated = new WeakMap<object, Map<string, unknown>>();
+  // An action's `isScheduled()`: the mixer's list of active actions, which only the action's own
+  // play/stop and the mixer's stopAllAction/uncache calls change (animation/mixer.cpp), never update,
+  // setTime or clipAction (a rifle asks clipAction each frame).
+  // core's AnimationPlayer asks it of every clip of every rig each step: 171 crossings a frame.
+  let scheduling = new WeakMap<object, unknown>();
+  // Object3D methods that move only the transform: the mirrored labels and numbers stay.
+  const transformOnly =
+    /^(updateMatrix|updateMatrixWorld|updateWorldMatrix|lookAt|rotate(X|Y|Z|OnAxis|OnWorldAxis)|translate(X|Y|Z|OnAxis)|apply(Matrix4|Quaternion)|setRotationFrom\w+|localToWorld|worldToLocal|updateProjectionMatrix)$/u;
   // `__THREENATIVE_BRIDGE_CACHE__ = false` (a page global the worker host forwards) turns the mirror, the
   // hierarchy cache and the JS Layers test off at the next safe point: the paired A/B knob.
   const knob = "__THREENATIVE_BRIDGE_CACHE__";
@@ -1320,6 +1340,17 @@ export function defineBrowserClasses(
       // A mixer or action call may write the tracks' targets (update, stop restoring originals).
       const drives =
         /^Animation(Mixer|Action|ObjectGroup)$/u.test(name) && !keeps && !/^is[A-Z]/u.test(method);
+      const transforms = hierarchyClass && transformOnly.test(method);
+      const schedule =
+        name === "AnimationAction" && method === "isScheduled"
+          ? "read"
+          : name === "AnimationAction" && drives
+            ? "own"
+            : drives && !/^(update|setTime|clipAction|existingAction)$/u.test(method)
+              ? "all"
+              : undefined;
+      // An action's clip and root are its construction arguments: kept like a geometry's attributes.
+      const lifelong = name === "AnimationAction" && (method === "getClip" || method === "getRoot");
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
@@ -1334,8 +1365,15 @@ export function defineBrowserClasses(
             return target;
           }
           const intersections = method === "intersectObject" || method === "intersectObjects";
-          const key = query ? `${method} ${String(args[0])}` : "";
-          if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
+          const kept = query || (lifelong && caching);
+          const key = kept ? `${method} ${String(args[0])}` : "";
+          if (kept && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
+          if (schedule === "read" && caching && scheduling.has(this)) return scheduling.get(this);
+          if (schedule === "own") {
+            scheduling.delete(this);
+            for (const arg of args)
+              if (typeof arg === "object" && arg !== null) scheduling.delete(arg);
+          } else if (schedule === "all") scheduling = new WeakMap();
           // A per-vertex setter writes its own range and reads no kept array, so a whole-shadow flush
           // would cost O(N) a call; it syncs just its range back below. Anything else flushes edits.
           if (pending.size > 0 && !rangeMethod) writeBack();
@@ -1364,7 +1402,7 @@ export function defineBrowserClasses(
               );
             }
           }
-          if (!keeps) {
+          if (!keeps && !(transforms && caching)) {
             labels.delete(this);
             animated.delete(this);
           }
@@ -1400,8 +1438,9 @@ export function defineBrowserClasses(
             args[2].sort((a, b) => a.distance - b.distance);
             return args[2];
           }
-          if (query)
+          if (kept)
             labels.get(this)?.set(key, result) ?? labels.set(this, new Map([[key, result]]));
+          if (schedule === "read" && caching) scheduling.set(this, result);
           return result;
         },
       });
@@ -1582,6 +1621,9 @@ export function defineBrowserClasses(
         flagField !== undefined && flagField[1] === 0 && peek !== undefined
           ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
           : undefined;
+      // A geometry's bounds, once present, are one engine object the engine recomputes in place
+      // (BufferGeometry::computeBoundingSphere); only its setter, copy() or another method replaces it.
+      const bounds = geometryClass && (property === "boundingSphere" || property === "boundingBox");
       const accessor: PropertyDescriptor = {
         configurable: true,
         get:
@@ -1628,7 +1670,7 @@ export function defineBrowserClasses(
                   entry[property] = fromEngine(runtime.get(refOf(this), property));
                 return entry[property];
               }
-            : mirrored(binding, property, setters)
+            : mirrored(binding, property, setters) || bounds
               ? function (this: object) {
                   const legacy = legacyLabelled.has(property);
                   if (!caching && !legacy) return fromEngine(runtime.get(refOf(this), property));
@@ -1638,8 +1680,12 @@ export function defineBrowserClasses(
                     known = new Map();
                     table.set(this, known);
                   }
-                  if (!known.has(property))
-                    known.set(property, fromEngine(runtime.get(refOf(this), property)));
+                  if (!known.has(property)) {
+                    const value = fromEngine(runtime.get(refOf(this), property));
+                    // The renderer computes a missing bound itself, so only a present one is kept.
+                    if (bounds && value === null) return value;
+                    known.set(property, value);
+                  }
                   return known.get(property);
                 }
               : function (this: object) {
@@ -1658,8 +1704,25 @@ export function defineBrowserClasses(
                   // writes `visible` on hundreds of nodes a frame, so those stay out of the bridge.
                   if (flag !== undefined && typeof value === "boolean" && flag(this) === value)
                     return;
-                  labels.delete(this);
-                  animated.delete(this);
+                  if (caching && (mirrored(binding, property, setters) || bounds)) {
+                    // A mirrored property's setter writes only that property: the others stay kept,
+                    // and a write of the primitive the mirror holds changes nothing in the engine.
+                    const legacy = legacyLabelled.has(property);
+                    const known = (!legacy && animatedNames.has(property) ? animated : labels).get(
+                      this,
+                    );
+                    if (
+                      (value === null || typeof value !== "object") &&
+                      known?.has(property) &&
+                      known.get(property) === value
+                    )
+                      return;
+                    labels.get(this)?.delete(property);
+                    animated.get(this)?.delete(property);
+                  } else {
+                    labels.delete(this);
+                    animated.delete(this);
+                  }
                   runtime.set(refOf(this), property, toEngine(value));
                 },
               }
@@ -1950,6 +2013,7 @@ export function defineBrowserClasses(
       if (wanted !== caching) {
         caching = wanted;
         animated = new WeakMap();
+        scheduling = new WeakMap();
         kept = new WeakMap();
       }
       if (
@@ -2376,7 +2440,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     try {
       return work();
     } finally {
-      for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      while (allocations.length > mark) abi._free(allocations.pop() as number);
       arenaTop = top;
     }
   };

@@ -373,8 +373,9 @@ public:
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
-    std::unique_ptr<Renderer> sibling() {
+    std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
         auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
+        child->sceneOnly_ = sceneOnly;
         child->textures_ = textures_;
         child->passTimer_ = passTimer_;
         child->ownsPassTimer_ = false;
@@ -452,6 +453,11 @@ public:
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
     void setSize(uint32_t width, uint32_t height);
+    /** Scene fraction; applies only while the temporal resolve reconstructs the display frame. */
+    void setRenderScale(float scale);
+    bool temporalUpscale() const { return traa_ != nullptr; }
+    uint32_t inputWidth() const { return inputWidth_; }
+    uint32_t inputHeight() const { return inputHeight_; }
     /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
     void setSampleCount(uint32_t samples);
     /** The samples the scene draws with: 1 while a traa() effect is in the post graph, otherwise the requested count. */
@@ -999,6 +1005,7 @@ private:
     uint32_t presentedWidth_ = 0, presentedHeight_ = 0;
     WGPUTexture depth_ = nullptr;
     WGPUTextureView colorView_ = nullptr;
+    bool sceneOnly_ = false;  // raw render targets expose sceneColorView(), not the RGBA8 output frame
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;
@@ -1103,6 +1110,8 @@ private:
     WGPUTextureFormat presentFormat_ = WGPUTextureFormat_Undefined;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
+    uint32_t inputWidth_ = 0, inputHeight_ = 0;
+    float renderScale_ = 1;
     uint64_t renderId_ = 0;
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
@@ -1140,6 +1149,14 @@ private:
         uint64_t source = 0;  // the caller frame id the successful sample was submitted with
     };
     std::shared_ptr<Timing> timing_ = std::make_shared<Timing>();
+    struct DeformationFrame {
+        Program* program = nullptr;
+        std::vector<uint64_t> buffers;
+        std::size_t instanceHash = 0;  // the instance matrices' contents: an instance moved since last frame when it differs
+        std::vector<uint8_t> uniforms;
+    };
+    // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
+    std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
@@ -1152,6 +1169,12 @@ private:
         std::vector<float> data;
         Handle buffer;
         uint64_t capacity = 0;
+        // The bytes last queued for this buffer at this offset: a frame that repeats them copies
+        // nothing. Bytes are exact (a hash could collide and hide a signed-zero/NaN change), and the
+        // buffer identity catches a reallocation whose old contents are gone.
+        std::vector<uint8_t> uploaded;
+        Handle uploadedBuffer;
+        uint64_t uploadedPrefix = 0;
     };
     struct ProbeTexture {
         WGPUTexture texture = nullptr;

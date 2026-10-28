@@ -82,6 +82,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // three's convertToTexture: a texture stays as it is; any other node renders to a texture of its own.
     const auto toTexture = [&](const g::Node& source) -> g::Node {
         if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture) return source;
+        if (source->kind == g::Kind::PostEffect && source->post && source->post->kind == "TRAANode" &&
+            source->post->output != "scene") {
+            // A late resolve already owns a named texture; retain its producer without drawing a copy. An early resolve
+            // writes "scene", which a render target's material reads as the unresolved scene colour, so it keeps its copy.
+            auto texture = std::make_shared<g::NodeData>(*g::texture(source->name, g::uv()));
+            texture->otherwise = {source};
+            return texture;
+        }
         auto target = std::make_shared<g::NodeData>();
         target->kind = g::Kind::RenderTexture;
         target->name = "native_rtt_" + std::to_string(++serial);
@@ -552,8 +560,10 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         return g::add(g::mul(node, args.size() > 1 ? arg(1) : g::float_(1)), args.size() > 2 ? arg(2) : g::float_(0));
     }
-    if (name == "textureLoad") {
-        if (args.size() < 2 || args.size() > 3) throw std::runtime_error("expected texture, coordinates and optional level");
+    if (name == "textureLoad" || name == "textureSize") {
+        const bool dimensions = name == "textureSize";
+        if ((dimensions && method) || args.size() < (dimensions ? 1u : 2u) || args.size() > (dimensions ? 2u : 3u))
+            throw std::runtime_error(dimensions ? "expected texture and optional level" : "expected texture, coordinates and optional level");
         std::string label;
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
             const auto& texture = args[0].node;
@@ -565,13 +575,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         }
         if (label.empty()) throw std::runtime_error("textureLoad needs a named texture");
         auto node = std::make_shared<g::NodeData>();
-        node->kind = g::Kind::TextureLoad; node->name = label; node->type = Type::vec(4);
+        node->kind = dimensions ? g::Kind::TextureSize : g::Kind::TextureLoad; node->name = label;
+        node->type = dimensions ? Type::vec(2, Type::Scalar::U32) : Type::vec(4);
         if (args[0].kind == TslArg::Kind::Node && args[0].node) {
             node->textureBinding = args[0].node->textureBinding; node->object = args[0].node->object; node->bits = args[0].node->bits;
             // Retain the target producer and the texture owner as graph dependencies.
-            if (node->textureObject() || args[0].node->kind == g::Kind::RenderTexture) node->otherwise = {args[0].node};
+            if (node->textureObject() || args[0].node->kind == g::Kind::RenderTexture || !args[0].node->otherwise.empty())
+                node->otherwise = {args[0].node};
         }
-        node->args = {arg(1)};
+        if (args.size() > 1) node->args = {dimensions ? tslCall("int", nullptr, {args[1]}, serial) : arg(1)};
         if (args.size() == 3) node->args.push_back(arg(2));
         return node;
     }
@@ -679,6 +691,21 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "uv") {
         arity(0);
         return g::uv();
+    }
+    // TextureNode.bias(n): the same texture with a derivative-relative mip bias.
+    if (method && name == "bias") {
+        arity(1);
+        const auto source = lhs();
+        const bool rendered = source->kind == g::Kind::RenderTexture && source->args.size() == 2;
+        if (!rendered && (source->kind != g::Kind::Texture || source->args.size() != 1 ||
+            source->bits == 1 || (source->name == "depth" && !source->textureBinding)))
+            throw std::runtime_error("bias needs a nondepth texture node");
+        const auto bias = arg(0);
+        if (bias->type != Type::f32()) throw std::runtime_error("bias needs an f32 scalar");
+        auto node = std::make_shared<g::NodeData>(*source);
+        node->sampleBias = true;
+        node->args.push_back(bias);
+        return node;
     }
     // TextureNode.level(n): the same texture read at an explicit mip level.
     if (method && name == "level") {
