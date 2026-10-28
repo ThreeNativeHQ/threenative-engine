@@ -272,12 +272,15 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
   private async awaitInstalledBundle(device: string, previous: string | undefined): Promise<void> {
     const deadline = Date.now() + kIosInstallRegistrationMs;
     for (;;) {
-      const path = await this.registeredBundlePath(device);
+      const listed = await this.run(["simctl", "listapps", device]);
+      const path = parseListedBundlePath(listed, this.options.bundleId);
       if (path !== undefined && path !== previous && !path.includes("/Dead/")) return;
       if (Date.now() >= deadline) {
+        const at = listed.indexOf(`"${this.options.bundleId}"`);
         throw new Error(
           `TN_PLAYTEST_IOS_INSTALL_UNREGISTERED: ${this.options.bundleId} still lists ` +
-            `'${path ?? "no bundle"}' ${kIosInstallRegistrationMs} ms after simctl install.`,
+            `'${path ?? "no bundle"}' ${kIosInstallRegistrationMs} ms after simctl install. listapps: ` +
+            listed.slice(Math.max(at, 0), Math.max(at, 0) + 800),
         );
       }
       await new Promise((resolve) => setTimeout(resolve, kIosInstallPollMs));
@@ -300,13 +303,16 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
 const kIosInstallRegistrationMs = 60_000;
 const kIosInstallPollMs = 250;
 
-/** The `Path` `simctl listapps` prints for one bundle identifier, or undefined when it is absent. */
+/**
+ * The `Path` `simctl listapps` prints for one bundle identifier, or undefined when it is absent. The
+ * output is an old-style plist: nested dictionaries (`GroupContainers`) close before `Path`, and a
+ * value made only of path characters is printed without quotes.
+ */
 function parseListedBundlePath(output: string, bundleId: string): string | undefined {
-  const start = output.indexOf(`"${bundleId}" =`);
-  if (start < 0) return undefined;
-  const end = output.indexOf("};", start);
-  const entry = output.slice(start, end < 0 ? undefined : end);
-  return /\bPath = "([^"]+)"/u.exec(entry)?.[1];
+  const key = new RegExp(`"${bundleId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}"\\s*=\\s*\\{`, "u").exec(output);
+  if (key === null) return undefined;
+  const path = /\n\s*Path = (?:"([^"]*)"|([^;\s]+));/u.exec(output.slice(key.index));
+  return path?.[1] ?? path?.[2];
 }
 
 export function parseLaunchedPid(output: string): string {

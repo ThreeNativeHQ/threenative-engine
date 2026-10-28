@@ -5,8 +5,12 @@ import { expect, test } from "vitest";
 
 import { parseLaunchedPid, XcrunIosDriver } from "../src/runner/ios.js";
 
+// The shape `simctl listapps` prints: an old-style plist keyed by bundle identifier, with nested
+// dictionaries ahead of `Path`, and `Path` unquoted when it holds only path characters.
 const listed = (bundleId: string, path: string) =>
-  `{\n    "${bundleId}" =     {\n        CFBundleIdentifier = "${bundleId}";\n        Path = "${path}";\n    };\n}\n`;
+  `{\n    "com.apple.Bridge" =     {\n        ApplicationType = System;\n        Path = "/Applications/Bridge.app";\n    };\n` +
+  `    "${bundleId}" =     {\n        ApplicationType = User;\n        CFBundleIdentifier = "${bundleId}";\n` +
+  `        GroupContainers =         {\n        };\n        Path = ${path};\n        SBAppTags =         (\n        );\n    };\n}\n`;
 
 // The simulator's app list around one `simctl install`: the previous bundle until the install
 // call, then whatever `afterInstall` lists, one entry per poll, repeating the last.
@@ -86,7 +90,7 @@ test("a simulator launch waits until the newly installed bundle replaces the dea
   }, async (args) => {
     const app = apps(args);
     if (app !== undefined) {
-      lastListed = /Path = "([^"]+)"/u.exec(app)?.[1];
+      lastListed = [...app.matchAll(/Path = (\S+);/gu)].at(-1)?.[1];
       return app;
     }
     if (args[1] === "get_app_container") return join(root, "container");
