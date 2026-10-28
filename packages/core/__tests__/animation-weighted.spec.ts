@@ -1,5 +1,5 @@
 import { AnimationClip, Object3D, VectorKeyframeTrack } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 
 function rig() {
@@ -29,6 +29,30 @@ describe("weighted action ownership", () => {
     player.update(0.01);
     expect(player.mixer.clipAction(walk).getEffectiveTimeScale()).toBeCloseTo(2);
     expect(player.mixer.clipAction(idle).getEffectiveTimeScale()).toBe(1);
+    player.dispose();
+  });
+
+  it("does not rewrite the dominant action's settled rate twice in one tick", () => {
+    const body = new Object3D();
+    const root = new Object3D();
+    body.add(root);
+    const idle = new AnimationClip("idle", 2, []);
+    const walk = new AnimationClip("walk", 2, [
+      new VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 0, 0, 2]),
+    ]);
+    const player = new AnimationPlayer({ clips: [idle, walk], root, strideRoot: body });
+    player.playWeighted([
+      { clip: "walk", weight: 0.7 },
+      { clip: "idle", weight: 0.3 },
+    ]);
+    player.update(0.01);
+    player.update(0.01);
+    const walkAction = player.mixer.clipAction(walk);
+    expect(walkAction.getEffectiveTimeScale()).toBeCloseTo(0.15, 6);
+    const setRate = vi.spyOn(walkAction, "setEffectiveTimeScale");
+    player.update(0.01);
+    expect(setRate).not.toHaveBeenCalled();
+    setRate.mockRestore();
     player.dispose();
   });
 

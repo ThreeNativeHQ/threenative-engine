@@ -160,6 +160,8 @@ export class LocalExposureNode extends TempNode<"float"> {
   readonly #gridTexture = texture(this.#gridTarget.texture);
   // Three's runtime accepts undefined on first use, but its declaration requires a state.
   #rendererState: Parameters<typeof RendererUtils.resetRendererState>[1] | undefined;
+  #configuredWidth = -1;
+  #configuredHeight = -1;
   #disposed = false;
 
   constructor(input: ColourTexture, exposure: Node<"float">) {
@@ -433,28 +435,32 @@ export class LocalExposureNode extends TempNode<"float"> {
     const renderer = frame.renderer;
     if (renderer === null) throw new Error("Local exposure requires a renderer.");
     renderer.getDrawingBufferSize(this.#size);
-    this.#full.value.copy(this.#size);
-    const sizes = localExposureSizes(this.#size.x, this.#size.y);
-    const [halfWidth, halfHeight] = sizes.half;
-    const [blurWidth, blurHeight] = sizes.blur;
-    const [cellsX, cellsY] = sizes.cells;
-    const [logWidth, logHeight] = sizes.log;
-    const [rowsWidth, rowsHeight] = sizes.rows;
-    const [gridWidth, gridHeight] = sizes.grid;
-    this.#half.value.set(halfWidth, halfHeight);
-    this.#logSize.value.set(logWidth, logHeight);
-    this.#rows.value.set(rowsWidth, rowsHeight);
-    this.#blurSize.value.set(blurWidth, blurHeight);
-    this.#blurRadius.value = sizes.blurRadius;
-    this.#rangeStride.value = sizes.rangeStride;
-    this.#cells.value.set(cellsX, cellsY);
-    this.#grid.value.set(gridWidth, gridHeight);
-    this.#logTarget.setSize(logWidth, logHeight);
-    this.#lumTarget.setSize(blurWidth, blurHeight);
-    this.#blurXTarget.setSize(blurWidth, blurHeight);
-    this.#blurTarget.setSize(blurWidth, blurHeight);
-    this.#rowTarget.setSize(rowsWidth, rowsHeight);
-    this.#gridTarget.setSize(gridWidth, gridHeight);
+    if (this.#configuredWidth !== this.#size.x || this.#configuredHeight !== this.#size.y) {
+      this.#full.value.copy(this.#size);
+      const sizes = localExposureSizes(this.#size.x, this.#size.y);
+      const [halfWidth, halfHeight] = sizes.half;
+      const [blurWidth, blurHeight] = sizes.blur;
+      const [cellsX, cellsY] = sizes.cells;
+      const [logWidth, logHeight] = sizes.log;
+      const [rowsWidth, rowsHeight] = sizes.rows;
+      const [gridWidth, gridHeight] = sizes.grid;
+      this.#half.value.set(halfWidth, halfHeight);
+      this.#logSize.value.set(logWidth, logHeight);
+      this.#rows.value.set(rowsWidth, rowsHeight);
+      this.#blurSize.value.set(blurWidth, blurHeight);
+      this.#blurRadius.value = sizes.blurRadius;
+      this.#rangeStride.value = sizes.rangeStride;
+      this.#cells.value.set(cellsX, cellsY);
+      this.#grid.value.set(gridWidth, gridHeight);
+      this.#logTarget.setSize(logWidth, logHeight);
+      this.#lumTarget.setSize(blurWidth, blurHeight);
+      this.#blurXTarget.setSize(blurWidth, blurHeight);
+      this.#blurTarget.setSize(blurWidth, blurHeight);
+      this.#rowTarget.setSize(rowsWidth, rowsHeight);
+      this.#gridTarget.setSize(gridWidth, gridHeight);
+      this.#configuredWidth = this.#size.x;
+      this.#configuredHeight = this.#size.y;
+    }
     this.#rendererState ??= RendererUtils.saveRendererState(renderer);
     this.#rendererState = RendererUtils.resetRendererState(renderer, this.#rendererState);
     try {

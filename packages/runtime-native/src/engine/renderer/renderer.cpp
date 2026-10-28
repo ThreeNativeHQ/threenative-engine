@@ -2,6 +2,7 @@
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/material_uniforms.h"
 #include "engine/renderer/shadows/lamp_resolution.h"
 
 #include <algorithm>
@@ -137,36 +138,26 @@ void put(std::vector<uint8_t>& block, size_t base, const shader::UniformField* f
 // Authored uniform data accompanies the graph, not the cached program. Both colour and shadow
 // draws bind it, so a graph positionNode has exactly the same deformation in the two passes.
 // A draw's material uniforms for one stage, read in place from its graphs' uniform nodes every frame
-// (no map built per draw): three's `time` (the frame's elapsed seconds), then each named value. A name
-// bound to two different values across the material's graphs fails rather than pick one.
+// (no map built per draw): three's `time` (the frame's elapsed seconds), then each named value. The
+// resolution itself is material_uniforms.h, which resolves a field by the name hash the stage was laid
+// out with instead of comparing every field's name against every value: those string compares were 59%
+// of the shooter's frame memcmp time (#574).
 void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
               const shader::MaterialNodes& nodes, float time, float delta, const LightState& lights) {
-    using Named = std::pair<std::string_view, std::span<const double>>;
-    thread_local std::vector<Named> values;
-    values.clear();
-    const double timeValue = time, deltaValue = delta;
-    values.emplace_back("time", std::span<const double>(&timeValue, 1));
-    values.emplace_back("deltaTime", std::span<const double>(&deltaValue, 1));
-    for (const auto& graph : nodes.graphs()) {
-        if (!graph) continue;
-        for (const auto& node : shader::graph::uniformList(graph)) {
-            if (node->values.empty()) continue;
-            const auto found = std::ranges::find(values, std::string_view(node->name), &Named::first);
-            if (found == values.end()) values.emplace_back(node->name, node->values);
-            else if (!std::ranges::equal(found->second, node->values)) throw std::runtime_error("TN_TSL_UNIFORM_CONFLICT: " + node->name);
-        }
-    }
+    thread_local std::vector<shader::BoundUniform> values;
+    const std::array<double, 2> clock{time, delta};
+    shader::bindMaterialUniforms(values, nodes, clock);
     for (const auto& field : stage.uniforms) {
-        constexpr std::string_view shadowPrefix = "authoredLightShadowMatrix";
-        if (field.name.starts_with(shadowPrefix)) {
-            put(block, base, &field, lights.shadowMatrix(std::stoull(field.name.substr(shadowPrefix.size()))));
+        if (field.shadowLightId != shader::kNoShadowLight) {
+            put(block, base, &field, lights.shadowMatrix(field.shadowLightId));
             continue;
         }
-        const auto found = std::ranges::find(values, std::string_view(field.name), &Named::first);
-        if (found == values.end()) continue;
-        if (field.type.isMatrix() || field.type.scalar == shader::Type::Scalar::Bool || found->second.size() != field.type.rows)
+        const shader::BoundUniform* found = shader::findBoundUniform(values, field);
+        if (found == nullptr) continue;
+        if (field.type.isMatrix() || field.type.scalar == shader::Type::Scalar::Bool ||
+            found->values.size() != field.type.rows)
             throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
-        shader::writeUniform(std::span(block).subspan(base), field, found->second);
+        shader::writeUniform(std::span(block).subspan(base), field, found->values);
     }
 }
 
@@ -551,6 +542,8 @@ struct Renderer::FrameJob {
     std::vector<Planned> plan, velocityPlan, auxPlan;
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
     std::vector<ShadowPass> shadowPasses;
+    uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
+    uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan
     std::deque<DrawItem> shadowLodItems;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
@@ -2971,6 +2964,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         map.width = mapWidth;
         map.height = mapHeight;
+        mapSignatures_.erase(i);  // a new texture holds no depth: its first frame draws
         shadowMapsChanged_ = true;
     }
 
@@ -3171,7 +3165,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
-    job.previousBytes = {}; job.previousSeed = false;
+    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -3554,10 +3548,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         }
         // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
-        // and each caster's matrix, geometry and cut. A GPU-deformed caster changes every frame.
-        if (lamp) {
+        // and each caster's matrix, geometry and cut. A GPU-deformed caster changes every frame. An
+        // ordinary sun map keeps it too, as Unreal's cached whole-scene shadows do: valid while the
+        // light's projection holds (UE 5.8.3: Engine/Source/Runtime/Engine/Public/SceneManagement.h:1011-1022,
+        // Engine/Source/Runtime/Renderer/Private/ShadowSetup.cpp:3867-3882), dropped when a caster changes
+        // (Engine/Source/Runtime/Renderer/Private/SceneCore.cpp:369-385). A virtual map caches its own pages.
+        if (!virtualMap && !compilation) {
             uint64_t h = 0xcbf29ce484222325ull;
-            const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
+            // Each word goes through murmur3's finalizer first: FNV over whole words carries a sign or exponent bit only
+            // upward, so two sign flips (a light or caster moved to its mirror image) cancelled and the stale map was kept.
+            const auto mix = [&h](uint64_t v) {
+                v ^= v >> 33; v *= 0xff51afd7ed558ccdull; v ^= v >> 33; v *= 0xc4ceb9fe1a85ec53ull; v ^= v >> 33;
+                h = (h ^ v) * 0x100000001b3ull;
+            };
             const auto mixMatrix = [&](const Matrix& m) { for (double e : m) mix(std::bit_cast<uint64_t>(e)); };
             const auto mixStore = [&](const BufferStore* b) { mix(reinterpret_cast<uintptr_t>(b)); if (b) { mix(b->version()); mix(b->epoch()); } };  // three uploads on needsUpdate, not on a write
             bool animated = false;
@@ -3571,18 +3574,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     animated |= item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
                     mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
                     mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
-                    mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map));
+                    mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
                     mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
                 }
             }
-            uint64_t& last = lampSignatures_[i];
+            uint64_t& last = mapSignatures_[i];
             if (!animated && last == h) {
                 shadowPasses.erase(shadowPasses.begin() + std::ptrdiff_t(firstPass), shadowPasses.end());
-                continue;  // a cache hit packs and uploads nothing for this lamp
+                ++job.keptShadowMaps;
+                continue;  // a cache hit packs and uploads nothing for this map
             }
             last = animated ? 0 : h;
         }
-        // Pack only the passes that run: a cached lamp's casters never allocate, fill or upload a slice.
+        // Pack only the passes that run: a kept map's casters never allocate, fill or upload a slice.
         for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
             ShadowPass& kept = shadowPasses[k];
             for (Planned& planned : kept.draws) {
@@ -3920,6 +3924,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     shadowMapsChanged_ = false;
     if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
+    job.uniformBytes = frameUniforms_.size();
     bool jointBufferMoved = false;
     for (auto& [name, storage] : storages_) {
         const uint64_t prefix = name == "boneMatrices" ? jointPrefix : 0;
@@ -5217,6 +5222,8 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     {
         std::lock_guard lock(frameMailMutex_);
+        lastFrame_.keptShadowMaps = job.keptShadowMaps;
+        lastFrame_.uniformBytes = job.uniformBytes;
         frameMail_ = lastFrame_;
     }
 }

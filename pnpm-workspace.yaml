@@ -14,6 +14,7 @@ catalog:
   procedural-animals: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512
   '@jridgewell/trace-mapping': 0.3.31
   '@gltf-transform/core': 4.4.2
+  '@modelcontextprotocol/server': 2.0.0
   '@gltf-transform/extensions': 4.4.2
   '@gltf-transform/functions': 4.4.2
   three-mesh-bvh: 0.9.14

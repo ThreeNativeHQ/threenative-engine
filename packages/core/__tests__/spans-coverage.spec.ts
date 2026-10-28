@@ -2,7 +2,11 @@ import type { Object3D } from "three";
 import { describe, expect, it } from "vitest";
 import { FrameBudget } from "../src/frame-budget.js";
 import { FixedStepLoop } from "../src/loop.js";
-import { FrameCounters } from "../src/profiling/FrameCounters.js";
+import {
+  FrameCounters,
+  createCrossingReader,
+  createEngineCounterReader,
+} from "../src/profiling/FrameCounters.js";
 import { SPANS, SpanRecorder, setSpanRecorder, spanRecorder } from "../src/profiling/Spans.js";
 import { installSpanProbes } from "../src/profiling/span-probes.js";
 
@@ -203,6 +207,73 @@ describe("the frame record carries the boundary counts", () => {
     // 5 is the end tick; the frame count is 2 and the sum of the ticks is 7.
     expect(window.counters.simulationTick).toBe(5);
     counters?.uninstall();
+  });
+
+  it("reports the frame's JS->Wasm crossings from the engine's own count", () => {
+    const lines: string[] = [];
+    const budget = new FrameBudget({ report: (line) => lines.push(line), reportEvery: 2 });
+    let total = 5_000;
+    const crossings = createCrossingReader({ __tnCrossingCount: () => total });
+    for (let frame = 0; frame < 2; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      budget.markSimulationEnd(frame * 16 + 1, 1);
+      budget.addRender(10);
+      // The first frame's read is the run's total since boot, so only the second has a delta.
+      const counted = crossings();
+      budget.addCounters({
+        ...(counted === undefined ? {} : { bridgeCrossings: counted }),
+        simulationTick: frame,
+      });
+      budget.endFrame(frame * 16 + 12);
+      total += frame === 0 ? 1_810 : 1_790;
+    }
+
+    const window = JSON.parse(lines[0]?.slice("TN_FRAME_BUDGET:".length) ?? "{}");
+    // One sample, not two: a frame nobody counted is absent, and the series says so by its count.
+    expect(window.counters.bridgeCrossings.samples).toBe(1);
+    expect(window.counters.bridgeCrossings.p50).toBe(1_810);
+  });
+
+  it("reports every engine work counter per frame under counters.engine, one surface for all sources", () => {
+    const lines: string[] = [];
+    const budget = new FrameBudget({ report: (line) => lines.push(line), reportEvery: 3 });
+    const host = {
+      __THREENATIVE_ENGINE_COST__: true,
+      __tnEngineCost: { cullRigRebuilds: 7 } as Record<string, number>,
+      __tnEngineCounters: () => ({
+        childrenReads: 100 * frame,
+        matrixEvaluations: 9_000 + 40 * frame,
+      }),
+    };
+    let frame = 0;
+    const engine = createEngineCounterReader(host);
+    for (; frame < 3; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      budget.markSimulationEnd(frame * 16 + 1, 1);
+      budget.addRender(10);
+      if (frame === 2) host.__tnEngineCost.cullRigRebuilds = 8;
+      const counted = engine();
+      budget.addCounters({
+        ...(counted === undefined ? {} : { engine: counted }),
+        simulationTick: frame,
+      });
+      budget.endFrame(frame * 16 + 12);
+    }
+
+    const window = JSON.parse(lines[0]?.slice("TN_FRAME_BUDGET:".length) ?? "{}");
+    // Frame 0 is the baseline; frames 1 and 2 each read 100 children and compose 40 matrices.
+    expect(window.counters.engine.childrenReads).toMatchObject({ max: 100, mean: 100, samples: 2 });
+    expect(window.counters.engine.matrixEvaluations.mean).toBe(40);
+    expect(window.counters.engine.cullRigRebuilds).toMatchObject({ max: 1, samples: 2 });
+  });
+
+  it("reads no engine counter unless a playtest asked for them", () => {
+    let reads = 0;
+    const engine = createEngineCounterReader({
+      __tnEngineCounters: () => ({ crossings: ++reads }),
+    });
+    expect([engine(), engine()]).toEqual([undefined, undefined]);
+    expect(reads).toBe(0);
   });
 
   it("leaves the counters off the window when nothing counted them", () => {

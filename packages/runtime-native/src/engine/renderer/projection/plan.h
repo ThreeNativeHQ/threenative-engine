@@ -12,6 +12,8 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -23,6 +25,7 @@
 
 #include "engine/animation/skinning/palette.h"
 #include "engine/animation/skinning/skeleton.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/lights.h"
 #include "engine/scene/material.h"
@@ -72,6 +75,61 @@ struct Decision {
 
 // isSimilarityTransform comes from the skinned palette (engine/animation/skinning/palette.h).
 using tn::engine::isSimilarityTransform;
+
+/**
+ * PRD-753 sizing: each caller's full-scene walks, the nodes they visit and what sent them. Always counted
+ * (an add per walk); `TN_PROJECTION_WALKS=1` (or a build with that definition, for the web Wasm) prints one
+ * `TN_PROJECTION_WALKS {json}` line per 1,000 calls of a caller and starts its next window; a larger value
+ * (`TN_PROJECTION_WALKS=200`) sets the window, for a host that renders too few frames to fill 1,000.
+ */
+struct WalkCounters {
+    enum Trigger { Hierarchy, Cadence, MinMeshes, Structure, Scene, Rig, kTriggers };
+    uint64_t calls = 0, stampWalks = 0, stampNodes = 0, decideWalks = 0, decideNodes = 0;
+    uint64_t stampBy[kTriggers] = {}, decideBy[kTriggers] = {};
+};
+enum class WalkCaller { HostReport, RenderDatabase };
+inline WalkCounters& walkCounters(WalkCaller caller) {
+    static WalkCounters counters[2];
+    return counters[int(caller)];
+}
+/** Every node structureStamp or decide visits, process-wide: a caller's walk is the difference across it. */
+inline uint64_t& walkedNodes() {
+    static uint64_t nodes = 0;
+    return nodes;
+}
+/** The calls per printed window, or 0 when walks are not reported. */
+inline uint64_t walksWindow() {
+#ifdef TN_PROJECTION_WALKS
+    return 1000;
+#else
+    static const uint64_t window = [] {
+        const char* flag = std::getenv("TN_PROJECTION_WALKS");
+        const long long n = flag ? std::atoll(flag) : 0;
+        return n <= 0 ? uint64_t(0) : n == 1 ? uint64_t(1000) : uint64_t(n);
+    }();
+    return window;
+#endif
+}
+/** Counts one call of `caller`; the window's last call prints it when reporting is on, then clears it. */
+inline void countWalkCall(WalkCaller caller) {
+    WalkCounters& c = walkCounters(caller);
+    const uint64_t window = walksWindow();
+    if (++c.calls < window || window == 0) return;
+    static const char* names[] = {"hierarchy", "cadence", "minMeshes", "structure", "scene", "rig"};
+    std::string by[2];
+    for (int k = 0; k < 2; ++k) {
+        const uint64_t* counts = k == 0 ? c.stampBy : c.decideBy;
+        for (int t = 0; t < WalkCounters::kTriggers; ++t)
+            if (counts[t]) by[k] += (by[k].empty() ? "\"" : ",\"") + std::string(names[t]) + "\":" + std::to_string(counts[t]);
+    }
+    std::printf("TN_PROJECTION_WALKS {\"caller\":\"%s\",\"frames\":%llu,\"stampWalks\":%llu,\"stampNodes\":%llu,"
+                "\"decideWalks\":%llu,\"decideNodes\":%llu,\"stampBy\":{%s},\"decideBy\":{%s}}\n",
+                caller == WalkCaller::HostReport ? "hostReport" : "renderDatabase", (unsigned long long)c.calls,
+                (unsigned long long)c.stampWalks, (unsigned long long)c.stampNodes, (unsigned long long)c.decideWalks,
+                (unsigned long long)c.decideNodes, by[0].c_str(), by[1].c_str());
+    std::fflush(stdout);
+    c = WalkCounters{};
+}
 
 namespace detail {
 
@@ -252,6 +310,7 @@ inline constexpr uint64_t kFnvPrime = 0x100000001b3ull;
 
 // What a change to a geometry's data moves: its revision, and each attribute's store, version and length.
 inline uint64_t contentVersionKey(const BufferGeometry& g) {
+    waste::count(waste::counters().contentVersionKeys);
     uint64_t h = kFnvBasis ^ g.revision();
     const auto mix = [&](uint64_t v) { h = (h ^ v) * kFnvPrime; };
     const auto attribute = [&](const BufferAttribute* a) {
@@ -338,6 +397,7 @@ inline std::unordered_map<uint64_t, std::vector<std::weak_ptr<GeometryContentCla
 
 // The class whose bytes equal this geometry's, or a new one it is canonical for.
 inline std::shared_ptr<GeometryContentClass> classify(const std::shared_ptr<BufferGeometry>& geometry, uint64_t epoch) {
+    waste::count(waste::counters().classifies);
     auto& classes = contentClasses();
     // Unique content (a streamed terrain tile) would leave a dead entry per hash: sweep when the table doubles.
     static std::size_t sweepAt = 64;
@@ -371,6 +431,7 @@ inline std::shared_ptr<GeometryContentClass> classify(const std::shared_ptr<Buff
  * drawn from the first unchanged member that resolves to it.
  */
 inline const GeometryContentClass& contentClassOf(const std::shared_ptr<BufferGeometry>& geometry) {
+    waste::count(waste::counters().contentClassCalls);
     BufferGeometry& g = *geometry;
     const uint64_t epoch = detail::uniformEpoch();
     if (g.contentEpoch_ == epoch && g.contentClass_) return *g.contentClass_;
@@ -414,6 +475,7 @@ inline double structureStamp(Object3D& root) {
     while (!stack.empty()) {
         const Object3D* object = stack.back();
         stack.pop_back();
+        ++walkedNodes();
         const auto* mesh = dynamic_cast<const Mesh*>(object);
         mix(object->id() * 2 + (object->visible() ? 1 : 0));
         if (mesh != nullptr) {
@@ -467,6 +529,7 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
     while (!stack.empty()) {
         Object3D* object = stack.back();
         stack.pop_back();
+        ++walkedNodes();
         if (drawnOnly && !object->visible()) continue;
         if (skinnedVerdictsOnly && object->skipsGpuJointSubtree()) {
             ++Object3D::gpuProjectionVisits_;

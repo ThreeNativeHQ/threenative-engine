@@ -187,6 +187,35 @@ describe("remote audio for a worker game (PRD-752)", () => {
     stop();
   });
 
+  // three's Audio.stop() calls source.stop() and clears onended. When the page's source ended in the
+  // same task, the page had already released it, and both ops threw "of undefined" on the page.
+  it("drops a stop that reaches the page after its source ended and was released", async () => {
+    const { created, remote, stop } = connect();
+    const warn = vi.spyOn(console, "warn");
+    const source = remote.createBufferSource();
+    await tick();
+    (created[0] as { end: () => void }).end();
+    source.stop();
+    source.onended = null;
+    await tick();
+    expect(warn).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("still names an op on a handle the page never had", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { port1, port2 } = new MessageChannel();
+    const stop = serveRemoteAudio(port2, fakePage().context as unknown as BaseAudioContext);
+    port1.postMessage({ ops: [{ op: "set", id: 99, key: "onended", value: null }] });
+    await tick();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('"set" failed'),
+      expect.any(TypeError),
+    );
+    stop();
+    port1.close();
+  });
+
   it("moves the listener through the page's real listener", async () => {
     const { context, remote, stop } = connect();
     remote.listener.positionX.linearRampToValueAtTime(3, 4.1);

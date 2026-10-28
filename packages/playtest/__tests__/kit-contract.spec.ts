@@ -6,6 +6,11 @@ import { validatePlaytestScenario } from "../src/scenario.js";
 
 const FULL: IKitContractEntry = {
   actions: [{ clip: "swing", contactTicks: 24, effect: { signal: "attack" }, key: "KeyF", ticks: 40 }],
+  engineCost: {
+    moving: { maxPerFrame: { bridgeCrossings: 1000 } },
+    source: "demo after-values, a fixture bound",
+    still: { maxPerFrame: { bridgeCrossings: 600 }, windows: 1 },
+  },
   feet: ["footL", "footR"],
   move: ["KeyW", "KeyA"],
   restart: { key: "KeyR", resets: [{ equals: 0, id: "state", path: "score" }, { id: "state", lte: 1, path: "elapsed" }] },

@@ -35,6 +35,17 @@ export interface IFrameCounters {
   readonly gpuBytes?: number;
   readonly hostCalls?: number;
   readonly jsAllocBytes?: number;
+  /**
+   * JS->Wasm crossings this frame, from the web back end's own count (`createCrossingReader`).
+   * Absent on a host whose back end keeps no such count.
+   */
+  readonly bridgeCrossings?: number;
+  /**
+   * This frame's engine work counts by name (`createEngineCounterReader`): the web back end's and the
+   * engine's own totals, and `globalThis.__tnEngineCost`, differenced per frame. Absent unless a
+   * playtest asked for them.
+   */
+  readonly engine?: Readonly<Record<string, number>>;
   /** The loop's fixed-step count at the frame's end; absent when the caller did not feed one. */
   readonly simulationTick?: number;
 }
@@ -228,4 +239,72 @@ function readHeapBytes(): number | undefined {
   const perf = globalThis.performance as { memory?: { usedJSHeapSize?: unknown } } | undefined;
   const used = perf?.memory?.usedJSHeapSize;
   return typeof used === "number" && Number.isFinite(used) ? used : undefined;
+}
+
+/**
+ * The web back end's running count of JS->Wasm crossings, when the engine publishes one.
+ *
+ * `@threenative/three-native` installs `globalThis.__tnCrossingCount` (browser-entry.ts) and answers
+ * the total so far, so one frame's crossings are a difference of two reads. It is a different number
+ * from `hostCalls`: this counts the game's and the engine's calls into the engine's own ABI, which
+ * on the owned engine is a Wasm boundary on the game thread, and `hostCalls` counts WebGPU API calls.
+ * A host with no such back end (upstream three, the native player) answers `undefined`, and the
+ * field stays absent rather than reading zero.
+ *
+ * Per frame, not cumulative: the counter rides the frame budget's window, whose series are
+ * per-frame samples, and a cumulative total would climb with the window and say nothing about a frame.
+ */
+/** Set to `true` by a playtest that bounds engine counters (`engineCost`); three-native reads the same name. */
+export const ENGINE_COST_KNOB = "__THREENATIVE_ENGINE_COST__";
+
+interface IEngineCounterHost {
+  readonly __THREENATIVE_ENGINE_COST__?: unknown;
+  /** The web back end's running totals by name (three-native browser-entry.ts). */
+  readonly __tnEngineCounters?: () => Readonly<Record<string, number>>;
+  /** Totals any module counts by name (`bag[name] = (bag[name] ?? 0) + 1`), on every engine. */
+  readonly __tnEngineCost?: Readonly<Record<string, number>>;
+}
+
+/**
+ * One reader for every engine work counter, so a playtest bounds them all from one surface,
+ * `TN_FRAME_BUDGET.counters.engine` (PRD-748's engine-cost row). Each source answers running totals;
+ * this answers one frame's difference per name. Off unless `ENGINE_COST_KNOB` is set, so a shipped
+ * frame pays nothing; the first read of a run is the baseline, not a frame.
+ */
+export function createEngineCounterReader(
+  host: IEngineCounterHost = globalThis as IEngineCounterHost,
+): () => Record<string, number> | undefined {
+  let last: Record<string, number> | undefined;
+  return () => {
+    if (host.__THREENATIVE_ENGINE_COST__ !== true) return undefined;
+    const totals: Record<string, number> = {
+      ...host.__tnEngineCost,
+      ...host.__tnEngineCounters?.(),
+    };
+    const previous = last;
+    last = totals;
+    if (previous === undefined) return undefined;
+    const frame: Record<string, number> = {};
+    // A name first counted this frame started from zero after the baseline.
+    for (const [name, total] of Object.entries(totals))
+      if (Number.isFinite(total)) frame[name] = Math.max(0, total - (previous[name] ?? 0));
+    return frame;
+  };
+}
+
+export function createCrossingReader(
+  host: { readonly __tnCrossingCount?: () => number } = globalThis as {
+    readonly __tnCrossingCount?: () => number;
+  },
+): () => number | undefined {
+  let last: number | undefined;
+  return () => {
+    if (typeof host.__tnCrossingCount !== "function") return undefined;
+    const total = host.__tnCrossingCount();
+    if (!Number.isFinite(total)) return undefined;
+    const previous = last;
+    last = total;
+    // The first read of a run is not a frame's worth of crossings: it is everything since boot.
+    return previous === undefined ? undefined : Math.max(0, total - previous);
+  };
 }

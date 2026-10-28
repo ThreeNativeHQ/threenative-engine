@@ -219,7 +219,7 @@ function hierarchyRevision(object: Object3D): number | undefined {
 
 /**
  * Counts one costly step by name in `globalThis.__tnEngineCost`, the bag a playtest reads per frame
- * (three-native reports it as TN_ENGINE_COST), so a kit that brings back a per-frame walk fails its bound.
+ * (core reports it per frame in TN_FRAME_BUDGET.counters.engine), so a kit that brings back a per-frame walk fails its bound.
  */
 function countEngineCost(name: string): void {
   const host = globalThis as { __tnEngineCost?: Record<string, number> };
@@ -904,6 +904,11 @@ function boundsOf(
   if (cullable.boundingSphere != null) return cullable.boundingSphere;
   const geometry = cullable.geometry;
   if (geometry === undefined) return undefined;
+  const known = versions.get(geometry);
+  // Animation preparation, draw culling and every part sharing this geometry read one frame's
+  // observation: on the Wasm engine each version read crosses the bridge.
+  if (known?.frame === frame && geometry.boundingSphere != null)
+    return known.stale ? DYNAMIC_BOUNDS : geometry.boundingSphere;
   const version = geometry.attributes?.position?.version;
   if (geometry.boundingSphere == null) {
     geometry.computeBoundingSphere?.();
@@ -912,16 +917,12 @@ function boundsOf(
     return geometry.boundingSphere ?? undefined;
   }
   if (version === undefined) return geometry.boundingSphere ?? undefined;
-  const known = versions.get(geometry);
   if (known === undefined) {
     versions.set(geometry, { version, frame, changedLastConsult: false, stale: false });
     return geometry.boundingSphere ?? undefined;
   }
-  const sameFrame = known.frame === frame;
   known.frame = frame;
   if (known.version === version) {
-    // Animation preparation and draw culling share one frame's observation.
-    if (sameFrame) return known.stale ? DYNAMIC_BOUNDS : (geometry.boundingSphere ?? undefined);
     // A buffer that settled after a per-frame rewrite has knowable extents again: scan it once and
     // cull it like any other, rather than exempting it for the rest of the run. Settling also lets
     // the next change count as a fresh one rather than as the second frame of a rewrite.

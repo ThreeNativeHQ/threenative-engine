@@ -410,6 +410,9 @@ export function serveRemoteAudio(port: MessagePort, context: BaseAudioContext): 
   const objects = new Map<number, unknown>([[0, context]]);
   const warned = new Set<string>();
   const parents = new Map<number, number>();
+  // The worker numbers handles in order. One at or below the highest seen that is gone was released
+  // when its source ended; an op the worker sent before it heard that has nothing left to do.
+  let highest = 0;
   let stopped = false;
   const syncClock = (): void => {
     if (!stopped)
@@ -489,7 +492,20 @@ export function serveRemoteAudio(port: MessagePort, context: BaseAudioContext): 
     for (const [child, parent] of parents) if (parent === id) release(child);
   }
 
+  function released(op: PageOp): boolean {
+    const out = (op as { out?: unknown } | undefined)?.out;
+    if (typeof out === "number" && out > highest) highest = out;
+    const id = (op as { id?: unknown } | undefined)?.id;
+    return (
+      (op?.op === "call" || op?.op === "set") &&
+      typeof id === "number" &&
+      id <= highest &&
+      !objects.has(id)
+    );
+  }
+
   function run(op: PageOp): void {
+    if (released(op)) return;
     try {
       switch (op?.op) {
         case "get": {

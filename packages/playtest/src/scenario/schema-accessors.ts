@@ -4,7 +4,7 @@ import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./err
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS, PLAYTEST_PER_ADAPTER_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSightLineAssertion, IPlaytestHudAuditAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSightLineAssertion, IPlaytestEngineCostAssertion, IPlaytestHudAuditAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -962,6 +962,62 @@ export function validateSightLineAssertion(value: unknown, scenarioPath: string,
   return {
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     maxBlockedRatio,
+  };
+}
+
+export function validateEngineCostAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestEngineCostAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxInFrame", "maxPerFrame", "minWindows", "moving", "skipWindows", "source", "still"], scenarioPath, objectPath);
+  const bounds = (key: "maxInFrame" | "maxPerFrame", owner: Record<string, unknown> = record, at = objectPath): Record<string, number> | undefined => {
+    if (!hasKey(owner, key)) return undefined;
+    const table = requireRecord(owner[key], scenarioPath, `${at}.${key}`);
+    const names = Object.keys(table);
+    if (names.length === 0) throw invalidScenario(scenarioPath, `'${at}.${key}' names no counter.`);
+    for (const name of names) {
+      const bound = table[name];
+      if (typeof bound !== "number" || !Number.isFinite(bound) || bound < 0)
+        throw invalidScenario(scenarioPath, `'${at}.${key}.${name}' must be a non-negative number, received ${describeValue(bound)}.`);
+    }
+    return table as Record<string, number>;
+  };
+  const maxPerFrame = bounds("maxPerFrame");
+  const maxInFrame = bounds("maxInFrame");
+  let still: { windows: number; maxPerFrame: Record<string, number> } | undefined;
+  if (hasKey(record, "still")) {
+    const at = `${objectPath}.still`;
+    const stillRecord = requireRecord(record.still, scenarioPath, at);
+    rejectUnknownKeys(stillRecord, ["maxPerFrame", "windows"], scenarioPath, at);
+    const windows = optionalPositiveInteger(stillRecord, "windows", scenarioPath, at);
+    const stillBounds = bounds("maxPerFrame", stillRecord, at);
+    if (windows === undefined || stillBounds === undefined)
+      throw invalidScenario(scenarioPath, `${at} needs 'windows' and 'maxPerFrame'.`);
+    still = { maxPerFrame: stillBounds, windows };
+  }
+  let moving: { maxPerFrame?: Record<string, number>; maxInFrame?: Record<string, number> } | undefined;
+  if (hasKey(record, "moving")) {
+    const at = `${objectPath}.moving`;
+    const movingRecord = requireRecord(record.moving, scenarioPath, at);
+    rejectUnknownKeys(movingRecord, ["maxInFrame", "maxPerFrame"], scenarioPath, at);
+    if (still === undefined) throw invalidScenario(scenarioPath, `${at} needs 'still': the moving windows are the ones after it.`);
+    const movingPerFrame = bounds("maxPerFrame", movingRecord, at);
+    const movingInFrame = bounds("maxInFrame", movingRecord, at);
+    if (movingPerFrame === undefined && movingInFrame === undefined)
+      throw invalidScenario(scenarioPath, `${at} must bound at least one counter.`);
+    moving = { ...present("maxPerFrame", movingPerFrame), ...present("maxInFrame", movingInFrame) };
+  }
+  if (maxPerFrame === undefined && maxInFrame === undefined && still === undefined && moving === undefined)
+    throw invalidScenario(scenarioPath, `${objectPath} must bound at least one counter in 'maxPerFrame', 'maxInFrame', 'still' or 'moving'.`);
+  const source = requireString(record, "source", scenarioPath, objectPath);
+  if (source.trim().length < 12)
+    throw invalidScenario(scenarioPath, `'${objectPath}.source' must say where the bounds came from.`);
+  return {
+    ...present("maxPerFrame", maxPerFrame),
+    ...present("maxInFrame", maxInFrame),
+    ...present("minWindows", optionalPositiveInteger(record, "minWindows", scenarioPath, objectPath)),
+    ...present("skipWindows", optionalNonNegativeInteger(record, "skipWindows", scenarioPath, objectPath)),
+    source,
+    ...present("still", still),
+    ...present("moving", moving),
   };
 }
 

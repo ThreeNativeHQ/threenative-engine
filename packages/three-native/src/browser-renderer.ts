@@ -33,7 +33,8 @@ type HostCall =
   | "_tnw_web_render_target"
   | "_tnw_web_read_target"
   | "_tnw_web_read_target_take"
-  | "_tnw_web_capture_face";
+  | "_tnw_web_capture_face"
+  | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
   readonly specialHTMLTargets: Record<string, unknown>;
@@ -49,7 +50,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 5;
+export const WEB_HOST_ABI = 6;
 
 /** The page query a worker game's init copies into its scope (core worker.ts). */
 const PAGE_SEARCH = "__THREENATIVE_PAGE_SEARCH";
@@ -100,6 +101,21 @@ function unsupported(name: string): never {
 }
 
 /** Defines the renderer class over one loaded module; the module owns one device and one canvas. */
+/** A scene environment as the bake record reads it: the engine keys its bake by texture and version. */
+interface IBakedEnvironment {
+  readonly version: number;
+  addEventListener?(type: "dispose", listener: () => void): void;
+}
+
+/** Environments a draw saw baked, at the version it saw; a disposal retires the engine's bake too. */
+const bakedEnvironments = new WeakMap<IBakedEnvironment, number>();
+
+function markBaked(environment: IBakedEnvironment): void {
+  if (!bakedEnvironments.has(environment))
+    environment.addEventListener?.("dispose", () => bakedEnvironments.delete(environment));
+  bakedEnvironments.set(environment, environment.version);
+}
+
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
@@ -209,6 +225,7 @@ export function defineWebRenderer(
         // lamp maps redrawn and their draws, every shadow draw (the sun's are the rest), and the GPU
         // milliseconds of each part in the sample `render.timestamp` reports, -1 until one resolves.
         // `lampMapMin` and `lampMapMax` are the edges of the lamp maps the engine sized from their footprint.
+        // `keptMaps` counts the maps (sun or lamp) kept from the last frame because nothing they draw changed.
         shadows: {
           lampRedraws: 0,
           lampDraws: 0,
@@ -217,6 +234,7 @@ export function defineWebRenderer(
           lampGpuMs: -1,
           lampMapMin: 0,
           lampMapMax: 0,
+          keptMaps: 0,
         },
         // The last frame's recorded passes (PRD-754): the draws the main pass recorded into its bundle, why its key
         // moved (0 held, 1 draw order, 2 uniform offsets, 3 visible count, 4 other), the aux and velocity draws
@@ -229,6 +247,8 @@ export function defineWebRenderer(
           recordMs: 0,
           shadowEncodeMs: 0,
         },
+        // The bytes of per-draw uniforms the last frame uploaded.
+        uniformBytes: 0,
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -276,6 +296,8 @@ export function defineWebRenderer(
       readonly device: { readonly lost: Promise<{ reason: string; message: string }> };
     };
     #deviceLost: (info: { reason: string; message: string }) => void = () => undefined;
+    /** The environment a preparation gave up on at its deadline, until a drawn frame finds it baked. */
+    #bakingEnvironment: IBakedEnvironment | undefined;
     #pixelRatio = 1;
     #width: number;
     #height: number;
@@ -527,6 +549,12 @@ export function defineWebRenderer(
         ),
       );
       this.info.frame += 1;
+      if (this.#bakingEnvironment !== undefined && module._tnw_web_frame(12) === 0) {
+        // An overlay draw has no environment and says nothing; another sky ends the watch.
+        const drawnEnvironment = (scene as { environment?: unknown }).environment;
+        if (drawnEnvironment === this.#bakingEnvironment) markBaked(this.#bakingEnvironment);
+        if (drawnEnvironment != null) this.#bakingEnvironment = undefined;
+      }
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
@@ -537,6 +565,8 @@ export function defineWebRenderer(
       shadows.shadowDraws = module._tnw_web_frame(27);
       shadows.lampMapMin = module._tnw_web_frame(28);
       shadows.lampMapMax = module._tnw_web_frame(29);
+      shadows.keptMaps = module._tnw_web_frame(40);
+      this.info.engine.uniformBytes = module._tnw_web_frame(41);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         this.#gpuSamples = gpuSamples;
@@ -727,6 +757,17 @@ export function defineWebRenderer(
       deadlineMs = Number.POSITIVE_INFINITY,
       afterDraw?: () => void,
     ): Promise<boolean> {
+      // The engine keeps a bake per texture and version, so a restart into the same sky has nothing
+      // to wait for. It must not draw to learn that: on a GPU that retires no frame the gate declines
+      // every draw and the loop below would hold the restart for its whole budget.
+      const environment = (scene as { environment?: IBakedEnvironment | null }).environment;
+      if (environment != null && bakedEnvironments.get(environment) === environment.version)
+        return true;
+      // A bake an earlier preparation is waiting on, or already waited its budget for, is still
+      // running: the engine finishes it whether or not anyone waits, so a restart into it does not
+      // wait a second budget.
+      if (environment != null && environment === this.#bakingEnvironment) return false;
+      if (environment != null) this.#bakingEnvironment = environment;
       // Lantern Vale's bake drew the main pass at 4x MSAA before its TRAA graph was installed: 39
       // pipelines the game never drew, compiled synchronously behind the cover.
       this[PIPELINE_POST]?.();
@@ -756,10 +797,18 @@ export function defineWebRenderer(
           const baked =
             this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
           afterDraw?.();
-          if (baked) return true;
+          if (baked) {
+            if (environment != null) {
+              markBaked(environment);
+              if (this.#bakingEnvironment === environment) this.#bakingEnvironment = undefined;
+            }
+            return true;
+          }
           // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
+        // The bake keeps running after the caller gave up on it: the first drawn frame that finds it
+        // done records it (`#bakingEnvironment` stays set), so the next restart does not wait again.
         return false;
       } finally {
         this.info.engine.environmentBake = false;

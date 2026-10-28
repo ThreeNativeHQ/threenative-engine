@@ -1,5 +1,12 @@
-import { AudioListener, Object3D, PositionalAudio, Audio as ThreeAudio, type Vector3 } from "three";
-import { hostGestureTarget } from "./platform.js";
+import {
+  AudioListener,
+  Object3D,
+  PositionalAudio,
+  Audio as ThreeAudio,
+  AudioContext as ThreeAudioContext,
+  type Vector3,
+} from "three";
+import { hostGestureTarget, hostWindow } from "./platform.js";
 
 /**
  * Bus-level dynamics compression, every value the game's.
@@ -226,6 +233,19 @@ type PooledVoice = {
   positional: boolean;
 };
 
+/**
+ * three's `AudioContext.getContext()` reads `window.AudioContext`. A worker has no `window`: its host
+ * installs `globalThis.AudioContext` instead, so a game on the three.js engine adopts that one.
+ */
+function adoptWorkerAudioContext(): void {
+  if (hostWindow() !== undefined || typeof globalThis.AudioContext !== "function") return;
+  try {
+    ThreeAudioContext.getContext();
+  } catch {
+    ThreeAudioContext.setContext(new globalThis.AudioContext());
+  }
+}
+
 export class AudioBus {
   readonly listener: AudioListener;
   #camera: Object3D;
@@ -254,6 +274,7 @@ export class AudioBus {
       throw new RangeError("maxVoices must be a positive integer.");
     this.#maxVoices = maxVoices;
     this.#camera = options.camera;
+    if (options.listener === undefined) adoptWorkerAudioContext();
     this.listener = options.listener ?? new AudioListener();
     if (options.compressor !== undefined) this.#installCompressor(options.compressor);
     const source = options.source ?? hostGestureTarget;

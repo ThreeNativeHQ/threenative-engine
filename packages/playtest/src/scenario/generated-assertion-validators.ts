@@ -239,6 +239,15 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "maxBlockedRatio": (value: unknown) => typeof value === "number" && Number.isFinite(value),
   }),
+  "engineCost": Object.freeze({
+    "maxPerFrame": (value: unknown) => isRecord(value),
+    "maxInFrame": (value: unknown) => isRecord(value),
+    "minWindows": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value > 0,
+    "skipWindows": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "still": (value: unknown) => isRecord(value),
+    "moving": (value: unknown) => isRecord(value),
+    "source": (value: unknown) => typeof value === "string" && value.trim() !== "",
+  }),
   "hudAudit": Object.freeze({
     "minContrast": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "noDebugText": (value: unknown) => value === true,

@@ -1,0 +1,167 @@
+{
+  "comment": "The animation MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.3, packed from this workspace and installed from that tarball into a clean directory — never read from src/. `recommended` is the ordered loop the shipped agent docs describe. Regenerate with `pnpm tsx scripts/capture-blender-mcp-tools.ts animation`.",
+  "version": "0.1.3",
+  "serverInfo": {
+    "name": "threenative-animation",
+    "version": "0.1.3"
+  },
+  "recommended": ["animation_inspect", "animation_attach", "animation_open_view"],
+  "tools": ["animation_attach", "animation_inspect", "animation_open_view"],
+  "inputSchemas": {
+    "animation_inspect": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["file"]
+    },
+    "animation_attach": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "anchor": {
+          "default": "right-hand",
+          "type": "string",
+          "enum": ["right-hand", "left-hand", "head", "hips", "right-foot", "left-foot"]
+        },
+        "attached": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keys": {
+          "maxItems": 2000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "attachment": {
+                "type": "string",
+                "enum": ["attached", "detached"]
+              },
+              "clip": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "time": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 600
+              },
+              "transform": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": ["position", "rotation", "scale"]
+              }
+            },
+            "required": ["clip", "time", "transform"]
+          }
+        },
+        "log": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recipe": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "animation_open_view": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "anchor": {
+          "default": "right-hand",
+          "type": "string",
+          "enum": ["right-hand", "left-hand", "head", "hips", "right-foot", "left-foot"]
+        },
+        "attach": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "descriptions": {
+    "animation_inspect": "Inspect a local rigged GLB: bones, skeleton landmarks, clips with durations, root-motion travel and in-place detection, meshes, skins and extensions. Reads one local file and writes nothing.",
+    "animation_attach": "Attach a prop GLB to a bone, with per-clip keyed offsets, and bake it into an ordinary GLB beside the source. Writes the v4 op log (<model>.anim.json) next to the source GLB and the baked GLB; a version 3 pose recipe loads as the same ops and still bakes.",
+    "animation_open_view": "Start the animation calibrator page on 127.0.0.1 and return its URL. A human drags the prop into place there; the same operations an agent calls are what the page records."
+  }
+}

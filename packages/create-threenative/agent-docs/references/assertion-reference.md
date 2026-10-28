@@ -838,6 +838,36 @@ Bounds the share of the run in which solid geometry stood between the camera and
 }
 ```
 
+### `engineCost`
+
+Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's counters.engine (and counters.bridgeCrossings): JS-to-Wasm crossings, children reads, scene-walk visits, hierarchy moves, matrix composes, handle shares, content classification, GPU allocations, physics crossings and any counter an engine module adds to globalThis.__tnEngineCost. Each window must hold every bound; a run with fewer windows than minWindows, or a window missing a bounded counter, fails closed. A failure names the counter, the window and the top caller of the TN_BRIDGE_CENSUS before it. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** browser.console
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `maxPerFrame` | { [counter: string]: number } | no |
+| `maxInFrame` | { [counter: string]: number } | no |
+| `minWindows` | positive integer | no |
+| `skipWindows` | non-negative integer | no |
+| `still` | { windows: positive integer, maxPerFrame: { [counter: string]: number } } | no |
+| `moving` | { maxPerFrame?: { [counter: string]: number }, maxInFrame?: { [counter: string]: number } } | no |
+| `source` | string | yes |
+
+
+```json
+{
+  "engineCost": {
+    "maxPerFrame": {
+      "bridgeCrossings": 2000,
+      "childrenReads": 60
+    },
+    "skipWindows": 1,
+    "source": "shooter after-value 1,024 per frame on 2026-10-27, about 2x headroom"
+  }
+}
+```
+
 ### `hudAudit`
 
 Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.

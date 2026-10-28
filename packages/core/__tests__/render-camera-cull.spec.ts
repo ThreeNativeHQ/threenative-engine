@@ -336,6 +336,36 @@ describe("render camera cull", () => {
     },
   );
 
+  // On the Wasm engine each `attribute.version` read crosses the bridge. Adventure's rig parts share
+  // geometry, and every part read the version again in the same frame: 102 of 136 reads a frame were
+  // repeats, and the flicker scenario failed on TN_BRIDGE_WARNING.
+  it("reads a shared geometry's buffer version once per frame", () => {
+    const dynamic = dynamicMesh([0, 0, 0, 1, 0, 0, 0, 1, 0], -10);
+    const twins = [1, 2].map(() => {
+      const twin = new Mesh(dynamic.mesh.geometry, new MeshBasicMaterial());
+      twin.position.set(0, 0, -10);
+      return twin;
+    });
+    const scene = sceneWith(dynamic.mesh, ...twins);
+    const cull = new RenderCameraCull();
+    cull.apply(scene, camera(), 720);
+    let reads = 0;
+    let version = dynamic.attribute.version;
+    Object.defineProperty(dynamic.attribute, "version", {
+      configurable: true,
+      get: () => {
+        reads += 1;
+        return version;
+      },
+      set: (value: number) => {
+        version = value;
+      },
+    });
+    cull.prepareAnimation(scene, camera(), 720);
+    cull.apply(scene, camera(), 720);
+    expect(reads).toBe(1);
+  });
+
   it("culls a rewritten buffer again once it stops changing", () => {
     // The dynamic exemption is for a buffer that *is* rewritten every frame. One that settles has a
     // knowable bound again, and a startup burst of rewrites must not exempt it forever.

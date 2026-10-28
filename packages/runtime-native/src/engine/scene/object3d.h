@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 // Object3D, Layers and EventDispatcher, ported from three@0.185.1 src/core/{Object3D,Layers,
 // EventDispatcher}.js. Ownership is a heap record per object: an Object3D never moves, and its
 // transform members are plain fields, so `&object.position` is the same address on every access and
@@ -266,11 +268,19 @@ public:
     // Renderer-owned Bone boundaries only; explicit world queries always use the eager chain.
     std::weak_ptr<bool> gpuJointBoundary;
     uint64_t gpuJointHierarchy = 0;
+    uint64_t subtreeVersion_ = 0;
+    /** Counts one hierarchy change at `node` and stamps it on `node` and every ancestor. */
+    static void markHierarchy(Object3D* node);
     bool skipsGpuJointSubtree() const {
         const auto valid = gpuJointBoundary.lock();
         return valid && *valid && gpuJointHierarchy == hierarchyVersion();
     }
-    inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0, gpuBoundaryVisits_ = 0;
+    inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0;
+    // Counted by the matrix walk, which runs on the job pool's threads (updateMatrixWorldVisibleJobs).
+    inline static std::atomic<uint64_t> gpuBoundaryVisits_ = 0;
+    // Set on a pool thread for one job: the evaluation stamp every node of that job's walk takes, and that
+    // thread's compose count, which the join adds to matrixEvaluations_ so the count matches one thread.
+    inline static thread_local uint64_t walkStamp_ = 0, threadComposes_ = 0;
     // Executed GPU-lazy projection, validation, and admission/revocation node inspections.
     inline static uint64_t gpuProjectionVisits_ = 0, gpuValidationVisits_ = 0, gpuMaintenanceVisits_ = 0;
     [[nodiscard]] static uint64_t joinDependencyVisits() { return joinDependencyVisits_; }
@@ -314,6 +324,9 @@ public:
     [[nodiscard]] static uint64_t hierarchyVersion();
     /** Where `hierarchyVersion()` lives, so a back end (Wasm) reads it in place instead of asking. */
     [[nodiscard]] static const uint64_t* hierarchyVersionAddress();
+    /** The `hierarchyVersion()` of the last add, remove, attach or destroy under this node (or at it), so a
+     * walk kept for one subtree (a rig, the camera's parts) holds while another subtree changes. */
+    [[nodiscard]] uint64_t subtreeVersion() const { return subtreeVersion_; }
     std::string name;  // not a renderer input, so a plain field: writes do not bump `revision()`
 
     Object3D* parent = nullptr;
@@ -460,6 +473,15 @@ public:
      * either mode: markStatic composed its subtree and a re-arm composes it again. Answers the nodes visited.
      */
     uint32_t updateMatrixWorldVisible(bool force, bool prune);
+    /**
+     * updateMatrixWorldVisible over the job pool (PRD-752 phase 4): breadth-first from here until the frontier
+     * holds enough independent subtrees, then each subtree is one job. Each node composes from its parent alone,
+     * so the matrices, revisions, visit and compose counts are those of the one-thread walk. A walk that
+     * composed under kParallelWalkComposes matrices last frame, a pool with no workers, or a pose observer
+     * runs the plain walk: a hidden node costs a visit, not a compose, so visits do not measure the work.
+     */
+    uint32_t updateMatrixWorldVisibleJobs(bool force, bool prune);
+    static constexpr uint32_t kParallelWalkComposes = 1024;
     /** What a subclass derives from its world matrix (a camera's view, a skinned mesh's bind inverse), after a walk. */
     virtual void afterMatrixWorld() {}
 
@@ -483,6 +505,10 @@ private:
     uint64_t id_ = 0;
     uint64_t revision_ = 0;
     std::vector<std::shared_ptr<Object3D>> owned_;  // shared-owned children, held while attached
+    uint32_t walkNodes_ = 0;  // nodes the last updateMatrixWorldVisibleJobs from here visited
+    uint32_t walkComposes_ = 0;  // matrices that walk composed
+    // The walk's step at this node: -1 when its subtree waits, else the force its children take.
+    int visitMatrixWorldVisible(bool force, bool prune);
     void own(Object3D& child);
     void disown(Object3D& child);
 };

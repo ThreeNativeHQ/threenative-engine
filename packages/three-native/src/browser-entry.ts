@@ -24,6 +24,7 @@ import { ColorManagement } from "./browser-math.js";
 import {
   PIPELINE_POST,
   RENDER_AGAIN,
+  type WebHostModule,
   defineWebRenderer,
   isWebHostModule,
 } from "./browser-renderer.js";
@@ -111,6 +112,18 @@ export function bindUpstreamExports(
 }
 
 /** Boots the Wasm module and returns every upstream export name bound over it. */
+/**
+ * PRD-752 phase 4: `on (N)` names the job pool's workers; `off (<reason>)` says why it has none. The
+ * threaded engine runs on shared memory, which only a cross-origin-isolated page has.
+ */
+export function webThreadsReport(module: object, isolated: boolean): string {
+  const memory = (module as { wasmMemory?: WebAssembly.Memory }).wasmMemory;
+  if (typeof SharedArrayBuffer === "undefined" || !(memory?.buffer instanceof SharedArrayBuffer))
+    return `off (${isolated ? "single-thread engine build" : "not cross-origin isolated"})`;
+  const workers = (module as Partial<WebHostModule>)._tnw_web_threads?.() ?? 0;
+  return workers > 0 ? `on (${workers})` : "off (no spare hardware thread)";
+}
+
 export async function bindWebEngine(
   createModule: () => Promise<TnAbiModule>,
   names: readonly string[],
@@ -121,14 +134,22 @@ export async function bindWebEngine(
   if (memory !== undefined)
     (globalThis as { __tnWasmMemoryBytes?: () => number }).__tnWasmMemoryBytes = () =>
       memory.buffer.byteLength;
+  // Core's TN_FRAME_BUDGET carries the verdict.
+  (globalThis as { __tnWebThreads?: string }).__tnWebThreads = webThreadsReport(
+    module,
+    globalThis.crossOriginIsolated === true,
+  );
   const runtime = createWasmRuntime(module);
-  const { classes, wrap, collect, crossings } = defineBrowserClasses(
+  const { classes, wrap, collect, crossings, counters } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
     engineCatalog,
   );
   // Engine crossings so far, for a bench page's per-frame bridgeCalls (the pair's crossing budget).
   (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount = crossings;
+  // The engine's running work totals by name, which core puts per frame into TN_FRAME_BUDGET.counters.engine.
+  (globalThis as { __tnEngineCounters?: () => Record<string, number> }).__tnEngineCounters =
+    counters;
   defineTypeFlags(classes);
   // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
   // buffers with the object, so the call has nothing to release (core's projection mirror makes it).

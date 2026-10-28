@@ -53,6 +53,25 @@ describe("Rapier crossings per step", () => {
     expect(ctx.physics.simulation.crossings).toEqual({ forceResets: 1, transformReads: 1 });
   });
 
+  it("adds each step's crossings to the engine-cost totals a playtest bounds", async () => {
+    const host = globalThis as { __tnEngineCost?: Record<string, number> };
+    const { ctx, plugin } = await setup();
+    town(ctx, 50);
+    const crate = new Object3D();
+    crate.position.set(0, 4, 0);
+    new RigidBody3D({ object: crate, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1) });
+    plugin.update?.(ctx, 1 / 60);
+    const before = { ...host.__tnEngineCost };
+    for (let tick = 0; tick < 10; tick += 1) plugin.update?.(ctx, 1 / 60);
+    // Ten steps of one awake dynamic body: one force reset and one pose read each.
+    expect((host.__tnEngineCost?.physicsForceResets ?? 0) - (before.physicsForceResets ?? 0)).toBe(
+      10,
+    );
+    expect(
+      (host.__tnEngineCost?.physicsTransformReads ?? 0) - (before.physicsTransformReads ?? 0),
+    ).toBe(10);
+  });
+
   it("reports the exact pose Rapier holds for every body on every step", async () => {
     const { ctx, plugin } = await setup();
     const walls = town(ctx, 8);

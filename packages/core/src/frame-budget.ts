@@ -266,6 +266,8 @@ export interface IFrameBudgetWindow {
       };
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
+  /** The web engine's job pool: `on (N)` workers, or `off (<reason>)`; absent off the Wasm engine. */
+  readonly threads?: string;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
   /** Fixed simulation ticks in this window multiplied by the loop's step, when supplied. */
@@ -439,6 +441,10 @@ export interface IFrameBudgetWindow {
     readonly hostCalls?: IFrameBudgetSummary;
     readonly gpuBytes?: IFrameBudgetSummary;
     readonly jsAllocBytes?: IFrameBudgetSummary;
+    /** JS->Wasm crossings per frame, when the back end counts them (`createCrossingReader`). */
+    readonly bridgeCrossings?: IFrameBudgetSummary;
+    /** Engine work counts per frame by name, when a playtest asked for them (`createEngineCounterReader`). */
+    readonly engine?: Readonly<Record<string, IFrameBudgetSummary>>;
     readonly simulationTick?: number;
   };
 }
@@ -660,6 +666,9 @@ export class FrameBudget {
   #hostCalls: Ring;
   #gpuBytes: Ring;
   #jsAllocBytes: Ring;
+  #bridgeCrossings: Ring;
+  #engine = new Map<string, Ring>();
+  readonly #capacity: number;
   #countersThisFrame: IFrameCounters | undefined;
   // The latest tick fed this window. It is not a boundary count and does not sum across frames: it
   // is the loop's fixed-step count at the last frame that fed one, so consecutive window closes read
@@ -716,6 +725,7 @@ export class FrameBudget {
     this.minFrames = requirePositiveInteger(options.minFrames, 1, "minFrames");
     this.hitchMs = requirePositiveNumber(options.hitchMs, DEFAULT_HITCH_MS, "hitchMs");
     const capacity = requirePositiveInteger(options.capacity, DEFAULT_CAPACITY, "capacity");
+    this.#capacity = capacity;
     this.#report = options.report ?? ((line) => console.log(line));
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
@@ -755,6 +765,7 @@ export class FrameBudget {
     this.#hostCalls = new Ring(capacity);
     this.#gpuBytes = new Ring(capacity);
     this.#jsAllocBytes = new Ring(capacity);
+    this.#bridgeCrossings = new Ring(capacity);
     this.#phaseRings = {
       hostGap: new Ring(capacity),
       overlay: new Ring(capacity),
@@ -978,6 +989,7 @@ export class FrameBudget {
       ["hostCalls", counters.hostCalls],
       ["gpuBytes", counters.gpuBytes],
       ["jsAllocBytes", counters.jsAllocBytes],
+      ["bridgeCrossings", counters.bridgeCrossings],
     ] as const) {
       if (value === undefined) continue;
       if (!Number.isFinite(value) || value < 0)
@@ -1133,6 +1145,16 @@ export class FrameBudget {
     if (counters?.hostCalls !== undefined) this.#hostCalls.push(counters.hostCalls);
     if (counters?.gpuBytes !== undefined) this.#gpuBytes.push(counters.gpuBytes);
     if (counters?.jsAllocBytes !== undefined) this.#jsAllocBytes.push(counters.jsAllocBytes);
+    if (counters?.bridgeCrossings !== undefined)
+      this.#bridgeCrossings.push(counters.bridgeCrossings);
+    for (const [name, value] of Object.entries(counters?.engine ?? {})) {
+      let ring = this.#engine.get(name);
+      if (ring === undefined) {
+        ring = new Ring(this.#capacity);
+        this.#engine.set(name, ring);
+      }
+      ring.push(value);
+    }
     this.#framesInWindow += 1;
     this.#maybeReport();
     return sample;
@@ -1195,14 +1217,28 @@ export class FrameBudget {
       this.#gpuBytes.count === 0 ? undefined : this.#gpuBytes.summarize(this.#scratch);
     const jsAllocBytes =
       this.#jsAllocBytes.count === 0 ? undefined : this.#jsAllocBytes.summarize(this.#scratch);
+    const bridgeCrossings =
+      this.#bridgeCrossings.count === 0
+        ? undefined
+        : this.#bridgeCrossings.summarize(this.#scratch);
     const simulationTick = this.#simulationTick;
     const counters =
       hostCalls === undefined &&
       gpuBytes === undefined &&
       jsAllocBytes === undefined &&
+      bridgeCrossings === undefined &&
+      this.#engine.size === 0 &&
       simulationTick === undefined
         ? undefined
         : {
+            ...(bridgeCrossings === undefined ? {} : { bridgeCrossings }),
+            ...(this.#engine.size === 0
+              ? {}
+              : {
+                  engine: Object.fromEntries(
+                    [...this.#engine].map(([name, ring]) => [name, ring.summarize(this.#scratch)]),
+                  ),
+                }),
             ...(gpuBytes === undefined ? {} : { gpuBytes }),
             ...(hostCalls === undefined ? {} : { hostCalls }),
             ...(jsAllocBytes === undefined ? {} : { jsAllocBytes }),
@@ -1250,6 +1286,10 @@ export class FrameBudget {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
+      // The Wasm engine's job pool (PRD-752 phase 4), as its facade reports it: `on (N)` or `off (<reason>)`.
+      ...(typeof (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads === "string"
+        ? { threads: (globalThis as { __tnWebThreads?: string }).__tnWebThreads }
+        : {}),
       ...(this.#simulation === undefined
         ? {}
         : {
@@ -1382,6 +1422,8 @@ export class FrameBudget {
     this.#hostCalls.reset();
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();
+    this.#bridgeCrossings.reset();
+    this.#engine.clear();
     this.#simulationTick = undefined;
     this.#gpuStaleInWindow = 0;
     this.#renderSkipsInWindow = 0;

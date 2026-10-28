@@ -13,6 +13,7 @@
 // notify through the Euler member's own setters.
 
 #include "engine/renderer/projection/plan.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/projected_cull.h"
 #include "engine/abi/bindings.h"
 #include "engine/abi/pooled_shared.h"
@@ -31,6 +32,7 @@
 #include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
 #include "engine/scene/texture.h"
+#include "engine/foundation/job_pool.h"
 #include "engine/scene/object3d.h"
 
 #include <array>
@@ -163,6 +165,77 @@ ProjectedCull& projectedCullOf(Object3D& root) {
     return entry.second;
 }
 
+// core's AutoBatch movement guard (auto-batch.ts) on the engine: each merged source's local state as it
+// was merged, compared in place. A JS check reads each field across the bridge (a few microseconds a
+// source, so 8,000 sources took 40 frames a lap); here a lap of the same fields costs nanoseconds a source.
+struct SourceGuard {
+    // position, quaternion, scale, visible, castShadow, receiveShadow, renderOrder, layers mask,
+    // matrixAutoUpdate off, and the manual matrix when it is off: what core's `writeStamp` reads.
+    struct Entry {
+        std::weak_ptr<Object3D> owner;  // expired: the source was freed, which counts as a change
+        Object3D* object = nullptr;
+        const Mesh* mesh = nullptr;     // the cast, done once
+        const Object3D* parent = nullptr;
+        const void* geometry = nullptr;
+        const void* material = nullptr;
+        std::array<double, 15> lanes{};
+        bool manual = false;
+        std::array<double, 16> matrix{};
+        bool out = false;
+    };
+    std::vector<Entry> entries;
+    std::size_t cursor = 0;
+
+    static void lanesOf(Object3D& object, std::array<double, 15>& into) {
+        into = {object.position.x, object.position.y, object.position.z, object.quaternion.x,
+                object.quaternion.y, object.quaternion.z, object.quaternion.w, object.scale.x,
+                object.scale.y, object.scale.z, object.visible() ? 1.0 : 0.0, object.castShadow() ? 1.0 : 0.0,
+                object.receiveShadow() ? 1.0 : 0.0, double(object.renderOrder()), object.layers().mask};
+    }
+    static void watch(Object3D& object, Entry& entry) {
+        object.materializeLocalTransform();
+        entry.owner = object.weak_from_this();
+        entry.object = &object;
+        entry.mesh = dynamic_cast<const Mesh*>(&object);
+        entry.parent = object.parent;
+        entry.geometry = entry.mesh ? entry.mesh->geometry.get() : nullptr;
+        entry.material = entry.mesh ? entry.mesh->material.get() : nullptr;
+        lanesOf(object, entry.lanes);
+        entry.manual = !object.matrixAutoUpdate;
+        if (entry.manual)
+            for (std::size_t element = 0; element < 16; ++element) entry.matrix[element] = object.matrix.elements[element];
+    }
+    // As core's `!==`, except that a NaN held still is still.
+    static bool held(double now, double then) { return now == then || (std::isnan(now) && std::isnan(then)); }
+    /** Whether the source still holds the state it was watched with. */
+    static bool same(const Entry& entry) {
+        if (entry.owner.expired()) return false;
+        Object3D& object = *entry.object;
+        object.materializeLocalTransform();
+        if (object.parent != entry.parent || object.matrixAutoUpdate == entry.manual) return false;
+        if (entry.mesh && (entry.mesh->geometry.get() != entry.geometry || entry.mesh->material.get() != entry.material))
+            return false;
+        std::array<double, 15> lanes;
+        lanesOf(object, lanes);
+        for (std::size_t lane = 0; lane < lanes.size(); ++lane)
+            if (!held(lanes[lane], entry.lanes[lane])) return false;
+        if (entry.manual)
+            for (std::size_t element = 0; element < 16; ++element)
+                if (!held(object.matrix.elements[element], entry.matrix[element])) return false;
+        return true;
+    }
+};
+
+// The guard for an AutoBatch root, kept while the root lives, as projectedCullOf keeps the cull's.
+SourceGuard& sourceGuardOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, SourceGuard>> guards;
+    for (auto it = guards.begin(); it != guards.end();)
+        it = it->second.first.expired() ? guards.erase(it) : std::next(it);
+    auto& entry = guards[&root];
+    if (entry.first.expired()) entry = {root.weak_from_this(), SourceGuard{}};
+    return entry.second;
+}
+
 // three's graph events (`added`, `removed` on the child; `childadded`, `childremoved` with `child` on
 // the parent), which the engine's own dispatcher fires from add, remove and attach. A language
 // listens per object and type through tn_set_callback, as it does to AnimationMixer's events.
@@ -243,18 +316,30 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
     // process was added, removed or attached, and let the cadence catch a geometry or material swap.
     const uint64_t hierarchy = Object3D::hierarchyVersion();
     const bool settled = hierarchy == host.hierarchy && minMeshes == host.minMeshes && host.sinceDecide + 1 < kDeclineRescanFrames;
+    using Walks = projection::WalkCounters;
+    Walks& walks = projection::walkCounters(projection::WalkCaller::HostReport);
     if (settled) {
         ++host.sinceDecide;
     } else {
+        uint64_t& nodes = projection::walkedNodes();
+        const uint64_t before = nodes;
         const double stamp = projection::structureStamp(root);
+        ++walks.stampWalks;
+        walks.stampNodes += nodes - before;
+        ++walks.stampBy[hierarchy != host.hierarchy ? Walks::Hierarchy : minMeshes != host.minMeshes ? Walks::MinMeshes : Walks::Cadence];
         if (stamp != host.stamp || minMeshes != host.minMeshes || ++host.sinceDecide >= kDeclineRescanFrames) {
+            ++walks.decideBy[stamp != host.stamp ? Walks::Structure : minMeshes != host.minMeshes ? Walks::MinMeshes : Walks::Cadence];
+            const uint64_t at = nodes;
             host.decision = projection::decide(root, minMeshes);
+            ++walks.decideWalks;
+            walks.decideNodes += nodes - at;
             host.stamp = stamp;
             host.minMeshes = minMeshes;
             host.sinceDecide = 0;
         }
         host.hierarchy = hierarchy;
     }
+    projection::countWalkCall(projection::WalkCaller::HostReport);
     const projection::Decision& d = host.decision;
     std::vector<std::pair<std::string, Value>> exact;
     for (const auto& [reason, count] : d.exact) exact.emplace_back(reason, Value::of(double(count)));
@@ -334,6 +419,36 @@ void registerObject3D(ClassBinding& b) {
             counts.push_back(Value::of(double(count)));
         return Value::array(std::move(counts));
     };
+    // Engine-internal: core's AutoBatch guard. `__tnGuardWatch(sources)` replaces the watched list with
+    // each source's state now; `__tnGuardCheck(limit)` compares up to `limit` sources from where the last
+    // check stopped and answers the indices that changed, which it stops watching.
+    b.methods["__tnGuardWatch"] = [](void* self, const Args& a, Store& store) {
+        SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
+        guard.entries.clear();
+        guard.cursor = 0;
+        for (const Value& ref : refsOf(a.at(0))) {
+            SourceGuard::Entry entry;
+            SourceGuard::watch(objectArg(store, ref), entry);
+            guard.entries.push_back(std::move(entry));
+        }
+        return Value::of(double(guard.entries.size()));
+    };
+    b.methods["__tnGuardCheck"] = [](void* self, const Args& a, Store&) {
+        SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
+        std::vector<double> changed;
+        const std::size_t count = guard.entries.size();
+        const double limit = number(a.at(0));
+        const std::size_t checks = count == 0 ? 0 : limit >= double(count) ? count : limit > 0 ? std::size_t(limit) : 0;
+        for (std::size_t checked = 0; checked < checks; ++checked) {
+            SourceGuard::Entry& entry = guard.entries[guard.cursor];
+            const std::size_t index = guard.cursor;
+            guard.cursor = (guard.cursor + 1) % count;
+            if (entry.out || SourceGuard::same(entry)) continue;
+            entry.out = true;
+            changed.push_back(double(index));
+        }
+        return Value::list(std::move(changed));
+    };
     b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
         projectedCullOf(*as<Object3D>(self)).restoreAfterDraw();
         return Value{};
@@ -380,12 +495,16 @@ void registerObject3D(ClassBinding& b) {
             {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
             {"layers", at(&o->layers())}});
     };
-    // Engine-internal: the process-wide count of adds, removes, attaches and destroys. Core keeps a walk
-    // that only finds who is under whom (the camera pass's rig and camera-part sets) while it holds still.
-    b.getters["__hierarchyRevision"] = [](void*) { return Value::of(double(Object3D::hierarchyVersion())); };
+    // Engine-internal: the count of adds, removes, attaches and destroys at or under this object. Core keeps a
+    // walk that only finds who is under whom (the camera pass's rig and camera-part sets) while it holds still.
+    b.getters["__hierarchyRevision"] = [](void* self) { return Value::of(double(as<Object3D>(self)->subtreeVersion())); };
     // Engine-internal: the process-wide count of world-matrix composes. A playtest reads it per frame, so a
     // walk that composes nodes nothing draws (a hidden batch source) fails its bound.
     b.getters["__matrixEvaluations"] = [](void*) { return Value::of(double(Object3D::matrixEvaluations())); };
+    // Engine-internal, PRD-752: the job pool's shared runs and their items, process-wide, so a playtest bounds
+    // jobs per frame; both stay 0 on a build or a page with no pool threads.
+    b.getters["__jobPoolRuns"] = [](void*) { return Value::of(double(JobPool::runs())); };
+    b.getters["__jobPoolItems"] = [](void*) { return Value::of(double(JobPool::items())); };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };
     b.getters["receiveShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->receiveShadow()); };
@@ -430,6 +549,25 @@ void registerObject3D(ClassBinding& b) {
     // The process-wide hierarchy counter's address: the Wasm back end keeps `children` and `parent` until it moves.
     b.getters["__hierarchy"] = [](void*) {
         return Value::of(double(reinterpret_cast<uintptr_t>(Object3D::hierarchyVersionAddress())));
+    };
+    // The engine's running work counts as "name@address,...": the Wasm back end reads each total's low
+    // word in place every frame, so core's TN_FRAME_BUDGET.counters.engine costs no crossing (PRD-748).
+    b.getters["__engineCounters"] = [](void*) {
+        auto& w = tn::engine::waste::counters();
+        const std::pair<const char*, const void*> totals[] = {
+            {"contentClassOf", &w.contentClassCalls}, {"contentVersionKeys", &w.contentVersionKeys},
+            {"classify", &w.classifies},              {"share", &w.shareCalls},
+            {"shareHits", &w.shareHits},              {"shareMints", &w.shareMints},
+            {"buffers", &w.bufferAllocs},             {"textures", &w.textureAllocs},
+            {"matrixEvaluations", &Object3D::matrixEvaluations_}};
+        std::string text;
+        for (const auto& [name, address] : totals) {
+            if (!text.empty()) text += ',';
+            text += name;
+            text += '@';
+            text += std::to_string(reinterpret_cast<uintptr_t>(address));
+        }
+        return Value{Value::Kind::String, 0, text};
     };
     b.getters["type"] = [](void* self) {
         return Value{Value::Kind::String, 0, std::string(as<Object3D>(self)->type())};
@@ -558,7 +696,7 @@ void registerObject3D(ClassBinding& b) {
     // `__tnUpdateMatrixWorld(force, prune)` answers the nodes it visited; with `prune` (core's "visible" mode) a
     // hidden subtree waits for the frame it shows (Object3D::updateMatrixWorldVisible).
     b.methods["__tnUpdateMatrixWorld"] = [](void* self, const Args& a, Store&) {
-        return Value::of(double(as<Object3D>(self)->updateMatrixWorldVisible(boolean(a, 0, false), boolean(a, 1, false))));
+        return Value::of(double(as<Object3D>(self)->updateMatrixWorldVisibleJobs(boolean(a, 0, false), boolean(a, 1, false))));
     };
     // Read current world values without leasing the source's live transform view.
     b.methods["__tnCopyMatrixWorld"] = [](void* self, const Args& a, Store& store) {

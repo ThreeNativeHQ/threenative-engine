@@ -584,26 +584,27 @@ Matrix4& Matrix4::compose(const Vector3& position, const Quaternion& quaternion,
     return *this;
 }
 
-Matrix4& Matrix4::decompose(Vector3& position, Quaternion& quaternion, Vector3& scale) {
-    double* te = elements.data();
+namespace {
+// One body for both overloads, inlined into each so the shared-scratch one compiles as before.
+[[gnu::always_inline]] inline Matrix4& decomposeInto(Matrix4& m, Vector3& position, Quaternion& quaternion, Vector3& scale,
+                                                  Matrix4& normalized) {
+    double* te = m.elements.data();
     position.x = te[12];
     position.y = te[13];
     position.z = te[14];
-    const double det = determinantAffine();
+    const double det = m.determinantAffine();
     if (det == 0) {
         scale.set(1, 1, 1);
         quaternion.identity();
-        return *this;
+        return m;
     }
-    static Vector3 scratch;
-    double sx = scratch.set(te[0], te[1], te[2]).length();
-    const double sy = scratch.set(te[4], te[5], te[6]).length();
-    const double sz = scratch.set(te[8], te[9], te[10]).length();
+    double sx = Vector3(te[0], te[1], te[2]).length();
+    const double sy = Vector3(te[4], te[5], te[6]).length();
+    const double sz = Vector3(te[8], te[9], te[10]).length();
     // if the determinant is negative, one scale has to be inverted
     if (det < 0) sx = -sx;
     // scale the rotation part
-    static Matrix4 normalized;
-    normalized.copy(*this);
+    normalized.copy(m);
     const double invSX = 1 / sx;
     const double invSY = 1 / sy;
     const double invSZ = 1 / sz;
@@ -620,7 +621,17 @@ Matrix4& Matrix4::decompose(Vector3& position, Quaternion& quaternion, Vector3& 
     scale.x = sx;
     scale.y = sy;
     scale.z = sz;
-    return *this;
+    return m;
+}
+}  // namespace
+
+Matrix4& Matrix4::decompose(Vector3& position, Quaternion& quaternion, Vector3& scale) {
+    static Matrix4 normalized;
+    return decomposeInto(*this, position, quaternion, scale, normalized);
+}
+
+Matrix4& Matrix4::decompose(Vector3& position, Quaternion& quaternion, Vector3& scale, Matrix4& normalized) {
+    return decomposeInto(*this, position, quaternion, scale, normalized);
 }
 
 Matrix4& Matrix4::makePerspective(double left, double right, double top, double bottom, double near,

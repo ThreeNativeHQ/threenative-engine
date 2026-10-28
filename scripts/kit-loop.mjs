@@ -42,7 +42,7 @@ export const goalsFor = (baseline) => [
     better: "lower",
   },
   {
-    key: "k2ScenarioPct",
+    key: "k2ScenarioPct", // gitleaks:allow (a KPI field id, not a credential; see .gitleaksignore)
     short: "K2 scenarios",
     label: "K2 kit scenarios green on the first cold build",
     unit: "%",

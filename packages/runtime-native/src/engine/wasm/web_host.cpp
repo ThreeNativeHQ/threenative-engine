@@ -4,6 +4,7 @@
 // desktop; this file owns only device bring-up and the canvas surface. The test host
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
+#include "engine/foundation/job_pool.h"
 #include "engine/renderer/render_database.h"
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
@@ -38,8 +39,9 @@ namespace {
 // signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
 // 2 = tnw_web_render's overlay argument (39295d1f3).
 // 3 = startup compilation. 4 = compilation plus temporal input scale in renderer state.
-// 5 = tnw_web_set_stable_passes (PRD-754's A/B knob).
-constexpr uint32_t kWebHostAbi = 5;
+// 5 = tnw_web_threads (PRD-752).
+// 6 = tnw_web_set_stable_passes (PRD-754's A/B knob).
+constexpr uint32_t kWebHostAbi = 6;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -197,6 +199,9 @@ Camera* cameraOf(const tn_handle_t* handle) {
 
 /** The web host ABI this module speaks; the facade refuses a module whose number differs. */
 extern "C" uint32_t tnw_web_host_abi() { return kWebHostAbi; }
+
+/** The job pool's workers (PRD-752 phase 4), started on the first job: 0 in the single-thread build. */
+extern "C" uint32_t tnw_web_threads() { return tn::engine::JobPool::defaultWorkers(); }
 
 /**
  * Starts adapter and device requests on the canvas `selector` names; poll until Ready or Failed.
@@ -693,7 +698,7 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * the post graph (13), the frames it has begun (14), 1 when the next resolve has history (15), and the last
  * sub-pixel jitter in pixels, x (16) and y (17). Then the samples the scene draws with (18): 1 while the temporal pass
  * replaces the multisampling the renderer asked for.
- * The temporal pass's counted frame follows the lamp fields, 30 to 33.
+ * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
  */
 /** PRD-754's A/B knob, off by default: 1 replays retained rows and recorded shadow bundles. */
 extern "C" void tnw_web_set_stable_passes(int on) {
@@ -761,6 +766,10 @@ extern "C" double tnw_web_frame(int field) {
         case 63: return renderer->lastFrame().recordMs;
         case 64: return renderer->lastFrame().shadowEncodeMs;
         case 65: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
+        // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
+        // 41: the bytes of per-draw uniforms it uploaded.
+        case 40: return double(renderer->lastFrame().keptShadowMaps);
+        case 41: return double(renderer->lastFrame().uniformBytes);
         default: return 0;
     }
 }

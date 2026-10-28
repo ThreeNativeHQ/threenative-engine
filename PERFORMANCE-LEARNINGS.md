@@ -54,6 +54,19 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - **A 60 Hz panel caps what you can see.** Measure frame cost uncapped (`--disable-gpu-vsync
   --disable-frame-rate-limit`, headed, real GPU) when the target is above the panel rate. On a desktop at load 25-40,
   paired A/B moved to the laptop's Iris Xe; the NVIDIA reading is still owed for those levers.
+- **A traced bucket of many tiny JS calls is a rank, not a size.** On 2026-10-27 the trace gave bridge glue 3.6-4.2 ms a
+  frame; counting every wrapper entry gave about 0.4-0.5 ms. Count the calls and price them on a bench before you size
+  a glue lever from a trace.
+- **A named `memcmp` in a Wasm profile is a variable-length compare.** clang inlines constant-size compares (the
+  128-byte matrix checks), so the `memcmp` function the profiler names holds string and name compares. On the shooter
+  it was uniform names in `putNodes`, not buffers. Attribute its samples to callers before you guess the data.
+- **Per-step physics cost moves with host load; read substeps first.** The same shooter step cost 108-184 µs on the
+  quiet laptop and 330-910 µs on the desktop at load 17-57, and the fixed-step catch-up ran 1.26-2.71 substeps a frame
+  there against 1.00-1.05. A physics bucket that grows only on a loaded host is the host.
+- **A thread-pool lever needs tests that hold without threads.** CI also runs the native-engine suite as
+  single-thread Wasm under node (`emcmake ... -DTN_ENGINE_CORE_ONLY=ON`, target `tn-native-engine-core-tests`). There
+  `JobPool(3)` has 0 workers, no walk shares out, and `std::thread` aborts. Gate the pool's checks on the build
+  (`__EMSCRIPTEN_PTHREADS__`) and run that build before you push.
 
 ## 2026-10-27 shooter campaign (PR #574, worker mode, web Wasm engine)
 
@@ -70,6 +83,19 @@ All levers are engine-layer, each with a spec that fails before the fix. Paired 
 | Camera cull keeps its rig map while the hierarchy holds still | `4fb0c6f26` | cull 2.47-2.69 → 1.85-1.92 ms (laptop, uncapped) | KEEP |
 | Bridge cache: `children`/`parent` and JS-only properties read from JS; meter; lint | `b088dc46f` | crossings 3,190 → 1,810, p50 9.95 → 8.9 ms, p95 19.55 → 13.45 ms | KEEP |
 | Rapier: a fixed or sleeping body's pose is read once, not every step; forces cleared only on dynamic bodies (same change as bughunt 05, `f683c14ca`) | `8501273d2` | Rapier calls 2,260 → 240 a step (the 144 walls were 95%); `readVisibleTransforms` 93 → 8 µs (node); worker physics update 455/459/448 → 366/389/362 µs a step (laptop Iris Xe, uncapped, load 2, 3 pairs); frame p50 and drawn fps inside noise (GPU-bound at 30-35 fps) | KEEP |
+| Web renderer converts a number clear colour once, not per pass | `d02647f41` | laptop, 3 pairs: mean 4.96/4.11/4.02 → 4.46/4.05/3.89 ms | KEEP |
+| Camera cull tests its frustum and forward ray in plain numbers (no engine Ray/Frustum/Sphere calls) | `66e637840` | laptop, 3 pairs: cull 0.78/0.76/0.76 → 0.66/0.64/0.64 ms | KEEP |
+| Camera cull caches each rig part's visible chain | not kept | laptop, 2 valid pairs: cull 0.81/0.79 unchanged; the profile's 0.68 ms `visibleInWorld` was misattribution | REJECT (tie) |
+| AutoBatch guard compares in C++, a whole lap a frame | not kept | guard still fills its 0.5 ms budget (0.58-0.65 ms, C++ costs ~70 ns a source in cache misses); staleness 40 → 1-3 frames, mean tie | REJECT (tie) |
+| AutoBatch guard compares in C++, one lap per settle window (3 frames) | this row's commit | laptop: guard 0.60-0.62 → 0.18-0.23 ms in 6/6 runs; mean 5 of 6 valid pairs −0.27 to −0.98 ms; staleness 18-75 → 3 frames | KEEP |
+| The sun's ordinary shadow map is kept while nothing it draws changed, as lamps were (render lane); its signature hashes each word through a finalizer | this commit | laptop Iris Xe, 3 pairs, load 6.5-9.2, 97-99 °C: GPU 27.2/29.2/28.5 → 25.9/26.0/28.4 ms, drawn fps 32.8/30.2/30.6 → 34.2/32.9/30.3, main pass span 1.93/2.04/1.99 → 1.93/1.87/1.81 ms; shooter shadow draws 46 → 0 per frame, direct WebGPU state calls about 250 → 30, uploads 230 → 196 KB; visual judge NEUTRAL | KEEP |
+| Bridge glue per crossing: heap views by identity, word-zeroed scratch, loan lane copy, in-place single set, address on the object | this lane | crossing mean 466 → 340 ns, 4/4 laptop pairs; about 0.04-0.13 ms a frame at 311-1,000 crossings (estimate) | KEEP |
+| A node the engine raycasts nothing for (Group, Bone, light, camera) keeps three's empty `raycast` | this lane | platformer crossings 873-894 → 690-707 a frame (`intersectObject` 309 → 131); spec 7 → 0 | KEEP |
+| A material uniform resolves by a name hash taken when the stage is laid out, not by a string compare per field per draw (`putNodes`) | `eb4cf11c6` | 12 fields with 2 bound: name compares 12 → 2 (spec); `putNodes` held 56-59% of the frame's `memcmp` samples, so about 0.30-0.35 ms a frame (estimate: profile share x measured `memcmp`); no A/B (laptop at 98 °C) | KEEP (count) |
+| The matrix walk shares out on the job pool (`JobPool`, min(threads - 1, 3) workers) when the last walk recomposed 1,024 nodes or more | `ce6386149`, `136617cac` | Wasm microbench, 9,387 nodes all moved: 0.77 → 0.22 ms on 4 threads; 95% hidden: 0.023 ms on one thread vs 0.037 on four, so the gate counts composes, not visits; shooter A/B void (load 26-87) | KEEP (micro) |
+| A texture setter moves `version` only on a real change, and the environment preparer waits on no draw for a sky that is baked or baking | `3df32abef`, `c2b1e0298` | the shooter's restart restated `mapping`/`colorSpace`, moved the sky 10 → 14, dropped the kept bake and waited its 15 s budget; debug-restart on SwiftShader 0/3 → 3/3 | KEEP |
+| The camera cull answers a shared geometry from the frame's observation before it reads the buffer `version` | `68ccbf696` | `version` reads 3 → 1 per shared geometry per frame (spec); 102+12 of adventure's 127 repeat reads | KEEP (count) |
+| Waste counters (6 classes) on the shooter: crossings 457/frame (0.37 ms, an estimate: count x per-call cost), transform visits 9,387/frame (0.31 ms), uniform write attempts 1,360/frame, geometry classification 0.02 ms, GPU allocations 0 | this lane | see `### 2026-10-27 — Wasted work, counted by class` below | DIAGNOSTIC |
 | `kMaxFramesOnGpu` 2 → 3 | not built | absorbs ~40 ms GPU stalls at +1 frame of latency; stalls come from outside the engine | REJECT |
 
 Rapier export names lie: wasm-bindgen folds identical getters into one export, so `rawintegrationparameters_dt`,
@@ -80,6 +106,16 @@ replay (about 66 calls, 7 µs a step) and the shooter enemies' per-step `telepor
 (5 zero-motion controller moves, about 35 µs a step). Ceiling: the laptop split after the fix is character
 controller 76-188 µs, `world.step` 77-99 µs and JS glue about 150 µs a step, so no physics bucket reaches 0.3 ms a
 frame at one step a frame.
+
+Renderer classes counted on the shooter (render lane, 2026-10-27; a JS probe on every WebGPU call, desktop, and a
+named-Wasm worker profile at load 15-21): 36 passes per frame, 24 of them post targets that core's bloom and local
+exposure nodes draw one `render()` each (0.58 ms of engine CPU, 0.45 ms of JS); the sun's 4096² map redrew 46 casters
+every frame although 238 of 240 frames left it unchanged (fixed above); uniforms 33 writes, 230 KB, 0.09 ms, and every
+draw's slice changes with the view matrix, so a dirty-range upload saves nothing until view-dependent values leave the
+per-draw block; render bundles are replayed while the scene holds still and re-recorded while the camera moves
+(about 190 draws), 0.05 ms. Not taken, under 0.3 ms: one command encoder for all target renders (about 0.07 ms).
+The `putNodes` field scan was taken later as the name hash in the table above. The renderer's whole C++ share is
+about 1.7 ms of a 4.9 ms worker frame; the next class is the pass count of the post chain, which the look nodes own.
 
 Not causes, ruled out by counts: readback staging buffers (steady while skips swing), pipeline or shader creation
 (zero after the first frames), heap growth (floor 76.9 MB across 13 major GCs). Wasm threads were off (no `-pthread`,
@@ -136,6 +172,63 @@ no COOP/COEP); that lane is open.
   clipAction exemption) took 825 and 340 crossings; the next candidates are each under 40 per frame.
 - Knob: `__THREENATIVE_BRIDGE_CACHE__ = false` turns the whole cache off for a paired A/B in one code state.
 
+### 2026-10-27 — Bridge glue per crossing: heap views by identity, word-zeroed scratch, loans copied lane by lane — KEEP
+- Where: `packages/three-native/src/browser-backend.ts` `createWasmRuntime` and the value loans, PRD-748.
+- Census first (lane head, shooter worker, NVIDIA, idle, `profile:wasm-page --calls`): 311 crossings per frame. The
+  reads the engines lane named on `327167c20` are gone (`DirectionalLight.intensity` 424, `.color` 212,
+  `matrixAutoUpdate` 181, `parent`/`renderOrder` 90 each: none in the top 30; `isScheduled` 127 → 3.9). So what is
+  left is the cost inside each crossing, not a class of crossings.
+- Sizing (node CPU profile of the real Wasm ABI module, 6 crossing kinds): JS glue 67% of a crossing, Wasm 22%. The
+  top JS self time was `view()`/`wordView()` reading two `.buffer`s per use, `alloc`'s `fill` per scratch slot, the
+  loan's `read`/`write` lists, and a one-item list per `set`.
+- Change: the heap views are made again only when `HEAPU8` is replaced (one identity test); a call's scratch (at most
+  64 bytes) is zeroed with word stores; a loan copies its lanes with no list between; `set` writes its one value in
+  place; an engine object's address is an own property instead of a WeakMap entry.
+- Result: paired A/B on the quiet laptop (load 0.3-1.5, node 20, pinned to one CPU, 4 alternating pairs, 15 rounds of
+  20,000 calls each): `updateWorldMatrix` 682-714 → 543-565 ns, `getWorldPosition` 1,585-1,650 → 1,161-1,198,
+  `__tnVisibleInWorld` 322-342 → 237-246, attribute `version` 222-239 → 134-144, a material `opacity` write 766-788 →
+  564-576; a lane read+write 16-17 → 5-9 ns. Crossing mean 733 → 535 ns (-27%), 4/4 pairs.
+- Ceiling: at 311 (idle) to about 1,000 (play) crossings per frame this saves 0.06-0.2 ms per frame, and the glue now
+  costs about 0.1-0.4 ms per frame (estimates: count x per-call cost). The DevTools traces that read 6.5 ms of glue run
+  with async stack tagging, which inflates JS self time several times; read them as a rank, not a size.
+- Rejected on the same bench: a special-step-free method wrapper (-5%, 35 duplicated lines, under 0.02 ms per frame)
+  and a ref kept per handle slot in `keyOf` (-17% on methods that return `this`, but about 60 such crossings per
+  shooter frame: 5 µs; the entry below says the same). What remains is the crossing count itself.
+- Bench: `packages/three-native/tests/browser-backend-glue-bench.ts <abi module> [rounds]`; for a CPU profile with
+  line numbers, bundle it with esbuild first (tsx's transform puts a file on one line). It also times a cached read
+  (31 ns) beside a crossing (171-1,490 ns).
+- Gap closed (glue lane, after this entry): the profiler traced 3.6-4.2 ms of glue a frame, the counts gave 0.1-0.24
+  ms. The wrapper entries are now counted too (`methodCalls`, `propertyReads` on `TN_FRAME_BUDGET.counters.engine`,
+  opt-in with the engine-cost knob). Laptop, one run per kit, moving: shooter 389 calls, 3,158 reads, 455 crossings;
+  platformer 325, 3,619, 655. 83-90% of entries never reach Wasm. Priced all at the crossing mean they make 1.2-1.3 ms,
+  3x under the trace; counted glue is about 0.37-0.49 ms (estimate). The rest of the traced figure is trace overhead,
+  so no glue cut is left to make.
+
+### 2026-10-27 — Regression net: the kit contract's engine-cost row — GUARD
+- Where: `packages/playtest/src/kit-contract.ts` (`engine-cost`), `evaluators/engine-cost.ts`, bounds in
+  `create-threenative/template-playtests/contract.json`, PRD-748.
+- One counter surface: `TN_FRAME_BUDGET.counters.engine`, one getter per source (core `createEngineCounterReader`).
+  Read it there before you add a stdout line or a census for a new cost class, and add the class's counter to it.
+- Bounds: each kit's after-values from 2 NVIDIA runs, max(1.5x, value + floor), boot window skipped. A floor that
+  hides a fix's red is too loose: the `childrenReads` floor went 10 → 5 when the AutoBatch poll read 11 against 12
+  on minimal. Adventure needs no such tightening to catch crossings and hierarchy moves, but its picker reads
+  `children` 108 times a frame, so the AutoBatch poll (+40) hides under its 1.5x there; the red shows on minimal.
+- What does not separate: a once-per-run cost inside the boot window (the 5 s projection line). Guard those
+  with a unit spec instead.
+
+### 2026-10-27 — A node with no engine raycast crosses nothing for a ray (three-native back end) — KEEP
+- Where: `packages/three-native/src/browser-backend.ts` `defineTraversal`, PRD-748.
+- Census (platformer, GPU sweep of the engine-cost row): `call Raycaster.intersectObject` 309 a frame from
+  `ScenePicker` `#hitTest`. Each Group and Bone under a pick target crossed to the engine, whose
+  `Object3D::raycast` answers nothing; three's `Object3D.raycast` is empty.
+- Change: the engine raycasts `Mesh`, `Line`, `Sprite` (each a `Mesh` in C++) and `LOD`, and their kinds, found
+  on the catalog chain; any other node gets three's empty `raycast`. Without a catalog every node still asks.
+- Proof: `bridge-reads.spec.ts` "ray tests": 7 crossings for 7 non-mesh nodes before, 0 after; the 8 raycasting
+  kinds still cross once each. Platformer engine-cost row, NVIDIA, one run per arm: crossings per frame 873-894 →
+  690-707 (windows 2-4), `intersectObject` 309 → 131. About 0.06 ms a frame (estimate: 185 x 0.34 µs).
+- Next on the same path, not taken: `#treeFor` reads `morphTargetInfluences` (131 a frame on the platformer) and
+  the position `version` per mesh per ray, about 0.05 ms a frame together.
+
 ### 2026-10-27 — A scratch object's death leaves the hierarchy counter alone (native engine) — KEEP
 - Where: `runtime-native/src/engine/scene/object3d.cpp` `Object3D::~Object3D`, PRD-748.
 - Cause: the destructor moved `hierarchyVersion` on every destruction, and `InstancedMesh::raycast` builds a stack
@@ -158,6 +251,63 @@ no COOP/COEP); that lane is open.
 - Cause: after the bridge cache, a quiet shooter frame makes only tens of handle-returning crossings, so the ceiling is
   a few microseconds a frame. A per-call speedup inside a crossing does not remove the crossing (see the 2026-10-14 decode
   reuse entry). Revisit only with a measured class of handle reads that the cache cannot keep.
+### 2026-10-27 — Incremental projection change set and state buckets — REJECT (deferred at sizing)
+- Where: [PRD-753](docs/PRDs/Unreal/performance/PRD-753-a-scene-change-updates-only-the-batches-it-touches.md), `projection::decide`, `structureStamp`, `contentClassOf`; counter `TN_PROJECTION_WALKS` (commit `9907ab1f2`).
+- Result: the three functions take 0.06% to 0.32% of the game thread on Midway and the shooter, native and web, two runs each (gate 2%). `RenderDatabase::batch` decides 0 to 25 times per 1,000 calls, nearly all on its 60-call cadence; `hostProjectionReport` is not called, because both games set `renderer.projection: false`.
+- Cause: the cited 10.8% predates or misattributes the PRD-613 hold above; once `batch` holds its decision, no scene walk is left to remove. The largest piece is `contentClassOf` from `RenderDatabase::record`, once per drawn mesh per frame (0.14% to 0.26%).
+- Insight: count the walks before porting a change set. A profile share names a function, not how often its caller runs.
+
+### 2026-10-27 — Wasted work on the shooter, counted by class — DIAGNOSTIC (2 of 6 classes have a fix in another lane)
+- Where: lane "waste", worktree `.claude/worktrees/pr574-waste`; counters in
+  `packages/runtime-native/src/engine/foundation/waste_counters.h` (first printed as `TN_WASTE:`, one line per 300 drawn
+  frames; now running totals read in place into `TN_FRAME_BUDGET.counters.engine`, no stdout line),
+  `TN_FRAME_BUDGET.counters.bridgeCrossings` (core), and two reused ones (`TN_PROJECTION.matrixWorld.visited`,
+  `TN_FRAME_SPANS`); scratch patches for the two sibling-owned classes. `shareHits`/`shareMints` first counted inside
+  `identity()`, which `adoptAlias` also calls, so hits exceeded calls (22,796 vs 23,580); they now count in `share()` only.
+- Result (shooter, worker `index.html`, uncapped, desktop at load 31, 900 steady frames):
+  contentClassOf 276/frame with 132 `contentVersionKey` recomputes and 0 `classify`; `share` 76/frame all cached
+  (0.2 mints); render bundles 0.4 encodes vs 25 replays/frame; GPU buffers/textures 0/frame after warm-up;
+  transform visits 9,387/frame = `sceneUpdate` 0.31 ms; crossings 457/frame ≈ 0.37 ms (estimate: count x per-call cost); TSL uniform syncs 34/frame,
+  1,360 write attempts/frame of which 99.6 % are unchanged (the array `uniformLanes()` allocates is the cost).
+- Cause: the three classes the brief named as leads are about 4 µs, 6 µs and (uniform) ~0.1 ms, estimates (count x per-call cost), not measurements;
+  the two ≥0.3 ms buckets are a bridge cache (bridge's file) and the authored `markStatic` freeze the shooter never
+  asks for (a settled-subtree freeze the engine decides is feature-sized, not a lane lever).
+- Insight: **count the class before naming a fix.** "share allocates a std::string per returned handle" is true and
+  worth 4 µs/frame because every call is a cache hit and most type names fit the SSO buffer. The same reading says
+  where the 0.3 ms actually is.
+- Artifact: `~/.cache/tmp-tn/pr574-waste/counters.md`, `patches/{tsl-uniforms-counters,render-bundle-counters}.patch`,
+  `summarize.py`.
+
+
+### 2026-10-27 — TSL object uniforms re-laned once per frame instead of once per render — HANDED OVER (smooth60's file)
+- Where: `packages/three-native/src/tsl-uniforms.ts`, `liveUniforms.sync` (smooth60 owns the file; patch
+  described in `~/.cache/tmp-tn/pr574-waste/patches/README.md`, not committed by this lane).
+- Ceiling: 50 render syncs a frame, 40 write attempts per sync = 2,000 a frame, and 99.6 % of them unchanged;
+  the per-attempt `uniformLanes()` array and compare is the cost, about 0.08-0.15 ms/frame.
+- Result (shooter, counter on, same wasm, 900 drawn frames): write attempts **2,000 -> 800 per frame**; the
+  remaining 700/frame are `onRenderUpdate` callbacks that run per render by design. CPU not measured: the
+  laptop was at its 97 °C admission ceiling with three other lanes' jobs, and the desktop stood at load 25-35,
+  so no qualified pair was possible for a lever under 1 % of the frame.
+- Cause: the object-uniform re-lane loop exists for in-place `Color`/vector edits, which a game can only make
+  between frames; the later passes of one frame compared the same lanes again.
+- Insight: it also changes when an in-place edit reaches a later pass of the same frame, so it needs a visual
+  judge before it ships — a counter win is not a verdict.
+- Artifact: `patches/tsl-uniforms-counters.patch` (the counter), `patches/README.md` (the fix), `probe3.log` /
+  `probe5.log` in the lane scratch.
+- Status at the PR #574 merge: still not committed. PR #574 holds a different `tsl-uniforms.ts` change (the lane
+  scratch is reused, and each sink write gets its own snapshot); the once-per-frame re-lane stays open for a follow-up
+  with its visual judge.
+
+### 2026-10-27 — Rapier step grew from 2.1 to 3.4-6.6 ms a frame in profiler round 2 — NOT A CAUSE (host load)
+- Where: `packages/physics`, step counters `physicsStepUs`, `physicsAwakeBodies`, `physicsDynamicBodies`,
+  `physicsBodies`, `physicsColliders` (lane/pr574-physics2 `5cf55b577`, opt-in with the engine-cost knob; not in PR #574).
+- Result: shooter kit, live clock, headed WebGPU. Quiet laptop (load 0.1-2.1), 3 arms x 2 runs (idle, firing,
+  walk+fire): 1.00-1.05 substeps, 108-184 µs a step, 110-223 µs a frame, 0 awake and 0 dynamic bodies, 150-162 bodies.
+  A shatter arm: 45 awake shards add 0.05-0.08 ms a step. Loaded desktop (load 17-57), 4 runs: 1.26-2.71 substeps,
+  330-910 µs a step, 0.42-1.91 ms a frame.
+- Cause: per-frame physics is substeps x per-step cost, and both grow with host contention. Load 53-57 at 2-3
+  substeps reproduces the traced 3.4 ms. Awake bodies do not track the step.
+- Insight: no engine fix. The next cost on that row is the host gap (`TN_HOST_GAP`) on the loaded host.
 
 ### 2026-10-27 — Batching holds a projecting decision; render thread on by default — KEEP
 - Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), `RenderDatabase::batch`, `player/run.cpp`.

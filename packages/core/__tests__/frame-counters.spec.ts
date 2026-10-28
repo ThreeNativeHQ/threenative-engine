@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { FrameCounters, counterDeviceOf } from "../src/profiling/FrameCounters.js";
+import {
+  FrameCounters,
+  counterDeviceOf,
+  createCrossingReader,
+} from "../src/profiling/FrameCounters.js";
 
 interface IFakeEncoder extends Record<string, unknown> {
   drawIndexed: () => void;
@@ -30,6 +34,25 @@ function fakeDevice(): IFakeDevice {
     },
   };
 }
+
+describe("crossing counter", () => {
+  it("reports each frame's JS->Wasm crossings, not the run's total, and skips the first read", () => {
+    let total = 12_000;
+    const crossings = createCrossingReader({ __tnCrossingCount: () => total });
+    // The first read is everything since boot: a run has no previous frame to difference.
+    expect(crossings()).toBeUndefined();
+    total += 1_810;
+    expect(crossings()).toBe(1_810);
+    total += 1_790;
+    expect(crossings()).toBe(1_790);
+  });
+
+  it("answers undefined on a host whose back end counts no crossings", () => {
+    const crossings = createCrossingReader({});
+    expect(crossings()).toBeUndefined();
+    expect(crossings()).toBeUndefined();
+  });
+});
 
 describe("FrameCounters", () => {
   it("counts every command-encoder and queue call of one frame, and resets between frames", () => {

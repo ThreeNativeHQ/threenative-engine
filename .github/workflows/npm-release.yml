@@ -160,6 +160,7 @@ jobs:
       #   @threenative/ueformat
       #   @threenative/ui
       #   create-threenative
+      #   threenative-animation-mcp
       #   threenative-blender-mcp
       #   threenative-engine-mcp
       # END GENERATED WORKSPACE PUBLISH SET

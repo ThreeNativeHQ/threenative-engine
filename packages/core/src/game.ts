@@ -36,7 +36,12 @@ import { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { getPlatform, hostDocument, hostWindow } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
-import { FrameCounters, counterDeviceOf } from "./profiling/FrameCounters.js";
+import {
+  FrameCounters,
+  counterDeviceOf,
+  createCrossingReader,
+  createEngineCounterReader,
+} from "./profiling/FrameCounters.js";
 import {
   SPANS,
   SpanRecorder,
@@ -541,8 +546,11 @@ export interface IGame<
   readonly ui: IGameUi;
   /** Rebuilds the requested scene from its initial state, then merges an optional carry patch. */
   goto(name: string, options?: IGotoOptions<TState>): Promise<void>;
-  /** Boot into `name` instead of `config.start` on the next `start()`. Hot reload's restore path. */
-  resumeScene(name: string): void;
+  /**
+   * Boot into `name` instead of `config.start` on the next `start()`. Hot reload's restore path.
+   * `revealed`: the session already showed its HUD, so the restarted game keeps the cover lifted.
+   */
+  resumeScene(name: string, options?: { readonly revealed?: boolean }): void;
   start(): Promise<void>;
   pause(): void;
   resume(): void;
@@ -836,9 +844,15 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
    * available here: it throws before `start()`, and it resets state to the destination's
    * `initialState`, which would discard the very state being restored.
    */
-  resumeScene(name: string): void {
+  resumeScene(name: string, options?: { readonly revealed?: boolean }): void {
     if (this.#config.scenes[name] === undefined) throw new Error(`Unknown scene '${name}'.`);
     this.#resumeScene = name;
+    // An edit restarts the game, and its HUD would blank until this startup lifted the cover
+    // again: seconds after every save on a slow GPU. A session that showed its HUD keeps it.
+    // The updated module may have connected its UI already and told a waiting HUD to hide.
+    if (options?.revealed !== true) return;
+    this.#uiRevealed = true;
+    if (this.#uiBridge?.hasPeer()) this.#postUiStartup();
   }
 
   get state(): GameStore<TState> {
@@ -1821,6 +1835,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // work a shipped build must not pay for a diagnostic it did not ask for.
     const frameCounters =
       spans === undefined ? undefined : FrameCounters.install(counterDeviceOf(renderer.raw));
+    // The engine's own ABI crossings ride every budget window, not the spans flag: one difference of
+    // two reads per frame, and the series a fix for repeated crossings is judged on.
+    const bridgeCrossings = createCrossingReader();
+    // Every engine work counter, per frame, when a playtest bounds them (PRD-748 engine-cost row).
+    const engineCounters = createEngineCounterReader();
     // The parity oracle for the static freeze. Off by default and expensive on purpose: it
     // recomputes every world matrix the long way and throws on the first that disagrees with what
     // the frame is about to draw.
@@ -2198,8 +2217,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // The boundary counts ride the span flag, but the simulation tick does not need them: it is
         // fed every frame so a plain `TN_FRAME_BUDGET` log can join a window's start and end ticks
         // without `TN_FRAME_SPANS`. `addCounters` keeps the last tick a caller did provide.
+        const crossings = bridgeCrossings();
+        const engine = engineCounters();
         frameBudget?.addCounters({
           ...(frameCounters?.read() ?? {}),
+          ...(crossings === undefined ? {} : { bridgeCrossings: crossings }),
+          ...(engine === undefined ? {} : { engine }),
           simulationTick: gameLoop.tick(),
         });
         const uiHost = globalThis as { __tnUiCompositeMs?: () => number };

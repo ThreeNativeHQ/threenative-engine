@@ -1,10 +1,11 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { planKitContract } from "../../packages/playtest/src/kit-contract.js";
 import { validatePlaytestScenario } from "../../packages/playtest/src/scenario.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
+import { writeKitContractRow } from "../kit-contract-row.js";
 import {
   assertKitContractPassed,
   formatKitContractMatrix,
@@ -34,6 +35,10 @@ describe("kit contract sweep", () => {
     const root = await makeTempDir("kit-contract-");
     const entries = {
       demo: {
+        engineCost: {
+          maxPerFrame: { bridgeCrossings: 600 },
+          source: "demo after-values, a fixture bound",
+        },
         move: ["KeyW"],
         optOut: {
           "action-clip-completes": "no key plays an animation clip",
@@ -64,6 +69,7 @@ describe("kit contract sweep", () => {
     );
     expect(ran.sort()).toEqual([
       "camera-sees-subject.playtest.json",
+      "engine-cost.playtest.json",
       "explore-clean.playtest.json",
       "hud-clean.playtest.json",
       "no-hitch.playtest.json",
@@ -92,6 +98,24 @@ describe("kit contract sweep", () => {
     expect(summarizeReport(report, "")).toBe("failed sightLine; TN_PLAYTEST_SIGHT_LINE_BLOCKED");
     expect(summarizeReport("", "boom\nTN_PLAYTEST_BRIDGE_MISSING")).toContain(
       "TN_PLAYTEST_BRIDGE_MISSING",
+    );
+  });
+});
+
+describe("one contract row for a CI job", () => {
+  it("writes the engine-cost scenario into a native kit's playtests and nothing for a kit pinned to three.js", async () => {
+    const root = await makeTempDir("kit-contract-row-");
+    const written = await writeKitContractRow("engine-cost", "shooter", path.join(root, "shooter"));
+    const scenario = JSON.parse(await readFile(written as string, "utf8")) as {
+      assert: { engineCost?: object };
+    };
+    expect(scenario.assert.engineCost).toBeDefined();
+    expect(
+      await writeKitContractRow("engine-cost", "snow", path.join(root, "snow")),
+    ).toBeUndefined();
+    await expect(readdir(path.join(root, "snow"))).rejects.toThrow();
+    await expect(writeKitContractRow("no-such-row", "shooter", root)).rejects.toThrow(
+      /no such row/u,
     );
   });
 });

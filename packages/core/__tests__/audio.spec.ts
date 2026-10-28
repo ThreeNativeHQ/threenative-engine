@@ -1,5 +1,5 @@
 import { AudioContext, Object3D, PerspectiveCamera, Vector3 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AudioBus,
   type IAudioCompressorOptions,
@@ -160,6 +160,27 @@ const buffer = { duration: 1 } as AudioBuffer;
 function endVoice(voice: { source: unknown }): void {
   (voice.source as { onended?: (() => void) | null } | null)?.onended?.();
 }
+
+describe("AudioBus in a worker (PRD-752)", () => {
+  it("takes the AudioContext the worker host installed, not three's window lookup", () => {
+    // three's AudioContext.getContext() reads `window.AudioContext`. A worker has no window, so the
+    // starter on the three.js engine threw "window is not defined" building its first AudioBus.
+    const remote = audioContext();
+    (AudioContext as unknown as { setContext(value: unknown): void }).setContext(undefined);
+    vi.stubGlobal("AudioContext", function RemoteAudioContext() {
+      return remote;
+    });
+    try {
+      const bus = new AudioBus({
+        camera: new PerspectiveCamera(),
+        gestureTarget: new EventTarget(),
+      });
+      expect(bus.listener.context).toBe(remote);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("AudioBus", () => {
   it("should queue playback before the first user gesture and flush after", async () => {

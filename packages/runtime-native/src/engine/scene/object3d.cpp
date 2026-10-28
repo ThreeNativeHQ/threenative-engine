@@ -6,6 +6,7 @@
 
 #include "engine/scene/object3d.h"
 
+#include "engine/foundation/job_pool.h"
 #include "engine/foundation/uuid.h"
 
 #include <algorithm>
@@ -271,6 +272,10 @@ void EventDispatcher::dispatchEvent(Event& event) {
 // ------------------------------------------------------------------------------ Object3D
 
 uint64_t Object3D::hierarchyVersion() { return hierarchyRevision; }
+void Object3D::markHierarchy(Object3D* node) {
+    ++hierarchyRevision;
+    for (; node != nullptr; node = node->parent) node->subtreeVersion_ = hierarchyRevision;
+}
 const uint64_t* Object3D::hierarchyVersionAddress() { return &hierarchyRevision; }
 
 Object3D::Object3D() : transform_(acquireTransform()),
@@ -490,7 +495,7 @@ void Object3D::lookAt(double x, double y, double z) {
 Object3D::~Object3D() {
     // Only a linked object's death changes a children list. A scratch object (InstancedMesh::raycast
     // builds a Mesh per ray) left the counter alone, or every cache keyed on it dropped once per ray.
-    if (parent != nullptr || !children.empty()) ++hierarchyRevision;
+    if (parent != nullptr || !children.empty()) markHierarchy(parent);
     for (Object3D* child : children) child->parent = nullptr;  // owned children die after this body
     if (parent != nullptr) {
         auto& siblings = parent->children;
@@ -515,7 +520,7 @@ Object3D& Object3D::add(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
-    ++hierarchyRevision;
+    markHierarchy(this);
     own(object);
     object.dispatchEvent(addedEvent);
     childAddedEvent.child = &object;
@@ -535,7 +540,7 @@ Object3D& Object3D::remove(Object3D& object) {
     if (found == children.end()) return *this;
     const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();  // alive until this returns
     children.erase(found);
-    ++hierarchyRevision;
+    markHierarchy(this);
     disown(object);
     object.parent = nullptr;
     object.dispatchEvent(removedEvent);
@@ -577,7 +582,7 @@ Object3D& Object3D::attach(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
-    ++hierarchyRevision;
+    markHierarchy(this);
     own(object);
 
     object.updateWorldMatrix(false, true);
@@ -691,7 +696,12 @@ inline bool bitsDiffer(const std::array<double, 16>& a, const std::array<double,
 }  // namespace
 
 bool Object3D::updateMatrixWorldSelf(bool force, bool identityParent, bool plain) {
-    lastWorldEvaluation_ = ++matrixEvaluations_;
+    if (walkStamp_ != 0) {
+        lastWorldEvaluation_ = walkStamp_;
+        ++threadComposes_;
+    } else {
+        lastWorldEvaluation_ = ++matrixEvaluations_;
+    }
     materializeLocalTransform();
     // Escaped aliases can change without a revision; auto-world ownership recomposes eagerly.
     const auto* tracking = ownTransformTracking();
@@ -759,9 +769,8 @@ void Object3D::updateMatrixWorld(bool force) {
     for (Object3D* child : children) child->updateMatrixWorld(force);
 }
 
-uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
-    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return 1; }
-    uint32_t visited = 1;
+int Object3D::visitMatrixWorldVisible(bool force, bool prune) {
+    if (skipsGpuJointSubtree()) { ++gpuBoundaryVisits_; return -1; }
     // Nothing here can draw, so its own compose waits for the frame it shows, as core's MatrixWorldPass
     // does. Remembered even when clean: its local or an ancestor's transform can change while it is hidden.
     // A camera renders from its world matrix whatever its flag, and a rig's bones pose a visible mesh.
@@ -774,16 +783,79 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
         }
         if (holdsBones_ == 0) {
             worldStale_ = true;
-            return visited;
+            return -1;
         }
     }
     bool childForce = updateMatrixWorldSelf(force || worldStale_);
     afterMatrixWorld();
     if (worldStale_) childForce = true;
     worldStale_ = false;
-    if (isStatic && !matrixWorldAutoUpdate) return visited;
-    for (Object3D* child : children) visited += child->updateMatrixWorldVisible(childForce, prune);
+    if (isStatic && !matrixWorldAutoUpdate) return -1;
+    return childForce ? 1 : 0;
+}
+
+uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
+    const int childForce = visitMatrixWorldVisible(force, prune);
+    uint32_t visited = 1;
+    if (childForce >= 0)
+        for (Object3D* child : children) visited += child->updateMatrixWorldVisible(childForce == 1, prune);
     return visited;
+}
+
+uint32_t Object3D::updateMatrixWorldVisibleJobs(bool force, bool prune) {
+    const uint64_t composedBefore = matrixEvaluations_;
+    // The compose gate comes first: the pool starts on the first walk that needs it, so a realm that walks no
+    // large scene (the page that only hosts the game's worker) starts no threads.
+    if (walkComposes_ < kParallelWalkComposes || JobPool::inJob() || poseObserver != nullptr ||
+        JobPool::shared().workers() == 0) {
+        walkNodes_ = updateMatrixWorldVisible(force, prune);
+        walkComposes_ = uint32_t(matrixEvaluations_ - composedBefore);
+        return walkNodes_;
+    }
+    JobPool& pool = JobPool::shared();
+    struct Item { Object3D* node; bool force; };
+    // The caller's scratch: a job names it through this reference, never through the thread_local.
+    static thread_local std::vector<Item> scratch, scratchJobs;
+    std::vector<Item>& frontier = scratch;
+    std::vector<Item>& jobs = scratchJobs;
+    frontier.clear();
+    jobs.clear();
+    frontier.push_back({this, force});
+    // Breadth-first: a subtree becomes a job once there are enough jobs and its last walk was small,
+    // so one deep subtree is split instead of keeping a worker busy while the others wait.
+    const std::size_t target = 8 * (std::size_t(pool.workers()) + 1);
+    const uint32_t grain = walkNodes_ / uint32_t(target);
+    std::size_t head = 0;
+    uint32_t visited = 0;
+    while (head < frontier.size()) {
+        const Item item = frontier[head++];
+        if (item.node->walkNodes_ <= grain && jobs.size() + (frontier.size() - head) + 1 >= target) {
+            jobs.push_back(item);
+            continue;
+        }
+        ++visited;
+        const int childForce = item.node->visitMatrixWorldVisible(item.force, prune);
+        if (childForce >= 0)
+            for (Object3D* child : item.node->children) frontier.push_back({child, childForce == 1});
+    }
+    // Every node a job composes takes one stamp, later than any the frontier took: "evaluated since" holds.
+    const uint64_t stamp = matrixEvaluations_ + 1;
+    std::atomic<uint32_t> jobVisits{0};
+    std::atomic<uint64_t> jobComposes{0};
+    pool.forEach(uint32_t(jobs.size()), [&](uint32_t i) {
+        Object3D& node = *jobs[i].node;
+        walkStamp_ = stamp;
+        threadComposes_ = 0;
+        // The subtree's size decides next frame whether it is split further.
+        node.walkNodes_ = node.updateMatrixWorldVisible(jobs[i].force, prune);
+        jobVisits.fetch_add(node.walkNodes_, std::memory_order_relaxed);
+        jobComposes.fetch_add(threadComposes_, std::memory_order_relaxed);
+        walkStamp_ = 0;
+    });
+    // At least the stamp when any job composed, so a later stamp is later than every job's.
+    matrixEvaluations_ += jobComposes.load(std::memory_order_relaxed);
+    walkComposes_ = uint32_t(matrixEvaluations_ - composedBefore);
+    return walkNodes_ = visited + jobVisits.load(std::memory_order_relaxed);
 }
 
 void Object3D::updateWorldMatrix(bool updateParents, bool updateChildren, bool force) {

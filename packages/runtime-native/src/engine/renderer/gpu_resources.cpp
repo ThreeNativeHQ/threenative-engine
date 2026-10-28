@@ -5,6 +5,8 @@
 #include <cstring>
 #include <utility>
 
+#include "engine/foundation/waste_counters.h"
+
 #include "mystral/webgpu_compat.h"
 
 #if defined(MYSTRAL_WEBGPU_WGPU)
@@ -155,6 +157,7 @@ Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage) {
 }
 
 Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const void* data, uint64_t bytes) {
+    waste::count(waste::counters().bufferAllocs);
     WGPUBufferDescriptor desc = {};
     desc.size = size;
     desc.usage = usage;
@@ -179,6 +182,7 @@ Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const vo
 
 Handle GpuResources::createTexture(uint32_t width, uint32_t height, WGPUTextureFormat format,
                                    WGPUTextureUsage usage) {
+    waste::count(waste::counters().textureAllocs);
     WGPUTextureDescriptor desc = {};
     desc.dimension = WGPUTextureDimension_2D;
     desc.size = {width, height, 1};

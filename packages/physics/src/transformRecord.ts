@@ -1,3 +1,5 @@
+import type { Quaternion } from "three";
+
 /**
  * Checked reads from the bulk step buffers.
  *
@@ -12,4 +14,27 @@ export function bulkTransformValue(values: Readonly<Float32Array>, index: number
   if (value === undefined || !Number.isFinite(value))
     throw new Error("IPhysicsSimulation returned a malformed transform.");
   return value;
+}
+
+/**
+ * Assigns a solved rotation only when it differs from the object's current one. Three.js
+ * `Quaternion.set()` fires its change callback even for identical components, and on the web
+ * engine that callback crosses into the native runtime. `Object.is` preserves signed zero, and
+ * comparing against the live object still corrects edits made outside physics.
+ */
+export function setRotationIfChanged(
+  quaternion: Quaternion,
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+): void {
+  if (
+    Object.is(quaternion.x, x) &&
+    Object.is(quaternion.y, y) &&
+    Object.is(quaternion.z, z) &&
+    Object.is(quaternion.w, w)
+  )
+    return;
+  quaternion.set(x, y, z, w);
 }

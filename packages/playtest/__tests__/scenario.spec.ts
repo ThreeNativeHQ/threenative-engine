@@ -628,6 +628,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   footSlip: [{ atStep: "loading-end", feet: ["footL", "footR"], maxSlip: 0.35 }],
   sightLine: { maxBlockedRatio: 0.02 },
   hudAudit: { minContrast: 3, noDebugText: true },
+  engineCost: { maxPerFrame: { bridgeCrossings: 2000 }, source: "family dispatch fixture bound" },
   causedBy: [
     {
       cause: { contact: { entity: "fox", kind: "trigger", with: "coin" } },
@@ -687,6 +688,8 @@ const FAMILY_PASS_IDS = [
   "sightLine",
   "hudAudit.debugText",
   "hudAudit.contrast",
+  "engineCost.observed",
+  "engineCost.maxPerFrame.bridgeCrossings",
   "causedBy[0].neverBefore",
   "causedBy[0].withinTicks",
   "startup.readyMs",
@@ -734,7 +737,10 @@ function familyReportObservations(fulfilled: boolean) {
   return {
     tone: [{ code: "TN_TONE", label: "after.png", mean: 100, p1: 0, p50: 100, p99: 200, clipFraction: 0, blackFraction: 0 }],
     components: { player: { health: { after: 2, before: 3 } } },
-    console: [{ level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` }],
+    console: [
+      { level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` },
+      { level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ counters: { bridgeCrossings: { max: 900, mean: 800, p50: 800, p95: 900, p99: 900, samples: 300 }, engine: {} }, window: 1 })}` },
+    ],
     deviceMetrics: {
       available: true,
       errors: [],
@@ -995,6 +1001,7 @@ test("should preserve every assertion family's result contract", async () => {
     "footSlip[0].observed",
     "sightLine.observed",
     "hudAudit.observed",
+    "engineCost.observed",
     "causedBy.observed",
     "startup.readyMs",
     "diagnostics",
@@ -1042,6 +1049,7 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_FOOT_SLIP_UNOBSERVED",
     "TN_PLAYTEST_SIGHT_LINE_UNOBSERVED",
     "TN_PLAYTEST_HUD_AUDIT_UNOBSERVED",
+    "TN_PLAYTEST_ENGINE_COST_UNOBSERVED",
     "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",

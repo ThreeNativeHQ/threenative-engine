@@ -145,12 +145,17 @@ export class FpsPlayer {
     };
   }
 
-  /** The camera basis is the single source of aim truth, including hit shake. */
+  /**
+   * The camera basis is the single source of aim truth, including hit shake. The camera hangs off
+   * the scene root, so its own placement is its world pose: reading the position and rotation
+   * `syncCamera` wrote is the same answer as `getWorldPosition`/`getWorldDirection` without the
+   * walk those two make up the camera and back down the viewmodel, once every frame, for a pose
+   * this class had just written itself.
+   */
   aimRay(): { origin: Vector3; direction: Vector3 } {
-    this.#camera.updateMatrixWorld(true);
     return {
-      origin: this.#camera.getWorldPosition(new Vector3()),
-      direction: this.#camera.getWorldDirection(new Vector3()).normalize(),
+      origin: this.#camera.position.clone(),
+      direction: new Vector3(0, 0, -1).applyQuaternion(this.#camera.quaternion),
     };
   }
 

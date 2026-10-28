@@ -47,7 +47,8 @@
       }
     ],
     "optOut": {
-      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row"
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "engine-cost": "pinned to engine \"threejs\" in threenative.config.ts: no JS-to-Wasm bridge, so there are no web engine counters to bound"
     }
   },
   "adventure": {
@@ -62,6 +63,49 @@
       "restart-resets": "a lost heart respawns at a checkpoint; there is no run to restart",
       "action-clip-completes": "slash and roll are procedural states with no clip; combat.playtest.json bounds the slash contact",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 1000,
+          "buffers": 3,
+          "childrenReads": 205,
+          "contentClassOf": 408,
+          "contentVersionKeys": 284,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 894,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 30,
+          "share": 23,
+          "shareMints": 6,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "adventure after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 595.2, buffers 0.0, childrenReads 117, contentClassOf 277.7, contentVersionKeys 194.8, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 576.1, physicsForceResets 0, physicsTransformReads 19, share 0, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 666.1, buffers 0.1, childrenReads 136.1, contentClassOf 271.8, contentVersionKeys 188.8, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 595.7, physicsForceResets 0, physicsTransformReads 19.5, share 2.6, shareMints 0.0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 893,
+          "buffers": 3,
+          "childrenReads": 176,
+          "contentClassOf": 417,
+          "contentVersionKeys": 293,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 865,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 29,
+          "share": 20,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "collectathon": {
@@ -76,6 +120,49 @@
       "restart-resets": "a lost heart respawns at a checkpoint; there is no run to restart",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 507,
+          "buffers": 3,
+          "childrenReads": 9,
+          "contentClassOf": 520,
+          "contentVersionKeys": 189,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 808,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 13,
+          "share": 22,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "collectathon after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 323.2, buffers 0.0, childrenReads 2, contentClassOf 406.6, contentVersionKeys 133.0, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 531.0, physicsForceResets 0, physicsTransformReads 2, share 0.5, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 337.6, buffers 0.1, childrenReads 3.6, contentClassOf 346.1, contentVersionKeys 125.3, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 538.6, physicsForceResets 0, physicsTransformReads 2.0, share 1.8, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 485,
+          "buffers": 3,
+          "childrenReads": 7,
+          "contentClassOf": 610,
+          "contentVersionKeys": 200,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 797,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 12,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "kart": {
@@ -116,6 +203,43 @@
       "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 247,
+          "buffers": 3,
+          "childrenReads": 8,
+          "contentClassOf": 119,
+          "contentVersionKeys": 94,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 227,
+          "share": 23,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "kart after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 143.2, buffers 0.1, childrenReads 2, contentClassOf 86.7, contentVersionKeys 47.6, hierarchyMoves 0, matrixEvaluations 149.8, share 2, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 146.4, buffers 0.1, childrenReads 2.4, contentClassOf 68.4, contentVersionKeys 43.6, hierarchyMoves 0, matrixEvaluations 151.2, share 2.1, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 244,
+          "buffers": 3,
+          "childrenReads": 7,
+          "contentClassOf": 137,
+          "contentVersionKeys": 98,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 225,
+          "share": 22,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "minimal": {
@@ -127,6 +251,49 @@
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 202,
+          "buffers": 3,
+          "childrenReads": 8,
+          "contentClassOf": 113,
+          "contentVersionKeys": 82,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 441,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 13,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "minimal after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 96.9, buffers 0.0, childrenReads 2, contentClassOf 61.9, contentVersionKeys 30.9, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 288.9, physicsForceResets 0, physicsTransformReads 2, share 0, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 101.8, buffers 0.0, childrenReads 2.5, contentClassOf 62.2, contentVersionKeys 31.1, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 293.4, physicsForceResets 0, physicsTransformReads 2.0, share 0.1, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 197,
+          "buffers": 3,
+          "childrenReads": 7,
+          "contentClassOf": 112,
+          "contentVersionKeys": 81,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 434,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 12,
+          "share": 20,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "platformer": {
@@ -159,6 +326,47 @@
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 1341,
+          "buffers": 3,
+          "childrenReads": 611,
+          "contentClassOf": 539,
+          "contentVersionKeys": 371,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 1716,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 12,
+          "share": 28,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 53
+        },
+        "maxInFrame": {
+          "walkVisits": 1145
+        }
+      },
+      "source": "platformer after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 873.4, buffers 0.1, childrenReads 396, contentClassOf 396.9, contentVersionKeys 278.3, hierarchyMoves 0, matrixEvaluations 1129.6, physicsForceResets 0, physicsTransformReads 1, share 3.7, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 893.9, buffers 0.1, childrenReads 406.8, contentClassOf 358.9, contentVersionKeys 247.3, hierarchyMoves 0, matrixEvaluations 1143.5, physicsForceResets 0, physicsTransformReads 1.0, share 7.1, shareMints 0, textures 0, walkVisits 2.6; moving walkVisits frame max 763; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 1311,
+          "buffers": 3,
+          "childrenReads": 594,
+          "contentClassOf": 596,
+          "contentVersionKeys": 418,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 1695,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 11,
+          "share": 24,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "puzzle": {
@@ -188,6 +396,47 @@
       "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 174,
+          "buffers": 3,
+          "childrenReads": 8,
+          "contentClassOf": 258,
+          "contentVersionKeys": 92,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 174,
+          "physicsForceResets": 70,
+          "physicsTransformReads": 13,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "puzzle after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 72.6, buffers 0.1, childrenReads 2, contentClassOf 177.5, contentVersionKeys 42.7, hierarchyMoves 0, matrixEvaluations 114.6, physicsForceResets 45, physicsTransformReads 2, share 0, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 73.8, buffers 0.1, childrenReads 2.6, contentClassOf 171.7, contentVersionKeys 41.3, hierarchyMoves 0, matrixEvaluations 115.5, physicsForceResets 46.2, physicsTransformReads 2.5, share 0.1, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 173,
+          "buffers": 3,
+          "childrenReads": 7,
+          "contentClassOf": 267,
+          "contentVersionKeys": 93,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 172,
+          "physicsForceResets": 68,
+          "physicsTransformReads": 12,
+          "share": 20,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "racing": {
@@ -220,6 +469,47 @@
       "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 188,
+          "buffers": 3,
+          "childrenReads": 8,
+          "contentClassOf": 211,
+          "contentVersionKeys": 129,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 239,
+          "physicsForceResets": 13,
+          "physicsTransformReads": 14,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "racing after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 86.6, buffers 0.1, childrenReads 2, contentClassOf 169.9, contentVersionKeys 96.3, hierarchyMoves 0, matrixEvaluations 158.6, physicsForceResets 2, physicsTransformReads 3, share 0, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 87.2, buffers 0.1, childrenReads 2.6, contentClassOf 140.4, contentVersionKeys 78.6, hierarchyMoves 0, matrixEvaluations 159.0, physicsForceResets 2.0, physicsTransformReads 3.1, share 0.4, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 187,
+          "buffers": 3,
+          "childrenReads": 7,
+          "contentClassOf": 255,
+          "contentVersionKeys": 147,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 238,
+          "physicsForceResets": 12,
+          "physicsTransformReads": 13,
+          "share": 20,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "rain": {
@@ -234,6 +524,43 @@
       "foot-slip": "the subject is a fly camera with no legs",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 140,
+          "buffers": 3,
+          "childrenReads": 8,
+          "contentClassOf": 65,
+          "contentVersionKeys": 64,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 87,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "rain after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 39.9, buffers 0.1, childrenReads 2, contentClassOf 14.4, contentVersionKeys 13.5, hierarchyMoves 0, matrixEvaluations 36.3, share 0.0, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 39.8, buffers 0.0, childrenReads 2.0, contentClassOf 14.1, contentVersionKeys 13.2, hierarchyMoves 0, matrixEvaluations 36.0, share 0.0, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 140,
+          "buffers": 3,
+          "childrenReads": 7,
+          "contentClassOf": 65,
+          "contentVersionKeys": 64,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 87,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "rts": {
@@ -249,6 +576,43 @@
       "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 1734,
+          "buffers": 3,
+          "childrenReads": 8,
+          "contentClassOf": 176,
+          "contentVersionKeys": 138,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 200,
+          "share": 92,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "rts after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 1128.4, buffers 0.0, childrenReads 2, contentClassOf 119.8, contentVersionKeys 89.1, hierarchyMoves 0, matrixEvaluations 133.4, share 58.7, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 1155.4, buffers 0.0, childrenReads 2.2, contentClassOf 117.3, contentVersionKeys 87.2, hierarchyMoves 0, matrixEvaluations 132.7, share 61.1, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 1693,
+          "buffers": 3,
+          "childrenReads": 7,
+          "contentClassOf": 180,
+          "contentVersionKeys": 140,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 201,
+          "share": 89,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "runner": {
@@ -280,7 +644,8 @@
     },
     "optOut": {
       "action-clip-completes": "the jump clip ends at landing by design, not at its last frame",
-      "effect-follows-contact": "no melee or timed hit with a contact window"
+      "effect-follows-contact": "no melee or timed hit with a contact window",
+      "engine-cost": "pinned to engine \"threejs\" in threenative.config.ts: no JS-to-Wasm bridge, so there are no web engine counters to bound"
     }
   },
   "sailing": {
@@ -309,7 +674,8 @@
     "optOut": {
       "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
-      "effect-follows-contact": "no melee or timed hit with a contact window"
+      "effect-follows-contact": "no melee or timed hit with a contact window",
+      "engine-cost": "pinned to engine \"threejs\" in threenative.config.ts: no JS-to-Wasm bridge, so there are no web engine counters to bound"
     }
   },
   "shooter": {
@@ -343,6 +709,49 @@
       "foot-slip": "first-person player with no visible feet; soldiers are not driven by a player key",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 750,
+          "buffers": 2,
+          "childrenReads": 100,
+          "contentClassOf": 415,
+          "contentVersionKeys": 195,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 3480,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 17,
+          "share": 53,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "shooter after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 268.9, buffers 0, childrenReads 4.2, contentClassOf 265.1, contentVersionKeys 125.4, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 2135.3, physicsForceResets 0, physicsTransformReads 6, share 2.8, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 499.6, buffers 0, childrenReads 66.4, contentClassOf 276.2, contentVersionKeys 129.4, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 2320.0, physicsForceResets 0, physicsTransformReads 6.2, share 32.4, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 404,
+          "buffers": 2,
+          "childrenReads": 10,
+          "contentClassOf": 398,
+          "contentVersionKeys": 189,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 3204,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 16,
+          "share": 23,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "snow": {
@@ -365,7 +774,8 @@
       "restart-resets": "a weather sandbox with no run; KeyR resets the snow field",
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
-      "effect-follows-contact": "no melee or timed hit with a contact window"
+      "effect-follows-contact": "no melee or timed hit with a contact window",
+      "engine-cost": "pinned to engine \"threejs\" in threenative.config.ts: no JS-to-Wasm bridge, so there are no web engine counters to bound"
     }
   },
   "starter": {
@@ -398,6 +808,49 @@
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
       "action-clip-completes": "the jump clip ends at landing by design, not at its last frame",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 213,
+          "buffers": 3,
+          "childrenReads": 15,
+          "contentClassOf": 118,
+          "contentVersionKeys": 85,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 465,
+          "physicsForceResets": 12,
+          "physicsTransformReads": 14,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "maxInFrame": {
+          "walkVisits": 300
+        }
+      },
+      "source": "starter after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 109.9, buffers 0.0, childrenReads 9, contentClassOf 72.9, contentVersionKeys 36.9, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 309.5, physicsForceResets 1, physicsTransformReads 3, share 0.0, shareMints 0, textures 0, walkVisits 0; moving bridgeCrossings 112.2, buffers 0.0, childrenReads 9.7, contentClassOf 67.5, contentVersionKeys 34.1, cullRigRebuilds 0, hierarchyMoves 0, matrixEvaluations 309.4, physicsForceResets 1.0, physicsTransformReads 3.1, share 0.4, shareMints 0, textures 0, walkVisits 0; moving walkVisits frame max 0; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 210,
+          "buffers": 3,
+          "childrenReads": 14,
+          "contentClassOf": 123,
+          "contentVersionKeys": 87,
+          "cullRigRebuilds": 1,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 465,
+          "physicsForceResets": 11,
+          "physicsTransformReads": 13,
+          "share": 21,
+          "shareMints": 5,
+          "textures": 2,
+          "walkVisits": 50
+        },
+        "windows": 1
+      }
     }
   },
   "tower-defense": {
@@ -441,6 +894,47 @@
       "foot-slip": "the subject has no legs (vehicle, boat, camera or sliding piece)",
       "action-clip-completes": "no key plays an animation clip; the mechanic has no clip to complete",
       "effect-follows-contact": "no melee or timed hit with a contact window"
+    },
+    "engineCost": {
+      "moving": {
+        "maxPerFrame": {
+          "bridgeCrossings": 797,
+          "buffers": 3,
+          "childrenReads": 39,
+          "contentClassOf": 239,
+          "contentVersionKeys": 149,
+          "hierarchyMoves": 1,
+          "matrixEvaluations": 300,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 18,
+          "share": 25,
+          "shareMints": 6,
+          "textures": 2,
+          "walkVisits": 51
+        },
+        "maxInFrame": {
+          "walkVisits": 576
+        }
+      },
+      "source": "tower-defense after-values, 2026-10-27, 2 NVIDIA runs of this row at the PRD-748 head, per-frame means: still bridgeCrossings 521.2, buffers 0.0, childrenReads 25.1, contentClassOf 161.6, contentVersionKeys 100.6, hierarchyMoves 0.1, matrixEvaluations 206.1, physicsForceResets 0, physicsTransformReads 5.7, share 4.9, shareMints 0.0, textures 0, walkVisits 0.9; moving bridgeCrossings 530.8, buffers 0.0, childrenReads 25.5, contentClassOf 159.2, contentVersionKeys 98.2, hierarchyMoves 0, matrixEvaluations 199.9, physicsForceResets 0, physicsTransformReads 7.2, share 4.8, shareMints 0.4, textures 0, walkVisits 0.9; moving walkVisits frame max 276; bound = max(1.5x, value + floor)",
+      "still": {
+        "maxPerFrame": {
+          "bridgeCrossings": 782,
+          "buffers": 3,
+          "childrenReads": 38,
+          "contentClassOf": 243,
+          "contentVersionKeys": 151,
+          "hierarchyMoves": 2,
+          "matrixEvaluations": 310,
+          "physicsForceResets": 10,
+          "physicsTransformReads": 16,
+          "share": 25,
+          "shareMints": 6,
+          "textures": 2,
+          "walkVisits": 51
+        },
+        "windows": 1
+      }
     }
   }
 }

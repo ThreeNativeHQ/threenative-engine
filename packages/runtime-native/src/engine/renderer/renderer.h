@@ -638,6 +638,10 @@ public:
         uint32_t mainRecorded = 0, shadowRecorded = 0;
         uint8_t recordCause = 0;
         double recordMs = 0, shadowEncodeMs = 0;
+        /** The shadow maps (sun or lamp, not virtual) kept from the last frame because nothing they draw changed: their
+         *  draws are neither encoded nor uploaded. And the bytes of per-draw uniforms the frame uploaded. */
+        uint32_t keptShadowMaps = 0;
+        uint64_t uniformBytes = 0;
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -971,7 +975,7 @@ private:
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
-    std::map<std::size_t, uint64_t> lampSignatures_;
+    std::map<std::size_t, uint64_t> mapSignatures_;
     /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
     struct LampMotion { uint64_t pose = 0; int64_t movedAt = 0; };
     std::map<std::size_t, LampMotion> lampMotion_;
