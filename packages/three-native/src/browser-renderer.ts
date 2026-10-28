@@ -29,6 +29,7 @@ type HostCall =
   | "_tnw_web_compile_status"
   | "_tnw_web_renderer_state"
   | "_tnw_web_frame"
+  | "_tnw_web_set_stable_passes"
   | "_tnw_web_render_target"
   | "_tnw_web_read_target"
   | "_tnw_web_read_target_take"
@@ -48,7 +49,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 4;
+export const WEB_HOST_ABI = 5;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -363,6 +364,10 @@ export function defineWebRenderer(
         // Honest, like the engine: a device without timestamp-query times no frame, so no caller
         // may be told timestamps are enabled. An explicit opt-out stays off.
         if (module._tnw_web_frame(10) === 0) this.backend.trackTimestamp = false;
+        // PRD-754's A/B knob: `?tnStablePasses=0` on the page (a worker game reads the page's query).
+        const scope = globalThis as { __THREENATIVE_PAGE_SEARCH?: unknown; location?: { search?: string } };
+        const query = String(scope.__THREENATIVE_PAGE_SEARCH ?? scope.location?.search ?? "");
+        if (/[?&]tnStablePasses=(0|false)(&|$)/u.test(query)) module._tnw_web_set_stable_passes(0);
         return this;
       })();
       return this.#initialized;

@@ -2433,7 +2433,7 @@ Renderer::RecordCause Renderer::recordCause(const std::vector<uint64_t>& was, co
 }
 
 std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<const DrawItem> items,
-                                                                 const CameraState& camera) {
+                                                                 const CameraState& camera, bool stateFirst) {
     // RenderList: z is the object origin's clip-space depth (setFromMatrixPosition, then the
     // projection-view matrix); painterSortStable for opaques, reversePainterSortStable for the rest.
     const Matrix projView = multiply(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -2445,11 +2445,22 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
         const double w = projView[3] * origin[0] + projView[7] * origin[1] + projView[11] * origin[2] + projView[15];
         (item.transparent ? transparent : opaque).push_back({z / w, &item});
     }
-    std::sort(opaque.begin(), opaque.end(), [](const auto& a, const auto& b) {
-        if (a.second->background != b.second->background) return a.second->background;
-        if (a.second->renderOrder != b.second->renderOrder) return a.second->renderOrder < b.second->renderOrder;
+    // UE 5.8.3: Engine/Source/Runtime/Renderer/Private/MeshDrawCommands.cpp sorts a pass's visible commands by a
+    // state key (FMeshDrawCommandSortKey: pipeline, then state), never by view depth, so its cached commands hold.
+    stateFirst = stateFirst && std::all_of(opaque.begin(), opaque.end(), [](const auto& d) {
+        return d.second->background || (d.second->depthWrite && d.second->colorWrite);
+    });
+    std::sort(opaque.begin(), opaque.end(), [stateFirst](const auto& a, const auto& b) {
+        const DrawItem& x = *a.second;
+        const DrawItem& y = *b.second;
+        if (x.background != y.background) return x.background;
+        if (x.renderOrder != y.renderOrder) return x.renderOrder < y.renderOrder;
+        // ponytail: material and geometry order by address, so exactly coplanar draws can swap winners between runs.
+        if (stateFirst)
+            return std::tie(x.kind, x.side, x.material, x.positions, x.indices, x.id) <
+                   std::tie(y.kind, y.side, y.material, y.positions, y.indices, y.id);
         if (a.first != b.first) return a.first < b.first;
-        return a.second->id < b.second->id;
+        return x.id < y.id;
     });
     // Stable: a transparent DoubleSide material's BackSide pass stays right before its FrontSide pass.
     std::stable_sort(transparent.begin(), transparent.end(), [](const auto& a, const auto& b) {
@@ -2619,7 +2630,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     depth.depthClearValue = 1.0f;
     const bool timed = ownsPassTimer_ && passTimer_->active();
 
-    const auto opaque = sortDraws(items, camera);
+    const auto opaque = sortDraws(items, camera, stablePasses_);
 
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does

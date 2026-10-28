@@ -2914,9 +2914,9 @@ void emissivePass(bool requirePixels) {
     }
 }
 
-// PRD-754: the main pass's bundle key follows the opaque draw order, which follows each origin's depth (three's
-// painterSortStable). A camera turn that swaps two boxes' depths re-records the bundle for its order, names that
-// cause, and a held pose records nothing. Renderer::recordCause tells order, offsets and count apart.
+// PRD-754: in depth order (three's painterSortStable) the main pass's bundle key follows each origin's depth, so a
+// camera turn that swaps two boxes' depths re-records the bundle for its order and names that cause; the state-first
+// order holds the bundle across the turn, and a held pose records nothing either way. Renderer::recordCause tells order, offsets and count apart.
 void cameraTurnRecords() {
     using R = Renderer;
     const std::vector<uint64_t> one(6 + 6 * 6, 0);
@@ -2969,14 +2969,19 @@ void cameraTurnRecords() {
         return c;
     };
     const auto frame = [&](double yaw) { renderer.render(std::span<const DrawItem>(items), turned(yaw), LightState{}, {0, 0, 0, 1}); };
-    for (int i = 0; i < 3; ++i) frame(0);
-    CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
-    frame(30 * kPi / 180);
-    std::printf("camera turn: %u main draw(s) recorded, cause %u, %.4f ms recording\n", renderer.lastFrame().mainRecorded,
-                unsigned(renderer.lastFrame().recordCause), renderer.lastFrame().recordMs);
-    CHECK(renderer.lastFrame().mainRecorded == 2 && renderer.lastFrame().recordCause == R::RecordOrder);
-    frame(30 * kPi / 180);
-    CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+    // Depth order (setStablePasses(false)) re-records the turn for its order; the state-first order keeps the bundle.
+    for (const bool stable : {false, true}) {
+        renderer.setStablePasses(stable);
+        for (int i = 0; i < 3; ++i) frame(0);
+        CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+        frame(30 * kPi / 180);
+        std::printf("camera turn, stable passes %d: %u main draw(s) recorded, cause %u, %.4f ms recording\n", int(stable),
+                    renderer.lastFrame().mainRecorded, unsigned(renderer.lastFrame().recordCause), renderer.lastFrame().recordMs);
+        if (stable) CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+        else CHECK(renderer.lastFrame().mainRecorded == 2 && renderer.lastFrame().recordCause == R::RecordOrder);
+        frame(30 * kPi / 180);
+        CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+    }
 }
 
 void emissiveTarget() { emissivePass(true); }

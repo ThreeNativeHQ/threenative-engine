@@ -466,8 +466,11 @@ public:
     uint32_t height() const { return height_; }
 
     /** The submission order, shared with batching so palette slots follow the exact draws. */
+    /** stateFirst (PRD-754): opaque draws order by program state, not depth, so a camera turn keeps the order and
+     *  the recorded bundle; it holds only when every opaque draw writes depth and colour (then order cannot change
+     *  a pixel but at exactly equal depth), else the frame keeps three's depth order. */
     static std::vector<std::pair<double, const DrawItem*>> sortDraws(std::span<const DrawItem> items,
-                                                                  const CameraState& camera);
+                                                                  const CameraState& camera, bool stateFirst = false);
 
     /**
      * Draws one frame and returns its render ID (every render call gets its own, from 1). Items are

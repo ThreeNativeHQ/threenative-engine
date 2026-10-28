@@ -18,6 +18,7 @@ const PINNED: Record<number, string> = {
   2: "49a13523783fbb35",
   3: "4afe732b2264c45b",
   4: "61297e45c5c4af17",
+  5: "0f129b407339bbd1",
 };
 
 function signatures(): string[] {
