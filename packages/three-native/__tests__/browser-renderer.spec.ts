@@ -713,6 +713,136 @@ describe("the Wasm engine's environment preparation", () => {
   });
 });
 
+describe("the Wasm engine's environment preparation across a restart", () => {
+  it("waits on no draw for an environment a draw already baked, even while the gate declines", async () => {
+    // A restart re-enters the same sky. The engine kept its bake (keyed by the texture), but every
+    // frame was gated on SwiftShader, so the loop saw no draw and held the restart for its whole
+    // 15 s budget: shooter debug-restart's one advance took 28 s against a 20.25 s bound.
+    let gated = false;
+    let drawn = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 11 ? (gated ? 1 : 0) : field === 12 ? (drawn < 2 ? 1 : 0) : 0),
+      () => {
+        drawn += 1;
+        return 0;
+      },
+    );
+    // An own property shadows the engine-backed accessor, which this stub runtime cannot answer.
+    const disposed: Array<() => void> = [];
+    const sky = {
+      version: 1,
+      addEventListener: (_type: string, listener: () => void) => disposed.push(listener),
+    };
+    Object.defineProperty(scene, "environment", { value: sky, configurable: true });
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
+      true,
+    );
+    const before = drawn;
+    gated = true;
+    const started = performance.now();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
+      true,
+    );
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(drawn).toBe(before);
+    // A new version, or a disposed sky, is a new bake: back to the bounded wait.
+    sky.version = 2;
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 20)).toBe(
+      false,
+    );
+    for (const listener of disposed) listener();
+    sky.version = 1;
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 20)).toBe(
+      false,
+    );
+  });
+});
+
+describe("the Wasm engine's environment preparation after its deadline", () => {
+  it("learns the bake finished from a later frame, so the restart after it waits on no draw", async () => {
+    // SwiftShader's first boot gives the bake up at the deadline; play then draws the baked sky.
+    let gated = false;
+    let pending = 1;
+    let drawn = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 11 ? (gated ? 1 : 0) : field === 12 ? pending : 0),
+      () => {
+        drawn += 1;
+        return 0;
+      },
+    );
+    const sky = { version: 1 };
+    Object.defineProperty(scene, "environment", { value: sky, configurable: true });
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 20)).toBe(
+      false,
+    );
+    // A restart before any frame found it done: the boot already waited its budget for this bake,
+    // which keeps running, so the restart does not wait it again.
+    gated = true;
+    const started = performance.now();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
+      false,
+    );
+    expect(performance.now() - started).toBeLessThan(500);
+    gated = false;
+    pending = 0;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.render(scene, camera);
+    gated = true;
+    const before = drawn;
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
+      true,
+    );
+    expect(drawn).toBe(before);
+  });
+});
+
+describe("the Wasm engine's environment preparation in flight", () => {
+  it("does not start a second wait for a bake an earlier preparation is still waiting on", async () => {
+    // Shooter on SwiftShader: the boot's 45 s hold warm-up was still waiting on the sky when the
+    // restart prepared the same sky, and the restart waited its own 15 s budget beside it.
+    const { Renderer, canvas, scene, camera } = host((field) => (field === 12 ? 1 : 0));
+    const sky = { version: 1 };
+    Object.defineProperty(scene, "environment", { value: sky, configurable: true });
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    const boot = renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1500);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const started = performance.now();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
+      false,
+    );
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(await boot).toBe(false);
+  });
+});
+
 describe("the Wasm engine's environment preparation presents", () => {
   it("lets the caller paint its cover straight after every draw, in the same task", async () => {
     // Each draw is a timer task the browser presents alone, so an unbaked environment presents black:

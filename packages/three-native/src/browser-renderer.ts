@@ -97,6 +97,21 @@ function unsupported(name: string): never {
 }
 
 /** Defines the renderer class over one loaded module; the module owns one device and one canvas. */
+/** A scene environment as the bake record reads it: the engine keys its bake by texture and version. */
+interface IBakedEnvironment {
+  readonly version: number;
+  addEventListener?(type: "dispose", listener: () => void): void;
+}
+
+/** Environments a draw saw baked, at the version it saw; a disposal retires the engine's bake too. */
+const bakedEnvironments = new WeakMap<IBakedEnvironment, number>();
+
+function markBaked(environment: IBakedEnvironment): void {
+  if (!bakedEnvironments.has(environment))
+    environment.addEventListener?.("dispose", () => bakedEnvironments.delete(environment));
+  bakedEnvironments.set(environment, environment.version);
+}
+
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
@@ -266,6 +281,8 @@ export function defineWebRenderer(
       readonly device: { readonly lost: Promise<{ reason: string; message: string }> };
     };
     #deviceLost: (info: { reason: string; message: string }) => void = () => undefined;
+    /** The environment a preparation gave up on at its deadline, until a drawn frame finds it baked. */
+    #bakingEnvironment: IBakedEnvironment | undefined;
     #pixelRatio = 1;
     #width: number;
     #height: number;
@@ -513,6 +530,12 @@ export function defineWebRenderer(
         ),
       );
       this.info.frame += 1;
+      if (this.#bakingEnvironment !== undefined && module._tnw_web_frame(12) === 0) {
+        // An overlay draw has no environment and says nothing; another sky ends the watch.
+        const drawnEnvironment = (scene as { environment?: unknown }).environment;
+        if (drawnEnvironment === this.#bakingEnvironment) markBaked(this.#bakingEnvironment);
+        if (drawnEnvironment != null) this.#bakingEnvironment = undefined;
+      }
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
@@ -706,6 +729,17 @@ export function defineWebRenderer(
       deadlineMs = Number.POSITIVE_INFINITY,
       afterDraw?: () => void,
     ): Promise<boolean> {
+      // The engine keeps a bake per texture and version, so a restart into the same sky has nothing
+      // to wait for. It must not draw to learn that: on a GPU that retires no frame the gate declines
+      // every draw and the loop below would hold the restart for its whole budget.
+      const environment = (scene as { environment?: IBakedEnvironment | null }).environment;
+      if (environment != null && bakedEnvironments.get(environment) === environment.version)
+        return true;
+      // A bake an earlier preparation is waiting on, or already waited its budget for, is still
+      // running: the engine finishes it whether or not anyone waits, so a restart into it does not
+      // wait a second budget.
+      if (environment != null && environment === this.#bakingEnvironment) return false;
+      if (environment != null) this.#bakingEnvironment = environment;
       // Lantern Vale's bake drew the main pass at 4x MSAA before its TRAA graph was installed: 39
       // pipelines the game never drew, compiled synchronously behind the cover.
       this[PIPELINE_POST]?.();
@@ -735,10 +769,18 @@ export function defineWebRenderer(
           const baked =
             this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
           afterDraw?.();
-          if (baked) return true;
+          if (baked) {
+            if (environment != null) {
+              markBaked(environment);
+              if (this.#bakingEnvironment === environment) this.#bakingEnvironment = undefined;
+            }
+            return true;
+          }
           // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
+        // The bake keeps running after the caller gave up on it: the first drawn frame that finds it
+        // done records it (`#bakingEnvironment` stays set), so the next restart does not wait again.
         return false;
       } finally {
         this.info.engine.environmentBake = false;
