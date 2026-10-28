@@ -12,7 +12,7 @@
 // every frame, with no interpolation of its own. The one smoothing is the eye's
 // climb over a stair step (`FpsPlayer` and `entities/movement.ts`), a fixed rate
 // of at most one step, as every first-person engine since Half-Life does.
-import { Euler, MathUtils, type PerspectiveCamera } from "three";
+import { MathUtils, type PerspectiveCamera } from "three";
 
 /** The numbers a first-person camera is built from, in one table. */
 export const FIRST_PERSON = {
@@ -42,9 +42,6 @@ export interface IEyeFrame {
   readonly phase: number;
 }
 
-/** The rotation `applyFirstPerson` last gave the camera, returned so aim reads it, not the camera. */
-const eyeRotation = new Euler(0, 0, 0, "YXZ");
-
 /**
  * Place the camera for this frame.
  *
@@ -52,19 +49,17 @@ const eyeRotation = new Euler(0, 0, 0, "YXZ");
  * order, looking up and turning at the same time rolls the horizon, which is the
  * single most common way a first-person camera goes wrong.
  */
-export function applyFirstPerson(camera: PerspectiveCamera, frame: IEyeFrame): Euler {
+export function applyFirstPerson(camera: PerspectiveCamera, frame: IEyeFrame): void {
   // A hit shoves the view; the caller decays it back to the aim, so the shake
   // never fights the player for control.
   const kick = frame.shake * frame.shake;
   camera.position.set(frame.x, frame.y, frame.z);
-  eyeRotation.set(
+  camera.rotation.set(
     frame.pitch + Math.sin(frame.phase * 37) * 0.05 * kick,
     frame.yaw + Math.sin(frame.phase * 23) * 0.05 * kick,
     Math.sin(frame.phase * 17) * 0.04 * kick,
     "YXZ",
   );
-  camera.rotation.copy(eyeRotation);
-  return eyeRotation;
 }
 
 /**

@@ -333,8 +333,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "87a9a4b2406cb1261af7810e3c66543aa6726d55897c545a6750ae6b8f9a2445",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
+<<<<<<< HEAD
   shooter: "eac44077fe6da6493fdd5076900cf923947c5aa0500cf0b6ef3ee86b170039d9",
   snow: "45c8c71a3c2d5ced4a99f4c481eeb5e8cf5ab01b478709a0218e5fca8dc81c00",
+||||||| parent of 5c0695682 (perf(shooter): the kit reads collider bounds, model height and hand gap once)
+  shooter: "837e22224ff355b43d8f0f2f51c6ba0127478939f6668ac3a625a867abb2ac84",
+  snow: "9ac935bb9675932070e1fa5ad83af1f9831eb62bb490789ea4d881f862df2972",
+=======
+  shooter: "0242e234f98aaefc7e8a4ca68674c187621b945ad5378c0215d6e07e1fd0d728",
+  snow: "9ac935bb9675932070e1fa5ad83af1f9831eb62bb490789ea4d881f862df2972",
+>>>>>>> 5c0695682 (perf(shooter): the kit reads collider bounds, model height and hand gap once)
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.

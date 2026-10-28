@@ -247,11 +247,13 @@ const OCCUPANCY_BUCKET = 4;
 const OCCUPANCY_PAD = AGENT_RADIUS + 0.16;
 
 /** The town's walls bucketed on the ground plane: `[minX, maxX, minZ, maxZ]` per box, per bucket. */
-interface IOccupancyIndex {
+export interface IOccupancyIndex {
   readonly minX: number;
   readonly minZ: number;
   readonly columns: number;
   readonly rows: number;
+  /** The widest padding this index files for; a wider query would silently miss a wall. */
+  readonly pad: number;
   readonly buckets: readonly number[][];
 }
 const OCCUPANCY = new WeakMap<object, IOccupancyIndex>();
@@ -260,8 +262,11 @@ const OCCUPANCY = new WeakMap<object, IOccupancyIndex>();
  * Index the colliders that block a walker once per collider set. The same two filters `#occupied`
  * used to apply per box per query: the raised deck is overhead, not a wall, so a soldier routes
  * through the open space under it; and a box under half a metre is a step, not an obstacle.
+ *
+ * Each wall is filed under every bucket its padded box reaches, so a query looks only at the walls
+ * its own bucket holds and still finds a wall whose face is up to `pad` away.
  */
-function occupancyIndex(colliders: readonly BoxCollider[]): IOccupancyIndex {
+export function occupancyIndex(colliders: readonly BoxCollider[]): IOccupancyIndex {
   const cached = OCCUPANCY.get(colliders);
   if (cached !== undefined) return cached;
   const walls = colliders.filter(
@@ -291,9 +296,40 @@ function occupancyIndex(colliders: readonly BoxCollider[]): IOccupancyIndex {
       }
     }
   }
-  const index = { minX, minZ, columns, rows, buckets };
+  const index = { minX, minZ, columns, rows, pad: OCCUPANCY_PAD, buckets };
   OCCUPANCY.set(colliders, index);
   return index;
+}
+
+/** True when a body `padding` wide at (x, z) overlaps one of the walls `index` holds near it. */
+export function occupancyBlocked(
+  index: IOccupancyIndex,
+  x: number,
+  z: number,
+  padding: number,
+): boolean {
+  if (padding > index.pad) {
+    throw new RangeError(
+      `Occupancy index files walls ${index.pad} m from a point, asked for ${padding} m.`,
+    );
+  }
+  const column = Math.floor((x - index.minX) / OCCUPANCY_BUCKET);
+  const row = Math.floor((z - index.minZ) / OCCUPANCY_BUCKET);
+  // Off the filed ground: no wall is within `pad` of a point outside every wall's own range.
+  if (column < 0 || column >= index.columns || row < 0 || row >= index.rows) return false;
+  const walls = index.buckets[row * index.columns + column];
+  if (walls === undefined) return false;
+  for (let at = 0; at < walls.length; at += 4) {
+    if (
+      x > (walls[at] as number) - padding &&
+      x < (walls[at + 1] as number) + padding &&
+      z > (walls[at + 2] as number) - padding &&
+      z < (walls[at + 3] as number) + padding
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Scratch for the per-frame sight test; five soldiers × three vectors × 60 Hz is real garbage.
@@ -1248,26 +1284,13 @@ export class Enemy {
    * (`occupancyIndex`) instead of the whole town; the answer is the same box test.
    */
   #occupied(x: number, z: number, padding: number): boolean {
-    const index = this.#occupancy;
-    const column = Math.floor((x - index.minX) / OCCUPANCY_BUCKET);
-    const row = Math.floor((z - index.minZ) / OCCUPANCY_BUCKET);
-    const walls =
-      column >= 0 && column < index.columns && row >= 0 && row < index.rows
-        ? index.buckets[row * index.columns + column]
-        : undefined;
-    if (walls !== undefined) {
-      for (let at = 0; at < walls.length; at += 4) {
-        if (
-          x > (walls[at] as number) - padding &&
-          x < (walls[at + 1] as number) + padding &&
-          z > (walls[at + 2] as number) - padding &&
-          z < (walls[at + 3] as number) + padding
-        ) {
-          return true;
-        }
-      }
-    }
-    return x < this.#navMin || x > this.#navMax || z < this.#navMin || z > this.#navMax;
+    return (
+      occupancyBlocked(this.#occupancy, x, z, padding) ||
+      x < this.#navMin ||
+      x > this.#navMax ||
+      z < this.#navMin ||
+      z > this.#navMax
+    );
   }
 
   /** True when the soldier stands in any raised deck's footprint — routing beneath it. */
