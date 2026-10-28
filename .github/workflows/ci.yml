@@ -1465,7 +1465,9 @@ jobs:
     needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
-    timeout-minutes: 5
+    # 15, not 5: `fetch-depth: 0` pulls every branch and tag, which takes over five minutes on a
+    # light slot while the pool is busy, and the cancelled job kept ci-required red on a green board.
+    timeout-minutes: 15
     # A reused verdict is only a pass if the run it cites passed its own ci-required job, and that
     # is an Actions API read rather than anything this repository can compute.
     permissions:
