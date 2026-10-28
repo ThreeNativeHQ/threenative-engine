@@ -2988,8 +2988,9 @@ void cameraTurnRecords() {
 // instances, so the visible set changing records nothing; the pixels and three's Info match the depth-order path that
 // re-records, and the draw coming back records nothing either.
 // PRD-754: transparent draws record their own bundle, keyed as the direct path keys them: a cull records what direct
-// encode records, never more, and pixels match.
-void cullKeepsMain(bool transparent) {
+// encode records, never more, and pixels match. A draw seen for the first time records alone, into a delta bundle
+// drawn after the kept rows: the kept rows record nothing (firstSeen).
+void cullKeepsMain(bool transparent, bool firstSeen = false) {
     using R = Renderer;
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
@@ -3026,6 +3027,10 @@ void cullKeepsMain(bool transparent) {
             const auto& f = renderer.lastFrame();
             return Seen{read(renderer, events), f.mainRecorded, f.draws, f.triangles};
         };
+        if (firstSeen) {
+            for (int i = 0; i < 3; ++i) frame(two);
+            return std::vector<Seen>{frame(three), frame(three)};
+        }
         for (int i = 0; i < 3; ++i) frame(three);
         // A readback copy destroyed between frames binds to no draw, so it keeps the out-of-view row.
         renderer.gpu().destroy(renderer.gpu().createBuffer(256, WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst));
@@ -3042,19 +3047,23 @@ void cullKeepsMain(bool transparent) {
             differ += !std::equal(direct[k].pixels.begin() + std::ptrdiff_t(p), direct[k].pixels.begin() + std::ptrdiff_t(p + 4),
                                   stable[k].pixels.begin() + std::ptrdiff_t(p));
         }
-        std::printf("cull%s frame %zu: %zu covered pixels, %zu differ; recorded %u direct, %u stable; draws %u/%u, triangles %llu/%llu\n",
-                    transparent ? " transparent" : "", k, covered, differ, direct[k].recorded, stable[k].recorded, direct[k].draws, stable[k].draws,
+        std::printf("cull%s%s frame %zu: %zu covered pixels, %zu differ; recorded %u direct, %u stable; draws %u/%u, triangles %llu/%llu\n",
+                    transparent ? " transparent" : "", firstSeen ? " first-seen" : "", k, covered, differ, direct[k].recorded, stable[k].recorded, direct[k].draws, stable[k].draws,
                     (unsigned long long)direct[k].triangles, (unsigned long long)stable[k].triangles);
         CHECK(!direct[k].pixels.empty() && direct[k].pixels.size() == stable[k].pixels.size());
         CHECK(covered > 0 && differ == 0);
         CHECK(direct[k].draws == stable[k].draws && direct[k].triangles == stable[k].triangles);
-        CHECK(stable[k].recorded == (transparent ? direct[k].recorded : 0));
+        if (!firstSeen) CHECK(stable[k].recorded == (transparent ? direct[k].recorded : 0));
+    }
+    if (firstSeen) {
+        CHECK(direct[0].recorded == 3 && stable[0].recorded == 1 && stable[1].recorded == 0);
+        return;
     }
     CHECK(direct[0].recorded == 2 && direct[2].recorded == 3 && direct[2].draws == direct[0].draws + 1);
     (void)sizeof(R);
 }
 
-void cullKeepsMainBundle() { cullKeepsMain(false); cullKeepsMain(true); }
+void cullKeepsMainBundle() { cullKeepsMain(false); cullKeepsMain(true); cullKeepsMain(false, true); }
 
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }

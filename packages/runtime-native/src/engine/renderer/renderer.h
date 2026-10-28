@@ -1127,6 +1127,9 @@ private:
     WGPURenderBundle mainBundle_ = nullptr;
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
     WGPURenderBundle tailBundle_ = nullptr;  // PRD-754: the main pass's draws after its rows (transparent), else null
+    // PRD-754: each rows pass's rows first seen since its last sort, drawn after the sorted rows, else null
+    WGPURenderBundle mainDelta_ = nullptr, auxDelta_ = nullptr, velocityDelta_ = nullptr;
+    std::array<uint64_t, 3> mainDeltaKey_{}, auxDeltaKey_{}, velocityDeltaKey_{};
     std::vector<uint64_t> tailKey_;
     std::vector<uint64_t> mainBundleKey_;
     std::vector<uint32_t> mainBundleRows_;

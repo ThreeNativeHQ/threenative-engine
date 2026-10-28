@@ -492,6 +492,8 @@ struct Renderer::PassRows {
     std::shared_ptr<const std::vector<Renderer::MainRow>> rows;
     Renderer::RecordCause cause = Renderer::RecordNone;
     WGPUBuffer indirect = nullptr;
+    std::size_t sorted = 0;              // rows [0, sorted) record in state order; the rest, first seen since, after them
+    std::array<uint64_t, 3> deltaKey{};  // the rows after `sorted`
     double ms = 0;  // building the rows, in the plan stage
     uint32_t draws = 0;
     uint64_t triangles = 0;
@@ -510,6 +512,8 @@ struct Renderer::MainRows {
     std::vector<uint32_t> planRows, planSource;    // its row starts, and each plan draw's row: rows, kLoose or kAfter
     std::vector<uint32_t> lastSource;              // last frame's planSource: a draw in the same place finds its row there
     uint64_t frame = 0, destroys = 0, generation = 0;
+    std::size_t sorted = 0;  // the ordered rows the last full record sorted; rows first seen since follow them
+    PassRows last;           // the last frame's result, for a frame whose key matches it word for word
     Handle indirect{};
     uint64_t capacity = 0;
     static constexpr uint32_t kLoose = 1u << 31, kAfter = 1u << 30;
@@ -518,6 +522,7 @@ struct Renderer::MainRows {
     }
     void clear() {
         rows.clear(); index.clear(); loose.clear(); after.clear(); ordered.reset(); source.clear(); planKey.clear();
+        sorted = 0;
     }
 };
 
@@ -1730,7 +1735,8 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
 }
 
 void Renderer::dropBundles() {
-    for (WGPURenderBundle* bundle : {&mainBundle_, &tailBundle_, &viewportBundle_, &auxBundle_, &velocityBundle_}) {
+    for (WGPURenderBundle* bundle :
+         {&mainBundle_, &tailBundle_, &viewportBundle_, &auxBundle_, &velocityBundle_, &mainDelta_, &auxDelta_, &velocityDelta_}) {
         if (*bundle) wgpuRenderBundleRelease(*bundle);
         *bundle = nullptr;
     }
@@ -4206,6 +4212,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const uint64_t destroys = GpuResources::destroyRequests.load(std::memory_order_relaxed);
         const bool destroyed = destroys != retained.destroys;
         retained.destroys = destroys;
+        // The same per-draw key word for word, instance counts too: no row, record or indirect count moves. The row
+        // clock stands still, so a frame that changes nothing ages no row either.
+        if (!destroyed && retained.ordered && key == retained.planKey && keyRows == retained.planRows) {
+            out = retained.last;
+            key = {retained.generation, reinterpret_cast<uintptr_t>(out.indirect)};
+            keyRows = {0};
+            out.ms = meterMs() - rowsStarted;
+            return;
+        }
         ++retained.frame;
         // A draw resolves its row only when its key row changed (instances aside); the bundle's rows are rebuilt,
         // and the bundle re-recorded, only when a row changed, came or went.
@@ -4269,6 +4284,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         };
         const bool quiet = !destroyed && sameDraws();
         std::size_t looseAt = 0, afterAt = 0;
+        const std::size_t rowsBefore = retained.rows.size();
+        bool appended = true;  // the only change is rows first seen this frame
         if (quiet) for (std::size_t k = 0; k < draws.size(); ++k) {
             const DrawItem& item = *draws[k].item;
             MainRow& row = retained.at(retained.planSource[k]);
@@ -4312,7 +4329,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 row = &retained.rows[at];
                 fresh = added;
             } else {
-                if (looseAt == retained.loose.size()) { retained.loose.emplace_back(); fresh = true; }
+                if (looseAt == retained.loose.size()) { retained.loose.emplace_back(); fresh = true; appended = false; }
                 retained.planSource[k] = MainRows::kLoose | uint32_t(looseAt);
                 row = &retained.loose[looseAt++];
             }
@@ -4322,6 +4339,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 else fill(*row, p);
                 row->words.assign(own.begin(), own.end());
                 changed |= !tail;
+                appended &= tail || (fresh && p.slot);
             }
             if (!tail) {
                 const auto before = row->order();
@@ -4329,7 +4347,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 row->kind = item.kind; row->side = item.side; row->material = reinterpret_cast<uintptr_t>(item.material);
                 row->positions = reinterpret_cast<uintptr_t>(item.positions); row->indices = reinterpret_cast<uintptr_t>(item.indices);
                 row->id = item.id; row->slot = p.slot;
-                changed |= row->order() != before;
+                if (row->order() != before) {
+                    changed = true;
+                    appended &= fresh && p.slot != 0;
+                }
             }
             row->instances = item.instanceCount;
             row->seen = retained.frame;
@@ -4343,11 +4364,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         }
         if (!quiet) {
-            if (looseAt != retained.loose.size()) { retained.loose.resize(looseAt); changed = true; }
+            if (looseAt != retained.loose.size()) { retained.loose.resize(looseAt); changed = true; appended = false; }
             retained.after.resize(afterAt);
-            retained.planKey = key;
-            retained.planRows = keyRows;
         }
+        retained.planKey = key;
+        retained.planRows = keyRows;
         // A row out of view keeps its place with no instances, until it ages out or any GPU resource is destroyed.
         bool moved = false;
         if (!quiet) for (uint32_t i = 0; i < retained.rows.size();) {
@@ -4363,6 +4384,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 retained.rows.pop_back();
                 retained.index.erase(gone);
                 changed = true;
+                appended = false;
                 continue;
             }
             row.instances = 0;
@@ -4373,7 +4395,25 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (!(retained.planSource[k] & (MainRows::kLoose | MainRows::kAfter)))
                     retained.planSource[k] = retained.index.at(draws[k].slot);
         const std::size_t recordedRows = retained.ordered ? retained.ordered->size() : 0;
-        if (changed || !retained.ordered) {
+        const auto snapshot = [&](MainRow& row, std::vector<MainRow>& to) {
+            auto words = std::move(row.words);  // the snapshot only records commands
+            to.push_back(row);
+            row.words = std::move(words);
+        };
+        // Rows first seen this frame follow the kept ones, so the kept rows' bundle records nothing (UE 5.8.3 caches a
+        // mesh draw command when its primitive is added). A full sort waits until they outgrow a quarter of the rows.
+        const std::size_t fresh = retained.rows.size() - rowsBefore;
+        if (changed && appended && retained.ordered && fresh &&
+            recordedRows + fresh - retained.sorted <= std::max<std::size_t>(8, retained.sorted / 4)) {
+            const auto first = retained.source.size();
+            for (uint32_t i = uint32_t(rowsBefore); i < retained.rows.size(); ++i) retained.source.push_back(i);
+            std::sort(retained.source.begin() + std::ptrdiff_t(first), retained.source.end(),
+                      [&](uint32_t a, uint32_t b) { return retained.rows[a].order() < retained.rows[b].order(); });
+            auto ordered = std::make_shared<std::vector<MainRow>>(*retained.ordered);
+            for (std::size_t at = first; at < retained.source.size(); ++at) snapshot(retained.rows[retained.source[at]], *ordered);
+            retained.ordered = std::move(ordered);
+            out.cause = RecordCount;
+        } else if (changed || !retained.ordered) {
             std::vector<uint32_t>& source = retained.source;
             source.clear();
             for (uint32_t i = 0; i < retained.rows.size(); ++i) source.push_back(i);
@@ -4384,13 +4424,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             std::sort(source.begin(), source.end(), [&](uint32_t a, uint32_t b) { return rowOf(a).order() < rowOf(b).order(); });
             auto ordered = std::make_shared<std::vector<MainRow>>();
             ordered->reserve(source.size());
-            for (uint32_t at : source) {
-                MainRow& row = retained.at(at);
-                auto words = std::move(row.words);  // the snapshot only records commands
-                ordered->push_back(row);
-                row.words = std::move(words);
-            }
+            for (uint32_t at : source) snapshot(retained.at(at), *ordered);
             retained.ordered = std::move(ordered);
+            retained.sorted = source.size();
             ++retained.generation;
             out.cause = retained.ordered->size() != recordedRows ? RecordCount : RecordOther;
         } else {
@@ -4420,6 +4456,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // The key: which rows the bundle draws, and the indirect buffer it reads their counts from.
         key = {retained.generation, reinterpret_cast<uintptr_t>(out.indirect)};
         keyRows = {0};
+        out.sorted = retained.sorted;
+        out.deltaKey = {retained.generation, retained.ordered->size(), reinterpret_cast<uintptr_t>(out.indirect)};
+        retained.last = out;
+        retained.last.cause = RecordNone;
         out.ms = meterMs() - rowsStarted;
     };
     for (auto* rows : {&mainRows_, &auxRows_, &velocityRows_})
@@ -4722,13 +4762,14 @@ void Renderer::encodeFrame(FrameJob& job) {
         plan.begin());
     const std::vector<uint64_t>& bundleKey = job.bundleKey;
     // A pass's retained rows, recorded with each draw's counts read from its indirect record (firstInstance 0).
-    const auto recordRows = [&](const WGPURenderBundleEncoderDescriptor& descriptor, const PassRows& pass) {
+    // Rows [from, to): the sorted ones, or (delta) the ones first seen since the sort.
+    const auto recordRows = [&](const WGPURenderBundleEncoderDescriptor& descriptor, const PassRows& pass, bool delta) {
         const std::vector<MainRow>& rows = *pass.rows;
         const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
         WGPURenderPipeline pipeline = nullptr;
         WGPUBuffer vertexBuffers[16] = {}, index = nullptr;
         uint64_t vertexOffsets[16] = {};
-        for (std::size_t r = 0; r < rows.size(); ++r) {
+        for (std::size_t r = delta ? pass.sorted : 0; r < (delta ? rows.size() : pass.sorted); ++r) {
             const MainRow& row = rows[r];
             if (row.pipeline != pipeline) {
                 wgpuRenderBundleEncoderSetPipeline(bundle, pipeline = row.pipeline);
@@ -4753,6 +4794,23 @@ void Renderer::encodeFrame(FrameJob& job) {
         const WGPURenderBundle recorded = wgpuRenderBundleEncoderFinish(bundle, &finish);
         wgpuRenderBundleEncoderRelease(bundle);
         return recorded;
+    };
+    // A pass's delta bundle: its rows first seen since the last sort, recorded again only when that set grows.
+    const auto delta = [&](const WGPURenderBundleEncoderDescriptor& descriptor, const PassRows& pass, WGPURenderBundle& bundle,
+                           std::array<uint64_t, 3>& key, uint32_t& recorded) {
+        if (!pass.on || pass.sorted == pass.rows->size()) {
+            if (bundle) wgpuRenderBundleRelease(bundle);
+            bundle = nullptr;
+            return;
+        }
+        if (bundle && key == pass.deltaKey) return;
+        const double recordStarted = meterMs();
+        const WGPURenderBundle made = recordRows(descriptor, pass, true);
+        if (bundle) wgpuRenderBundleRelease(bundle);
+        bundle = made;
+        key = pass.deltaKey;
+        recorded += uint32_t(pass.rows->size() - pass.sorted);
+        lastFrame_.recordMs += meterMs() - recordStarted;
     };
     if (job.mainRows.on) {
         WGPURenderBundleEncoderDescriptor descriptor{};
@@ -4803,15 +4861,17 @@ void Renderer::encodeFrame(FrameJob& job) {
             const auto cause = mainBundleKey_.size() == 2 ? job.mainRows.cause : RecordOther;
             const double recordStarted = meterMs();
             const std::vector<MainRow>& rows = *job.mainRows.rows;
-            const WGPURenderBundle recorded = recordRows(descriptor, job.mainRows);
+            const WGPURenderBundle recorded = recordRows(descriptor, job.mainRows, false);
             if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);  // after the record: the new bundle holds the rows' objects
             mainBundle_ = recorded;
-            lastFrame_.mainRecorded += uint32_t(rows.size());
+            lastFrame_.mainRecorded += uint32_t(job.mainRows.sorted);
+            (void)rows;
             lastFrame_.recordCause = cause;
             lastFrame_.recordMs += meterMs() - recordStarted;
             mainBundleKey_ = std::move(job.bundleKey);
             mainBundleRows_ = std::move(job.bundleRows);
         }
+        delta(descriptor, job.mainRows, mainDelta_, mainDeltaKey_, lastFrame_.mainRecorded);
         lastFrame_.recordMs += job.mainRows.ms;
         lastFrame_.draws = job.mainRows.draws;
         lastFrame_.triangles = job.mainRows.triangles;
@@ -4820,7 +4880,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
         if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
         if (tailBundle_) wgpuRenderBundleRelease(tailBundle_);
-        mainBundle_ = viewportBundle_ = tailBundle_ = nullptr;
+        if (mainDelta_) wgpuRenderBundleRelease(mainDelta_);
+        mainBundle_ = viewportBundle_ = tailBundle_ = mainDelta_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
         const WGPUTextureFormat color = sceneFormat_;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
@@ -4865,8 +4926,11 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.triangles = mainBundleStats_.triangles;
         lastFrame_.mainSkinned = mainBundleStats_.mainSkinned;
     }
-    const WGPURenderBundle mainBundles[2] = {mainBundle_, tailBundle_};
-    wgpuRenderPassEncoderExecuteBundles(pass, tailBundle_ ? 2 : 1, mainBundles);
+    WGPURenderBundle mainBundles[3] = {mainBundle_};
+    std::size_t mainCount = 1;
+    for (const WGPURenderBundle more : {mainDelta_, tailBundle_})
+        if (more) mainBundles[mainCount++] = more;
+    wgpuRenderPassEncoderExecuteBundles(pass, mainCount, mainBundles);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     // At 4x, the main pass draws depth into msaaDepth_. Resolve it into depth_ for the copy below.
@@ -4898,27 +4962,24 @@ void Renderer::encodeFrame(FrameJob& job) {
     // pipelines, groups, offsets or stores change (their keys, built with the plan), as the main pass does.
     const auto replay = [&](WGPURenderPassEncoder pass, WGPURenderBundle& bundle, std::vector<uint64_t>& key,
                             std::vector<uint64_t>& planned, const std::vector<Planned>& draws,
-                            const WGPUTextureFormat* formats, size_t formatCount, uint32_t samples, const PassRows& rows) {
+                            const WGPUTextureFormat* formats, size_t formatCount, uint32_t samples, const PassRows& rows,
+                            WGPURenderBundle& deltaBundle, std::array<uint64_t, 3>& deltaKey) {
         lastFrame_.recordMs += rows.ms;
+        WGPURenderBundleEncoderDescriptor descriptor{};
+        descriptor.colorFormatCount = formatCount; descriptor.colorFormats = formats;
+        descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = samples;
+        descriptor.depthReadOnly = true;
         if (rows.on && (!bundle || planned != key)) {
             const double recordStarted = meterMs();
-            WGPURenderBundleEncoderDescriptor descriptor{};
-            descriptor.colorFormatCount = formatCount; descriptor.colorFormats = formats;
-            descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = samples;
-            descriptor.depthReadOnly = true;
-            const WGPURenderBundle recorded = recordRows(descriptor, rows);
+            const WGPURenderBundle recorded = recordRows(descriptor, rows, false);
             if (bundle) wgpuRenderBundleRelease(bundle);  // after the record: the new bundle holds the rows' objects
             bundle = recorded;
             key = std::move(planned);
-            lastFrame_.auxRecorded += uint32_t(rows.rows->size());
+            lastFrame_.auxRecorded += uint32_t(rows.sorted);
             lastFrame_.recordMs += (meterMs() - recordStarted);
         } else if (!bundle || planned != key) {
             const double recordStarted = meterMs();
             if (bundle) wgpuRenderBundleRelease(bundle);
-            WGPURenderBundleEncoderDescriptor descriptor{};
-            descriptor.colorFormatCount = formatCount; descriptor.colorFormats = formats;
-            descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = samples;
-            descriptor.depthReadOnly = true;
             const auto recorder = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
             bound = nullptr; boundIndex = nullptr;
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
@@ -4930,7 +4991,9 @@ void Renderer::encodeFrame(FrameJob& job) {
             lastFrame_.auxRecorded += uint32_t(draws.size());
             lastFrame_.recordMs += (meterMs() - recordStarted);
         }
-        wgpuRenderPassEncoderExecuteBundles(pass, 1, &bundle);
+        delta(descriptor, rows, deltaBundle, deltaKey, lastFrame_.auxRecorded);
+        const WGPURenderBundle bundles[2] = {bundle, deltaBundle};
+        wgpuRenderPassEncoderExecuteBundles(pass, deltaBundle ? 2 : 1, bundles);
     };
     if (job.auxMask) {
         // One pass writes every post target the graph reads, one colour attachment each in AuxTarget order
@@ -4958,7 +5021,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         auxDesc.colorAttachmentCount = count; auxDesc.colorAttachments = targets.data();
         auxDesc.depthStencilAttachment = &auxDepth;
         auto auxPass = beginTimedRenderPass(encoder, &auxDesc, 2, {"aux", inputWidth_, inputHeight_});
-        replay(auxPass, auxBundle_, auxBundleKey_, job.auxKey, job.auxPlan, formats.data(), count, 1, job.auxRows);
+        replay(auxPass, auxBundle_, auxBundleKey_, job.auxKey, job.auxPlan, formats.data(), count, 1, job.auxRows,
+               auxDelta_, auxDeltaKey_);
         wgpuRenderPassEncoderEnd(auxPass); wgpuRenderPassEncoderRelease(auxPass);
         lastFrame_.auxPasses = 1;
     }
@@ -4990,7 +5054,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
         const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
         replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_,
-               job.velocityRows);
+               job.velocityRows, velocityDelta_, velocityDeltaKey_);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         copyPrevious();
         if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
