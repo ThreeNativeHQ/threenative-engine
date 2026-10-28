@@ -41,6 +41,7 @@ runs:
           [ -n "$archive" ] || { echo "missing packed archive for $package_name"; exit 1; }
           case "$package_name" in
             create-threenative) package_flag="--cli-package" ;;
+            threenative-animation-mcp) package_flag="--animation-mcp-package" ;;
             threenative-blender-mcp) package_flag="--blender-mcp-package" ;;
             threenative-engine-mcp) package_flag="--engine-mcp-package" ;;
             @threenative/*) package_flag="--threenative-${package_name#@threenative/}-package" ;;

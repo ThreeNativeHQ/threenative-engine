@@ -55,6 +55,13 @@ const SLOW_STARTUP_DELAY_MS = 5_100;
 const FRAME_SAMPLE_BATCH_SIZE = 30;
 // Android logcat truncates long lines, so native samples use a smaller JSON batch.
 const NATIVE_FRAME_SAMPLE_BATCH_SIZE = 5;
+const collectorStartedAt = Date.now();
+// One stderr line as each phase starts: the evidence JSON prints only at the end, so a run that a
+// CI watchdog kills still names the phase it was in.
+export function phaseLine(name, elapsedMs) {
+  return `TN_PROD_PHASE ${name} ${(elapsedMs / 1_000).toFixed(1)}s\n`;
+}
+const reportPhase = (name) => process.stderr.write(phaseLine(name, Date.now() - collectorStartedAt));
 // The wall-clock a paced fixed step gives each tick, so a synthetic workload's tick budget stands
 // in for the seconds it names and the host's render loop actually presents frames while it runs.
 const PRODUCTION_TICK_INTERVAL_MS = 1_000 / 60;
@@ -307,11 +314,13 @@ export async function collectProduction(options, context, runId) {
   const project = join(temporaryRoot, 'platformer');
   const startedAt = new Date().toISOString();
   try {
+    reportPhase('stage');
     await stageProductionProject(options, project, tools);
     tools.workloadSourceHash = await hashPath(join(project, 'src'));
     const scenarios = await writeRunScenarios(project, options);
     const artifactsRoot = join(project, 'artifacts', 'production');
     await mkdir(artifactsRoot, { recursive: true });
+    if (webDisplay !== undefined) reportPhase('web');
     const web = webDisplay === undefined ? undefined : await collectWeb(project, scenarios, artifactsRoot, options, tools, webDisplay);
     const native = nativeTargets.has(options.target) || options.target === 'desktop-pair'
       ? await collectNative(project, scenarios, artifactsRoot, options, tools)
@@ -478,14 +487,14 @@ async function packLocalPackage(directory, destination) {
   return join(destination, archive);
 }
 
-function packageSourceFlag(name) {
+export function packageSourceFlag(name) {
   if (name === 'create-threenative') return '--cli-package';
-  if (name === 'threenative-blender-mcp') return '--blender-mcp-package';
-  if (name === 'threenative-engine-mcp') return '--engine-mcp-package';
   if (name.startsWith('@threenative/')) {
     const suffix = name.slice('@threenative/'.length);
     return `--threenative-${suffix}-package`;
   }
+  // scripts/workspace-packages.ts workspacePackageSourceFlag: an unscoped tool package drops its prefix.
+  if (name.startsWith('threenative-')) return `--${name.slice('threenative-'.length)}-package`;
   throw new Error(`TN_PROD_PACKAGE_FLAG_UNSUPPORTED: ${name}`);
 }
 
@@ -735,6 +744,7 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
 
 async function collectNative(project, scenarios, artifactsRoot, options, tools) {
   const target = options.target === 'desktop-pair' || options.target === 'desktop' ? 'desktop' : options.target.startsWith('ios') ? 'ios' : 'android';
+  reportPhase(`${target}-build`);
   await installNativeProfileEntry(project, target, options);
   const build = await prepareNativeWorkload(project, target, options);
   if (build.status !== 0) {
@@ -756,9 +766,11 @@ async function collectNative(project, scenarios, artifactsRoot, options, tools) 
   const runs = [];
   const startups = [];
   for (let coldStart = 0; coldStart < options.coldStarts; coldStart += 1) {
+    reportPhase(`${target}-startup-${coldStart + 1}`);
     const startup = await runNativeScenario(project, target, scenarios.nativeStartupPath, join(artifactsRoot, `native-startup-${coldStart + 1}`), options, artifactPath, tools, scenarios.timeoutMs);
     startups.push(startup);
     for (let repetition = 0; repetition < steadyLaunchesAt(options, coldStart); repetition += 1) {
+      reportPhase(`${target}-workload-${coldStart + 1}-${repetition + 1}`);
       runs.push(await runNativeScenario(
         project,
         target,

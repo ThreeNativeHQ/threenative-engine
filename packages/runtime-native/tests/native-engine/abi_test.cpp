@@ -913,7 +913,24 @@ void hierarchy_revision() {
     const double nested = revision(scene);
     CHECK(nested > added);
     CHECK(tn_invoke(scene, "attach", &meshRef, 1, &result, &d.value) == TN_OK);
-    CHECK(revision(scene) > nested);
+    const double attached = revision(scene);
+    CHECK(attached > nested);
+    // Per subtree: a walk kept under one root (a rig) holds while another subtree changes. A shot crate's
+    // shards added under the scene re-walked every rig in the shooter (573 nodes in one frame).
+    const double rig = revision(group);
+    tn_handle_t shard{};
+    CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &shard, &d.value) == TN_OK);
+    const tn_value_t shardRef = ref(shard);
+    CHECK(tn_invoke(scene, "add", &shardRef, 1, &result, &d.value) == TN_OK);
+    CHECK(revision(scene) > attached);
+    CHECK(revision(group) == rig);
+    CHECK(tn_invoke(group, "add", &shardRef, 1, &result, &d.value) == TN_OK);
+    CHECK(revision(group) > rig);
+    const double moved = revision(scene);
+    CHECK(moved > attached);
+    CHECK(tn_invoke(shard, "removeFromParent", nullptr, 0, &result, &d.value) == TN_OK);
+    CHECK(revision(scene) > moved);
+    std::printf("TN_HIERARCHY_REVISION rig %g after an unrelated add under the scene, %g after one under the rig\n", rig, revision(group));
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

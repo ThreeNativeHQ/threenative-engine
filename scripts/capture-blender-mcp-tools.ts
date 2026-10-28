@@ -7,7 +7,8 @@
 // The published-tarball form PRD-346 asks for is not available while the package is unpublished, so
 // this packs the workspace and installs *that artifact*, which is what CI scaffolds from too.
 //
-//   pnpm tsx scripts/capture-blender-mcp-tools.ts
+//   pnpm tsx scripts/capture-blender-mcp-tools.ts            # blender (default)
+//   pnpm tsx scripts/capture-blender-mcp-tools.ts animation  # the same capture for the animation server
 import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,15 +16,39 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 
 const REPO = path.resolve(import.meta.dirname, "..");
-const SNAPSHOT = path.join(REPO, "packages/create-threenative/blender-mcp-tools.json");
-const PACKAGE = "threenative-blender-mcp";
-const RECOMMENDED = [
-  "blender_status",
-  "blender_inspect",
-  "blender_convert",
-  "blender_recipes",
-  "blender_run_python",
-] as const;
+/** One row per server this capture covers. `statusTool` is the tool whose reply shape is recorded;
+ * a server without one records no `statusShape`. */
+const SERVERS = {
+  animation: {
+    label: "animation",
+    package: "threenative-animation-mcp",
+    recommended: ["animation_inspect", "animation_attach", "animation_open_view"],
+    snapshot: "animation-mcp-tools.json",
+    statusTool: undefined,
+  },
+  blender: {
+    label: "blender",
+    package: "threenative-blender-mcp",
+    recommended: [
+      "blender_status",
+      "blender_inspect",
+      "blender_convert",
+      "blender_recipes",
+      "blender_run_python",
+    ],
+    snapshot: "blender-mcp-tools.json",
+    statusTool: "blender_status",
+  },
+} as const;
+const SELECTED = SERVERS[(process.argv[2] ?? "blender") as keyof typeof SERVERS];
+if (SELECTED === undefined) {
+  throw new Error(
+    `TN_MCP_SNAPSHOT: unknown server '${process.argv[2]}'; use blender or animation.`,
+  );
+}
+const SNAPSHOT = path.join(REPO, "packages/create-threenative", SELECTED.snapshot);
+const PACKAGE = SELECTED.package;
+const RECOMMENDED = SELECTED.recommended;
 
 /** Scratch roots this run owns, removed together in `main`'s finally. */
 const scratch: string[] = [];
@@ -99,10 +124,13 @@ async function main(): Promise<void> {
     });
     child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
     const listed = await request(child, lines, next, "tools/list");
-    const status = await request(child, lines, next, "tools/call", {
-      arguments: {},
-      name: "blender_status",
-    });
+    const status =
+      SELECTED.statusTool === undefined
+        ? undefined
+        : await request(child, lines, next, "tools/call", {
+            arguments: {},
+            name: SELECTED.statusTool,
+          });
     // The schemas come from the same live response, so the docs never restate an argument by hand.
     const listedTools = listed.tools as readonly {
       name: string;
@@ -116,16 +144,18 @@ async function main(): Promise<void> {
     const descriptions = Object.fromEntries(
       listedTools.map((tool) => [tool.name, tool.description ?? ""]),
     );
-    const statusText = (status.content as { text: string }[])[0]?.text ?? "{}";
+    const statusText = (status?.content as { text: string }[] | undefined)?.[0]?.text ?? "{}";
     const snapshot = {
-      comment: `The blender MCP surface a generated project actually gets. \`tools\` is set-equal to the live tools/list response of version ${manifest.version}, packed from this workspace and installed from that tarball into a clean directory — never read from src/. \`recommended\` is the ordered loop the shipped agent docs describe. Regenerate with \`pnpm tsx scripts/capture-blender-mcp-tools.ts\`.`,
+      comment: `The ${SELECTED.label} MCP surface a generated project actually gets. \`tools\` is set-equal to the live tools/list response of version ${manifest.version}, packed from this workspace and installed from that tarball into a clean directory — never read from src/. \`recommended\` is the ordered loop the shipped agent docs describe. Regenerate with \`pnpm tsx scripts/capture-blender-mcp-tools.ts${SELECTED.label === "blender" ? "" : ` ${SELECTED.label}`}\`.`,
       version: manifest.version,
       serverInfo: initialized.serverInfo,
       recommended: [...RECOMMENDED],
       tools,
       inputSchemas,
       descriptions,
-      statusShape: Object.keys(JSON.parse(statusText) as Record<string, unknown>).sort(),
+      ...(status === undefined
+        ? {}
+        : { statusShape: Object.keys(JSON.parse(statusText) as Record<string, unknown>).sort() }),
     };
     writeFileSync(SNAPSHOT, `${JSON.stringify(snapshot, null, 2)}\n`);
     // Biome formats JSON arrays differently from JSON.stringify, and `pnpm lint` checks this file.
@@ -134,7 +164,7 @@ async function main(): Promise<void> {
       cwd: REPO,
       stdio: "ignore",
     });
-    process.stdout.write(`blender MCP surface: ${tools.length} tool(s) -> ${SNAPSHOT}\n`);
+    process.stdout.write(`${SELECTED.label} MCP surface: ${tools.length} tool(s) -> ${SNAPSHOT}\n`);
   } finally {
     child.kill();
     lines.close();

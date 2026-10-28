@@ -77,7 +77,9 @@ means something on one target is a fork of the harness. `--live-clock` adds
 the game entry evaluates.
 
 A device target that cannot be reached fails `TN_PLAYTEST_DEVICE_FAILED`; it never degrades
-to a browser run. Desktop observes HTTP and asset fetch failures through the native host mailbox
+to a browser run. The iOS simulator launches only after `simctl listapps` lists the newly
+installed bundle, because `simctl install` returns while the replaced build is still listed; an install
+that stays unlisted for 60 s fails `TN_PLAYTEST_IOS_INSTALL_UNREGISTERED`. Desktop observes HTTP and asset fetch failures through the native host mailbox
 and checks network errors by default. Missing, malformed or overflowing observations fail closed.
 Android and iOS still lack a runner network observer; an explicit network assertion **errors and
 names the working target**, it does not skip.

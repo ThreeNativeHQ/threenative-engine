@@ -319,3 +319,33 @@ describe("production profile staging", () => {
     );
   });
 });
+
+describe("production package flags", () => {
+  // The macOS desktop-core collector refused threenative-animation-mcp with
+  // TN_PROD_PACKAGE_FLAG_UNSUPPORTED: its copy of the flag rule named two MCP packages by hand.
+  it("passes every workspace package to the scaffolder under the shared flag rule", async () => {
+    const { packageSourceFlag } = (await import(
+      new URL("../scripts/profile-production.mjs", import.meta.url).href
+    )) as { packageSourceFlag(name: string): string };
+    const { workspacePackages, workspacePackageSourceFlag } = await import(
+      "../../../scripts/workspace-packages.js"
+    );
+    const names = workspacePackages().map(({ name }) => name);
+    expect(names).toContain("threenative-animation-mcp");
+    for (const name of names)
+      expect(packageSourceFlag(name), name).toBe(workspacePackageSourceFlag(name));
+  });
+});
+
+describe("production collector phases", () => {
+  // test-native's watchdog killed the collector twice at 180 s with an empty collector.log: the
+  // evidence prints only at the end, so nothing said which phase was running.
+  it("names each phase and its elapsed seconds on one stderr line", async () => {
+    const { phaseLine } = (await import(
+      new URL("../scripts/profile-production.mjs", import.meta.url).href
+    )) as { phaseLine(name: string, elapsedMs: number): string };
+    expect(phaseLine("desktop-workload-1-1", 61_234)).toBe(
+      "TN_PROD_PHASE desktop-workload-1-1 61.2s\n",
+    );
+  });
+});

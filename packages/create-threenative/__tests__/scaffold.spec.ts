@@ -213,6 +213,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
+// Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
+// trees gain the `threenative-animation` server; no other scaffold byte changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
   // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
@@ -300,7 +302,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // the sailing and snow core-look migrations on top of the on-demand asset loader.
   // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
   // to its clip; platformer binds R to restart.
-  "action-rpg": "ad90416c87a76329eb3e829af14cbb5fe0c19bb7ec4e6ce03ad6738595de9d38",
+  "action-rpg": "9253b797977c839ca35584e939fe556aa5094252d045be0307668722976131dd",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -314,7 +316,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "b5f72509b535500ef1e51fed5de9750ecb6bbafd59d611424aa6744638ca076f",
+  collectathon: "3752a726daf53ad901ac3973c28d238c1685d240763fb05566a26c0adcebd93e",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -323,28 +325,28 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "d7eb4c718940be8a957933b9f1e4551012b246d6c434dd2bc33316bb8b16d46e",
+  adventure: "463856ead2935a55e5376dc3eda490ea36afc3ca7392f16499e910b40717f69a",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "20369b64cb0453c3bef1f68152e49376d87caeb42daf2fd843fceecf19e1cb5a",
-  minimal: "aee9353f534c487f7684e78fa8bfdd128f7c20d851a46fc10c0e3b6cc10f78ee",
-  platformer: "b992fffccba1b037501484a167bc29816394189de0c52821365c577aa6a19410",
-  puzzle: "8f523af13798c9efd7abda7ea22ea07a845e3bcb94107e76188314c551d7b6a5",
-  racing: "04df0cd4c17046ee8e3eae398aed9b14a5415283064d099c31ef29587359d8d7",
-  rain: "9ebe13bf931e246e81f430e9102fb896016f308044e51e36e774be9111d8ca2f",
-  rts: "c0b05564685a0e150ee5ba71c9b6840deb96d47aacdcd9575f7ec6eed15ddcce",
-  runner: "434af04958895709aca41ae4e3c1a806040f45e12e8652ccdd5b449986a69bac",
+  kart: "c066f55dd62ab4bb52d319cf4209e44ead249d3c3aedd142ad0ee36ddcd9c6a5",
+  minimal: "93d41478b0f498f92c0bc4bb47840bc656b595e2004fce72652bad7bde7641a4",
+  platformer: "710a9a0a5ef8b3c16f83fdfa82b2deed0e01e7e06ad65928912a94beccdae1d3",
+  puzzle: "497b431c89b5b4cb90de901e575b87f10b99a12f11defd41763de8b3dd71802c",
+  racing: "6323644108412fdaa7edd63570903f57b8a539828feec801b2c104435720549a",
+  rain: "256e263532b81700bc0b4ed976089978ddea22760becad4400105987fb6ca1bc",
+  rts: "d624aac12c0963e654bc1b641ec6b522402296165519d89c4181784386205f45",
+  runner: "97bffb023b26066f33a7a7aa8d347db5730b5b0d59c551e69f97fe1e5211d16c",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "d0e83340c611759261f232fd208c16ad3bad99258c99b280c27045b62c3b8015",
+  sailing: "522f933e5fd391718b430b15ca396aec6002ae3007dcc13fdbbd233d107d1b66",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "93a64cc66acc55a85ef068625f038486dac51c3d523aa14dd466441c38dfc258",
-  snow: "b5108467bdd763257d64dfee784a55a3156441da3ff10a24ad8f2b957436fc70",
+  shooter: "1a2a97a722149f839fb698b8da0f1eabe4bc4d0381aa6b6c4c6216dde9a1fb8c",
+  snow: "b01cfc7ebc4ea78a4279cdef9f6743aa1c99eda6fc5b498fdebd710e85975a9f",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "4d259e6e85ee6bb9f11ef8add007dde96dabc5638694abd246b3760fdd65fbfd",
-  "tower-defense": "00e189fab08d520b916b64147f9a37984ff4f826b8bf2a7e39bb20788458339d",
+  starter: "6ace45b5f21286c8081f3ca052fc030c50405fe6e50adc217bb040177ab96850",
+  "tower-defense": "05349f600c375fb2d300348ceb772128831d8c0cdf1ef910c5d351a813dcbd1c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1809,6 +1811,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
           },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1844,6 +1850,10 @@ describe("create-threenative", () => {
           "threenative-blender": {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
+          },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
           },
         },
       });

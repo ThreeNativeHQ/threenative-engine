@@ -34,3 +34,6 @@ f799f51aba375ce12df5eb43db2a7c69b65d96ae:scripts/kit-loop.mjs:generic-api-key:45
 0fd2f4d574d82305373434bc8cf1c00600b3a36e:.gitleaksignore:generic-api-key:31
 # Verified 2026-10-27: the same KPI field id line of scripts/kit-loop.mjs, on #574's branch (pr563-followup).
 4e74eea0908f871c2f42c112e82c31952d9cdd89:scripts/kit-loop.mjs:generic-api-key:45
+# Verified 2026-10-28: the #574 squash brings scripts/kit-loop.mjs to develop in a merge-group commit whose
+# SHA does not exist until the queue builds it, so line 45 (the KPI field id k2ScenarioPct) carries an inline
+# `gitleaks:allow` instead of a fingerprint here. It suppresses that one line only.
