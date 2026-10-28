@@ -1043,7 +1043,7 @@ importers:
         version: 19.2.0(react@19.2.0)
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=07a8cc40e8948c5c5f8997a5a0ade65af2ea7f9cd832cd85c779e5572c9bdbc4)
+        version: 0.185.1(patch_hash=ad73bb2ac7c2e2e52c29685d6ed605b7931006be6a5488bcf6160e647ff43a9f)
       zod:
         specifier: 'catalog:'
         version: 4.4.3
