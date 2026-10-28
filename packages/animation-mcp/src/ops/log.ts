@@ -7,6 +7,7 @@ import {
   migrateRecipe,
   upsertKeyframe,
 } from "../client/recipe.js";
+import type { ClipEdit } from "./clip-edit.js";
 import type { AnchorInfo } from "./landmarks.js";
 
 /** The clip name the calibrator view uses for a pose that applies to every clip. */
@@ -28,7 +29,14 @@ export interface KeyOp {
   readonly attachment?: AttachmentMode;
 }
 
-export type AnimationOp = AttachOp | KeyOp;
+/** A clip edit, recorded so a replay runs the same program the first run did. */
+export interface ModifyOp {
+  readonly clip: string;
+  readonly edit: ClipEdit;
+  readonly op: "modify";
+}
+
+export type AnimationOp = AttachOp | KeyOp | ModifyOp;
 
 /**
  * `<model>.anim.json`, next to the source GLB: the whole edit history, oldest first.
@@ -90,12 +98,60 @@ function attachmentMode(value: unknown): AttachmentMode | undefined {
   return value;
 }
 
+function clipEdit(value: unknown): ClipEdit {
+  if (!isRecord(value)) throw new Error("A modify op needs an edit object.");
+  const finite = (candidate: unknown, what: string): number => {
+    if (typeof candidate !== "number" || !Number.isFinite(candidate))
+      throw new Error(`A ${value.kind as string} edit needs a finite ${what}.`);
+    return candidate;
+  };
+  switch (value.kind) {
+    case "trim": {
+      const start = finite(value.start, "start");
+      const end = finite(value.end, "end");
+      if (start < 0 || end <= start) throw new Error("trim needs 0 <= start < end.");
+      return { end, kind: "trim", start };
+    }
+    case "retime": {
+      const speed = finite(value.speed, "speed");
+      if (speed <= 0) throw new Error("retime needs a speed above zero.");
+      return { kind: "retime", speed };
+    }
+    case "loop-point": {
+      const time = finite(value.time, "time");
+      if (time < 0) throw new Error("A loop point cannot be before the clip starts.");
+      return { kind: "loop-point", time };
+    }
+    case "resample": {
+      const fps = finite(value.fps, "fps");
+      if (fps <= 0) throw new Error("resample needs an fps above zero.");
+      return { fps, kind: "resample" };
+    }
+    case "mirror":
+      return { kind: "mirror" };
+    case "foot-lock": {
+      const contact = finite(value.contact, "contact");
+      const feet = value.feet;
+      if (!Array.isArray(feet) || !feet.every((foot) => typeof foot === "string"))
+        throw new Error("foot-lock names its feet as strings.");
+      return { contact, feet: feet as string[], kind: "foot-lock" };
+    }
+    default:
+      throw new Error(`Unknown clip edit '${String(value.kind)}'.`);
+  }
+}
+
 function op(value: unknown): AnimationOp {
   if (!isRecord(value)) throw new Error("Every op must be an object.");
   if (value.op === "attach") {
     if (typeof value.attached !== "string" || value.attached.length === 0)
       throw new Error("An attach op names the attached GLB.");
     return { anchor: anchorInfo(value.anchor), attached: value.attached, op: "attach" };
+  }
+  if (value.op === "modify") {
+    if (typeof value.clip !== "string" || value.clip.length === 0)
+      throw new Error("A modify op names its clip.");
+    return { clip: value.clip, edit: clipEdit(value.edit), op: "modify" };
   }
   if (value.op === "key") {
     if (typeof value.clip !== "string" || value.clip.length === 0)
@@ -166,6 +222,9 @@ export function replayOps(log: AnimationLog): ReplayResult {
       attached = entry.attached;
       continue;
     }
+    // Edits change a clip's curves, not the attachment's keyed offsets, so replay of the poses
+    // skips them; `renderLog` is what applies them to the GLB.
+    if (entry.op === "modify") continue;
     const keyed = upsertKeyframe(poses[entry.clip], {
       time: entry.time,
       transform: entry.transform,

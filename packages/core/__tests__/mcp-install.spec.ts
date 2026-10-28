@@ -269,6 +269,7 @@ describe("MCP_SERVERS", () => {
       expect(listed.result?.tools?.map((tool) => tool.name).sort()).toEqual([
         "animation_attach",
         "animation_inspect",
+        "animation_modify",
         "animation_open_view",
         "animation_verify",
       ]);

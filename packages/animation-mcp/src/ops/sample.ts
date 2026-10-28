@@ -1,9 +1,11 @@
-import { type Node, NodeIO } from "@gltf-transform/core";
+import { type Document, type Node, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { Matrix4, Quaternion, Vector3 } from "three";
 
 /** A posed frame: every tracked bone's world transform, in the model's own units. */
 export interface FrameSample {
+  /** The parent bone's world rotation, which is the space a local correction is written in. */
+  readonly parents: Readonly<Record<string, [number, number, number, number]>>;
   readonly positions: Readonly<Record<string, [number, number, number]>>;
   readonly rotations: Readonly<Record<string, [number, number, number, number]>>;
   readonly time: number;
@@ -16,7 +18,7 @@ export interface ClipSamples {
   readonly frames: readonly FrameSample[];
 }
 
-interface Channel {
+export interface Channel {
   readonly interpolation: string;
   readonly times: Float32Array;
   readonly values: Float32Array;
@@ -29,7 +31,7 @@ const reader = () => new NodeIO().registerExtensions(ALL_EXTENSIONS);
 /** CUBICSPLINE stores in-tangent, value and out-tangent per key; the value component is sampled and
  * the tangents ignored, which is exact at every keyframe and straight between two. Verify reads a
  * dense grid of frames, so the approximation can neither invent nor hide a defect. */
-function sampleChannel(channel: Channel, width: number, time: number): number[] {
+export function sampleChannel(channel: Channel, width: number, time: number): number[] {
   const { times, values } = channel;
   const keys = times.length;
   const cubic = channel.interpolation === "CUBICSPLINE";
@@ -94,7 +96,12 @@ function longestKey(node: Node, channels: Channels): number {
  * agent that asked for it.
  */
 export async function sampleClip(file: string, clip: string, fps = 30): Promise<ClipSamples> {
-  const document = await reader().read(file);
+  return samplesOf(await reader().read(file), clip, fps);
+}
+
+/** The same sampling on a document already in memory, so an edit can measure what it is about to
+ * change without writing a temporary GLB first. */
+export function samplesOf(document: Document, clip: string, fps = 30): ClipSamples {
   const animation = document
     .getRoot()
     .listAnimations()
@@ -156,19 +163,22 @@ export async function sampleClip(file: string, clip: string, fps = 30): Promise<
     const time = Math.min(duration, index / fps);
     const positions: Record<string, [number, number, number]> = {};
     const rotations: Record<string, [number, number, number, number]> = {};
+    const parents: Record<string, [number, number, number, number]> = {};
     const visit = (node: Node, parent: Matrix4): void => {
       const world = parent.clone().multiply(trsAt(node, channels, time).matrix);
       const name = node.getName();
       if (tracked.has(name)) {
         const position = new Vector3().setFromMatrixPosition(world);
         const rotation = new Quaternion().setFromRotationMatrix(world);
+        const parentRotation = new Quaternion().setFromRotationMatrix(parent);
         positions[name] = [position.x, position.y, position.z];
         rotations[name] = [rotation.x, rotation.y, rotation.z, rotation.w];
+        parents[name] = [parentRotation.x, parentRotation.y, parentRotation.z, parentRotation.w];
       }
       for (const child of node.listChildren()) visit(child, world);
     };
     for (const root of roots) visit(root, new Matrix4());
-    frames.push({ positions, rotations, time });
+    frames.push({ parents, positions, rotations, time });
   }
 
   return { bones, duration, fps, frames };
