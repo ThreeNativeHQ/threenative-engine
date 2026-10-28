@@ -1,4 +1,4 @@
-# PRD-735 — Game reference content at scale: the full list, the classics and the scout pipeline
+# PRD-761 — Game reference content at scale: the full list, the classics and the scout pipeline
 
 **Status:** NOT STARTED
 **Priority:** P3 — AC-1 to AC-5 are open; until they land, references cover only the SM64 seed from PRD-734.

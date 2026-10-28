@@ -30,7 +30,7 @@ export const {
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld, positionWorldDirection,
-  normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, uvec2, nodeObject, reflect, textureLoad,
+  normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, uvec2, nodeObject, reflect, textureLoad, textureSize,
   mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
@@ -117,7 +117,3 @@ export const Stack = unsupportedExport("Stack");
 export const getShadowMaterial = unsupportedExport("getShadowMaterial");
 export const shadow = unsupportedExport("shadow");
 export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
-
-// Refused at use, as on Wasm: core's WorldEnvironment imports textureSize for the
-// resolutionSubrect && !ownedEngine geometric-normals branch, which the owned path never takes.
-export const textureSize = unsupportedExport("textureSize");

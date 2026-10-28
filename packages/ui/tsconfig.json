@@ -6,5 +6,5 @@
       "@threenative/core": ["../core/src/index.ts"]
     }
   },
-  "include": ["src/**/*.tsx", "src/**/*.ts", "__tests__/**/*.ts"]
+  "include": ["src/**/*.tsx", "src/**/*.ts"]
 }

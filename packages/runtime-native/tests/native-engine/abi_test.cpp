@@ -1040,6 +1040,73 @@ void tsl_call() {
         const auto holderReceiver = tn::abi::TslArg::of(holder);
         CHECK(tn::abi::tslCall("textureValue", &holderReceiver, {tn::abi::TslArg::objectOf("Texture", target->texture)}, serial) == holder);
         CHECK(holder->textureObject() == target->texture);
+        // Dimensions must query the bound texture, retaining its owner and deferred producer.
+        using tn::abi::TslArg;
+        using namespace tn::engine::shader;
+        const auto biased = tn::abi::tslCall("bias", &holderReceiver, {TslArg::of(-0.5)}, serial);
+        CHECK(biased);
+        if (!biased) { tn_context_destroy(ctx, &d.value); return; }
+        CHECK(biased->textureObject() == holder->textureObject());
+        CHECK(biased->textureBinding == holder->textureBinding);
+        const auto biasedWgsl = [&](g::Node root) {
+            Program fragment(Stage::Fragment);
+            tn::engine::shader::tsl::Build scope(fragment);
+            fragment.output("color", g::lower(root, fragment));
+            const auto stage = buildStage(fragment);
+            CHECK(stage.wgsl.ok());
+            return stage.wgsl.code;
+        };
+        const auto biasedCode = biasedWgsl(biased);
+        CHECK(biasedCode.find("textureSampleBias(") != std::string::npos &&
+              biasedCode.find("-0.5") != std::string::npos);
+        CHECK(biasedWgsl(holder).find("textureSampleBias(") == std::string::npos);
+        const auto sameLevel = tn::abi::tslCall("level", &holderReceiver, {TslArg::of(-0.5)}, serial);
+        CHECK(g::key(biased) != g::key(sameLevel));
+        CHECK(biasedWgsl(sameLevel).find("textureSampleLevel(") != std::string::npos);
+        auto depth = std::make_shared<g::NodeData>(*holder);
+        depth->bits = 1;
+        for (const auto& wrongSource : {g::float_(1), g::Node(depth)}) {
+            const auto self = TslArg::of(wrongSource);
+            bool refused = false;
+            try { tn::abi::tslCall("bias", &self, {TslArg::of(-0.5)}, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
+        for (const auto& invalid : std::vector<std::vector<TslArg>>{{}, {TslArg::of(-0.5), TslArg::of(0.0)},
+                {TslArg::of(g::int_(0))}, {TslArg::of(g::vec2({g::float_(0)}))}}) {
+            bool refused = false;
+            try { tn::abi::tslCall("bias", &holderReceiver, invalid, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
+        const auto dimensions = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(holder)}, serial);
+        CHECK(dimensions);
+        if (!dimensions) { tn_context_destroy(ctx, &d.value); return; }
+        CHECK(dimensions->kind == g::Kind::TextureSize && dimensions->textureObject() == target->texture);
+        CHECK(dimensions->otherwise.size() == 1 && dimensions->otherwise[0] == holder);
+        const auto producer = tn::abi::tslCall("convertToTexture", nullptr, {TslArg::of(g::vec4({g::float_(1)}))}, serial);
+        const auto producedSize = tn::abi::tslCall("textureSize", nullptr, {TslArg::of(producer), TslArg::of(0.0)}, serial);
+        CHECK(producedSize->otherwise.size() == 1 && producedSize->otherwise[0] == producer);
+        const auto producerSelf = TslArg::of(producer);
+        const auto biasedProducer = tn::abi::tslCall("bias", &producerSelf, {TslArg::of(-0.5)}, serial);
+        CHECK(biasedProducer && biasedProducer->args[0] == producer->args[0] &&
+              biasedProducer->rtt == producer->rtt && biasedProducer->name == producer->name);
+        CHECK(biasedWgsl(biasedProducer).find("textureSampleBias(") != std::string::npos);
+        const auto passes = g::postPasses(biasedProducer);
+        CHECK(passes.size() == 1 && passes[0].output == producer->name);
+
+        Program query(Stage::Fragment);
+        tn::engine::shader::tsl::Build queryScope(query);
+        query.output("color", g::lower(g::vec4({g::vec2({dimensions}), g::float_(0), g::float_(1)}), query));
+        const auto built = buildStage(query);
+        CHECK(built.wgsl.ok() && built.wgsl.code.find("textureDimensions(") != std::string::npos);
+        for (const auto& invalid : std::vector<std::vector<TslArg>>{{}, {TslArg::of(2.0)}, {TslArg::of(g::float_(1))},
+                {TslArg::of(holder), TslArg::of(g::int_(0)), TslArg::of(g::int_(0))}}) {
+            bool refused = false;
+            try { tn::abi::tslCall("textureSize", nullptr, invalid, serial); }
+            catch (const std::runtime_error&) { refused = true; }
+            CHECK(refused);
+        }
     }
     // A material is no texture, and a released handle is no object.
     const tn_tsl_arg_t wrong[3] = {handleArg(material), nodeArg(direction), number(0.5)};
@@ -2502,6 +2569,27 @@ void starter_post_bindings() {
         CHECK(programs.fragment.diagnostics().empty());
         return fragment;
     };
+    // An early resolve's "scene" is the unresolved colour inside a render target, so it is drawn to a texture of its own.
+    CHECK(call("convertToTexture", {TslArg::of(temporal)})->kind == g::Kind::RenderTexture);
+    for (const auto& effect : {late}) {
+        const auto texture = call("convertToTexture", {TslArg::of(effect)});
+        CHECK(texture->kind == g::Kind::Texture && texture->name == effect->name);
+        CHECK(call("convertToTexture", {TslArg::of(texture)}) == texture);
+        const auto self = TslArg::of(texture);
+        const auto sampled = tn::abi::tslCall("sample", &self, {TslArg::of(g::uv())}, serial);
+        const auto texel = call("ivec2", {TslArg::of(0.0), TslArg::of(0.0)});
+        const auto loaded = call("textureLoad", {self, TslArg::of(texel)});
+        const auto size = call("textureSize", {self});
+        for (const auto& consumer : {texture, sampled, loaded, size}) {
+            CHECK(g::traaEffect(consumer) == effect->post);
+            const auto retained = g::postPasses(consumer);
+            CHECK(retained.size() == 2u);
+            if (retained.size() == 2)
+                CHECK(retained.back().host == "traa" && retained.back().output == effect->name);
+        }
+        compile(sampled);
+        compile(loaded);
+    }
     // `.level(n)` on a render texture reads it at an explicit level, as the motion blur's loop does.
     const auto compositeSelf = TslArg::of(composite);
     const auto leveled = tn::abi::tslCall("level", &compositeSelf, {TslArg::of(g::float_(0))}, serial);

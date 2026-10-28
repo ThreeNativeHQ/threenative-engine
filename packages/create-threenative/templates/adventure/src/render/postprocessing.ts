@@ -12,6 +12,8 @@ import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 import type { Camera, DirectionalLight, Scene } from "three";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
 
+import { temporalDetailRequested, temporalDetailStages } from "./temporalDetailStage.js";
+
 type ProfileGlobals = typeof globalThis & {
   __THREENATIVE_PROFILE__?: { hostedSoftware?: unknown };
 };
@@ -48,7 +50,13 @@ export function setupPost(
       environment.software === true
     } source=${source}`,
   );
-  const world = new WorldEnvironment(qualityPreset(tier));
+  const settings = qualityPreset(tier);
+  const detail = temporalDetailRequested(renderer, settings) ? temporalDetailStages() : [];
+  const world = new WorldEnvironment({
+    ...settings,
+    authoredStageNames: [...(settings.authoredStageNames ?? []), ...detail.map(({ name }) => name)],
+    authoredStages: () => detail,
+  });
   const applied = world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
   let disposed = false;
   return {

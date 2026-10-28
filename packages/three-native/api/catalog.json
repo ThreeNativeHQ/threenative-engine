@@ -26955,6 +26955,15 @@
       }
     },
     {
+      "name": "textureSize",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "unsupported",
+        "diagnostic": "TN_NATIVE_UNSUPPORTED_TEXTURESIZE"
+      }
+    },
+    {
       "name": "time",
       "kind": "function",
       "source": "three/tsl",

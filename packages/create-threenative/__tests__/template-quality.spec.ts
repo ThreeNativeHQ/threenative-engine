@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, readdir, symlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PerspectiveCamera, Scene } from "three";
@@ -10,6 +10,8 @@ import {
   presetLiteralsIn,
   templateNames,
 } from "../../../scripts/template-quality.js";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { createProject } from "../src/index.js";
 
 const templatesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "templates");
 
@@ -159,10 +161,22 @@ describe("template quality tiers", () => {
   it("should take the cheap tier through each template's own setupPost on a software adapter", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
+      const generatedRoot = await makeTempDir("template-quality-setup-post-");
       for (const name of names) {
-        const post = (await import(
-          path.join(templatesDir, name, "src", "render", "postprocessing.ts")
-        )) as {
+        const { target } = await createProject(
+          { install: false, target: name, template: name },
+          generatedRoot,
+        );
+        // Generate the canonical render sources that the installed kit receives.
+        for (const [dependency, source] of [
+          ["@threenative/core", path.resolve("packages/core")],
+          ["three", path.resolve("packages/create-threenative/node_modules/three")],
+        ] as const) {
+          const link = path.join(target, "node_modules", dependency);
+          await mkdir(path.dirname(link), { recursive: true });
+          await symlink(source, link, "dir");
+        }
+        const post = (await import(path.join(target, "src", "render", "postprocessing.ts"))) as {
           setupPost: (
             renderer: unknown,
             scene: unknown,

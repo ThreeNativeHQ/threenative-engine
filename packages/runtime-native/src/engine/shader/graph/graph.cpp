@@ -272,6 +272,8 @@ ExprId Lowerer::emit(Node node) {
         }
         case Kind::Var: { const auto variable = ensureVar(node); return variable == noVar ? kInvalid : program_.load(variable); }
         case Kind::RenderTexture:
+            if (d.sampleBias)
+                return program_.sampleBias(program_.texture2d(d.name), expression(d.args[1]), expression(d.args[2]));
             // A third argument is an explicit level (`.level(n)`), so the read is legal under divergent control flow.
             return d.args.size() > 2
                        ? program_.sampleLevel(program_.texture2d(d.name), expression(d.args[1]), expression(d.args[2]))
@@ -292,6 +294,8 @@ ExprId Lowerer::emit(Node node) {
             if (d.type.scalar == Type::Scalar::Bool) return program_.constant(d.bits != 0);
             return kInvalid;
         case Kind::Uniform: {
+            if (const auto input = inputs_.find("uniform:" + d.name); input != inputs_.end())
+                return convert(input->second, d.type);
             if (d.bits == 1)
                 if (const auto input = inputs_.find("material:" + d.name); input != inputs_.end())
                     return convert(input->second, d.type);
@@ -462,9 +466,10 @@ ExprId Lowerer::emit(Node node) {
             if (d.args.size() == 2) {
                 const ExprId level = expression(d.args[1]);
                 if (level == kInvalid) return kInvalid;
-                return program_.sampleLevel(program_.expr(coordinate).type == Type::vec(3)
-                                                ? program_.texture3d(d.name) : program_.texture2d(d.name),
-                                            coordinate, level);
+                const auto texture = program_.expr(coordinate).type == Type::vec(3)
+                    ? program_.texture3d(d.name) : program_.texture2d(d.name);
+                return d.sampleBias ? program_.sampleBias(texture, coordinate, level)
+                                    : program_.sampleLevel(texture, coordinate, level);
             }
             return program_.sample(program_.expr(coordinate).type == Type::vec(3)
                                        ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
@@ -984,7 +989,7 @@ std::string key(const Graph& graph) {
         out += std::to_string(it->second) + ";";
         if (!fresh) return;
         out += "{" + std::to_string(int(n->kind)) + "," + n->type.name() + "," +
-               std::to_string(n->bits) + "," + std::to_string(n->scale) + "," + std::to_string(n->width) + "," + std::to_string(n->height) + "," + std::to_string(int(n->unary)) + "," +
+               std::to_string(n->bits) + "," + std::to_string(n->sampleBias) + "," + std::to_string(n->scale) + "," + std::to_string(n->width) + "," + std::to_string(n->height) + "," + std::to_string(int(n->unary)) + "," +
                std::to_string(int(n->binary)) + ";";
         text(n->name); text(n->lanes);
         out += n->atomic && *n->atomic ? "atomic;" : "plain;";

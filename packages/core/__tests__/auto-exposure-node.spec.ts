@@ -181,6 +181,8 @@ describe("GPU exposure lifecycle", () => {
     settings.rateUp = 99999; // A caller mutation cannot replace the validated shader policy.
     node.updateBefore(frame);
     expect(generated).toHaveLength(5);
+    // The metered scene can be smaller than the display before the temporal resolve.
+    expect(generated[0]).toContain("textureDimensions(");
     expect(generated[0]?.match(/textureLoad\(/gu)).toHaveLength(16);
     expect(generated[1]?.match(/textureLoad\(/gu)).toHaveLength(16);
     expect(generated[4]).toContain("log2(");

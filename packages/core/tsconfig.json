@@ -1,13 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "paths": {
-      "@threenative/core": ["./src/index.ts"],
-      "@threenative/core/playtest": ["./src/playtest.ts"],
-      "@threenative/physics": ["../physics/src/index.ts"]
-    }
+    "rootDir": "src"
   },
-  // No rootDir: tests live in __tests__/, outside src/, and the base config is
-  // noEmit — tsup owns the build, so rootDir would only constrain typechecking.
-  "include": ["src/**/*.ts", "__tests__/**/*.ts", "../assets/__tests__/draco3dgltf.d.ts"]
+  "include": ["src/**/*.ts"]
 }

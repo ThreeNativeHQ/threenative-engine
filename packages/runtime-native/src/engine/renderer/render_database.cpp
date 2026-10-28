@@ -987,13 +987,36 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
 // first member's place.
 void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
                            const std::vector<std::pair<double, const DrawItem*>>& ordered) {
-    // A decline writes no verdict, so a settled one is an empty decision until its rescan; an empty
-    // scene (still loading) or a projecting one is judged again next frame, as SceneRenderProjection.
-    projection::Decision decision;
-    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig && !item.gpuJoints; }) &&
-        ++framesSinceDeclineScan_ >= kDeclineRescanFrames) {
-        decision = projection::decide(scene, 200, true);
-        framesSinceDeclineScan_ = decision.projecting || decision.sourceRenderables == 0 ? kDeclineRescanFrames : 0;
+    // A decline writes no verdict, so a settled one holds no verdict until its rescan; an empty scene (still
+    // loading) is judged again next frame. A projecting one holds while the scene's structure does, re-judged on
+    // the same cadence (PRD-613: hostProjectionReport's rule; deciding every frame cost Midway ~1.5 ms).
+    static const projection::Decision none;
+    const projection::Decision* decision = &none;
+    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig && !item.gpuJoints; })) {
+        bool due = ++framesSinceDeclineScan_ >= kDeclineRescanFrames || &scene != batchScene_;
+        if (!due && batchDecision_.projecting && Object3D::hierarchyVersion() != batchHierarchy_) {
+            batchHierarchy_ = Object3D::hierarchyVersion();
+            due = projection::structureStamp(scene) != batchStamp_;
+        }
+        // The structure held, so every rig is alive: a rig that scaled, mirrored or changed material leaves now.
+        for (std::size_t i = 0; !due && i < batchRigs_.size(); ++i)
+            due = projection::detail::rigLaneKey(*batchRigs_[i].first) != batchRigs_[i].second;
+        if (due) {
+            batchDecision_ = projection::decide(scene, 200, true);
+            ++batchDecisions_;
+            batchScene_ = &scene;
+            batchHierarchy_ = Object3D::hierarchyVersion();
+            batchStamp_ = batchDecision_.projecting ? projection::structureStamp(scene) : -1;
+            batchRigs_.clear();
+            if (batchDecision_.projecting)
+                for (const auto& [object, lane] : batchDecision_.verdict)
+                    if (const auto* rig = dynamic_cast<const SkinnedMesh*>(object))
+                        batchRigs_.emplace_back(rig, projection::detail::rigLaneKey(*rig));
+            // TN_BATCH_DECISION_CACHE=0 (diagnostic): a projecting decision is judged again next frame, as before PRD-613.
+            static const bool held = [] { const char* flag = std::getenv("TN_BATCH_DECISION_CACHE"); return !flag || std::strcmp(flag, "0") != 0; }();
+            framesSinceDeclineScan_ = batchDecision_.sourceRenderables == 0 || (!held && batchDecision_.projecting) ? kDeclineRescanFrames : 0;
+        }
+        decision = &batchDecision_;
     }
     skinnedPalettes_.clear();
     batchGroupsList_.clear();
@@ -1001,8 +1024,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
-        const auto verdict = decision.verdict.find(d.skinnedRig);
-        const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned");
+        const auto verdict = decision->verdict.find(d.skinnedRig);
+        const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision->verdict.end() && verdict->second == "skinned");
         if ((virtualShadows_ && d.castShadow) || (!d.batchable && !skinned))
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {

@@ -498,6 +498,12 @@ check(record.value instanceof ArrayBuffer && String.fromCharCode(...new Uint8Arr
 let mismatch = false;
 try { globalThis.tn.loadAsset("audio", "sky.jpg"); } catch (error) { mismatch = /TN_NATIVE_ASSET_KIND_MISMATCH/.test(error.message); }
 check(mismatch, "a texture entry is not audio");
+// core's IAssetLoader on a native host: no disk cache (the files are installed), prefetch serves nothing.
+// The playtest bridge's state sample reads this report on every observation.
+const loader = createAssetLoader({ cache: false, backgroundFill: false });
+check(loader.cache.enabled === false && loader.cache.reason === "native host reads installed files" &&
+  loader.cache.bytesOnDisk === 0 && typeof loader.cache.clear === "function", "native asset cache report");
+check(typeof loader.prefetch === "function" && typeof loader.startBackgroundFill === "function", "native prefetch and fill");
 // A decode settles on the first tick's drain, which a check never runs: reaching the decoder leaves
 // both pending, and any refusal before it rejects inside this check's microtasks.
 // "audio/engine.ogg" is not a package name: core's source fallback finds it under assets/, as the
@@ -896,6 +902,38 @@ assert.equal(emissiveRun.status, 0, `${emissiveRun.stdout}\n${emissiveRun.stderr
 assert.match(emissiveRun.stdout, /EMISSIVE_STRENGTH_(OK|UNAVAILABLE)/);
 console.log(emissiveRun.stdout.match(/EMISSIVE_STRENGTH_[^\n]*/)[0]);
 
+// Final loader release must not clear reusable TNPK cache entries: native owns no decoder workers.
+const disposalBytes = Buffer.alloc(16);
+disposalBytes.writeUInt32LE(1, 0); disposalBytes.writeUInt32LE(1, 4); disposalBytes.writeUInt32LE(19, 8);
+disposalBytes.set([255, 32, 16, 255], 12);
+const disposalPackage = resolve(work, "dispose-assets.tnpk");
+await writeFile(disposalPackage, writeNativePackage([
+  { name: "cache.rgba", kind: 2, data: disposalBytes, uploadSize: 4 },
+]));
+await writeFile(entry, `
+import ${JSON.stringify(resolve(native, "src/engine/player/core-host.mjs"))};
+import { createAssetLoader } from ${JSON.stringify(resolve(native, "src/engine/player/core-assets.mjs"))};
+import { Scene, PerspectiveCamera } from "three";
+const loader = createAssetLoader();
+loader.texture("cache.rgba").then(async (first) => {
+  loader.dispose(); loader.dispose();
+  if (await loader.texture("cache.rgba") !== first || loader.progress.requested !== 1)
+    throw Error("asset dispose cleared the reusable cache");
+  loader.clear(); await loader.texture("cache.rgba");
+  if (loader.progress.requested !== 2) throw Error("asset clear did not empty the cache");
+  loader.release("texture", "cache.rgba"); await loader.texture("cache.rgba");
+  if (loader.progress.requested !== 3) throw Error("asset release did not release its cache entry");
+  globalThis.tn.log("ASSET_DISPOSE_OK");
+}).catch((error) => { globalThis.tn.__startupError = error.stack; });
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const disposalRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
+  env: { ...process.env, TN_NATIVE_ASSET_PACKAGE: disposalPackage } });
+assert.equal(disposalRun.status, 0, `${disposalRun.stdout}\n${disposalRun.stderr}`);
+assert.match(disposalRun.stdout, /ASSET_DISPOSE_OK/);
+console.log("ASSET_DISPOSE_OK");
+
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);
@@ -946,8 +984,12 @@ renderer.toneMapping = 4; renderer.toneMappingExposure = 0.62; renderer.shadowMa
 renderer.render(scene, camera);
 renderer.toneMapping = 5;
 let customRefused = false;
-try { renderer.render(scene, camera); } catch (error) { customRefused = /TN_NATIVE_RENDERER_STATE: toneMapping 5/.test(error.message); }
-check(customRefused, "an unimplemented tone mapping refuses");
+try { renderer.render(scene, camera); } catch (error) { customRefused = /TN_NATIVE_CUSTOM_TONEMAPPING_MISSING/.test(error.message); }
+check(customRefused, "custom tone mapping without a registered curve refuses");
+renderer.toneMapping = 8;
+let unsupportedRefused = false;
+try { renderer.render(scene, camera); } catch (error) { unsupportedRefused = /TN_NATIVE_RENDERER_STATE: toneMapping 8/.test(error.message); }
+check(unsupportedRefused, "an unsupported tone mapping refuses");
 check(renderer.info.render.drawCalls === 0 && renderer.info.render.triangles === 0 && renderer.info.render.calls === 0,
   "renderer.info counts the last drawn frame (none in a check)");
 renderer.toneMapping = 4;
@@ -995,11 +1037,14 @@ for (const name of ["metalness", "roughness"]) {
 }
 scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
 const sceneDepth = scenePass.getTextureNode("depth"), sceneNormal = scenePass.getTextureNode("normal");
-let refusedVelocity = false;
-try { scenePass.getTextureNode("velocity"); } catch (error) { refusedVelocity = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+const sceneVelocity = scenePass.getTextureNode("velocity");
+pipeline.outputNode = sceneVelocity.sample(screenUV); pipeline.render();
+let refusedUnknown = false;
+try { scenePass.getTextureNode("unregistered-channel"); } catch (error) { refusedUnknown = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+check(refusedUnknown, "an unregistered scene-pass channel refuses");
 const sceneSurface = scenePass.getTextureNode("metalness");
-check(refusedVelocity && scenePass.getTextureNode("roughness") && scenePass.isPassNode && scenePass.scene === scene && sceneSurface.r !== undefined && sceneSurface.g !== undefined,
-  "the native scene pass has colour, depth, normals and the surface (metalness r, roughness g); velocity refuses");
+check(sceneVelocity && scenePass.getTextureNode("roughness") && scenePass.isPassNode && scenePass.scene === scene && sceneSurface.r !== undefined && sceneSurface.g !== undefined,
+  "the native scene pass has colour, depth, normals, sampleable temporal velocity and the surface (metalness r, roughness g)");
 const contact = ao(sceneDepth, sceneNormal, camera);
 contact.radius.value = 0.35; contact.resolutionScale = 0.5;
 check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");

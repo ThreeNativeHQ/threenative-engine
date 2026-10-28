@@ -82,7 +82,10 @@ describe("the desktop floor", () => {
     const built = walkToTheEnd(scaler({ minScale: 0.61, temporalUpscale: () => temporal }));
     expect(built.scale).toBe(0.61);
     temporal = true;
-    expect(walkToTheEnd(built).scale).toBe(0.23);
+    expect(walkToTheEnd(built).scale).toBe(0.27);
+    temporal = false;
+    expect(built.observe(pixelBound(built.scale))).toBe(0.61);
+    expect(built.scale).toBe(0.61);
   });
 
   it("keeps a host's own start rung when it already sits above the floor", () => {

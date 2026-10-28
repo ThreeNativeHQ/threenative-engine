@@ -45,7 +45,7 @@ struct PipelineTarget {
     WGPUTextureFormat color = WGPUTextureFormat_RGBA8Unorm;  // Undefined: depth-only (shadow) pass
     WGPUTextureFormat depth = WGPUTextureFormat_Depth32Float;
     WGPUCullMode cull = WGPUCullMode_Back;
-    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay)
+    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay); 4 the TRAA responsive mark
     bool depthWrite = true;  // material.depthWrite
     bool colorWrite = true;  // material.colorWrite: false masks every colour channel
     uint32_t sampleCount = 1;

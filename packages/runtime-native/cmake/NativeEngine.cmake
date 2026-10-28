@@ -112,6 +112,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_shader_emit_shared_once=shared_once)
     target_link_libraries(tn-native-engine-shader-emit-test PRIVATE tn_engine_shader tn_host_services)
     tn_native_engine_test(tn-native-engine-frame-gpu-timer-test tests/native-engine/frame_gpu_timer_test.cpp
+        native_engine_frame_gpu_timer_trace_extents=trace_extents
         native_engine_frame_gpu_timer_full_stream=full_stream
         native_engine_frame_gpu_timer_owner_frame_restores=owner_frame_restores)
     target_link_libraries(tn-native-engine-frame-gpu-timer-test PRIVATE tn_engine_renderer)
@@ -119,6 +120,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_reflection_capture=validation)
     target_link_libraries(tn-native-engine-reflection-capture-test PRIVATE tn_engine_renderer)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
+        native_engine_history_depth_rows=history_depth_rows
+        native_engine_raw_target_scene_only=raw_target_scene_only
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_emissive_target=emissive_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
@@ -138,14 +141,27 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_alpha=traa_alpha
         native_engine_traa_reset_seed=traa_reset_seed
         native_engine_traa_camera_velocity=traa_camera_velocity
+        native_engine_traa_skinned_velocity=traa_skinned_velocity
+        native_engine_traa_instanced_velocity=traa_instanced_velocity
+        native_engine_traa_alpha_tested_velocity=traa_alpha_tested_velocity
+        native_engine_traa_manual_jitter=traa_manual_jitter
+        native_engine_traa_deformation_velocity=traa_deformation_velocity
         native_engine_traa_feeds_the_chain=traa_feeds_the_chain
         native_engine_velocity_needs_traa=velocity_needs_traa
         native_engine_traa_replaces_multisampling=traa_replaces_multisampling
         native_engine_traa_converges_edges=traa_converges_edges
+        native_engine_traa_velocity_footprint=traa_velocity_footprint
         native_engine_traa_late_resolve=traa_late_resolve
         native_engine_traa_ghosting=traa_ghosting
         native_engine_traa_camera_pan=traa_camera_pan
         native_engine_traa_rejection=traa_rejection
+        native_engine_traa_receding_mover=traa_receding_mover
+        native_engine_wgsl_strip=wgsl_strip
+        native_engine_traa_swaying_blades=traa_swaying_blades
+        native_engine_traa_ignored_history_filter=traa_ignored_history_filter
+        native_engine_traa_mover_over_dynamic_ground=traa_mover_over_dynamic_ground
+        native_engine_traa_responsive_transparent=traa_responsive_transparent
+        native_engine_traa_fast_pan_edges=traa_fast_pan_edges
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
@@ -276,6 +292,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
+        native_engine_target_samples_late_traa_output=target_samples_late_traa_output
         native_engine_float_render_target=float_render_target_keeps_float32
         native_engine_float_render_target_half=float_render_target_falls_back_to_half
         native_engine_renderer_updates=updates
@@ -285,6 +302,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_batched_vs_unbatched=batched_vs_unbatched
         native_engine_skinned_batched_vs_unbatched=skinned_crowd
         native_engine_skinned_decline_cadence=skinned_decline_cadence
+        native_engine_skinned_projecting_cadence=skinned_projecting_cadence
         native_engine_skinned_normalized_weights=skinned_normalized_weights
         native_engine_normal_map_tilt=normal_map_tilt
         native_engine_renderer_gpu_mipmaps=gpu_mipmaps

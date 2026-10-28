@@ -974,7 +974,7 @@ if(EMSCRIPTEN)
     add_custom_command(TARGET tn-native-engine-web POST_BUILD
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-host-abi.mjs
         VERBATIM)
-    target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
+    target_link_options(tn-native-engine-web PRIVATE -Os --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
         # The whole 32-bit address space: a game the size of Midway (161 MB of GLBs, decoded on the
         # engine side) ran past emscripten's 2 GB default maximum and failed with std::bad_alloc.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1

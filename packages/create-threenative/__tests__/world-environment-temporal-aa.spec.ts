@@ -94,3 +94,18 @@ it("leaves a kit's traa stage out until the kit names it", () => {
   expect(found).toHaveLength(1);
   expect(found[0]).not.toBe(kit);
 });
+
+it("keeps offered authored reconstruction detail dormant when temporal AA is explicitly disabled", () => {
+  const detail: ChainStage = {
+    name: "sharpen",
+    build: () => {
+      throw new Error("disabled temporal detail built");
+    },
+  };
+  const { chain } = request(
+    { temporalAA: false, authoredStageNames: [], authoredStages: () => [detail] },
+    true,
+  );
+  expect(chain.request?.stages).not.toContain("traa");
+  expect(chain.request?.stages).not.toContain("sharpen");
+});

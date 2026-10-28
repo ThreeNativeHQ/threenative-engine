@@ -16,6 +16,11 @@ import {
   type TemporalAAProvider,
   temporalAAStages,
 } from "../templates/starter/src/render/temporalAAStage.js";
+import {
+  temporalDetail,
+  temporalDetailRequested,
+  temporalDetailStages,
+} from "../templates/starter/src/render/temporalDetailStage.js";
 import { createTemporalDepthRejection } from "../templates/starter/src/render/temporalResolveDepth.js";
 
 afterEach(() => vi.restoreAllMocks());
@@ -1138,5 +1143,104 @@ describe("reconstruction uses the input camera that actually drew", () => {
       temporal.dispose();
       scenePass.dispose();
     }
+  });
+});
+
+describe("generated temporal detail controls", () => {
+  it("keeps the named Three override free of detail unless an authored TRAA provides it", () => {
+    const renderer = { kind: "webgpu" as const, raw: { info: {} } };
+    expect(temporalDetailRequested(renderer, { temporalAA: true })).toBe(false);
+    expect(temporalDetailRequested(renderer, { temporalAA: false })).toBe(false);
+    expect(temporalDetailRequested(renderer, { authoredStageNames: ["traa"] })).toBe(true);
+    expect(
+      temporalDetailRequested({ ...renderer, raw: { info: { engine: {} } } }, { temporalAA: true }),
+    ).toBe(true);
+    expect(
+      temporalDetailRequested(
+        { ...renderer, raw: { info: { engine: {} } } },
+        { temporalAA: false },
+      ),
+    ).toBe(false);
+    expect(
+      temporalDetailRequested(
+        { ...renderer, kind: "webgl", raw: { info: { engine: {} } } },
+        { temporalAA: true },
+      ),
+    ).toBe(false);
+  });
+  afterEach(() => {
+    temporalDetail.strength = 1;
+  });
+  function stage() {
+    return temporalDetailStages()[1];
+  }
+  it("uses valid authored anchors in the render chain", () => {
+    const chain = new RenderChain(
+      { kind: "webgpu", raw: {}, setOutputNode: vi.fn() },
+      { stages: temporalDetailStages(), request: { stages: [], tier: "high" } },
+    );
+    chain.dispose();
+  });
+  it("refuses missing temporal motion and reports an explicit zero override", () => {
+    expect(stage().available?.({} as never)).toBe("temporal-detail:velocity-missing");
+    temporalDetail.strength = 0;
+    expect(stage().available?.({ velocityNode: rtt(output) } as never)).toBe(
+      "temporal-detail:strength=0",
+    );
+  });
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid strength %s", (strength) => {
+    temporalDetail.strength = strength;
+    expect(() => temporalDetailStages()).toThrow(/temporalDetail.strength/);
+  });
+  it("retains the automatic output transform and requires measured motion texture", () => {
+    const [source, sharpen] = temporalDetailStages();
+    if (!source || !sharpen) throw new Error("Temporal detail needs a source and output stage.");
+    expect(sharpen.afterOutputTransform).not.toBe(true);
+    source.build(rtt(output), { velocityNode: rtt(output) } as never);
+    const frame = rtt(output);
+    const result = sharpen.build(frame, {
+      velocityNode: rtt(output),
+    } as never) as unknown as {
+      node: { nodes: { components?: string; node?: unknown }[] };
+    };
+    // Keep the composited frame's alpha outside the RGB-only detail selection.
+    expect(result.node.nodes[1]?.components).toBe("w");
+    expect(result.node.nodes[1]?.node).toBe(frame);
+    expect(sharpen.available?.({ velocityNode: rtt(output) } as never)).toBe(true);
+    expect(() => sharpen.build(output, {} as never)).toThrow(/velocity/);
+  });
+  it("retains the temporal source and fuses its detail after bloom without another texture", () => {
+    const [source, sharpen] = temporalDetailStages();
+    if (!source || !sharpen) throw new Error("Temporal detail needs a source and output stage.");
+    expect(source.before).toBe("bloom");
+    expect(sharpen.after).toBe("bloom");
+    const temporal = rtt(output);
+    const chain = { velocityNode: temporal } as never;
+    expect(() => sharpen.build(temporal, chain)).toThrow(/source/);
+    expect(source.build(temporal, chain)).toBe(temporal);
+    const composite = temporal.add(0.1);
+    const result = sharpen.build(composite, chain) as Node;
+    const textures = new Set<Node>();
+    result.traverse((node) => {
+      if ("isRTTNode" in node && node.isRTTNode === true) textures.add(node);
+    });
+    expect(textures).toEqual(new Set([temporal]));
+    source.dispose?.();
+    expect(() => sharpen.build(composite, chain)).toThrow(/source/);
+  });
+  it("reads the velocity flag so dynamic pixels are not sharpened", () => {
+    const [source, sharpen] = temporalDetailStages();
+    if (!source || !sharpen) throw new Error("Temporal detail needs a source and output stage.");
+    const temporal = rtt(output);
+    const motion = rtt(output, 853, 480);
+    const chain = { velocityNode: motion } as never;
+    source.build(temporal, chain);
+    const result = sharpen.build(temporal, chain) as Node;
+    let flagRead = false;
+    result.traverse((node) => {
+      const split = node as { components?: string; node?: { value?: unknown } };
+      if (split.components === "z" && split.node?.value === motion.value) flagRead = true;
+    });
+    expect(flagRead).toBe(true);
   });
 });

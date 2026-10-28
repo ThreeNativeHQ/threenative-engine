@@ -31,6 +31,13 @@
       "args": [
         "./node_modules/@threenative/core/mcp/blender.mjs"
       ]
+    },
+    "threenative-animation": {
+      "source": "custom",
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/animation.mjs"
+      ]
     }
   }
 }

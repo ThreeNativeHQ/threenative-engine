@@ -42,7 +42,7 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     }
     if (isNew) {
         e.buffer = gpu_.createBuffer(byteLength == 0 ? 4 : byteLength, usage | WGPUBufferUsage_CopyDst,
-                                     store.data(), store.byteLength());
+                                     static_cast<const BufferStore&>(store).data(), store.byteLength());
         e.byteLength = byteLength;
         e.epoch = store.epoch();
         e.owner = store.weak_from_this();

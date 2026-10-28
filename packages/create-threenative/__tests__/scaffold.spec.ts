@@ -22,6 +22,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
+  canonicalRenderSourcePath,
   cliHelp,
   createProject,
   discoverKitManifests,
@@ -209,6 +210,11 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
+// Recomputed 2026-10-26 (reference MCP hook): every template's AGENTS.md names classic-game
+// mechanics references beside capability search in the authoring skill list, so all sixteen
+// trees move. No other scaffold byte changed.
+// Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
+// trees gain the `threenative-animation` server; no other scaffold byte changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
   // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
@@ -292,7 +298,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // boot-failure text both engines now show, so only puzzle's tree moves.
   // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
   // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
-  "action-rpg": "3328522bb755658638ca1952ff49f3e8d8108eb517f610d16554d716baf8961b",
+  "action-rpg": "6ed05b6d238cde28c6574094f1528d69685a43db221b03f3d3250efeccb2c45d",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -306,31 +312,37 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "f74b17bf776afc8a2d432fdee6db0df3beda3233ba776abda6a5d4187d25d6c6",
+  // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
+  // Recomputed 2026-10-27 on the merge of origin/develop (#577 native player, #579 reference search)
+  // into the PRD-741 lane: measured by this test on the merged tree, which is neither parent's tree.
+  collectathon: "dff7d2cef852f4fc25e5cd112dad94df0bb48a40294faa41b699de98e3065001",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
-  adventure: "df21f0d88fa88177edfb1070c19857b6a7c55034fc70392d405a44092e80ab27",
+  // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
+  adventure: "8b8f2ebcaab6d8aedc3c11e717661a03fc832518c6b132b79d0535c41909630a",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "028a13659ff063ff678ef9587869c29621343ee8954ae842045a58f5b09efb87",
-  minimal: "2786d7eee1ba93183585b2a9a20ea370c7d98cad4543cbd07849b5145c17d49e",
-  platformer: "c26471c971cb8c50b631056f00d023ccf415fa1ec12eb2102b164fb6f84ce33a",
-  puzzle: "40cbf8678e99518926645d85e18f3b4bcd15d203acae0dee11370a279670b7fe",
-  racing: "af1a4f9bfa7b72f4706840c4284231455f6fcba9331ff0c91a975427c9b59f07",
-  rain: "cf83bea415bc3a6fdb5654a3d906c2608b5625666189e264279aac1a38e2e155",
-  rts: "22059980238c7743d8251ebdd49eaffd49ae7f878a7904fb75a3a8be93582cf8",
-  runner: "cda53296a601c2dac944f169afc60d94d3fa03f049f5a3eaf88889819f1ec55d",
+  // PRD-741: the kerb lies level with the road, closing the slot that showed grass under its edge.
+  kart: "6541323f16c053cc9b0b68aa29e62ae27641c4dd5c344e652d95f0272f20b00e",
+  minimal: "4939ecef344e167115ba6b96abc80fd77ed1a267188ec85204d61936591b56a2",
+  platformer: "a790c96c3637e83e413b74af677f514b51d2b38ce5693c9eb7bf4523dfba8de2",
+  puzzle: "6fb75de0686dd7d21af8a0dd862a66733a522a89508ae3ff3575d8fbf215f2f0",
+  racing: "1f09213d11dc032b8c06121098eca0fc2d04d4ef6f47b5dc490629e35a0a2327",
+  rain: "7fe3da10a9f44a2012640ccef392464da41fcc8f390fbbf6b995aa801d67af01",
+  rts: "9cbd8a9cab867cd34e3c94af51c13fcd6a51b8b3cb2dc005fac07750dbf492fa",
+  runner: "6af1d4d0ef44003ac1f9ae3bcd2f11b37d25eee94c8394fc2132dea0d570b6c0",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "5383db14b9c32f6185f406113a83054b465a869a36e171eb2a9308d544a5522d",
-  shooter: "07eb04cfbb07bab2321795b66c0a81b372a0e801df4120da74dce22e570f4b2e",
-  snow: "183b80ada822f22f25c9f7e6ca0f45aef2f5789a71f51f8cc3048965ddda8d2b",
+  sailing: "09aede500e707d2c951ac45093f68ca5e55f3f3d3634b3863a703fedbd95a19a",
+  shooter: "1cf31dd05d6dad2ccc35a3b64855c23766f8161cff6a4eacadd37ae7f1ccb4bc",
+  snow: "9901b30b5cb85cdefeef864e8fcbd50d26f0733cec1577481d7e2314fb06eebd",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "603cce83c0b7da17f1ed2eba72e317f940840327e95081555191c22849041a73",
-  "tower-defense": "c2874bdeedfb61095c23374f4e9716aacedfc801e0966648b067bbf267b1cb11",
+  // Recomputed 2026-10-27 on the merge of origin/develop into the PRD-741 lane.
+  starter: "d1c6a58f2a85fa35ef3aaf8bbcdde8dabfb523a71c753af99eb9392e05af898d",
+  "tower-defense": "49eb6457b5cb1cbe3905f144b89ac0ea1d368fdcded4a921d089db1c5cd330c5",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1697,6 +1709,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
           },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1732,6 +1748,10 @@ describe("create-threenative", () => {
           "threenative-blender": {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
+          },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
           },
         },
       });
@@ -1830,4 +1850,39 @@ describe("create-threenative", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("authored temporal detail distribution", () => {
+  it("retains global shared assets for a custom template root", () => {
+    expect(canonicalRenderSourcePath("src/render/loading.ts", "/tmp/tn-absent-templates")).toBe(
+      path.resolve("packages/create-threenative/template-assets/loading.ts"),
+    );
+  });
+  it.each(["collectathon", "adventure", "kart"])(
+    "copies the canonical detail stage with a closed local import graph into %s",
+    async (template) => {
+      const parent = await makeTempDir("tn-temporal-detail-");
+      const target = path.join(parent, "game");
+      try {
+        await createProject({ target, template, install: false }, parent, TEMPLATE_ROOT);
+        const relative = "src/render/temporalDetailStage.ts";
+        const generated = await readFile(path.join(target, relative), "utf8");
+        expect(generated).toBe(
+          await readFile(path.join(TEMPLATE_ROOT, "starter", relative), "utf8"),
+        );
+        const post = await readFile(path.join(target, "src/render/postprocessing.ts"), "utf8");
+        expect(post).toContain('from "./temporalDetailStage.js"');
+        // The generated helper depends only on public Three/TSL plus an erased core type.
+        for (const match of generated.matchAll(/from ["'](\.[^"']+)["']/g)) {
+          const specifier = match[1];
+          if (specifier === undefined) throw new Error("Missing local import specifier capture");
+          expect(
+            existsSync(path.resolve(target, "src/render", specifier.replace(/\.js$/, ".ts"))),
+          ).toBe(true);
+        }
+      } finally {
+        await rm(parent, { recursive: true, force: true });
+      }
+    },
+  );
 });

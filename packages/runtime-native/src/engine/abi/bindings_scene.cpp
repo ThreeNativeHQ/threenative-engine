@@ -215,38 +215,6 @@ void registerEvents(ClassBinding& b, EventDispatcher* (*dispatcher)(void*), std:
     }
 }
 
-// One number that changes whenever anything the projection's stability proof reads off the engine
-// changes (projection-stability.ts): the walk order, each node's visibility, and for a mesh its
-// geometry, material, flags, render order and layer mask. It walks the way that proof walks, so a
-// light or LOD hides its children. A hash, so a match is a claim at 2^-53 and a mismatch only sends
-// the caller to its own exact walk.
-double structureStamp(Object3D& root) {
-    uint64_t h = 0xcbf29ce484222325ULL;
-    const auto mix = [&h](uint64_t v) {
-        h = (h ^ v) * 0x100000001b3ULL;
-        h ^= h >> 29;
-    };
-    std::vector<const Object3D*> stack(root.children.rbegin(), root.children.rend());
-    while (!stack.empty()) {
-        const Object3D* object = stack.back();
-        stack.pop_back();
-        const auto* mesh = dynamic_cast<const Mesh*>(object);
-        mix(object->id() * 2 + (object->visible() ? 1 : 0));
-        if (mesh != nullptr) {
-            mix(reinterpret_cast<uintptr_t>(mesh->geometry.get()));
-            mix(reinterpret_cast<uintptr_t>(mesh->material.get()));
-            mix(static_cast<uint64_t>(mesh->castShadow()) | static_cast<uint64_t>(mesh->receiveShadow()) << 1 |
-                static_cast<uint64_t>(mesh->frustumCulled) << 2);
-            mix(static_cast<uint64_t>(static_cast<int64_t>(mesh->renderOrder())));
-            mix(std::bit_cast<uint64_t>(mesh->layers().mask));
-        }
-        mix(object->children.size());
-        if (object->isLight() || object->type() == "LOD") continue;
-        for (auto it = object->children.rbegin(); it != object->children.rend(); ++it) stack.push_back(*it);
-    }
-    return static_cast<double>(h & ((1ULL << 53) - 1));
-}
-
 // core's host projection seam (renderProjection.ts): the verdict the native renderer's own batching gives a
 // root, in one call per frame. It is projection::decide, the port of core's scanProjection, kept while the
 // structure stamp it reads holds and re-judged on core's decline cadence (matrices move a verdict too: a
@@ -278,7 +246,7 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
     if (settled) {
         ++host.sinceDecide;
     } else {
-        const double stamp = structureStamp(root);
+        const double stamp = projection::structureStamp(root);
         if (stamp != host.stamp || minMeshes != host.minMeshes || ++host.sinceDecide >= kDeclineRescanFrames) {
             host.decision = projection::decide(root, minMeshes);
             host.stamp = stamp;
@@ -561,7 +529,7 @@ void registerObject3D(ClassBinding& b) {
     };
     // core's projection-stability proof asks for this where it exists; three has no such method.
     b.methods["__tnStructureStamp"] = [](void* self, const Args&, Store&) {
-        return Value::of(structureStamp(*as<Object3D>(self)));
+        return Value::of(projection::structureStamp(*as<Object3D>(self)));
     };
     // core's SceneRenderProjection asks for this where it exists, instead of building a mirror: the native
     // renderer batches this scene itself, so one call answers what that batching will make of it.
