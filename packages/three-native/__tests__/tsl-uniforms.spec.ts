@@ -98,7 +98,7 @@ interface ILaneWrite {
   lanesRef: readonly number[];
 }
 
-/** A sink that keeps each lane array's numbers and its identity, as the engine reads it in place. */
+/** A sink that keeps each lane array's numbers and its identity, so a kept argument shows aliasing. */
 function setupLaneIdentity() {
   const writes: ILaneWrite[] = [];
   const live = liveUniforms<IFakeNode>(
@@ -110,13 +110,15 @@ function setupLaneIdentity() {
   return { live, writes };
 }
 
-function reusedIdentities(writes: ILaneWrite[], node: IFakeNode): number {
-  return new Set(writes.filter((write) => write.node === node).map((write) => write.lanesRef)).size;
+function distinctWrites(writes: ILaneWrite[], node: IFakeNode): { writes: number; arrays: number } {
+  const own = writes.filter((write) => write.node === node);
+  return { writes: own.length, arrays: new Set(own.map((write) => write.lanesRef)).size };
 }
 
 /**
  * 32 edits with 24 unchanged syncs between: every edit reaches the sink once with the right lanes,
- * and every write for the node reuses the same lane array after warm-up.
+ * the unchanged syncs (extracted into the uniform's scratch) write nothing, and every write hands
+ * the sink its own snapshot, never the scratch a later sync refills.
  */
 function exerciseEdits(
   live: ReturnType<typeof liveUniforms<IFakeNode>>,
@@ -132,13 +134,16 @@ function exerciseEdits(
     for (let pass = 0; pass < 24; pass++) live.sync();
     expect(writes.at(-1)?.lanes).toEqual(expected(index));
   }
-  expect(reusedIdentities(writes, node)).toBe(1);
+  const seen = distinctWrites(writes, node);
+  expect(seen.arrays).toBe(seen.writes);
+  for (const [index, write] of writes.filter((w) => w.node === node).entries())
+    if (index > 0) expect(write.lanesRef).toEqual(write.lanes);
 }
 
 describe("uniform lane reuse", () => {
   // Every sync extracted a vector into a fresh array literal plus a filter result, even when the
   // lanes matched the last upload and write() returned before the engine call.
-  it("reuses one sink lane array across edits and unchanged syncs", () => {
+  it("writes each edit once as its own snapshot across unchanged syncs", () => {
     const { live, writes } = setupLaneIdentity();
     const origin = { x: 1, y: 2, z: 3 };
     const node = live.uniform(origin);
@@ -154,7 +159,7 @@ describe("uniform lane reuse", () => {
     expect(writes).toHaveLength(33);
   });
 
-  it("reuses one sink lane array for hooked scalars, a Color and Vector2/3/4", () => {
+  it("writes snapshots for hooked scalars, a Color and Vector2/3/4", () => {
     const { live, writes } = setupLaneIdentity();
     let gain = 1;
     const scalar = live.uniform(0);

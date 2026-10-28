@@ -119,9 +119,11 @@ export function liveUniforms<TNode extends object>(
   // hook that returns the same number every render costs no engine write.
   const write = (node: TNode, state: IUniformState, lanes: readonly number[]) => {
     if (sameLanes(state.lanes, lanes)) return;
-    setValues(node, lanes);
-    // A snapshot: `lanes` is the state's scratch and is refilled by the next extraction.
-    state.lanes = lanes.slice();
+    // A snapshot for the sink and the state: `lanes` is the state's scratch, refilled by the next
+    // extraction, so a sink that keeps its argument must not see later values.
+    const written = lanes.slice();
+    setValues(node, written);
+    state.lanes = written;
   };
   const live = {
     uniform(value: unknown, type?: unknown): TNode {
