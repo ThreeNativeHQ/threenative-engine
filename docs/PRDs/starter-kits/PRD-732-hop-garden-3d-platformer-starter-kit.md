@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-732 — Hop Garden: a 3D collectathon starter kit with an SM64-style moveset
 
-**Status:** PARTIAL — Phases 1 and 2 done; Phase 3 (gates, native, judge) open
+**Status:** PARTIAL — Phases 1 and 2 done, Phase 4's retro work done; Phase 3 (gates, native, judge) and AC-8 open
 **Priority:** P2 — new genre kit: Phase 3's registration gates, native run and visual judge (AC-8..AC-10) are open.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2); risk override: none. The kit is game code in one template; no `packages/` API changes.
 **Owner:** João
@@ -588,6 +588,33 @@ defeat, the rotating-platform carry, the camera pull-in.
 - [x] AC-5: a scripted route collects the 8 red gems and the summit Sunseed, and the HUD state shows `seeds: 2`, and coins heal a damaged meter by one wedge each. proof: `playtests/collect.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; gems 0→8, seeds 0→2, 10 `collected` signals; two walker hits then one coin: wedges 8→6→7, coins 1.
 - [x] AC-6: a walker touch costs one wedge, while a stomp, a ground pound or a dive each defeat a walker with no wedge lost. proof: `playtests/combat.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; stomped, pounded, dived 1 each, defeated 3, wedges 8 at `after-three`; then one touch: hurt 1, wedges 7.
 - [x] AC-7: with a wall between the hero and the default camera spot, the hero stays inside the frame and the camera-to-hero ray hits nothing. proof: `playtests/camera.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; pulledIn false→true, arm 9→6.31 m, `rayClear` true, `camera` follows the player with the target in the viewport. The Phase 1 four, rerun on the same build: all exit 0.
+
+#### Phase 4: The PRD-750 row-3 retro, applied to this kit
+
+**Status:** PARTIAL — the three retro items are done; AC-8 (registration gates) still open
+**Files:** `src/scenes/Play.ts`, `src/state.ts`, `src/ui/Hud.tsx`,
+`playtests/win.playtest.json` (new), the kit's `AGENTS.md`.
+**Why here:** PRD-750's loop records one row per cold build and fixes that row's top frictions
+before the next author step. Row 3's retro named two kit-layer frictions (no win state at three
+Sunseeds; a 22 KB `AGENTS.md` read twice) and AC-3 of PRD-750 asks this kit to carry the reference
+citations. All three land in this phase so the next cold build measures them.
+
+- [x] The kit ends: the third Sunseed publishes `won`, draws COURSE CLEAR with the run's coins and
+gems, and emits a `won` signal. proof: `playtests/win.playtest.json` on a scaffolded collectathon
+(branch tarballs, `--genre mario`, headed, `--browser-recipe webgpu`) — red on the pre-change kit
+(exit 2, `TN_PLAYTEST_OBSERVATION_UNAVAILABLE`: the `won` path did not exist), green after (pass
+true, `seeds: 3`, `won: true`, `toast: "COURSE CLEAR!"`, one `won` signal).
+- [x] The kit `AGENTS.md` stops restating the installed references: the asset-cook paragraph a
+kit with no authored asset never runs, the eighteen-path recipe list, and one CI-collector
+paragraph are gone (22,455 B -> 20,103 B, 58 lines either side), and no engine rule is lost.
+proof: `pnpm sync:agents` mirror, `scaffold.spec` + `template.spec` 126/126 on the rebased head.
+- [x] The SM64 reference cards are cited with their pinned sources: see the card table above
+(`engine_search_references` / `engine_reference_detail`, `n64decomp/sm64` sha `9921382a`), one row
+per card with the kit constant it became.
+- [ ] AC-8: the kit passes every registration gate and the template lane. proof (pending):
+`pnpm budgets`, the doc and CI-structure specs, and `TN_TEMPLATE_ONLY=collectathon pnpm test:templates`
+on an idle host — the first attempt ran beside five CI legs on the same machine and failed only its
+performance rows (`TN_PLAYTEST_PERF_WARNING`, `TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED` at load 52).
 
 #### Phase 3: Registered, native and judged
 
