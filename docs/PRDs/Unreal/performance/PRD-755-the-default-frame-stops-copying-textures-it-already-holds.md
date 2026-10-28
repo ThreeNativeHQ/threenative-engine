@@ -36,6 +36,16 @@ The resolve and the post targets do the same work with no history copy and no ex
 ### Phase 3: Prove it on games
 
 - [ ] Paired GPU A/B on Iris Xe, Hop Garden medium and the shooter, three pairs from one code state, GPU p50 and presented p95, load and temperature recorded. proof: the table here.
+  Hop Garden done, shooter open. 2026-10-28, Iris Xe at 0.72 medium, BEFORE PR #574 head `916682671`, AFTER `aecafb9ba`, Wasm hashes checked different. A first series (B1 A1 B2 A2 B3 A3) was rejected: every AFTER run started 5-10 C hotter (88-93 C). Balanced rerun, each run admitted below 78 C, all at 1200 MHz, presented p95 16.70 ms in every run:
+
+  | pair | order | BEFORE GPU p50 | AFTER GPU p50 | start C |
+  | --- | --- | --- | --- | --- |
+  | 1 | A then B | 18.87 | 18.68 | 74 / 76 |
+  | 2 | B then A | 18.91 | 19.11 | 77 / 77 |
+  | 3 | A then B | 18.97 | 19.07 | 75 / 80 |
+  | median | | **18.91** | **19.07** | |
+
+  No measurable gain on Iris Xe: +0.16 ms, inside the AFTER spread (0.43 ms). With `?tnGpuPasses=1`, `traaResolve` is 4.546/4.532 ms BEFORE and 4.556/4.566 ms AFTER: the third colour attachment costs what the two copies cost, and the copies never showed as passes of their own (inference: the copy engine overlaps them).
 - [ ] The kit scenarios pass on both kits. proof: `pnpm test:templates` on Hop Garden and the shooter.
 
 ## Done when
