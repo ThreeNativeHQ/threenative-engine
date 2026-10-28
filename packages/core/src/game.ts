@@ -844,7 +844,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#resumeScene = name;
     // An edit restarts the game, and its HUD would blank until this startup lifted the cover
     // again: seconds after every save on a slow GPU. A session that showed its HUD keeps it.
-    if (options?.revealed === true) this.#uiRevealed = true;
+    // The updated module may have connected its UI already and told a waiting HUD to hide.
+    if (options?.revealed !== true) return;
+    this.#uiRevealed = true;
+    if (this.#uiBridge?.hasPeer()) this.#postUiStartup();
   }
 
   get state(): GameStore<TState> {

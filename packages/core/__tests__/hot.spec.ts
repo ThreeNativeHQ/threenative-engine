@@ -105,13 +105,16 @@ describe("acceptHotUpdate", () => {
       acceptHotUpdate(current, hot);
       hot.triggerDispose();
 
-      const rebuilt = twoSceneGame({ screen: "menu" });
-      acceptHotUpdate(rebuilt, hot);
+      // The page's UI layer stays mounted across the update and announced itself once, to the
+      // old game. The updated module connects its game's UI before acceptHotUpdate runs, as a
+      // game that registers intents at module load does, and meets that UI already waiting.
       const ui = connectUiBridge({ end: "ui" });
       const mirror = subscribeUiState(ui);
+      ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+      const rebuilt = twoSceneGame({ screen: "menu" });
       try {
         void rebuilt.ui;
-        ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+        acceptHotUpdate(rebuilt, hot);
         expect(mirror.covered()).toBe(covered);
       } finally {
         rebuilt.stop();
@@ -119,6 +122,35 @@ describe("acceptHotUpdate", () => {
       }
     },
   );
+
+  it("keeps the HUD through a second update that lands before the restarted startup is ready", () => {
+    // One save, two rebuilds: vite updated the module again 0.1 s after the first restart, whose
+    // own startup was still collapsing, and that restart covered the HUD for 15 s on SwiftShader.
+    const hot = hotContext();
+    const first = twoSceneGame({ screen: "playing" });
+    Object.defineProperty(first, "sceneName", { get: () => "play" });
+    Object.defineProperty(first, "ctx", { get: () => ({ startup: { phase: "ready" } }) });
+    acceptHotUpdate(first, hot);
+    hot.triggerDispose();
+    const second = twoSceneGame({ screen: "menu" });
+    Object.defineProperty(second, "sceneName", { get: () => "play" });
+    Object.defineProperty(second, "ctx", { get: () => ({ startup: { phase: "collapsing" } }) });
+    acceptHotUpdate(second, hot);
+    hot.triggerDispose();
+
+    const ui = connectUiBridge({ end: "ui" });
+    const mirror = subscribeUiState(ui);
+    ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
+    const third = twoSceneGame({ screen: "menu" });
+    try {
+      void third.ui;
+      acceptHotUpdate(third, hot);
+      expect(mirror.covered()).toBe(false);
+    } finally {
+      third.stop();
+      ui.close();
+    }
+  });
 
   it("should do nothing when import.meta.hot is undefined", () => {
     const hot = hotContext();

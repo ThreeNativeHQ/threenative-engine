@@ -51,9 +51,14 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
   // game and boots it at `config.start` — so a session that was playing came back holding its own
   // state on the main menu, with every entity and its physics world gone, and the store insisting
   // the screen was still "playing". Resuming the scene is what makes the restored state true.
+  // Whether this session's HUD is showing: carried from a restart that kept it, else this
+  // startup's own reveal. One save can update the module twice, the second before this startup
+  // is ready, and that update must not cover a HUD the player is looking at.
+  let revealed = false;
   if (carried?.sceneName !== undefined) {
     try {
       game.resumeScene(carried.sceneName, { revealed: carried.revealed === true });
+      revealed = carried.revealed === true;
     } catch {
       // A scene that no longer exists in the updated module is not a reason to lose the reload;
       // the game boots at its start scene, which is what it would have done anyway.
@@ -79,7 +84,7 @@ export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics
       assertPortableState(state);
       data.threenative = {
         reloads: reloads + 1,
-        revealed: game.ctx?.startup.phase === "ready",
+        revealed: revealed || game.ctx?.startup.phase === "ready",
         sceneName: game.sceneName,
         state,
       };
