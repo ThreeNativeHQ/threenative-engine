@@ -213,6 +213,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-26 (reference MCP hook): every template's AGENTS.md names classic-game
 // mechanics references beside capability search in the authoring skill list, so all sixteen
 // trees move. No other scaffold byte changed.
+// Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
+// trees gain the `threenative-animation` server; no other scaffold byte changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
   // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
@@ -296,7 +298,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // boot-failure text both engines now show, so only puzzle's tree moves.
   // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
   // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
-  "action-rpg": "4624f123406c7937266701522f3713586da49e4768443dd784f0539648705c2b",
+  "action-rpg": "6ed05b6d238cde28c6574094f1528d69685a43db221b03f3d3250efeccb2c45d",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -313,34 +315,34 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
   // Recomputed 2026-10-27 on the merge of origin/develop (#577 native player, #579 reference search)
   // into the PRD-741 lane: measured by this test on the merged tree, which is neither parent's tree.
-  collectathon: "a28ab9b6924ac96dc1fd1d97b61f6632e7ef87f8d6fda2d15153e30fcc45f1a9",
+  collectathon: "dff7d2cef852f4fc25e5cd112dad94df0bb48a40294faa41b699de98e3065001",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
   // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
-  adventure: "0e6815ab9edc724b4abcef00c8c74f3938e3c1a2e9a94f9f3a95b75b592786f7",
+  adventure: "8b8f2ebcaab6d8aedc3c11e717661a03fc832518c6b132b79d0535c41909630a",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   // PRD-741: the kerb lies level with the road, closing the slot that showed grass under its edge.
-  kart: "f02e80e6ef8b23b7e2300c08f02142a8f5e82bf79ade6eeb84f3fd9b78b9c23c",
-  minimal: "27410c7c37862bcf806108e49adadecc54e6b4b50a0d501fd888caf923e2b3e2",
-  platformer: "5f9b28f6abe3fb03fdda135e7d34ce66afaa30065336b538914b853da6e57be3",
-  puzzle: "d4b56cb86ea944742715641166311fec92c506e999b464eaf0714878b67ea130",
-  racing: "6d75c5655e5bd791102160e7eba732d7e21646030a9eaa1fe1edf1b10f316aaa",
-  rain: "89eb30964fc637d3cfe724b400c9d43915f45e0c0248d9bcbe30dff38b9ef03d",
-  rts: "e31b93637ac7086855477c67c4c9ee505283e28b3bdd10ea84900a8ac989018d",
-  runner: "e78e0a0588df93f069150fa844f5ba7d229ac7169e4aa2052fae914b51f2c1d8",
+  kart: "6541323f16c053cc9b0b68aa29e62ae27641c4dd5c344e652d95f0272f20b00e",
+  minimal: "4939ecef344e167115ba6b96abc80fd77ed1a267188ec85204d61936591b56a2",
+  platformer: "a790c96c3637e83e413b74af677f514b51d2b38ce5693c9eb7bf4523dfba8de2",
+  puzzle: "6fb75de0686dd7d21af8a0dd862a66733a522a89508ae3ff3575d8fbf215f2f0",
+  racing: "1f09213d11dc032b8c06121098eca0fc2d04d4ef6f47b5dc490629e35a0a2327",
+  rain: "7fe3da10a9f44a2012640ccef392464da41fcc8f390fbbf6b995aa801d67af01",
+  rts: "9cbd8a9cab867cd34e3c94af51c13fcd6a51b8b3cb2dc005fac07750dbf492fa",
+  runner: "6af1d4d0ef44003ac1f9ae3bcd2f11b37d25eee94c8394fc2132dea0d570b6c0",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "b521d6a6642cbc2bceb4e6bee68cf4b0c2c61eb55c413bff7852bfb257c64abb",
-  shooter: "875ca40c3bed545c482803a80538d44d7ce3a095cf13ea6418d7f24ac6067ce7",
-  snow: "4835838c0d73ed3fd5a5441a9143fc3e840fdee16de5cf884209b0bb962712b0",
+  sailing: "09aede500e707d2c951ac45093f68ca5e55f3f3d3634b3863a703fedbd95a19a",
+  shooter: "1cf31dd05d6dad2ccc35a3b64855c23766f8161cff6a4eacadd37ae7f1ccb4bc",
+  snow: "9901b30b5cb85cdefeef864e8fcbd50d26f0733cec1577481d7e2314fb06eebd",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   // Recomputed 2026-10-27 on the merge of origin/develop into the PRD-741 lane.
-  starter: "223be23413159d7589208f89f6f22e76ae9faed6e92462a5fcff2061844690b9",
-  "tower-defense": "6f25e3f22029e259ed91358e29f7a4bc20cfe7ca57132769efc0f7bbef696597",
+  starter: "d1c6a58f2a85fa35ef3aaf8bbcdde8dabfb523a71c753af99eb9392e05af898d",
+  "tower-defense": "49eb6457b5cb1cbe3905f144b89ac0ea1d368fdcded4a921d089db1c5cd330c5",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -1707,6 +1709,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
           },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1742,6 +1748,10 @@ describe("create-threenative", () => {
           "threenative-blender": {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
+          },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
           },
         },
       });
