@@ -495,9 +495,9 @@ void registerObject3D(ClassBinding& b) {
             {"up", at(&o->up)}, {"matrix", at(&o->matrixValue())}, {"matrixWorld", at(&o->matrixWorldValue())},
             {"layers", at(&o->layers())}});
     };
-    // Engine-internal: the process-wide count of adds, removes, attaches and destroys. Core keeps a walk
-    // that only finds who is under whom (the camera pass's rig and camera-part sets) while it holds still.
-    b.getters["__hierarchyRevision"] = [](void*) { return Value::of(double(Object3D::hierarchyVersion())); };
+    // Engine-internal: the count of adds, removes, attaches and destroys at or under this object. Core keeps a
+    // walk that only finds who is under whom (the camera pass's rig and camera-part sets) while it holds still.
+    b.getters["__hierarchyRevision"] = [](void* self) { return Value::of(double(as<Object3D>(self)->subtreeVersion())); };
     // Engine-internal: the process-wide count of world-matrix composes. A playtest reads it per frame, so a
     // walk that composes nodes nothing draws (a hidden batch source) fails its bound.
     b.getters["__matrixEvaluations"] = [](void*) { return Value::of(double(Object3D::matrixEvaluations())); };

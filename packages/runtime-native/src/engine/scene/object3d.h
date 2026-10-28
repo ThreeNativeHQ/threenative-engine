@@ -268,6 +268,9 @@ public:
     // Renderer-owned Bone boundaries only; explicit world queries always use the eager chain.
     std::weak_ptr<bool> gpuJointBoundary;
     uint64_t gpuJointHierarchy = 0;
+    uint64_t subtreeVersion_ = 0;
+    /** Counts one hierarchy change at `node` and stamps it on `node` and every ancestor. */
+    static void markHierarchy(Object3D* node);
     bool skipsGpuJointSubtree() const {
         const auto valid = gpuJointBoundary.lock();
         return valid && *valid && gpuJointHierarchy == hierarchyVersion();
@@ -321,6 +324,9 @@ public:
     [[nodiscard]] static uint64_t hierarchyVersion();
     /** Where `hierarchyVersion()` lives, so a back end (Wasm) reads it in place instead of asking. */
     [[nodiscard]] static const uint64_t* hierarchyVersionAddress();
+    /** The `hierarchyVersion()` of the last add, remove, attach or destroy under this node (or at it), so a
+     * walk kept for one subtree (a rig, the camera's parts) holds while another subtree changes. */
+    [[nodiscard]] uint64_t subtreeVersion() const { return subtreeVersion_; }
     std::string name;  // not a renderer input, so a plain field: writes do not bump `revision()`
 
     Object3D* parent = nullptr;

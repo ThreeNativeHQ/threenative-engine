@@ -272,6 +272,10 @@ void EventDispatcher::dispatchEvent(Event& event) {
 // ------------------------------------------------------------------------------ Object3D
 
 uint64_t Object3D::hierarchyVersion() { return hierarchyRevision; }
+void Object3D::markHierarchy(Object3D* node) {
+    ++hierarchyRevision;
+    for (; node != nullptr; node = node->parent) node->subtreeVersion_ = hierarchyRevision;
+}
 const uint64_t* Object3D::hierarchyVersionAddress() { return &hierarchyRevision; }
 
 Object3D::Object3D() : transform_(acquireTransform()),
@@ -491,7 +495,7 @@ void Object3D::lookAt(double x, double y, double z) {
 Object3D::~Object3D() {
     // Only a linked object's death changes a children list. A scratch object (InstancedMesh::raycast
     // builds a Mesh per ray) left the counter alone, or every cache keyed on it dropped once per ray.
-    if (parent != nullptr || !children.empty()) ++hierarchyRevision;
+    if (parent != nullptr || !children.empty()) markHierarchy(parent);
     for (Object3D* child : children) child->parent = nullptr;  // owned children die after this body
     if (parent != nullptr) {
         auto& siblings = parent->children;
@@ -516,7 +520,7 @@ Object3D& Object3D::add(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
-    ++hierarchyRevision;
+    markHierarchy(this);
     own(object);
     object.dispatchEvent(addedEvent);
     childAddedEvent.child = &object;
@@ -536,7 +540,7 @@ Object3D& Object3D::remove(Object3D& object) {
     if (found == children.end()) return *this;
     const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();  // alive until this returns
     children.erase(found);
-    ++hierarchyRevision;
+    markHierarchy(this);
     disown(object);
     object.parent = nullptr;
     object.dispatchEvent(removedEvent);
@@ -578,7 +582,7 @@ Object3D& Object3D::attach(Object3D& object) {
     object.removeFromParent();
     object.parent = this;
     children.push_back(&object);
-    ++hierarchyRevision;
+    markHierarchy(this);
     own(object);
 
     object.updateWorldMatrix(false, true);
