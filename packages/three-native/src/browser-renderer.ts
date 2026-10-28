@@ -51,6 +51,9 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  */
 export const WEB_HOST_ABI = 5;
 
+/** The page query a worker game's init copies into its scope (core worker.ts). */
+const PAGE_SEARCH = "__THREENATIVE_PAGE_SEARCH";
+
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
 const READY = 1;
@@ -365,8 +368,8 @@ export function defineWebRenderer(
         // may be told timestamps are enabled. An explicit opt-out stays off.
         if (module._tnw_web_frame(10) === 0) this.backend.trackTimestamp = false;
         // PRD-754's A/B knob: `?tnStablePasses=0` on the page (a worker game reads the page's query).
-        const scope = globalThis as { __THREENATIVE_PAGE_SEARCH?: unknown; location?: { search?: string } };
-        const query = String(scope.__THREENATIVE_PAGE_SEARCH ?? scope.location?.search ?? "");
+        const scope = globalThis as Record<string, unknown> & { location?: { search?: string } };
+        const query = String(scope[PAGE_SEARCH] ?? scope.location?.search ?? "");
         if (/[?&]tnStablePasses=(0|false)(&|$)/u.test(query)) module._tnw_web_set_stable_passes(0);
         return this;
       })();
