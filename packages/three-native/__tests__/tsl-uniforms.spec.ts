@@ -92,6 +92,190 @@ describe("boolean uniforms", () => {
   });
 });
 
+interface ILaneWrite {
+  node: IFakeNode;
+  lanes: number[];
+  lanesRef: readonly number[];
+}
+
+/** A sink that keeps each lane array's numbers and its identity, as the engine reads it in place. */
+function setupLaneIdentity() {
+  const writes: ILaneWrite[] = [];
+  const live = liveUniforms<IFakeNode>(
+    () => ({}),
+    (node, lanes) => {
+      writes.push({ node, lanes: [...lanes], lanesRef: lanes });
+    },
+  );
+  return { live, writes };
+}
+
+function reusedIdentities(writes: ILaneWrite[], node: IFakeNode): number {
+  return new Set(writes.filter((write) => write.node === node).map((write) => write.lanesRef)).size;
+}
+
+/**
+ * 32 edits with 24 unchanged syncs between: every edit reaches the sink once with the right lanes,
+ * and every write for the node reuses the same lane array after warm-up.
+ */
+function exerciseEdits(
+  live: ReturnType<typeof liveUniforms<IFakeNode>>,
+  writes: ILaneWrite[],
+  node: IFakeNode,
+  edit: (index: number) => void,
+  expected: (index: number) => number[],
+): void {
+  live.sync();
+  for (let index = 0; index < 32; index++) {
+    edit(index);
+    live.sync();
+    for (let pass = 0; pass < 24; pass++) live.sync();
+    expect(writes.at(-1)?.lanes).toEqual(expected(index));
+  }
+  expect(reusedIdentities(writes, node)).toBe(1);
+}
+
+describe("uniform lane reuse", () => {
+  // Every sync extracted a vector into a fresh array literal plus a filter result, even when the
+  // lanes matched the last upload and write() returned before the engine call.
+  it("reuses one sink lane array across edits and unchanged syncs", () => {
+    const { live, writes } = setupLaneIdentity();
+    const origin = { x: 1, y: 2, z: 3 };
+    const node = live.uniform(origin);
+    exerciseEdits(
+      live,
+      writes,
+      node,
+      (index) => {
+        origin.x = 10 + index;
+      },
+      (index) => [10 + index, 2, 3],
+    );
+    expect(writes).toHaveLength(33);
+  });
+
+  it("reuses one sink lane array for hooked scalars, a Color and Vector2/3/4", () => {
+    const { live, writes } = setupLaneIdentity();
+    let gain = 1;
+    const scalar = live.uniform(0);
+    scalar.onRenderUpdate?.(() => gain);
+    exerciseEdits(
+      live,
+      writes,
+      scalar,
+      (index) => {
+        gain = 2 + index;
+      },
+      (index) => [2 + index],
+    );
+
+    const color = { r: 0.1, g: 0.2, b: 0.3 };
+    const colorNode = live.uniform(color);
+    exerciseEdits(
+      live,
+      writes,
+      colorNode,
+      (index) => {
+        color.r = (index + 1) / 10;
+      },
+      (index) => [(index + 1) / 10, 0.2, 0.3],
+    );
+
+    const v2 = { x: 0, y: 1 };
+    const v2Node = live.uniform(v2);
+    exerciseEdits(
+      live,
+      writes,
+      v2Node,
+      (index) => {
+        v2.y = 2 + index;
+      },
+      (index) => [0, 2 + index],
+    );
+
+    const v3 = { x: 0, y: 1, z: 2 };
+    const v3Node = live.uniform(v3);
+    exerciseEdits(
+      live,
+      writes,
+      v3Node,
+      (index) => {
+        v3.z = 3 + index;
+      },
+      (index) => [0, 1, 3 + index],
+    );
+
+    const v4 = { x: 0, y: 1, z: 2, w: 3 };
+    const v4Node = live.uniform(v4);
+    exerciseEdits(
+      live,
+      writes,
+      v4Node,
+      (index) => {
+        v4.w = 4 + index;
+      },
+      (index) => [0, 1, 2, 4 + index],
+    );
+  });
+
+  // The engine refuses lanes that do not fit the uniform's type. Reusing storage must not pad a
+  // short value with the lanes of an earlier, wider one.
+  it("still refuses a value whose lanes do not fit the uniform type", () => {
+    const widths = new WeakMap<IFakeNode, number>();
+    const live = liveUniforms<IFakeNode>(
+      () => ({}),
+      (node, lanes) => {
+        const width = widths.get(node);
+        if (width !== undefined && width !== lanes.length)
+          throw new Error(
+            `TN_TSL_UNIFORM_WIDTH: ${lanes.length} lanes for a ${width}-lane uniform`,
+          );
+      },
+    );
+    const vec3 = live.uniform({ x: 1, y: 2, z: 3 });
+    widths.set(vec3, 3);
+    live.sync();
+    expect(() => {
+      vec3.value = { x: 4, y: 5 };
+    }).toThrow("TN_TSL_UNIFORM_WIDTH: 2 lanes for a 3-lane uniform");
+
+    const scalar = live.uniform(1);
+    widths.set(scalar, 1);
+    scalar.value = 2;
+    expect(() => {
+      scalar.value = { x: 2, y: 3 };
+    }).toThrow("TN_TSL_UNIFORM_WIDTH: 2 lanes for a 1-lane uniform");
+  });
+
+  // A refused write must not become the last-successful lanes, or the engine never sees the value.
+  it("retries a changed value after the sink throws instead of treating it as uploaded", () => {
+    const pushed: number[][] = [];
+    let throwOnce = false;
+    const live = liveUniforms<IFakeNode>(
+      () => ({}),
+      (_node, lanes) => {
+        pushed.push([...lanes]);
+        if (throwOnce) {
+          throwOnce = false;
+          throw new Error("TN_TSL_SINK: transient");
+        }
+      },
+    );
+    const origin = { x: 1, y: 2 };
+    live.uniform(origin);
+    live.sync();
+    origin.x = 9;
+    throwOnce = true;
+    expect(() => live.sync()).toThrow("TN_TSL_SINK: transient");
+    live.sync();
+    expect(pushed).toEqual([
+      [1, 2],
+      [9, 2],
+      [9, 2],
+    ]);
+  });
+});
+
 describe("uniform sync cost", () => {
   // Lantern Vale renders about ten post passes a frame, and every pass synced every uniform: 832 engine
   // writes a frame for values that had not changed.
