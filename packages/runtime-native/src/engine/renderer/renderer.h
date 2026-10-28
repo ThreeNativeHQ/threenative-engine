@@ -750,12 +750,13 @@ private:
     struct Planned;
     struct ShadowPass;
     struct FrameJob;
+    struct PassRows;  // PRD-754: one pass's retained rows for a frame (renderer.cpp)
     void encodeFrame(FrameJob& job);
     std::unique_ptr<FrameJob> job_;
     /** PRD-754: the main pass's draws, kept past the frames they are out of view (see renderer.cpp). */
     struct MainRow;
     struct MainRows;
-    std::unique_ptr<MainRows> mainRows_;
+    std::unique_ptr<MainRows> mainRows_, auxRows_, velocityRows_;
     bool pendingEncode_ = false;
     std::atomic<bool> encoding_{false};
     mutable std::mutex frameMailMutex_;
@@ -1127,6 +1128,7 @@ private:
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
     std::vector<uint64_t> mainBundleKey_;
     std::vector<uint32_t> mainBundleRows_;
+    std::vector<uint64_t> viewportKey_;  // PRD-754: the viewport bundle's draws, recorded beside the main rows
     // The aux and TRAA velocity passes' draws, recorded once and replayed while their plans hold (PRD-740).
     WGPURenderBundle auxBundle_ = nullptr, velocityBundle_ = nullptr;
     std::vector<uint64_t> auxBundleKey_, velocityBundleKey_;

@@ -1080,7 +1080,8 @@ void unchangedFrameStorage() {
                 static_cast<unsigned long long>(paletteBytes));
     CHECK(changed == unchanged + packed);
     CHECK(steadyMoved == unchanged);
-    CHECK(grown == steadyMoved + grownPacked);
+    // PRD-754: a changed instance count also rewrites the main pass's indirect records, five words per draw (two here).
+    CHECK(grown == steadyMoved + grownPacked + 2 * 5 * sizeof(uint32_t));
     CHECK(steadyGrown == unchanged);
     CHECK(palette == steadyGrown + paletteBytes);
 }
@@ -2912,10 +2913,16 @@ void cameraCull() {
         camera.updateMatrixWorld(true);
     };
     struct Frame { std::vector<uint8_t> pixels; Renderer::FrameStats stats; std::size_t batches; };
-    const auto laps = [&](bool stable) {
+    const auto laps = [&](bool stable, bool post = false) {
         Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
         renderer.setSize(160, 120);
         renderer.setStablePasses(stable);
+        if (post) {  // the velocity pass, and a post graph that reads the normal target
+            namespace g = shader::graph;
+            renderer.setTraa(TraaOptions{});
+            renderer.setPostGraph(g::bloom(g::vec4({g::swizzle(g::texture("normal", g::uv()), "x"), g::float_(0), g::float_(0),
+                                                    g::float_(0)}), 0, 0, 0));
+        }
         RenderDatabase database;
         std::vector<Frame> frames;
         for (int step = 0; step < 32; ++step) {
@@ -2946,6 +2953,25 @@ void cameraCull() {
     CHECK(covered > 20000 && differ == 0);
     CHECK(directRecorded > 0);
     CHECK(secondLap == 0);
+    // With the velocity and normal passes on, they replay their bundles too: the second lap records no aux draw.
+    const auto postDirect = laps(false, true), postStable = laps(true, true);
+    std::size_t postDiffer = 0;
+    uint32_t auxSecond = 0, auxDirect = 0, mainSecond = 0;
+    for (std::size_t f = 0; f < postDirect.size(); ++f) {
+        CHECK(postDirect[f].pixels.size() == postStable[f].pixels.size());
+        for (std::size_t p = 0; p + 3 < postDirect[f].pixels.size() && postDirect[f].pixels.size() == postStable[f].pixels.size(); ++p)
+            postDiffer += postDirect[f].pixels[p] != postStable[f].pixels[p];
+        CHECK(postDirect[f].stats.auxPasses == 1 && postStable[f].stats.auxPasses == 1);
+        if (f >= 16) {
+            auxSecond += postStable[f].stats.auxRecorded;
+            auxDirect += postDirect[f].stats.auxRecorded;
+            mainSecond += postStable[f].stats.mainRecorded;
+        }
+    }
+    std::printf("camera cull, velocity and normal passes: %zu bytes differ; second lap records %u aux draws stable "
+                "(%u main), %u direct\n", postDiffer, auxSecond, mainSecond, auxDirect);
+    CHECK(postDiffer == 0);
+    CHECK(auxSecond == 0 && mainSecond == 0);
 }
 
 // PRD-518 box 38: the same animated poses and refusals, with batching on and off, including shadows.
