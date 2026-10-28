@@ -108,6 +108,9 @@ On an opaque scene, a camera turn and a culling change record no bundle again, i
   48.4) and p95 59.8/66.5/56.2 against 66.9/54.4/56.3 ms (mean 60.8 against 59.2). The shadow bundles still record
   about 30 draws a frame. Shooter web turn (`probe-trace`, load 4-14): 0.414/0.361/0.349 against 0.583/0.354/0.369 ms,
   no fall, so b5021ba1d compiles the stable passes out of the web engine. Deferred: revisit with the rows (above)
+  At bdaf08599 (a batch keeps its member's id, the base's coplanar winner; 3 pairs, load 6-18): Midway 0.158/0.139/
+  0.128 against 0.129/0.105/0.115 ms, an 18% fall (pairs 18/24/10%); frame p50 mean 50.2 against 50.3 ms, p95 64.3
+  against 60.7 ms
 - [x] A fresh visual judge returns NEUTRAL or IMPROVEMENT on BEFORE/AFTER frames of Midway and the shooter (`--browser-recipe webgpu`, `adapter.info` checked, two runs per arm). proof: the verdict in this box and images on PR #574
   result: NEUTRAL on both games, no criterion fails, judged twice by fresh read-only Opus subagents with criteria
   written before the AFTER frames: at 7f78a57f4 and again at a9caf82d3 (the delta bundle draws first-seen rows last;
