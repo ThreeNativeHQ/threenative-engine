@@ -291,13 +291,14 @@ Six hazards block a render thread: non-atomic `nextObjectId`/`hierarchyRevision`
 - [ ] Mixers and independent transform subtrees run as jobs, bit-equal to one thread, events dispatched after the join, hazard 1 fixed. proof: `native_engine_skinned_crowd_cpu` and `native_engine_static_transform` with 1 and N workers, under ThreadSanitizer
 
 #### Phase v3.2: Recorded passes survive camera motion
-**Status:** BLOCKED (2026-10-28) on an owner decision: PRD-754's state-ordered rows swap exactly coplanar draws (judge REGRESSION on the shooter's doors), so the knob is off by default; under that order recording CPU fell 75% on Midway native and 78% on the shooter web turn against an 80% gate. Revisit condition in PRD-754.
+**Status:** PARTIAL (2026-10-28). The owner chose PRD-754 option 1: three's opaque order stays; native desktop replays the shadow passes from bundles with persistent uniform slots by default (Midway recording plus shadow CPU -17%); the rows wait behind `setStableRows` (native, off); the web engine compiles all of it out (no web gain, 4 MiB budget). The camera-turn goal and the 80% gate are Deferred in PRD-754.
 **Owned by [PRD-754](../Unreal/performance/PRD-754-a-camera-turn-re-records-no-pass.md)** (lane `lane/perf-stable-passes`, 2026-10-27). The boxes below stay as the summary; PRD-754 carries the proof.
 Today the bundle key (`renderer.cpp:2702-2722`) moves with depth order (`sortDraws`), plan-order uniform offsets and visible-count batch stores (`render_database.cpp:893`); shadow, normal and velocity passes encode directly (`renderer.cpp:2693,2784,2813`).
 - [x] Rebuilds by cause and direct encodes by pass are counted, and shadow, normal and velocity passes replay bundles pixel-identically. proof: red-green `native_engine_batched_vs_unbatched`; `profile:wasm-page --gpu-calls` ratio below 1.0
   result: PRD-754 Phase 1 and Phase 2 box 1 (`stable_passes_match_direct`, `camera_cull_keeps_bundle`: 0 differ; `--gpu-calls` ratio 0.25)
 - [ ] State-first opaque order and a persistent uniform slot per record: a camera turn on an opaque scene rebuilds nothing, and the judge passes. proof: red-green `native_engine_batched_vs_unbatched`; a judge subagent; `--gpu-time` ratio at most 1.0
   result: reopened 2026-10-28, the judge at c58d8f16f reads REGRESSION (coplanar door trim); see PRD-754 Blocked on
+  Deferred 2026-10-28 (owner, option 1): rows behind `setStableRows`, off; the judge reads NEUTRAL on the default at 4a7e82414
 - [x] Capacity-stable stores and `drawIndexedIndirect` (`firstInstance` 0): a culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
   result: PRD-754 Phase 2 box 2 (`cull_keeps_main_bundle` 0 differ; Chrome worker recording CPU ratio 0.45 over 3 pairs)
 

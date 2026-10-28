@@ -1,13 +1,13 @@
 # PRD-754 — A camera turn re-records no pass
 
-**Status:** BLOCKED (2026-10-28) on an owner decision: state-ordered opaque rows swap the winner of exactly coplanar draws (judge REGRESSION on the shooter's doors), and depth-ordered rows cost more than they save. The knob is off by default until then. See Blocked on.
+**Status:** PARTIAL (2026-10-28). The owner chose option 1: three's opaque order stays, and native desktop replays the shadow passes from bundles with persistent uniform slots, on by default. The main, aux and velocity rows wait behind `Renderer::setStableRows` (native, off by default), and the web engine compiles all of it out (no web gain, 4 MiB budget). A camera turn still records the main pass again by default, so the goal is open.
 **Priority:** P1 — in a game the camera moves every frame. Today a camera turn changes the opaque draw order, which changes the bundle key, so the main pass records its render bundle again. The shadow, normal and velocity passes encode directly every frame. The same C++ renderer runs on desktop and in the web Wasm engine, where each encode call is also a JS-to-WebGPU call.
 **Complexity:** 7 (HIGH) — renderer, render database and projection batch stores (+3), a new draw order and persistent uniform slots (+2), indirect draws and pixel parity across four passes (+2); risk override: none
 **Owner:** João
 **Parent:** [PRD-573](../../performance/PRD-573-unreal-class-performance-in-release-cycles.md), Phase v3.2 ("Recorded passes survive camera motion"). This PRD carries the v3.2 boxes; PRD-573 points here. Lane of PR #574 (`pr563-followup`).
 **Depends on:** none. Related: PRD-753 (batch keys from a change set), [PRD-752](../../performance/PRD-752-web-games-run-in-a-worker-so-the-page-cannot-stall-them.md) phase 4 (job pool; lane `lane/pr574-threads`).
 
-**Update rule:** this PRD has no PR of its own. Its commits land on `lane/perf-stable-passes` and merge into PR #574. Tick each box, with its result, in the commit that proves it.
+**Update rule:** the owner opened PR #584 (`lane/perf-stable-passes` into `pr563-followup`, PR #574) on 2026-10-28. Tick each box, with its result, in the commit that proves it.
 
 ## Problem
 
@@ -74,16 +74,21 @@ On an opaque scene, a camera turn and a culling change record no bundle again, i
   1.00 (mean ratio 1.015, inside the 8.8-11.9 ms run spread).
   reopened 2026-10-28: the judge at c58d8f16f reads REGRESSION (Phase 3): state order swaps exactly coplanar draws.
   Depth-ordered rows keep the pixels, but a camera lap then records 105 rows against 57 direct (patch kept, not committed)
+  Deferred 2026-10-28 (owner, option 1): the rows ship behind `setStableRows`, native only and off; the default keeps
+  three's order, and `coplanar_keeps_winner` (red at 4a7e82414's parent: 64 pixels differ, green after) holds it.
+  Revisit when an opaque order the camera does not change keeps the coplanar winner (Blocked on, option 2)
 - [x] Batch stores keep their capacity, and draws use `drawIndexedIndirect` (`firstInstance` 0). A culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
   result: `native_engine_renderer_cull_keeps_main_bundle` (opaque arm: a cull and the draw's return record 0, 0 differ,
   draws and triangles equal to direct encode) and `native_engine_camera_cull` pass. Chrome, the shooter in its worker
   at a9caf82d3 (3 pairs, load 11-16, NVIDIA Turing): recording CPU of the turn 0.299/0.334/0.318 ms knob off against
   0.143/0.159/0.131 ms on, ratio 0.45; `--gpu-calls` ratio 0.25. `--cpu-work` reads the page main thread only, so the
   worker meter stands in (see Decisions)
+  Since option 1 (2026-10-28) the indirect draws and the culling claim hold only with `setStableRows` (native); the
+  batch stores keep their capacity by default on native
 
 ### Phase 3: Prove it on games
 
-**Status:** BLOCKED (2026-10-28): the judge reads REGRESSION, and the CPU fall is below the gate.
+**Status:** PARTIAL (2026-10-28): the judge reads NEUTRAL at option 1; the CPU gate fails and is Deferred.
 
 - [ ] Midway native and the shooter on web: CPU per frame falls by at least the Phase 1 ceiling minus 20%, with frame p50 and p95 no worse. Paired A/B from one code state with a knob, three runs per arm, host load recorded. proof: `scripts/midway-bench/flight.sh` and `profile:wasm-page` pairs
   result (gate FAILS, Deferred): recording plus shadow encode CPU per frame at a9caf82d3, knob off then on, 3 pairs.
@@ -98,7 +103,12 @@ On an opaque scene, a camera turn and a culling change record no bundle again, i
   0.396/0.550/0.340 against 0.118/0.099/0.068 ms, a 78% fall (pairs 70/82/80%, load 12-25), aux draws recorded 43 → 5
   a frame; Midway 0.139/0.166/0.190 against 0.051/0.035/0.039 ms, a 75% fall (pairs 63/79/79%, load 12-27; the 63%
   run had a 275 ms p95 stall). Still below 80%, and these numbers hold only if the state order is accepted
-- [ ] A fresh visual judge returns NEUTRAL or IMPROVEMENT on BEFORE/AFTER frames of Midway and the shooter (`--browser-recipe webgpu`, `adapter.info` checked, two runs per arm). proof: the verdict in this box and images on PR #574
+  At option 1 (4a7e82414, shadow bundles and slots on, rows off; 3 pairs): Midway native flight 0.132/0.139/0.129
+  against 0.117/0.110/0.105 ms, a 17% fall; frame p50 48.0/50.8/46.8 against 51.1/47.3/46.8 ms (mean 48.5 against
+  48.4) and p95 59.8/66.5/56.2 against 66.9/54.4/56.3 ms (mean 60.8 against 59.2). The shadow bundles still record
+  about 30 draws a frame. Shooter web turn (`probe-trace`, load 4-14): 0.414/0.361/0.349 against 0.583/0.354/0.369 ms,
+  no fall, so b5021ba1d compiles the stable passes out of the web engine. Deferred: revisit with the rows (above)
+- [x] A fresh visual judge returns NEUTRAL or IMPROVEMENT on BEFORE/AFTER frames of Midway and the shooter (`--browser-recipe webgpu`, `adapter.info` checked, two runs per arm). proof: the verdict in this box and images on PR #574
   result: NEUTRAL on both games, no criterion fails, judged twice by fresh read-only Opus subagents with criteria
   written before the AFTER frames: at 7f78a57f4 and again at a9caf82d3 (the delta bundle draws first-seen rows last;
   the judge checked newly visible objects for z-fighting). Shooter web (headed, `--browser-recipe webgpu`,
@@ -111,6 +121,11 @@ On an opaque scene, a camera turn and a culling change record no bundle again, i
   differ at 7f78a57f4 and a9caf82d3 (343 and 435 pixels where both knob-on runs differ from all six knob-off ones), so
   the two NEUTRAL verdicts missed it. Cause: exactly coplanar trim, whose winner the draw order picks. Sheets:
   `~/.cache/tmp-tn/prd754/judge/sheets/*-c58d8f16f.png`, crop x 840-1060, y 280-420 of `vtail-shooter-*/spawn.png`
+  option 1 at 4a7e82414: a fourth fresh judge reads NEUTRAL on both games and overall, every pose, criteria 1-5; the
+  door stripes are gone (spawn BEFORE-AFTER 0.00, 0 pixels where both knob-on runs differ). The shooter's `turned`
+  pose has 2792 such pixels, on the palm fronds and their shadow, which the two knob-on runs share on only 59% (signed
+  mean -1.3): wind phase and TRAA on alpha-tested leaves. Midway 0 such pixels in every pose. Sheets
+  `judge/sheets/{shooter-web,midway-native}-opt1.png`, posted on PR #584
 
 ## Done when
 
@@ -118,6 +133,13 @@ Every box is ticked, `PERFORMANCE-LEARNINGS.md` has the lever entry (keep or rej
 
 ## Decisions
 
+- 2026-10-28 (owner, option 1 of Blocked on): keep three's opaque order; ship the shadow bundles, the uniform slots
+  and the fixes on by default; the main, aux and velocity rows stay behind `setStableRows` (`TN_STABLE_ROWS=1`),
+  native only. `TN_STABLE_PASSES=0` turns the default off on native.
+- 2026-10-28 (lane): the web engine compiles the stable passes out (`stablePasses_` and `stableRows_` constexpr false
+  on Emscripten; web host ABI back to 5, no `?tnStablePasses`). The web turn did not fall, and the lane put the Wasm
+  74 KB over `LIMITS.webEngineBytes`; raising a budget to pass is relaxing a check. After: 4,193,163 bytes (threads),
+  4,183,616 (single thread), limit 4,194,304.
 - 2026-10-27 (lane): the recording meters read render-thread CPU time on Linux (wall time elsewhere). On this host
   (load 50 to 80) the wall meter read Midway at 2.18 ms a frame against 0.33 ms of CPU time.
 - 2026-10-27 (lane): the web ceiling uses a Chrome trace of the worker thread instead of `profile:wasm-page --cpu-work`,
@@ -134,8 +156,8 @@ Every box is ticked, `PERFORMANCE-LEARNINGS.md` has the lever entry (keep or rej
   0.153 ms off). They record a second bundle keyed as direct encode keys them, so they never record more than the knob
   off. UE 5.8.3 also re-sorts translucent draws each frame by view (`UpdateTranslucentMeshSortKeys`,
   `Engine/Source/Runtime/Renderer/Private/MeshDrawCommands.cpp:164,1149`).
-- 2026-10-28 (lane): the knob is off by default (`TN_STABLE_PASSES=1`, `?tnStablePasses=1` turn it on): its state
-  order changes coplanar pixels, and the owner rule is that a performance win never costs visuals. Replaces:
+- 2026-10-28 (lane, replaced by option 1 above): the knob is off by default: its state order changes coplanar pixels,
+  and the owner rule is that a performance win never costs visuals. Replaces:
 - 2026-10-27 (lane): the knob stays on by default (`TN_STABLE_PASSES=0`, `?tnStablePasses=0` turn it off). The CPU of a
   turn falls on both games and the judge is NEUTRAL; the open risk is the web frame p50 read 1.10x and 1.19x under
   Xvfb on a loaded host, for the owner to weigh with the quiet-host pairs.
@@ -151,15 +173,8 @@ Every box is ticked, `PERFORMANCE-LEARNINGS.md` has the lever entry (keep or rej
 
 ## Blocked on
 
-- Owner decision (2026-10-28). Opaque rows that hold across a camera turn must draw in an order the camera does not
-  change; three draws opaque front to back (`painterSortStable`), and at exactly equal depth the order picks the
-  winner, so the shooter's door trim swaps (judge REGRESSION). Options:
-  1. Accept UE 5.8.3's state order (`FMeshDrawCommandSortKey`) as a named behaviour change for coplanar draws, with
-     the shooter's door trim fixed in content (a polygon offset). Keeps the 75-78% falls; gives up identical pixels.
-  2. Keep three's order, and order rows by depth only among draws whose world bounds intersect (only those can tie).
-     Research, unmeasured.
-  3. Keep three's order everywhere and close the main, aux and velocity rows; keep the shadow bundles, uniform slots
-     and the two correctness fixes of c58d8f16f. Shadow encode falls about 75% on Midway.
-  Until then the knob is off by default, so no default frame changes. The depth-ordered attempt is kept as a patch,
-  not committed (a camera lap records 105 rows against 57 direct).
-- The Phase 3 CPU gate (80%) stays open: 75% (Midway native) and 78% (shooter web turn) at c58d8f16f, state order.
+- The camera-turn goal (Phase 2 box 2, Phase 3 CPU box) needs an opaque order the camera does not change that keeps
+  three's winner for exactly coplanar draws: order rows by depth only among draws whose world bounds intersect (option
+  2 of the 2026-10-28 owner decision; research, unmeasured). The depth-ordered attempt is kept as a patch,
+  `~/.cache/tmp-tn/prd754/depth-order-attempt.patch` (a camera lap records 105 rows against 57 direct).
+- The Phase 3 CPU gate (80%) is the owner's threshold call: 17% on Midway native at option 1, none on the web.

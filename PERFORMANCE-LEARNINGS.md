@@ -439,3 +439,15 @@ no COOP/COEP); that lane is open.
 - Result: instructions decrease in both pairs at all poses; CPU fails every-candidate-below-every-baseline. Four PASS reports with exact windows; dashboard 179 runs.
 - Insight: capture serialization does not establish low CPU load. Higher load and lower IPC confound pair 2 CPU attribution; no causal explanation or qualified win. No third retry or integration.
 - Artifact: `screens/visible-queue-{base,on}-{1,2}/`; recovery cycle terminal 2026-10-15T06:49:37.800Z.
+
+### 2026-10-28 — PRD-754 recorded passes survive a camera turn — KEEP (native shadow bundles), DEFER (rows)
+- Where: [PRD-754](docs/PRDs/Unreal/performance/PRD-754-a-camera-turn-re-records-no-pass.md), PR #584; `4a7e82414`, `b5021ba1d`.
+- Result: state-ordered opaque rows cut recording plus shadow CPU 75-78% on a camera turn, but swapped the winner of
+  exactly coplanar draws (shooter door trim): judge REGRESSION, missed by two earlier NEUTRAL judges. Depth-ordered rows
+  keep the pixels but record more than direct encode (105 against 57 rows a lap). The owner kept three's order: the
+  shadow bundles and uniform slots alone give 17% on Midway native and nothing on the web turn, so the web engine
+  compiles them out (it was 74 KB over its 4 MiB budget).
+- Insight: a draw order that the camera does not change must still keep the coplanar winner, or the "free" order costs
+  pixels. Count pixels where every AFTER run differs from every BEFORE run; a judge reading a sheet misses a thin stripe.
+- Revisit when: an opaque order that keeps the coplanar winner exists (depth order only among intersecting bounds).
+
