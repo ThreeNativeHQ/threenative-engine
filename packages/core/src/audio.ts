@@ -6,7 +6,7 @@ import {
   AudioContext as ThreeAudioContext,
   type Vector3,
 } from "three";
-import { hostGestureTarget } from "./platform.js";
+import { hostGestureTarget, hostWindow } from "./platform.js";
 
 /**
  * Bus-level dynamics compression, every value the game's.
@@ -238,7 +238,7 @@ type PooledVoice = {
  * installs `globalThis.AudioContext` instead, so a game on the three.js engine adopts that one.
  */
 function adoptWorkerAudioContext(): void {
-  if (typeof window !== "undefined" || typeof globalThis.AudioContext !== "function") return;
+  if (hostWindow() !== undefined || typeof globalThis.AudioContext !== "function") return;
   try {
     ThreeAudioContext.getContext();
   } catch {
