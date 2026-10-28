@@ -244,8 +244,6 @@ export function serveWorkerGame(
 
       // A worker resolves relative URLs against its own script, so the page's URL is the base.
       const pageUrl = message.pageUrl;
-      // Measurement knobs read the page's query (PRD-754's ?tnStablePasses=0), not the worker script's.
-      scope.__THREENATIVE_PAGE_SEARCH = new URL(pageUrl).search;
       const resolve = (input: RequestInfo | URL): RequestInfo | URL =>
         typeof input === "string" || input instanceof URL ? new URL(input, pageUrl) : input;
       const originalFetch = scope.fetch as typeof fetch;

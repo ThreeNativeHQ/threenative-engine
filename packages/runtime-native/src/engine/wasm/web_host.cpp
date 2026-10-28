@@ -40,8 +40,7 @@ namespace {
 // 2 = tnw_web_render's overlay argument (39295d1f3).
 // 3 = startup compilation. 4 = compilation plus temporal input scale in renderer state.
 // 5 = tnw_web_threads (PRD-752).
-// 6 = tnw_web_set_stable_passes (PRD-754's A/B knob).
-constexpr uint32_t kWebHostAbi = 6;
+constexpr uint32_t kWebHostAbi = 5;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -700,11 +699,6 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * replaces the multisampling the renderer asked for.
  * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
  */
-/** PRD-754's A/B knob, on by default: 0 encodes the shadow passes directly, without recorded bundles or uniform slots. */
-extern "C" void tnw_web_set_stable_passes(int on) {
-    if (renderer) renderer->setStablePasses(on != 0);
-}
-
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
     if (!lastDrawn) lastDrawn = renderer.get();

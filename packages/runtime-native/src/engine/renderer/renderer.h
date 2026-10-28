@@ -668,22 +668,26 @@ public:
      */
     void setGpuTimer(bool on) { passTimer_->enabled = on; }
     /**
-     * PRD-754, on by default: the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
+     * PRD-754, native only and on by default: the shadow passes replay recorded bundles and each opaque draw keeps a uniform slot, so a
      * cull or a moved caster records no shadow pass. Off encodes them as before; a paired A/B runs from one build.
      */
+#ifndef __EMSCRIPTEN__
     void setStablePasses(bool on) {
         if (on != stablePasses_) dropBundles();
         stablePasses_ = on;
     }
+#endif
     /**
-     * PRD-754, off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
+     * PRD-754, native only and off by default (owner, 2026-10-28): with stable passes on, the main, aux and velocity passes also replay
      * retained rows in state order, so a camera turn records nothing. State order swaps the winner of exactly coplanar
      * draws (the shooter's door trim), and three's depth order cost more than it saved, so it waits for a fix there.
      */
+#ifndef __EMSCRIPTEN__
     void setStableRows(bool on) {
         if (on != stableRows_) dropBundles();
         stableRows_ = on;
     }
+#endif
     /**
      * The caller's frame id for the next timed render, reported with its sample once the readback
      * lands. The caller owns the id: the engine's own render ids are not one per present.
@@ -1162,8 +1166,15 @@ private:
         FrameStats::SkinnedPass skinned;
     };
     std::vector<ShadowBundle> shadowBundles_;
+#ifdef __EMSCRIPTEN__
+    // The web engine compiles the stable passes out: the shooter's web camera turn recorded no less with them (PRD-754),
+    // and 4 MiB is its budget.
+    static constexpr bool stablePasses_ = false;
+    static constexpr bool stableRows_ = false;
+#else
     bool stablePasses_ = true;
     bool stableRows_ = false;
+#endif
     /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
     void dropBundles();
     FrameStats mainBundleStats_;

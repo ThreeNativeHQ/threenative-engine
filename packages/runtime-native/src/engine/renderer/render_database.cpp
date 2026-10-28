@@ -1152,8 +1152,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (uniform) {
             batchColors_[slot]->needsUpdate();
             d.instanceColors = batchColors_[slot].get();
-            if (batchParams_.size() <= slot) batchParams_.resize(slot + 1);
-            auto& params = batchParams_[slot];
+            while (batchParams_.size() <= slot) batchParams_.push_back(std::make_unique<shader::StandardMaterial>());
+            auto& params = *batchParams_[slot];
             params = *d.material;
             params.color = {1, 1, 1};
             d.material = &params;
@@ -1246,6 +1246,10 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
 }
 
 std::size_t RenderDatabase::batchSlot(uint64_t identity) {
+#ifdef __EMSCRIPTEN__
+    (void)identity;
+    return batchGroups_ - 1;  // the web engine compiles the stable passes out: a batch takes the next slot each frame
+#else
     auto [slot, fresh] = batchSlotOf_.try_emplace(identity, 0);
     if (fresh) {
         if (batchSlotFree_.empty()) {
@@ -1258,6 +1262,7 @@ std::size_t RenderDatabase::batchSlot(uint64_t identity) {
     }
     batchSlotSeen_[slot->second] = frame_;
     return slot->second;
+#endif
 }
 
 void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
@@ -1387,14 +1392,14 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.instanceMatrices = &matrices;
         d.instanceCount = static_cast<uint32_t>(members.size());
         // The slot's copy of the material, not the nearest member's: its address stays the draw's state key.
-        if (batchParams_.size() <= slot) batchParams_.resize(slot + 1);
-        batchParams_[slot] = *d.material;
+        while (batchParams_.size() <= slot) batchParams_.push_back(std::make_unique<shader::StandardMaterial>());
+        *batchParams_[slot] = *d.material;
         if (uniform) {
             batchColors_[slot]->needsUpdate();
             d.instanceColors = batchColors_[slot].get();
-            batchParams_[slot].color = {1, 1, 1};
+            batchParams_[slot]->color = {1, 1, 1};
         }
-        d.material = &batchParams_[slot];
+        d.material = batchParams_[slot].get();
         items.push_back(std::move(d));
         batchMembers_ += members.size();
     }
@@ -1557,11 +1562,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     }
     if (erased) std::fill(slotRecords_.begin(), slotRecords_.end(), nullptr);  // one of these may have been erased
     batchGroups_ = batchMembers_ = 0;
+#ifndef __EMSCRIPTEN__
     for (auto slot = batchSlotOf_.begin(); slot != batchSlotOf_.end();) {
         if (frame_ - batchSlotSeen_[slot->second] <= 600) { ++slot; continue; }
         batchSlotFree_.push_back(slot->second);
         slot = batchSlotOf_.erase(slot);
     }
+#endif
     const auto beforeBatch = profiling ? Clock::now() : Clock::time_point{};
     if (batching) {
         CameraState state;

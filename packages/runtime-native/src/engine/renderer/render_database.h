@@ -187,13 +187,15 @@ class RenderDatabase {
                const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
     std::vector<std::shared_ptr<BufferStore>> batchColors_;
-    std::deque<shader::StandardMaterial> batchParams_;  // a deque: a draw's material keeps its address as slots grow
+    std::vector<std::unique_ptr<shader::StandardMaterial>> batchParams_;  // boxed: a draw's material keeps its address as slots grow
     /** PRD-754: each batch keeps one slot (store, colours, cache, material) while its group lives, whichever groups
      *  are in view, so its buffers and draw key hold across culling. A slot unseen for 600 frames is reused. */
     std::size_t batchSlot(uint64_t identity);
+#ifndef __EMSCRIPTEN__
     std::unordered_map<uint64_t, std::size_t> batchSlotOf_;
     std::vector<uint64_t> batchSlotSeen_;
     std::vector<std::size_t> batchSlotFree_;
+#endif
     std::deque<DrawCache> batchCaches_;  // a deque: a draw keeps its slot's address while later slots grow
     Frustum frustum_;          // this prepare's camera frustum, as three's _frustum
     bool cullExempt_ = false;  // inside a BatchedMesh, which three culls per instance
