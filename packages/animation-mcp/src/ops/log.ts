@@ -206,6 +206,7 @@ export function upgradeLog(value: unknown): AnimationLog {
     return { host: value.host, ops: value.ops.map((entry) => op(entry)), version: 4 };
   }
   if (value.version === 3 || value.version === 2)
+    // quality-allow: a v2/v3 recipe is untrusted JSON; migrateRecipe checks its version and fromRecipe reads each field
     return fromRecipe(migrateRecipe(value as unknown as Parameters<typeof migrateRecipe>[0]));
   throw new Error(`Unsupported animation log version '${String(value.version)}'.`);
 }
