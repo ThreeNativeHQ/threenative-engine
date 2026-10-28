@@ -1126,6 +1126,8 @@ private:
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
+    WGPURenderBundle tailBundle_ = nullptr;  // PRD-754: the main pass's draws after its rows (transparent), else null
+    std::vector<uint64_t> tailKey_;
     std::vector<uint64_t> mainBundleKey_;
     std::vector<uint32_t> mainBundleRows_;
     std::vector<uint64_t> viewportKey_;  // PRD-754: the viewport bundle's draws, recorded beside the main rows

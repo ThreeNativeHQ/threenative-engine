@@ -2987,7 +2987,8 @@ void cameraTurnRecords() {
 // PRD-754: a draw that leaves the frame (the render database culled it) keeps its row in the main bundle with no
 // instances, so the visible set changing records nothing; the pixels and three's Info match the depth-order path that
 // re-records, and the draw coming back records nothing either.
-// PRD-754: a transparent draw keeps its row too, so one leaving view moves no other and records nothing.
+// PRD-754: transparent draws record their own bundle, keyed as the direct path keys them: a cull records what direct
+// encode records, never more, and pixels match.
 void cullKeepsMain(bool transparent) {
     using R = Renderer;
     mystral::webgpu::Context context;
@@ -3047,7 +3048,7 @@ void cullKeepsMain(bool transparent) {
         CHECK(!direct[k].pixels.empty() && direct[k].pixels.size() == stable[k].pixels.size());
         CHECK(covered > 0 && differ == 0);
         CHECK(direct[k].draws == stable[k].draws && direct[k].triangles == stable[k].triangles);
-        CHECK(stable[k].recorded == 0);
+        CHECK(stable[k].recorded == (transparent ? direct[k].recorded : 0));
     }
     CHECK(direct[0].recorded == 2 && direct[2].recorded == 3 && direct[2].draws == direct[0].draws + 1);
     (void)sizeof(R);
