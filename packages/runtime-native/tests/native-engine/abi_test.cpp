@@ -194,6 +194,37 @@ void generic() {
     tn_value_t copyX{};
     CHECK(tn_get(result.handle, "x", &copyX, &d.value) == TN_OK && copyX.number == 11);
 
+    // Restating a texture field is no change. The shooter's sky restates its mapping and colour space
+    // on every enter; each one moved the version, which retired the retained environment bake, and a
+    // restart on SwiftShader waited 15 s to bake an unchanged sky again.
+    {
+        tn_handle_t texture{};
+        CHECK(tn_construct(ctx, "Texture", nullptr, 0, &texture, &d.value) == TN_OK);
+        auto version = [&] {
+            tn_value_t out{};
+            CHECK(tn_get(texture, "version", &out, &d.value) == TN_OK);
+            return out.number;
+        };
+        tn_value_t value{};
+        const double before = version();
+        for (const char* field : {"mapping", "wrapS", "minFilter", "rotation", "repeat.x", "flipY"}) {
+            CHECK(tn_get(texture, field, &value, &d.value) == TN_OK);
+            CHECK(tn_set(texture, field, &value, &d.value) == TN_OK);
+        }
+        tn_value_t space{};
+        CHECK(tn_get(texture, "colorSpace", &space, &d.value) == TN_OK);
+        const std::string restated = text(space);
+        tn_value_t same_space{};
+        same_space.kind = TN_VALUE_STRING;
+        same_space.text = restated.c_str();
+        same_space.count = restated.size();
+        CHECK(tn_set(texture, "colorSpace", &same_space, &d.value) == TN_OK);
+        CHECK(version() == before);
+        const tn_value_t reflection = num(303);  // EquirectangularReflectionMapping: a real change
+        CHECK(tn_set(texture, "mapping", &reflection, &d.value) == TN_OK);
+        CHECK(version() == before + 1);
+    }
+
     // Particle culling passes the camera's live projection conventions into Frustum.
     for (const char* cls : {"Camera", "PerspectiveCamera", "OrthographicCamera"}) {
         tn_handle_t camera{};
