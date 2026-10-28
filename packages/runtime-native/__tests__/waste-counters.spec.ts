@@ -8,11 +8,11 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SOURCE = `
@@ -42,7 +42,7 @@ int main() {
 
 /** Compiles and runs the snippet above; its stdout lines, in order. */
 function run(): string[] {
-  const dir = mkdtempSync(path.join(tmpdir(), "tn-waste-"));
+  const dir = makeTempDirSync("tn-waste-");
   const source = path.join(dir, "counter.cpp");
   const binary = path.join(dir, "counter");
   writeFileSync(source, SOURCE);
