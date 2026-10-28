@@ -314,7 +314,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "ebb791b9feb853cc2c5a129de33bafa5250e125b1311ffc81e398e9896622f38",
+  collectathon: "7214f29e60875351060828c742683ba316f2afb728fabac8ccb9c805e4da7a4a",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -323,16 +323,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "f3dbaa887150a4ccb283ddb9a007e59f6d0cad4c84f871b39a8923158474bfcf",
+  adventure: "bb59da8ec47838f92347c33bbe040123e9b5fee57cf315342e29b7efc22e33d5",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "57c31d8593c2096229241fb28a50b429d952827f3cfd1d17ec68bfc4c1f0f19f",
-  minimal: "51a6dcb9d4f85cb9aa5f5d122a3bbcb3d82a1435439c73357dc35fc1bf6c925f",
-  platformer: "1cfcc191a13da0b6c6c7cead9546bdba8dcae0a69e7114ef6081cfb75b8731c8",
-  puzzle: "6f442b8bb7ad83c38e0e23095e572308b00041e04aa97cf09c8ccbcb71d7b13c",
-  racing: "faa19a2555791d2a69c00be73c9231a0cf07ad07b45b588a401a9c6116df4e8f",
-  rain: "e417d2a7839bd6057f3b55febe79148fd89798509261452b85991ee9ac1d12c1",
-  rts: "8371a8a241fc1d277d54d31dc31571cc1fd11fe2c7ade5d0791893f2aef479c0",
-  runner: "08b4a4be093583ce62ff958ef5018385d730a2e7e2bcc5fe207cd75ce9b2aa00",
+  kart: "857b961170ec784702731023bfe8aa4c939cacb0e405119719b3be3346f98083",
+  minimal: "fc6f8c2be2f29b20f537ae2aab995e81ce00c85a3245d0a971bbc1a0b51f54d2",
+  platformer: "f14970d49df86646facf5d87e7cdd7957282680ffa9f36bebd898c001512ddfc",
+  puzzle: "8b4aa81d6c194b1b8657c1db28a05c6b3444864a96940fe674d4f68eba5aba5c",
+  racing: "856110587b75dde028b519dcb43d7427b749b5fa537668483f2d6b446c672a5b",
+  rain: "01cb7f5149482b842e9ec3a832da495578a2bc2ffdbbf43e7a2110c76bd5ad81",
+  rts: "3514fddf0c134f59bfe8b716874f7a6ff6c73a0d74f16fe1c7433878959b1c2d",
+  runner: "3256894452ac4bf1a9858fa1cdd9d68bb6eda27319cb0694f29c558fbce4cc24",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "0642a9f591632eb9e61b185f31ff1303024ca97a86f93b05d011fd01bc6325c2",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
@@ -343,8 +343,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "bcdeccb8c5c03661d430e2a63487fafbe327b83f69edc59ce609ad2b64642ddf",
-  "tower-defense": "ccd47f7e725fc25226520729e759e3a627118b1cad65c4bc76543fe564290c95",
+  starter: "59daa9671cebc4e016c8f5cbec27e9baab0a8f54a133bfe41c7a421f019d9b59",
+  "tower-defense": "ce0e782374a422b45f3928a954aba708e9552bcbb3672fedcbf74a243d916868",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
