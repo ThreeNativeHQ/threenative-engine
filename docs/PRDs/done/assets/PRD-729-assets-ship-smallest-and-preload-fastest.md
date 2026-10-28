@@ -132,7 +132,13 @@ same scenario with the merged-develop `packages/assets` code (`b9a84db2f`) fails
 (146 and 194,703), so the asset levers on this branch do not cause it. The cause sits in the
 develop template or core changes (#541, #487) and is open as its own issue. The first run of this
 gate failed 7 of 8 templates on a stale Wasm engine (`TN_TSL_DYNAMIC_UNSUPPORTED
-constant:positionWorldDirection`); the rebuild fixed it. No visual judge ran on the final head.
+constant:positionWorldDirection`); the rebuild fixed it. **Visual judge on the combined final head (2026-10-28): NEUTRAL.** The authored `mannequin-combat`,
+`mannequin` and `player-viewmodel` against the default cook of this head, 135 poses x 2 runs in
+the three.js engine on the RTX 2080 (`scripts/asset-pose-capture.mjs`; run-to-run noise 0 pixels).
+A fresh read-only Opus judge ruled NEUTRAL on all six sampled rows. Worst pose per model, pixels
+over 8 levels: 2, 3 and 1. On the viewmodel the difference is texture recompression noise: at most
+4,453 of 339,200 pixels differ at all, 6 by 3 levels or more, and the largest connected region at
+4 levels or more is 1 pixel. The owned Wasm engine got no capture. Sheet: `~/Downloads/prd-729-final-judge/sheet.png`.
 
 Each lever is one iteration on the dashboard: measure, then `keep` or `reject`. A lever changes what
 reaches the screen, so a kept lever needs the visual judge (root `AGENTS.md`, owner rule
