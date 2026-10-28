@@ -1130,6 +1130,8 @@ private:
     // PRD-754: each rows pass's rows first seen since its last sort, drawn after the sorted rows, else null
     WGPURenderBundle mainDelta_ = nullptr, auxDelta_ = nullptr, velocityDelta_ = nullptr;
     std::array<uint64_t, 3> mainDeltaKey_{}, auxDeltaKey_{}, velocityDeltaKey_{};
+    WGPURenderBundle auxTail_ = nullptr, velocityTail_ = nullptr;  // PRD-754: their transparent draws, else null
+    std::vector<uint64_t> auxTailKey_, velocityTailKey_;
     std::vector<uint64_t> tailKey_;
     std::vector<uint64_t> mainBundleKey_;
     std::vector<uint32_t> mainBundleRows_;
@@ -1183,6 +1185,7 @@ private:
     std::unordered_map<uint64_t, std::vector<uint64_t>> freeSlots_;  // freed offsets by block bytes
     std::unordered_map<uint64_t, uint32_t> slotUses_;  // this frame's occurrences per key
     uint64_t slotArena_ = 0, slotFrame_ = 0;
+    std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;

@@ -3063,7 +3063,63 @@ void cullKeepsMain(bool transparent, bool firstSeen = false) {
     (void)sizeof(R);
 }
 
-void cullKeepsMainBundle() { cullKeepsMain(false); cullKeepsMain(true); cullKeepsMain(false, true); }
+// PRD-754: under TRAA, transparent draws that come and go and whose material pointer moves (a batch's) re-record only
+// themselves in the velocity pass, and the velocity slots asked for after their appended uniform blocks do not land on them.
+void transparentKeepsVelocityRows() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const std::array geometries = {plane(1, 1), plane(1, 2), plane(2, 1), plane(1, 1)};
+    std::array<shader::StandardMaterial, 4> materials;
+    materials[0].color = {1, 0, 0}; materials[1].color = {0, 1, 0}; materials[2].color = {0, 0, 1}; materials[3].color = {1, 1, 0};
+    const std::array<shader::StandardMaterial, 4> copies = materials;
+    std::vector<DrawItem> items(4);
+    const double x[4] = {-2.5, 0, 2.5, 1};
+    for (int i = 0; i < 4; ++i) {
+        items[i].key = items[i].id = uint64_t(i + 1);
+        items[i].kind = MaterialKind::Basic;
+        items[i].positions = &geometries[i]->positions; items[i].indices = &geometries[i]->indices;
+        items[i].material = &materials[i];
+        items[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x[i], 0, 0, 1};
+    }
+    items[2].transparent = items[3].transparent = true;
+    struct Seen { std::vector<uint8_t> pixels; uint32_t recorded; };
+    const auto run = [&](bool stable) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(32, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setTraa(TraaOptions{});
+        renderer.setRenderScale(0.5f);  // upscaled: the transparent draw writes its responsive mark into the velocity target
+        renderer.setStablePasses(stable);
+        std::vector<Seen> seen;
+        for (int frame = 0; frame < 6; ++frame) {
+            items[2].material = frame % 2 ? &copies[2] : &materials[2];
+            renderer.render(std::span<const DrawItem>(items.data(), frame % 2 ? 4 : 3), camera(1), LightState{}, {0, 0, 0, 1});
+            seen.push_back({read(renderer, events), renderer.lastFrame().auxRecorded});
+        }
+        return seen;
+    };
+    const auto direct = run(false), stable = run(true);
+    for (std::size_t k = 0; k < direct.size(); ++k) {
+        std::size_t differ = 0;
+        int most = 0;
+        for (std::size_t p = 0; p < direct[k].pixels.size() && p < stable[k].pixels.size(); ++p) {
+            differ += direct[k].pixels[p] != stable[k].pixels[p];
+            most = std::max(most, std::abs(int(direct[k].pixels[p]) - int(stable[k].pixels[p])));
+        }
+        std::printf("velocity tail frame %zu: %zu bytes differ (most %d); velocity recorded %u direct, %u stable\n", k, differ,
+                    most, direct[k].recorded, stable[k].recorded);
+        CHECK(!direct[k].pixels.empty() && direct[k].pixels.size() == stable[k].pixels.size() && differ == 0);
+        if (k >= 2) CHECK(direct[k].recorded == (k % 2 ? 4u : 3u) && stable[k].recorded == (k % 2 ? 2u : 1u));
+    }
+}
+
+void cullKeepsMainBundle() {
+    cullKeepsMain(false); cullKeepsMain(true); cullKeepsMain(false, true);
+    transparentKeepsVelocityRows();
+}
 
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }

@@ -494,6 +494,8 @@ struct Renderer::PassRows {
     WGPUBuffer indirect = nullptr;
     std::size_t sorted = 0;              // rows [0, sorted) record in state order; the rest, first seen since, after them
     std::array<uint64_t, 3> deltaKey{};  // the rows after `sorted`
+    std::size_t tail = 0;                 // aux and velocity: the first transparent draw, recorded after the rows
+    std::vector<uint64_t> tailKey;        // its draws' rows of the per-draw key
     double ms = 0;  // building the rows, in the plan stage
     uint32_t draws = 0;
     uint64_t triangles = 0;
@@ -1736,7 +1738,8 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
 
 void Renderer::dropBundles() {
     for (WGPURenderBundle* bundle :
-         {&mainBundle_, &tailBundle_, &viewportBundle_, &auxBundle_, &velocityBundle_, &mainDelta_, &auxDelta_, &velocityDelta_}) {
+         {&mainBundle_, &tailBundle_, &viewportBundle_, &auxBundle_, &velocityBundle_, &mainDelta_, &auxDelta_, &velocityDelta_,
+          &auxTail_, &velocityTail_}) {
         if (*bundle) wgpuRenderBundleRelease(*bundle);
         *bundle = nullptr;
     }
@@ -3193,19 +3196,37 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return target;
     };
     // The main draws' blocks: a stable slot per draw (PRD-754), or appended in plan order with the knob off.
+    // A new slot takes a freed block of its size, else grows the arena; returns false when this frame's appended blocks
+    // already sit where the arena would grow.
+    const auto addSlot = [&](uint64_t slotKey, uint64_t bytes) {
+        auto& free = freeSlots_[bytes];
+        uint64_t at = slotArena_;
+        if (!free.empty()) { at = free.back(); free.pop_back(); }
+        else if (frameUniforms_.size() > slotArena_) return false;
+        else slotArena_ += bytes;
+        uniformSlots_.emplace(slotKey, UniformSlot{at, bytes, 0});
+        if (frameUniforms_.size() < slotArena_) frameUniforms_.resize(slotArena_, 0);
+        return true;
+    };
     if (stablePasses_ && !compilation) {
         frameUniforms_.resize(slotArena_);
         ++slotFrame_;
         slotUses_.clear();
+        // The slots asked for after last frame's appended blocks (a velocity block after the transparent draws') are
+        // made first, before this frame appends any.
+        for (const auto& [slotKey, bytes] : lateSlots_)
+            if (!uniformSlots_.contains(slotKey)) addSlot(slotKey, bytes);
+        lateSlots_.clear();
     } else {
         frameUniforms_.clear();
     }
     const auto uniformBlocks = [&](uint64_t slotKey, uint64_t bytes) -> uint64_t {
-        if (slotKey == 0) {
+        const auto append = [&] {
             const uint64_t at = frameUniforms_.size();
             frameUniforms_.resize(at + bytes, 0);
             return at;
-        }
+        };
+        if (slotKey == 0) return append();
         auto slot = uniformSlots_.find(slotKey);
         if (slot != uniformSlots_.end() && slot->second.bytes != bytes) {
             freeSlots_[slot->second.bytes].push_back(slot->second.offset);
@@ -3213,12 +3234,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             slot = uniformSlots_.end();
         }
         if (slot == uniformSlots_.end()) {
-            auto& free = freeSlots_[bytes];
-            uint64_t at = slotArena_;
-            if (!free.empty()) { at = free.back(); free.pop_back(); }
-            else slotArena_ += bytes;
-            slot = uniformSlots_.emplace(slotKey, UniformSlot{at, bytes, 0}).first;
-            if (frameUniforms_.size() < slotArena_) frameUniforms_.resize(slotArena_, 0);
+            if (!addSlot(slotKey, bytes)) {  // appended this frame, a slot from the next
+                lateSlots_.emplace_back(slotKey, bytes);
+                return append();
+            }
+            slot = uniformSlots_.find(slotKey);
         }
         slot->second.seen = slotFrame_;
         std::memset(frameUniforms_.data() + slot->second.offset, 0, bytes);
@@ -4481,8 +4501,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         job.viewportKey.assign(job.bundleKey.begin() + rowOf(split), job.bundleKey.end() - 1);
         job.tailKey.assign(job.bundleKey.begin() + rowOf(job.tail), job.bundleKey.begin() + rowOf(split));
         retainRows(*mainRows_, plan, job.bundleKey, job.bundleRows, job.tail, job.mainRows);
-        retainRows(*auxRows_, job.auxPlan, job.auxKey, auxKeyRows, job.auxPlan.size(), job.auxRows);
-        retainRows(*velocityRows_, velocityPlan, job.velocityKey, velocityKeyRows, velocityPlan.size(), job.velocityRows);
+        // The aux and velocity passes' transparent draws record their own bundle too, as the main pass's do.
+        const auto retainTail = [&](MainRows& retained, const std::vector<Planned>& draws, std::vector<uint64_t>& key,
+                                    std::vector<uint32_t>& keyRows, PassRows& out) {
+            const std::size_t tail = std::find_if(draws.begin(), draws.end(), [](const Planned& p) {
+                return p.item->transparent;
+            }) - draws.begin();
+            std::vector<uint64_t> tailKey(key.begin() + (tail < draws.size() ? keyRows[tail] : key.size() - 1), key.end() - 1);
+            retainRows(retained, draws, key, keyRows, tail, out);
+            out.tail = tail;
+            out.tailKey = std::move(tailKey);
+        };
+        retainTail(*auxRows_, job.auxPlan, job.auxKey, auxKeyRows, job.auxRows);
+        retainTail(*velocityRows_, velocityPlan, job.velocityKey, velocityKeyRows, job.velocityRows);
     } else {
         for (auto* rows : {&mainRows_, &auxRows_, &velocityRows_}) (*rows)->clear();  // the next record may release what they hold
     }
@@ -4963,7 +4994,8 @@ void Renderer::encodeFrame(FrameJob& job) {
     const auto replay = [&](WGPURenderPassEncoder pass, WGPURenderBundle& bundle, std::vector<uint64_t>& key,
                             std::vector<uint64_t>& planned, const std::vector<Planned>& draws,
                             const WGPUTextureFormat* formats, size_t formatCount, uint32_t samples, const PassRows& rows,
-                            WGPURenderBundle& deltaBundle, std::array<uint64_t, 3>& deltaKey) {
+                            WGPURenderBundle& deltaBundle, std::array<uint64_t, 3>& deltaKey, WGPURenderBundle& tailBundle,
+                            std::vector<uint64_t>& tailKey) {
         lastFrame_.recordMs += rows.ms;
         WGPURenderBundleEncoderDescriptor descriptor{};
         descriptor.colorFormatCount = formatCount; descriptor.colorFormats = formats;
@@ -4992,8 +5024,28 @@ void Renderer::encodeFrame(FrameJob& job) {
             lastFrame_.recordMs += (meterMs() - recordStarted);
         }
         delta(descriptor, rows, deltaBundle, deltaKey, lastFrame_.auxRecorded);
-        const WGPURenderBundle bundles[2] = {bundle, deltaBundle};
-        wgpuRenderPassEncoderExecuteBundles(pass, deltaBundle ? 2 : 1, bundles);
+        if (!rows.on || rows.tail == draws.size()) {
+            if (tailBundle) wgpuRenderBundleRelease(tailBundle);
+            tailBundle = nullptr;
+        } else if (!tailBundle || rows.tailKey != tailKey) {
+            const double recordStarted = meterMs();
+            const auto recorder = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
+            bound = nullptr; boundIndex = nullptr;
+            std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
+            for (std::size_t k = rows.tail; k < draws.size(); ++k) encode(recorder, draws[k], Tally::Extra);
+            WGPURenderBundleDescriptor finish{};
+            if (tailBundle) wgpuRenderBundleRelease(tailBundle);
+            tailBundle = wgpuRenderBundleEncoderFinish(recorder, &finish);
+            wgpuRenderBundleEncoderRelease(recorder);
+            tailKey = rows.tailKey;
+            lastFrame_.auxRecorded += uint32_t(draws.size() - rows.tail);
+            lastFrame_.recordMs += (meterMs() - recordStarted);
+        }
+        WGPURenderBundle bundles[3] = {bundle};
+        uint32_t executed = 1;
+        for (const WGPURenderBundle more : {deltaBundle, tailBundle})
+            if (more) bundles[executed++] = more;
+        wgpuRenderPassEncoderExecuteBundles(pass, executed, bundles);
     };
     if (job.auxMask) {
         // One pass writes every post target the graph reads, one colour attachment each in AuxTarget order
@@ -5022,7 +5074,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         auxDesc.depthStencilAttachment = &auxDepth;
         auto auxPass = beginTimedRenderPass(encoder, &auxDesc, 2, {"aux", inputWidth_, inputHeight_});
         replay(auxPass, auxBundle_, auxBundleKey_, job.auxKey, job.auxPlan, formats.data(), count, 1, job.auxRows,
-               auxDelta_, auxDeltaKey_);
+               auxDelta_, auxDeltaKey_, auxTail_, auxTailKey_);
         wgpuRenderPassEncoderEnd(auxPass); wgpuRenderPassEncoderRelease(auxPass);
         lastFrame_.auxPasses = 1;
     }
@@ -5054,7 +5106,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
         const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
         replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_,
-               job.velocityRows, velocityDelta_, velocityDeltaKey_);
+               job.velocityRows, velocityDelta_, velocityDeltaKey_, velocityTail_, velocityTailKey_);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         copyPrevious();
         if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
