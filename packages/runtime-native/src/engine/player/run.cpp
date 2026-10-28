@@ -768,8 +768,8 @@ int Session::initialize() {
     const uint32_t width = presenter ? presenter->width() : surfaceConfig().width;
     const uint32_t height = presenter ? presenter->height() : surfaceConfig().height;
     renderer->setGpuTimer(gpuTiming);
-    // PRD-754's A/B knob: TN_STABLE_PASSES=0 encodes the passes as before it, for a paired run from one build.
-    if (const char* flag = std::getenv("TN_STABLE_PASSES"); flag && std::strcmp(flag, "0") == 0) renderer->setStablePasses(false);
+    // PRD-754's A/B knob: TN_STABLE_PASSES=1 replays retained rows, for a paired run from one build (off by default).
+    if (const char* flag = std::getenv("TN_STABLE_PASSES"); flag && std::strcmp(flag, "1") == 0) renderer->setStablePasses(true);
     renderer->setSize(width, height);
     renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
 #if !defined(__ANDROID__)

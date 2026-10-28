@@ -664,8 +664,9 @@ public:
      */
     void setGpuTimer(bool on) { passTimer_->enabled = on; }
     /**
-     * PRD-754, on by default: the shadow passes replay recorded bundles. Off encodes them directly, as before, so a
-     * paired A/B runs from one build and a test compares the two.
+     * PRD-754, off by default: on, the passes replay retained rows and recorded bundles, but the opaque rows draw in
+     * state order, which swaps the winner of exactly coplanar draws (the shooter's door trim). Off encodes them as
+     * before; a paired A/B runs from one build and a test compares the two.
      */
     void setStablePasses(bool on) {
         if (on != stablePasses_) dropBundles();
@@ -1149,7 +1150,7 @@ private:
         FrameStats::SkinnedPass skinned;
     };
     std::vector<ShadowBundle> shadowBundles_;
-    bool stablePasses_ = true;
+    bool stablePasses_ = false;
     /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
     void dropBundles();
     FrameStats mainBundleStats_;
