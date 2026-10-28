@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cctype>
 #include <cmath>
+#include <ctime>
 #include <unordered_map>
 #include "engine/animation/skinning/palette.h"
 #include <iterator>
@@ -490,6 +491,7 @@ struct Renderer::FrameJob {
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
     std::vector<uint64_t> bundleKey, auxKey, velocityKey;
+    std::vector<uint32_t> bundleRows;  // where each main draw's key row starts (Renderer::recordCause)
     std::vector<std::vector<uint64_t>> shadowKeys;
 };
 
@@ -2396,23 +2398,34 @@ void Renderer::rebuildGroups() {
     }
 }
 
-Renderer::RecordCause Renderer::recordCause(const std::vector<uint64_t>& was, const std::vector<uint64_t>& now) {
-    // bundleKeyOf's layout: per draw 6 words (pipeline, groups, the vertex and fragment offsets at 3 and 4, instances)
-    // and 6 per store; then the main key's one trailing word.
-    constexpr std::size_t stride = 6 + 6 * 6;
+// PRD-754's recording meters: the calling thread's CPU ms where the platform has that clock, so a loaded host does
+// not inflate them, else wall ms.
+static double meterMs() {
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
+    timespec t{};
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t);
+    return double(t.tv_sec) * 1e3 + double(t.tv_nsec) / 1e6;
+#else
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+#endif
+}
+
+Renderer::RecordCause Renderer::recordCause(const std::vector<uint64_t>& was, const std::vector<uint32_t>& wasRows,
+                                            const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows) {
+    // bundleKeyOf's row: pipeline, groups, the vertex and fragment offsets at 3 and 4, instances, then 6 words per store.
     if (was == now) return RecordNone;
-    if (was.empty() || was.size() % stride != 1) return RecordOther;
-    if (was.size() != now.size()) return RecordCount;
-    const std::size_t draws = was.size() / stride;
-    const auto masked = [&](const std::vector<uint64_t>& key) {
-        std::vector<std::vector<uint64_t>> rows(draws);
-        for (std::size_t d = 0; d < draws; ++d) {
-            rows[d].assign(key.begin() + std::ptrdiff_t(d * stride), key.begin() + std::ptrdiff_t((d + 1) * stride));
-            rows[d][3] = rows[d][4] = 0;
+    if (was.empty() || wasRows.empty()) return RecordOther;
+    if (wasRows.size() != nowRows.size()) return RecordCount;
+    const auto masked = [](const std::vector<uint64_t>& key, const std::vector<uint32_t>& rows) {
+        std::vector<std::vector<uint64_t>> out(rows.size());
+        for (std::size_t d = 0; d < rows.size(); ++d) {
+            const std::size_t end = d + 1 < rows.size() ? rows[d + 1] : key.size() - 1;  // the main key's trailing word
+            out[d].assign(key.begin() + std::ptrdiff_t(rows[d]), key.begin() + std::ptrdiff_t(end));
+            if (out[d].size() > 4) out[d][3] = out[d][4] = 0;
         }
-        return rows;
+        return out;
     };
-    auto a = masked(was), b = masked(now);
+    auto a = masked(was, wasRows), b = masked(now, nowRows);
     if (a == b) return RecordOffset;
     std::sort(a.begin(), a.end());
     std::sort(b.begin(), b.end());
@@ -4020,9 +4033,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A bundle references buffers and offsets, not their contents. Matrix, colour, camera and
     // light writes therefore leave it valid; changed draw order, resources or counts rebuild it.
     // The aux and velocity passes replay their draws the same way, each from its own key.
-    const auto bundleKeyOf = [&](const std::vector<Planned>& draws, std::vector<uint64_t>& key) {
+    const auto bundleKeyOf = [&](const std::vector<Planned>& draws, std::vector<uint64_t>& key, std::vector<uint32_t>* rows = nullptr) {
         key.clear();
+        if (rows) rows->clear();
         for (const Planned& p : draws) {
+            if (rows) rows->push_back(static_cast<uint32_t>(key.size()));
             const DrawItem& item = *p.item;
             key.insert(key.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
                 reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
@@ -4038,7 +4053,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             for (const auto& attribute : p.program->vertex.attributes) appendStore(vertexSourceOf(item, attribute));
         }
     };
-    bundleKeyOf(plan, job.bundleKey);
+    bundleKeyOf(plan, job.bundleKey, &job.bundleRows);
     bundleKeyOf(job.auxPlan, job.auxKey);
     bundleKeyOf(velocityPlan, job.velocityKey);
     job.shadowKeys.resize(shadowPasses.size());
@@ -4236,7 +4251,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     std::map<size_t, std::pair<std::weak_ptr<VirtualShadowCosts>, int>> shadowQueries;
     for (const ShadowPass& shadowPlan : shadowPasses) {
         const auto shadowStarted = std::chrono::steady_clock::now();
-        const double recordedBefore = lastFrame_.recordMs;
+        const double shadowMeter = meterMs(), recordedBefore = lastFrame_.recordMs;
         WGPURenderPassDepthStencilAttachment shadowDepth = {};
         shadowDepth.view = shadowPlan.target;
         shadowDepth.depthLoadOp = shadowPlan.size ? WGPULoadOp_Load : WGPULoadOp_Clear;
@@ -4270,7 +4285,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             for (const Planned& p : shadowPlan.draws) encode(shadowPass, p, Tally::Shadow);
         } else if (!shadowPlan.draws.empty()) {
             if (!cached.bundle || cached.key != job.shadowKeys[index]) {
-                const auto recordStarted = std::chrono::steady_clock::now();
+                const double recordStarted = meterMs();
                 if (cached.bundle) wgpuRenderBundleRelease(cached.bundle);
                 WGPURenderBundleEncoderDescriptor descriptor{};
                 descriptor.depthStencilFormat = WGPUTextureFormat_Depth24Plus;
@@ -4293,7 +4308,7 @@ void Renderer::encodeFrame(FrameJob& job) {
                 wgpuRenderBundleEncoderRelease(recorder);
                 cached.key = std::move(job.shadowKeys[index]);
                 lastFrame_.shadowRecorded += uint32_t(shadowPlan.draws.size());
-                lastFrame_.recordMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - recordStarted).count();
+                lastFrame_.recordMs += (meterMs() - recordStarted);
             }
             lastFrame_.shadowDraws += cached.draws;
             lastFrame_.shadowTriangles += cached.triangles;
@@ -4305,7 +4320,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         wgpuRenderPassEncoderEnd(shadowPass);
         wgpuRenderPassEncoderRelease(shadowPass);
         const double shadowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - shadowStarted).count();
-        lastFrame_.shadowEncodeMs += shadowMs - (lastFrame_.recordMs - recordedBefore);
+        lastFrame_.shadowEncodeMs += meterMs() - shadowMeter - (lastFrame_.recordMs - recordedBefore);
         if (shadowPlan.virtualLevel >= 0) shadowCosts[{shadowPlan.virtualLight, shadowPlan.virtualLevel}] += shadowMs;
     }
     // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
@@ -4336,8 +4351,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         const auto lampRedraws = lastFrame_.lampRedraws, lampShadowDraws = lastFrame_.lampShadowDraws;
         const double shadowEncodeMs = lastFrame_.shadowEncodeMs, shadowRecordMs = lastFrame_.recordMs;
         const uint32_t shadowRecorded = lastFrame_.shadowRecorded;
-        const auto cause = recordCause(mainBundleKey_, bundleKey);
-        const auto recordStarted = std::chrono::steady_clock::now();
+        const auto cause = recordCause(mainBundleKey_, mainBundleRows_, bundleKey, job.bundleRows);
+        const double recordStarted = meterMs();
         lastFrame_ = FrameStats{};
         const auto record = [&](std::size_t from, std::size_t to) {
             const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
@@ -4361,8 +4376,9 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.shadowRecorded = shadowRecorded;
         lastFrame_.mainRecorded = uint32_t(plan.size());
         lastFrame_.recordCause = cause;
-        lastFrame_.recordMs = shadowRecordMs + std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - recordStarted).count();
+        lastFrame_.recordMs = shadowRecordMs + (meterMs() - recordStarted);
         mainBundleKey_ = std::move(job.bundleKey);
+        mainBundleRows_ = std::move(job.bundleRows);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;
         lastFrame_.triangles = mainBundleStats_.triangles;
@@ -4402,7 +4418,7 @@ void Renderer::encodeFrame(FrameJob& job) {
                             std::vector<uint64_t>& planned, const std::vector<Planned>& draws,
                             const WGPUTextureFormat* formats, size_t formatCount, uint32_t samples) {
         if (!bundle || planned != key) {
-            const auto recordStarted = std::chrono::steady_clock::now();
+            const double recordStarted = meterMs();
             if (bundle) wgpuRenderBundleRelease(bundle);
             WGPURenderBundleEncoderDescriptor descriptor{};
             descriptor.colorFormatCount = formatCount; descriptor.colorFormats = formats;
@@ -4417,7 +4433,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             wgpuRenderBundleEncoderRelease(recorder);
             key = std::move(planned);
             lastFrame_.auxRecorded += uint32_t(draws.size());
-            lastFrame_.recordMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - recordStarted).count();
+            lastFrame_.recordMs += (meterMs() - recordStarted);
         }
         wgpuRenderPassEncoderExecuteBundles(pass, 1, &bundle);
     };

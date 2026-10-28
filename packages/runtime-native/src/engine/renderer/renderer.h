@@ -639,7 +639,9 @@ public:
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
     enum RecordCause : uint8_t { RecordNone, RecordOrder, RecordOffset, RecordCount, RecordOther };
-    static RecordCause recordCause(const std::vector<uint64_t>& was, const std::vector<uint64_t>& now);
+    /** Each key's rows start at the matching offsets: one row per draw, its length set by the program's attributes. */
+    static RecordCause recordCause(const std::vector<uint64_t>& was, const std::vector<uint32_t>& wasRows,
+                                   const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows);
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
     /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
@@ -1117,6 +1119,7 @@ private:
     WGPURenderBundle mainBundle_ = nullptr;
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
     std::vector<uint64_t> mainBundleKey_;
+    std::vector<uint32_t> mainBundleRows_;
     // The aux and TRAA velocity passes' draws, recorded once and replayed while their plans hold (PRD-740).
     WGPURenderBundle auxBundle_ = nullptr, velocityBundle_ = nullptr;
     std::vector<uint64_t> auxBundleKey_, velocityBundleKey_;

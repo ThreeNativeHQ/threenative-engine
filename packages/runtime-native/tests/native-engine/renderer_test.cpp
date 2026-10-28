@@ -2925,11 +2925,18 @@ void cameraTurnRecords() {
     ba.insert(ba.end(), one.begin(), one.end()); ba[42] = 1; ba.push_back(0);
     std::vector<uint64_t> offsets(ab); offsets[3] = 256;
     std::vector<uint64_t> fewer(one); fewer.push_back(0);
-    CHECK(R::recordCause(ab, ab) == R::RecordNone);
-    CHECK(R::recordCause(ab, ba) == R::RecordOrder);
-    CHECK(R::recordCause(ab, offsets) == R::RecordOffset);
-    CHECK(R::recordCause(ab, fewer) == R::RecordCount);
-    CHECK(R::recordCause({}, ab) == R::RecordOther);
+    const std::vector<uint32_t> two{0, 42}, single{0};
+    CHECK(R::recordCause(ab, two, ab, two) == R::RecordNone);
+    CHECK(R::recordCause(ab, two, ba, two) == R::RecordOrder);
+    CHECK(R::recordCause(ab, two, offsets, two) == R::RecordOffset);
+    CHECK(R::recordCause(ab, two, fewer, single) == R::RecordCount);
+    CHECK(R::recordCause({}, {}, ab, two) == R::RecordOther);
+    // Rows of different lengths (a program with more attributes) still read as a reorder.
+    std::vector<uint64_t> wide(one); wide.resize(wide.size() + 6, 7); wide[0] = 2;
+    std::vector<uint64_t> wn(wide), nw(one);
+    wn.insert(wn.end(), one.begin(), one.end()); wn.push_back(0);
+    nw.insert(nw.end(), wide.begin(), wide.end()); nw.push_back(0);
+    CHECK(R::recordCause(wn, {0, 48}, nw, {0, 42}) == R::RecordOrder);
 
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
