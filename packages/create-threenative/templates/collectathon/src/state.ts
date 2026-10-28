@@ -30,6 +30,8 @@ export type GameState = {
   wallHits: number;
   /** The health meter, out of eight wedges. */
   wedges: number;
+  /** True once all three Sunseeds are held: the course is clear and `Hud.tsx` says so. */
+  won: boolean;
 };
 
 /** The HUD pill's box in CSS pixels from the top-left: `Hud.tsx` draws it here and `Play.ts` fades it when a Sunseed projects inside. */

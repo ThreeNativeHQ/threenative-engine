@@ -7,7 +7,7 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { auditAllTemplates } from "../../../scripts/instruction-budget.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { createProject } from "../src/index.js";
+import { createProject, discoverTemplateNames } from "../src/index.js";
 import { createSpringArm } from "../templates/starter/src/render/camera.js";
 
 const templates = ["starter", "minimal"] as const;
@@ -876,6 +876,23 @@ describe("template contracts", () => {
       expect(discovery, tool).toContain(tool);
     expect(fresh).toContain("threenative-reverse-engineer");
     expect(fresh).toContain("engine_capabilities");
+  });
+
+  it("reaches every MCP server from a session started outside the game folder", async () => {
+    // PRD-750 cold build 8: the agent scaffolded mid-session, read CLAUDE.md and this skill, had
+    // no mcp__threenative-* tool and called none. Both files it reads name the bridge.
+    const bridge = "node node_modules/@threenative/core/mcp/call.mjs <server> <tool> '<json>'";
+    const gate = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    expect(gate.replace(/\s+/gu, " ")).toContain(bridge);
+    for (const name of discoverTemplateNames()) {
+      const agents = await readFile(path.join(templateRoot, name, "AGENTS.md"), "utf8");
+      expect(agents, name).toContain(bridge);
+    }
   });
 
   it("selects required textures from mechanics and reference context before execution", async () => {

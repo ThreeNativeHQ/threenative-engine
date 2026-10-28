@@ -58,6 +58,15 @@ export function Hud() {
           </b>
         </span>
       </div>
+      {state.won ? (
+        <div className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 rounded-2xl border-2 border-line bg-panel/70 px-6 py-4 text-center backdrop-blur-sm">
+          <div className="text-2xl text-lume">COURSE CLEAR</div>
+          <div className="pt-1 text-sm text-text">
+            all {state.seedTotal} Sunseeds held — coins {state.coins}, gems {state.gems}/
+            {state.gemTotal}
+          </div>
+        </div>
+      ) : null}
       {state.toast !== "" ? (
         <div className="absolute left-1/2 top-16 -translate-x-1/2 rounded-full border-2 border-line bg-panel/60 px-4 py-1 text-base font-bold text-lume backdrop-blur-sm">
           {state.toast}
