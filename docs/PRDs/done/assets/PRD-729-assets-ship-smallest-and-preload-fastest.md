@@ -122,6 +122,15 @@ animation and JSON that meshopt and the JSON pass already compress, and audio at
 therefore needs an owner decision on texture quality (lower the PRD-351 floor or accept lossy
 normal/ORM maps); no safe lever closes the gap.
 
+**Template gate on head `12ca4a6ff` (desktop, 2026-10-28).** `pnpm test:templates` ran after
+`pnpm wasm:build`: seven templates pass, `snow` included. `action-rpg` `production-performance`
+fails its two scene budgets (145 draw calls against 140, 194,623 triangles against 185,000). The
+same scenario with the merged-develop `packages/assets` code (`b9a84db2f`) fails the same way
+(146 and 194,703), so the asset levers on this branch do not cause it. The cause sits in the
+develop template or core changes (#541, #487) and is open as its own issue. The first run of this
+gate failed 7 of 8 templates on a stale Wasm engine (`TN_TSL_DYNAMIC_UNSUPPORTED
+constant:positionWorldDirection`); the rebuild fixed it. No visual judge ran on the final head.
+
 Each lever is one iteration on the dashboard: measure, then `keep` or `reject`. A lever changes what
 reaches the screen, so a kept lever needs the visual judge (root `AGENTS.md`, owner rule
 2026-10-09) to return NEUTRAL or IMPROVEMENT, and no texture may fall below its PRD-351 floor.
