@@ -31,8 +31,7 @@ The resolve and the post targets do the same work with no history copy and no ex
 
 ### Phase 2: A post target draws without the extra output pass
 
-- [ ] A render into a post target whose output stage is an identity draws its scene pass straight into the target. proof: a ctest, red at one `output` pass per target render, green at 0.
-- [ ] The target holds the same pixels as the old path, or this box records why it cannot. proof: a readback ctest.
+- [x] A render into a post target whose output stage is an identity draws its scene pass straight into the target. proof: a ctest, red at one `output` pass per target render, green at 0. Result: already landed after the trace this PRD quotes (source `618c0670e`, 2026-10-25): `a0ecc6f0d` (PRD-748) gives a render target's renderer `skipOutputPass()` (`render_target_pass.cpp:34-35`), and `226ec257a` (PRD-741) guards it with `!sceneOnly_` (`renderer.cpp:4440`). Its red-green is that commit's: `native_engine_render_target` red at 1 output pass, green flat (57 to 33 passes a frame); rerun here, passed, and `ctest -L native-engine` 484/484 (gpu2 lane, no code change).
 
 ### Phase 3: Prove it on games
 
@@ -44,6 +43,9 @@ The resolve and the post targets do the same work with no history copy and no ex
 Every box above is ticked.
 
 ## Decisions
+
+- 2026-10-27, lead: the Phase 2 pixel box is moot and is removed. The skipped output pass drew into the renderer's own `RGBA8Unorm` `colorView_` (`renderer.cpp:4529, 4557`), never into the target, whose pixels are its own linear scene texture (`render_target_pass.cpp:90, 103`), so skipping it cannot change the target. Of the 0.45 ms, 23 `output / 2 / N` rows are 0.321 ms; the 5 `localExposure.*.outputBlit` rows (0.115 ms) have another producer, unverified.
+- 2026-10-27, lead: follow-up, not a box here: a reflection pass still draws an unread output pass with the main tone-mapped program (`render_database.cpp:1768-1805`), about 0.3 ms at 0.5 scale per reflector per frame (estimate). Only the sailing kit places water reflectors, so it cannot move the Hop Garden number.
 
 - 2026-10-27, lead: with no caller target the resolve still writes a third attachment beside `resolve_`. Resolving straight into the next history slot would remove that write too, at the cost of a second pipeline. Left for Phase 3's measurement to price.
 
