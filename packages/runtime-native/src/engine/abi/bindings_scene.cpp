@@ -490,8 +490,8 @@ void registerObject3D(ClassBinding& b) {
     b.getters["__matrixEvaluations"] = [](void*) { return Value::of(double(Object3D::matrixEvaluations())); };
     // Engine-internal, PRD-752: the job pool's shared runs and their items, process-wide, so a playtest bounds
     // jobs per frame; both stay 0 on a build or a page with no pool threads.
-    b.getters["__jobPoolRuns"] = [](void*) { return Value::of(double(JobPool::shared().runs())); };
-    b.getters["__jobPoolItems"] = [](void*) { return Value::of(double(JobPool::shared().items())); };
+    b.getters["__jobPoolRuns"] = [](void*) { return Value::of(double(JobPool::runs())); };
+    b.getters["__jobPoolItems"] = [](void*) { return Value::of(double(JobPool::items())); };
     b.getters["castShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->castShadow()); };
     b.setters["castShadow"] = [](void* self, const Value& v) { as<Object3D>(self)->setCastShadow(flag(v)); };
     b.getters["receiveShadow"] = [](void* self) { return Value::of(as<Object3D>(self)->receiveShadow()); };

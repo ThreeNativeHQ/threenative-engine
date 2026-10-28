@@ -799,13 +799,16 @@ uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
 }
 
 uint32_t Object3D::updateMatrixWorldVisibleJobs(bool force, bool prune) {
-    JobPool& pool = JobPool::shared();
     const uint64_t composedBefore = matrixEvaluations_;
-    if (pool.workers() == 0 || JobPool::inJob() || poseObserver != nullptr || walkComposes_ < kParallelWalkComposes) {
+    // The compose gate comes first: the pool starts on the first walk that needs it, so a realm that walks no
+    // large scene (the page that only hosts the game's worker) starts no threads.
+    if (walkComposes_ < kParallelWalkComposes || JobPool::inJob() || poseObserver != nullptr ||
+        JobPool::shared().workers() == 0) {
         walkNodes_ = updateMatrixWorldVisible(force, prune);
         walkComposes_ = uint32_t(matrixEvaluations_ - composedBefore);
         return walkNodes_;
     }
+    JobPool& pool = JobPool::shared();
     struct Item { Object3D* node; bool force; };
     // The caller's scratch: a job names it through this reference, never through the thread_local.
     static thread_local std::vector<Item> scratch, scratchJobs;

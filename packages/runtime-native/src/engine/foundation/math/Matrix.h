@@ -105,6 +105,8 @@ public:
     Matrix4& compose(const Vector3& position, const Quaternion& quaternion, const Vector3& scale);
     /** A singular matrix answers scale (1,1,1) and the identity quaternion: three's branch. */
     Matrix4& decompose(Vector3& position, Quaternion& quaternion, Vector3& scale);
+    /** The same, with the caller's scratch: safe on job pool workers, where the shared scratch races. */
+    Matrix4& decompose(Vector3& position, Quaternion& quaternion, Vector3& scale, Matrix4& scratch);
     Matrix4& makePerspective(double left, double right, double top, double bottom, double near,
                              double far, CoordinateSystem coordinateSystem = CoordinateSystem::WebGL,
                              bool reversedDepth = false);

@@ -21,9 +21,6 @@ namespace {
 constexpr double kDeg2Rad = PI / 180.0;  // local, to avoid the MathUtils DEG2RAD name
 constexpr double RAD2DEG = 180.0 / PI;
 
-Vector3 scratchPosition;
-Vector3 scratchScale;
-Quaternion scratchQuaternion;
 Vector3 scratchV3;
 Vector2 scratchMinTarget;
 Vector2 scratchMaxTarget;
@@ -43,8 +40,12 @@ bool viewEnabled(const std::optional<ViewOffset>& view) { return view.has_value(
 Vector3& Camera::getWorldDirection(Vector3& target) { return Object3D::getWorldDirection(target).negate(); }
 
 void Camera::updateViewMatrix() {
-    // Exclude scale from the view matrix to be glTF conform.
-    matrixWorld.decompose(scratchPosition, scratchQuaternion, scratchScale);
+    // Exclude scale from the view matrix to be glTF conform. Locals, not shared scratch: the matrix walk
+    // runs this on job pool workers (foundation/job_pool.h).
+    Vector3 scratchPosition, scratchScale;
+    Quaternion scratchQuaternion;
+    Matrix4 normalized;
+    matrixWorld.decompose(scratchPosition, scratchQuaternion, scratchScale, normalized);
 
     if (scratchScale.x == 1 && scratchScale.y == 1 && scratchScale.z == 1) {
         matrixWorldInverse.copy(matrixWorld).invert();

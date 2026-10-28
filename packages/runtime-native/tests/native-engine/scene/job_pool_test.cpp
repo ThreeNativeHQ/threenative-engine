@@ -1,8 +1,10 @@
 // PRD-752 phase 4 / PRD-573 v3.1: the engine's job pool, and the matrix walk it splits. The pool runs every
 // item exactly once, at 0 and N workers, nested calls inline. The walk over the pool composes every node,
-// revision and visit count of the one-thread walk, bit for bit, frame after frame of random edits.
+// revision and visit count of the one-thread walk, bit for bit, frame after frame of random edits, and keeps
+// the pruned walk's contract: a hidden subtree keeps its matrices, a hidden camera is still walked.
 #include "check.h"
 #include "engine/foundation/job_pool.h"
+#include "engine/scene/camera.h"
 #include "engine/scene/object3d.h"
 
 #include <atomic>
@@ -60,14 +62,14 @@ struct Tree {
     std::vector<std::shared_ptr<Object3D>> nodes;
 };
 
-// The same seed builds the same tree: wide groups, deep chains, hidden and frozen subtrees.
+// The same seed builds the same tree: wide groups, deep chains, hidden and frozen subtrees, cameras.
 Tree build(uint32_t seed, std::size_t count) {
     std::mt19937 random(seed);
     std::uniform_real_distribution<double> unit(-1, 1);
     Tree tree;
     tree.nodes.push_back(std::make_shared<Object3D>());
     for (std::size_t i = 1; i < count; ++i) {
-        auto node = std::make_shared<Object3D>();
+        auto node = i % 23 == 0 ? std::make_shared<PerspectiveCamera>() : std::make_shared<Object3D>();
         node->position.set(unit(random) * 10, unit(random) * 10, unit(random) * 10);
         node->rotation.set(unit(random), unit(random), unit(random));
         node->scale.set(1 + unit(random) * 0.5, 1 + unit(random) * 0.5, 1 + unit(random) * 0.5);
@@ -94,16 +96,26 @@ void edit(Tree& tree, std::mt19937& random) {
     }
 }
 
+bool sameMatrix(const Matrix4& a, const Matrix4& b) {
+    for (int e = 0; e < 16; ++e)
+        if (std::bit_cast<uint64_t>(a.elements[e]) != std::bit_cast<uint64_t>(b.elements[e])) return false;
+    return true;
+}
+
+// The pruned walk's contract: a hidden node (not a camera) and everything under it keep their world
+// matrices, and a hidden camera under shown parents is walked (it renders from its world matrix).
+bool prunedAway(const Object3D& node) {
+    for (const Object3D* at = &node; at != nullptr; at = at->parent)
+        if (!at->visible() && !at->isCamera()) return true;
+    return false;
+}
+
 std::size_t differ(const Tree& one, const Tree& many) {
     std::size_t differing = 0;
     for (std::size_t i = 0; i < one.nodes.size(); ++i) {
         const auto& a = *one.nodes[i];
         const auto& b = *many.nodes[i];
-        bool same = a.revision() == b.revision();
-        for (int e = 0; e < 16; ++e)
-            same = same && std::bit_cast<uint64_t>(a.matrixWorld.elements[e]) ==
-                               std::bit_cast<uint64_t>(b.matrixWorld.elements[e]);
-        differing += same ? 0 : 1;
+        differing += a.revision() == b.revision() && sameMatrix(a.matrixWorld, b.matrixWorld) ? 0 : 1;
     }
     return differing;
 }
@@ -112,7 +124,10 @@ void matrixWalkJobs() {
     constexpr std::size_t kNodes = 6000;
     Tree one = build(7, kNodes), many = build(7, kNodes);
     std::mt19937 editsOne(11), editsMany(11);
-    std::size_t differing = 0, visitsDiffer = 0, composesDiffer = 0;
+    std::size_t differing = 0, visitsDiffer = 0, composesDiffer = 0, hiddenWalked = 0, camerasStale = 0,
+                camerasChecked = 0;
+    std::vector<Matrix4> held(kNodes);
+    const uint64_t runsBefore = JobPool::runs();
     for (int frame = 0; frame < 40; ++frame) {
         const bool prune = frame % 3 != 0;
         JobPool::resetShared(0);
@@ -120,8 +135,21 @@ void matrixWalkJobs() {
         const uint32_t serial = one.nodes[0]->updateMatrixWorldVisibleJobs(frame == 0, prune);
         const uint64_t serialComposes = Object3D::matrixEvaluations() - before;
         JobPool::resetShared(3);
+        for (std::size_t i = 0; i < kNodes; ++i) held[i] = many.nodes[i]->matrixWorld;
         before = Object3D::matrixEvaluations();
         const uint32_t jobs = many.nodes[0]->updateMatrixWorldVisibleJobs(frame == 0, prune);
+        if (prune && frame > 0)
+            for (std::size_t i = 1; i < kNodes; ++i) {
+                const Object3D& node = *many.nodes[i];
+                if (prunedAway(node)) {
+                    hiddenWalked += sameMatrix(node.matrixWorld, held[i]) ? 0 : 1;
+                } else if (!node.visible() && node.isCamera() && node.matrixAutoUpdate) {
+                    Matrix4 expected;
+                    expected.multiplyMatrices(node.parent->matrixWorld, node.matrix);
+                    ++camerasChecked;
+                    camerasStale += sameMatrix(expected, node.matrixWorld) ? 0 : 1;
+                }
+            }
         // The engine-cost counter reads composes per frame: the jobs count every one, as one thread does.
         composesDiffer += Object3D::matrixEvaluations() - before == serialComposes ? 0 : 1;
         visitsDiffer += serial == jobs ? 0 : 1;
@@ -130,8 +158,15 @@ void matrixWalkJobs() {
         edit(many, editsMany);
     }
     JobPool::resetShared(0);
-    std::printf("matrix walk on 3 workers: %zu nodes, 40 frames, %zu node states differ, %zu visit counts differ, "
-                "%zu compose counts differ\n", kNodes, differing, visitsDiffer, composesDiffer);
+    const uint64_t poolRuns = JobPool::runs() - runsBefore;
+    std::printf("matrix walk on 3 workers: %zu nodes, 40 frames, %llu pool runs, %zu node states differ, %zu visit counts differ, "
+                "%zu compose counts differ; pruned frames: %zu hidden-subtree matrices moved, %zu of %zu hidden "
+                "cameras stale\n", kNodes, (unsigned long long)poolRuns, differing, visitsDiffer, composesDiffer, hiddenWalked, camerasStale,
+                camerasChecked);
+    CHECK(poolRuns > 0);
+    CHECK(hiddenWalked == 0);
+    CHECK(camerasChecked > 0);
+    CHECK(camerasStale == 0);
     CHECK(differing == 0);
     CHECK(visitsDiffer == 0);
     CHECK(composesDiffer == 0);
@@ -149,7 +184,7 @@ void matrixWalkThreshold() {
         root->add(*group);
         nodes.push_back(std::move(group));
     }
-    const auto runs = [] { return JobPool::shared().runs(); };
+    const auto runs = [] { return JobPool::runs(); };
     for (int frame = 0; frame < 3; ++frame) root->updateMatrixWorldVisibleJobs(true, true);
     const uint64_t before = runs();
     for (int frame = 0; frame < 5; ++frame) {
@@ -170,7 +205,32 @@ void matrixWalkThreshold() {
     CHECK(shownRuns == 1);
 }
 
+// The pool starts on the first walk that shares out, so a realm that walks no large scene (the page that only
+// hosts the game's worker) and a read of the engine-cost counters start no threads.
+void poolStartsOnNeed() {
+    auto root = std::make_shared<Object3D>();
+    std::vector<std::shared_ptr<Object3D>> nodes;
+    const auto grow = [&](std::size_t count) {
+        for (std::size_t i = 0; i < count; ++i) {
+            nodes.push_back(std::make_shared<Object3D>());
+            root->add(*nodes.back());
+        }
+    };
+    grow(100);
+    for (int frame = 0; frame < 3; ++frame) root->updateMatrixWorldVisibleJobs(frame == 0, true);
+    (void)JobPool::runs();
+    (void)JobPool::items();
+    const bool idle = !JobPool::started();
+    grow(4000);
+    root->updateMatrixWorldVisibleJobs(true, true);
+    root->updateMatrixWorldVisibleJobs(true, true);  // 4,101 composes last walk: this one needs the pool
+    std::printf("job pool: started after a 101-node walk and a counter read: %s; after a 4,101-node walk: %s\n",
+                idle ? "no" : "yes", JobPool::started() ? "yes" : "no");
+    CHECK(idle);
+    CHECK(JobPool::started());
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"for_each_once", forEachOnce}, {"matrix_walk_jobs", matrixWalkJobs},
-             {"matrix_walk_threshold", matrixWalkThreshold})
+             {"matrix_walk_threshold", matrixWalkThreshold}, {"pool_starts_on_need", poolStartsOnNeed})

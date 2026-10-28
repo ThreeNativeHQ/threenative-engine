@@ -831,7 +831,8 @@ target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAK
 tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
     native_engine_job_pool=for_each_once
     native_engine_matrix_walk_jobs=matrix_walk_jobs
-    native_engine_matrix_walk_threshold=matrix_walk_threshold)
+    native_engine_matrix_walk_threshold=matrix_walk_threshold
+    native_engine_job_pool_starts_on_need=pool_starts_on_need)
 target_link_libraries(tn-native-engine-job-pool-test PRIVATE tn_engine_scene)
 
 # The engine's JSON reader and writer (header-only), against JSON.parse, JSON.stringify and
@@ -999,13 +1000,13 @@ if(EMSCRIPTEN)
     # (scripts/web-engine-stamp.mjs): a pack after an engine commit shipped the older Wasm.
     find_program(TN_NODE_EXECUTABLE node REQUIRED NO_CMAKE_FIND_ROOT_PATH)
     if(TN_WEB_THREADS)
-        # The job pool's workers (foundation/job_pool.h) come from emscripten's pthread pool, loaded with the
-        # module so no job waits on a worker to start: the same min(hardware threads - 1, 3) as
-        # JobPool::defaultWorkers. The node ABI check below cannot start this glue (no `node` environment);
-        # the stamp ties it to the same sources as the single-thread module, which that check runs on.
+        # The job pool's workers (foundation/job_pool.h) start as pthreads on the first walk that needs them,
+        # not with the module: a preloaded pool put 3 idle workers in the page that only hosts the game's
+        # worker. A job never waits on a worker that has not started (the caller runs the items it finds).
+        # The node ABI check below cannot start this glue (no `node` environment); the stamp ties it to the
+        # same sources as the single-thread module, which that check runs on.
         set_target_properties(tn-native-engine-web PROPERTIES OUTPUT_NAME tn-native-engine-web-threads)
-        target_link_options(tn-native-engine-web PRIVATE
-            "-sPTHREAD_POOL_SIZE=Math.min(3,Math.max(0,(navigator.hardwareConcurrency||1)-1))")
+        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0)
         add_custom_command(TARGET tn-native-engine-web POST_BUILD
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write tn-native-engine-web-threads
             VERBATIM)

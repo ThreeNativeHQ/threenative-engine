@@ -52,7 +52,6 @@ unsigned JobPool::defaultWorkers() {
         if (end != nullptr && *end == '\0') return unsigned(value);
     }
 #endif
-    // The web build's -sPTHREAD_POOL_SIZE spells the same formula (NativeEngineCore.cmake).
     const unsigned hardware = std::thread::hardware_concurrency();
     const unsigned spare = hardware > 1 ? hardware - 1 : 0;
     return spare < kMaxWorkers ? spare : kMaxWorkers;
@@ -63,6 +62,8 @@ JobPool& JobPool::shared() {
     if (!pool) pool = std::make_unique<JobPool>(defaultWorkers());
     return *pool;
 }
+
+bool JobPool::started() { return sharedSlot() != nullptr; }
 
 void JobPool::resetShared(unsigned workers) {
     auto& pool = sharedSlot();

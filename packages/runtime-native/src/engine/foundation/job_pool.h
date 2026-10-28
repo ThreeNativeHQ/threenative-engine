@@ -31,9 +31,9 @@ public:
     JobPool& operator=(const JobPool&) = delete;
 
     /**
-     * The process pool: min(hardware threads - 1, kMaxWorkers) workers, started on first use. On native
-     * `TN_JOB_WORKERS=<n>` names the count (0 turns the pool off); the web build reads it from the same
-     * formula as its pthread pool (`-sPTHREAD_POOL_SIZE`), so no worker waits on a thread to load.
+     * The process pool: min(hardware threads - 1, kMaxWorkers) workers, started on first use (the first
+     * walk that shares out). On native `TN_JOB_WORKERS=<n>` names the count (0 turns the pool off); on the
+     * web each worker is a pthread started then, and a job never waits for one to load.
      */
     static JobPool& shared();
     /** Replaces the process pool with one of `workers` workers: tests run one case at 1 and N threads. */
@@ -44,9 +44,12 @@ public:
     [[nodiscard]] unsigned workers() const { return unsigned(threads_.size()); }
     /** True on a pool worker, and on the caller while it runs items. */
     [[nodiscard]] static bool inJob() { return inJob_; }
-    // Engine-cost counters: forEach calls the workers shared, and the items those calls ran.
-    [[nodiscard]] uint64_t runs() const { return runs_.load(std::memory_order_relaxed); }
-    [[nodiscard]] uint64_t items() const { return items_.load(std::memory_order_relaxed); }
+    // Engine-cost counters, process-wide: forEach calls the workers shared, and the items those calls ran.
+    // Reading them starts no pool.
+    [[nodiscard]] static uint64_t runs() { return runs_.load(std::memory_order_relaxed); }
+    [[nodiscard]] static uint64_t items() { return items_.load(std::memory_order_relaxed); }
+    /** True once `shared()` started the process pool (and its threads). */
+    [[nodiscard]] static bool started();
 
     /** Runs `body(i)` for every `i` in [0, count) across the caller and the workers. */
     template <class F>
@@ -76,7 +79,7 @@ private:
     bool stopping_ = false;
     std::atomic<uint32_t> next_{0};
     std::atomic<uint32_t> busy_{0};
-    std::atomic<uint64_t> runs_{0}, items_{0};
+    inline static std::atomic<uint64_t> runs_{0}, items_{0};
     std::atomic<bool> running_{false};
     inline static thread_local bool inJob_ = false;
 };
