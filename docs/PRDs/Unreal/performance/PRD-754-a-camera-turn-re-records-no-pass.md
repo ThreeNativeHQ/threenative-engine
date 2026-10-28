@@ -38,10 +38,22 @@ On an opaque scene, a camera turn and a culling change record no bundle again, i
 
 ### Phase 1: Size it
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-27): the web shooter's ceiling is above the gate, so the PRD goes on.
 
-- [ ] The frame report splits `renderMs` into prepare and `Renderer::render`, and counts bundle rebuilds by cause (order, uniform offset, visible count, other) and direct encodes by pass. `perf` prints stages that sum to frame CPU within 5%. proof: a red-green `perf.spec.ts` case; a native Midway run and a web shooter run with the counts recorded here
-- [ ] The ceiling is recorded: CPU per frame spent in recording and encode on Midway and the shooter, native and web, during a scripted camera turn. If it is below 0.5 ms per frame on both games, the PRD stops and moves to Deferred with that number. proof: the Phase 1 counters with `profile:wasm-page --cpu-work` and the native frame report
+- [x] The frame report splits `renderMs` into prepare and `Renderer::render`, and counts bundle rebuilds by cause (order, uniform offset, visible count, other) and direct encodes by pass. `perf` prints stages that sum to frame CPU within 5%. proof: a red-green `perf.spec.ts` case; a native Midway run and a web shooter run with the counts recorded here
+  result: cacb23cac and 162093baf (`perf.spec.ts` PRD-754 case red without the parser, green with it). Midway native
+  flight (`flight-bench-desktop.playtest.json`, player at 1c730892e, `TN_STABLE_PASSES=0`, load 60): `perf` prints
+  "frame CPU 93.146 = game JS 75.080 + render prepare 11.258 + render encode 6.146 + other 0.662 (the three stages
+  cover 99.3%)"; main rebuilds over 2538 frames: 663 order, 0 uniform offset, 144 visible count, 6 other; shadow
+  passes 73.4 direct-encoded draws a frame. Shooter web (sandbox `--genre fps --template shooter`, NVIDIA Turing,
+  6 s mouse sweep, 2 runs): rebuilds 68 and 54 visible count, 0 and 2 order, 19 and 6 other, of 105 and 66 frames
+- [x] The ceiling is recorded: CPU per frame spent in recording and encode on Midway and the shooter, native and web, during a scripted camera turn. If it is below 0.5 ms per frame on both games, the PRD stops and moves to Deferred with that number. proof: the Phase 1 counters with `profile:wasm-page --cpu-work` and the native frame report
+  result: Midway native, recording plus shadow encode in render-thread CPU time (`CLOCK_THREAD_CPUTIME_ID`):
+  **0.328 ms a frame** (0.164 recording + 0.163 shadow encode; p50 0.185, p95 0.927), below the gate. Shooter web,
+  the Wasm wall meter scaled by the game worker's CPU/wall ratio from a Chrome trace of the turn (`tdur`/`dur` of its
+  top-level tasks): **0.85 and 1.16 ms a frame** ((1.021 + 0.521) x 0.553 and (3.094 + 0.367) x 0.335, load 62),
+  above it. Not run: `profile:wasm-page --cpu-work`, which has no camera-turn input (see Decisions); the Midway web
+  and shooter native cells (the shooter web cell already clears the gate)
 
 ### Phase 2: Stable recorded passes
 
@@ -64,7 +76,14 @@ Every box is ticked, `PERFORMANCE-LEARNINGS.md` has the lever entry (keep or rej
 
 ## Decisions
 
-(none yet)
+- 2026-10-27 (lane): the recording meters read render-thread CPU time on Linux (wall time elsewhere). On this host
+  (load 50 to 80) the wall meter read Midway at 2.18 ms a frame against 0.33 ms of CPU time.
+- 2026-10-27 (lane): the web ceiling uses a Chrome trace of the worker thread instead of `profile:wasm-page --cpu-work`,
+  because the profiler samples a still page and the box needs a camera turn. The Wasm meter is wall time, so it is
+  scaled by the worker's measured CPU/wall ratio over the same turn (assumes preemption spreads evenly over the frame).
+- 2026-10-27 (lane): state-first order sorts by kind, side, material, geometry and id, as a proxy for pipeline, then
+  material, then geometry: the pipeline is resolved after the sort. A frame with an opaque draw that does not write
+  depth or colour keeps three's depth order, since only then does order change a pixel.
 
 ## Blocked on
 
