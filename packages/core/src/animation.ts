@@ -962,7 +962,7 @@ export class AnimationPlayer {
     // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
     const applies =
       strideSync && this.#mode === "loop" && !this.#timeScaleInterpolations.has(action);
-    if (applies) action.setEffectiveTimeScale(rate);
+    if (applies && action.timeScale !== rate) action.setEffectiveTimeScale(rate);
     this.#strideGroundSpeed = groundSpeed;
     this.#strideRate = rate;
     this.#strideSynced = applies;
@@ -984,7 +984,8 @@ export class AnimationPlayer {
       const ground = this.#measureOf(name).groundSpeed;
       if (ground < CLIP_GROUND_FLOOR || this.#timeScaleInterpolations.has(action)) continue;
       const wanted = groundSpeed < STRIDE_SPEED_FLOOR ? STRIDE_RATE_MIN : groundSpeed / ground;
-      action.setEffectiveTimeScale(Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted)));
+      const rate = Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted));
+      if (action.timeScale !== rate) action.setEffectiveTimeScale(rate);
     }
   }
 
