@@ -11,23 +11,23 @@ targets could not be built and are named below.
 | `src/audio/` | 1471 | 1301 | 88.44% |
 | `src/canvas/` | 1334 | 1110 | 83.21% |
 | `src/cli/` | 1691 | 1243 | 73.51% |
-| `src/engine/` | 39637 | 33316 | 84.05% |
+| `src/engine/` | 39663 | 33326 | 84.02% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2835 | 2227 | 78.55% |
+| `src/js/` | 2835 | 2229 | 78.62% |
 | `src/platform/` | 1507 | 1047 | 69.48% |
 | `src/raytracing/` | 643 | 543 | 84.45% |
-| `src/runtime.cpp` | 2410 | 1869 | 77.55% |
+| `src/runtime.cpp` | 2410 | 1867 | 77.47% |
 | `src/screenshot_gate.cpp` | 27 | 24 | 88.89% |
 | `src/storage/` | 370 | 329 | 88.92% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 10061 | 7736 | 76.89% |
+| `src/webgpu/` | 10061 | 7725 | 76.78% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **64949** | **53171** | **81.87%** |
+| **TOTAL** | **64975** | **53170** | **81.83%** |
 
-Source digest: `sha256:27dd0062ce81c9b4a384afeebdd13cd0f8602b210a86d326108f8038bdfe5f01`
+Source digest: `sha256:d527c63b75217bdac36bf870becfc28eca85785e7585befd5ecf5ae1383fda01`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
