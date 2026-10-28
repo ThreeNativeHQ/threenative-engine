@@ -1,6 +1,6 @@
 # PRD-760 — Agents author, repair and verify character animation through one MCP
 
-**Status:** IN PROGRESS (phase 1)
+**Status:** IN PROGRESS (phase 1 merged, phase 2 next)
 **Priority:** P2 — planned feature work: AC-1 to AC-8 are open; no release or runtime blocker depends on them.
 **Complexity:** 7 (HIGH) — 11+ implementation files, a new MCP package, and a cross-repository move out of `threenative-asset-mcp`; risk override: none.
 **Owner:** João
@@ -54,7 +54,7 @@ flowchart LR
 #### Phase 1 — recovered package, moved tools, attachments
 
 - [x] AC-1 [local]: A game project's `.mcp.json` (written by `mergeMcpServers` in `packages/core/mcp/servers.mjs`) starts `threenative-animation`, and a stdio `tools/list` returns every tool in the table above that is implemented so far. proof: `pnpm exec vitest run packages/animation-mcp/__tests__/server.spec.ts packages/animation-mcp/__tests__/mcp.spec.ts packages/core/__tests__/mcp-install.spec.ts scripts/__tests__/sync-agent-docs.spec.ts` — **Evidence (2026-10-27):** pass, 95 tests across 10 files. `MCP_SERVERS` now declares five servers, ordered, animation last; `mcp-install.spec.ts` spawns the shipped shim `packages/core/mcp/animation.mjs` and asserts a stdio `tools/list` answers `animation_attach`, `animation_inspect`, `animation_open_view`. Every scaffold template's seven host configs reloaded by `pnpm sync:mcp`. The PRD named `writeMcpConfig` and `packages/core/__tests__/mcp-servers.spec.ts`; neither exists — the writer is `mergeMcpServers` and the spec is `mcp-install.spec.ts`, so the proof path above is the real one.
-- [ ] AC-2 [local]: `animation_inspect`, `animation_auto_rig`, `animation_ik_retarget` and `animation_preview` run from the animation MCP on a Mixamo character with output identical to the asset MCP's tools, and the asset MCP `tools/list` no longer has the four tools. proof: `pnpm exec vitest run packages/animation-mcp/__tests__/rig.spec.ts` plus the asset MCP PR's `pnpm test` — Evidence: **blocked, not attempted.** `animation_inspect` shipped here from this repo's own glTF reader, not from the asset MCP. The three rig-motion tools still live in `threenative-asset-mcp`, which is `UNLICENSED`; moving that code relicenses it, and only João as copyright holder can decide. The alternative the PRD names — import them from the published package — needs an export surface that package does not have (`exports: ./dist/index.js` only) and therefore an asset MCP PR either way. Left open.
+- [ ] AC-2 [local]: `animation_inspect`, `animation_auto_rig`, `animation_ik_retarget` and `animation_preview` run from the animation MCP on a Mixamo character with output identical to the asset MCP's tools, and the asset MCP `tools/list` no longer has the four tools. proof: `pnpm exec vitest run packages/animation-mcp/__tests__/rig.spec.ts` plus the asset MCP PR's `pnpm test` — Evidence: **open, and not blocked on licensing (corrected 2026-10-27).** There is no third-party right here: `src/rig/*` in `threenative-asset-mcp` is 2,713 lines with a single author over three commits, all João's, and the only licensed thing it touches is the Quaternius `UAL1`/`UAL2` catalog, which `src/rig/catalog.ts` already records as CC0. The `"license": "UNLICENSED"` in that manifest is a default, not someone else's claim, and the owner cleared it ("what license are you bitching about?"). What blocks the box is scope: the move is a cross-repo port of 2,713 lines plus an asset MCP release that removes four tools, and it is not in this PR. `animation_inspect` here is this repo's own reader, so even that one does not yet match the asset MCP's output shape.
 - [ ] AC-3 [local]: `animation_attach` reproduces `enemy-ak47.pose.json` (rifle on `mixamorigRightHand`, per-clip keys) as a v4 op log, and the baked GLB plays the rifle in the hand with no game code holding the offsets. proof: `pnpm exec vitest run packages/animation-mcp/__tests__/attach.spec.ts packages/animation-mcp/__tests__/log.spec.ts` (v3 load, v4 round trip, baked node world transform within 1 mm of the recipe) — Evidence: **spec passes, box open for the visual judge only.** 24 tests pass. The recipe loads as a v4 log whose first op is the attach on `mixamorigRightHand_035`; the bake writes `attach-weapon` as that bone's child with translation/rotation/scale tracks for the six held clips; posing the baked `RifleIdle` track puts the rifle `0` units from the recipe's offset in world space (asserted under 1 mm) through a hand bone that is neither at the origin nor unrotated. The three `detached` death clips get no track and are reported in the bake result. The recipe is committed as `packages/animation-mcp/__tests__/fixtures/enemy-ak47.pose.json` so the proof needs no file outside the repository. **The visual judge verdict this AC requires beside the box is not recorded yet**, so the box stays open.
 
 #### Phase 2 — clip edits and motion perception
@@ -72,8 +72,8 @@ Baked clips and attachments reach the screen. AC-3 and AC-6 therefore need a vis
 
 ## Blocked on
 
-- Relicensing the moved rig code from `UNLICENSED` (asset MCP) to MIT (this repo). Only João, as copyright holder, can decide. This blocks AC-2. Alternative: the animation MCP imports the code from the published `threenative-asset-mcp` and the code stays where it is. — unblocked by João's decision.
-- Publishing `threenative-animation-mcp` and an asset MCP release without the rig tools, so installed games get the server. — unblocked by João's explicit release request.
+- ~~Relicensing the moved rig code from `UNLICENSED` (asset MCP) to MIT (this repo).~~ **Withdrawn 2026-10-27:** one author, João's own code, CC0 catalog. Nothing needs relicensing; AC-2 waits on scope — a 2,713-line cross-repo port plus a release that drops four tools from the asset MCP — not on permission.
+- ~~Publishing `threenative-animation-mcp` and an asset MCP release without the rig tools, so installed games get the server.~~ **Done 2026-10-27:** `threenative-animation-mcp@0.1.0` is on npm. Installed games already got the server from core's committed bundle; the npx fallback now resolves a real package instead of an E404.
 
 ## Integration Ledger
 
@@ -95,19 +95,19 @@ Baked clips and attachments reach the screen. AC-3 and AC-6 therefore need a vis
 ## Execution Phases
 
 #### Phase 1: Recovered package, moved tools, attachments
-**Status:** IN PROGRESS (phase 1)
+**Status:** IN PROGRESS (phase 1 merged, phase 2 next)
 **Files:** `packages/animation-mcp/` (restored from `0ce584752:packages/pose-lab`, renamed, plus `src/mcp.ts` and `src/ops/{inspect,attach}.ts`); `packages/core/mcp/servers.mjs` and `packages/core/mcp/animation.mjs`; asset MCP `src/server.ts` and `src/rig/*` (separate PR in that repo).
 **Implementation:** restore pose-lab and get its specs green on current `develop`. Add the stdio server with `@modelcontextprotocol/server` and zod (the asset MCP pattern). Move the rig modules once licensing is decided. Make recipe v4 the op log. Bake attachments as a bone child node with per-clip tracks.
 **Verification:** AC-1 and AC-3 specs pass; AC-2 blocked on licensing. Visual judge on the baked attachment: **not run**. `animation_attach` bakes; the judge needs a headed capture of the baked GLB through the view page, which is WebGL rather than WebGPU, so it is its own pass.
 
 #### Phase 2: Clip edits and motion perception
-**Status:** IN PROGRESS (phase 1)
+**Status:** IN PROGRESS (phase 1 merged, phase 2 next)
 **Files:** `packages/animation-mcp/src/ops/{modify,verify}.ts`, `src/report/filmstrip.ts`.
 **Implementation:** use gltf-transform for the clip ops. Verify samples world bone positions per frame (three `AnimationMixer`, headless), measures planted-foot slip, floor penetration, first/last pose distance, jerk spikes and bone length drift, and renders the filmstrip through the moved preview renderer.
 **Verification:** AC-4 and AC-5 specs.
 
 #### Phase 3: Pose language, library search, web view
-**Status:** IN PROGRESS (phase 1)
+**Status:** IN PROGRESS (phase 1 merged, phase 2 next)
 **Files:** `packages/animation-mcp/src/ops/{pose,bake,find,view}.ts`, `src/client/*` (pose-lab UI reads and writes the op log), one template kit playtest scenario.
 **Implementation:** before writing `pose.ts`, sparse-add `Engine/Plugins/Animation/IKRig` and `Engine/Plugins/Animation/ControlRig` to `~/projects/UnrealEngine` (not in the current sparse clone), read the goal and solver setup, and cite `UE 5.8.3: Engine/...:line` here. Borrow defaults, not code. Search ranks catalog clips by name, tags and duration. The view server pushes op-log changes over SSE.
 **Verification:** AC-6, AC-7 and AC-8. Visual judge on the baked clip.
