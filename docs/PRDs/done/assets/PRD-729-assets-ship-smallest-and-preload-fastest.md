@@ -4,6 +4,8 @@ prd_contract: v1
 
 # PRD-729 — Assets ship as few bytes as they can and preload as fast as they can
 
+**PR:** [#561](https://github.com/ThreeNativeHQ/threenative-engine/pull/561) — merged 2026-10-25 as
+`ae3336204` through the merge queue.
 **Status:** COMPLETE WITH AN OWNER-APPROVED SIZE EXCEPTION — Phases 1-3 are done. The corpus ships
 3.68 MiB / 30.9% instead of 3 MiB / 25%, and both preload goals are met. The owner accepted the GPU
 texture-memory trade of lever 5 (2026-10-24).

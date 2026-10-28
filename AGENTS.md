@@ -31,6 +31,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 - The commit that finishes a PRD also `git mv`s it to `docs/PRDs/done/`.
 - `main` takes only the ordinary full-checked `develop -> main` PR, merged with a merge commit, never squash or rebase.
 - **Push once per run**: while your PR's CI runs, commit locally; push to fix that run or after it finishes. A PRD tick rides with the next code push, never alone.
+- **Short CI fix cycles.** Start a full CI run only when it is necessary: a release-candidate head or a required gate. A full run costs about an hour. Start the fix when the first red appears, and do not wait for the run to end. Prove the fix on the nearest lane (CI image, same software adapter, cold cache) before you push. Push all fixes for a run as one commit set and cancel the superseded run. `gh run rerun --failed` retries only a flake on the same commit. It cannot test a fix, and a partial rerun breaks the Integration receipts. Never trim the board or call a partial run green.
 - **No workflow file per feature**: add its CI proof as a job in an existing workflow.
 - Before retargeting, inventory `gh pr list` and `pnpm worktree:status`; retarget in-flight PRs one at a time and never rewrite another worktree.
 
