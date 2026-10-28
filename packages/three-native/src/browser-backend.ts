@@ -12,7 +12,7 @@
  * collected wrapper releases its object.
  */
 
-import { createBridgeMeter } from "./bridge-meter.js";
+import { ENGINE_COST_KNOB, createBridgeMeter } from "./bridge-meter.js";
 import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
@@ -566,6 +566,13 @@ export function defineBrowserClasses(
   const walked = (count: number) => {
     walkVisits += count;
   };
+  // The glue's own entries, which the crossing count cannot see: a method wrapper and a property getter
+  // run whether the cache answers or the engine does, and the cache answers most of them. Counted only
+  // while a playtest bounds engine counters, so a shipped frame pays one branch and no store;
+  // `collect()` is the safe point that reads the flag.
+  let methodCalls = 0;
+  let propertyReads = 0;
+  let glueCounting = false;
   // The hierarchy cache: `children`, `parent` and a whole-subtree walk are kept until the engine's
   // process-wide hierarchy counter (Object3D::hierarchyVersion, read in place) moves. Every add,
   // remove, attach, clear and destructor moves it, and nothing else in the engine writes a children
@@ -603,9 +610,11 @@ export function defineBrowserClasses(
         return readByte === undefined
           ? undefined
           : function (this: object) {
+              if (glueCounting) propertyReads += 1;
               return readByte(addressOf(this) + offset) !== 0;
             };
       return function (this: object) {
+        if (glueCounting) propertyReads += 1;
         return read(addressOf(this) + offset, count);
       };
     }
@@ -614,6 +623,7 @@ export function defineBrowserClasses(
       // Object3D has it: every later read is a plain property load, never this getter (R5 reads
       // position and rotation three times per cube per frame).
       return function (this: object) {
+        if (glueCounting) propertyReads += 1;
         const member = fromEngine(runtime.get(refOf(this), property));
         Object.defineProperty(this, property, { value: member, writable: false });
         if (property === "rotation") rotations.set(member as object, this);
@@ -1404,6 +1414,7 @@ export function defineBrowserClasses(
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
+          if (glueCounting) methodCalls += 1;
           // three's toArray(array, offset) writes the lanes into the array it is given and answers that array; the
           // engine answers a new one, since a plain array crosses by value.
           if (method === "toArray" && args[0] !== undefined) {
@@ -1713,6 +1724,7 @@ export function defineBrowserClasses(
           ((property === "children" || property === "parent") &&
           binding.getters.includes("__hierarchy")
             ? function (this: object) {
+                if (glueCounting) propertyReads += 1;
                 if (property === "children") {
                   childrenReads += 1;
                   // The census names who reads it, though the cache answers without a crossing.
@@ -1726,6 +1738,7 @@ export function defineBrowserClasses(
               }
             : mirrored(binding, property, setters) || bounds
               ? function (this: object) {
+                  if (glueCounting) propertyReads += 1;
                   const legacy = legacyLabelled.has(property);
                   if (!caching && !legacy) return fromEngine(runtime.get(refOf(this), property));
                   const table = !legacy && animatedNames.has(property) ? animated : labels;
@@ -1743,6 +1756,7 @@ export function defineBrowserClasses(
                   return known.get(property);
                 }
               : function (this: object) {
+                  if (glueCounting) propertyReads += 1;
                   return fromEngine(runtime.get(refOf(this), property));
                 }),
         ...(lane !== undefined && write !== undefined
@@ -2064,7 +2078,14 @@ export function defineBrowserClasses(
     // engine's hierarchy counter itself: each move drops every cache keyed on it, here and in C++.
     counters: () => {
       // Crossings ride their own series, TN_FRAME_BUDGET.counters.bridgeCrossings (__tnCrossingCount).
-      const totals: Record<string, number> = { childrenReads, walkVisits };
+      // `methodCalls` and `propertyReads` are the glue entries that series cannot see: every wrapper
+      // entry, crossed or answered by the cache.
+      const totals: Record<string, number> = {
+        childrenReads,
+        methodCalls,
+        propertyReads,
+        walkVisits,
+      };
       if (readWord === undefined) return totals;
       if (hierarchyAt !== undefined) totals.hierarchyMoves = readWord(hierarchyAt);
       // The low word of each 64-bit total: core takes per-frame differences, which stay exact.
@@ -2073,6 +2094,7 @@ export function defineBrowserClasses(
     },
     collect() {
       meter.frame();
+      glueCounting = (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
       const wanted = cacheWanted();
       // A setter or method drops an object's kept answers whether or not the cache is on, so turning it
       // back on keeps nothing stale; the two tables that other calls drop are emptied anyway.
