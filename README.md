@@ -184,13 +184,13 @@ Every Unreal 5.8.3 system that sets the look or the frame cost, split into 380 s
 measured in lines of the Unreal source. Each one maps to the ThreeNative PRD that ports it.
 
 **20% done · 24% in progress · 33% not started · 16% deferred · 5% with no PRD** (share of 676K Unreal lines; the tool-heavy Niagara, Landscape, World Partition, RHI and RenderCore modules are left out)
-· 82 open PRDs on this branch · 72 subsystems with no PRD
+· 83 open PRDs on this branch · 72 subsystems with no PRD
 
 [![Unreal port progress map](docs/PRDs/Unreal/research/unreal-port-status.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
-**Pace:** 128 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
-so at that pace the default look is done about **Nov 12, 2026**, and everything filed today about
-**Dec 1, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
+**Pace:** 114 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
+so at that pace the default look is done about **Nov 18, 2026**, and everything filed today about
+**Dec 10, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 
 [![Unreal port burn-up](docs/PRDs/Unreal/research/unreal-port-progress.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 

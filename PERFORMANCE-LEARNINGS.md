@@ -77,6 +77,12 @@ no COOP/COEP); that lane is open.
 
 ## Levers
 
+### 2026-10-27 — Incremental projection change set and state buckets — REJECT (deferred at sizing)
+- Where: [PRD-753](docs/PRDs/Unreal/performance/PRD-753-a-scene-change-updates-only-the-batches-it-touches.md), `projection::decide`, `structureStamp`, `contentClassOf`; counter `TN_PROJECTION_WALKS` (commit `9907ab1f2`).
+- Result: the three functions take 0.06% to 0.32% of the game thread on Midway and the shooter, native and web, two runs each (gate 2%). `RenderDatabase::batch` decides 0 to 25 times per 1,000 calls, nearly all on its 60-call cadence; `hostProjectionReport` is not called, because both games set `renderer.projection: false`.
+- Cause: the cited 10.8% predates or misattributes the PRD-613 hold above; once `batch` holds its decision, no scene walk is left to remove. The largest piece is `contentClassOf` from `RenderDatabase::record`, once per drawn mesh per frame (0.14% to 0.26%).
+- Insight: count the walks before porting a change set. A profile share names a function, not how often its caller runs.
+
 ### 2026-10-27 — Batching holds a projecting decision; render thread on by default — KEEP
 - Where: [PRD-613](docs/PRDs/done/PRD-613-native-render-thread.md), `RenderDatabase::batch`, `player/run.cpp`.
 - Result (Midway desktop, matched CPU, 3 alternating pairs): main-thread CPU per frame falls 3.4 to 7.5 ms per

@@ -1039,8 +1039,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             framesSinceDeclineScan_ = batchDecision_.sourceRenderables == 0 || (!held && batchDecision_.projecting) ? kDeclineRescanFrames : 0;
         }
         decision = &batchDecision_;
-        projection::countWalkCall(projection::WalkCaller::RenderDatabase);
     }
+    projection::countWalkCall(projection::WalkCaller::RenderDatabase);
     skinnedPalettes_.clear();
     batchGroupsList_.clear();
     candidatesByKey_.clear();
