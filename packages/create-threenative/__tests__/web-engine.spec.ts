@@ -13,6 +13,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createWebBrandPlugin } from "../src/web-brand.js";
 import {
   WASM_ENGINE_ENTRY,
+  WASM_THREADS_ENTRY,
   WEB_ENGINE_ID,
   createWebEnginePlugin,
   webRuntimeDecoders,
@@ -183,6 +184,8 @@ describe("createWebEnginePlugin", () => {
     expect(manifest.files.filter((file: string) => file.startsWith("build"))).toEqual([
       WASM_ENGINE_ENTRY,
       "build/web/tn-native-engine-web.wasm",
+      WASM_THREADS_ENTRY,
+      "build/web/tn-native-engine-web-threads.wasm",
     ]);
   });
 
@@ -204,6 +207,22 @@ describe("createWebEnginePlugin", () => {
     const source = await createWebEnginePlugin({ root, engine: "threenative" }).load(WEB_ENGINE_ID);
     expect(source).not.toBeNull();
     await expect(transform(source ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
+  });
+
+  it("loads the threaded engine on a cross-origin-isolated page and the single-thread one elsewhere", async () => {
+    const root = await project(false);
+    const wasm = path.join(root, "engine/tn-native-engine-web.mjs");
+    await mkdir(path.dirname(wasm), { recursive: true });
+    await writeFile(wasm, "export default async function createModule() { return {}; }\n");
+    const plugin = () => createWebEnginePlugin({ root, engine: "threenative", wasm });
+    // No threaded build beside it: the page loads the single-thread engine whatever its isolation.
+    expect(await plugin().load(WEB_ENGINE_ID)).not.toContain("crossOriginIsolated");
+    const threads = path.join(root, "engine/tn-native-engine-web-threads.mjs");
+    await writeFile(threads, "export default async function createModule() { return {}; }\n");
+    const loaded = (await plugin().load(WEB_ENGINE_ID)) ?? "";
+    expect(loaded).toContain(
+      `globalThis.crossOriginIsolated === true ? await import(${JSON.stringify(threads)}) : await import(${JSON.stringify(wasm)})`,
+    );
   });
 
   it("loads the Wasm engine from an explicit module path when one is given", async () => {

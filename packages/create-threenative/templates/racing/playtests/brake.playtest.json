@@ -1,0 +1,54 @@
+{
+  "name": "racing-shift-brakes-under-throttle",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "throttle",
+      "press": "ArrowUp",
+      "holdTicks": 186,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "brake-with-throttle-held",
+      "press": ["ArrowUp", "ShiftLeft"],
+      "holdTicks": 90,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "topSpeed",
+        "gte": 12,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "speed",
+        "lte": 6,
+        "allowTrivial": "The car starts at rest; this run proves it is back near rest after full throttle, because shift braked while the throttle stayed down."
+      }
+    ],
+    "hud": [
+      {
+        "id": "boost",
+        "equals": "READY",
+        "allowTrivial": "No boost was used, so the HUD says the boost is ready, not how many were spent."
+      }
+    ]
+  }
+}

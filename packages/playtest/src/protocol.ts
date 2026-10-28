@@ -145,6 +145,12 @@ export interface IPlaytestStartupObservation {
    * the machine has no GPU has already conceded it is not measuring that.
    */
   compileSettled?: boolean;
+  /**
+   * Whether the loading cover has lifted, which happens after `phase` reaches `"ready"`: the
+   * game holds its UI state until the first uncovered frame has left the GPU. Absent from a
+   * game that does not report it, which the runner reads as uncovered.
+   */
+  revealed?: boolean;
   /** Present when the application records its startup milestones. */
   timeline?: IPlaytestStartupTimeline;
   /** Present once the reveal ran and the application measured what it waited for. */
@@ -231,6 +237,17 @@ export interface IPlaytestSampleRequest {
   resources?: readonly string[];
   /** Scene-graph selectors to report, one observation per selector, in request order. */
   sceneNodes?: readonly IPlaytestSceneNodeSelector[];
+  /** Report what stands between the camera and this entity's world bounds centre. */
+  sightLine?: { entity: string };
+}
+
+/** What the lens sees of the subject: whether any solid blocks it, and which solids do. */
+export interface IPlaytestSightLineObservation {
+  blocked: boolean;
+  /** Distinct names of the nearest blocking meshes, nearest first, at most five. */
+  blockers: string[];
+  /** Metres from the camera's world position to the subject's world bounds centre. */
+  distance: number;
 }
 
 export interface IPlaytestEntityObservation {
@@ -590,6 +607,8 @@ export interface IPlaytestObservationSnapshot {
   resources?: Record<string, JsonValue>;
   scene?: IPlaytestSceneObservation;
   sceneNodes?: IPlaytestSceneNodesObservation[];
+  /** Present when the request named an entity to sight from the camera. */
+  sightLine?: IPlaytestSightLineObservation;
 }
 
 /**

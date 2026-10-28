@@ -4,7 +4,7 @@ import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./err
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS, PLAYTEST_PER_ADAPTER_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSightLineAssertion, IPlaytestEngineCostAssertion, IPlaytestHudAuditAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -954,12 +954,100 @@ export function validateFootSlipAssertion(value: unknown, scenarioPath: string, 
   };
 }
 
+export function validateSightLineAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestSightLineAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["entity", "maxBlockedRatio"], scenarioPath, objectPath);
+  const maxBlockedRatio = optionalRatio(record, "maxBlockedRatio", scenarioPath, objectPath);
+  if (maxBlockedRatio === undefined) throw invalidScenario(scenarioPath, `${objectPath}.maxBlockedRatio is required; a sight line with no allowed blocked share bounds nothing.`);
+  return {
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    maxBlockedRatio,
+  };
+}
+
+export function validateEngineCostAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestEngineCostAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxInFrame", "maxPerFrame", "minWindows", "moving", "skipWindows", "source", "still"], scenarioPath, objectPath);
+  const bounds = (key: "maxInFrame" | "maxPerFrame", owner: Record<string, unknown> = record, at = objectPath): Record<string, number> | undefined => {
+    if (!hasKey(owner, key)) return undefined;
+    const table = requireRecord(owner[key], scenarioPath, `${at}.${key}`);
+    const names = Object.keys(table);
+    if (names.length === 0) throw invalidScenario(scenarioPath, `'${at}.${key}' names no counter.`);
+    for (const name of names) {
+      const bound = table[name];
+      if (typeof bound !== "number" || !Number.isFinite(bound) || bound < 0)
+        throw invalidScenario(scenarioPath, `'${at}.${key}.${name}' must be a non-negative number, received ${describeValue(bound)}.`);
+    }
+    return table as Record<string, number>;
+  };
+  const maxPerFrame = bounds("maxPerFrame");
+  const maxInFrame = bounds("maxInFrame");
+  let still: { windows: number; maxPerFrame: Record<string, number> } | undefined;
+  if (hasKey(record, "still")) {
+    const at = `${objectPath}.still`;
+    const stillRecord = requireRecord(record.still, scenarioPath, at);
+    rejectUnknownKeys(stillRecord, ["maxPerFrame", "windows"], scenarioPath, at);
+    const windows = optionalPositiveInteger(stillRecord, "windows", scenarioPath, at);
+    const stillBounds = bounds("maxPerFrame", stillRecord, at);
+    if (windows === undefined || stillBounds === undefined)
+      throw invalidScenario(scenarioPath, `${at} needs 'windows' and 'maxPerFrame'.`);
+    still = { maxPerFrame: stillBounds, windows };
+  }
+  let moving: { maxPerFrame?: Record<string, number>; maxInFrame?: Record<string, number> } | undefined;
+  if (hasKey(record, "moving")) {
+    const at = `${objectPath}.moving`;
+    const movingRecord = requireRecord(record.moving, scenarioPath, at);
+    rejectUnknownKeys(movingRecord, ["maxInFrame", "maxPerFrame"], scenarioPath, at);
+    if (still === undefined) throw invalidScenario(scenarioPath, `${at} needs 'still': the moving windows are the ones after it.`);
+    const movingPerFrame = bounds("maxPerFrame", movingRecord, at);
+    const movingInFrame = bounds("maxInFrame", movingRecord, at);
+    if (movingPerFrame === undefined && movingInFrame === undefined)
+      throw invalidScenario(scenarioPath, `${at} must bound at least one counter.`);
+    moving = { ...present("maxPerFrame", movingPerFrame), ...present("maxInFrame", movingInFrame) };
+  }
+  if (maxPerFrame === undefined && maxInFrame === undefined && still === undefined && moving === undefined)
+    throw invalidScenario(scenarioPath, `${objectPath} must bound at least one counter in 'maxPerFrame', 'maxInFrame', 'still' or 'moving'.`);
+  const source = requireString(record, "source", scenarioPath, objectPath);
+  if (source.trim().length < 12)
+    throw invalidScenario(scenarioPath, `'${objectPath}.source' must say where the bounds came from.`);
+  return {
+    ...present("maxPerFrame", maxPerFrame),
+    ...present("maxInFrame", maxInFrame),
+    ...present("minWindows", optionalPositiveInteger(record, "minWindows", scenarioPath, objectPath)),
+    ...present("skipWindows", optionalNonNegativeInteger(record, "skipWindows", scenarioPath, objectPath)),
+    source,
+    ...present("still", still),
+    ...present("moving", moving),
+  };
+}
+
+export function validateHudAuditAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestHudAuditAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["minContrast", "noDebugText"], scenarioPath, objectPath);
+  const noDebugText = optionalBoolean(record, "noDebugText", scenarioPath, objectPath);
+  if (noDebugText === false) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.noDebugText' may only be true; remove the key to stop scanning for developer text.`);
+  }
+  const minContrast = optionalNumber(record, "minContrast", scenarioPath, objectPath);
+  if (minContrast !== undefined && (minContrast < 1 || minContrast > 21)) {
+    throw invalidScenario(scenarioPath, `'${objectPath}.minContrast' must be between 1 and 21, received ${describeValue(minContrast)}.`);
+  }
+  if (noDebugText === undefined && minContrast === undefined) {
+    throw invalidScenario(scenarioPath, `${objectPath} must declare at least one of 'minContrast' or 'noDebugText'.`);
+  }
+  return {
+    ...present("minContrast", minContrast),
+    ...(noDebugText === undefined ? {} : { noDebugText: true }),
+  };
+}
+
 export function validateAnimationAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAnimationAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "clip", "entered", "entity", "finished", "maxFootSlide", "strideSynced"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["advancedFrames", "allowTrivial", "atStep", "clip", "entered", "entity", "finished", "maxFootSlide", "strideSynced"], scenarioPath, objectPath);
   return {
     ...present("advancedFrames", optionalNumber(record, "advancedFrames", scenarioPath, objectPath)),
     ...present("allowTrivial", optionalTrivialityReason(record, "allowTrivial", scenarioPath, objectPath)),
+    ...present("atStep", optionalString(record, "atStep", scenarioPath, objectPath)),
     ...present("clip", optionalString(record, "clip", scenarioPath, objectPath)),
     ...present("entered", optionalBoolean(record, "entered", scenarioPath, objectPath)),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
@@ -997,12 +1085,14 @@ export function validatePathAssertion(value: unknown, scenarioPath: string, obje
     ? record.atSteps.map((step, index) => {
       const stepPath = `${objectPath}.atSteps[${index}]`;
       const entry = requireRecord(step, scenarioPath, stepPath);
-      if (!hasKey(entry, "equals") && entry.textIncludes === undefined) {
-        throw invalidScenario(scenarioPath, `'${stepPath}' must set equals or textIncludes; a labeled step with no expectation passes on any value.`);
+      const stepLte = optionalNumber(entry, "lte", scenarioPath, stepPath);
+      if (!hasKey(entry, "equals") && entry.textIncludes === undefined && stepLte === undefined) {
+        throw invalidScenario(scenarioPath, `'${stepPath}' must set equals, lte or textIncludes; a labeled step with no expectation passes on any value.`);
       }
       return {
         ...(hasKey(entry, "equals") ? { equals: entry.equals } : {}),
         label: requireString(entry, "label", scenarioPath, stepPath),
+        ...present("lte", stepLte),
         ...present("textIncludes", optionalString(entry, "textIncludes", scenarioPath, stepPath)),
       };
     })
@@ -1207,7 +1297,7 @@ export function validateNestedAssertionKeys(
     if (Array.isArray(value.atSteps)) {
       value.atSteps.forEach((step, index) => {
         if (isRecord(step)) {
-          rejectUnknownKeys(step, kind === "components" ? ["equals", "label"] : ["equals", "label", "textIncludes"], scenarioPath, `assert.${kind}${suffix}.atSteps[${index}]`);
+          rejectUnknownKeys(step, kind === "components" ? ["equals", "label"] : ["equals", "label", "lte", "textIncludes"], scenarioPath, `assert.${kind}${suffix}.atSteps[${index}]`);
         }
       });
     }

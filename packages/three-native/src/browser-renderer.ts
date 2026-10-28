@@ -32,7 +32,8 @@ type HostCall =
   | "_tnw_web_render_target"
   | "_tnw_web_read_target"
   | "_tnw_web_read_target_take"
-  | "_tnw_web_capture_face";
+  | "_tnw_web_capture_face"
+  | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
   readonly specialHTMLTargets: Record<string, unknown>;
@@ -48,7 +49,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 4;
+export const WEB_HOST_ABI = 5;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -96,6 +97,21 @@ function unsupported(name: string): never {
 }
 
 /** Defines the renderer class over one loaded module; the module owns one device and one canvas. */
+/** A scene environment as the bake record reads it: the engine keys its bake by texture and version. */
+interface IBakedEnvironment {
+  readonly version: number;
+  addEventListener?(type: "dispose", listener: () => void): void;
+}
+
+/** Environments a draw saw baked, at the version it saw; a disposal retires the engine's bake too. */
+const bakedEnvironments = new WeakMap<IBakedEnvironment, number>();
+
+function markBaked(environment: IBakedEnvironment): void {
+  if (!bakedEnvironments.has(environment))
+    environment.addEventListener?.("dispose", () => bakedEnvironments.delete(environment));
+  bakedEnvironments.set(environment, environment.version);
+}
+
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
@@ -205,6 +221,7 @@ export function defineWebRenderer(
         // lamp maps redrawn and their draws, every shadow draw (the sun's are the rest), and the GPU
         // milliseconds of each part in the sample `render.timestamp` reports, -1 until one resolves.
         // `lampMapMin` and `lampMapMax` are the edges of the lamp maps the engine sized from their footprint.
+        // `keptMaps` counts the maps (sun or lamp) kept from the last frame because nothing they draw changed.
         shadows: {
           lampRedraws: 0,
           lampDraws: 0,
@@ -213,7 +230,21 @@ export function defineWebRenderer(
           lampGpuMs: -1,
           lampMapMin: 0,
           lampMapMax: 0,
+          keptMaps: 0,
         },
+        // The last frame's recorded passes (PRD-754): the draws the main pass recorded into its bundle, why its key
+        // moved (0 held, 1 draw order, 2 uniform offsets, 3 visible count, 4 other; the web engine reads 1 and 2 as
+        // 4), the aux and velocity draws recorded, and the ms spent recording bundles and encoding the shadow passes.
+        passes: {
+          mainRecorded: 0,
+          recordCause: 0,
+          auxRecorded: 0,
+          shadowRecorded: 0,
+          recordMs: 0,
+          shadowEncodeMs: 0,
+        },
+        // The bytes of per-draw uniforms the last frame uploaded.
+        uniformBytes: 0,
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -257,11 +288,19 @@ export function defineWebRenderer(
       trackTimestamp: boolean;
       getTimestampFrames(type: string): number[];
       pipelineCompiles(): number;
+      /** Resolves as three's GPUDevice.lost does once the host loses its device; core reports it (TN_DEVICE_LOST). */
+      readonly device: { readonly lost: Promise<{ reason: string; message: string }> };
     };
+    #deviceLost: (info: { reason: string; message: string }) => void = () => undefined;
+    /** The environment a preparation gave up on at its deadline, until a drawn frame finds it baked. */
+    #bakingEnvironment: IBakedEnvironment | undefined;
     #pixelRatio = 1;
     #width: number;
     #height: number;
     #clear: [number, number, number, number] = [0, 0, 0, 1];
+    /** The last number or string clear colour and its lanes: each is converted once. */
+    #clearKey: unknown = Symbol("unset");
+    #clearLanes: [number, number, number] = [0, 0, 0];
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
@@ -288,7 +327,8 @@ export function defineWebRenderer(
         (parameters.canvas as HTMLCanvasElement | undefined) ??
         document.createElement("canvas");
       // three's WebGPURenderer marks its canvas `three.js r<rev> webgpu`; tools read the backend there.
-      this.domElement.setAttribute("data-engine", "threenative wasm webgpu");
+      // A worker's OffscreenCanvas has no attributes (PRD-752).
+      this.domElement.setAttribute?.("data-engine", "threenative wasm webgpu");
       const samples = parameters.samples ?? (parameters.antialias ? 4 : 1);
       this.samples = Math.max(1, Number(samples));
       this.#width = this.domElement.width || 300;
@@ -306,6 +346,11 @@ export function defineWebRenderer(
         trackTimestamp: Boolean(parameters.trackTimestamp ?? true),
         getTimestampFrames: timestampFrames,
         pipelineCompiles: () => module._tnw_web_frame(2),
+        device: {
+          lost: new Promise((resolve) => {
+            this.#deviceLost = resolve;
+          }),
+        },
       };
     }
 
@@ -398,10 +443,24 @@ export function defineWebRenderer(
     }
 
     setClearColor(color: unknown, alpha = 1): void {
-      const value = (
-        typeof color === "object" && color !== null ? color : new Color(color)
-      ) as IColorLike;
-      this.#clear = [value.r, value.g, value.b, alpha];
+      if (typeof color === "object" && color !== null) {
+        const value = color as IColorLike;
+        this.#clear = [value.r, value.g, value.b, alpha];
+        return;
+      }
+      // Every post pass resets the clear colour to 0 (RendererUtils), and an engine Color per call
+      // was a construction across the boundary each time.
+      if (!Object.is(color, this.#clearKey)) {
+        const value = new Color(color) as IColorLike;
+        this.#clearLanes = [value.r, value.g, value.b];
+        this.#clearKey = color;
+        const host = globalThis as { __tnEngineCost?: Record<string, number> };
+        host.__tnEngineCost ??= {};
+        host.__tnEngineCost.clearColorConversions =
+          (host.__tnEngineCost.clearColorConversions ?? 0) + 1;
+      }
+      const lanes = this.#clearLanes;
+      this.#clear = [lanes[0], lanes[1], lanes[2], alpha];
     }
 
     getClearColor<T extends IColorLike & { setRGB(r: number, g: number, b: number): T }>(
@@ -445,6 +504,9 @@ export function defineWebRenderer(
       // Measured on Lantern Vale: every cover over a drawn frame was refused, so the loading screen
       // flickered black for the whole environment bake and then showed the unfinished world.
       if (!this.#frameOpen && module._tnw_web_frame(11) === 1) {
+        // A lost device leaves its frames on the GPU for good, so the gate declines every later frame
+        // and no draw ever returns a status: name the loss here, where the frame poll just ran.
+        if (this.#noticeLost()) return;
         // Counted, never hidden: the loop's render phase for this frame is near zero, and a meter that
         // averages it with drawn frames reads cheaper than the work that was done (core's `renderSkips`).
         this.info.engine.frameGateSkips += 1;
@@ -479,6 +541,12 @@ export function defineWebRenderer(
         ),
       );
       this.info.frame += 1;
+      if (this.#bakingEnvironment !== undefined && module._tnw_web_frame(12) === 0) {
+        // An overlay draw has no environment and says nothing; another sky ends the watch.
+        const drawnEnvironment = (scene as { environment?: unknown }).environment;
+        if (drawnEnvironment === this.#bakingEnvironment) markBaked(this.#bakingEnvironment);
+        if (drawnEnvironment != null) this.#bakingEnvironment = undefined;
+      }
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
@@ -489,6 +557,8 @@ export function defineWebRenderer(
       shadows.shadowDraws = module._tnw_web_frame(27);
       shadows.lampMapMin = module._tnw_web_frame(28);
       shadows.lampMapMax = module._tnw_web_frame(29);
+      shadows.keptMaps = module._tnw_web_frame(40);
+      this.info.engine.uniformBytes = module._tnw_web_frame(41);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         this.#gpuSamples = gpuSamples;
@@ -532,6 +602,15 @@ export function defineWebRenderer(
       temporal.outputWidth = module._tnw_web_frame(38);
       temporal.outputHeight = module._tnw_web_frame(39);
       engine.samples = module._tnw_web_frame(18);
+      const passes = engine.passes;
+      passes.mainRecorded = module._tnw_web_frame(60);
+      passes.recordCause = module._tnw_web_frame(61);
+      passes.auxRecorded = module._tnw_web_frame(62);
+      passes.recordMs = module._tnw_web_frame(63);
+      passes.shadowEncodeMs = module._tnw_web_frame(64);
+      passes.shadowRecorded = module._tnw_web_frame(65);
+      // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
+      (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */
@@ -597,15 +676,25 @@ export function defineWebRenderer(
      * page error per frame. A refusal that leaves the host running (a render target's) still throws each time.
      */
     #drawStatus(status: number): void {
-      if (status !== 0 && !this.#lost && module._tnw_web_poll() === FAILED) {
-        this.#lost = true;
-        // The throw below is the only other report, and a warm-up or a frame hook may swallow it: every
-        // later render() returns without drawing, so the console must name the loss once, here.
-        console.error(
-          `TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. ${module.UTF8ToString(module._tnw_web_error())}`,
-        );
-      }
+      if (status !== 0) this.#noticeLost();
       check(status);
+    }
+
+    /**
+     * True once the host is Failed for good. The first time, the console names it: the throw from a draw
+     * is the only other report, and a warm-up or a frame hook may swallow it. A lost device also resolves
+     * `backend.device.lost`; another host failure (an uncaptured error) is not a lost device.
+     */
+    #noticeLost(): boolean {
+      if (this.#lost || module._tnw_web_poll() !== FAILED) return this.#lost;
+      this.#lost = true;
+      const message = module.UTF8ToString(module._tnw_web_error());
+      console.error(
+        `TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. ${message}`,
+      );
+      if (message.startsWith("TN_WASM_DEVICE_LOST"))
+        this.#deviceLost({ reason: "unknown", message });
+      return true;
     }
 
     /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */
@@ -660,6 +749,17 @@ export function defineWebRenderer(
       deadlineMs = Number.POSITIVE_INFINITY,
       afterDraw?: () => void,
     ): Promise<boolean> {
+      // The engine keeps a bake per texture and version, so a restart into the same sky has nothing
+      // to wait for. It must not draw to learn that: on a GPU that retires no frame the gate declines
+      // every draw and the loop below would hold the restart for its whole budget.
+      const environment = (scene as { environment?: IBakedEnvironment | null }).environment;
+      if (environment != null && bakedEnvironments.get(environment) === environment.version)
+        return true;
+      // A bake an earlier preparation is waiting on, or already waited its budget for, is still
+      // running: the engine finishes it whether or not anyone waits, so a restart into it does not
+      // wait a second budget.
+      if (environment != null && environment === this.#bakingEnvironment) return false;
+      if (environment != null) this.#bakingEnvironment = environment;
       // Lantern Vale's bake drew the main pass at 4x MSAA before its TRAA graph was installed: 39
       // pipelines the game never drew, compiled synchronously behind the cover.
       this[PIPELINE_POST]?.();
@@ -689,10 +789,18 @@ export function defineWebRenderer(
           const baked =
             this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
           afterDraw?.();
-          if (baked) return true;
+          if (baked) {
+            if (environment != null) {
+              markBaked(environment);
+              if (this.#bakingEnvironment === environment) this.#bakingEnvironment = undefined;
+            }
+            return true;
+          }
           // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
+        // The bake keeps running after the caller gave up on it: the first drawn frame that finds it
+        // done records it (`#bakingEnvironment` stays set), so the next restart does not wait again.
         return false;
       } finally {
         this.info.engine.environmentBake = false;
@@ -792,7 +900,13 @@ export function defineWebRenderer(
         module._tnw_web_poll();
         const status = module._tnw_web_read_target_take(id, out, size);
         if (status === 1) return module.HEAPU8.slice(out, out + size);
-        if (status < 0) throw new Error("TN_WASM_READ_TARGET: the read failed");
+        // A read the lost device dropped says so, so the caller's report is read as that one loss.
+        if (status < 0)
+          throw new Error(
+            module._tnw_web_poll() === FAILED
+              ? `TN_WASM_READ_TARGET: the read failed: ${module.UTF8ToString(module._tnw_web_error())}`
+              : "TN_WASM_READ_TARGET: the read failed",
+          );
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     } finally {

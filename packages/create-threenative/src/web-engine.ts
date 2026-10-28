@@ -47,6 +47,12 @@ const ENGINE_ADDON_PREFIX = "\0threenative:web-engine-addon:";
 const SKELETON_UTILS_ID = "\0threenative:web-engine-skeleton-utils";
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
 export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
+/**
+ * The threaded engine beside it (PRD-752 phase 4): a cross-origin-isolated page loads this one, so the
+ * engine's job pool has workers; any other page loads the single-thread entry. Optional: an install
+ * without it runs single-threaded and reports `threads: off`.
+ */
+export const WASM_THREADS_ENTRY = "build/web/tn-native-engine-web-threads.mjs";
 
 /**
  * three's math modules the engine's own JS value classes borrow (PRD-742). They carry no renderer,
@@ -218,9 +224,15 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         "__tnTsl",
         "__tnLoadGltf",
       ];
+      const single = wasmModule(projectRoot(), options.wasm);
+      const threads = path.join(path.dirname(single), path.basename(WASM_THREADS_ENTRY));
+      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP, createWebBrandPlugin).
+      const createModule = existsSync(threads)
+        ? `(globalThis.crossOriginIsolated === true ? await import(${JSON.stringify(threads)}) : await import(${JSON.stringify(single)})).default`
+        : `(await import(${JSON.stringify(single)})).default`;
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        `import createModule from ${JSON.stringify(wasmModule(projectRoot(), options.wasm))};`,
+        `const createModule = ${createModule};`,
         `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
         `export const { ${names.join(", ")} } = engine;`,
         "",

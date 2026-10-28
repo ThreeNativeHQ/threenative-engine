@@ -35,7 +35,7 @@ export function Hud() {
       {/* Compact and unblurred, so a gem behind the panel still shows through it; it fades while a
           Sunseed sits under it (`Play.ts` measures that against the same `HUD_PILL` box). */}
       <div
-        className={`absolute flex items-center gap-3 whitespace-nowrap rounded-2xl border border-line bg-panel/25 px-3 transition-opacity duration-200 ${state.hudFaded ? "opacity-20" : "opacity-100"}`}
+        className={`absolute flex items-center gap-3 whitespace-nowrap rounded-2xl border border-line bg-panel/50 px-3 transition-opacity duration-200 ${state.hudFaded ? "opacity-20" : "opacity-100"}`}
         style={HUD_PILL}
       >
         <Meter wedges={state.wedges} />
@@ -58,8 +58,17 @@ export function Hud() {
           </b>
         </span>
       </div>
+      {state.won ? (
+        <div className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 rounded-2xl border-2 border-line bg-panel/70 px-6 py-4 text-center backdrop-blur-sm">
+          <div className="text-2xl text-lume">COURSE CLEAR</div>
+          <div className="pt-1 text-sm text-text">
+            all {state.seedTotal} Sunseeds held — coins {state.coins}, gems {state.gems}/
+            {state.gemTotal}
+          </div>
+        </div>
+      ) : null}
       {state.toast !== "" ? (
-        <div className="absolute left-1/2 top-16 -translate-x-1/2 rounded-full border-2 border-line bg-panel/40 px-4 py-1 text-base font-bold text-lume backdrop-blur-sm">
+        <div className="absolute left-1/2 top-16 -translate-x-1/2 rounded-full border-2 border-line bg-panel/60 px-4 py-1 text-base font-bold text-lume backdrop-blur-sm">
           {state.toast}
         </div>
       ) : null}

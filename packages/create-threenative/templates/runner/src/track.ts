@@ -55,6 +55,8 @@ export class Chunk {
   readonly #bodies: RigidBody3D[] = [];
   readonly #obstacles: ReturnType<InstancedBatch["build"]>;
   readonly #matrix = new Matrix4();
+  /** This stretch's obstacles: lane x and the run distance at their centre. */
+  readonly obstacles: { x: number; distance: number }[] = [];
   #start = 0;
 
   constructor(
@@ -81,6 +83,7 @@ export class Chunk {
     this.group.position.z = -(start + CHUNK_LENGTH / 2);
     for (const body of this.#bodies) body.dispose();
     this.#bodies.length = 0;
+    this.obstacles.length = 0;
 
     let placed = 0;
     if (start >= GRACE_METRES) {
@@ -95,6 +98,7 @@ export class Chunk {
           this.#matrix.identity().setPosition(laneX, OBSTACLE_SIZE.height / 2, localZ),
         );
         placed += 1;
+        this.obstacles.push({ x: laneX, distance: -(this.group.position.z + localZ) });
         this.#bodies.push(
           new RigidBody3D({
             collisionLayer: OBSTACLE_LAYER,

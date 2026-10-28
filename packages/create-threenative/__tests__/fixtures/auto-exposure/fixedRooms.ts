@@ -12,6 +12,13 @@ import {
   SphereGeometry,
 } from "three";
 
+/**
+ * Both rooms sit this many stops over the plain fixture room. At 2^0 the dark room metered about
+ * -9.7 log2 and its backdrop under -10, inside the black bucket the meter drops (PRD-747), so an
+ * 11-stop cut read 9.75 stops. Here every block clears that floor and the cut stays linear.
+ */
+export const ROOM_BASE_STOPS = 3;
+
 /** Both rooms stay resident and lit. A cut moves only the camera; no light/layer is toggled. */
 export function createFixedExposureRooms(scene: Scene, camera: PerspectiveCamera, stops: number) {
   const floor = new BoxGeometry(12, 0.2, 12);
@@ -23,7 +30,7 @@ export function createFixedExposureRooms(scene: Scene, camera: PerspectiveCamera
   const rooms = [0, 1].map((index) => {
     const group = new Group();
     group.position.x = index * 100;
-    const multiplier = 2 ** (index * stops);
+    const multiplier = 2 ** (ROOM_BASE_STOPS + index * stops);
     const ground = new Mesh(floor, materials[0]);
     ground.position.y = -0.1;
     group.add(ground);

@@ -13,6 +13,7 @@ import type {
   IPlaytestRenderChainObservation,
   IPlaytestSceneNodesObservation,
   IPlaytestSceneObservation,
+  IPlaytestSightLineObservation,
   IPlaytestStartupOffscreenBytes,
   IPlaytestStartupCoverObservation,
   IPlaytestStartupTimeline,
@@ -59,6 +60,16 @@ export interface IPlaytestFootSlipObservation {
   samples: Array<{ body: [number, number, number] | null; feet: Array<[number, number, number] | null> }>;
 }
 
+/** One visible text node the page draws, with its colour and the colour composited behind it. */
+export interface IPlaytestHudAuditItem {
+  /** Effective backing colour, alpha-composited from the nearest ancestor up; alpha 0 sits on the canvas. */
+  background: [number, number, number, number];
+  color: [number, number, number, number];
+  fontSizePx: number;
+  selector: string;
+  text: string;
+}
+
 export interface IPlaytestObservations {
   tone?: IPlaytestToneCaptureObservation[];
   animation?: unknown;
@@ -97,6 +108,10 @@ export interface IPlaytestObservations {
   sceneNodes?: IPlaytestSceneNodesObservation[];
   /** Per-tick world positions of the subject and its named feet over each footSlip step; a foot the walk did not find is null. */
   footSlip?: IPlaytestFootSlipObservation[];
+  /** The camera-to-subject sight line as sampled during the run, when the scenario asserts it. */
+  sightLine?: { entity: string; samples: IPlaytestSightLineObservation[] };
+  /** Visible page text and its colours, sampled after the last step when the scenario audits the HUD. */
+  hudAudit?: { items: IPlaytestHudAuditItem[] };
   /** The startup observation the runner waited on, with the rule it resolved under. */
   startup?: {
     compileSettled?: boolean;

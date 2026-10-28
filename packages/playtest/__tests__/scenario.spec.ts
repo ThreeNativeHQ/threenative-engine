@@ -379,6 +379,20 @@ test("scenario loading rejects an atSteps label that was never sampled", async (
   });
 });
 
+test("scenario loading rejects an animation atStep that was never sampled", async () => {
+  const directory = await makeTempDir("playtest-animation-missing-step-");
+  await writeFile(join(directory, "scenario.json"), JSON.stringify({
+    assert: { animation: [{ atStep: "missing", clip: "run", entity: "player" }] },
+    name: "missing-animation-step",
+    schemaVersion: 1,
+    steps: [{ label: "present", release: true, waitFrames: 1 }],
+  }));
+
+  await expect(loadPlaytestScenario(directory, "scenario.json")).rejects.toMatchObject({
+    diagnostic: { message: expect.stringMatching(/names step label 'missing'/u) },
+  });
+});
+
 test("scenario loading preserves the framebuffer coverage contract", async () => {
   const directory = await makeTempDir("playtest-framebuffer-coverage-");
   const framebufferCoverage = {
@@ -612,6 +626,9 @@ const FAMILY_SCENARIO_ASSERTS = {
   scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
   sceneNodes: [{ select: { nameContains: "crate" }, visible: true }],
   footSlip: [{ atStep: "loading-end", feet: ["footL", "footR"], maxSlip: 0.35 }],
+  sightLine: { maxBlockedRatio: 0.02 },
+  hudAudit: { minContrast: 3, noDebugText: true },
+  engineCost: { maxPerFrame: { bridgeCrossings: 2000 }, source: "family dispatch fixture bound" },
   causedBy: [
     {
       cause: { contact: { entity: "fox", kind: "trigger", with: "coin" } },
@@ -668,6 +685,11 @@ const FAMILY_PASS_IDS = [
   "sceneNodes[0].count",
   "sceneNodes[0].visible",
   "footSlip[0].slip",
+  "sightLine",
+  "hudAudit.debugText",
+  "hudAudit.contrast",
+  "engineCost.observed",
+  "engineCost.maxPerFrame.bridgeCrossings",
   "causedBy[0].neverBefore",
   "causedBy[0].withinTicks",
   "startup.readyMs",
@@ -715,7 +737,10 @@ function familyReportObservations(fulfilled: boolean) {
   return {
     tone: [{ code: "TN_TONE", label: "after.png", mean: 100, p1: 0, p50: 100, p99: 200, clipFraction: 0, blackFraction: 0 }],
     components: { player: { health: { after: 2, before: 3 } } },
-    console: [{ level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` }],
+    console: [
+      { level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` },
+      { level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ counters: { bridgeCrossings: { max: 900, mean: 800, p50: 800, p95: 900, p99: 900, samples: 300 }, engine: {} }, window: 1 })}` },
+    ],
     deviceMetrics: {
       available: true,
       errors: [],
@@ -839,6 +864,13 @@ function familyReportObservations(fulfilled: boolean) {
         return { body: [0, 0, tick * 0.1], feet: [foot(0), foot(10)] };
       }),
     }],
+    sightLine: {
+      entity: "player",
+      samples: [{ blocked: false, blockers: [], distance: 5 }],
+    },
+    hudAudit: {
+      items: [{ background: [10, 10, 12, 1], color: [255, 255, 255, 1], fontSizePx: 14, selector: "div.hud", text: "Score 10" }],
+    },
     sceneNodes: [
       {
         matched: 1,
@@ -967,6 +999,9 @@ test("should preserve every assertion family's result contract", async () => {
     "scene.observed",
     "sceneNodes.observed",
     "footSlip[0].observed",
+    "sightLine.observed",
+    "hudAudit.observed",
+    "engineCost.observed",
     "causedBy.observed",
     "startup.readyMs",
     "diagnostics",
@@ -1012,6 +1047,9 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_SCENE_UNOBSERVED",
     "TN_PLAYTEST_SCENE_NODES_UNOBSERVED",
     "TN_PLAYTEST_FOOT_SLIP_UNOBSERVED",
+    "TN_PLAYTEST_SIGHT_LINE_UNOBSERVED",
+    "TN_PLAYTEST_HUD_AUDIT_UNOBSERVED",
+    "TN_PLAYTEST_ENGINE_COST_UNOBSERVED",
     "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",

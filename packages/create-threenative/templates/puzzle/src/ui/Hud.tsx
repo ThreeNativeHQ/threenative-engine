@@ -16,52 +16,17 @@ export function Hud() {
 
   return (
     <>
+      {/* What a player needs: their progress (the goal is the menu's line). The vault's physics telemetry (bodies,
+          blocked ticks, seal contacts, replay drift) stays in the published state for scenarios. */}
       <div className="pointer-events-none absolute left-6 top-6 w-56 select-none">
         <div className="text-[10px] uppercase tracking-[0.22em] text-dim">warden vault</div>
-        <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-dim">
-          seed <b className="font-normal tabular-nums text-text">{state.seed}</b>
-        </div>
 
         <dl className="mt-4 space-y-1 text-[11px] uppercase tracking-[0.12em]">
-          <Row label="solid crates" value={state.crates} />
-          <Row label="phase crates" value={state.phaseCrates} tone="phase" />
-          <Row
-            label="at rest"
-            value={`${state.settledCrates} / ${state.crates + state.phaseCrates}`}
-          />
-          <Row label="shoved" value={state.pushedCrates} />
-          <Row label="push metres" value={state.pushDistance.toFixed(2)} />
-          <Row label="blocked ticks" value={state.blockedTicks} />
-          <Row label="walked through" value={state.passThroughs} tone="phase" />
-          <Row label="seal contacts" value={state.sealContacts} />
+          <Row label="crates shoved" value={state.pushedCrates} />
+          {state.replayPhase === "done" ? (
+            <Row label="replay" tone="lume" value={state.replayMatch ? "matched" : "drifted"} />
+          ) : null}
         </dl>
-
-        <div className="mt-4 border-t border-line pt-2 text-[10px] uppercase tracking-[0.14em] text-dim">
-          <div className="flex justify-between gap-2">
-            <span>replay</span>
-            <b className="font-normal tabular-nums text-text">{state.replayPhase}</b>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span>bodies</span>
-            <b className="font-normal tabular-nums text-text">
-              {state.replayPhase === "done" ? state.replayBodies : "—"}
-            </b>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span>drift</span>
-            <b className="font-normal tabular-nums text-text">
-              {state.replayPhase === "done" ? state.replayDrift.toExponential(1) : "—"}
-            </b>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span>match</span>
-            <b
-              className={`font-normal tabular-nums ${state.replayMatch ? "text-lume" : "text-text"}`}
-            >
-              {state.replayMatch ? "yes" : "—"}
-            </b>
-          </div>
-        </div>
       </div>
 
       <div className="pointer-events-none absolute bottom-6 left-6 select-none text-[10px] uppercase leading-relaxed tracking-[0.14em] text-dim">
@@ -97,13 +62,13 @@ function Row({
   value,
 }: {
   label: string;
-  tone?: "phase";
+  tone?: "lume";
   value: number | string;
 }) {
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-dim">{label}</dt>
-      <dd className={`tabular-nums ${tone === "phase" ? "text-lume" : "text-text"}`}>{value}</dd>
+      <dd className={`tabular-nums ${tone === "lume" ? "text-lume" : "text-text"}`}>{value}</dd>
     </div>
   );
 }

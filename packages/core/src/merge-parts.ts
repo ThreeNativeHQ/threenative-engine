@@ -69,6 +69,12 @@ export interface IMergeByMaterialOptions {
    * trading one draw for a single enormous buffer. See `CHUNK_MERGE_MAX_VERTICES`.
    */
   readonly maxGroupVertices?: number;
+  /**
+   * Told which meshes went into each merged mesh, part by part in the order their triangles sit in
+   * the merged buffer (an `InstancedMesh` appears once per instance it expanded into). The caller
+   * that detaches the sources uses it to give one back without rebuilding the merge.
+   */
+  readonly onGroup?: (merged: Mesh, sources: readonly Mesh[]) => void;
 }
 
 /** The channels `mergeByMaterial` keeps, in the order it asks `mergeParts` for them. */
@@ -77,6 +83,7 @@ const MERGEABLE_CHANNELS = ["normal", "uv"] as const;
 /** One material's parts that will become one mesh, and what that costs. */
 interface IMergeGroup {
   readonly parts: IMergePart[];
+  readonly sources: Mesh[];
   triangles: number;
   vertices: number;
 }
@@ -727,15 +734,21 @@ export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions
       open === undefined ||
       open.vertices + vertices > (options.maxGroupVertices ?? Number.POSITIVE_INFINITY)
     ) {
-      const started: IMergeGroup = { parts: [], triangles: 0, vertices: 0 };
+      const started: IMergeGroup = { parts: [], sources: [], triangles: 0, vertices: 0 };
       groups.push(started);
       return started;
     }
     return open;
   };
-  const add = (material: Material, part: IMergePart, triangles: number): IMergeGroup => {
+  const add = (
+    material: Material,
+    part: IMergePart,
+    triangles: number,
+    source: Mesh,
+  ): IMergeGroup => {
     const group = groupFor(material, part);
     group.parts.push(part);
+    group.sources.push(source);
     group.triangles += triangles;
     group.vertices += verticesOf(part.geometry);
     return group;
@@ -751,6 +764,7 @@ export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions
         renderable.material,
         { geometry: renderable.geometry, matrix: place },
         trianglesOf(renderable.geometry),
+        renderable,
       );
       return;
     }
@@ -780,6 +794,7 @@ export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions
         renderable.material,
         { geometry: instanced.geometry, matrix: place.clone().multiply(instance) },
         shape,
+        instanced,
       );
     }
   });
@@ -797,15 +812,15 @@ export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions
           ? group.parts.some((piece) => has(piece, channel))
           : group.parts.every((piece) => has(piece, channel)),
       );
-      merged.push(
-        new Mesh(
-          mergeParts(group.parts, {
-            label: `${options.label}:${material.name || index}${part === 0 ? "" : `#${part}`}`,
-            preserve,
-          }),
-          material,
-        ),
+      const mesh = new Mesh(
+        mergeParts(group.parts, {
+          label: `${options.label}:${material.name || index}${part === 0 ? "" : `#${part}`}`,
+          preserve,
+        }),
+        material,
       );
+      options.onGroup?.(mesh, group.sources);
+      merged.push(mesh);
     });
   });
   return [...merged, ...kept];

@@ -1,6 +1,6 @@
 import { Vector3 } from "three";
 import { createMaterials } from "../render/materials.js";
-import { CIRCUIT } from "../track/circuit.js";
+import { CIRCUIT, LINE_AT, lineDistance } from "../track/circuit.js";
 import { CarBody, type CarCtx, RIDE } from "./CarBody.js";
 import { LineDriver } from "./LineDriver.js";
 
@@ -10,6 +10,15 @@ import { LineDriver } from "./LineDriver.js";
  * the player would be the same lie with more code. A fixed pace is beatable, and it is honest.
  */
 export const RIVAL_PACE = 17.4;
+
+/**
+ * Laps the rival has completed, from its progress in metres since the route origin. Counted at the
+ * finish line, as the player's `Lap` counts them: counted at the origin, 50 m short of the line,
+ * the rival gained a lap the player had not yet, and a player leading into the line ranked second.
+ */
+export function rivalLap(progress: number): number {
+  return Math.max(0, Math.floor((progress - lineDistance(LINE_AT.finish)) / CIRCUIT.totalLength));
+}
 
 /** The side of the road the rival keeps, so it and the demo driver never share a line. */
 const RIVAL_OFFSET = 1.5;
@@ -51,7 +60,7 @@ export class Rival {
 
   update(dt: number): void {
     this.driver.update(this.car, dt);
-    this.#lap = Math.max(0, Math.floor(this.driver.progress / CIRCUIT.totalLength));
+    this.#lap = rivalLap(this.driver.progress);
   }
 
   get mesh(): CarBody["mesh"] {

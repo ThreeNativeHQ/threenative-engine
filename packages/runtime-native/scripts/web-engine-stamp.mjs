@@ -20,8 +20,14 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCES = ["src/engine", "include"];
 const SKIPPED = new Set(["src/engine/player"]);
-const MODULE = "build/web/tn-native-engine-web.wasm";
-export const STAMP = "build/web/tn-native-engine-web.sources";
+/**
+ * The two web engines: the single-thread module, and the `-pthread` one a cross-origin-isolated page
+ * loads (PRD-752 phase 4, CMake `TN_WEB_THREADS`). Each names its sources in its own stamp.
+ */
+export const MODULES = ["tn-native-engine-web", "tn-native-engine-web-threads"];
+const moduleFile = (name) => `build/web/${name}.wasm`;
+const stampFile = (name) => `build/web/${name}.sources`;
+export const STAMP = stampFile(MODULES[0]);
 
 function files(root, directory) {
   const found = [];
@@ -46,38 +52,42 @@ export function engineSourceHash(root = ROOT) {
   return hash.digest("hex");
 }
 
-export function writeEngineStamp(root = ROOT) {
-  writeFileSync(join(root, STAMP), `${engineSourceHash(root)}\n`);
+export function writeEngineStamp(root = ROOT, name = MODULES[0]) {
+  if (!MODULES.includes(name)) throw new Error(`TN_WEB_ENGINE_STAMP_MODULE: ${name} is not one of ${MODULES.join(", ")}`);
+  writeFileSync(join(root, stampFile(name)), `${engineSourceHash(root)}\n`);
 }
 
 /**
- * Throws unless the built module's stamp names the sources in `root`. A tree with no module built
+ * Throws unless each built module's stamp names the sources in `root`. A tree with no module built
  * passes: packing without one is `assertWebEngineBuilt`'s and the CI engine action's refusal, and
  * jobs that pack only for the other packages' files have no engine to vouch for.
  */
 export function assertEngineStampCurrent(root = ROOT) {
-  if (!existsSync(join(root, MODULE))) return;
-  const stamp = join(root, STAMP);
-  const rebuild =
-    "rebuild it in packages/runtime-native: cmake --preset wasm && cmake --build build/wasm --target tn-native-engine-web";
-  if (!existsSync(stamp))
-    throw new Error(
-      `TN_PACK_WEB_ENGINE_UNSTAMPED: ${relative(process.cwd(), stamp)} is missing, so nothing says which sources the packed web engine was built from; ${rebuild}`,
-    );
-  const built = readFileSync(stamp, "utf8").trim();
-  const current = engineSourceHash(root);
-  if (built !== current)
-    throw new Error(
-      `TN_PACK_WEB_ENGINE_STALE: ${MODULE} was built from other engine sources (${built.slice(0, 12)}) than this tree holds (${current.slice(0, 12)}); a pack would ship the older engine; ${rebuild}`,
-    );
+  let current;
+  for (const name of MODULES) {
+    const module = moduleFile(name);
+    if (!existsSync(join(root, module))) continue;
+    const stamp = join(root, stampFile(name));
+    const rebuild = "rebuild both in packages/runtime-native: node scripts/build-wasm.mjs (presets wasm and wasm-threads)";
+    if (!existsSync(stamp))
+      throw new Error(
+        `TN_PACK_WEB_ENGINE_UNSTAMPED: ${relative(process.cwd(), stamp)} is missing, so nothing says which sources the packed web engine was built from; ${rebuild}`,
+      );
+    const built = readFileSync(stamp, "utf8").trim();
+    current ??= engineSourceHash(root);
+    if (built !== current)
+      throw new Error(
+        `TN_PACK_WEB_ENGINE_STALE: ${module} was built from other engine sources (${built.slice(0, 12)}) than this tree holds (${current.slice(0, 12)}); a pack would ship the older engine; ${rebuild}`,
+      );
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const mode = process.argv[2];
   try {
-    if (mode === "--write") writeEngineStamp();
+    if (mode === "--write") writeEngineStamp(ROOT, process.argv[3]);
     else if (mode === "--check") assertEngineStampCurrent();
-    else throw new Error("usage: web-engine-stamp.mjs --write | --check");
+    else throw new Error("usage: web-engine-stamp.mjs --write [module] | --check");
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);

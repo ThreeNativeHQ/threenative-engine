@@ -40,6 +40,8 @@ export default defineConfig({
     tailwindcss(),
     assetsWatchPlugin(),
   ],
+  // `index.html` runs the game in a worker (the default); `main.html` runs it on the page thread.
+  build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } },
   server: {
     watch: {
       ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],

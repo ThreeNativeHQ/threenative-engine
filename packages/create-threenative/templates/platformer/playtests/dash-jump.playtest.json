@@ -1,0 +1,34 @@
+{
+  "name": "platformer-dash-jump",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "run", "press": "ArrowRight", "holdTicks": 10, "release": false },
+    {
+      "kind": "input",
+      "label": "dash",
+      "press": ["ArrowRight", "ShiftLeft"],
+      "holdTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "jump-mid-dash",
+      "press": ["ArrowRight", "Space"],
+      "holdTicks": 6,
+      "release": true
+    },
+    { "kind": "wait", "label": "airborne", "waitTicks": 40, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "state", "path": "dashes", "gte": 1, "changed": true },
+      { "id": "state", "path": "jumps", "gte": 1, "changed": true },
+      { "id": "state", "path": "peakRise", "gte": 1.5, "changed": true }
+    ]
+  }
+}

@@ -336,3 +336,16 @@ describe("production package flags", () => {
       expect(packageSourceFlag(name), name).toBe(workspacePackageSourceFlag(name));
   });
 });
+
+describe("production collector phases", () => {
+  // test-native's watchdog killed the collector twice at 180 s with an empty collector.log: the
+  // evidence prints only at the end, so nothing said which phase was running.
+  it("names each phase and its elapsed seconds on one stderr line", async () => {
+    const { phaseLine } = (await import(
+      new URL("../scripts/profile-production.mjs", import.meta.url).href
+    )) as { phaseLine(name: string, elapsedMs: number): string };
+    expect(phaseLine("desktop-workload-1-1", 61_234)).toBe(
+      "TN_PROD_PHASE desktop-workload-1-1 61.2s\n",
+    );
+  });
+});

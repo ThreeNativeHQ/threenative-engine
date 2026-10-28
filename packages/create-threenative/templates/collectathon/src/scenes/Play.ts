@@ -33,6 +33,8 @@ import { type GameState, HUD_PILL } from "../state.js";
 export type { GameCtx };
 
 const WEDGES = 8;
+/** All three Sunseeds: the summit, the eight red gems and the wall-kick shaft. */
+const SEEDS = 3;
 const JUMPS: ReadonlySet<string> = new Set([
   "single",
   "double",
@@ -59,12 +61,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     landings: 0,
     paused: false,
     respawns: 0,
-    seedTotal: 3,
+    seedTotal: SEEDS,
     seeds: 0,
     toast: "",
     uiReady: false,
     wallHits: 0,
     wedges: WEDGES,
+    won: false,
   };
 
   #sky: DataTexture | undefined;
@@ -269,6 +272,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let coins = 0;
     let gems = 0;
     let seeds = 0;
+    let won = false;
     let defeated = 0;
     let wedges = WEDGES;
     let checkpoint = 0;
@@ -293,8 +297,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       defeated += 1;
       emitPlaytestEvent({ entity: "player", name: how });
     };
-    // Ticks a Sunseed sat under the HUD pill, and of those, ticks the pill stayed opaque over it.
-    const hud = { covered: 0, under: 0 };
+    // Ticks a Sunseed sat under the HUD pill: each one fades the pill through `hudFaded`.
+    const hud = { under: 0 };
     ctx.entities.add("hud", { debug: () => ({ ...hud }) });
     const seedAt = new Vector3();
     const seedUnderHud = (width: number, height: number): boolean => {
@@ -399,6 +403,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         }
       }
 
+      // The course is clear the moment the third Sunseed is held: the HUD banner is the one win
+      // surface and the state carries it, so a scenario asserts the end instead of inferring it.
+      if (!won && seeds === SEEDS) {
+        won = true;
+        emitPlaytestEvent({ entity: "player", name: "won" });
+      }
+
       for (const walker of this.#walkers) {
         walker.update(dt, elapsed, at);
         if (!walker.alive) continue;
@@ -444,7 +455,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const under = seedUnderHud(frameCtx.viewport.size.width, frameCtx.viewport.size.height);
       statePatch.hudFaded = under;
       hud.under += under ? 1 : 0;
-      hud.covered += under && !statePatch.hudFaded ? 1 : 0;
       statePatch.action = hero.action;
       statePatch.checkpoint = checkpoint;
       statePatch.coins = coins;
@@ -456,6 +466,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.seeds = seeds;
       statePatch.wallHits = hero.wallHits;
       statePatch.wedges = wedges;
+      statePatch.won = won;
       frameCtx.state.set(statePatch);
     };
   }

@@ -76,8 +76,12 @@ export function Hud() {
       </div>
       {state.status === "sailing" ? null : (
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 border border-accent/70 bg-panel/80 px-8 py-5 text-center">
-          <div className={`text-[28px] tracking-[0.28em] ${statusClass}`}>
-            {state.status === "won" ? "course complete" : "capsized"}
+          <div className={`text-[28px] tracking-[0.28em] ${statusClass}`} id="outcome">
+            {state.status === "won"
+              ? "course complete"
+              : state.wind <= 0
+                ? "out of wind"
+                : "capsized"}
           </div>
           <div className="mt-2 text-[10px] text-muted">press R to restart</div>
         </div>

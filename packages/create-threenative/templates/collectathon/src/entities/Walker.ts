@@ -47,9 +47,13 @@ export class Walker {
   /** Telegraphs shown (a crouch or a rear) and the attacks that followed (hops or charges). */
   telegraphs = 0;
   attacks = 0;
+  /** The longest ground distance one hop covered, in metres: a hop never reaches past `hop.reach`. */
+  longestHop = 0;
   readonly #home = new Vector3();
   readonly #from = new Vector3();
   readonly #to = new Vector3();
+  /** Where a hop lands, fixed at take-off: `#to` is re-aimed every tick and would steer it mid-air. */
+  readonly #land = new Vector3();
   readonly #spikes: Object3D | undefined;
   #squash = 0;
   #phase: number;
@@ -169,17 +173,19 @@ export class Walker {
         const dz = this.#to.z - p.z;
         const d = Math.hypot(dx, dz);
         const s = d > reach ? reach / d : 1;
-        this.#to.set(p.x + dx * s, 0, p.z + dz * s);
-        this.#to.y = this.#floor(this.#to.x, this.#to.z);
+        this.#land.set(p.x + dx * s, 0, p.z + dz * s);
+        this.#land.y = this.#floor(this.#land.x, this.#land.z);
         [this.#state, this.#timer] = ["attack", 0];
         this.attacks += 1;
       }
     } else if (this.#state === "attack") {
       const t = Math.min(1, k / air);
-      p.lerpVectors(this.#from, this.#to, t);
-      p.y = this.#from.y + (this.#to.y - this.#from.y) * t + Math.sin(t * Math.PI) * height;
+      p.lerpVectors(this.#from, this.#land, t);
+      p.y = this.#from.y + (this.#land.y - this.#from.y) * t + Math.sin(t * Math.PI) * height;
       this.mesh.scale.set(0.9, 1.15, 0.9);
       if (t >= 1) {
+        const hop = Math.hypot(p.x - this.#from.x, p.z - this.#from.z);
+        this.longestHop = Math.max(this.longestHop, hop);
         [this.#state, this.#timer] = ["rest", 0];
         this.mesh.scale.set(1, 1, 1);
       }
@@ -234,6 +240,7 @@ export class Walker {
       alive: this.alive,
       attacks: this.attacks,
       kind: this.kind,
+      longestHop: this.longestHop,
       position: this.mesh.position.toArray(),
       telegraphs: this.telegraphs,
     };

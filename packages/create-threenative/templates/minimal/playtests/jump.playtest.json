@@ -1,0 +1,45 @@
+{
+  "name": "minimal-jump",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "landed",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": "Space",
+      "holdTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "airborne",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "jumps",
+        "gte": 1
+      }
+    ]
+  }
+}

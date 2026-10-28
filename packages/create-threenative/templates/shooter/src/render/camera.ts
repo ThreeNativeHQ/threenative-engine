@@ -9,7 +9,9 @@
 // is welded to a head that physics already solved, so smoothing it only ever
 // puts the crosshair somewhere the body is not. The rule this file exists to
 // state is the opposite one: compose the camera from the body's *solved* pose,
-// every frame, with no interpolation of its own.
+// every frame, with no interpolation of its own. The one smoothing is the eye's
+// climb over a stair step (`FpsPlayer` and `entities/movement.ts`), a fixed rate
+// of at most one step, as every first-person engine since Half-Life does.
 import { MathUtils, type PerspectiveCamera } from "three";
 
 /** The numbers a first-person camera is built from, in one table. */

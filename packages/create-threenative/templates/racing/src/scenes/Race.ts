@@ -265,7 +265,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
       rival.update(dt);
-      sector.update(car.body.position, car.forward, dt, car.speed);
+      sector.update(car.body.position, car.forward, dt, car.speed, car.driving);
       if (sector.rescue(car)) {
         rescues += 1;
         rescuePositionError = quantize(
@@ -323,7 +323,8 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         void frameCtx.goto("race");
         return;
       }
-      elapsed += dt;
+      // The race clock stops with the race, so the outcome panel reads the finishing time.
+      if (status === "RACING") elapsed += dt;
       advanceRace(frameCtx, dt);
       const ranked = rankRace();
       const player = playerRanking(ranked);

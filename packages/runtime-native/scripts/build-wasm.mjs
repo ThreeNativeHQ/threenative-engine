@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Builds the browser Wasm engine (`build/web/tn-native-engine-web.{mjs,wasm}`) in one command.
+ * Builds the browser Wasm engines (`build/web/tn-native-engine-web{,-threads}.{mjs,wasm}`) in one command.
  *
  * The default web engine is this file. It needs three things that git does not carry: the
  * `stb`, `cgltf` and `webp-source` sources under `third_party/` and an Emscripten SDK. A web
@@ -51,5 +51,8 @@ const env = {
   EMSDK: emsdk,
   PATH: `${join(emsdk, 'upstream', 'emscripten')}:${process.env.PATH ?? ''}`,
 };
-run('cmake', ['--preset', 'wasm'], env);
-run('cmake', ['--build', '--preset', 'wasm'], env);
+// The single-thread engine, and the threaded one a cross-origin-isolated page loads (PRD-752 phase 4).
+for (const preset of ['wasm', 'wasm-threads']) {
+  run('cmake', ['--preset', preset], env);
+  run('cmake', ['--build', '--preset', preset], env);
+}

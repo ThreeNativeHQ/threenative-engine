@@ -32,10 +32,9 @@ export function setupLighting(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  // A warmer midday sun (0xffe6c8) than the photographed one: it sets the warm sunlit street and,
-  // against the cool sky fill (`sky.ts`), the blue shade of the Unreal reference. 6.5 against the
-  // fill's 1.375 gives that sun-to-shade ratio; the metered exposure sets the overall level.
-  const key = new DirectionalLight(0xffe6c8, 6.5);
+  // Warm white, matched by eye to the photographed midday sun against its own sky (owner
+  // 2026-10-26 prefers this 7b546d6 neutral look to the warmer 0xffe6c8 at 6.5).
+  const key = new DirectionalLight(0xfff1e0, 4.5);
   // The light sits outside the map's own box, so its near plane is not inside the town.
   key.position.copy(SUN_DIRECTION).multiplyScalar(halfExtent * 2);
   key.castShadow = true;

@@ -44,8 +44,39 @@ import type { QualityTier } from "@threenative/core";
 export const resolveQualityTier = qualityTiers.resolve;
 
 /**
- * The stages and strengths a tier turns on: the core preset, this game's exposure policy and the
- * named cost override above: no gather, no reflections. The volumetric atmosphere already owns most
+ * Named overrides of core's Unreal look: the owner (2026-10-26) prefers the 7b546d6 neutral look,
+ * grey stone and pale floor with no yellow cast. `TN_WORLD_ENVIRONMENT` reports the tone curve and
+ * the exposure this runs; delete a line to take core's value back.
+ */
+export const neutralLook: IWorldEnvironmentOptions = {
+  // ACES at a fixed exposure: core's filmic curve and metered exposure read yellowish here.
+  tonemapMode: "aces",
+  autoExposureEnabled: false,
+  exposure: 0.62,
+  // The kit's bloom: a low threshold that lifts the sunlit floor a little.
+  bloomRadius: 0.5,
+  bloomStrength: 0.7,
+  bloomThreshold: 0.2,
+  // The kit's contact occlusion: whole-frame, a 0.35 m reach, 16 directions (8 on medium).
+  gtaoDistanceExponent: 1,
+  gtaoDistanceFalloff: 1,
+  gtaoIndirectOnly: false,
+  gtaoRadius: 0.35,
+  gtaoSamples: 16,
+  // 4x MSAA under the chain on every tier.
+  samples: 4,
+};
+
+/** The 7b546d6 per-tier values: half the occlusion directions on medium, none of it on a phone. */
+const neutralTiers: Readonly<Record<string, IWorldEnvironmentOptions>> = {
+  high: {},
+  medium: { gtaoSamples: 8 },
+  low: { gtaoEnabled: false, gtaoRadius: 0.25, motionBlurEnabled: false, temporalAA: false },
+};
+
+/**
+ * The stages and strengths a tier turns on: the core preset, the neutral look above, this game's
+ * exposure policy and the named cost override: no gather, no reflections. The volumetric atmosphere already owns most
  * of the frame; the performance scenario measured 39 to 42 ms GPU p95 with them on and about 1.5 ms
  * of frame time without them. Remove the override when the atmosphere is replaced by a flat sky.
  */
@@ -61,6 +92,8 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   );
   return {
     ...coreQualityPreset(tier),
+    ...neutralLook,
+    ...neutralTiers[tier],
     exposurePolicy: exposureSettings,
     finalGatherMethod: "none",
     ssgiEnabled: false,

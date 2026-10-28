@@ -1,56 +1,200 @@
 {
   "version": 1,
   "shims": [
-    { "name": "__tnGameSpan", "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp" },
-    { "name": "__tnFrameSpans", "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp" },
-    { "name": "__tnWallMs", "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp" },
-    { "name": "__tnOnTrimMemory", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "AbortController", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "AbortSignal", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "Blob", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "console", "evidence": "packages/runtime-native/src/js/v8_engine.cpp and packages/runtime-native/src/js/quickjs_engine.cpp" },
-    { "name": "Event", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
-    { "name": "Headers", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "HTMLCanvasElement", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
-    { "name": "Image", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js", "reason": "Stock three.js addons such as SMAANode construct Image and assign an embedded base64 PNG data URI to .src; the host decodes it through fetch plus createImageBitmap." },
-    { "name": "KeyboardEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
-    { "name": "OffscreenCanvas", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
-    { "name": "PointerEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
-    { "name": "ReadableStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
-    { "name": "Request", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "Response", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "TextDecoder", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "TextDecoderStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
-    { "name": "TextEncoder", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "TextEncoderStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
-    { "name": "TouchEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
-    { "name": "TransformStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
-    { "name": "URL", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
-    { "name": "URLSearchParams", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
-    { "name": "WheelEvent", "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js" },
-    { "name": "Worker", "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js" },
-    { "name": "WritableStream", "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js" },
-    { "name": "cancelAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "clearInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "clearTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "createImageBitmap", "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js" },
-    { "name": "document", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "fetch", "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js" },
-    { "name": "localStorage", "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js" },
-    { "name": "navigator", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "performance", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "requestAnimationFrame", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "self", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "sessionStorage", "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js" },
-    { "name": "scheduler", "evidence": "packages/runtime-native/src/runtime-scripts/scheduler-yield.js" },
-    { "name": "setInterval", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "setTimeout", "evidence": "packages/runtime-native/src/runtime.cpp" },
-    { "name": "window", "evidence": "packages/runtime-native/src/runtime.cpp" }
+    {
+      "name": "__tnGameSpan",
+      "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp"
+    },
+    {
+      "name": "__tnFrameSpans",
+      "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp"
+    },
+    {
+      "name": "__tnWallMs",
+      "evidence": "packages/runtime-native/src/engine/player/v8_main.cpp"
+    },
+    {
+      "name": "__tnOnTrimMemory",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "AbortController",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "AbortSignal",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "Blob",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "console",
+      "evidence": "packages/runtime-native/src/js/v8_engine.cpp and packages/runtime-native/src/js/quickjs_engine.cpp"
+    },
+    {
+      "name": "Event",
+      "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js"
+    },
+    {
+      "name": "Headers",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "HTMLCanvasElement",
+      "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js"
+    },
+    {
+      "name": "Image",
+      "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js",
+      "reason": "Stock three.js addons such as SMAANode construct Image and assign an embedded base64 PNG data URI to .src; the host decodes it through fetch plus createImageBitmap."
+    },
+    {
+      "name": "KeyboardEvent",
+      "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js"
+    },
+    {
+      "name": "OffscreenCanvas",
+      "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js"
+    },
+    {
+      "name": "PointerEvent",
+      "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js"
+    },
+    {
+      "name": "ReadableStream",
+      "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js"
+    },
+    {
+      "name": "Request",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "Response",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "TextDecoder",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "TextDecoderStream",
+      "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js"
+    },
+    {
+      "name": "TextEncoder",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "TextEncoderStream",
+      "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js"
+    },
+    {
+      "name": "TouchEvent",
+      "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js"
+    },
+    {
+      "name": "TransformStream",
+      "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js"
+    },
+    {
+      "name": "URL",
+      "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js"
+    },
+    {
+      "name": "URLSearchParams",
+      "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js"
+    },
+    {
+      "name": "WheelEvent",
+      "evidence": "packages/runtime-native/src/runtime-scripts/event-constructors-setup.js"
+    },
+    {
+      "name": "Worker",
+      "evidence": "packages/runtime-native/src/runtime-scripts/url-worker-polyfill.js"
+    },
+    {
+      "name": "WritableStream",
+      "evidence": "packages/runtime-native/src/runtime-scripts/streams-polyfill.js"
+    },
+    {
+      "name": "cancelAnimationFrame",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "clearInterval",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "clearTimeout",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "createImageBitmap",
+      "evidence": "packages/runtime-native/src/runtime-scripts/image-bitmap-polyfill.js"
+    },
+    {
+      "name": "document",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "fetch",
+      "evidence": "packages/runtime-native/src/runtime-scripts/fetch-polyfill.js"
+    },
+    {
+      "name": "localStorage",
+      "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js"
+    },
+    {
+      "name": "navigator",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "performance",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "requestAnimationFrame",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "self",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "sessionStorage",
+      "evidence": "packages/runtime-native/src/runtime-scripts/storage-polyfill.js"
+    },
+    {
+      "name": "scheduler",
+      "evidence": "packages/runtime-native/src/runtime-scripts/scheduler-yield.js"
+    },
+    {
+      "name": "setInterval",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "setTimeout",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    },
+    {
+      "name": "window",
+      "evidence": "packages/runtime-native/src/runtime.cpp"
+    }
   ],
   "allowlist": [
     {
+      "name": "EventTarget",
+      "reason": "Worker mode (PRD-752) builds its page-side event surface from EventTarget only inside a browser DedicatedWorker; the native host never loads core/src/worker.ts."
+    },
+    {
       "name": "HTMLElement",
       "reason": "Framework uses HTMLElement only as a DOM-compatible TypeScript annotation; native mounting receives the host's compatibility object."
+    },
+    {
+      "name": "MessageChannel",
+      "reason": "Only the browser worker page (core/src/worker.ts, PRD-752) and the ui-bridge loopback behind the ?tnUiLoopback=1 URL flag open a MessageChannel; the native host has no URL search and no worker page."
     },
     {
       "name": "PerformanceObserver",
@@ -59,6 +203,10 @@
     {
       "name": "ResizeObserver",
       "reason": "The renderer probes this optional browser API and falls back to the native window resize event when the host does not install it."
+    },
+    {
+      "name": "queueMicrotask",
+      "reason": "The worker audio proxy (core/src/worker-audio.ts, PRD-752) batches page messages with queueMicrotask inside a browser DedicatedWorker only; the native host plays audio directly."
     }
   ]
 }

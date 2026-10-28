@@ -1,12 +1,12 @@
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { advanceFixedStep, completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
-import { sampleHud } from "./sampling.js";
+import { sampleHud, sampleHudAudit } from "./sampling.js";
 import {
   normalizedRuntimeDiagnostics,
   pairObservations,
@@ -42,6 +42,7 @@ import {
   type IPlaytestCaptureProvenance,
   type IPlaytestFootSlipObservation,
   type IPlaytestFramebufferCoverageObservation,
+  type IPlaytestSightLineObservation,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
   type IPlaytestVisualElementRegionObservation,
@@ -192,6 +193,19 @@ export interface IStandalonePlaytestRunOptions {
 
 interface IStandalonePlaytestInternalOptions extends IStandalonePlaytestRunOptions {
   remoteBrowser?: IRemoteBrowserSession;
+  /** Set on the relaunch after the page showed a game drawing from a worker (PRD-752). */
+  gameThread?: "worker";
+}
+
+/** The page runs its game in a worker, so the run relaunches with that thread's measurement flags. */
+class WorkerGameRelaunch extends Error {}
+
+/** A worker host installs its platform source in the worker before the game starts (PRD-752). */
+async function runsGameInWorker(page: Page): Promise<boolean> {
+  for (const worker of page.workers()) {
+    if ((await worker.evaluate("typeof globalThis.__tnGamePlatform").catch(() => undefined)) === "object") return true;
+  }
+  return false;
 }
 
 export async function runStandalonePlaytest(
@@ -207,6 +221,18 @@ export async function runStandalonePlaytest(
 async function runStandalonePlaytestInternal(
   config: IStandalonePlaytestConfig,
   options: IStandalonePlaytestInternalOptions = {},
+): Promise<IStandalonePlaytestReport> {
+  try {
+    return await runStandalonePlaytestOnce(config, options);
+  } catch (error) {
+    if (!(error instanceof WorkerGameRelaunch)) throw error;
+    return runStandalonePlaytestOnce(config, { ...options, gameThread: "worker" });
+  }
+}
+
+async function runStandalonePlaytestOnce(
+  config: IStandalonePlaytestConfig,
+  options: IStandalonePlaytestInternalOptions,
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
   const resolvedConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
@@ -230,7 +256,7 @@ async function runStandalonePlaytestInternal(
   let completionWindow: ICompletionWindow | undefined;
   const completionDisplay = completionLabel === undefined ? undefined : completionWindowEnvironment("browser", activeConfig.headless);
   if (completionLabel !== undefined && options.remoteBrowser !== undefined) throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: requires a fresh local browser process");
-  const measurementArgs = measurementBrowserArgs(scenario.assert?.performance !== undefined, completionLabel !== undefined, frameDisplay());
+  const measurementArgs = measurementBrowserArgs(scenario.assert?.performance !== undefined, completionLabel !== undefined, frameDisplay(), options.gameThread);
   const browserConfig = measurementArgs.length === 0
     ? activeConfig
     : {
@@ -419,6 +445,10 @@ async function runStandalonePlaytestInternal(
       // evaluated is one the engine never saw. The wire name is literal because the other end of
       // it is the page's engine, not this package.
       if (liveClock) (globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+      // The engine counts its work into TN_FRAME_BUDGET.counters.engine (and three-native prints its
+      // census) for the run; the worker host forwards every __THREENATIVE_ page global, so a worker
+      // game reports them too.
+      (globalThis as Record<string, unknown>).__THREENATIVE_ENGINE_COST__ = true;
       window.addEventListener("unhandledrejection", (event) => {
         const reason = event.reason instanceof Error
           ? event.reason.stack || event.reason.message
@@ -463,6 +493,9 @@ async function runStandalonePlaytestInternal(
     // Started before navigation: the frames a player sees first are the ones a cover must own.
     const coverRecorder = scenario.assert?.startup?.steadyCover === true ? await recordStartupCover(page) : undefined;
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
+    // Browser flags are per process, so the thread the game draws on can only pick them on a relaunch.
+    if (options.gameThread === undefined && measurementArgs.includes("--disable-frame-rate-limit")
+      && await runsGameInWorker(page)) throw new WorkerGameRelaunch();
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
     const setupApplication = bridge?.setupApplication;
@@ -752,6 +785,21 @@ async function runStandalonePlaytestInternal(
     const footSlip: IPlaytestFootSlipObservation[] = [];
     const footSlipAt = (label: string | undefined) =>
       label === undefined ? undefined : scenario.assert?.footSlip?.find(({ atStep }) => atStep === label);
+    const sightLineAssertion = scenario.assert?.sightLine;
+    const sightLineEntity = sightLineAssertion?.entity ?? scenario.subject;
+    const sightLine = sightLineAssertion === undefined || sightLineEntity === undefined
+      ? undefined
+      : { entity: sightLineEntity, samples: [] as IPlaytestSightLineObservation[] };
+    // The engine's cost windows count per drawn frame, so every tick draws one: with ticks advanced
+    // undrawn, a slower machine folds more ticks into each frame and the same game reads costlier.
+    const drawnTicks = scenario.assert?.engineCost === undefined || bridge === undefined
+      || activeConfig.liveClock === true || !bridge.description.capabilities.includes("runtime.fixedStep")
+      ? undefined
+      : async (ticks: number) => {
+          await advanceFixedStep(activePage, bridge, ticks, true);
+          await samplePathPosition(bridge, pathEntity, pathPositions);
+          await sampleSightLine(bridge, sightLine);
+        };
     for (const [index, step] of scenario.steps.entries()) {
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (framebufferAssertion !== undefined
@@ -803,7 +851,7 @@ async function runStandalonePlaytestInternal(
               await setBrowserPointers(activePage, inputState, [], scenario.viewport);
             });
           completionWindow.setupSnapshot = setupSnapshot;
-        } : footSlipAt(step.label) === undefined ? undefined : async (ticks) => {
+        } : footSlipAt(step.label) === undefined ? drawnTicks : async (ticks) => {
           const assertion = footSlipAt(step.label)!;
           const entity = assertion.entity ?? scenario.subject;
           if (bridge === undefined || entity === undefined || activeConfig.liveClock === true
@@ -812,7 +860,9 @@ async function runStandalonePlaytestInternal(
           }
           footSlip.push(await sampleFootSlip(activePage, bridge, ticks, step.label!, entity, assertion.feet));
           await samplePathPosition(bridge, pathEntity, pathPositions);
+          await sampleSightLine(bridge, sightLine);
         },
+        sightLine,
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;
@@ -864,6 +914,7 @@ async function runStandalonePlaytestInternal(
       if (position !== undefined) pathPositions.push(position);
     }
     const afterHud = await sampleHud(page, hudAssertions);
+    const hudAudit = scenario.assert?.hudAudit === undefined ? undefined : await sampleHudAudit(page);
     const afterScreenshot = (scenario.artifacts?.screenshots !== false && artifactFrames) || wantsVisual || wantsFinalTone
       ? wantsVisual || wantsFinalTone
         ? await captureVisualPage(
@@ -916,6 +967,8 @@ async function runStandalonePlaytestInternal(
       undefined,
       tone,
       footSlip.length === 0 ? undefined : footSlip,
+      sightLine === undefined || sightLine.samples.length === 0 ? undefined : sightLine,
+      hudAudit,
     );
     if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
     if (completionWindow !== undefined) {
@@ -923,6 +976,7 @@ async function runStandalonePlaytestInternal(
       completionWindow.provenance = { requestedDisplay: completionDisplay!, qualified: false,
         browserArgs: resolveBrowserArguments(browserConfig.browserArgs) };
     }
+    if (options.gameThread !== undefined) report.gameThread = options.gameThread;
     report.acquisition = { requestUrls: [...requestUrls], ...(cpuLabels.length === 0 ? {} : { cpuWindows }), ...(completionWindow === undefined ? {} : { completionWindow }) };
     await writeObservationArtifacts(activeConfig.artifactDirectory, scenario.artifacts, {
       console: consoleEntries,
@@ -935,6 +989,7 @@ async function runStandalonePlaytestInternal(
     else await page.close();
     return addPreflightDiagnostic(report, preflight);
   } catch (error) {
+    if (error instanceof WorkerGameRelaunch) throw error;
     // Retain already-collected observations under the existing artifact policy.
     // A failed bridge is never queried here; artifact I/O cannot replace the primary error.
     try {

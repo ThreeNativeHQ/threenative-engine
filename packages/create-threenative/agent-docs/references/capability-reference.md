@@ -665,9 +665,9 @@ const effects = new AudioBus({ camera });
 export class AutoExposureNode extends TempNode<"float"> { … }
 ```
 
-- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change · a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather
 - **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
-- **Overrides:** every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
+- **Overrides:** every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default · `setExposureBias(stops)` is Unreal's Exposure Compensation, live: the game changes it per place or weather (`WorldEnvironment.apply` returns the node as `exposure`)
 
 ```ts
 const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
@@ -3402,6 +3402,36 @@ export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … 
 const mirror = subscribeUiState(bridge);
 ```
 
+## `@threenative/core/worker`
+
+### `serveWorkerGame`
+
+`function` — Runs inside the worker: wire the page's messages to the unchanged portable game. Call it last in the worker entry, after the game module evaluated: it posts the ready message the page waits for before it sends the canvas.
+
+```ts
+export function serveWorkerGame( game: { … }
+```
+
+- **Use when:** run the game loop in a web worker so a busy page cannot stall its frames
+
+```ts
+serveWorkerGame(game);
+```
+
+### `startWorkerGame`
+
+`function` — Runs on the page: own the canvas and the DOM, and feed the worker game. Call it before the UI mounts: the HUD's bridge host globals exist from this call on.
+
+```ts
+export function startWorkerGame( worker: Worker, container: HTMLElement, ): { … }
+```
+
+- **Use when:** host a worker-run game's canvas, input and HUD on the page
+
+```ts
+const handle = startWorkerGame(new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }), root);
+```
+
 ## `@threenative/core/world`
 
 ### `cellPlacements`
@@ -4488,7 +4518,7 @@ const adb = discoverAdb(process.env);
 `function` — Execute scenario steps, assertions, and evidence capture.
 
 ```ts
-export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, "advance">, ticks: number, render = false, ): Promise<void> { … }
+export async function advanceFixedStep( page: Page, bridge: { … }
 ```
 
 - **Use when:** run a complete browser or device playtest · capture diagnostics and screenshots from a managed server
@@ -7054,11 +7084,27 @@ export function useUiState<TState extends object>(): TState | undefined;
 ```
 
 - **Use when:** bind a HUD to game state on web and native alike · show score or health in a UI rendered over the game surface
-- **Constraints:** returns undefined until the game publishes its first state
+- **Constraints:** returns undefined until the game publishes its first state and while the loading cover is up
 - **Requires:** npm i @threenative/ui
 
 ```ts
 const score = useUiState<GameState, number>((state) => state.score);
+```
+
+### `useUiStateDuringStartup`
+
+`function` — Read the game's published state while the loading cover is still up, for a UI that draws its own loading screen.
+
+```ts
+export function useUiStateDuringStartup<TState extends object>(options: { … }
+```
+
+- **Use when:** draw a staged loading overlay from the startup progress the game publishes
+- **Constraints:** needs a non-empty reason, reported once as TN_UI_STARTUP_OVERRIDE; every other HUD uses useUiState
+- **Requires:** npm i @threenative/ui
+
+```ts
+const loading = useUiStateDuringStartup<GameState, number>({ reason: "staged loading overlay" }, (state) => state.loading.progress);
 ```
 
 ## `src/audio/storm.ts`

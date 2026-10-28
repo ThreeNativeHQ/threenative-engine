@@ -70,6 +70,11 @@ export class RacingCar {
     return this.car.speedMagnitude;
   }
 
+  /** Whether the engine is pushing this step: a stopped car with no throttle is parked, not stuck. */
+  get driving(): boolean {
+    return this.car.body.engineForce !== 0;
+  }
+
   get topSpeed(): number {
     return this.#topSpeed;
   }
@@ -111,7 +116,7 @@ export class RacingCar {
     if (this.#autopilotOn) {
       this.autopilot.update(this.car, dt);
     } else {
-      this.drive(move);
+      this.drive(move, ctx.input.pressed("brake") || touch?.brakePressed === true);
       this.car.measure(dt);
     }
     if (this.boost.active) {
@@ -123,14 +128,18 @@ export class RacingCar {
     this.#topSpeed = Math.max(this.#topSpeed, this.speed);
   }
 
-  private drive(move: { x: number; y: number }): void {
+  private drive(move: { x: number; y: number }, braking: boolean): void {
     const body = this.car.body;
     const speed = body.speed;
     // The sign: `move.x` is +1 to the right, and a positive Rapier steering angle turns toward the
     // chassis's -z, which is the driver's left. Flipping here keeps "right means right" for the
     // physics and for the visual front wheels, which take the same angle.
     body.steering = -move.x * this.car.lockAt(speed);
-    if (move.y > 0) {
+    // The brake key (shift, the touch brake button) wins over the throttle, and holds a stopped car.
+    if (braking) {
+      body.engineForce = 0;
+      body.brake = FEEL.brake;
+    } else if (move.y > 0) {
       const top = this.boost.active ? FEEL.boostTopSpeed : FEEL.topSpeed;
       body.engineForce =
         move.y *

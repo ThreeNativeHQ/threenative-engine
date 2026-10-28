@@ -524,7 +524,10 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
   }
   for (const assertion of scenarioAssertions.animation ?? []) {
     const entity = assertion.entity ?? input.scenario.subject ?? input.report.entity;
-    const runtime = runtimeAnimationObservations(input.report.observations?.runtimeObservations);
+    const stepAnimation = runtimeGameplayAtStep(input.report.observations?.runtimeObservations, assertion.atStep)?.animation;
+    const runtime = assertion.atStep === undefined
+      ? runtimeAnimationObservations(input.report.observations?.runtimeObservations)
+      : isRecord(stepAnimation) ? stepAnimation : undefined;
     if (runtime !== undefined) {
       const observed = isRecord(runtime[entity]) ? runtime[entity] : undefined;
       const clip = typeof observed?.clip === "string" ? observed.clip : undefined;

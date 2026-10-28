@@ -154,6 +154,7 @@ export interface IPlaytestPathAssertion {
   atSteps?: Array<{
     equals?: unknown;
     label: string;
+    lte?: number;
     textIncludes?: string;
   }>;
   changed?: boolean;
@@ -284,6 +285,56 @@ export interface IPlaytestFootSlipAssertion {
 }
 
 /**
+ * Bounds the share of the run in which geometry stood between the camera and the subject.
+ *
+ * The camera is the thing a player looks through, so a cast that clips a pillar or a wall that
+ * eats the framing is a frame-destroying failure that leaves every count healthy. Browser target
+ * only; elsewhere it fails unobserved.
+ */
+export interface IPlaytestSightLineAssertion {
+  /** The entity whose world bounds centre the camera should see; defaults to the subject. */
+  entity?: string;
+  /** Ceiling on the share of samples, 0..1, with any solid between the lens and the subject. */
+  maxBlockedRatio: number;
+}
+
+/**
+ * Audits the text the page draws: developer left-overs and unreadable colours reach the player.
+ *
+ * A placeholder or a `NaN` in the HUD is a shipped defect no screenshot gate catches, and text
+ * the same colour as its backing plate is unreadable while every node count stays healthy.
+ * Browser target only; elsewhere it fails unobserved.
+ */
+/**
+ * Bounds on the engine's own work counters (PRD-748): per-frame means and single-frame maxima over each
+ * `TN_FRAME_BUDGET` window (`counters.engine`, plus `counters.bridgeCrossings`), read off the console.
+ * Fails closed when no window arrives or a bounded counter is missing from one.
+ */
+export interface IPlaytestEngineCostAssertion {
+  /** Counter name to its bound on the window's per-frame mean. */
+  maxPerFrame?: Readonly<Record<string, number>>;
+  /** Counter name to its bound on any single frame in the window. */
+  maxInFrame?: Readonly<Record<string, number>>;
+  /** Windows the run must report (default 1). */
+  minWindows?: number;
+  /** Windows left unbounded before every other bound applies: the boot (loading, first builds). Default 0. */
+  skipWindows?: number;
+  /** Bounds on the first `windows` windows only, which the scenario keeps still (no input). */
+  still?: { readonly windows: number; readonly maxPerFrame: Readonly<Record<string, number>> };
+  /** Bounds on the windows after the still ones, which the scenario fills with play. Needs `still`. */
+  moving?: { readonly maxPerFrame?: Readonly<Record<string, number>>; readonly maxInFrame?: Readonly<Record<string, number>> };
+  /** Where the bounds came from: the measured after-values and their headroom. */
+  source: string;
+}
+
+export interface IPlaytestHudAuditAssertion {
+  /** WCAG 2.x contrast ratio, 1..21, every judged text item must reach. */
+  minContrast?: number;
+  /** Require that no text reads like developer copy. Only `true` is accepted. */
+  noDebugText?: true;
+}
+
+/**
  * Bounds on named nodes of the scene graph — the questions a screenshot gets taken for.
  *
  * `scene` bounds the room as a whole: is anything lit, does the fog clear the world. This bounds
@@ -374,6 +425,8 @@ export interface IPlaytestEffectSpec {
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
   allowTrivial?: string;
+  /** Judge the animation report sampled after this labeled step, not the last one: one scenario then checks several clips. */
+  atStep?: string;
   clip?: string;
   entered?: boolean;
   entity?: string;
@@ -679,6 +732,9 @@ export interface IPlaytestScenarioAssertions {
   causedBy?: IPlaytestCausedByAssertion[];
   sceneNodes?: IPlaytestSceneNodesAssertion[];
   footSlip?: IPlaytestFootSlipAssertion[];
+  sightLine?: IPlaytestSightLineAssertion;
+  hudAudit?: IPlaytestHudAuditAssertion;
+  engineCost?: IPlaytestEngineCostAssertion;
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];

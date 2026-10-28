@@ -17,7 +17,7 @@ function Legend() {
     <div className="desktop-only pointer-events-none flex items-center gap-3 bg-black/45 px-4 py-2 text-[13px] font-semibold tracking-wide">
       {KEYS.map(([key, label], index) => (
         <span className="flex items-center gap-2" key={key}>
-          {index > 0 ? <i className="mr-1 not-italic text-white/25">|</i> : null}
+          {index > 0 ? <i className="mr-1 not-italic text-white/50">|</i> : null}
           <b className="font-bold text-[#ffa63d]">{key}</b>
           <span className="font-normal text-white/85">{label}</span>
         </span>
@@ -205,145 +205,283 @@ function TouchAction({
   );
 }
 
-export function Hud() {
-  const state = useUiState<GameState>();
-  // An intent, not a state write: on native this component runs in the platform's web view, in a
-  // different realm from the game, so it cannot reach `game` at all. The game owns what "restart"
-  // means and does the same two things the keyboard's Enter path does.
+/**
+ * The round minimap, and the only HUD part that moves every tick.
+ *
+ * `blips`, the player position and the yaw are published on every frame so the map can follow
+ * them. Reading the whole state with `useUiState<GameState>()` re-rendered every line of this
+ * file at that cadence; each part below subscribes to its own fields, so a frame publish renders
+ * this component and leaves the roster, clock and wallet alone.
+ */
+function MinimapPanel() {
+  const playerX = useUiState<GameState, number>((state) => state.playerX);
+  const playerZ = useUiState<GameState, number>((state) => state.playerZ);
+  const playerYaw = useUiState<GameState, number>((state) => state.playerYaw);
+  const blips = useUiState<GameState, GameState["blips"]>((state) => state.blips);
+  if (
+    playerX === undefined ||
+    playerZ === undefined ||
+    playerYaw === undefined ||
+    blips === undefined
+  ) {
+    return null;
+  }
+  return (
+    <Minimap
+      schematic={townSchematic}
+      playerX={playerX}
+      playerZ={playerZ}
+      playerYaw={playerYaw}
+      blips={blips}
+    />
+  );
+}
+
+/**
+ * The header clock, to the whole second the header prints.
+ *
+ * `timeRemaining` changes every frame. Rounded inside the selector, the component re-renders once
+ * a second, which is the only rate its text can change.
+ */
+function RoundClock() {
+  const seconds = useUiState<GameState, number>((state) =>
+    Math.max(0, Math.floor(state.timeRemaining)),
+  );
+  if (seconds === undefined) return null;
+  const minutes = Math.floor(seconds / 60);
+  const part = String(seconds % 60).padStart(2, "0");
+  return (
+    <div className="min-w-[86px] rounded-[3px] border border-white/15 bg-black/60 px-3 py-0.5 text-center">
+      <div className="text-[26px] font-bold leading-tight tabular-nums text-white">
+        {minutes}
+        <span className="text-[#ffa63d]">:</span>
+        {part}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Team rosters flanking the round clock, score beneath — five defenders in blue against five
+ * attackers in gold, like the reference's 5-vs-5 header.
+ *
+ * The roster only changes when a soldier falls, so the selector reads the dead set as a bit mask
+ * rather than the blips array the minimap needs every frame.
+ */
+function TopCentre() {
+  const downMask = useUiState<GameState, number>((state) =>
+    state.blips.reduce((mask, blip, index) => (blip.alive ? mask : mask | (1 << index)), 0),
+  );
+  const playerDown = useUiState<GameState, boolean>((state) => state.health <= 0);
+  const playing = useUiState<GameState, boolean>((state) => state.phase === "playing");
+  const targetsHit = useUiState<GameState, number>((state) => state.targetsHit);
+  const down = downMask ?? 0;
+  let soldiersDown = 0;
+  for (const index of ROSTER) {
+    if ((down & (1 << index)) !== 0) soldiersDown += 1;
+  }
+  const soldiersStanding = Math.max(0, ROSTER.length - soldiersDown);
+  return (
+    <div className="hud-top absolute left-1/2 top-2 flex -translate-x-1/2 flex-col items-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+      <div className="flex items-start gap-2">
+        <div className="flex items-center gap-[3px] pt-1">
+          {ROSTER.map((index) => (
+            <PortraitChip
+              key={`ct-${index}`}
+              tone="ct"
+              // Slot 0 is the player; the rest of the side is unfilled, and
+              // showing it greyed is honest about a roster nobody occupies.
+              down={index === 0 ? playerDown === true : true}
+            />
+          ))}
+        </div>
+        <RoundClock />
+        <div className="flex items-center gap-[3px] pt-1">
+          {ROSTER.map((index) => (
+            <PortraitChip
+              key={`t-${index}`}
+              tone="t"
+              // A blip that has not been reported yet counts as standing, so
+              // the row reads full during the asset-loading window.
+              down={(down & (1 << index)) !== 0}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="mt-0.5 text-[19px] font-bold leading-none tabular-nums tracking-[0.08em] text-white">
+        {soldiersDown}
+        <span className="mx-1.5 text-white/45">:</span>
+        {soldiersStanding}
+      </div>
+      <div className="mt-[3px] text-[12px] font-semibold leading-none tracking-[0.04em] text-white/60">
+        {ROSTER.length} vs {ROSTER.length}
+      </div>
+      {playing === true ? (
+        <div className="mt-1 text-[13px] font-bold tracking-[0.05em] text-white/85">
+          CLEAR THE TOWN · HIT {Math.max(0, TARGET_GOAL - (targetsHit ?? 0))} TARGETS
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Armour badge, health readout, rank emblem and ammo on one shared baseline. */
+function BottomCentre() {
+  const health = useUiState<GameState, number>((state) => state.health) ?? 0;
+  const ammo = useUiState<GameState, number>((state) => state.ammo) ?? 0;
+  const reserve = useUiState<GameState, number>((state) => state.reserve) ?? 0;
+  const lowHealth = health < 35;
+  return (
+    <div className="hud-bottom absolute bottom-4 left-1/2 flex -translate-x-1/2 items-end gap-9">
+      <div className="flex items-end gap-3">
+        <span className="relative inline-block h-[34px] w-[30px]">
+          <ShieldGlyph className="h-full w-full fill-[#274a68] stroke-[#7fb3e8] stroke-[1.4]" />
+          <span className="absolute inset-x-0 top-[11px] text-center text-[12px] font-bold leading-none tabular-nums text-white">
+            100
+          </span>
+        </span>
+        <span>
+          <span
+            className={`block text-[36px] font-bold leading-none tabular-nums drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] ${
+              lowHealth ? "text-[#ff5f4d]" : "text-white"
+            }`}
+          >
+            {Math.round(health)}
+          </span>
+          <i
+            className={`mt-[3px] block h-[3px] w-[74px] ${lowHealth ? "bg-[#ff5f4d]" : "bg-[#e8c66f]"}`}
+            style={{ transformOrigin: "left" }}
+          >
+            <i
+              className={`block h-full ${lowHealth ? "bg-[#ff5f4d]" : "bg-[#ffd166]"}`}
+              style={{ width: `${Math.min(100, Math.max(0, health))}%` }}
+            />
+          </i>
+        </span>
+      </div>
+      <RankEmblem />
+      <div className="flex items-baseline gap-2 tabular-nums drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+        <span className="text-[38px] font-bold leading-none text-white">{ammo}</span>
+        <span className="text-[19px] font-semibold text-white/55">| {reserve}</span>
+        <BulletsGlyph />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Crosshair, with a hit marker that blooms outward on a scoring hit.
+ *
+ * It is hidden while aiming down the sights. The weapon's own optic is the aim reference there,
+ * and a second reticle floating beside the red dot reads as a misaligned sight.
+ */
+function Reticle() {
+  const aiming = useUiState<GameState, boolean>((state) => state.aiming) ?? false;
+  const hitFlash = useUiState<GameState, number>((state) => state.hitFlash) ?? 0;
+  return (
+    <>
+      <Crosshair aiming={aiming} hitFlash={hitFlash} Primitive={WebCrosshairPrimitive} />
+      {hitFlash > 0 ? (
+        <div
+          className="absolute left-1/2 top-1/2 h-[26px] w-[26px] -translate-x-1/2 -translate-y-1/2 rotate-45"
+          style={{ opacity: Math.min(1, hitFlash * 1.6) }}
+        >
+          <i className="absolute left-1/2 top-0 h-full w-[2px] -translate-x-1/2 bg-[#ffd166]" />
+          <i className="absolute left-0 top-1/2 h-[2px] w-full -translate-y-1/2 bg-[#ffd166]" />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Red only while a round is landing. It used to be driven by `health < 45`, which is a
+ * low-health indicator wearing a damage vignette's clothes: a soldier at 40 with nobody
+ * shooting him got a permanently red screen, and the 70 rounds it takes to walk from 100
+ * to 30 produced no feedback at all. The health bar and the health number already say
+ * "you are nearly dead".
+ */
+function DamageVignette() {
+  const hurtFlash = useUiState<GameState, number>((state) => state.hurtFlash) ?? 0;
+  if (hurtFlash <= 0) return null;
+  return (
+    <div
+      className="absolute inset-0"
+      style={{
+        background:
+          "radial-gradient(circle at 50% 55%, rgba(0,0,0,0) 42%, rgba(190,26,20,0.5) 100%)",
+        opacity: Math.min(1, hurtFlash),
+      }}
+    />
+  );
+}
+
+/** End-of-round card. An intent, not a state write: the game owns what "restart" means. */
+function EndCard() {
+  const phase = useUiState<GameState, GameState["phase"]>((state) => state.phase);
+  const score = useUiState<GameState, number>((state) => state.score) ?? 0;
+  const targetsHit = useUiState<GameState, number>((state) => state.targetsHit) ?? 0;
   const sendIntent = useUiIntent();
-  // Nothing to draw until the game has published a frame. The web view loads this page before the
-  // game has run a tick, so an empty first paint is the normal path here, not a failure.
-  if (state === undefined) return null;
-  const {
-    score,
-    health,
-    ammo,
-    reserve,
-    targetsHit,
-    timeRemaining,
-    hitFlash,
-    phase,
-    aiming,
-    playerX,
-    playerZ,
-    playerYaw,
-    blips,
-    hurtFlash,
-  } = state;
+  if (phase === undefined || phase === "playing") return null;
   // The same two lines the keyboard's Enter path runs in `Play.update`. A phone has no Enter key,
   // and until this existed a mobile player who ran out of time had no way to start another round —
   // the end card told them to press a key their device does not have.
   const restart = () => sendIntent("restart");
+  return (
+    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/45">
+      <div
+        className={`text-[42px] font-bold tracking-[0.08em] ${
+          phase === "complete" ? "text-[#3ddc6b]" : "text-[#ff5f4d]"
+        }`}
+      >
+        {phase === "complete" ? "TOWN CLEAR" : "RUN OVER"}
+      </div>
+      <div className="mt-2 text-[18px] font-bold tracking-[0.06em] text-white">
+        SCORE {String(score).padStart(4, "0")} · {targetsHit} HITS
+      </div>
+      <div className="desktop-only mt-6 text-[15px] font-bold tracking-[0.14em] text-[#ffa63d]">
+        PRESS ENTER TO RUN IT AGAIN
+      </div>
+      <div className="touch-show mt-6">
+        <TouchAction
+          onPress={restart}
+          className="rounded-[4px] border-2 border-[#ffa63d] bg-[#ffa63d]/15 px-8 py-3 text-[16px] font-bold tracking-[0.16em] text-[#ffa63d] active:bg-[#ffa63d]/35"
+        >
+          RUN IT AGAIN
+        </TouchAction>
+      </div>
+      {/* Poly Haven's licence requires a visible credit wherever its API was
+          used to source assets, and "visible" means a player has to be able
+          to see it — CREDITS.md alone does not discharge that. The sky,
+          barrel, gutter, wall lamp and buoy all came from there. ambientCG
+          (the plaster, brick, flagstone, concrete, quaystone and steel) is
+          CC0 and asks for nothing; it is named here as courtesy, not duty. */}
+      <div className="mt-10 text-center text-[11px] leading-relaxed tracking-[0.06em] text-white/40">
+        Environment textures and props: Poly Haven (CC0) · ambientCG (CC0)
+        <br />
+        Audio: Kenney (CC0) · Sonniss
+      </div>
+    </div>
+  );
+}
 
-  const lowHealth = health < 35;
-  // The header score is the round's real tally, not a placeholder: soldiers
-  // down on the left, soldiers still standing on the right.
-  const soldiersDown = blips.reduce((total, blip) => total + (blip.alive ? 0 : 1), 0);
-  const soldiersStanding = Math.max(0, ROSTER.length - soldiersDown);
-  const clockSeconds = Math.max(0, Math.floor(timeRemaining));
-  const clockMinutes = Math.floor(clockSeconds / 60);
-  const clockPart = String(clockSeconds % 60).padStart(2, "0");
+export function Hud() {
+  // Nothing to draw until the game has published a frame. The web view loads this page before the
+  // game has run a tick, so an empty first paint is the normal path here, not a failure.
+  const ready = useUiState<GameState, boolean>(() => true);
+  if (ready !== true) return null;
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none font-sans">
       {/* Top left: the round minimap, north-up. It renders the plain map data
           the town builder emits — no scene objects cross into the HUD. */}
-      <Minimap
-        schematic={townSchematic}
-        playerX={playerX}
-        playerZ={playerZ}
-        playerYaw={playerYaw}
-        blips={blips}
-      />
+      <MinimapPanel />
 
-      {/* Top centre: team rosters flanking the round clock, score beneath —
-          five defenders in blue against five attackers in gold, like the
-          reference's 5-vs-5 header. Both rows are live: the gold chips are the
-          five patrolling soldiers and grey out as they fall, and the leading
-          blue chip is the player. */}
-      <div className="hud-top absolute left-1/2 top-2 flex -translate-x-1/2 flex-col items-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
-        <div className="flex items-start gap-2">
-          <div className="flex items-center gap-[3px] pt-1">
-            {ROSTER.map((index) => (
-              <PortraitChip
-                key={`ct-${index}`}
-                tone="ct"
-                // Slot 0 is the player; the rest of the side is unfilled, and
-                // showing it greyed is honest about a roster nobody occupies.
-                down={index === 0 ? health <= 0 : true}
-              />
-            ))}
-          </div>
-          <div className="min-w-[86px] rounded-[3px] border border-white/15 bg-black/60 px-3 py-0.5 text-center">
-            <div className="text-[26px] font-bold leading-tight tabular-nums text-white">
-              {clockMinutes}
-              <span className="text-[#ffa63d]">:</span>
-              {clockPart}
-            </div>
-          </div>
-          <div className="flex items-center gap-[3px] pt-1">
-            {ROSTER.map((index) => (
-              <PortraitChip
-                key={`t-${index}`}
-                tone="t"
-                // A blip that has not been reported yet counts as standing, so
-                // the row reads full during the asset-loading window.
-                down={blips[index]?.alive === false}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="mt-0.5 text-[19px] font-bold leading-none tabular-nums tracking-[0.08em] text-white">
-          {soldiersDown}
-          <span className="mx-1.5 text-white/45">:</span>
-          {soldiersStanding}
-        </div>
-        <div className="mt-[3px] text-[12px] font-semibold leading-none tracking-[0.04em] text-white/60">
-          {ROSTER.length} vs {ROSTER.length}
-        </div>
-        {phase === "playing" ? (
-          <div className="mt-1 text-[13px] font-bold tracking-[0.05em] text-white/85">
-            CLEAR THE TOWN · HIT {Math.max(0, TARGET_GOAL - targetsHit)} TARGETS
-          </div>
-        ) : null}
-      </div>
+      {/* Top centre: the 5-vs-5 header. */}
+      <TopCentre />
 
-      {/* Bottom centre: armour badge, health readout, rank emblem and ammo on
-          one shared baseline, like the reference's lower cluster. */}
-      <div className="hud-bottom absolute bottom-4 left-1/2 flex -translate-x-1/2 items-end gap-9">
-        <div className="flex items-end gap-3">
-          <span className="relative inline-block h-[34px] w-[30px]">
-            <ShieldGlyph className="h-full w-full fill-[#274a68] stroke-[#7fb3e8] stroke-[1.4]" />
-            <span className="absolute inset-x-0 top-[11px] text-center text-[12px] font-bold leading-none tabular-nums text-white">
-              100
-            </span>
-          </span>
-          <span>
-            <span
-              className={`block text-[36px] font-bold leading-none tabular-nums drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] ${
-                lowHealth ? "text-[#ff5f4d]" : "text-white"
-              }`}
-            >
-              {Math.round(health)}
-            </span>
-            <i
-              className={`mt-[3px] block h-[3px] w-[74px] ${lowHealth ? "bg-[#ff5f4d]" : "bg-[#e8c66f]"}`}
-              style={{ transformOrigin: "left" }}
-            >
-              <i
-                className={`block h-full ${lowHealth ? "bg-[#ff5f4d]" : "bg-[#ffd166]"}`}
-                style={{ width: `${Math.min(100, Math.max(0, health))}%` }}
-              />
-            </i>
-          </span>
-        </div>
-        <RankEmblem />
-        <div className="flex items-baseline gap-2 tabular-nums drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
-          <span className="text-[38px] font-bold leading-none text-white">{ammo}</span>
-          <span className="text-[19px] font-semibold text-white/55">| {reserve}</span>
-          <BulletsGlyph />
-        </div>
-      </div>
+      {/* Bottom centre: the armour, health, rank and ammo cluster. */}
+      <BottomCentre />
 
       {/* Top right: one tap to full screen and landscape. Placed opposite the minimap and above
           the right thumb's look band, so it is reachable but never under a finger that is aiming. */}
@@ -371,72 +509,9 @@ export function Hud() {
         <Legend />
       </div>
 
-      {/* Crosshair, with a hit marker that blooms outward on a scoring hit.
-
-          It is hidden while aiming down the sights. The weapon's own optic is the aim reference
-          there, and a second reticle floating beside the red dot reads as a misaligned sight. */}
-      <Crosshair aiming={aiming} hitFlash={hitFlash} Primitive={WebCrosshairPrimitive} />
-      {hitFlash > 0 ? (
-        <div
-          className="absolute left-1/2 top-1/2 h-[26px] w-[26px] -translate-x-1/2 -translate-y-1/2 rotate-45"
-          style={{ opacity: Math.min(1, hitFlash * 1.6) }}
-        >
-          <i className="absolute left-1/2 top-0 h-full w-[2px] -translate-x-1/2 bg-[#ffd166]" />
-          <i className="absolute left-0 top-1/2 h-[2px] w-full -translate-y-1/2 bg-[#ffd166]" />
-        </div>
-      ) : null}
-      {/* Red only while a round is landing. It used to be driven by `health < 45`, which is a
-          low-health indicator wearing a damage vignette's clothes: a soldier at 40 with nobody
-          shooting him got a permanently red screen, and the 70 rounds it takes to walk from 100
-          to 30 produced no feedback at all. The health bar and the health number already say
-          "you are nearly dead". */}
-      {hurtFlash > 0 ? (
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(circle at 50% 55%, rgba(0,0,0,0) 42%, rgba(190,26,20,0.5) 100%)",
-            opacity: Math.min(1, hurtFlash),
-          }}
-        />
-      ) : null}
-
-      {phase !== "playing" ? (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/45">
-          <div
-            className={`text-[42px] font-bold tracking-[0.08em] ${
-              phase === "complete" ? "text-[#3ddc6b]" : "text-[#ff5f4d]"
-            }`}
-          >
-            {phase === "complete" ? "TOWN CLEAR" : "RUN OVER"}
-          </div>
-          <div className="mt-2 text-[18px] font-bold tracking-[0.06em] text-white">
-            SCORE {String(score).padStart(4, "0")} · {targetsHit} HITS
-          </div>
-          <div className="desktop-only mt-6 text-[15px] font-bold tracking-[0.14em] text-[#ffa63d]">
-            PRESS ENTER TO RUN IT AGAIN
-          </div>
-          <div className="touch-show mt-6">
-            <TouchAction
-              onPress={restart}
-              className="rounded-[4px] border-2 border-[#ffa63d] bg-[#ffa63d]/15 px-8 py-3 text-[16px] font-bold tracking-[0.16em] text-[#ffa63d] active:bg-[#ffa63d]/35"
-            >
-              RUN IT AGAIN
-            </TouchAction>
-          </div>
-          {/* Poly Haven's licence requires a visible credit wherever its API was
-              used to source assets, and "visible" means a player has to be able
-              to see it — CREDITS.md alone does not discharge that. The sky,
-              barrel, gutter, wall lamp and buoy all came from there. ambientCG
-              (the plaster, brick, flagstone, concrete, quaystone and steel) is
-              CC0 and asks for nothing; it is named here as courtesy, not duty. */}
-          <div className="mt-10 text-center text-[11px] leading-relaxed tracking-[0.06em] text-white/40">
-            Environment textures and props: Poly Haven (CC0) · ambientCG (CC0)
-            <br />
-            Audio: Kenney (CC0) · Sonniss
-          </div>
-        </div>
-      ) : null}
+      <Reticle />
+      <DamageVignette />
+      <EndCard />
     </div>
   );
 }

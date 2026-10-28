@@ -1,0 +1,55 @@
+{
+  "name": "action-rpg-swing-lands-with-the-blade",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "ready", "waitTicks": 8, "release": true },
+    { "kind": "input", "label": "swing", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "wind-up", "waitTicks": 6, "release": true },
+    { "kind": "input", "label": "spam-1", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "swing-landed", "waitTicks": 30, "release": true },
+    { "kind": "input", "label": "spam-2", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "spam-gap-1", "waitTicks": 3, "release": true },
+    { "kind": "input", "label": "spam-3", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "spam-gap-2", "waitTicks": 3, "release": true },
+    { "kind": "input", "label": "death", "press": "KeyX", "holdTicks": 1, "release": true },
+    { "kind": "input", "label": "dead-swing", "press": "KeyF", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "dead-gap", "waitTicks": 3, "release": true },
+    { "kind": "input", "label": "dead-cast", "press": "KeyE", "holdTicks": 1, "release": true },
+    { "kind": "wait", "label": "dead-settled", "waitTicks": 40, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "signals": [
+      { "name": "attack", "entity": "player", "maxCount": 0, "atStep": "swing" },
+      { "name": "attack", "entity": "player", "maxCount": 0, "atStep": "wind-up" },
+      { "name": "vfx-attack", "entity": "player", "maxCount": 0, "atStep": "wind-up" },
+      { "name": "attack", "entity": "player", "minCount": 1, "atStep": "swing-landed" },
+      { "name": "vfx-attack", "entity": "player", "minCount": 1, "atStep": "swing-landed" },
+      { "name": "vfx-hit", "entity": "player", "minCount": 1, "atStep": "swing-landed" },
+      { "name": "attack", "entity": "player", "minCount": 1, "maxCount": 1 },
+      { "name": "died", "entity": "player", "minCount": 1, "atStep": "death" },
+      { "name": "ability", "entity": "player", "maxCount": 0 }
+    ],
+    "components": [
+      {
+        "entity": "player",
+        "component": "action",
+        "atSteps": [
+          { "label": "wind-up", "equals": "attack" },
+          { "label": "dead-settled", "equals": "death" }
+        ]
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The action RPG scene begins with the player visible and in frame; this held visibility row accompanies the swing-timing assertions.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
+  }
+}

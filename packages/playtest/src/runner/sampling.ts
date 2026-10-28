@@ -4,6 +4,7 @@ import {
   type IPlaytestVisualRegionBounds,
   type IPlaytestVisualRegionTarget,
 } from "../index.js";
+import type { IPlaytestHudAuditItem } from "../assertion-report.js";
 import { PlaytestBridgeError } from "./bridgeClient.js";
 import type { Page } from "playwright";
 import { PNG } from "pngjs";
@@ -796,6 +797,94 @@ function containsPaintedPixels(screenshot: Buffer): boolean {
     if ((png.data[offset + 3] ?? 0) > 0) return true;
   }
   return false;
+}
+
+/**
+ * Reads every visible text element the page draws, with its colour and the colour behind it.
+ *
+ * The DOM is the only place a HUD's real text lives: a canvas pixel cannot say whether "NaN"
+ * reached the player. A background is composited from the nearest ancestor up so text on the
+ * canvas reports alpha 0 and is not judged against a colour the player never sees.
+ */
+export async function sampleHudAudit(page: Page): Promise<{ items: IPlaytestHudAuditItem[] }> {
+  return page.evaluate((): { items: IPlaytestHudAuditItem[] } => {
+    const MAX_ITEMS = 400;
+    const MAX_TEXT = 120;
+
+    const parseColour = (value: string): [number, number, number, number] => {
+      const match = /^rgba?\((.+)\)$/u.exec(value.trim());
+      if (match !== null) {
+        const parts = match[1]!.split(/[\s,/]+/u).filter((part) => part !== "");
+        const channels = parts.slice(0, 3).map((part) => Number.parseFloat(part));
+        const alphaText = parts[3];
+        const alpha = alphaText === undefined ? 1 : Number.parseFloat(alphaText);
+        const normalizedAlpha = alpha > 1 ? alpha / 255 : alpha;
+        if (channels.length === 3 && channels.every((channel) => Number.isFinite(channel)) && Number.isFinite(normalizedAlpha)) {
+          return [channels[0]!, channels[1]!, channels[2]!, Math.min(Math.max(normalizedAlpha, 0), 1)];
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (context === null) return [0, 0, 0, 1];
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = value;
+      context.fillRect(0, 0, 1, 1);
+      const data = context.getImageData(0, 0, 1, 1).data;
+      return [data[0]!, data[1]!, data[2]!, data[3]! / 255];
+    };
+
+    const backing = (element: Element): [number, number, number, number] => {
+      let accumulated: [number, number, number, number] = [0, 0, 0, 0];
+      for (let current: Element | null = element; current !== null; current = current.parentElement) {
+        const [r, g, b, a] = parseColour(window.getComputedStyle(current).backgroundColor);
+        // Each ancestor paints underneath what is already accumulated: the nearer plate stays on top.
+        if (a > 0 && accumulated[3] < 0.99) {
+          const near = accumulated[3];
+          const total = near + a * (1 - near);
+          if (total > 0) {
+            accumulated = [
+              (accumulated[0] * near + r * a * (1 - near)) / total,
+              (accumulated[1] * near + g * a * (1 - near)) / total,
+              (accumulated[2] * near + b * a * (1 - near)) / total,
+              total,
+            ];
+          }
+        }
+        if (accumulated[3] >= 0.99 || current === document.documentElement) break;
+      }
+      return accumulated;
+    };
+
+    const items: IPlaytestHudAuditItem[] = [];
+    for (const element of document.body.querySelectorAll("*")) {
+      if (items.length === MAX_ITEMS) break;
+      if (element.closest("script, style, canvas, noscript") !== null) continue;
+      let ownText = "";
+      for (const node of element.childNodes) {
+        if (node.nodeType === 3 /* Node.TEXT_NODE; the global is browser-only */) ownText += node.textContent ?? "";
+      }
+      const text = ownText.replace(/\s+/gu, " ").trim();
+      if (text === "") continue;
+      const style = window.getComputedStyle(element);
+      if (style.display === "none" || style.visibility !== "visible") continue;
+      const opacity = Number.parseFloat(style.opacity);
+      if (!Number.isFinite(opacity) || opacity <= 0) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      if (rect.right <= 0 || rect.bottom <= 0 || rect.left >= window.innerWidth || rect.top >= window.innerHeight) continue;
+      const classes = Array.from(element.classList).slice(0, 2).map((name) => `.${name}`).join("");
+      items.push({
+        background: backing(element),
+        color: parseColour(style.color),
+        fontSizePx: Number.parseFloat(style.fontSize),
+        selector: `${element.tagName.toLowerCase()}${element.id === "" ? "" : `#${element.id}`}${classes}`,
+        text: text.slice(0, MAX_TEXT),
+      });
+    }
+    return { items };
+  });
 }
 
 export async function sampleHud(page: Page, assertions: readonly IPlaytestPathAssertion[]): Promise<Record<string, unknown>> {

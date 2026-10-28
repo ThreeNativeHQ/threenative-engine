@@ -4,6 +4,7 @@
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/graph/render_graph.h"
 #include "engine/shader/output.h"
+#include "engine/shader/standard.h"
 #include <webgpu/webgpu.h>
 #include <array>
 #include <memory>
@@ -137,8 +138,10 @@ private:
     void releaseTargets();
 };
 
-// Rigid-object VelocityNode: current/previous *unjittered* clip positions, then NDC subtraction.
-shader::OutputPrograms traaVelocityPrograms();
+// VelocityNode: current/previous *unjittered* clip positions of the draw's local vertex, then NDC subtraction.
+// The default variant is a rigid draw; a skinned, morphed or position-node variant deforms the vertex as the
+// colour pass does and carries it through last frame's model, view and projection (last frame's bones are not kept).
+shader::OutputPrograms traaVelocityPrograms(const shader::VertexVariant& variant = {});
 const char* traaResolveWgsl();
 const char* traaFillWgsl();
 

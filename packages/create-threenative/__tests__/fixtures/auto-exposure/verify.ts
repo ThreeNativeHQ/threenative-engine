@@ -36,9 +36,11 @@ interface IFixtureCase extends IExposureCaseProof {
 // with core's Unreal luminance (equal channel weights, no bottom-of-frame preference; PRD-632),
 // not the template copy's Rec. 709 bottom-weighted one that read 0.0014869 / 3.0579: the same
 // frames now read 6.1% and 6.5% lower. This pins the meter against a constant/doubled-meter bug;
-// display-tone metrics remain PRD341-owned.
-const darkLuminance = 0.0013968388084322214;
-const sunlightLuminance = 2.8592607975006104;
+// display-tone metrics remain PRD341-owned. Since PRD-747 the room sits one stop higher
+// (game.ts PLAIN_ROOM_BASE_STOPS), over the meter's -10 log2 black bucket; the frames read 2.000x /
+// 2.001x the 0.0013968 / 2.8593 above (turing adapter, local run).
+const darkLuminance = 0.0027937162667512894;
+const sunlightLuminance = 5.721457481384277;
 // The dark room's settled target; a backlit patch must leave it where it was.
 const darkTargetStops = Math.log2(exposureSettings.key / darkLuminance);
 const cases: IFixtureCase[] = [

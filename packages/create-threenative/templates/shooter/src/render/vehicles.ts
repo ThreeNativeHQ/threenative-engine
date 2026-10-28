@@ -677,6 +677,8 @@ const seaSeconds = (): number => (NOW.now() - SEA_EPOCH) / 1000;
  * motion is continuous, which is exactly what `ctx.tween` is NOT for.
  */
 function driftOnTheSwell(boat: Group, baseY: number, phase: number): void {
+  // Read by the town merge: baking a transform that changes next frame freezes it.
+  boat.userData.moving = true;
   boat.updateMatrixWorld = (force?: boolean): void => {
     const t = seaSeconds() + phase;
     boat.position.y = baseY + Math.sin(t * 2.64) * 0.035;

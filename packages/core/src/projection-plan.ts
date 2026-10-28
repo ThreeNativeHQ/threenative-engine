@@ -10,6 +10,7 @@ import type {
   SkinnedMesh,
 } from "three";
 
+import { isAutoBatchSource } from "./auto-batch.js";
 import { isEngineRenderHook } from "./engine-render-hook.js";
 import {
   type IGeometryContentClass,
@@ -1062,6 +1063,9 @@ function visitProjectionObject(
     addExactEntry(workspace, object, "lod");
     return;
   }
+  // Drawn through its merged mesh, which is walked in its place: a slot here would be a draw of
+  // nothing.
+  if (isAutoBatchSource(object)) return;
   if (!isRenderable(object)) return;
   state.renderables += 1;
   workspace.seen.add(object);

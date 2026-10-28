@@ -62,6 +62,9 @@ describe("core constraints", () => {
           // configures no property of one, and reads only `name` for the error label; which
           // materials exist, and how each looks, is entirely the game's.
           file !== "merge-parts.ts" &&
+          // The automatic caller of `mergeByMaterial`: it reads each mesh's material identity and
+          // render flags to decide which meshes share a draw, and constructs or edits no material.
+          file !== "auto-batch.ts" &&
           // The scene trace flattens the game's meshes into triangle and material-texel buffers, and
           // `TracedReflections` walks them. They read the game's materials and write none of them.
           // The tighter check is below.

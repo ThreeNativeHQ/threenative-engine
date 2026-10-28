@@ -20,6 +20,7 @@ import {
   readLinuxCpuSnapshot,
   SOAK_MIN_FRAMES,
   soakVerdict,
+  summarizePassRecording,
   type IFrameBudgetWindowJson,
   type ILinuxCpuSnapshot,
   type ISoakSample,
@@ -77,6 +78,30 @@ function sampleStream(): string {
 }
 
 describe("parsePerformanceMarkers", () => {
+  it("sums the native player's pass recording: rebuilds by cause, recorded draws and the frame CPU stages (PRD-754)", () => {
+    const frame = (recordCause: number, mainRecorded: number, recordMs: number) =>
+      `TN_PLAYER_FRAME:${JSON.stringify({
+        cpuFrameMs: 10, gameJsMs: 4, renderPrepareMs: 3, renderEncodeMs: 2.6, mainRecorded, recordCause,
+        auxRecorded: mainRecorded ? 5 : 0, shadowDraws: 46, recordMs, shadowEncodeMs: 0.25,
+      })}`;
+    const parsed = parsePerformanceMarkers(
+      [frame(0, 0, 0), frame(1, 120, 0.8), frame(1, 120, 0.8), frame(3, 118, 0.7), "TN_PLAYER_FRAME:{\"tick\":9}"].join("\n"),
+    );
+    expect(parsed.passRecording).toMatchObject({
+      frames: 4,
+      rebuilds: { order: 2, offset: 0, count: 1, other: 0 },
+      mainRecordedDraws: 358,
+      auxRecordedDraws: 15,
+      shadowDraws: 46,
+    });
+    expect(parsed.passRecording?.recordMs).toBeCloseTo(0.575);
+    expect(parsed.passRecording?.stagesMs.other).toBeCloseTo(0.4);
+    const report = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "fixture"));
+    expect(report).toContain("main bundle rebuilds: 2 order, 0 uniform offset, 1 visible count, 0 other; 358 main, 15 aux/velocity and 0 shadow draws recorded");
+    expect(report).toContain("(the three stages cover 96.0%)");
+    expect(() => summarizePassRecording([{ recordCause: 9, cpuFrameMs: 1 }])).toThrow(/TN_PERF_MARKER_MALFORMED/u);
+  });
+
   it("reads budget, host-gap and present-mode lines out of a mixed logcat stream", () => {
     const parsed = parsePerformanceMarkers(sampleStream());
     expect(parsed.budgets).toHaveLength(3);

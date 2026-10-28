@@ -1,0 +1,112 @@
+{
+  "name": "rts-pause",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "selection",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "label": "pause",
+      "at": {
+        "element": {
+          "selector": "[data-testid=pause-toggle]"
+        }
+      },
+      "waitTicks": 6
+    },
+    {
+      "kind": "click",
+      "label": "base-while-paused",
+      "at": {
+        "element": {
+          "selector": "[data-testid=order-base]"
+        }
+      },
+      "waitTicks": 6
+    },
+    {
+      "kind": "click",
+      "label": "army-while-paused",
+      "at": {
+        "element": {
+          "selector": "[data-testid=order-army]"
+        }
+      },
+      "waitTicks": 6
+    },
+    {
+      "kind": "wait",
+      "label": "held",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "label": "resume",
+      "at": {
+        "element": {
+          "selector": "[data-testid=pause-toggle]"
+        }
+      },
+      "waitTicks": 6
+    },
+    {
+      "kind": "wait",
+      "label": "running",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "paused",
+        "atSteps": [
+          {
+            "label": "pause",
+            "equals": true
+          },
+          {
+            "label": "base-while-paused",
+            "equals": true
+          },
+          {
+            "label": "army-while-paused",
+            "equals": true
+          },
+          {
+            "label": "held",
+            "equals": true
+          },
+          {
+            "label": "running",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "simTime",
+        "changed": true
+      }
+    ]
+  }
+}

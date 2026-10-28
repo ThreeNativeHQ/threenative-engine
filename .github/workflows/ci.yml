@@ -608,7 +608,11 @@ jobs:
           # The old 90 s cap sat under the floor and killed a healthy run at exactly 90 s (exit
           # 124). Only this outer watchdog moves: every runtime, assertion, sample and duration
           # budget inside the collector is unchanged, so a hang still dies, just not a slow run.
-          timeout 180s node packages/runtime-native/scripts/profile-production.mjs \
+          # 300 s, not 180 (PR #574): hosted runs took 103 s and 138 s, then two runs of one
+          # unchanged tree were killed at exactly 180 s while their build steps ran no slower; four
+          # local replays on 4 cores took 68-83 s with no stall. The collector now prints a
+          # TN_PROD_PHASE line per phase into collector.log, so a killed run names its phase.
+          timeout 300s node packages/runtime-native/scripts/profile-production.mjs \
             --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
             --hosted-software \
             --prebuilt-artifact "$GITHUB_WORKSPACE/packages/runtime-native/build/tn-linux/mystral" \
@@ -925,6 +929,8 @@ jobs:
           # in, or this lane would quietly stop covering 21 scenarios it has always covered.
           extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
           if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
+          # PRD-748: the engine-cost contract row runs on every PR, for every kit that does not opt out.
+          pnpm exec tsx scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}" "$target/playtests"
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
@@ -1033,7 +1039,7 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
-      - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
+      - run: sh scripts/xvfb.sh pnpm exec playwright test --config=benchmark.playwright.config.ts
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on
@@ -1376,7 +1382,12 @@ jobs:
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
     # PR range and immune to force-push SHAs the checkout may not have.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The full-history scan pays a 3.9 GB clone: on a hosted runner it has taken 5m59s
+    # (merge-group run 40715886891, success) and over 10 minutes (run 40754093470, killed by
+    # this budget with actions/checkout still fetching, which then failed the merge queue's
+    # fail-closed receipt verifier). Two runs, same tree cost, opposite verdicts: the budget
+    # was under the work, so it gets headroom rather than the scan losing its full history.
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
@@ -1386,6 +1397,10 @@ jobs:
         with:
           ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
           fetch-depth: 0
+          # A PR scans only its own commits, so it fetches commits and trees and then just the blobs
+          # its range reads (below): every blob of the 3.9 GB history outlasted this job's 10 minutes
+          # (PR #574, run 40745026751). Pushes and merge groups scan the full history and keep them.
+          filter: ${{ github.event_name == 'pull_request' && 'blob:none' || '' }}
       - name: Verify the PR commit range is present
         if: github.event_name == 'pull_request'
         env:
@@ -1395,6 +1410,20 @@ jobs:
           set -euo pipefail
           range="$BASE_SHA..$HEAD_SHA"
           test "$(git rev-list --count "$range")" -gt 0
+          # The checkout fetched no blobs. Fetch every blob the range's commits read in one request,
+          # and fail when one is still missing: gitleaks exits 0 after scanning 0 commits when it
+          # cannot read one.
+          blobs="$RUNNER_TEMP/gitleaks-range-blobs"
+          git rev-list --no-merges "$range" | git diff-tree --stdin -r --no-commit-id --raw \
+            | awk '$1 != ":160000" && $2 != "160000" { print $3; print $4 }' | grep -v '^0*$' | sort -u > "$blobs"
+          if [ -s "$blobs" ]; then
+            git -c fetch.negotiationAlgorithm=noop fetch --quiet --no-tags --no-write-fetch-head \
+              --recurse-submodules=no --filter=blob:none --stdin origin < "$blobs"
+          fi
+          if GIT_NO_LAZY_FETCH=1 git cat-file --batch-check < "$blobs" | grep ' missing$'; then
+            echo "::error::the PR range's blobs are missing, so gitleaks would scan nothing"
+            exit 1
+          fi
           echo "TN_GITLEAKS_RANGE=$range" >> "$GITHUB_ENV"
       - name: Scan PR commits for leaked secrets
         if: github.event_name == 'pull_request'
@@ -1475,6 +1504,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # As in scope: this job reads commits and a few workflow files (`git show`, fetched on
+          # demand), so it fetches no history blobs and fits its 5 minutes on a loaded runner.
+          filter: blob:none
           ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
       - name: Reject every unsuccessful or missing selected job
         env:

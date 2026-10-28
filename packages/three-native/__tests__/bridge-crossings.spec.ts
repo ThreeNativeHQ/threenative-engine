@@ -120,7 +120,13 @@ function growableModule() {
     HEAPU8: new Uint8Array(1 << 20),
     HEAPF64: new Float64Array(0),
     handlesSeen: [] as number[][],
-  } as unknown as TnAbiModule & { handlesSeen: number[][] };
+    mallocs: [] as Array<{ pointer: number; size: number }>,
+    frees: [] as number[],
+  } as unknown as TnAbiModule & {
+    handlesSeen: number[][];
+    mallocs: Array<{ pointer: number; size: number }>;
+    frees: number[];
+  };
   module.HEAPF64 = new Float64Array(module.HEAPU8.buffer);
   const grow = () => {
     const bigger = new Uint8Array(2 << 20);
@@ -133,12 +139,27 @@ function growableModule() {
   abi._malloc = (size: number) => {
     const pointer = top;
     top += (size + 7) & ~7;
+    module.mallocs.push({ pointer, size });
     return pointer;
   };
-  abi._free = () => 0;
+  abi._free = (pointer: number) => {
+    module.frees.push(pointer);
+    return 0;
+  };
   abi._tn_engine_version = () => 0;
   abi._tn_context_create = () => 0;
   abi._tn_diagnostic_release = () => 0;
+  // A get whose result is known: writes the number kind and its value into the output slot.
+  abi._tn_get = (_handle: number, _name: number, out: number) => {
+    const v = new DataView(module.HEAPU8.buffer);
+    v.setUint32(out, 1, true);
+    v.setFloat64(out + 8, 42, true);
+    return 0;
+  };
+  abi._tn_invoke = (_handle: number, _name: number, _args: number, _count: number, out: number) => {
+    new DataView(module.HEAPU8.buffer).setUint32(out, 8, true);
+    return 0;
+  };
   abi.lengthBytesUTF8 = (text: string) => text.length;
   abi.stringToUTF8 = () => undefined;
   abi.addFunction = () => 1;
@@ -176,5 +197,136 @@ describe("Wasm memory growth under the bridge", () => {
       [5 | (2 << 16), 7, 9],
       [5 | (2 << 16), 7, 9, 6, 1, 2],
     ]);
+  });
+});
+
+describe("scope cleanup on the Wasm bridge", () => {
+  const ref: IEngineRef = { key: "5:2:7:9", type: 5 };
+
+  it("allocates no empty cleanup array on an ordinary get", () => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    const results: unknown[] = [];
+    const splice = Array.prototype.splice;
+    let empty = 0;
+    Array.prototype.splice = function (this: unknown[], ...args: unknown[]) {
+      if (this.length === 0 && args.length === 1) empty += 1;
+      return Reflect.apply(splice, this, args) as unknown[];
+    } as typeof Array.prototype.splice;
+    try {
+      for (let call = 0; call < 100; call += 1) results.push(runtime.get(ref, "value"));
+    } finally {
+      Array.prototype.splice = splice;
+    }
+    expect(results).toEqual(Array.from({ length: 100 }, () => 42));
+    expect(empty).toBe(0);
+  });
+
+  it("frees an overflow allocation exactly once", () => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    runtime.invoke(ref, "overflow", [new Float64Array(9000)]);
+    const fallbacks = module.mallocs.filter((entry) => entry.size > 64 * 1024);
+    expect(fallbacks).toHaveLength(1);
+    expect(module.frees.filter((pointer) => pointer === fallbacks[0]?.pointer)).toHaveLength(1);
+  });
+
+  it("frees an outer overflow allocation only after a nested call returns", () => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    let freesWhenNested = -1;
+    const abi = module as unknown as Record<string, unknown>;
+    abi._tn_invoke = (
+      _handle: number,
+      _name: number,
+      _args: number,
+      _count: number,
+      out: number,
+    ) => {
+      runtime.get(ref, "value");
+      freesWhenNested = module.frees.length;
+      new DataView(module.HEAPU8.buffer).setUint32(out, 8, true);
+      return 0;
+    };
+    runtime.invoke(ref, "overflow", [new Float64Array(9000)]);
+    const overflow = module.mallocs.find((entry) => entry.size > 64 * 1024);
+    expect(freesWhenNested).toBe(0);
+    expect(module.frees.filter((pointer) => pointer === overflow?.pointer)).toHaveLength(1);
+  });
+
+  it("rewinds the arena when a scoped call throws", () => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    const abi = module as unknown as Record<string, unknown>;
+    let fail = true;
+    abi._tn_invoke = (
+      _handle: number,
+      _name: number,
+      _args: number,
+      _count: number,
+      out: number,
+      diag: number,
+    ) => {
+      const v = new DataView(module.HEAPU8.buffer);
+      if (fail) {
+        fail = false;
+        v.setUint32(diag, 0, true);
+        return 1;
+      }
+      v.setUint32(out, 8, true);
+      return 0;
+    };
+    // 8000 doubles fill the arena without overflowing it, so a rewound arena fits the retry.
+    const value = new Float64Array(8000);
+    expect(() => runtime.invoke(ref, "fill", [value])).toThrow(/TN_ABI_1/u);
+    const mallocs = module.mallocs.length;
+    runtime.invoke(ref, "fill", [value]);
+    expect(module.mallocs.length).toBe(mallocs);
+    expect(module.frees).toHaveLength(0);
+  });
+});
+
+describe("per-crossing glue on the Wasm bridge", () => {
+  /** A module whose invoke answers the handle in `answer` (type|context, index, generation). */
+  function answering(answer: number[]) {
+    const { module, grow } = growableModule();
+    const scratch: number[][] = [];
+    (module as unknown as Record<string, unknown>)._tn_invoke = (
+      _handle: number,
+      _name: number,
+      _args: number,
+      _count: number,
+      out: number,
+      diag: number,
+    ) => {
+      const words = new Uint32Array(module.HEAPU8.buffer);
+      // What the engine finds in its output and diagnostic slots before it writes them.
+      scratch.push([
+        ...words.subarray(out >>> 2, (out + 56) >>> 2),
+        words[diag >>> 2] ?? -1,
+        words[(diag >>> 2) + 1] ?? -1,
+      ]);
+      const v = new DataView(module.HEAPU8.buffer);
+      v.setUint32(out, 4, true); // KIND.handle
+      v.setUint32(out + 16, answer[0] ?? 0, true);
+      v.setUint32(out + 20, answer[1] ?? 0, true);
+      v.setUint32(out + 24, answer[2] ?? 0, true);
+      // Junk the next call must not see.
+      v.setUint32(out + 40, 0xdeadbeef, true);
+      v.setUint32(diag, 0xdeadbeef, true);
+      return 0;
+    };
+    return { module, grow, scratch, runtime: createWasmRuntime(module) };
+  }
+  const self: IEngineRef = { key: "5:0:1:1", type: 5 };
+
+  it("hands every call zeroed output and diagnostic slots, before and after the memory grows", () => {
+    const { runtime, grow, scratch } = answering([5, 7, 9]);
+    runtime.invoke(self, "updateMatrixWorld", []);
+    runtime.invoke(self, "updateMatrixWorld", []);
+    grow();
+    runtime.invoke(self, "updateMatrixWorld", []);
+    expect(scratch).toHaveLength(3);
+    for (const seen of scratch) expect(seen.every((word) => word === 0)).toBe(true);
   });
 });

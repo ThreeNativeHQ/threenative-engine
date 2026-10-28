@@ -23,6 +23,9 @@ function summary(value: number): IFrameBudgetSummary {
 function midwayWindow(overrides: Partial<IFrameBudgetWindow> = {}): IFrameBudgetWindow {
   return {
     fps: 49.5,
+    drawn: summary(20.2),
+    drawnFps: 49.5,
+    drawnFrames: 300,
     frame: summary(18.4),
     frames: 300,
     gpu: summary(1.9),

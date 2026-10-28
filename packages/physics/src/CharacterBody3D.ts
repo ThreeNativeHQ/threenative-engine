@@ -13,7 +13,7 @@ import {
   type IPhysicsSimulation,
   requirePhysicsSimulation,
 } from "./simulation.js";
-import { bulkTransformValue } from "./transformRecord.js";
+import { bulkTransformValue, setRotationIfChanged } from "./transformRecord.js";
 
 export interface ICharacterBody3DOptions {
   readonly object: Object3D;
@@ -246,7 +246,7 @@ export class CharacterBody3D {
     }
     if (this.#sliding && this.grounded && this.velocity.y < 0) this.velocity.y = 0;
     this.object.position.set(x, y, z);
-    this.object.quaternion.set(qx, qy, qz, qw);
+    setRotationIfChanged(this.object.quaternion, qx, qy, qz, qw);
     this.#desired.x = 0;
     this.#desired.y = 0;
     this.#desired.z = 0;
@@ -263,7 +263,8 @@ export class CharacterBody3D {
     const transform = this.#simulation.readBodyTransform(this.body.id);
     if (transform === undefined) return;
     this.object.position.set(transform.position.x, transform.position.y, transform.position.z);
-    this.object.quaternion.set(
+    setRotationIfChanged(
+      this.object.quaternion,
       transform.rotation.x,
       transform.rotation.y,
       transform.rotation.z,

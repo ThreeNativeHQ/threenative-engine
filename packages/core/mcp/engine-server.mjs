@@ -802,7 +802,7 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
   const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
-  const response = searchMechanics(situation, manifest, scope);
+  const response = withReferenceTools(situation, searchMechanics(situation, manifest, scope));
   if (starterKits.length === 0) return response;
   return {
     starterKits,
@@ -811,6 +811,20 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
       guidance: `Scaffold from the starter kit first, then search the mechanics it does not cover. ${response.guidance}`,
       verdict: "starterKit"
     } : {}
+  };
+}
+var REVERSE_ENGINEER = /\breverse[\s-]?engineer|\bdecomp|\bdisassembl/iu;
+var REFERENCE_TOOLS = [
+  "engine_search_references",
+  "engine_reference_detail",
+  "engine_save_reference"
+];
+function withReferenceTools(situation, response) {
+  if (!REVERSE_ENGINEER.test(situation)) return response;
+  return {
+    referenceTools: REFERENCE_TOOLS,
+    ...response,
+    guidance: `Reverse engineer the game with engine_search_references, then engine_reference_detail for its pinned cards. ${response.guidance}`
   };
 }
 function searchMechanics(situation, manifest, scope) {
@@ -910,7 +924,7 @@ var TOOL_DEFINITIONS = [
   },
   {
     name: "engine_search_references",
-    description: "Search mechanic cards and repository map nodes from classic games. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
+    description: "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
     annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -921,7 +935,7 @@ var TOOL_DEFINITIONS = [
   },
   {
     name: "engine_reference_detail",
-    description: "Read a game's pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
+    description: "Reverse engineer a game: read its pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
     annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -936,7 +950,7 @@ var TOOL_DEFINITIONS = [
   },
   {
     name: "engine_save_reference",
-    description: "Validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused.",
+    description: "Save what you reverse engineer: validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused.",
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -1174,7 +1188,33 @@ async function handleLine(line2, manifestFile) {
     return jsonRpcError(request.id, -32e3, message);
   }
 }
+async function runCli(argv, manifestFile = defaultManifestPath(), io = {
+  stderr: (text2) => void process.stderr.write(text2),
+  stdout: (text2) => void process.stdout.write(text2)
+}) {
+  const [name, json = "{}"] = argv;
+  try {
+    const result = await handleToolCall(
+      { arguments: JSON.parse(json), name },
+      manifestFile
+    );
+    io.stdout(`${result.content[0].text}
+`);
+    return 0;
+  } catch (error) {
+    io.stderr(`${name}: ${error instanceof Error ? error.message : String(error)}
+`);
+    return 1;
+  }
+}
 function runServer(manifestFile = defaultManifestPath()) {
+  const tool = process.argv[2];
+  if (tool?.startsWith("engine_") === true) {
+    void runCli(process.argv.slice(2), manifestFile).then((code) => {
+      process.exitCode = code;
+    });
+    return;
+  }
   loadCapabilityManifest(manifestFile);
   const input = createInterface({ input: process.stdin });
   void loadReferenceIndex().catch((error) => process.stderr.write(`${String(error)}
@@ -1196,4 +1236,4 @@ if (entryPath !== void 0 && realpathSync(path2.resolve(entryPath)) === realpathS
   }
 }
 
-export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilityDetails, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };
+export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilityDetails, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runCli, runServer, searchCapabilities, toolDefinitions };

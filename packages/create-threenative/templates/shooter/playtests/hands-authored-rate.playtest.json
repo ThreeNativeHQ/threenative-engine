@@ -1,0 +1,54 @@
+{
+  "name": "hands-authored-rate",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "rifle",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "stand",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-and-fire",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 30,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "rifle",
+        "component": "handsRate",
+        "lte": 1.1,
+        "allowTrivial": "handsRate is clip seconds per game second the playing hands clip ran since it started (Shoot here, authored rate 1; 1.1 leaves room for the loop-wrap rounding of a 0.15 s clip). The defect: core stride sync read the camera carrying the viewmodel (5.6 m/s against the clip's hand sway) as walking and played the clips the rifle does not re-time at its 3x ceiling, which the owner saw as a seizure."
+      },
+      {
+        "entity": "player",
+        "component": "speed",
+        "gte": 3,
+        "allowTrivial": "Proves the body is walking, so the rate above was read under the motion that triggered the defect."
+      }
+    ]
+  }
+}

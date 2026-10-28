@@ -758,6 +758,107 @@ void traaCameraVelocity() {
     CHECK(moving > 50);  // the sphere's pixels move with the camera, not zero
 }
 
+// A skinned ball held 3 m in front of a camera that yaws 5 degrees a frame (a first-person weapon while the player turns).
+// The velocity pass drew no skinned draw and the camera-motion fill gave the ball the camera's motion, so motion blur
+// smeared the weapon (PRD-746). Drawn through its own skinned vertex, the ball reads still and the sky keeps the fill's
+// camera motion: background texels equal a frame with no ball.
+void traaCameraHeldSkinnedVelocity() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    const size_t vertices = ball->positions.byteLength() / 12;
+    BufferStore skinIndices(Scalar::U16, 0), skinWeights(Scalar::F32, 0);
+    skinIndices.resize(vertices * 4);
+    skinWeights.resize(vertices * 4);
+    const std::vector<uint16_t> zero(vertices * 4, 0);
+    std::vector<float> weights(vertices * 4, 0);
+    for (size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    skinIndices.write(0, zero.data(), zero.size() * 2);
+    skinWeights.write(0, weights.data(), weights.size() * 4);
+    const std::vector<float> bones = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    shader::StandardMaterial material;
+    const auto directory = std::filesystem::current_path() /
+        ("traa-skinned-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    constexpr int last = 20;  // the debug dump keeps frames 18-23
+    const auto velocity = [&](bool withBall, bool& skipped) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump();
+        DrawItem item;
+        item.key = item.id = 1; item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions; item.normals = &ball->normals; item.indices = &ball->indices; item.material = &material;
+        item.skinIndices = &skinIndices; item.skinWeights = &skinWeights; item.boneMatrices = &bones;
+        item.bindMatrix = item.bindMatrixInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        const auto folder = directory / (withBall ? "ball" : "sky");
+        skipped = false;
+        for (int frame = 0; frame <= last; ++frame) {
+            const double a = 5 * kPi / 180 * frame, c = std::cos(a), s = std::sin(a);
+            CameraState view = camera(double(width) / height);
+            view.matrixWorld = {c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 4, 1};
+            view.matrixWorldInverse = {c, 0, s, 0, 0, 1, 0, 0, -s, 0, c, 0, 4 * s, 0, -4 * c, 1};
+            item.matrixWorld = {c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, -3 * s, 0, 4 - 3 * c, 1};  // the camera's child at z = -3
+            renderer.render({&item, withBall ? 1u : 0u}, view, LightState{}, {0, 0, 0, 1});
+            for (const auto& note : renderer.diagnostics()) skipped = skipped || note.rfind("TN_TRAA_VELOCITY_SKIPPED: skinned", 0) == 0;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        std::ifstream file(folder / ("frame-" + std::to_string(last) + "-velocity.bin"), std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    bool skipped = false, unused = false;
+    const auto held = velocity(true, skipped);
+    const auto sky = velocity(false, unused);
+    CHECK(!skipped);
+    size_t still = 0, background = 0;
+    for (uint32_t y = 0; y < height; ++y)
+        for (uint32_t x = 0; x < width; ++x) {
+            const size_t texel = size_t{y} * width + x;
+            const double nx = (x + 0.5) / width * 2 - 1, ny = (y + 0.5) / height * 2 - 1;
+            // The ball spans about 0.57 NDC across and 0.76 NDC up: its inner half, and the four corners outside it.
+            if (std::hypot(nx * width / height, ny) < 0.4) {
+                ++still;
+                CHECK(std::hypot(held[texel * 4], held[texel * 4 + 1]) < 1e-3);
+            } else if (std::abs(nx) > 0.8 && std::abs(ny) > 0.8) {
+                ++background;
+                CHECK(std::abs(held[texel * 4] - sky[texel * 4]) < 1e-4f && std::abs(held[texel * 4 + 1] - sky[texel * 4 + 1]) < 1e-4f);
+                CHECK(std::abs(sky[texel * 4]) > 0.05f);  // the sky moves with the turning camera
+            }
+        }
+    CHECK(still > 20 && background > 8);
+}
+
+// The frame delta (three's deltaTime, read by the output pass and by material nodes) spans presented frames. A
+// pipeline compile between two frames restarted it, so the next frame read only the time since the compile.
+void frameDeltaSkipsCompiles() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(8, 8);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const CameraState view = camera(1);
+    renderer.setPostGraph(g::vec4({g::splat(g::uniform("deltaTime", shader::Type::f32()), 3), g::float_(1)}));
+    renderer.render({}, view, LightState{}, {0, 0, 0, 1});
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    renderer.compileAsync({}, view, LightState{}, WGPUTextureFormat_RGBA8Unorm);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    renderer.render({}, view, LightState{}, {0, 0, 0, 1});
+    const auto pixels = read(renderer, events);
+    CHECK(pixels.size() == 8 * 8 * 4);
+    if (pixels.size() == 8 * 8 * 4) CHECK(pixels[0] >= 0.36 * 255);  // at least the 0.4 s since the first frame, not the 0.2 s since the compile
+}
 // A skinned or instanced draw writes its own motion: the velocity stage places its previous position with the previous
 // frame's palette or instance matrices (Unreal's previous bone and instance transforms). Without it the pixels read as
 // incomplete dynamic motion, upsampling rejects their history and the 0.72 input grid shows on every animated edge (the kits
@@ -2813,6 +2914,262 @@ void emissivePass(bool requirePixels) {
     }
 }
 
+// PRD-754: in depth order (three's painterSortStable) the main pass's bundle key follows each origin's depth, so a
+// camera turn that swaps two boxes' depths re-records the bundle for its order and names that cause; the state-first
+// order holds the bundle across the turn, and a held pose records nothing either way. Renderer::recordCause tells order, offsets and count apart.
+void cameraTurnRecords() {
+    using R = Renderer;
+    const std::vector<uint64_t> one(6 + 6 * 6, 0);
+    std::vector<uint64_t> ab(one), ba(one);
+    ab.insert(ab.end(), one.begin(), one.end()); ab[0] = 1; ab.push_back(0);
+    ba.insert(ba.end(), one.begin(), one.end()); ba[42] = 1; ba.push_back(0);
+    std::vector<uint64_t> offsets(ab); offsets[3] = 256;
+    std::vector<uint64_t> fewer(one); fewer.push_back(0);
+    const std::vector<uint32_t> two{0, 42}, single{0};
+    CHECK(R::recordCause(ab, two, ab, two) == R::RecordNone);
+    CHECK(R::recordCause(ab, two, ba, two) == R::RecordOrder);
+    CHECK(R::recordCause(ab, two, offsets, two) == R::RecordOffset);
+    CHECK(R::recordCause(ab, two, fewer, single) == R::RecordCount);
+    CHECK(R::recordCause({}, {}, ab, two) == R::RecordOther);
+    // Rows of different lengths (a program with more attributes) still read as a reorder.
+    std::vector<uint64_t> wide(one); wide.resize(wide.size() + 6, 7); wide[0] = 2;
+    std::vector<uint64_t> wn(wide), nw(one);
+    wn.insert(wn.end(), one.begin(), one.end()); wn.push_back(0);
+    nw.insert(nw.end(), wide.begin(), wide.end()); nw.push_back(0);
+    CHECK(R::recordCause(wn, {0, 48}, nw, {0, 42}) == R::RecordOrder);
+
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    // Two geometries: draws that share a program and geometry swap without moving the key, since uniform slots follow
+    // plan order and a slot's contents are rewritten each frame. Two materials: one batch would hold both in one draw.
+    const std::array geometries = {plane(1, 1), plane(1, 2)};
+    std::array<shader::StandardMaterial, 2> materials;
+    materials[1].color = {1, 0, 0};
+    std::array<DrawItem, 2> items;
+    const double x[2] = {-2, 2}, z[2] = {0, -0.5};
+    for (int i = 0; i < 2; ++i) {
+        items[i].key = items[i].id = uint64_t(i + 1);
+        items[i].kind = MaterialKind::Basic;
+        items[i].positions = &geometries[i]->positions; items[i].indices = &geometries[i]->indices;
+        items[i].material = &materials[i];
+        items[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x[i], 0, z[i], 1};
+    }
+    // camera(1) at z = 4 turned by `yaw` about y: at 30 degrees the right box (farther ahead) is the nearer one.
+    const auto turned = [](double yaw) {
+        CameraState c = camera(1);
+        const double cs = std::cos(yaw), sn = std::sin(yaw);
+        c.matrixWorld = {cs, 0, -sn, 0, 0, 1, 0, 0, sn, 0, cs, 0, 0, 0, 4, 1};
+        c.matrixWorldInverse = {cs, 0, sn, 0, 0, 1, 0, 0, -sn, 0, cs, 0, 4 * sn, 0, -4 * cs, 1};
+        return c;
+    };
+    const auto frame = [&](double yaw) { renderer.render(std::span<const DrawItem>(items), turned(yaw), LightState{}, {0, 0, 0, 1}); };
+    // Depth order (setStablePasses(false)) re-records the turn for its order; the state-first order keeps the bundle.
+    for (const bool stable : {false, true}) {
+        renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
+        for (int i = 0; i < 3; ++i) frame(0);
+        CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+        frame(30 * kPi / 180);
+        std::printf("camera turn, stable passes %d: %u main draw(s) recorded, cause %u, %.4f ms recording\n", int(stable),
+                    renderer.lastFrame().mainRecorded, unsigned(renderer.lastFrame().recordCause), renderer.lastFrame().recordMs);
+        if (stable) CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+        else CHECK(renderer.lastFrame().mainRecorded == 2 && renderer.lastFrame().recordCause == R::RecordOrder);
+        frame(30 * kPi / 180);
+        CHECK(renderer.lastFrame().mainRecorded == 0 && renderer.lastFrame().recordCause == R::RecordNone);
+    }
+}
+
+// PRD-754: two exactly coplanar quads, where three's order (equal depth, then id) and a state order (material first)
+// disagree. At equal depth the draw order picks the winner (the shooter's door trim), so the stable passes keep three's
+// order: the pixels match direct encode over a camera turn.
+void coplanarKeepsWinner() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const auto geometry = plane(2, 2);
+    std::array<shader::StandardMaterial, 2> materials;
+    materials[0].color = {1, 0, 0}; materials[1].color = {0, 1, 0};
+    std::array<DrawItem, 2> items;
+    for (int i = 0; i < 2; ++i) {
+        items[i].key = items[i].id = uint64_t(i + 1);
+        items[i].kind = MaterialKind::Basic;
+        items[i].positions = &geometry->positions; items[i].indices = &geometry->indices;
+        items[i].material = &materials[1 - i];  // id order and material address order disagree
+        items[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    }
+    const auto run = [&](bool stable) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setStablePasses(stable);
+        std::vector<std::vector<uint8_t>> frames;
+        for (const double yaw : {0.0, 0.2, 0.4}) {
+            CameraState c = camera(1);
+            const double cs = std::cos(yaw), sn = std::sin(yaw);
+            c.matrixWorld = {cs, 0, -sn, 0, 0, 1, 0, 0, sn, 0, cs, 0, 0, 0, 4, 1};
+            c.matrixWorldInverse = {cs, 0, sn, 0, 0, 1, 0, 0, -sn, 0, cs, 0, 0, 0, -4, 1};
+            renderer.render(std::span<const DrawItem>(items), c, LightState{}, {0, 0, 0, 1});
+            frames.push_back(read(renderer, events));
+        }
+        return frames;
+    };
+    const auto direct = run(false), stable = run(true);
+    for (std::size_t k = 0; k < direct.size(); ++k) {
+        std::size_t differ = 0;
+        for (std::size_t p = 0; p + 3 < direct[k].size(); p += 4)
+            differ += !std::equal(direct[k].begin() + std::ptrdiff_t(p), direct[k].begin() + std::ptrdiff_t(p + 4), stable[k].begin() + std::ptrdiff_t(p));
+        std::printf("coplanar frame %zu: %zu pixels differ\n", k, differ);
+        CHECK(!direct[k].empty() && direct[k].size() == stable[k].size() && differ == 0);
+    }
+}
+
+// PRD-754: a draw that leaves the frame (the render database culled it) keeps its row in the main bundle with no
+// instances, so the visible set changing records nothing; the pixels and three's Info match the depth-order path that
+// re-records, and the draw coming back records nothing either.
+// PRD-754: transparent draws record their own bundle, keyed as the direct path keys them: a cull records what direct
+// encode records, never more, and pixels match. A draw seen for the first time records alone, into a delta bundle
+// drawn after the kept rows: the kept rows record nothing (firstSeen).
+void cullKeepsMain(bool transparent, bool firstSeen = false) {
+    using R = Renderer;
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const std::array geometries = {plane(1, 1), plane(1, 2), plane(2, 1)};
+    std::array<shader::StandardMaterial, 3> materials;
+    materials[0].color = {1, 0, 0}; materials[1].color = {0, 1, 0}; materials[2].color = {0, 0, 1};
+    std::array<DrawItem, 3> all;
+    const double x[3] = {-2.5, 0, 2.5};
+    for (int i = 0; i < 3; ++i) {
+        all[i].key = all[i].id = uint64_t(i + 1);
+        all[i].kind = MaterialKind::Basic;
+        all[i].positions = &geometries[i]->positions; all[i].indices = &geometries[i]->indices;
+        all[i].material = &materials[i];
+        all[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x[i], 0, 0, 1};
+        all[i].transparent = transparent;
+    }
+    const std::vector<DrawItem> three(all.begin(), all.end()), two{all[0], all[2]};
+    // The same draws through copied materials: a batch's material pointer can move between frames.
+    const std::array<shader::StandardMaterial, 3> copies = materials;
+    std::vector<DrawItem> copied = two;  // and a cull in the same frame, so the frame is not the last one again
+    copied[0].material = &copies[0];
+    copied[1].material = &copies[2];
+    struct Seen { std::vector<uint8_t> pixels; uint32_t recorded, draws; uint64_t triangles; };
+    const auto run = [&](bool stable) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(32, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
+        const auto frame = [&](const std::vector<DrawItem>& items) {
+            renderer.render(std::span<const DrawItem>(items), camera(1), LightState{}, {0, 0, 0, 1});
+            const auto& f = renderer.lastFrame();
+            return Seen{read(renderer, events), f.mainRecorded, f.draws, f.triangles};
+        };
+        if (firstSeen) {
+            for (int i = 0; i < 3; ++i) frame(two);
+            return std::vector<Seen>{frame(three), frame(three)};
+        }
+        for (int i = 0; i < 3; ++i) frame(three);
+        // A readback copy destroyed between frames binds to no draw, so it keeps the out-of-view row.
+        renderer.gpu().destroy(renderer.gpu().createBuffer(256, WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst));
+        std::vector<Seen> seen{frame(two), frame(two), frame(three)};
+        if (transparent) seen.push_back(frame(copied));
+        return seen;
+    };
+    const auto direct = run(false), stable = run(true);
+    for (std::size_t k = 0; k < direct.size(); ++k) {
+        std::size_t covered = 0, differ = 0;
+        for (std::size_t p = 0; p + 3 < direct[k].pixels.size(); p += 4) {
+            const bool lit = direct[k].pixels[p] || direct[k].pixels[p + 1] || direct[k].pixels[p + 2];
+            covered += lit;
+            differ += !std::equal(direct[k].pixels.begin() + std::ptrdiff_t(p), direct[k].pixels.begin() + std::ptrdiff_t(p + 4),
+                                  stable[k].pixels.begin() + std::ptrdiff_t(p));
+        }
+        std::printf("cull%s%s frame %zu: %zu covered pixels, %zu differ; recorded %u direct, %u stable; draws %u/%u, triangles %llu/%llu\n",
+                    transparent ? " transparent" : "", firstSeen ? " first-seen" : "", k, covered, differ, direct[k].recorded, stable[k].recorded, direct[k].draws, stable[k].draws,
+                    (unsigned long long)direct[k].triangles, (unsigned long long)stable[k].triangles);
+        CHECK(!direct[k].pixels.empty() && direct[k].pixels.size() == stable[k].pixels.size());
+        CHECK(covered > 0 && differ == 0);
+        CHECK(direct[k].draws == stable[k].draws && direct[k].triangles == stable[k].triangles);
+        if (!firstSeen) CHECK(stable[k].recorded == (transparent ? direct[k].recorded : 0));
+    }
+    if (firstSeen) {
+        CHECK(direct[0].recorded == 3 && stable[0].recorded == 1 && stable[1].recorded == 0);
+        return;
+    }
+    CHECK(direct[0].recorded == 2 && direct[2].recorded == 3 && direct[2].draws == direct[0].draws + 1);
+    (void)sizeof(R);
+}
+
+// PRD-754: under TRAA, transparent draws that come and go and whose material pointer moves (a batch's) re-record only
+// themselves in the velocity pass, and the velocity slots asked for after their appended uniform blocks do not land on them.
+void transparentKeepsVelocityRows() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const std::array geometries = {plane(1, 1), plane(1, 2), plane(2, 1), plane(1, 1)};
+    std::array<shader::StandardMaterial, 4> materials;
+    materials[0].color = {1, 0, 0}; materials[1].color = {0, 1, 0}; materials[2].color = {0, 0, 1}; materials[3].color = {1, 1, 0};
+    const std::array<shader::StandardMaterial, 4> copies = materials;
+    std::vector<DrawItem> items(4);
+    const double x[4] = {-2.5, 0, 2.5, 1};
+    for (int i = 0; i < 4; ++i) {
+        items[i].key = items[i].id = uint64_t(i + 1);
+        items[i].kind = MaterialKind::Basic;
+        items[i].positions = &geometries[i]->positions; items[i].indices = &geometries[i]->indices;
+        items[i].material = &materials[i];
+        items[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x[i], 0, 0, 1};
+    }
+    items[2].transparent = items[3].transparent = true;
+    struct Seen { std::vector<uint8_t> pixels; uint32_t recorded; };
+    const auto run = [&](bool stable) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(32, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setTraa(TraaOptions{});
+        renderer.setRenderScale(0.5f);  // upscaled: the transparent draw writes its responsive mark into the velocity target
+        renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
+        std::vector<Seen> seen;
+        for (int frame = 0; frame < 6; ++frame) {
+            items[2].material = frame % 2 ? &copies[2] : &materials[2];
+            renderer.render(std::span<const DrawItem>(items.data(), frame % 2 ? 4 : 3), camera(1), LightState{}, {0, 0, 0, 1});
+            seen.push_back({read(renderer, events), renderer.lastFrame().auxRecorded});
+        }
+        return seen;
+    };
+    const auto direct = run(false), stable = run(true);
+    for (std::size_t k = 0; k < direct.size(); ++k) {
+        std::size_t differ = 0;
+        int most = 0;
+        for (std::size_t p = 0; p < direct[k].pixels.size() && p < stable[k].pixels.size(); ++p) {
+            differ += direct[k].pixels[p] != stable[k].pixels[p];
+            most = std::max(most, std::abs(int(direct[k].pixels[p]) - int(stable[k].pixels[p])));
+        }
+        std::printf("velocity tail frame %zu: %zu bytes differ (most %d); velocity recorded %u direct, %u stable\n", k, differ,
+                    most, direct[k].recorded, stable[k].recorded);
+        CHECK(!direct[k].pixels.empty() && direct[k].pixels.size() == stable[k].pixels.size() && differ == 0);
+        if (k >= 2) CHECK(direct[k].recorded == (k % 2 ? 4u : 3u) && stable[k].recorded == (k % 2 ? 2u : 1u));
+    }
+}
+
+void cullKeepsMainBundle() {
+    cullKeepsMain(false); cullKeepsMain(true); cullKeepsMain(false, true);
+    transparentKeepsVelocityRows();
+}
+
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }
 
@@ -2962,11 +3319,13 @@ void auxTargetsAlphaTested() {
 
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},
              {"traa_skinned_velocity", traaSkinnedVelocity},
+             {"traa_camera_held_skinned_velocity", traaCameraHeldSkinnedVelocity},
+             {"frame_delta_skips_compiles", frameDeltaSkipsCompiles},
              {"traa_instanced_velocity", traaInstancedVelocity},
              {"traa_alpha_tested_velocity", traaAlphaTestedVelocity},
              {"traa_manual_jitter", traaManualJitter},

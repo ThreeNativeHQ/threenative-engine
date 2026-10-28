@@ -3,7 +3,7 @@ import type { IToneRegion } from "../tone.js";
 import type { IPlaytestToneAssertion } from "./schema-base.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
-import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateFootSlipAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
+import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateFootSlipAssertion, validateSightLineAssertion, validateHudAuditAssertion, validateEngineCostAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
 import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestNetworkProfile, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
@@ -1032,6 +1032,9 @@ export function validateStepLabels(
   for (const [index, assertion] of (assertions.tone ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.tone[${index}].atStep`);
   }
+  for (const [index, assertion] of (assertions.animation ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.animation[${index}].atStep`);
+  }
   for (const [index, assertion] of (assertions.footSlip ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.footSlip[${index}].atStep`);
     // The runner samples one set of feet per step; a second assertion there would never be measured.
@@ -1218,6 +1221,15 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
           footSlip: requireArray(value, "footSlip", scenarioPath, "assert.footSlip").map((entry, index) =>
             validateFootSlipAssertion(entry, scenarioPath, `assert.footSlip[${index}]`)),
         }
+      : {}),
+    ...(hasKey(value, "sightLine")
+      ? { sightLine: validateSightLineAssertion(value.sightLine, scenarioPath, "assert.sightLine") }
+      : {}),
+    ...(hasKey(value, "hudAudit")
+      ? { hudAudit: validateHudAuditAssertion(value.hudAudit, scenarioPath, "assert.hudAudit") }
+      : {}),
+    ...(hasKey(value, "engineCost")
+      ? { engineCost: validateEngineCostAssertion(value.engineCost, scenarioPath, "assert.engineCost") }
       : {}),
     ...(hasKey(value, "sceneNodes")
       ? {

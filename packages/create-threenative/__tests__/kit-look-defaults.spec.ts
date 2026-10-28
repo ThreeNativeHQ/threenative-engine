@@ -54,9 +54,10 @@ const VENDORED_RENDER_FILES = [
  * tracking its pending visual migration; remove each entry only after IMPROVEMENT.
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
-  rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
+  "action-rpg":
+    "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
+  shooter:
+    "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
 };
 
 /** Runtime names imported from `@threenative/core` in one file. */
@@ -193,28 +194,46 @@ describe("PRD-723 phase 1 kit look defaults", () => {
   );
 
   it.each(TIERS)(
-    "shooter/%s follows the core preset with its three named exposure overrides",
+    "shooter/%s is core's preset plus the named neutral-look overrides",
     async (tier) => {
       const quality = (await import(pathToFileURL(renderFile("shooter", "quality.ts")).href)) as {
+        neutralLook: Record<string, unknown>;
         qualityPreset: (tier: string) => Record<string, unknown>;
       };
       const exposure = (await import(pathToFileURL(renderFile("shooter", "exposure.ts")).href)) as {
         exposureSettings: Record<string, unknown>;
       };
       const core = await import("@threenative/core");
-      const preset = quality.qualityPreset(tier);
-      expect(exposure.exposureSettings).toEqual({
-        ...core.exposureSettings,
-        key: 0.14,
-        maxStops: 0.5,
-        minStops: -2,
+      expect(exposure.exposureSettings).toEqual({ ...core.exposureSettings, key: 0.14 });
+      expect(quality.neutralLook).toEqual({
+        tonemapMode: "aces",
+        autoExposureEnabled: false,
+        exposure: 0.62,
+        bloomRadius: 0.5,
+        bloomStrength: 0.7,
+        bloomThreshold: 0.2,
+        finalGatherMethod: "none",
+        ssgiEnabled: false,
+        ssrEnabled: false,
+        gtaoDistanceExponent: 1,
+        gtaoDistanceFalloff: 1,
+        gtaoIndirectOnly: false,
+        gtaoRadius: 0.35,
+        gtaoSamples: 16,
+        samples: 4,
+        motionBlurEnabled: false,
       });
-      expect(preset).toEqual({
+      const tiers: Record<string, Record<string, unknown>> = {
+        high: {},
+        medium: { gtaoSamples: 8 },
+        low: { gtaoEnabled: false, gtaoRadius: 0.25, motionBlurEnabled: false, temporalAA: false },
+      };
+      expect(quality.qualityPreset(tier)).toEqual({
         ...core.qualityPreset(tier),
+        ...quality.neutralLook,
+        ...tiers[tier],
         exposurePolicy: exposure.exposureSettings,
       });
-      expect(preset.tonemapMode, `shooter/${tier} tonemapMode`).toBe("filmic");
-      expect(preset.autoExposureEnabled, `shooter/${tier} metered exposure`).toBe(true);
     },
   );
 
@@ -248,12 +267,13 @@ describe("PRD-723 phase 1 kit look defaults", () => {
   );
 
   it.each(TIERS)(
-    "action-rpg/%s follows the core preset with its named exposure and cost overrides",
+    "action-rpg/%s is core's preset plus the named neutral-look and cost overrides",
     async (tier) => {
       vi.spyOn(console, "info").mockImplementation(() => {});
       const quality = (await import(
         pathToFileURL(renderFile("action-rpg", "quality.ts")).href
       )) as {
+        neutralLook: Record<string, unknown>;
         qualityPreset: (tier: string) => Record<string, unknown>;
       };
       const exposure = (await import(
@@ -262,21 +282,39 @@ describe("PRD-723 phase 1 kit look defaults", () => {
         exposureSettings: Record<string, unknown>;
       };
       const core = await import("@threenative/core");
-      const preset = quality.qualityPreset(tier);
       expect(exposure.exposureSettings).toEqual({
         ...core.exposureSettings,
         maxStops: 0.3,
         minStops: -2,
       });
-      expect(preset).toEqual({
+      expect(quality.neutralLook).toEqual({
+        tonemapMode: "aces",
+        autoExposureEnabled: false,
+        exposure: 0.62,
+        bloomRadius: 0.5,
+        bloomStrength: 0.7,
+        bloomThreshold: 0.2,
+        gtaoDistanceExponent: 1,
+        gtaoDistanceFalloff: 1,
+        gtaoIndirectOnly: false,
+        gtaoRadius: 0.35,
+        gtaoSamples: 16,
+        samples: 4,
+      });
+      const tiers: Record<string, Record<string, unknown>> = {
+        high: {},
+        medium: { gtaoSamples: 8 },
+        low: { gtaoEnabled: false, gtaoRadius: 0.25, motionBlurEnabled: false, temporalAA: false },
+      };
+      expect(quality.qualityPreset(tier)).toEqual({
         ...core.qualityPreset(tier),
+        ...quality.neutralLook,
+        ...tiers[tier],
         exposurePolicy: exposure.exposureSettings,
         finalGatherMethod: "none",
         ssgiEnabled: false,
         ssrEnabled: false,
       });
-      expect(preset.tonemapMode, `action-rpg/${tier} tonemapMode`).toBe("filmic");
-      expect(preset.autoExposureEnabled, `action-rpg/${tier} metered exposure`).toBe(true);
     },
   );
 
@@ -315,4 +353,110 @@ describe("PRD-723 phase 1 kit look defaults", () => {
       expect(preset.autoExposureEnabled, `puzzle/${tier} metered exposure`).toBe(true);
     },
   );
+
+  it.each(TIERS)(
+    "sailing/%s follows the core preset with its named cost override",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(pathToFileURL(renderFile("sailing", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("sailing", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      // The starter kits' shared 0 EV meter (kit-exposure.spec.ts).
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        key: 0.18,
+        minStops: Math.log2(0.18) - 20,
+        maxStops: Math.log2(0.18) + 10,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        finalGatherMethod: "none",
+        ssgiEnabled: false,
+        ssrEnabled: false,
+        motionBlurEnabled: false,
+      });
+      expect(preset.tonemapMode, `sailing/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `sailing/${tier} metered exposure`).toBe(true);
+    },
+  );
+
+  it.each(TIERS)(
+    "rain/%s follows the core preset with its own post pass doing bloom and grade",
+    async (tier) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const quality = (await import(pathToFileURL(renderFile("rain", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("rain", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual({
+        ...core.exposureSettings,
+        maxStops: 0.8,
+        minStops: -2,
+      });
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+        bloomEnabled: false,
+        denoiseEnabled: false,
+        finalGatherMethod: "none",
+        gtaoEnabled: false,
+        localExposureEnabled: false,
+        motionBlurEnabled: false,
+        sharpenEnabled: false,
+        ssgiEnabled: false,
+        ssrEnabled: false,
+        temporalAA: false,
+        unrealBloomEnabled: false,
+        vignetteAmount: 0,
+        samples: 4,
+      });
+      expect(preset.tonemapMode, `rain/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `rain/${tier} metered exposure`).toBe(true);
+    },
+  );
+  it.each(TIERS)("snow/%s follows the core preset with its named cost override", async (tier) => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const quality = (await import(pathToFileURL(renderFile("snow", "quality.ts")).href)) as {
+      qualityPreset: (tier: string) => Record<string, unknown>;
+    };
+    const exposure = (await import(pathToFileURL(renderFile("snow", "exposure.ts")).href)) as {
+      exposureSettings: Record<string, unknown>;
+      EXPOSURE_BIAS: { clear: number; blizzard: number };
+      exposureBias: (storm: number) => number;
+    };
+    const core = await import("@threenative/core");
+    const preset = quality.qualityPreset(tier);
+    expect(exposure.exposureSettings).toEqual(core.exposureSettings);
+    // Exposure compensation per weather: two stops over the meter in clear weather, less in the
+    // blizzard, blended on the eased storm level so the change never pops.
+    expect(exposure.exposureBias(0)).toBe(2);
+    expect(exposure.exposureBias(1)).toBe(exposure.EXPOSURE_BIAS.blizzard);
+    expect(exposure.EXPOSURE_BIAS.blizzard).toBeLessThan(exposure.EXPOSURE_BIAS.clear);
+    expect(exposure.exposureBias(0.5)).toBeCloseTo(
+      (exposure.EXPOSURE_BIAS.clear + exposure.EXPOSURE_BIAS.blizzard) / 2,
+    );
+    expect(preset).toEqual({
+      ...core.qualityPreset(tier),
+      exposurePolicy: exposure.exposureSettings,
+      finalGatherMethod: "none",
+      ssgiEnabled: false,
+      ssrEnabled: false,
+      temporalAA: false,
+      motionBlurEnabled: false,
+      bloomEnabled: false,
+      localExposureEnabled: false,
+    });
+    expect(preset.tonemapMode, `snow/${tier} tonemapMode`).toBe("filmic");
+    expect(preset.autoExposureEnabled, `snow/${tier} metered exposure`).toBe(true);
+  });
 });

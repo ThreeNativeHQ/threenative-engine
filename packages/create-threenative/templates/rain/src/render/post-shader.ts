@@ -4,8 +4,9 @@
 //
 // The demo's filmic half in one pass: twelve animated refractive beads near the lens edges, a
 // five-tap luma-edge antialias over the warped coordinate, the bloom added, the weather exposure,
-// the ACES fit, the cool-shadow/warm-highlight grade, the vignette, gamma 1/2.2 and the dither.
-// Nothing here is a framework default; every constant is the demo's.
+// the cool-shadow/warm-highlight grade, the vignette and the dither. The demo's ACES fit and gamma
+// 1/2.2 are gone: the engine's filmic curve and sRGB encode run after this pass.
+// Nothing else here is a framework default; every constant is the demo's.
 import { DataTexture, Vector2 } from "three";
 import {
   Continue,
@@ -70,10 +71,6 @@ const gl_FragCoord = vec3(screenCoordinate.x, screenCoordinate.y.oneMinus(), dep
 
 export const hash = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
   return fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453123));
-});
-
-export const aces = /*@__PURE__*/ Fn(([x]: [Node<"vec3">]) => {
-  return clamp(x.mul(mul(2.51, x).add(0.03)).div(x.mul(mul(2.43, x).add(0.59)).add(0.14)), 0, 1);
 });
 
 export const antialias = /*@__PURE__*/ Fn(([uv]: [Node<"vec2">]) => {
@@ -158,14 +155,12 @@ export const tempestPost = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
 
   col.addAssign(bloom.div(wt).mul(0.22));
   col.mulAssign(uExposure);
-  col.assign(aces(col));
 
   // Cool shadow / warm practical-light grade, retaining neutral highlights.
 
   col.assign(pow(max(col, vec3(0)), vec3(1.015, 1, 0.975)));
   const vign = sub(1, mul(0.28, pow(length(uv.sub(0.5).mul(vec2(1.05, 1))), 1.65))).toVar();
   col.mulAssign(vign);
-  col.assign(pow(col, vec3(1 / 2.2)));
   col.addAssign(
     hash(gl_FragCoord.xy.add(floor(uTime.mul(24))))
       .sub(0.5)
@@ -173,5 +168,7 @@ export const tempestPost = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
       .add(dropHighlight),
   );
 
-  return vec4(clamp(col, 0, 1), 1);
+  // No upper clamp: the engine's filmic curve rolls the highlights off after this pass, and a clamp at 1
+  // would cap every highlight at the curve's value for 1.0 (about 228 of 255).
+  return vec4(max(col, vec3(0)), 1);
 });

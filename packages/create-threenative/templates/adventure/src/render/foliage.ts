@@ -507,7 +507,11 @@ export function plantVale(site: IValeSite): {
   });
   const bark = surfaced(0xffffff, "bark", { vertexColors: true });
   giants.forEach((model, i) => {
-    group.add(instanced(model.wood, bark, wood.giant[i] ?? [], true));
+    const trunks = instanced(model.wood, bark, wood.giant[i] ?? [], true);
+    // The collider is the trunk; the roots and limbs it does not cover are drawn. The camera arm
+    // tests the drawn shape, so the lens never ends up inside a root.
+    trunks.userData.lens = true;
+    group.add(trunks);
   });
   // The far rings stand outside the sun's shadow window: they cast nothing.
   fars.forEach((model, i) => {
@@ -773,7 +777,9 @@ export function plantVale(site: IValeSite): {
     for (let i = 0; i < 3; i += 1)
       rockAt(x + (rng() - 0.5) * 3, z + (rng() - 0.5) * 3, 0.3 + rng() * 0.4);
   const stone = surfaced(0xffffff, "rock", { vertexColors: true });
-  group.add(instanced(boulder, stone, rocks, true));
+  const boulders = instanced(boulder, stone, rocks, true);
+  boulders.userData.lens = true;
+  group.add(boulders);
 
   // The path: rounded cobbles, two to four across, a few centimetres proud of the dark soil and
   // its moss, each tipped to the slope it lies on.

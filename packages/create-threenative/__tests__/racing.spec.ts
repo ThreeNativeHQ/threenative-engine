@@ -5,10 +5,12 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { CAR, FEEL, RIDE, SAG } from "../templates/racing/src/entities/CarBody.js";
 import { headingError } from "../templates/racing/src/entities/LineDriver.js";
+import { rivalLap } from "../templates/racing/src/entities/Rival.js";
 import { cameraBank, chaseCamera } from "../templates/racing/src/render/camera.js";
 import { toon } from "../templates/racing/src/render/palette.js";
 import { rankRacers, routeProgress } from "../templates/racing/src/track/Ranking.js";
 import { TOTAL_LAPS, gridPosition, intersectRay } from "../templates/racing/src/track/Track.js";
+import { TrackSector } from "../templates/racing/src/track/TrackSector.js";
 import {
   CIRCUIT,
   GRID,
@@ -17,6 +19,7 @@ import {
   LINE_AT,
   TRACK_WIDTH,
   groundHeight,
+  lineDistance,
 } from "../templates/racing/src/track/circuit.js";
 
 const racingRoot = path.resolve("packages/create-threenative/templates/racing");
@@ -249,6 +252,42 @@ describe("racing route promotion", () => {
     expect(ranked[0]?.routeProgress).toBeGreaterThan(CIRCUIT.totalLength);
     expect(routeProgress(CIRCUIT, position, 1)).toBe(ranked[0]?.routeProgress);
     expect(() => routeProgress(CIRCUIT, position, -1)).toThrow(/lap/u);
+  });
+
+  it("counts the rival's laps at the finish line, where the player's Lap counts them", () => {
+    // The player's lap completes at the line (LINE_AT.finish), not at the route origin 50 m
+    // before it. A rival counted at the origin gained a lap the player had not, so for those 50 m
+    // a player leading by a car length ranked second, then first again past the line.
+    const lap = CIRCUIT.totalLength;
+    const line = lineDistance(LINE_AT.finish);
+    expect(rivalLap(GRID_DISTANCE.rival)).toBe(0);
+    expect(rivalLap(lap + line / 2)).toBe(0);
+    expect(rivalLap(lap + line)).toBe(1);
+    expect(rivalLap(2 * lap + line + 1)).toBe(2);
+    // One lap in, the player half-way from the origin to the line has completed no lap yet (its
+    // first crossing armed the counter); the rival a metre behind it must rank behind it.
+    const player = CIRCUIT.at(line / 2, CIRCUIT.createSample()).point.clone();
+    const rival = CIRCUIT.at(line / 2 - 1, CIRCUIT.createSample()).point.clone();
+    const ranked = rankRacers(CIRCUIT, [
+      { id: "player", lap: 0, position: player },
+      { id: "rival", lap: rivalLap(lap + line / 2 - 1), position: rival },
+    ]);
+    expect(ranked.map(({ id }) => id)).toEqual(["player", "rival"]);
+  });
+
+  it("rescues a car that is driven and stuck, not one the player parked", () => {
+    // Four rescues end the race. Counting a parked car as stalled rescued it every 1.2 s, so a
+    // player who stopped on the road for five seconds was out of the race.
+    const stalled = (driving: boolean): boolean => {
+      const sector = new TrackSector({ intersectRay: () => ({ distance: 1 }), route: CIRCUIT });
+      const at = new Vector3();
+      const heading = new Vector3(1, 0, 0);
+      sector.update(at, heading, 1 / 60, 10);
+      for (let tick = 0; tick < 120; tick += 1) sector.update(at, heading, 1 / 60, 0, driving);
+      return sector.shouldRescue;
+    };
+    expect(stalled(true)).toBe(true);
+    expect(stalled(false)).toBe(false);
   });
 
   it("uses the direct-space ray query and only falls back without that API", () => {

@@ -10,6 +10,13 @@ import {
 } from "./handles.js";
 
 /** One record is logical body id, xyz position, and xyzw rotation. */
+/** Adds `count` to the running total `name` in `globalThis.__tnEngineCost`, which core puts per frame into TN_FRAME_BUDGET.counters.engine. */
+function countEngineCost(name: string, count: number): void {
+  const host = globalThis as { __tnEngineCost?: Record<string, number> };
+  host.__tnEngineCost ??= {};
+  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + count;
+}
+
 export const PHYSICS_TRANSFORM_STRIDE = 8;
 
 export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
@@ -350,6 +357,12 @@ export interface IPhysicsSimulation {
   /** Cold-path respawn: move the chassis, drop both velocities, and face the given yaw in radians. */
   resetVehicle?(id: number, position: IPhysicsVector3, yaw: number): void;
   drainCollisionEvents(buffer: Uint32Array): number;
+  /**
+   * Per-body backend crossings of the last `step()` and `readVisibleTransforms()`: bodies whose
+   * forces were cleared and bodies whose pose was read from the backend. Fixed and sleeping
+   * bodies cost neither. Optional: a bulk backend crosses once per step, whatever the count.
+   */
+  readonly crossings?: { readonly forceResets: number; readonly transformReads: number };
   dispose(): void;
 }
 
@@ -504,6 +517,8 @@ interface ISimulationBody {
   groundCollider?: number;
   /** The last step asked to move down and the floor held the character in place. */
   held?: boolean;
+  /** Last pose read while fixed or asleep; replayed without crossing until the body can move. */
+  restingPose?: Float32Array;
 }
 
 interface IStoredCharacterState {
@@ -626,12 +641,10 @@ const QUERY_SHAPE_KINDS = new Set<PhysicsShapeKind>([
 ]);
 
 /** Rapier reports a solid cast that starts inside a collider as toi 0 with a zero normal. */
-function startsInside(hit: {
-  readonly timeOfImpact: number;
-  readonly normal: IPhysicsVector3;
-}): boolean {
-  const { x, y, z } = hit.normal;
-  return hit.timeOfImpact === 0 && x === 0 && y === 0 && z === 0;
+// A solid cast that starts inside a collider stops at toi 0. The normal is no test: Rapier gives
+// a box a zero normal there but a ball or capsule the reversed ray.
+function startsInside(hit: { readonly timeOfImpact: number }): boolean {
+  return hit.timeOfImpact === 0;
 }
 
 function queryObject(value: unknown, label: string): Record<string, unknown> {
@@ -947,6 +960,32 @@ function writeRapierTransformRecord(
   renderBuffer[offset + 7] = rotation.w;
 }
 
+/**
+ * A fixed body moves only through `setBodyTransform`, which drops the cached pose, and a sleeping
+ * one not at all. Reading either costs 13 Wasm calls a step for an unchanged value: 95% of the
+ * shooter's 2,260 Rapier calls a step. A pose moved through `raw` is outside the contract and is
+ * not seen until the body moves on this seam.
+ */
+function writeVisibleRecord(
+  entry: ISimulationBody,
+  renderBuffer: Float32Array,
+  offset: number,
+): "invalid" | "read" | "replayed" {
+  const fixed = entry.type === "fixed";
+  if (!(fixed && entry.restingPose !== undefined) && !entry.body.isValid()) return "invalid";
+  const resting = fixed || (entry.type === "dynamic" && entry.body.isSleeping());
+  if (resting && entry.restingPose !== undefined) {
+    renderBuffer[offset] = entry.id;
+    renderBuffer.set(entry.restingPose, offset + 1);
+    return "replayed";
+  }
+  writeRapierTransformRecord(entry, renderBuffer, offset);
+  entry.restingPose = resting
+    ? renderBuffer.slice(offset + 1, offset + PHYSICS_TRANSFORM_STRIDE)
+    : undefined;
+  return "read";
+}
+
 /** One `PHYSICS_CONTACT_STRIDE` record summarising a solved manifold. */
 function writeContactRecord(
   buffer: Float32Array,
@@ -1092,7 +1131,10 @@ export function createWebPhysicsSimulation(
     return record;
   };
 
+  const crossings = { forceResets: 0, transformReads: 0 };
+
   const simulation: IPhysicsRuntimeSimulation = {
+    crossings,
     version: options.version,
     rawWorld: options.world,
     rawEventQueue: options.eventQueue,
@@ -1237,6 +1279,7 @@ export function createWebPhysicsSimulation(
       entry.body.setTranslation(position, true);
       options.world.propagateModifiedBodyPositionsToColliders();
       dirtyBodies.add(entry);
+      entry.restingPose = undefined;
     },
     applyBodyImpulse: (id, impulse) => {
       requireLive();
@@ -1362,22 +1405,30 @@ export function createWebPhysicsSimulation(
       // Rapier retains accumulated forces and torques unless the caller clears them. The public
       // seam is a fixed-step force — an off-centre one adds a torque — so clear both after every
       // step to keep web and native actuation aligned.
+      // Rapier accumulates a force only on a dynamic body, so clearing any other is a no-op that
+      // still costs two Wasm calls: the shooter's 144 walls spent 288 a step on it.
+      crossings.forceResets = 0;
       for (const entry of bodies.values()) {
+        if (entry.type !== "dynamic") continue;
         entry.body.resetForces(true);
         entry.body.resetTorques(true);
+        crossings.forceResets += 1;
       }
+      countEngineCost("physicsForceResets", crossings.forceResets);
       dirtyBodies.clear();
     },
     readVisibleTransforms: (renderBuffer) => {
       requireLive();
       requirePhysicsRenderBuffer(renderBuffer, bodies.size);
       let index = 0;
+      crossings.transformReads = 0;
       for (const entry of bodies.values()) {
-        if (!entry.body.isValid()) continue;
-        const offset = index * PHYSICS_TRANSFORM_STRIDE;
-        writeRapierTransformRecord(entry, renderBuffer, offset);
+        const written = writeVisibleRecord(entry, renderBuffer, index * PHYSICS_TRANSFORM_STRIDE);
+        if (written === "invalid") continue;
+        if (written === "read") crossings.transformReads += 1;
         index += 1;
       }
+      countEngineCost("physicsTransformReads", crossings.transformReads);
       return index;
     },
     readBodySleepStates: (buffer) => {
@@ -1405,9 +1456,9 @@ export function createWebPhysicsSimulation(
         y: dy / distance,
         z: dz / distance,
       });
-      // Rapier's solid cast reports a ray that starts inside a collider as toi 0 with a zero
-      // normal. Godot's default (`hit_from_inside` false) skips that collider, so skip it here
-      // and cast again; the loop ends after at most one pass per overlapping collider.
+      // Rapier's solid cast reports a ray that starts inside a collider as toi 0. Godot's default
+      // (`hit_from_inside` false) skips that collider, so skip it here and cast again; the loop
+      // ends after at most one pass per overlapping collider.
       const skipped = new Set<number>();
       const accepts = queryPredicate(query.collisionMask);
       let closestCollider: rapier.Collider | undefined;
@@ -1455,7 +1506,11 @@ export function createWebPhysicsSimulation(
       return {
         ...queryHit(entry),
         distance: closestTime,
-        normal: { x: closestNormal.x, y: closestNormal.y, z: closestNormal.z },
+        // `hitFromInside` reports the solid around the origin with a zero normal, whatever its shape.
+        normal:
+          closestTime === 0
+            ? { x: 0, y: 0, z: 0 }
+            : { x: closestNormal.x, y: closestNormal.y, z: closestNormal.z },
         position: { x: position.x, y: position.y, z: position.z },
       };
     },

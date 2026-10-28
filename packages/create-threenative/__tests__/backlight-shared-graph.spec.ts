@@ -168,3 +168,56 @@ test("shared graph follows the actual render camera and live key layers within o
   assert.equal(frame.frameId, 7, "all camera renders belong to one frame");
   material.dispose();
 });
+
+test("one render reads the controls once, not once per uniform", () => {
+  // The shooter, 2026-10-27: eight uniforms each validated every control each render, 525 native
+  // bridge reads a frame (0.75 ms of a 10 ms worker frame) for values that had not changed.
+  const scene = new Scene();
+  const key = new DirectionalLight(0xffffff, 2);
+  key.position.set(0, 2, -3);
+  scene.add(key);
+  scene.updateMatrixWorld(true);
+  let reads = 0;
+  const controls = new Proxy(
+    {
+      scene,
+      camera: new Camera(),
+      key,
+      rimGain: 0.12,
+      fillGain: 1,
+      fillColor: new Color(0.2, 0.3, 0.4),
+      fillDirection: new Vector3(0, 1, 0),
+      fillAngularSize: 1.25,
+      fillAdmitted: true,
+    },
+    {
+      get(target, property, receiver) {
+        if (property === "rimGain") reads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+    },
+  );
+  const material = backlightMaterial(new MeshStandardMaterial(), controls);
+  const nodes = new Set<LiveNode>();
+  material.emissiveNode?.traverse((node) => {
+    if (node.getUpdateType() === "render") nodes.add(node as LiveNode);
+  });
+  const frame = new NodeFrame();
+  frame.renderId = 1;
+  reads = 0;
+  for (const node of nodes) frame.updateNode(node);
+  // One validation for the uniforms, one inside the key's resolve, and the rim gain's own value.
+  assert.ok(reads <= 5, `rimGain read ${reads} times in one render`);
+  assert.ok(
+    [...nodes].some((node) => node.value === 2),
+    "the key still reaches its gain",
+  );
+  controls.rimGain = 0.4;
+  frame.renderId = 2;
+  for (const node of nodes) frame.updateNode(node);
+  assert.ok(
+    [...nodes].some((node) => node.value === 0.4),
+    "the next render reads the new value",
+  );
+  material.dispose();
+});

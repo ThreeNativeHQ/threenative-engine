@@ -273,6 +273,8 @@ StandardPrograms buildDepth(const VertexVariant& variant);
  */
 StandardPrograms buildMaskedDepth(const VertexVariant& variant);
 
+/** The colour pass's local vertex position (morph, skin, instancing, positionNode), vec4 with w = 1, built into `v`. */
+ExprId localPosition(Program& v, const VertexVariant& variant);
 /** Velocity for the same local vertex deformation as the colour pass. Previous uniforms are submitted-frame snapshots. */
 inline constexpr const char* previousDeformationUniformPrefix = "traaPrevious_";
 OutputPrograms velocityPrograms(const VertexVariant& variant);

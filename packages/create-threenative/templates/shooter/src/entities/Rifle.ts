@@ -28,6 +28,7 @@ import { FIRST_PERSON } from "../render/camera.js";
 import { PooledBillboards } from "../render/pooled-billboards.js";
 import { scale } from "../render/scale.js";
 import type { GameState } from "../state.js";
+import { SPRINT_SPEED, WALK_SPEED } from "./FpsPlayer.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -54,6 +55,36 @@ const AIM_Z = -0.16;
 const ZERO_DISTANCE = 25;
 const MAX_CONVERGENCE_DEGREES = 8;
 const UP = new Vector3(0, 1, 0);
+/** Below this share of a gait's speed the clip stops slowing: a crawl still reads as a walk. */
+const MIN_LOCOMOTION_RATE = 0.6;
+
+export type LocomotionClip = "Idle" | "Walk" | "Run";
+
+export interface ILocomotion {
+  readonly clip: LocomotionClip;
+  /** Playback rate: the authored rate at full gait speed, slower below it, never faster. */
+  readonly timeScale: number;
+  /** Fraction of the procedural sway and bob that survives beside the clip. */
+  readonly bobScale: number;
+}
+
+/**
+ * The clip, rate and procedural-bob weight for a body speed.
+ *
+ * Walking plays Walk and only a sprint plays Run, each at its authored rate (about 1.2 and 1.5
+ * cycles a second) at full gait speed and slower while the body eases in. Never faster: the
+ * hands are the closest thing on screen, and a sped-up cycle reads as a seizure, not as speed.
+ * While a locomotion clip plays it owns the motion, so the procedural bob is off; two unrelated
+ * oscillations on the same hands beat against each other.
+ */
+export function locomotion(speed: number, sprinting: boolean): ILocomotion {
+  if (speed <= WALK_SPEED * 0.05) return { bobScale: 1, clip: "Idle", timeScale: 1 };
+  // Run only once the body is actually past walking pace; the key alone at a standstill is not a gait.
+  const run = sprinting && speed >= WALK_SPEED;
+  const gaitSpeed = run ? SPRINT_SPEED : WALK_SPEED;
+  const timeScale = MathUtils.clamp(speed / gaitSpeed, MIN_LOCOMOTION_RATE, 1);
+  return { bobScale: 0, clip: run ? "Run" : "Walk", timeScale };
+}
 
 export type AimRay = { origin: Vector3; direction: Vector3 };
 
@@ -81,6 +112,10 @@ export class Rifle {
   #lowered = 0;
 
   #animation: AnimationPlayer | undefined;
+  /** Clip seconds the playing clip advanced, and the game seconds that took, since it started. */
+  #handsClip: string | undefined;
+  #handsClipSeconds = 0;
+  #handsSeconds = 0;
   #clips: ReadonlySet<string>;
   #shootFor = 0;
   #camera: PerspectiveCamera;
@@ -398,28 +433,36 @@ export class Rifle {
     return (this.#flash.material as MeshBasicMaterial).opacity;
   }
 
-  update(dt: number, aiming: boolean, moving: number): void {
+  update(dt: number, aiming: boolean, speed: number, sprinting: boolean): void {
     this.#shootFor = Math.max(0, this.#shootFor - dt);
+    const gait = locomotion(speed, sprinting);
     if (this.reloading) this.#play("Reload");
     else if (this.#shootFor > 0) this.#play("Shoot", 0.02);
-    else if (moving > 0.6) this.#play("Run");
-    else if (moving > 0.05) this.#play("Walk");
-    else this.#play("Idle");
-    this.#animation?.update(dt);
+    else this.#play(gait.clip);
+    this.#syncPlayback(gait);
+    this.#advance(dt);
     this.decay(dt);
     // The sights drop while the magazine is out and come back up after.
     const wantLowered = this.reloading ? 1 : 0;
     this.#lowered += (wantLowered - this.#lowered) * Math.min(1, dt * 9);
     this.#blend += ((aiming && !this.reloading ? 1 : 0) - this.#blend) * Math.min(1, dt * 12);
+    const moving = Math.min(1, speed / WALK_SPEED);
     this.#sway += dt * (2.6 + moving * 4.4);
-    this.#apply(moving, dt);
+    this.#apply(moving, gait.bobScale);
   }
 
-  #apply(moving: number, _dt: number): void {
+  #syncPlayback(gait: ILocomotion): void {
+    if (this.#animation === undefined || !this.#clips.has(gait.clip)) return;
+    this.#animation.mixer
+      .clipAction(this.#animation.clip(gait.clip))
+      .setEffectiveTimeScale(gait.timeScale);
+  }
+
+  #apply(moving: number, bobScale: number): void {
     const t = this.#blend;
     const hipMotion = 1 - t;
-    const bob = Math.sin(this.#sway) * 0.008 * (0.35 + moving) * hipMotion;
-    const bobY = Math.abs(Math.cos(this.#sway)) * 0.01 * (0.25 + moving) * hipMotion;
+    const bob = Math.sin(this.#sway) * 0.008 * (0.35 + moving) * hipMotion * bobScale;
+    const bobY = Math.abs(Math.cos(this.#sway)) * 0.01 * (0.25 + moving) * hipMotion * bobScale;
     const kick = this.#kick * this.#kick;
     this.group.position.set(
       HIP.x + (-this.#opticLocal.x - HIP.x) * t + bob,
@@ -449,8 +492,35 @@ export class Rifle {
     this.group.quaternion.premultiply(correction);
   }
 
+  /** Advance the hands and measure how fast the playing clip actually ran, wraps included. */
+  #advance(dt: number): void {
+    const animation = this.#animation;
+    if (animation === undefined) return;
+    const name = animation.current;
+    const action =
+      name === undefined ? undefined : animation.mixer.clipAction(animation.clip(name));
+    const before = action?.time ?? 0;
+    animation.update(dt);
+    if (action === undefined || dt <= 0) return;
+    if (name !== this.#handsClip) {
+      this.#handsClip = name;
+      this.#handsClipSeconds = 0;
+      this.#handsSeconds = 0;
+    }
+    const duration = action.getClip().duration;
+    let advanced = action.time - before;
+    if (advanced < 0 && duration > 0) advanced += duration;
+    this.#handsClipSeconds += advanced;
+    this.#handsSeconds += dt;
+  }
+
+  #handsRate(): number {
+    return this.#handsSeconds > 0 ? this.#handsClipSeconds / this.#handsSeconds : 1;
+  }
+
   debug(): {
     barrelAxisErrorDeg: number;
+    handsRate: number;
     flashOpacity: number;
     muzzleLocal: number[];
     tipGapToGeometry: number;
@@ -469,6 +539,10 @@ export class Rifle {
       tipGapToGeometry: this.#flash.position.distanceTo(this.#geometryTipLocal),
       opticScreen: { x: (optic.x + 1) / 2, y: (1 - optic.y) / 2 },
       viewmodelLength: this.#viewmodelLength,
+      // Clip seconds per game second the playing clip actually ran since it started. Above 1 is
+      // the hands sped past their authored cycle: stride sync once read the camera carrying them
+      // as walking and played them at up to 3x.
+      handsRate: this.#handsRate(),
     };
   }
 

@@ -37,6 +37,7 @@ import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { markEngineRenderHook } from "../src/engine-render-hook.js";
 import { ProjectionMirror } from "../src/projection-apply.js";
+import { formatProjectionWindow } from "../src/projection-marker.js";
 import { hasMorphAttributes } from "../src/projection-plan.js";
 import {
   createProjectionScanWorkspace,
@@ -2148,6 +2149,22 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
     // same fact the spy asserts, counted from the report the boundary actually publishes.
     expect(projection.report.sourceRenderables).toBe(0);
     scanSpy.mockRestore();
+  });
+
+  // The window line every five seconds reads the report but not its scene count: on the native
+  // engine a whole-scene walk crosses the bridge per node, and the shooter town's 8,900 nodes made
+  // that window's frame miss its vsync. The full report still counts it.
+  it("walks the scene for its draw-candidate count only when the count is read", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
+    projection.reconcile();
+    const walk = vi.spyOn(projection.root, "traverse");
+
+    formatProjectionWindow(projection.windowReport, 1, 300);
+    expect(walk).not.toHaveBeenCalled();
+    expect(projection.report.resultDrawCandidates).toBe(300);
+    walk.mockRestore();
   });
 
   // (c) The verdict names the opt-out: `disabled`, its own reason code, not `belowMeshFloor` or

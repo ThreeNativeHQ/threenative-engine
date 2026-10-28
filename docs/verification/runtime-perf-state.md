@@ -5424,3 +5424,23 @@ and the machine is uncontended.
 
 Candidate rows (`L1-*`, `L2-*`, `L3-*`) begin after `L0-06` is measured. Rejected and inconclusive
 candidates stay in this section with their measured values and commit ids.
+
+## Performance loop — PRD-754
+
+Recorded passes survive a camera turn. Judge: recording plus shadow encode CPU per frame (`TN_PLAYER_METRICS`,
+`TN_RENDER_PREPARE_SPLIT`; web: the Wasm meter in a turn probe), paired knob off/on from one build, host load recorded.
+
+| id | hypothesis | files | target: baseline → candidate (band) | other metrics | verdict | commit |
+| --- | --- | --- | --- | --- | --- | --- |
+| L1-01 | state-first opaque rows, persistent uniform slots, indirect counts; shadow/normal/velocity bundles | renderer.cpp/.h | Midway native 0.110/0.137/0.131 → 0.035/0.041/0.037 ms (load 4-13) | order rebuilds ~601 → 0; judge in L1-05 | keep | bcf00660c |
+| L1-02 | transparent draws keep slot rows in a kept sequence | renderer.cpp | native shooter 0.153 → 0.151 ms (2 pairs) | main records 18k → 8k | reject (bookkeeping = savings) | b29914d5b, 11351dc0d |
+| L1-03 | a destroy evicts rows only when it was bindable | gpu_resources.cpp | native shooter recorded rows 2 → 0 (test) | web unchanged | keep | f1c4403b8 |
+| L1-04 | transparent draws record their own tail bundle; rows reuse last positions | renderer.cpp/.h | native shooter 0.142/0.143 → 0.115/0.116 ms (load 3-6) | Midway ratio unchanged (68%) | keep | 7f78a57f4 |
+| L1-05 | Phase 3 at 7f78a57f4 | — | Midway 0.180 → 0.066 ms mean (63%); shooter web turn 0.516 → 0.211 ms (59%); gate 80% | judge NEUTRAL; frame p50 not shown | gate deferred | 7f78a57f4 |
+| L1-07 | aux/velocity transparent draws record their own tail; a late slot waits a frame (it overwrote a transparent block under TRAA) | renderer.cpp/.h | shooter web turn 0.429 → 0.095 ms (78%, load 12-25); Midway 0.165 → 0.042 ms (75%, load 12-27) | aux recorded 43 → 5 a frame; test red at a9caf82d3 (96 bytes differ) | keep (fixes); judge REGRESSION on the state order | c58d8f16f |
+| L1-08 | rows in three's depth order, so coplanar draws keep their winner | renderer.cpp/.h | camera lap 105 rows stable against 57 direct | pixels identical | reject (patch kept); knob off by default | — |
+| L1-06 | first-seen rows record alone in a delta bundle per pass; an unchanged key skips the rows | renderer.cpp/.h | Midway 0.137 → 0.031 ms mean (77%, load 5-21); shooter web turn 0.317 → 0.144 ms (55%, load 11-16); gate 80% | first-seen re-sorts 48 → 8 a flight; frame p50 47.7 → 47.6 ms, p95 59.0 → 55.7; GPU p50 ratio 1.00; judge NEUTRAL | keep, gate deferred | a9caf82d3 |
+| L1-09 | owner option 1: three's opaque order; shadow bundles and uniform slots on by default, rows behind `setStableRows` | renderer.cpp/.h, run.cpp | Midway native 0.133 → 0.111 ms mean (17%, 3 pairs); shooter web turn 0.375 → 0.435 ms (no fall) | frame p50 48.5 → 48.4 ms, p95 60.8 → 59.2 (means); judge NEUTRAL, door stripes gone; `coplanar_keeps_winner` red-green | keep (native), gate deferred | 4a7e82414 |
+| L1-10 | the web engine compiles the stable passes out | renderer.cpp/.h, render_database.cpp/.h, web_host.cpp | Wasm threads 4,268,326 → 4,193,163 bytes (limit 4,194,304) | web host ABI 6 → 5; native unchanged, ctest 88/88 related | keep | b5021ba1d |
+| L1-11 | a batch draw keeps its member's id (review: the group id moved three's coplanar tie-break on both builds) | render_database.cpp, renderer.cpp | Midway native 0.142 → 0.116 ms mean (18%, 3 pairs, load 6-18) | frame p50 50.2 → 50.3 ms, p95 64.3 → 60.7; `batch_keeps_member_id` red-green | keep | bdaf08599 |
+

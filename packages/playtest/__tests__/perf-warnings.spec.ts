@@ -13,6 +13,11 @@ describe("perf warnings read off the console", () => {
     expect(perfWarnings(["ready", `[info] ${WARNING}`])).toEqual([WARNING]);
   });
 
+  it("flags a TN_BRIDGE_WARNING line, a property read again and again in one frame", () => {
+    const bridge = 'TN_BRIDGE_WARNING:{"window":2,"top":[{"name":"get DirectionalLight.intensity","caller":"validateControls"}]}';
+    expect(perfWarnings([`[warning] ${bridge}`])).toEqual([bridge]);
+  });
+
   it("flags a projection decline and prints its cause and hint", () => {
     const line = projection({ projecting: false, reasonCode: "notWorthwhile", sourceRenderables: 40, cause: { code: "uniqueGeometry", hint: "share one geometry", meshes: 3 } });
     const [found] = perfWarnings([line]);

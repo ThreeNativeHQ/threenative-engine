@@ -212,7 +212,7 @@ continue using the original metric; CPU headlines require the matched OS windows
 
 ## Dashboard
 
-`pnpm perf:live` also serves the Midway tab at `http://127.0.0.1:8765/midway`: PRD-610 KPI cards, desktop against
+`pnpm dashboard` also serves the Midway tab at `http://127.0.0.1:8765/midway`: PRD-610 KPI cards, desktop against
 web Wasm against three.js, a trend per run and A/B groups by tag prefix. It reads `MIDWAY_RUNS` (default
 `~/.cache/tmp-tn/midway-runs`) and never writes. Malformed log lines are skipped and counted; a run with no samples
 shows "no samples", not zero.

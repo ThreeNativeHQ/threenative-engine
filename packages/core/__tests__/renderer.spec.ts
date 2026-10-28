@@ -953,6 +953,32 @@ describe("createRenderer", () => {
     }
   });
 
+  it("names the WebGPU failure in TN_NO_RENDERER instead of swallowing it (PRD-752)", async () => {
+    // A worker boot fell back because the Wasm renderer called a DOM-only canvas method; the
+    // boot error said only "WebGPU is not available", which hid the fix.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    try {
+      await expect(
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: () => {
+            throw new Error("no WebGL");
+          },
+          webgpuFactory: () => {
+            throw new TypeError("this.domElement.setAttribute is not a function");
+          },
+        }),
+      ).rejects.toThrow(
+        /^TN_NO_RENDERER: .* WebGPU failed: this\.domElement\.setAttribute is not a function$/u,
+      );
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("reports a facade and Wasm engine of two web host ABIs as that, not as a device without WebGPU", async () => {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });

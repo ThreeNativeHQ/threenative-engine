@@ -28,7 +28,10 @@ import {
   discoverKitManifests,
   discoverTemplateNames,
   parseArgs,
+  projectMcpServers,
+  referenceDigest,
   scaffoldCompletionMessage,
+  scaffoldNextSteps,
 } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -210,9 +213,6 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
-// Recomputed 2026-10-26 (reference MCP hook): every template's AGENTS.md names classic-game
-// mechanics references beside capability search in the authoring skill list, so all sixteen
-// trees move. No other scaffold byte changed.
 // Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
 // trees gain the `threenative-animation` server; no other scaffold byte changed.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
@@ -298,7 +298,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // boot-failure text both engines now show, so only puzzle's tree moves.
   // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
   // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
-  "action-rpg": "6ed05b6d238cde28c6574094f1528d69685a43db221b03f3d3250efeccb2c45d",
+  // Recomputed 2026-10-26 (PR #574 merges #572): the action-rpg draw fix, the rain terrain cache,
+  // the sailing and snow core-look migrations on top of the on-demand asset loader.
+  // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
+  // to its clip; platformer binds R to restart.
+  // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
+  "action-rpg": "23220b0bcf1c1600263b9c736bec03414b6c3c1bf82291aa39917c99749201f2",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -312,37 +317,37 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
-  // Recomputed 2026-10-27 on the merge of origin/develop (#577 native player, #579 reference search)
-  // into the PRD-741 lane: measured by this test on the merged tree, which is neither parent's tree.
-  collectathon: "dff7d2cef852f4fc25e5cd112dad94df0bb48a40294faa41b699de98e3065001",
+  collectathon: "21cebcb49aa0ce5548faa5bfe62e0ed78cbd6712eb0b19d7d2155a88500faa31",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
-  // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
-  adventure: "8b8f2ebcaab6d8aedc3c11e717661a03fc832518c6b132b79d0535c41909630a",
+  // Recomputed 2026-10-26 (PRD-747 exposure): adventure, collectathon, kart, platformer, racing, runner,
+  // sailing and starter ship the shared kitExposure.ts meter (0 EV).
+  // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
+  // reads state through `useUiStateDuringStartup`.
+  // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
+  adventure: "11bd41fb0efcb8e1612a62a32a9cc50ca3e0898425f2951a477545b53cd8843a",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  // PRD-741: the kerb lies level with the road, closing the slot that showed grass under its edge.
-  kart: "6541323f16c053cc9b0b68aa29e62ae27641c4dd5c344e652d95f0272f20b00e",
-  minimal: "4939ecef344e167115ba6b96abc80fd77ed1a267188ec85204d61936591b56a2",
-  platformer: "a790c96c3637e83e413b74af677f514b51d2b38ce5693c9eb7bf4523dfba8de2",
-  puzzle: "6fb75de0686dd7d21af8a0dd862a66733a522a89508ae3ff3575d8fbf215f2f0",
-  racing: "1f09213d11dc032b8c06121098eca0fc2d04d4ef6f47b5dc490629e35a0a2327",
-  rain: "7fe3da10a9f44a2012640ccef392464da41fcc8f390fbbf6b995aa801d67af01",
-  rts: "9cbd8a9cab867cd34e3c94af51c13fcd6a51b8b3cb2dc005fac07750dbf492fa",
-  runner: "6af1d4d0ef44003ac1f9ae3bcd2f11b37d25eee94c8394fc2132dea0d570b6c0",
+  kart: "3e989773e757697ab0be6f05274aa04a714b6dcf3f946c8bf6b548ea3f708a51",
+  minimal: "bd6ef2a31362cdcc0c9c650281eccb620a344c9ea4dcd7e3b95154cc624a2eb9",
+  platformer: "18537fd846c820ba16db1004e0e185f23f201eb581529d64dce86e250c7341b0",
+  puzzle: "e611a8ecaa139fcaaea7eece78abd456ecfb11965c594f0e3557f8f486f401fd",
+  racing: "1e527e5e5afa86cdaadc995b9a177625c693c5970da9ed086d28535cd41f3b99",
+  rain: "217f2ed3e3d81701525891d1aa70b396479c7c3641e0727b4d7e14bec23b4d05",
+  rts: "be827d5f3d3c47ea34acd19b54b26390df97b68047c572b9d79084466d770521",
+  runner: "2c7e9d4d30ce061c1f2f3d8324577c1b46e2302fbfce087ef39a375c3f4729d0",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "09aede500e707d2c951ac45093f68ca5e55f3f3d3634b3863a703fedbd95a19a",
-  shooter: "1cf31dd05d6dad2ccc35a3b64855c23766f8161cff6a4eacadd37ae7f1ccb4bc",
-  snow: "9901b30b5cb85cdefeef864e8fcbd50d26f0733cec1577481d7e2314fb06eebd",
+  sailing: "80a1c2a736e7d681a76b15a5c8cc03ea386a1558f52ec6b25afb2d94b3093775",
+  // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
+  shooter: "bc87f0178936e00965398086c466dc7d68e20f3dcecedbbe3ff79dd0e70c7cd9",
+  snow: "d7abb7a41d2ef6a6413ac9238da8220425b62c961e90437a6d289b5cf0ffcd41",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  // Recomputed 2026-10-27 on the merge of origin/develop into the PRD-741 lane.
-  starter: "d1c6a58f2a85fa35ef3aaf8bbcdde8dabfb523a71c753af99eb9392e05af898d",
-  "tower-defense": "49eb6457b5cb1cbe3905f144b89ac0ea1d368fdcded4a921d089db1c5cd330c5",
+  starter: "a01b8b60378d89cdcb6ad9fa51dfeef6dbab28b58183c94b1d9a81de531d31f9",
+  "tower-defense": "194b5f8729a368a13988dc73108c44451915dd487136d7a60fdb82916bae1caa",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -597,6 +602,104 @@ describe("create-threenative", () => {
       );
       expect(source).toContain("scaffoldCompletionMessage(discoverKitManifests())");
       expect(source).not.toContain("Templates: minimal (smallest)");
+      // Kit-loop rows 1-6 (PRD-750): a cold agent scaffolds from its session folder, so the host
+      // never loads the game's .mcp.json (a probe that wrote it mid-session got NO_TOOL) and five
+      // builds made zero engine calls. The last line hands it every server through mcp/call.mjs.
+      const servers = [
+        "threenative-assets",
+        "threenative-sculpt",
+        "threenative-engine",
+        "threenative-blender",
+      ];
+      const next = scaffoldNextSteps("/w/mario64", true, servers);
+      expect(next).toMatch(/\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u);
+      expect(next).toContain(`.mcp.json (${servers.join(", ")})`);
+      expect(next).toContain(
+        "`node /w/mario64/node_modules/@threenative/core/mcp/call.mjs <server>` lists its tools",
+      );
+      expect(next).toContain(
+        "node /w/mario64/node_modules/@threenative/core/mcp/call.mjs threenative-engine engine_search_capabilities",
+      );
+      expect(next).toMatch(
+        /Read AGENTS\.md once; CLAUDE\.md is its copy, and the skills it names are \.claude\/skills/u,
+      );
+      expect(scaffoldNextSteps("/w/mario64", false)).toMatch(/pnpm install[\s\S]*\.mcp\.json/u);
+      expect(projectMcpServers(root)).toEqual([]);
+      // Sandboxes 4-6 (2026-10-27): no reference call even with a ready command, and a printed title
+      // list was read and none opened. The scaffold runs the search and prints the pinned sources.
+      const calls: string[][] = [];
+      const hit = (id: string, kind: string) => ({
+        game: "sm64",
+        id,
+        kind,
+        name: id,
+        summary: `${id} summary`,
+        title: "Super Mario 64",
+      });
+      const detail = (id: string) =>
+        id === "a"
+          ? {
+              repo: "https://github.com/n64decomp/sm64",
+              sha: "9921382a68",
+              node: {
+                purpose: "Mario actions",
+                functions: [
+                  { name: "set_mario_action", path: "src/game/mario.c", lines: [979, 1013] },
+                ],
+              },
+              children: [{ id: "wall-kick" }],
+            }
+          : {
+              repo: "https://github.com/n64decomp/sm64",
+              sha: "9921382a68",
+              card: {
+                behavior: `${id} behavior`,
+                constants: [
+                  {
+                    name: "kick speed",
+                    value: 24,
+                    unit: "units/frame",
+                    source: "src/game/mario_actions_airborne.c:12",
+                  },
+                ],
+                sources: [{ path: "src/game/mario_actions_airborne.c", line: 40 }],
+              },
+            };
+      const digest = referenceDigest("/w/mario64", "mario", (args) => {
+        calls.push(args);
+        if (args[1] === "engine_reference_detail")
+          return JSON.stringify(detail(JSON.parse(args[2] ?? "{}").id));
+        return JSON.stringify({
+          results: [hit("a", "node"), ...["b", "c", "d", "e", "f"].map((id) => hit(id, "card"))],
+        });
+      });
+      const engine = "/w/mario64/node_modules/@threenative/core/mcp/engine.mjs";
+      expect(calls).toEqual([
+        [engine, "engine_search_references", '{"situation":"mario"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"a","kind":"node"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"b","kind":"card"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"c","kind":"card"}'],
+      ]);
+      expect(digest).toContain('Mechanics references for "mario"');
+      expect(digest).toContain(
+        "- Super Mario 64 / a: a summary\n  https://github.com/n64decomp/sm64@9921382: Mario actions\n  set_mario_action src/game/mario.c:979\n  children: wall-kick\n",
+      );
+      expect(digest).toContain(
+        "- Super Mario 64 / b: b summary\n  https://github.com/n64decomp/sm64@9921382: b behavior\n  kick speed = 24 units/frame (src/game/mario_actions_airborne.c:12)\n  sources: src/game/mario_actions_airborne.c:40\n",
+      );
+      expect(digest).toContain("- Super Mario 64 / d: d summary\n- Super Mario 64 / e:");
+      expect(digest).not.toContain("- Super Mario 64 / f:");
+      expect(digest).toContain(
+        `node /w/mario64/node_modules/@threenative/core/mcp/call.mjs threenative-engine engine_search_references '{"situation":"<mechanic>"}'`,
+      );
+      expect(
+        referenceDigest("/w/mario64", "mario", () => {
+          throw new Error("TN_REFERENCES_OFFLINE: fetch failed\nstack");
+        }),
+      ).toBe("References unavailable: TN_REFERENCES_OFFLINE: fetch failed\n");
+      expect(referenceDigest("/w/x", "zzz", () => '{"results":[]}')).toBe(
+        'No mechanics references match "zzz".\n',
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }

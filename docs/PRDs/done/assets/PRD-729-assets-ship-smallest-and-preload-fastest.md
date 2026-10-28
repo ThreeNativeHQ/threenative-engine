@@ -20,8 +20,8 @@ Phase 3 lever changes `packages/assets` defaults that every game inherits (+2).
 **Depends on:** [PRD-351](../../assets/PRD-351-compression-never-looks-worse-than-a-floor.md) (the quality
 floor that every lever must hold), [PRD-496](../../performance/PRD-496-the-loading-screen-is-bytes-not-files.md)
 (the loader fan-out and progress work; its probe method is the preload method here).
-**Dashboard:** [`docs/asset-perf/index.html`](../../../asset-perf/index.html), generated from
-[`docs/asset-perf/ledger.json`](../../../asset-perf/ledger.json) by `node scripts/asset-perf-loop.mjs report`.
+**Dashboard:** the Asset perf tab of `pnpm dashboard` (PRD-751) renders
+[`docs/asset-perf/ledger.json`](../../../asset-perf/ledger.json) on each load.
 
 ## Context
 

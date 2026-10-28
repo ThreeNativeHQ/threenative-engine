@@ -2,17 +2,21 @@ import {
   AnimationClip,
   AnimationMixer,
   Bone,
+  Frustum,
   Group,
   LoopOnce,
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
+  Object3D,
   PerspectiveCamera,
+  Ray,
   Scene,
+  Sphere,
   SphereGeometry,
   VectorKeyframeTrack,
 } from "three";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { AnimationComposer } from "../src/animation-composition.js";
 import { AnimationPlayer } from "../src/animation.js";
 import { RenderCameraCull, animationRateStates } from "../src/render-camera-cull.js";
@@ -430,6 +434,93 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  it("flushes skipped time before a rate 8 to rate 1 transition", () => {
+    const baseline = player(1);
+    const candidate = player(8);
+    let skipped = false;
+    for (let frame = 0; frame < 3; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+      skipped ||= !candidate.updateRateReport.evaluated;
+    }
+    expect(skipped).toBe(true);
+    candidate.updateRate = 1;
+    for (let frame = 0; frame < 130; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+      expect(candidate.updateRateReport).toMatchObject({
+        rate: 1,
+        overridden: true,
+        evaluated: true,
+      });
+      expect(candidate.mixer.time).toBeCloseTo(baseline.mixer.time, 10);
+      expect(candidate.mixer.clipAction(candidate.clip("clip1")).time).toBeCloseTo(
+        baseline.mixer.clipAction(baseline.clip("clip1")).time,
+        10,
+      );
+      expect(candidate.root.rotation.x).toBeCloseTo(baseline.root.rotation.x, 6);
+    }
+    baseline.dispose();
+    candidate.dispose();
+  });
+
+  it("a zero-dt held tick before a switch to rate 1 does not freeze the next tick", () => {
+    const baseline = player(1);
+    const candidate = player(8);
+    for (const dt of [0, 0]) {
+      baseline.update(dt);
+      candidate.update(dt);
+    }
+    candidate.updateRate = 1;
+    for (let frame = 0; frame < 3; frame += 1) {
+      baseline.update(1 / 60);
+      candidate.update(1 / 60);
+      expect(candidate.mixer.clipAction(candidate.clip("clip1")).time).toBeCloseTo(
+        baseline.mixer.clipAction(baseline.clip("clip1")).time,
+        10,
+      );
+    }
+    baseline.dispose();
+    candidate.dispose();
+  });
+
+  it("does not scan inactive clips at full rate", () => {
+    const clips = Array.from(
+      { length: 64 },
+      (_, index) =>
+        new AnimationClip(`scan${index}`, 1, [
+          new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1]),
+        ]),
+    );
+    const root = new Group();
+    const rig = new AnimationPlayer({ root, clips, strideSync: false, updateRate: 1 });
+    rig.play("scan0");
+    const expectedRoot = new Group();
+    const expectedMixer = new AnimationMixer(expectedRoot);
+    const expected = expectedMixer.clipAction(clips[0] as AnimationClip).play();
+    for (let tick = 0; tick < 4; tick += 1) {
+      expectedMixer.update(1 / 60);
+      rig.update(1 / 60);
+    }
+
+    const probes = clips.map((clip) => vi.spyOn(rig.mixer.clipAction(clip), "isScheduled"));
+
+    for (let tick = 0; tick < 30; tick += 1) {
+      expectedMixer.update(1 / 60);
+      rig.update(1 / 60);
+    }
+    for (let index = 1; index < probes.length; index += 1) {
+      expect(probes[index]?.mock.calls.length, clips[index]?.name).toBe(0);
+    }
+    const actual = rig.mixer.clipAction(rig.clip("scan0"));
+    expect(actual.time).toBeCloseTo(expected.time, 10);
+    expect(root.rotation.x).toBeCloseTo(expectedRoot.rotation.x, 10);
+
+    for (const probe of probes) probe.mockRestore();
+    expectedMixer.uncacheRoot(expectedRoot);
+    rig.dispose();
+  });
+
   it("never skips updateRate 1 and reports the explicit override", () => {
     const rig = player(1);
     for (let frame = 0; frame < 300; frame += 1) {
@@ -802,6 +893,122 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  it("keeps its rig and camera walks while the engine's hierarchy holds still, and walks again when it moves", () => {
+    const rig = player();
+    const view = rendered(rig);
+    rig.root.position.x = 10;
+    const rigWalks = vi.spyOn(rig.root, "traverse");
+    const cameraWalks = vi.spyOn(view.camera, "traverse");
+    // Plain three has no hierarchy count: both walks run every frame.
+    view.render();
+    view.render();
+    expect([rigWalks.mock.calls.length, cameraWalks.mock.calls.length]).toEqual([2, 2]);
+    // The native engine's count, which every one of its objects reports.
+    let revision = 1;
+    Object.defineProperty(Object3D.prototype, "__hierarchyRevision", {
+      configurable: true,
+      get: () => revision,
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Object3D.prototype, "__hierarchyRevision");
+    });
+    view.render();
+    view.render();
+    view.render();
+    expect([rigWalks.mock.calls.length, cameraWalks.mock.calls.length]).toEqual([3, 3]);
+    rig.update(1 / 60);
+    expect(rig.updateRateReport.rate).toBeGreaterThan(1);
+    // Attaching the rig to the camera moves the count: both sets are found again.
+    view.scene.add(view.camera);
+    view.camera.add(rig.root);
+    revision += 1;
+    view.render();
+    // three's traverse recurses through each child's own, so the camera's walk calls the rig's too.
+    expect(rigWalks.mock.calls.length).toBeGreaterThan(3);
+    expect(cameraWalks.mock.calls.length).toBe(4);
+    rig.update(1 / 60);
+    expect(rig.updateRateReport).toMatchObject({ rate: 1, evaluated: true });
+    view.cull.dispose();
+    rig.dispose();
+  });
+
+  it("on the native engine asks each rig part whether it is shown, and takes the walk's rates", () => {
+    const run = (engine: boolean) => {
+      const cost: Record<string, number> = {};
+      (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost = cost;
+      if (engine) {
+        Object.defineProperty(Object3D.prototype, "__hierarchyRevision", {
+          configurable: true,
+          get: () => 1,
+        });
+        Object.defineProperty(Object3D.prototype, "__tnVisibleInWorld", {
+          configurable: true,
+          value(this: Object3D) {
+            for (let node: Object3D | null = this; node !== null; node = node.parent)
+              if (!node.visible) return false;
+            return true;
+          },
+        });
+      }
+      const rig = player();
+      const part = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
+      const near = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
+      near.position.x = 8;
+      rig.root.add(part, near);
+      const scene = new Scene();
+      scene.add(rig.root);
+      const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+      const cull = new RenderCameraCull();
+      const walks = vi.spyOn(rig.root, "traverseVisible");
+      // On the web engine these are engine objects, one boundary call per use.
+      const math = [
+        vi.spyOn(Ray.prototype, "intersectsSphere"),
+        vi.spyOn(Frustum.prototype, "intersectsSphere"),
+        vi.spyOn(Frustum.prototype, "containsPoint"),
+        vi.spyOn(Sphere.prototype, "set"),
+      ];
+      const rates: number[] = [];
+      const step = () => {
+        scene.updateMatrixWorld(true);
+        cull.prepareAnimation(scene, camera, 720);
+        cull.restore();
+        rig.update(1 / 60);
+        rates.push(rig.updateRateReport.rate);
+      };
+      rig.root.position.set(2, 0, -60);
+      step();
+      step();
+      // The far part alone is left: the rig's sphere is the far part's.
+      near.visible = false;
+      step();
+      step();
+      near.visible = true;
+      rig.root.position.set(2, 0, -8);
+      step();
+      rig.root.visible = false;
+      step();
+      step();
+      cull.dispose();
+      rig.dispose();
+      if (engine) {
+        Reflect.deleteProperty(Object3D.prototype, "__hierarchyRevision");
+        Reflect.deleteProperty(Object3D.prototype, "__tnVisibleInWorld");
+      }
+      const mathCalls = math.reduce((sum, spy) => sum + spy.mock.calls.length, 0);
+      for (const spy of math) spy.mockRestore();
+      return { rates, walks: walks.mock.calls.length, cost: { ...cost }, mathCalls };
+    };
+    const plain = run(false);
+    const native = run(true);
+    expect(plain.walks).toBeGreaterThan(0);
+    expect(native.walks).toBe(0);
+    expect(native.rates).toEqual(plain.rates);
+    // The engine-cost bag a kit's playtest bounds: one rig map for the run, no rig walk.
+    expect(plain.cost).toEqual({ cullRigRebuilds: 7, cullRigWalks: plain.walks });
+    expect(native.cost).toEqual({ cullRigRebuilds: 1 });
+    expect([plain.mathCalls, native.mathCalls]).toEqual([0, 0]);
+  });
+
   it("passes the named override through SkeletalMesh3D", () => {
     const rig = new SkeletalMesh3D({ source: new Group(), updateRate: 4 });
     expect(rig.updateRate).toBe(4);
@@ -828,6 +1035,46 @@ describe("AnimationPlayer update rate", () => {
     rig.play("clip2");
     rig.update(0.1, true);
     expect(rig.mixer.clipAction(rig.clip("clip2")).time).toBeCloseTo(0.1, 10);
+    rig.dispose();
+  });
+
+  it("evaluates a stride-synced walk every frame in the 32-128 px band, so the planted foot holds", () => {
+    // A held pose rides on a moving body: the planted foot slides by the body's travel each held
+    // frame. The action RPG hero, about 60 px tall, ran its jog at half rate and slid 0.5 m per metre.
+    const body = new Group();
+    const root = new Group();
+    body.add(root);
+    root.add(new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial()));
+    const walk = new AnimationClip("walk", 2, [
+      new VectorKeyframeTrack(".position", [0, 2], [0, 0, 0, 0, 0, 2]),
+    ]);
+    const idle = new AnimationClip("idle", 1, [
+      new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, 1]),
+    ]);
+    const rig = new AnimationPlayer({ root, clips: [walk, idle], strideRoot: body });
+    const scene = new Scene();
+    scene.add(body);
+    body.position.set(2, 0, -20);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    const cull = new RenderCameraCull();
+    const frame = (move: number) => {
+      body.position.z -= move;
+      scene.updateMatrixWorld(true);
+      cull.apply(scene, camera, 720);
+      cull.restore();
+      rig.update(1 / 60);
+    };
+    rig.play("idle");
+    for (let tick = 0; tick < 8; tick += 1) frame(0);
+    expect(rig.updateRateReport.rate, "a still idle keeps the band rate").toBe(2);
+    rig.play("walk");
+    for (let tick = 0; tick < 8; tick += 1) frame(1 / 60);
+    expect(rig.stride.synced).toBe(true);
+    const updates = vi.spyOn(rig.mixer, "update");
+    for (let tick = 0; tick < 8; tick += 1) frame(1 / 60);
+    expect(rig.updateRateReport.rate).toBe(1);
+    expect(updates.mock.calls.length).toBe(8);
+    cull.dispose();
     rig.dispose();
   });
 

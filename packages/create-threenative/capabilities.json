@@ -869,12 +869,14 @@
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
-        "every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default"
+        "every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default",
+        "`setExposureBias(stops)` is Unreal's Exposure Compensation, live: the game changes it per place or weather (`WorldEnvironment.apply` returns the node as `exposure`)"
       ],
       "package": "@threenative/core",
       "signature": "export class AutoExposureNode extends TempNode<\"float\"> { … }",
       "situations": [
-        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change"
+        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change",
+        "a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather"
       ],
       "summary": "Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.",
       "supersedes": [],
@@ -4370,6 +4372,34 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "serveWorkerGame(game);",
+      "importPath": "@threenative/core/worker",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function serveWorkerGame( game: { … }",
+      "situations": ["run the game loop in a web worker so a busy page cannot stall its frames"],
+      "summary": "Runs inside the worker: wire the page's messages to the unchanged portable game. Call it last in the worker entry, after the game module evaluated: it posts the ready message the page waits for before it sends the canvas.",
+      "supersedes": [],
+      "symbol": "serveWorkerGame"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const handle = startWorkerGame(new Worker(new URL(\"./worker.ts\", import.meta.url), { type: \"module\" }), root);",
+      "importPath": "@threenative/core/worker",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function startWorkerGame( worker: Worker, container: HTMLElement, ): { … }",
+      "situations": ["host a worker-run game's canvas, input and HUD on the page"],
+      "summary": "Runs on the page: own the canvas and the DOM, and feed the worker game. Call it before the UI mounts: the HUD's bridge host globals exist from this call on.",
+      "supersedes": [],
+      "symbol": "startWorkerGame"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
@@ -5661,7 +5691,7 @@
       "kind": "function",
       "overrides": [],
       "package": "@threenative/playtest",
-      "signature": "export async function advanceFixedStep( page: Page, bridge: Pick<IPlaytestBridgeClient, \"advance\">, ticks: number, render = false, ): Promise<void> { … }",
+      "signature": "export async function advanceFixedStep( page: Page, bridge: { … }",
       "situations": [
         "run a complete browser or device playtest",
         "capture diagnostics and screenshots from a managed server"
@@ -8483,7 +8513,9 @@
     },
     {
       "aliases": [],
-      "constraints": ["returns undefined until the game publishes its first state"],
+      "constraints": [
+        "returns undefined until the game publishes its first state and while the loading cover is up"
+      ],
       "example": "const score = useUiState<GameState, number>((state) => state.score);",
       "importPath": "@threenative/ui",
       "kind": "function",
@@ -8498,6 +8530,23 @@
       "summary": "Read the game's published state from a UI that may be in another process.",
       "supersedes": [],
       "symbol": "useUiState"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "needs a non-empty reason, reported once as TN_UI_STARTUP_OVERRIDE; every other HUD uses useUiState"
+      ],
+      "example": "const loading = useUiStateDuringStartup<GameState, number>({ reason: \"staged loading overlay\" }, (state) => state.loading.progress);",
+      "importPath": "@threenative/ui",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/ui",
+      "requires": ["npm i @threenative/ui"],
+      "signature": "export function useUiStateDuringStartup<TState extends object>(options: { … }",
+      "situations": ["draw a staged loading overlay from the startup progress the game publishes"],
+      "summary": "Read the game's published state while the loading cover is still up, for a UI that draws its own loading screen.",
+      "supersedes": [],
+      "symbol": "useUiStateDuringStartup"
     },
     {
       "symbol": "createStormAudio",

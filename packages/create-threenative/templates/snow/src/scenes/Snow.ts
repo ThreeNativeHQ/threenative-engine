@@ -20,6 +20,7 @@ import { type Command, commands } from "../commands.js";
 import { Explorer, type IFootstep, STANCE } from "../entities/Explorer.js";
 import { BOOT_AREA, bootPrint } from "../render/bootPrint.js";
 import { OrbitFollow, setupCamera } from "../render/camera.js";
+import { exposureBias } from "../render/exposure.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
@@ -591,6 +592,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       );
       lights.update(explorer.position, weather.storm);
       stormSky(weather.storm);
+      this.#post?.exposure?.setExposureBias(exposureBias(weather.storm));
       surface.setStorm(weather.storm);
       audio.update(weather.wind, weather.storm);
 

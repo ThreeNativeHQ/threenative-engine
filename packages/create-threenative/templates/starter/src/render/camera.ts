@@ -24,6 +24,12 @@ export interface ISpringArmOptions {
   readonly maxDistance?: number;
   /** Target-relative distance units moved by one full zoom axis unit per second. */
   readonly dollySpeed?: number;
+  /**
+   * How far a ray from `origin` along `direction` runs before it meets something solid, or
+   * `undefined`: Godot's SpringArm3D collision. The arm shortens to stop in front of the hit, so a
+   * wall behind the player never ends up between the lens and the player. Unset, the arm is free.
+   */
+  readonly obstruction?: (origin: Vector3, direction: Vector3, far: number) => number | undefined;
 }
 
 export interface ISpringArm {
@@ -58,6 +64,26 @@ export function createSpringArm(
   const desired = new Vec3();
   const aim = new Vec3();
   const currentOffset = new Vec3();
+  const pivot = new Vec3();
+  const toLens = new Vec3();
+  // The ray starts at the player's chest, where the lens is looking, never at the floor it stands on.
+  const PIVOT_HEIGHT = 1;
+  // Space kept between the lens and the solid it stopped in front of, and the shortest arm.
+  const MARGIN = 0.5;
+  const MIN_ARM = 1.5;
+
+  const clear = (target: Vector3): void => {
+    if (options.obstruction === undefined) return;
+    pivot.copy(target);
+    pivot.y += PIVOT_HEIGHT;
+    toLens.subVectors(camera.position, pivot);
+    const length = toLens.length();
+    if (!(length > MIN_ARM)) return;
+    toLens.multiplyScalar(1 / length);
+    const hit = options.obstruction(pivot, toLens, length);
+    if (hit !== undefined)
+      camera.position.copy(pivot).addScaledVector(toLens, Math.max(MIN_ARM, hit - MARGIN));
+  };
 
   const dolly = (amount: number, dt: number): void => {
     if (!Number.isFinite(amount) || !Number.isFinite(dt) || dt <= 0) return;
@@ -68,6 +94,7 @@ export function createSpringArm(
 
   const snap = (target: Vector3): void => {
     camera.position.copy(target).add(targetOffset());
+    clear(target);
     camera.lookAt(aim.copy(target).add(lookAhead));
   };
 
@@ -76,6 +103,7 @@ export function createSpringArm(
     // 1 - e^(-dt/damping): the frame-rate-independent form of a lerp. At 30fps
     // and 120fps the camera ends up in the same place after the same second.
     camera.position.lerp(desired, 1 - Math.exp(-dt / damping));
+    clear(target);
     camera.lookAt(aim.copy(target).add(lookAhead));
   };
 

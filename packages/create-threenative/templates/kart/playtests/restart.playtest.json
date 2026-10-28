@@ -1,0 +1,87 @@
+{
+  "name": "kart-restart",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drive",
+      "press": ["KeyW"],
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restart",
+      "press": ["KeyR"],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "countdown-again",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "countdown"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "label": "race-again",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          { "label": "drive", "equals": "race" },
+          { "label": "countdown-again", "equals": "countdown" },
+          { "label": "race-again", "equals": "race" }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lap",
+        "atSteps": [{ "label": "countdown-again", "equals": 1 }]
+      },
+      {
+        "id": "state",
+        "path": "loaded",
+        "equals": true,
+        "allowTrivial": "The HUD's loaded flag survives the rebuild, so the HUD still draws after R."
+      }
+    ]
+  }
+}

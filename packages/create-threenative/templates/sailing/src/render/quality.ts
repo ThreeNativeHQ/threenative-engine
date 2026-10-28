@@ -43,119 +43,30 @@ import type { QualityTier } from "@threenative/core";
  */
 export const resolveQualityTier = qualityTiers.resolve;
 
-const legacyDefaults: IWorldEnvironmentOptions = {
-  // PRD-723: preserve the vendored look until this kit earns IMPROVEMENT. Cost: unmeasured.
-  autoExposureEnabled: false,
-  // Bloom cost: unmeasured; preserve the vendored stage until this kit is judged.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.7,
-  bloomThreshold: 0.2,
-  exposure: 1,
-  finalGatherMethod: "none",
-  gtaoEnabled: false,
-  gtaoRadius: 0.25,
-  gtaoSamples: 16,
-  gtaoDistanceExponent: 1,
-  gtaoDistanceFalloff: 1,
-  gtaoIndirectOnly: false,
-  localExposureEnabled: false,
-  motionBlurEnabled: false,
-  ssgiEnabled: false,
-  ssgiRadius: 12,
-  ssgiResolutionScale: 0.5,
-  ssrEnabled: false,
-  ssrResolutionScale: 0.5,
-  temporalAA: false,
-  tonemapMode: "aces",
-  unrealBloomEnabled: false,
-  vignetteAmount: 0,
-};
-
-const high: IWorldEnvironmentOptions = {
-  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
-  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
-  temporalAA: true,
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.38,
-  // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
-  denoiseEnabled: false,
-  autoExposureEnabled: false,
-  exposure: 0.9,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
 /**
- * The rung in between. With no screen-space stage to drop at any tier, the only thing left to
- * move is how hard the sun blooms off the water, so that is what the three tiers differ by.
- * The saving is **unmeasured** and small by construction — if this template needs to be cheaper,
- * the water material is where the frame actually goes.
+ * The stages and strengths a tier turns on: the core preset, this game's exposure policy and the
+ * named override from the header: no final gather, no SSGI, no SSR. The frame is the water,
+ * and a screen-space reflection over moving water reads as smear. Motion blur is off too: with the
+ * camera chasing the ship it smeared the sails and the buoys at 1920x1080.
  */
-const medium: IWorldEnvironmentOptions = {
-  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
-  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
-  temporalAA: true,
-  // The chain's own quality tier: without it the renderer keeps its `high` default at this tier.
-  renderChainTier: "medium",
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.33,
-  // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
-  denoiseEnabled: false,
-  exposure: 0.9,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
-/**
- * What a phone gets: this template's shipped mobile look, unchanged.
- */
-const low: IWorldEnvironmentOptions = {
-  // The chain's own quality tier, separate from which stages this preset enables: without it
-  // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
-  // paid for the high chain's denoise and slice counts.
-  renderChainTier: "low",
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.28,
-  exposure: 0.9,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
-
-/** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  const preset = QUALITY_PRESETS[tier as QualityTier];
-  if (preset === undefined) {
-    throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
-    );
-  }
+  console.info(
+    `TN_RENDER_CHAIN_COST_OVERRIDE ${JSON.stringify({
+      reason:
+        "Sailing: the frame is the water; screen-space reflections over moving water read as smear, the gather is the costliest stage, and motion blur smeared the chase-camera ship",
+      finalGatherMethod: "none",
+      ssgiEnabled: false,
+      ssrEnabled: false,
+      motionBlurEnabled: false,
+    })}`,
+  );
   return {
     ...coreQualityPreset(tier),
-    ...legacyDefaults,
-    ...preset,
     exposurePolicy: exposureSettings,
-    samples: preset.samples ?? 4,
+    finalGatherMethod: "none",
+    ssgiEnabled: false,
+    ssrEnabled: false,
+    motionBlurEnabled: false,
   };
 }
 
