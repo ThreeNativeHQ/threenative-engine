@@ -70,6 +70,11 @@ All levers are engine-layer, each with a spec that fails before the fix. Paired 
 | Camera cull keeps its rig map while the hierarchy holds still | `4fb0c6f26` | cull 2.47-2.69 → 1.85-1.92 ms (laptop, uncapped) | KEEP |
 | Bridge cache: `children`/`parent` and JS-only properties read from JS; meter; lint | `b088dc46f` | crossings 3,190 → 1,810, p50 9.95 → 8.9 ms, p95 19.55 → 13.45 ms | KEEP |
 | Rapier: a fixed or sleeping body's pose is read once, not every step; forces cleared only on dynamic bodies (same change as bughunt 05, `f683c14ca`) | `8501273d2` | Rapier calls 2,260 → 240 a step (the 144 walls were 95%); `readVisibleTransforms` 93 → 8 µs (node); worker physics update 455/459/448 → 366/389/362 µs a step (laptop Iris Xe, uncapped, load 2, 3 pairs); frame p50 and drawn fps inside noise (GPU-bound at 30-35 fps) | KEEP |
+| Web renderer converts a number clear colour once, not per pass | `d02647f41` | laptop, 3 pairs: mean 4.96/4.11/4.02 → 4.46/4.05/3.89 ms | KEEP |
+| Camera cull tests its frustum and forward ray in plain numbers (no engine Ray/Frustum/Sphere calls) | `66e637840` | laptop, 3 pairs: cull 0.78/0.76/0.76 → 0.66/0.64/0.64 ms | KEEP |
+| Camera cull caches each rig part's visible chain | not kept | laptop, 2 valid pairs: cull 0.81/0.79 unchanged; the profile's 0.68 ms `visibleInWorld` was misattribution | REJECT (tie) |
+| AutoBatch guard compares in C++, a whole lap a frame | not kept | guard still fills its 0.5 ms budget (0.58-0.65 ms, C++ costs ~70 ns a source in cache misses); staleness 40 → 1-3 frames, mean tie | REJECT (tie) |
+| AutoBatch guard compares in C++, one lap per settle window (3 frames) | this row's commit | laptop: guard 0.60-0.62 → 0.18-0.23 ms in 6/6 runs; mean 5 of 6 valid pairs −0.27 to −0.98 ms; staleness 18-75 → 3 frames | KEEP |
 | `kMaxFramesOnGpu` 2 → 3 | not built | absorbs ~40 ms GPU stalls at +1 frame of latency; stalls come from outside the engine | REJECT |
 
 Rapier export names lie: wasm-bindgen folds identical getters into one export, so `rawintegrationparameters_dt`,

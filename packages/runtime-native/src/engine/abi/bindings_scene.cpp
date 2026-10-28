@@ -163,6 +163,77 @@ ProjectedCull& projectedCullOf(Object3D& root) {
     return entry.second;
 }
 
+// core's AutoBatch movement guard (auto-batch.ts) on the engine: each merged source's local state as it
+// was merged, compared in place. A JS check reads each field across the bridge (a few microseconds a
+// source, so 8,000 sources took 40 frames a lap); here a lap of the same fields costs nanoseconds a source.
+struct SourceGuard {
+    // position, quaternion, scale, visible, castShadow, receiveShadow, renderOrder, layers mask,
+    // matrixAutoUpdate off, and the manual matrix when it is off: what core's `writeStamp` reads.
+    struct Entry {
+        std::weak_ptr<Object3D> owner;  // expired: the source was freed, which counts as a change
+        Object3D* object = nullptr;
+        const Mesh* mesh = nullptr;     // the cast, done once
+        const Object3D* parent = nullptr;
+        const void* geometry = nullptr;
+        const void* material = nullptr;
+        std::array<double, 15> lanes{};
+        bool manual = false;
+        std::array<double, 16> matrix{};
+        bool out = false;
+    };
+    std::vector<Entry> entries;
+    std::size_t cursor = 0;
+
+    static void lanesOf(Object3D& object, std::array<double, 15>& into) {
+        into = {object.position.x, object.position.y, object.position.z, object.quaternion.x,
+                object.quaternion.y, object.quaternion.z, object.quaternion.w, object.scale.x,
+                object.scale.y, object.scale.z, object.visible() ? 1.0 : 0.0, object.castShadow() ? 1.0 : 0.0,
+                object.receiveShadow() ? 1.0 : 0.0, double(object.renderOrder()), object.layers().mask};
+    }
+    static void watch(Object3D& object, Entry& entry) {
+        object.materializeLocalTransform();
+        entry.owner = object.weak_from_this();
+        entry.object = &object;
+        entry.mesh = dynamic_cast<const Mesh*>(&object);
+        entry.parent = object.parent;
+        entry.geometry = entry.mesh ? entry.mesh->geometry.get() : nullptr;
+        entry.material = entry.mesh ? entry.mesh->material.get() : nullptr;
+        lanesOf(object, entry.lanes);
+        entry.manual = !object.matrixAutoUpdate;
+        if (entry.manual)
+            for (std::size_t element = 0; element < 16; ++element) entry.matrix[element] = object.matrix.elements[element];
+    }
+    // As core's `!==`, except that a NaN held still is still.
+    static bool held(double now, double then) { return now == then || (std::isnan(now) && std::isnan(then)); }
+    /** Whether the source still holds the state it was watched with. */
+    static bool same(const Entry& entry) {
+        if (entry.owner.expired()) return false;
+        Object3D& object = *entry.object;
+        object.materializeLocalTransform();
+        if (object.parent != entry.parent || object.matrixAutoUpdate == entry.manual) return false;
+        if (entry.mesh && (entry.mesh->geometry.get() != entry.geometry || entry.mesh->material.get() != entry.material))
+            return false;
+        std::array<double, 15> lanes;
+        lanesOf(object, lanes);
+        for (std::size_t lane = 0; lane < lanes.size(); ++lane)
+            if (!held(lanes[lane], entry.lanes[lane])) return false;
+        if (entry.manual)
+            for (std::size_t element = 0; element < 16; ++element)
+                if (!held(object.matrix.elements[element], entry.matrix[element])) return false;
+        return true;
+    }
+};
+
+// The guard for an AutoBatch root, kept while the root lives, as projectedCullOf keeps the cull's.
+SourceGuard& sourceGuardOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, SourceGuard>> guards;
+    for (auto it = guards.begin(); it != guards.end();)
+        it = it->second.first.expired() ? guards.erase(it) : std::next(it);
+    auto& entry = guards[&root];
+    if (entry.first.expired()) entry = {root.weak_from_this(), SourceGuard{}};
+    return entry.second;
+}
+
 // three's graph events (`added`, `removed` on the child; `childadded`, `childremoved` with `child` on
 // the parent), which the engine's own dispatcher fires from add, remove and attach. A language
 // listens per object and type through tn_set_callback, as it does to AnimationMixer's events.
@@ -333,6 +404,36 @@ void registerObject3D(ClassBinding& b) {
                                      r.dynamicBounds, r.frustumCulled})
             counts.push_back(Value::of(double(count)));
         return Value::array(std::move(counts));
+    };
+    // Engine-internal: core's AutoBatch guard. `__tnGuardWatch(sources)` replaces the watched list with
+    // each source's state now; `__tnGuardCheck(limit)` compares up to `limit` sources from where the last
+    // check stopped and answers the indices that changed, which it stops watching.
+    b.methods["__tnGuardWatch"] = [](void* self, const Args& a, Store& store) {
+        SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
+        guard.entries.clear();
+        guard.cursor = 0;
+        for (const Value& ref : refsOf(a.at(0))) {
+            SourceGuard::Entry entry;
+            SourceGuard::watch(objectArg(store, ref), entry);
+            guard.entries.push_back(std::move(entry));
+        }
+        return Value::of(double(guard.entries.size()));
+    };
+    b.methods["__tnGuardCheck"] = [](void* self, const Args& a, Store&) {
+        SourceGuard& guard = sourceGuardOf(*as<Object3D>(self));
+        std::vector<double> changed;
+        const std::size_t count = guard.entries.size();
+        const double limit = number(a.at(0));
+        const std::size_t checks = count == 0 ? 0 : limit >= double(count) ? count : limit > 0 ? std::size_t(limit) : 0;
+        for (std::size_t checked = 0; checked < checks; ++checked) {
+            SourceGuard::Entry& entry = guard.entries[guard.cursor];
+            const std::size_t index = guard.cursor;
+            guard.cursor = (guard.cursor + 1) % count;
+            if (entry.out || SourceGuard::same(entry)) continue;
+            entry.out = true;
+            changed.push_back(double(index));
+        }
+        return Value::list(std::move(changed));
     };
     b.methods["__restoreCull"] = [](void* self, const Args&, Store&) {
         projectedCullOf(*as<Object3D>(self)).restoreAfterDraw();

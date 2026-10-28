@@ -364,6 +364,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_spot_target_in_scene=spot_target_in_scene
     native_engine_abi_hierarchy_revision=hierarchy_revision
     native_engine_abi_matrix_evaluations=matrix_evaluations
+    native_engine_abi_source_guard=source_guard
     native_engine_abi_shadow_camera_in_scene=shadow_camera_in_scene
     native_engine_abi_callbacks=callbacks
     native_engine_abi_color_set=color_set

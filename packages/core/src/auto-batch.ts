@@ -47,6 +47,25 @@ const SETTLE_FRAMES = 3;
  */
 const GUARD_BUDGET_MS = 0.5;
 
+/** Sources the native engine's guard compares per call, between two reads of the budget clock. */
+const ENGINE_GUARD_CHUNK = 2048;
+
+/**
+ * The native engine's own guard (bindings_scene.cpp): it keeps each source's state as merged and
+ * compares it in place, so a lap of 8,000 sources fits the budget the JS slice spent on 200.
+ */
+interface IEngineGuard {
+  __tnGuardWatch(sources: readonly Mesh[]): number;
+  __tnGuardCheck(limit: number): ArrayLike<number>;
+}
+
+function engineGuardOf(scene: Object3D): IEngineGuard | undefined {
+  const host = scene as Object3D & Partial<IEngineGuard>;
+  return typeof host.__tnGuardWatch === "function" && typeof host.__tnGuardCheck === "function"
+    ? (host as Object3D & IEngineGuard)
+    : undefined;
+}
+
 /**
  * Meshes under a game-held object that still count as that object's own parts. A held group above
  * this is the level container, not a live prop, and its contents stay eligible.
@@ -183,6 +202,17 @@ const mergedMeshes = new WeakSet<object>();
 
 export function isAutoBatchMerged(object: object): boolean {
   return mergedMeshes.has(object);
+}
+
+/**
+ * Adds to one costly step by name in `globalThis.__tnEngineCost`, the bag a playtest reads per frame
+ * (three-native reports it as TN_ENGINE_COST), so a kit that brings back a per-frame cost fails its bound.
+ */
+function countEngineCost(name: string, count: number): void {
+  if (count === 0) return;
+  const host = globalThis as { __tnEngineCost?: Record<string, number> };
+  host.__tnEngineCost ??= {};
+  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + count;
 }
 
 /** Frames of guard cost averaged into the one `guard` marker line. */
@@ -328,6 +358,7 @@ export class AutoBatch {
   #staleFrames = 1;
   readonly #entities: Registry | undefined;
   readonly #everyFrame: boolean;
+  readonly #engine: IEngineGuard | undefined;
   /** Adds and removes counted at the scene's top two levels; see {@link AutoBatch.#shape}. */
   #shapeChanges = 0;
   /** Top-level children whose own `childadded` and `childremoved` are counted. */
@@ -349,6 +380,7 @@ export class AutoBatch {
     this.#settleFrames = options.settleFrames ?? SETTLE_FRAMES;
     this.#entities = options.entities;
     this.#everyFrame = options.guard === "everyFrame";
+    this.#engine = engineGuardOf(scene);
     if (!this.#enabled) return;
     scene.addEventListener("childadded", this.#onTopChild);
     scene.addEventListener("childremoved", this.#onTopChild);
@@ -419,6 +451,7 @@ export class AutoBatch {
     if (!this.#enabled) return;
     const meshes = this.#snapshot();
     if (meshes.size >= 2) this.#merge([...meshes.keys()]);
+    this.#watchEngine();
     this.#known = this.#shape();
     this.#state = "idle";
   }
@@ -427,6 +460,7 @@ export class AutoBatch {
   reset(): void {
     for (const record of this.#records) if (!record.out) this.#giveBack(record);
     this.#records = [];
+    this.#watchEngine();
     this.#ancestors.clear();
     this.#watched.clear();
     this.#state = "idle";
@@ -511,6 +545,7 @@ export class AutoBatch {
     this.#unsettled = moved;
     this.#watched = new Map();
     this.#merge([...stable.keys()]);
+    this.#watchEngine();
     this.#known = this.#shape();
     this.#state = "idle";
   }
@@ -624,6 +659,7 @@ export class AutoBatch {
     if (given === 0) return;
     this.#records = this.#records.filter((record) => !record.out);
     this.#cursor = 0;
+    this.#watchEngine();
     this.#report(
       `${AUTO_BATCH_MARKER}:${JSON.stringify({ event: "restored", given, ...this.census })}`,
     );
@@ -645,8 +681,17 @@ export class AutoBatch {
     return given;
   }
 
+  /**
+   * Hands the engine's guard the sources as they are now. It runs in the same frame as each merge
+   * and each give-back, so no game code runs between the state merged and the state watched.
+   */
+  #watchEngine(): void {
+    this.#engine?.__tnGuardWatch(this.#records.map((record) => record.mesh));
+  }
+
   /** A slice of the sources bounded by {@link GUARD_BUDGET_MS}, or all of them under `everyFrame`. */
   #checkSources(started: number): number {
+    if (this.#engine !== undefined) return this.#checkInEngine(this.#engine, started);
     const records = this.#records;
     let given = 0;
     let checked = 0;
@@ -671,6 +716,35 @@ export class AutoBatch {
         performance.now() - started > GUARD_BUDGET_MS
       )
         break;
+    }
+    this.#staleFrames = Math.ceil(records.length / Math.max(1, checked));
+    countEngineCost("autoBatchJsSourceChecks", checked);
+    return given;
+  }
+
+  /**
+   * {@link #checkSources} on the engine, compared where the state lives. A whole lap fits the budget
+   * there, but a frame need not pay for it: `spread` checks one lap per settle window, so a change is
+   * seen within the frames the merge waited to call the mesh still, under the same budget.
+   */
+  #checkInEngine(engine: IEngineGuard, started: number): number {
+    const records = this.#records;
+    const lap = this.#everyFrame
+      ? records.length
+      : Math.ceil(records.length / Math.max(1, this.#settleFrames));
+    let given = 0;
+    let checked = 0;
+    while (checked < lap) {
+      const limit = this.#everyFrame ? lap : Math.min(ENGINE_GUARD_CHUNK, lap - checked);
+      const changed = engine.__tnGuardCheck(limit);
+      for (let at = 0; at < changed.length; at += 1) {
+        const record = records[changed[at] as number];
+        if (record === undefined || record.out) continue;
+        this.#giveBack(record);
+        given += 1;
+      }
+      checked += limit;
+      if (!this.#everyFrame && performance.now() - started > GUARD_BUDGET_MS) break;
     }
     this.#staleFrames = Math.ceil(records.length / Math.max(1, checked));
     return given;

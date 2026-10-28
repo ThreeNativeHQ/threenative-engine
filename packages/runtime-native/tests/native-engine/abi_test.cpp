@@ -775,6 +775,56 @@ void walk_parents() {
 
 // `__hierarchyRevision` is the engine's count of adds, removes, attaches and destroys: core keeps a walk
 // that only finds who is under whom while it holds still, so it moves on each of those and nothing else.
+// core's AutoBatch guard on the engine: a watched source that moves, hides or changes material is
+// answered once by index; one held still never is, and a limit checks that many from where it stopped.
+void source_guard() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t scene{}, meshes[3]{}, other{};
+    CHECK(tn_construct(ctx, "Scene", nullptr, 0, &scene, &d.value) == TN_OK);
+    tn_value_t result{};
+    for (auto& mesh : meshes) {
+        CHECK(tn_construct(ctx, "Mesh", nullptr, 0, &mesh, &d.value) == TN_OK);
+        const tn_value_t child = ref(mesh);
+        CHECK(tn_invoke(scene, "add", &child, 1, &result, &d.value) == TN_OK);
+    }
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &other, &d.value) == TN_OK);
+    const tn_value_t items[3] = {ref(meshes[0]), ref(meshes[1]), ref(meshes[2])};
+    tn_value_t list{};
+    list.kind = TN_VALUE_ARRAY;
+    list.count = 3;
+    list.values = items;
+    CHECK(tn_invoke(scene, "__tnGuardWatch", &list, 1, &result, &d.value) == TN_OK && result.number == 3);
+    const auto changed = [&](double limit) {
+        const tn_value_t arg = num(limit);
+        tn_value_t out{};
+        CHECK(tn_invoke(scene, "__tnGuardCheck", &arg, 1, &out, &d.value) == TN_OK);
+        CHECK(out.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(out.numbers, out.numbers + out.count);
+    };
+    CHECK(changed(10).empty());
+    const tn_value_t moved = num(0.5), hidden = boolean(false), material = ref(other);
+    CHECK(tn_set(meshes[1], "position.x", &moved, &d.value) == TN_OK);
+    CHECK((changed(10) == std::vector<double>{1}));
+    CHECK(changed(10).empty());  // answered once, then no longer watched
+    CHECK(tn_set(meshes[2], "visible", &hidden, &d.value) == TN_OK);
+    CHECK(tn_set(meshes[0], "material", &material, &d.value) == TN_OK);
+    // A limit checks that many sources from where the last check stopped.
+    CHECK((changed(1) == std::vector<double>{0}));
+    CHECK(changed(1).empty());  // source 1 is no longer watched
+    CHECK((changed(1) == std::vector<double>{2}));
+    CHECK(tn_invoke(scene, "__tnGuardWatch", &list, 1, &result, &d.value) == TN_OK);
+    CHECK(changed(3).empty());  // rewatched as they are now
+    const tn_value_t zero = num(0), far = num(4);
+    CHECK(tn_set(meshes[0], "position.x", &zero, &d.value) == TN_OK);  // the value it holds: still
+    CHECK(tn_set(meshes[2], "position.x", &far, &d.value) == TN_OK);
+    CHECK(changed(2).empty());  // sources 0 and 1
+    CHECK((changed(2) == std::vector<double>{2}));
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void matrix_evaluations() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -2845,7 +2895,7 @@ void tsl_mat4_element() {
 }
 
 TN_TEST_MAIN({"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
-             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
+             {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

@@ -301,14 +301,66 @@ describe("AutoBatch", () => {
     expect(batch.census.restored).toBe(1);
   });
 
+  it("on the native engine has the engine compare its sources, a lap per settle window, and no JS stamp", () => {
+    const scene = new Scene();
+    const group = new Group();
+    scene.add(group);
+    const meshes = town(10, group);
+    // The engine guard's contract (bindings_scene.cpp `__tnGuardWatch`, `__tnGuardCheck`), over y only.
+    let watched: { mesh: Mesh; y: number; out: boolean }[] = [];
+    let cursor = 0;
+    const watches: number[] = [];
+    const engine = scene as Scene & Record<string, unknown>;
+    engine.__tnGuardWatch = (sources: readonly Mesh[]) => {
+      watched = sources.map((mesh) => ({ mesh, y: mesh.position.y, out: false }));
+      cursor = 0;
+      watches.push(sources.length);
+      return sources.length;
+    };
+    engine.__tnGuardCheck = (limit: number) => {
+      const changed: number[] = [];
+      for (let checked = 0; checked < Math.min(limit, watched.length); checked += 1) {
+        const at = cursor;
+        cursor = (cursor + 1) % watched.length;
+        const entry = watched[at] as (typeof watched)[number];
+        if (entry.out || entry.mesh.position.y === entry.y) continue;
+        entry.out = true;
+        changed.push(at);
+      }
+      return changed;
+    };
+    const cost: Record<string, number> = {};
+    (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost = cost;
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(watches).toEqual([10]);
+    // 10 sources over a 3-frame settle window: 4 a frame, a lap in 3 frames.
+    expect(batch.census.guardStaleFrames).toBe(3);
+    const plate = meshes[4] as Mesh;
+    plate.position.y = -3;
+    run(batch, 3);
+    expect(plate.visible).toBe(true);
+    expect(batch.census.restored).toBe(1);
+    expect(draws(scene)).toBe(3);
+    // Rewatched in the frame it gave back, without that source.
+    expect(watches).toEqual([10, 9]);
+    run(batch, 3);
+    expect(batch.census.restored).toBe(1);
+    expect(cost.autoBatchJsSourceChecks).toBeUndefined();
+  });
+
   it("checks every source each frame on request", () => {
     const scene = new Scene();
     const group = new Group();
     scene.add(group);
     town(10, group);
+    const cost: Record<string, number> = {};
+    (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost = cost;
     const exact = new AutoBatch(scene, { guard: "everyFrame", settleFrames: 3 });
     run(exact, 8);
     expect(exact.census.guardStaleFrames).toBe(1);
+    // Plain three checks in JS; the engine-cost bag counts each source read.
+    expect(cost.autoBatchJsSourceChecks).toBeGreaterThanOrEqual(10);
   });
 
   it("counts a merged mesh in the warm-up, not the hidden sources it replaced", async () => {
