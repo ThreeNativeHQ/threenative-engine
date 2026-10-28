@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import {
   BufferAttribute,
   BufferGeometry,
@@ -29,6 +31,17 @@ import {
 // The camera pass tests its frustum and forward ray in plain numbers: on the web engine three's Frustum,
 // Ray and Sphere are engine objects, one boundary call per test, 70 a frame on the shooter.
 describe("the cull's plain frustum and ray math", () => {
+  // The win is the class, not the answer: the equivalence test below passes just as well if the math is
+  // right while an engine Ray, Frustum or Sphere comes back to hold it, which is the cost the lever
+  // removed (66e637840: cull 0.78 -> 0.66 ms on the laptop). Count the constructions in the cull's source.
+  it("constructs no three Frustum, Ray or Sphere, which are engine objects on the web", () => {
+    const source = readFileSync(new URL("../src/render-camera-cull.ts", import.meta.url), "utf8");
+    // Comments name the types the plain code replaces, so they are not constructions.
+    const code = source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/.*$/gmu, "");
+    for (const name of ["Frustum", "Ray", "Sphere"])
+      expect(code, `new ${name}(`).not.toMatch(new RegExp(`new ${name}\\(`, "u"));
+  });
+
   it("answers as three's Frustum and Ray for cameras and spheres all around", () => {
     let seed = 7;
     const random = () => {
