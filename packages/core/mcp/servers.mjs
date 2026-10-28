@@ -48,7 +48,7 @@ export const MCP_PACKAGES = Object.freeze({
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
   engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.6" }),
   blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.6" }),
-  animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.0" }),
+  animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.3" }),
 });
 
 /** How one host spells a stdio MCP server. Hosts agree on what to run and disagree on where to

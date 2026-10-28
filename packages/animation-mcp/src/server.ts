@@ -1,7 +1,6 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { poseLabPage } from "./page.js";
 
 const CLIENT = new URL("./client/app.js", import.meta.url);
@@ -155,20 +154,4 @@ export async function startPoseLab(options: PoseLabOptions = {}): Promise<{
         server.close((error) => (error ? reject(error) : resolve())),
       ),
   };
-}
-
-function invokedAsCli(): boolean {
-  const entry = process.argv[1];
-  return (
-    entry !== undefined && path.resolve(entry) === path.resolve(fileURLToPath(import.meta.url))
-  );
-}
-
-if (invokedAsCli()) {
-  startPoseLab(parseArgs(process.argv.slice(2)))
-    .then(({ port }) => process.stdout.write(`Pose Lab: http://127.0.0.1:${port}/pose\n`))
-    .catch((error: unknown) => {
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = 1;
-    });
 }

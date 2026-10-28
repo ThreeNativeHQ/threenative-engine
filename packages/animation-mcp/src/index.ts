@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -194,7 +195,7 @@ function openView(input: z.output<typeof ViewInputSchema>) {
 }
 
 export function createAnimationServer(): McpServer {
-  const server = new McpServer({ name: "threenative-animation", version: "0.1.0" });
+  const server = new McpServer({ name: "threenative-animation", version: "0.1.3" });
 
   server.registerTool(
     "animation_inspect",
@@ -272,11 +273,19 @@ export function runServer(): void {
   serveStdio(() => createAnimationServer());
 }
 
+/** Whether this file is the process's main module. `realpath` on both sides is the whole point:
+ * an installed package runs through `node_modules/.bin/threenative-animation-mcp`, a symlink, so
+ * `argv[1]` is the link and `import.meta.url` the file it points at. Comparing the two literally
+ * started nothing at all — the server initialized and went silent, which a host reports as a
+ * timeout in whichever editor the agent happened to be using. */
 function invokedAsCli(): boolean {
   const entry = process.argv[1];
-  return (
-    entry !== undefined && path.resolve(entry) === path.resolve(fileURLToPath(import.meta.url))
-  );
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
 }
 
 if (invokedAsCli()) {
