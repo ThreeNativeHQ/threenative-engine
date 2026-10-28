@@ -1,0 +1,172 @@
+{
+  "name": "collectathon-win",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "gem.0",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 27
+        }
+      },
+      {
+        "entity": "gem.1",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 26.5
+        }
+      },
+      {
+        "entity": "gem.2",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 26
+        }
+      },
+      {
+        "entity": "gem.3",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 25.5
+        }
+      },
+      {
+        "entity": "gem.4",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 25
+        }
+      },
+      {
+        "entity": "gem.5",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 24.5
+        }
+      },
+      {
+        "entity": "gem.6",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 24
+        }
+      },
+      {
+        "entity": "gem.7",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 23.5
+        }
+      },
+      {
+        "entity": "seed.summit",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 22
+        }
+      },
+      {
+        "entity": "seed.shaft",
+        "at": {
+          "x": 0,
+          "y": 0.9,
+          "z": 21.5
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "won",
+      "waitForResource": {
+        "id": "state",
+        "path": "won",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stand",
+      "press": [],
+      "holdTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "seeds",
+        "equals": 3,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "won",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "toast",
+        "equals": "COURSE CLEAR!",
+        "changed": true
+      }
+    ],
+    "signals": [
+      {
+        "entity": "player",
+        "name": "won",
+        "minCount": 1
+      },
+      {
+        "entity": "player",
+        "name": "collected",
+        "minCount": 10
+      }
+    ]
+  }
+}

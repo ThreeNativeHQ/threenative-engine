@@ -33,6 +33,8 @@ import { type GameState, HUD_PILL } from "../state.js";
 export type { GameCtx };
 
 const WEDGES = 8;
+/** All three Sunseeds: the summit, the eight red gems and the wall-kick shaft. */
+const SEEDS = 3;
 const JUMPS: ReadonlySet<string> = new Set([
   "single",
   "double",
@@ -59,12 +61,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     landings: 0,
     paused: false,
     respawns: 0,
-    seedTotal: 3,
+    seedTotal: SEEDS,
     seeds: 0,
     toast: "",
     uiReady: false,
     wallHits: 0,
     wedges: WEDGES,
+    won: false,
   };
 
   #sky: DataTexture | undefined;
@@ -269,6 +272,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let coins = 0;
     let gems = 0;
     let seeds = 0;
+    let won = false;
     let defeated = 0;
     let wedges = WEDGES;
     let checkpoint = 0;
@@ -399,6 +403,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         }
       }
 
+      // The course is clear the moment the third Sunseed is held: the HUD says so and the state
+      // carries it, so a scenario can assert the end of the game instead of inferring it.
+      if (!won && seeds === SEEDS) {
+        won = true;
+        toast("COURSE CLEAR!", Number.POSITIVE_INFINITY);
+        emitPlaytestEvent({ entity: "player", name: "won" });
+      }
+
       for (const walker of this.#walkers) {
         walker.update(dt, elapsed, at);
         if (!walker.alive) continue;
@@ -455,6 +467,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.seeds = seeds;
       statePatch.wallHits = hero.wallHits;
       statePatch.wedges = wedges;
+      statePatch.won = won;
       frameCtx.state.set(statePatch);
     };
   }
