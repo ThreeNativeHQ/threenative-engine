@@ -273,7 +273,8 @@ function boneStretch(samples: ClipSamples, limit: number): Defect[] {
       .map((frame, index) => ({
         index,
         ratio: Math.abs(
-          distance(frame.positions[bone] ?? [0, 0, 0], frame.positions[parent] ?? [0, 0, 0]) / base -
+          distance(frame.positions[bone] ?? [0, 0, 0], frame.positions[parent] ?? [0, 0, 0]) /
+            base -
             1,
         ),
       }))
