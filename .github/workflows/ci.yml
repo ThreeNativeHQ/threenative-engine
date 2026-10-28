@@ -64,6 +64,10 @@ jobs:
         with:
           # Manual full qualification does not consult history; automatic scope selection does.
           fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 1 || 0 }}
+          # Scope reads commits and trees, never old file contents, so it fetches no blobs: every
+          # branch of the 3.9 GB repository took over this job's 5 minutes on a loaded tn-local
+          # runner (three cancels on PR #574), against 8 s and 20 MB blob-less with the same plan.
+          filter: blob:none
           # Until protected develop exists, retain the qualified-main scheduled flow.
           ref: ${{ github.event_name == 'schedule' && vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop' || github.sha }}
       - id: classify
