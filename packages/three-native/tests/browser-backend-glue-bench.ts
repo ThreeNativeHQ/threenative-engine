@@ -41,7 +41,9 @@ const out = new Vector3();
 const position = mesh.geometry.getAttribute("position");
 if (position === null) throw new Error("the box has no position attribute");
 
-// The shooter's top crossing kinds (2026-10-27 census), and two lane accesses that cross nothing.
+// The shooter's top crossing kinds (2026-10-27 census), two lane accesses that cross nothing, and the
+// two entries a cached read pays instead of a crossing: the glue a frame pays for a property the back end
+// already holds is the descriptor getter, not the engine call.
 const kinds: Record<string, () => unknown> = {
   "call Group.updateWorldMatrix": () => group.updateWorldMatrix(false, false),
   "call Euler.setFromQuaternion": () => euler.setFromQuaternion(quaternion),
@@ -49,6 +51,8 @@ const kinds: Record<string, () => unknown> = {
   "call Mesh.__tnVisibleInWorld": () =>
     (mesh as unknown as { __tnVisibleInWorld(): boolean }).__tnVisibleInWorld(),
   "get BufferAttribute.version": () => position.version,
+  "cached get MeshBasicMaterial.opacity": () => material.opacity,
+  "cached get Mesh.renderOrder": () => mesh.renderOrder,
   "lane Mesh.position.x read+write": () => {
     mesh.position.x += 1;
   },
