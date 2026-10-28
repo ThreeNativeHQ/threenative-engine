@@ -1,6 +1,10 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
     "ignore": [
       "**/dist/**",
@@ -8,6 +12,7 @@
       "**/.threenative/**",
       "**/mcp/engine-server.mjs",
       "**/mcp/blender-server.mjs",
+      "**/mcp/animation-server.mjs",
       "packages/metahuman/wasm/**",
       "artifacts/**",
       "examples/strata-terrain-preview/src/world/*.json",
@@ -75,14 +80,23 @@
       "complexity": {
         "noExcessiveCognitiveComplexity": {
           "level": "warn",
-          "options": { "maxAllowedComplexity": 15 }
+          "options": {
+            "maxAllowedComplexity": 15
+          }
         }
       },
       "style": {
         "useNamingConvention": {
           "level": "error",
           "options": {
-            "conventions": [{ "selector": { "kind": "interface" }, "match": "I(.*)" }],
+            "conventions": [
+              {
+                "selector": {
+                  "kind": "interface"
+                },
+                "match": "I(.*)"
+              }
+            ],
             "strictCase": false,
             "requireAscii": false
           }
@@ -92,13 +106,29 @@
   },
   "overrides": [
     {
-      "include": ["**/*.ts", "**/*.tsx"],
-      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+      "include": [
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": "off"
+          }
+        }
+      }
     },
     {
-      "include": ["packages/runtime-native/**/*.js", "packages/runtime-native/**/*.mjs"],
-      "formatter": { "enabled": false },
-      "organizeImports": { "enabled": false },
+      "include": [
+        "packages/runtime-native/**/*.js",
+        "packages/runtime-native/**/*.mjs"
+      ],
+      "formatter": {
+        "enabled": false
+      },
+      "organizeImports": {
+        "enabled": false
+      },
       "linter": {
         "rules": {
           "style": {
@@ -106,8 +136,18 @@
               "level": "error",
               "options": {
                 "conventions": [
-                  { "selector": { "kind": "importNamespace" }, "match": ".*" },
-                  { "selector": { "kind": "objectLiteralProperty" }, "match": ".*" }
+                  {
+                    "selector": {
+                      "kind": "importNamespace"
+                    },
+                    "match": ".*"
+                  },
+                  {
+                    "selector": {
+                      "kind": "objectLiteralProperty"
+                    },
+                    "match": ".*"
+                  }
                 ],
                 "strictCase": false,
                 "requireAscii": false
@@ -117,7 +157,9 @@
             "useTemplate": "warn",
             "noUnusedTemplateLiteral": "warn"
           },
-          "performance": { "noDelete": "warn" }
+          "performance": {
+            "noDelete": "warn"
+          }
         }
       }
     },
@@ -136,7 +178,14 @@
             "useNamingConvention": {
               "level": "error",
               "options": {
-                "conventions": [{ "selector": { "kind": "interface" }, "match": "I(.*)" }],
+                "conventions": [
+                  {
+                    "selector": {
+                      "kind": "interface"
+                    },
+                    "match": "I(.*)"
+                  }
+                ],
                 "strictCase": false,
                 "requireAscii": false
               }
@@ -146,20 +195,36 @@
       }
     },
     {
-      "include": ["packages/core/src/react-glyphs.ts"],
-      "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
+      "include": [
+        "packages/core/src/react-glyphs.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": "off"
+          }
+        }
+      }
     },
     {
-      "include": ["packages/playtest/**"],
-      "formatter": { "enabled": false },
-      "organizeImports": { "enabled": false },
+      "include": [
+        "packages/playtest/**"
+      ],
+      "formatter": {
+        "enabled": false
+      },
+      "organizeImports": {
+        "enabled": false
+      },
       "linter": {
         "rules": {
           "recommended": true,
           "complexity": {
             "noExcessiveCognitiveComplexity": {
               "level": "warn",
-              "options": { "maxAllowedComplexity": 15 }
+              "options": {
+                "maxAllowedComplexity": 15
+              }
             },
             "noForEach": "warn"
           },
@@ -170,13 +235,19 @@
             "useImportType": "warn",
             "useTemplate": "warn"
           },
-          "suspicious": { "noConfusingVoidType": "warn" },
-          "performance": { "noDelete": "warn" }
+          "suspicious": {
+            "noConfusingVoidType": "warn"
+          },
+          "performance": {
+            "noDelete": "warn"
+          }
         }
       }
     },
     {
-      "include": ["packages/playtest/src/**"],
+      "include": [
+        "packages/playtest/src/**"
+      ],
       "linter": {
         "rules": {
           "style": {
@@ -184,8 +255,15 @@
               "level": "error",
               "options": {
                 "conventions": [
-                  { "selector": { "kind": "interface" }, "match": "I(.*)" },
-                  { "match": ".*" }
+                  {
+                    "selector": {
+                      "kind": "interface"
+                    },
+                    "match": "I(.*)"
+                  },
+                  {
+                    "match": ".*"
+                  }
                 ],
                 "strictCase": false,
                 "requireAscii": false
@@ -215,7 +293,9 @@
       }
     },
     {
-      "include": ["examples/procedural-animals/src/render/donor/core/motion/quadruped.js"],
+      "include": [
+        "examples/procedural-animals/src/render/donor/core/motion/quadruped.js"
+      ],
       "linter": {
         "rules": {
           "style": {
@@ -234,7 +314,9 @@
                       "kind": "objectLiteralProperty"
                     },
                     "match": "(?:D|DL|T|F|H|W|U|Lf|(.+))",
-                    "formats": ["camelCase"]
+                    "formats": [
+                      "camelCase"
+                    ]
                   }
                 ],
                 "strictCase": false,

@@ -516,6 +516,10 @@
       "exports": [".", "./package.json", "./quality", "./web-brand"],
       "symbols": {}
     },
+    "threenative-animation-mcp": {
+      "exports": [".", "./package.json"],
+      "symbols": {}
+    },
     "threenative-blender-mcp": {
       "exports": [".", "./bridge", "./package.json"],
       "symbols": {}

@@ -34,6 +34,7 @@ describe("mergeMcpServers", () => {
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
+      "threenative-animation",
     ]);
   });
 
@@ -100,6 +101,10 @@ describe("MCP_SERVERS", () => {
     // ERR_PNPM_FETCH_404 while resolving core, and the scaffolded project never reaches its build.
     expect(manifest.dependencies?.["threenative-blender-mcp"]).toBeUndefined();
     expect(manifest.devDependencies?.["threenative-blender-mcp"]).toBe("workspace:*");
+    // Same rule, and for the same reason: the animation server has never been published, so a
+    // registry dependency on it is an install that cannot resolve.
+    expect(manifest.dependencies?.["threenative-animation-mcp"]).toBeUndefined();
+    expect(manifest.devDependencies?.["threenative-animation-mcp"]).toBe("workspace:*");
     const blender = JSON.parse(
       readFileSync(path.resolve("packages/blender-mcp/package.json"), "utf8"),
     ) as { version: string };
@@ -107,15 +112,16 @@ describe("MCP_SERVERS", () => {
     expect(MCP_PACKAGES.blender?.version).toBe(blender.version);
   });
 
-  // The four are ordered, not merely present: a host renders the table in declaration order and
+  // The five are ordered, not merely present: a host renders the table in declaration order and
   // the golden-path snapshot probes them by index. A server appended in the wrong place is the
   // kind of change that passes every set-shaped assertion and moves what a user sees.
-  it("should declare four ThreeNative servers", () => {
+  it("should declare five ThreeNative servers", () => {
     expect(Object.keys(MCP_SERVERS)).toEqual([
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
+      "threenative-animation",
     ]);
   });
 
@@ -170,7 +176,11 @@ describe("MCP_SERVERS", () => {
     })
       .split("\n")
       .filter((line) => line.length > 0);
-    for (const bundle of ["mcp/blender-server.mjs", "mcp/engine-server.mjs"]) {
+    for (const bundle of [
+      "mcp/animation-server.mjs",
+      "mcp/blender-server.mjs",
+      "mcp/engine-server.mjs",
+    ]) {
       expect(
         tracked,
         `packages/core/${bundle} is untracked; a checkout that skips core's build ships without it and the shim falls back to npx`,
@@ -206,6 +216,63 @@ describe("MCP_SERVERS", () => {
         readFileSync(path.join(packageRoot, script), "utf8"),
         `packages/core/${script} drifted`,
       ).toBe(readFileSync(path.resolve(packageRoot, "..", "blender-mcp", script), "utf8"));
+    }
+  });
+
+  // AC-1 of PRD-760: a generated project's `.mcp.json` starts `threenative-animation`, and a stdio
+  // `tools/list` answers with the tools this commit implements. Spawned rather than imported: the
+  // shim is the thing a host runs, and a shim that imports a server without starting it looks fine
+  // to every assertion that never speaks to it.
+  it("starts the bundled animation server and answers tools/list", async () => {
+    const shim = path.join(packageRoot, "mcp", "animation.mjs");
+    expect(existsSync(shim), `${shim} is missing`).toBe(true);
+    const child = spawn(process.execPath, [shim], { stdio: ["pipe", "pipe", "pipe"] });
+    const pending = new Map<number, (value: { result?: { tools?: { name: string }[] } }) => void>();
+    let buffer = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim().length === 0) continue;
+        const message = JSON.parse(line) as {
+          id?: number;
+          result?: { tools?: { name: string }[] };
+        };
+        if (message.id !== undefined) pending.get(message.id)?.(message);
+      }
+    });
+    let nextId = 1;
+    const send = (method: string, params: Record<string, unknown> = {}) => {
+      const id = nextId++;
+      return new Promise<{ result?: { tools?: { name: string }[] } }>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error("animation tools/list timed out; the shim started no server"));
+        }, 30_000);
+        pending.set(id, (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        });
+        child.stdin.write(`${JSON.stringify({ id, jsonrpc: "2.0", method, params })}\n`);
+      });
+    };
+    try {
+      await send("initialize", {
+        capabilities: {},
+        clientInfo: { name: "spec", version: "0.0.0" },
+        protocolVersion: "2025-06-18",
+      });
+      child.stdin.write(
+        `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`,
+      );
+      const listed = await send("tools/list");
+      expect(listed.result?.tools?.map((tool) => tool.name).sort()).toEqual([
+        "animation_attach",
+        "animation_inspect",
+        "animation_open_view",
+      ]);
+    } finally {
+      child.kill();
     }
   });
 
