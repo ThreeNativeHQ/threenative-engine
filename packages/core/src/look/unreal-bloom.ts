@@ -112,6 +112,8 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
   readonly #result: ColourTexture;
   // Three's runtime accepts undefined on first use, but its declaration requires a state.
   #rendererState: Parameters<typeof RendererUtils.resetRendererState>[1] | undefined;
+  #configuredWidth = -1;
+  #configuredHeight = -1;
   #disposed = false;
 
   constructor(input: ColourTexture) {
@@ -228,29 +230,33 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
     const renderer = frame.renderer;
     if (renderer === null) throw new Error("Bloom requires a renderer.");
     renderer.getDrawingBufferSize(this.#size);
-    const sizeAt = (level: number): [number, number] => [
-      levelSize(this.#size.x, level),
-      levelSize(this.#size.y, level),
-    ];
-    for (const [i, target] of this.#downTargets.entries()) {
-      const [w, h] = sizeAt(i + 1);
-      target.setSize(w, h);
-      const [pw, ph] = i === 0 ? [this.#size.x, this.#size.y] : sizeAt(i);
-      this.#downTexel[i]?.value.set(0.5 / pw, 0.5 / ph);
-    }
-    const schedule = bloomSchedule(this.#size.x, this.#size.y);
-    for (const [order, stage] of this.#stages.entries()) {
-      const { width: w, height: h, radius, taps } = schedule[order] as IBloomStageSize;
-      stage.across.setSize(w, h);
-      stage.out.setSize(w, h);
-      stage.radius.value = Math.max(radius, 1e-4);
-      stage.reach.value = taps - 1;
-      stage.taps.value = taps;
-      stage.texel.value.set(1 / w, 1 / h);
-      let total = 0;
-      for (let o = -(taps - 1); o <= taps - 1; o++)
-        total += Math.exp(SHAPE * (o / stage.radius.value) ** 2);
-      stage.norm.value = 1 / total;
+    if (this.#configuredWidth !== this.#size.x || this.#configuredHeight !== this.#size.y) {
+      const sizeAt = (level: number): [number, number] => [
+        levelSize(this.#size.x, level),
+        levelSize(this.#size.y, level),
+      ];
+      for (const [i, target] of this.#downTargets.entries()) {
+        const [w, h] = sizeAt(i + 1);
+        target.setSize(w, h);
+        const [pw, ph] = i === 0 ? [this.#size.x, this.#size.y] : sizeAt(i);
+        this.#downTexel[i]?.value.set(0.5 / pw, 0.5 / ph);
+      }
+      const schedule = bloomSchedule(this.#size.x, this.#size.y);
+      for (const [order, stage] of this.#stages.entries()) {
+        const { width: w, height: h, radius, taps } = schedule[order] as IBloomStageSize;
+        stage.across.setSize(w, h);
+        stage.out.setSize(w, h);
+        stage.radius.value = Math.max(radius, 1e-4);
+        stage.reach.value = taps - 1;
+        stage.taps.value = taps;
+        stage.texel.value.set(1 / w, 1 / h);
+        let total = 0;
+        for (let o = -(taps - 1); o <= taps - 1; o++)
+          total += Math.exp(SHAPE * (o / stage.radius.value) ** 2);
+        stage.norm.value = 1 / total;
+      }
+      this.#configuredWidth = this.#size.x;
+      this.#configuredHeight = this.#size.y;
     }
     this.#rendererState ??= RendererUtils.saveRendererState(renderer);
     this.#rendererState = RendererUtils.resetRendererState(renderer, this.#rendererState);
