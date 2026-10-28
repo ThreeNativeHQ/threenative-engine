@@ -334,6 +334,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_flat_shading_needs_no_normals=flat_shading_needs_no_normals
         native_engine_renderer_map_sampleability_changes=map_sampleability_changes
         native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put
+        native_engine_renderer_batch_keeps_member_id=batch_keeps_member_id
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow

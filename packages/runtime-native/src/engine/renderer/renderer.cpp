@@ -2543,8 +2543,8 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
         std::sort(opaque.begin(), opaque.end(), [](const auto& a, const auto& b) {
             const DrawItem& x = *a.second;
             const DrawItem& y = *b.second;
-            return std::tie(y.background, x.renderOrder, x.kind, x.side, x.material, x.positions, x.indices, x.id) <
-                   std::tie(x.background, y.renderOrder, y.kind, y.side, y.material, y.positions, y.indices, y.id);
+            return std::tie(y.background, x.renderOrder, x.kind, x.side, x.material, x.positions, x.indices, x.key) <
+                   std::tie(x.background, y.renderOrder, y.kind, y.side, y.material, y.positions, y.indices, y.key);
         });
     } else
 #endif
@@ -4387,7 +4387,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 row->background = item.background; row->transparent = item.transparent; row->renderOrder = item.renderOrder;
                 row->kind = item.kind; row->side = item.side; row->material = reinterpret_cast<uintptr_t>(item.material);
                 row->positions = reinterpret_cast<uintptr_t>(item.positions); row->indices = reinterpret_cast<uintptr_t>(item.indices);
-                row->id = item.id; row->slot = p.slot;
+                row->id = item.key; row->slot = p.slot;
                 if (row->order() != before) {
                     changed = true;
                     appended &= fresh && p.slot != 0;

@@ -1347,8 +1347,11 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.mainPass = firstMember.mainPass;
         d.castShadow = firstMember.shadowCaster;
         d.layers = firstMember.layers;
-        // PRD-754: the group, not its nearest member, names the draw, so culling a member moves no uniform slot or row.
-        d.key = d.id = uint64_t{1} << 62 | (group.identity >> 2);
+#ifndef __EMSCRIPTEN__
+        // PRD-754: the group, not its nearest member, keys the draw, so culling a member moves no uniform slot. The id
+        // stays the member's: it breaks three's depth ties, and with it the winner of two coplanar draws.
+        d.key = uint64_t{1} << 62 | (group.identity & ((uint64_t{1} << 62) - 1));
+#endif
         ++batchGroups_;
         const auto slot = batchSlot(group.identity);
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
