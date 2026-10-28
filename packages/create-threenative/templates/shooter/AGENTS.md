@@ -9,7 +9,7 @@ portable, `src/main.ts` is the web-only React mount. The render camera also skip
 
 ## Start every change
 
-1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art.
+1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art. A session started outside this folder has no `mcp__threenative-*` tools: call them with `node node_modules/@threenative/core/mcp/call.mjs <server> <tool> '<json>'`.
 2. **New game only:** run discovery in `threenative-capabilities` before `prd-creator`. Draft the core-mechanics plan from the kit, both discovery passes and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;

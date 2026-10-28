@@ -153,6 +153,62 @@
           }
         ]
       }
+    },
+    {
+      "id": 4,
+      "at": "2026-10-28T04:49:12.489Z",
+      "decision": "iteration",
+      "kit": "collectathon",
+      "reference": "sm64",
+      "fixes": [
+        "137c2f2c9: the third Sunseed clears the course, with playtests/win.playtest.json red before and green after (row 3 retro friction 2)",
+        "830f78c2d: the kit AGENTS.md drops what the installed references already say, 22,455 -> 20,103 B (row 3 retro friction 1)",
+        "1be81b9d1: the win banner is the one win surface, not a banner plus a duplicate toast (a fresh judge called the doubled line a REGRESSION, then PASS/IMPROVEMENT after)"
+      ],
+      "notes": "Cold build on tarballs packed from 1be81b9d1 (the row-3 retro fixes), same prompt, engine and isolation as rows 1-3 (claude -p opus-5-5, --setting-sources project, empty sandbox, mcp_servers []). The agent scaffolded with --genre mario on its first attempt, changed no code, and ran 6 scenarios including the new win one; the recorder reran all 23 on the cold build: 22 green, the one red is production-performance (cost p95 22.65 ms over 16.7, GPU-dominated at CPU 1.6). The kit's render source is byte-identical to row 3's 12.59 ms measurement, so this is the base or the host, not the kit: two more single-scenario runs measured 24.84 and 24.90 ms, and a probe with temporalDetail.strength = 0 measured 22.32 ms, which rules that stage out as the cause. The run also logs a new TN_BRIDGE_WARNING naming 4022 redundant reads per frame from boundsOf < #visitAnimation < #visitRig, a base-side cost in PRD-748's lane. K1 45,630 tokens (rows 3 and 2: 47,107 and 44,483; baseline 97,840). K2 presented p95 17.7 ms is Xvfb cadence per the PRD decision. K4 carried from row 3 with Hero.ts byte-identical.",
+      "metrics": {
+        "k1Tokens": 45630,
+        "k1WallMin": 5,
+        "k1Turns": 17,
+        "k2ScenarioPct": 96,
+        "k2PresentedP95Ms": 17.7,
+        "k2CostP95Ms": 22.65,
+        "k2BudgetMs": 16.7,
+        "k2BudgetMet": false,
+        "k2Visual": "CLOSE",
+        "k3Friction": 1,
+        "k4Grade": 4
+      },
+      "friction": {
+        "searchMisses": 0,
+        "duplicates": 0,
+        "wrongApi": 0,
+        "retries": 1
+      },
+      "retro": {
+        "worked": [
+          "`create-threenative --genre mario` picked the collectathon kit on the first attempt and printed the SM64 mechanics digest (L6)",
+          "no code change: check, build and the suite run green on the kit as shipped (L17, L44, L55)",
+          "the new `playtests/win.playtest.json` passed on its first run, so row 3's missing-win-state friction is closed (L44-55)"
+        ],
+        "failed": [
+          "the agent could not tell which scenarios passed from the first suite run and re-ran the whole suite (L25 then L44): 6 of 17 turns went to learning 5 verdicts"
+        ],
+        "frictions": [
+          {
+            "text": "per-scenario verdicts are unreadable from the runner's stdout: the agent spent L32-L40 (5 calls) probing artifacts/playtest/*.json with jq, then re-ran the suite (L44) because only that prints scenarioSummary lines",
+            "transcriptLine": 32
+          },
+          {
+            "text": "the machine-readable report has no documented status field: `jq 'keys'`, `.status`, `.passed` and `.ok` all miss in artifacts/playtest/<NN>-<scenario>.json, so the probing had no schema to follow (L34-L40)",
+            "transcriptLine": 34
+          },
+          {
+            "text": "scenarioSummary goes to stderr, so the verdicts were only readable after grepping /tmp/pt.err (L52); nothing tells an agent that the summary sink is stderr rather than stdout",
+            "transcriptLine": 52
+          }
+        ]
+      }
     }
   ]
 }

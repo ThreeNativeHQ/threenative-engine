@@ -10,7 +10,7 @@ and the look; `src/game.ts` is portable and React mounts only from `src/main.ts`
 
 ## Start every change
 
-1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art.
+1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art. A session started outside this folder has no `mcp__threenative-*` tools: call them with `node node_modules/@threenative/core/mcp/call.mjs <server> <tool> '<json>'`.
 2. **New game only:** run discovery in `threenative-capabilities` before `prd-creator`. Draft the core-mechanics plan from the kit, both discovery passes and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. This kit needs no navmesh and imports none, so it runs
