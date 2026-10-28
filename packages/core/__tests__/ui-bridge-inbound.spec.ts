@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { UI_BRIDGE_GLOBALS, connectUiBridge } from "../src/ui-bridge.js";
 
 /** A host scope: the game end finds `__tnUiPost`, so it takes the platform transport. */
@@ -63,8 +63,6 @@ describe("ui bridge inbound global", () => {
 });
 
 describe("ui bridge loopback over a message port (PRD-752)", () => {
-  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-
   it("carries state and intents over an async port when the page asks for ?tnUiLoopback=1", async () => {
     const scope: Record<string, unknown> = { location: { search: "?tnUiLoopback=1" } };
     const ui = connectUiBridge({ end: "ui", scope });
@@ -80,9 +78,11 @@ describe("ui bridge loopback over a message port (PRD-752)", () => {
     ui.post({ type: "tn:intent", name: "pause" });
     // A worker delivers a task later, never inside the post: the loopback must too.
     expect([seenByUi, seenByGame]).toEqual([[], []]);
-    await tick();
-    expect(seenByUi).toEqual([{ type: "tn:state", state: { score: 3 } }]);
-    expect(seenByGame).toEqual([{ type: "tn:intent", name: "pause" }]);
+    // Port delivery is a later task; poll for it, since one timer tick loses that race on a loaded host.
+    await vi.waitFor(() => {
+      expect(seenByUi).toEqual([{ type: "tn:state", state: { score: 3 } }]);
+      expect(seenByGame).toEqual([{ type: "tn:intent", name: "pause" }]);
+    });
 
     ui.close();
     game.close();
