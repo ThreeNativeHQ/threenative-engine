@@ -226,7 +226,9 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
   private async prepareSimulator(endpoint: string, mailboxRoot?: string): Promise<void> {
     const device = this.device();
     await this.run(["simctl", "bootstatus", device, "-b"]);
+    const previous = await this.registeredBundlePath(device);
     await this.run(["simctl", "install", device, this.options.appPath]);
+    await this.awaitInstalledBundle(device, previous);
     const container = (await this.run([
       "simctl", "get_app_container", device, this.options.bundleId, "data",
     ])).trim();
@@ -263,6 +265,29 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
     this.pid = parseLaunchedPid(output);
   }
 
+  // `simctl install` returns while the simulator still lists the replaced bundle, which it has
+  // moved to `containermanagerd/Dead/`. A launch in that window starts the previous build: a CI
+  // physics scenario ran the input smoke game from a Dead container and failed every assertion.
+  // Every reinstall gets a new bundle container, so launch only once the listed path is new.
+  private async awaitInstalledBundle(device: string, previous: string | undefined): Promise<void> {
+    const deadline = Date.now() + kIosInstallRegistrationMs;
+    for (;;) {
+      const path = await this.registeredBundlePath(device);
+      if (path !== undefined && path !== previous && !path.includes("/Dead/")) return;
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `TN_PLAYTEST_IOS_INSTALL_UNREGISTERED: ${this.options.bundleId} still lists ` +
+            `'${path ?? "no bundle"}' ${kIosInstallRegistrationMs} ms after simctl install.`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, kIosInstallPollMs));
+    }
+  }
+
+  private async registeredBundlePath(device: string): Promise<string | undefined> {
+    return parseListedBundlePath(await this.run(["simctl", "listapps", device]), this.options.bundleId);
+  }
+
   private device(): string {
     return this.options.device ?? "booted";
   }
@@ -270,6 +295,18 @@ export class XcrunIosDriver implements IDevicePlaytestDriver {
   private mailboxPath(path: string): string {
     return this.mailboxRoot === undefined ? path : join(this.mailboxRoot, basename(path));
   }
+}
+
+const kIosInstallRegistrationMs = 60_000;
+const kIosInstallPollMs = 250;
+
+/** The `Path` `simctl listapps` prints for one bundle identifier, or undefined when it is absent. */
+function parseListedBundlePath(output: string, bundleId: string): string | undefined {
+  const start = output.indexOf(`"${bundleId}" =`);
+  if (start < 0) return undefined;
+  const end = output.indexOf("};", start);
+  const entry = output.slice(start, end < 0 ? undefined : end);
+  return /\bPath = "([^"]+)"/u.exec(entry)?.[1];
 }
 
 export function parseLaunchedPid(output: string): string {
