@@ -1382,7 +1382,12 @@ jobs:
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
     # PR range and immune to force-push SHAs the checkout may not have.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The full-history scan pays a 3.9 GB clone: on a hosted runner it has taken 5m59s
+    # (merge-group run 40715886891, success) and over 10 minutes (run 40754093470, killed by
+    # this budget with actions/checkout still fetching, which then failed the merge queue's
+    # fail-closed receipt verifier). Two runs, same tree cost, opposite verdicts: the budget
+    # was under the work, so it gets headroom rather than the scan losing its full history.
+    timeout-minutes: 20
     permissions:
       contents: read
     env:
