@@ -1080,6 +1080,7 @@ void unchangedFrameStorage() {
                 static_cast<unsigned long long>(paletteBytes));
     CHECK(changed == unchanged + packed);
     CHECK(steadyMoved == unchanged);
+    // PRD-754's main-pass rows (off by default) would also rewrite their indirect records, five words per draw.
     CHECK(grown == steadyMoved + grownPacked);
     CHECK(steadyGrown == unchanged);
     CHECK(palette == steadyGrown + paletteBytes);
@@ -2795,6 +2796,188 @@ void batchedVsUnbatched() {
     CHECK(database.diagnostics().empty());
 }
 
+// PRD-754: the passes a frame replays from recorded bundles draw the pixels the same commands draw when encoded
+// directly (setStablePasses(false)), on a lit, shadowed scene across a camera turn that also moves a caster; and the
+// turn replays the shadow pass's bundle, since a moved caster is a uniform write.
+void stablePassesMatchDirect() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Scene scene;
+    auto sun = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 2.2);
+    sun->position.set(2, 6, 4);
+    sun->setCastShadow(true);
+    scene.add(*sun);
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(12, 0.2, 12), std::make_shared<Material>(MaterialType::Standard));
+    ground->position.set(0, -1, 0);
+    ground->setReceiveShadow(true);
+    scene.add(*ground);
+    auto sphere = makeSphereGeometry(0.5, 20, 14);
+    auto box = makeBoxGeometry(0.8, 0.8, 0.8);
+    std::vector<std::shared_ptr<Mesh>> casters;
+    for (int i = 0; i < 5; ++i) {
+        auto material = std::make_shared<Material>(i % 2 ? MaterialType::Lambert : MaterialType::Standard);
+        material->color.setHex(0x335577u + 0x221100u * uint32_t(i));
+        auto mesh = std::make_shared<Mesh>(i % 2 ? box : sphere, material);
+        mesh->position.set(-4 + i * 2.0, 0.2 * i, -1 + 0.5 * i);
+        mesh->setCastShadow(true);
+        mesh->setReceiveShadow(true);
+        scene.add(*mesh);
+        casters.push_back(mesh);
+    }
+    PerspectiveCamera camera(55, 4.0 / 3, 0.1, 100);
+    const auto pose = [&](int k) {
+        camera.position.set(0, 3, 13);
+        camera.lookAt(k ? 1.5 : 0, 0, 0);
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+        casters[2]->position.set(0, k ? 0.9 : 0.4, 0);
+    };
+    const auto frames = [&](bool stable) {
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(200, 150);
+        renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        database.batching = false;
+        std::vector<std::vector<uint8_t>> pixels;
+        std::vector<Renderer::FrameStats> stats;
+        for (int k : {0, 1, 1}) {
+            pose(k);
+            database.render(renderer, scene, camera);
+            stats.push_back(renderer.lastFrame());
+            pixels.push_back(read(renderer, events));
+        }
+        return std::pair{pixels, stats};
+    };
+    const auto [direct, directStats] = frames(false);
+    const auto [stable, stableStats] = frames(true);
+    std::size_t differ = 0, covered = 0;
+    for (std::size_t f = 0; f < direct.size(); ++f) {
+        CHECK(direct[f].size() == stable[f].size() && !direct[f].empty());
+        for (std::size_t p = 0; p + 3 < direct[f].size() && direct[f].size() == stable[f].size(); p += 4) {
+            differ += direct[f][p] != stable[f][p] || direct[f][p + 1] != stable[f][p + 1] || direct[f][p + 2] != stable[f][p + 2];
+            covered += f == 0 && direct[f][p] + direct[f][p + 1] + direct[f][p + 2] > 0;
+        }
+    }
+    std::printf("stable passes vs direct: %zu covered pixels, %zu differ; shadow draws %u/%u, recorded %u then %u, %u\n",
+                covered, differ, stableStats[1].shadowDraws, directStats[1].shadowDraws, stableStats[0].shadowRecorded,
+                stableStats[1].shadowRecorded, stableStats[2].shadowRecorded);
+    CHECK(covered > 2000 && differ == 0);
+    // The third frame repeats the second's pose, so the sun keeps its map (#574) and neither arm draws a caster.
+    CHECK(stableStats[2].keptShadowMaps == 1 && directStats[2].keptShadowMaps == 1 && stableStats[2].shadowDraws == 0);
+    for (std::size_t f = 0; f < 3; ++f) {
+        CHECK(stableStats[f].shadowDraws == directStats[f].shadowDraws && (f == 2 || stableStats[f].shadowDraws >= 5));
+        CHECK(stableStats[f].shadowTriangles == directStats[f].shadowTriangles);
+        CHECK(directStats[f].shadowRecorded == 0);
+    }
+    CHECK(stableStats[0].shadowRecorded == stableStats[0].shadowDraws);
+    CHECK(stableStats[1].shadowRecorded == 0 && stableStats[2].shadowRecorded == 0);
+}
+
+// PRD-754: a camera that turns in place culls meshes in and out of view, batched and unbatched. Once each draw has
+// been seen, a second lap records nothing in the main pass (rows out of view keep their place with no instances), and
+// every frame draws the pixels and three's Info of the depth-order path that re-records.
+void cameraCull() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Scene scene;
+    auto light = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 2.0);
+    light->position.set(2, 6, 4);
+    scene.add(*light);
+    auto box = makeBoxGeometry(0.6, 0.6, 0.6);
+    auto shared = std::make_shared<Material>(MaterialType::Standard);
+    shared->color.setHex(0x88aacc);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 48; ++i) {  // one batch per material: a ring of boxes around the camera
+        const double a = i * 2 * M_PI / 48 + 0.35 * std::sin(i * 1.7);  // uneven, so each step sees another count
+        auto mesh = std::make_shared<Mesh>(box, i % 3 ? shared : std::make_shared<Material>(MaterialType::Lambert));
+        mesh->position.set(8 * std::cos(a), 0.3 * (i % 4), 8 * std::sin(a));
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    for (int i = 0; i < 6; ++i) {  // unbatched: each its own geometry
+        const double a = (i + 0.5) * 2 * M_PI / 6;
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setHex(0x553311u + 0x112233u * uint32_t(i));
+        auto mesh = std::make_shared<Mesh>(makeSphereGeometry(0.4 + 0.1 * i, 12, 8), material);
+        mesh->position.set(5 * std::cos(a), 1, 5 * std::sin(a));
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    PerspectiveCamera camera(50, 4.0 / 3, 0.1, 100);
+    const auto pose = [&](int step) {
+        const double yaw = step * 2 * M_PI / 16;
+        camera.position.set(0, 1, 0);
+        camera.lookAt(std::cos(yaw), 1, std::sin(yaw));
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+    };
+    struct Frame { std::vector<uint8_t> pixels; Renderer::FrameStats stats; std::size_t batches; };
+    const auto laps = [&](bool stable, bool post = false) {
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(160, 120);
+        renderer.setStablePasses(stable);
+        renderer.setStableRows(stable);
+        if (post) {  // the velocity pass, and a post graph that reads the normal target
+            namespace g = shader::graph;
+            renderer.setTraa(TraaOptions{});
+            renderer.setPostGraph(g::bloom(g::vec4({g::swizzle(g::texture("normal", g::uv()), "x"), g::float_(0), g::float_(0),
+                                                    g::float_(0)}), 0, 0, 0));
+        }
+        RenderDatabase database;
+        std::vector<Frame> frames;
+        for (int step = 0; step < 32; ++step) {
+            pose(step % 16);
+            database.render(renderer, scene, camera);
+            frames.push_back({read(renderer, events), renderer.lastFrame(), database.lastBatches().first});
+        }
+        return frames;
+    };
+    const auto direct = laps(false), stable = laps(true);
+    std::size_t differ = 0, covered = 0;
+    uint32_t firstLap = 0, secondLap = 0, directRecorded = 0, batches = 0;
+    for (std::size_t f = 0; f < direct.size(); ++f) {
+        CHECK(direct[f].pixels.size() == stable[f].pixels.size() && !direct[f].pixels.empty());
+        for (std::size_t p = 0; p + 3 < direct[f].pixels.size() && direct[f].pixels.size() == stable[f].pixels.size(); p += 4) {
+            const auto& d = direct[f].pixels;
+            const auto& t = stable[f].pixels;
+            differ += d[p] != t[p] || d[p + 1] != t[p + 1] || d[p + 2] != t[p + 2];
+            covered += d[p] + d[p + 1] + d[p + 2] > 0;
+        }
+        CHECK(direct[f].stats.draws == stable[f].stats.draws && direct[f].stats.triangles == stable[f].stats.triangles);
+        (f < 16 ? firstLap : secondLap) += stable[f].stats.mainRecorded;
+        if (f >= 16) directRecorded += direct[f].stats.mainRecorded;
+        batches += uint32_t(stable[f].batches);
+    }
+    std::printf("camera cull: %zu covered pixels, %zu differ; second lap records %u stable, %u direct (first lap %u); %u batch draws\n",
+                covered, differ, secondLap, directRecorded, firstLap, batches);
+    CHECK(covered > 20000 && differ == 0);
+    CHECK(directRecorded > 0);
+    CHECK(secondLap == 0);
+    // With the velocity and normal passes on, they replay their bundles too: the second lap records no aux draw.
+    const auto postDirect = laps(false, true), postStable = laps(true, true);
+    std::size_t postDiffer = 0;
+    uint32_t auxSecond = 0, auxDirect = 0, mainSecond = 0;
+    for (std::size_t f = 0; f < postDirect.size(); ++f) {
+        CHECK(postDirect[f].pixels.size() == postStable[f].pixels.size());
+        for (std::size_t p = 0; p + 3 < postDirect[f].pixels.size() && postDirect[f].pixels.size() == postStable[f].pixels.size(); ++p)
+            postDiffer += postDirect[f].pixels[p] != postStable[f].pixels[p];
+        CHECK(postDirect[f].stats.auxPasses == 1 && postStable[f].stats.auxPasses == 1);
+        if (f >= 16) {
+            auxSecond += postStable[f].stats.auxRecorded;
+            auxDirect += postDirect[f].stats.auxRecorded;
+            mainSecond += postStable[f].stats.mainRecorded;
+        }
+    }
+    std::printf("camera cull, velocity and normal passes: %zu bytes differ; second lap records %u aux draws stable "
+                "(%u main), %u direct\n", postDiffer, auxSecond, mainSecond, auxDirect);
+    CHECK(postDiffer == 0);
+    CHECK(auxSecond == 0 && mainSecond == 0);
+}
+
 // PRD-518 box 38: the same animated poses and refusals, with batching on and off, including shadows.
 void skinnedCrowdPixels() {
     mystral::webgpu::Context context;
@@ -3849,6 +4032,32 @@ void batchCachesStayPut() {
     for (std::size_t i = 0; i < first.size(); ++i) moved += first[i].cache != second[i].cache;
     std::printf("batch caches moved between frames: %zu of %zu\n", moved, first.size());
     CHECK(moved == 0);
+}
+
+// A batch's id breaks the opaque depth ties, so it stays a member mesh's id as three's would: a group-derived id
+// changed which of two exactly coplanar draws wins (PRD-754 review).
+void batchKeepsMemberId() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(4, 20, 50);
+    camera.lookAt(4, 0, 4);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    std::vector<uint64_t> ids;
+    for (int g = 0; g < 8; ++g) {
+        const auto geometry = makeBoxGeometry();
+        geometry->scale(1, 1 + g / 100.0, 1); // distinct bytes: equal boxes would batch as one group
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        for (int i = 0; i < 4; ++i) {
+            auto mesh = std::make_shared<Mesh>(geometry, material);
+            mesh->position.set(g, 0, i);
+            scene.add(*mesh); meshes.push_back(mesh); ids.push_back(mesh->id());
+        }
+    }
+    const auto& items = database.prepare(scene, camera, lights);
+    std::size_t foreign = 0;
+    for (const DrawItem& d : items) foreign += std::find(ids.begin(), ids.end(), d.id) == ids.end();
+    std::printf("batch draws: %zu, ids that are no member's: %zu\n", items.size(), foreign);
+    CHECK(items.size() == 8);
+    CHECK(foreign == 0);
 }
 
 // three's projectObject frustum-culls each Mesh, Line, Sprite and InstancedMesh (its instance-aware
@@ -6302,7 +6511,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_lod_rung", virtualSunLodRung},
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 

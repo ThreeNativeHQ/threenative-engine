@@ -123,6 +123,36 @@ no COOP/COEP); that lane is open.
 
 ## Levers
 
+### 2026-10-27 — Recorded passes survive a camera turn (cached draw rows, indirect counts) — KNOB OFF, owner decision
+- Where: `packages/runtime-native/src/engine/renderer/renderer.cpp`, PRD-754 (PRD-573 v3.2), branch
+  `lane/perf-stable-passes`, head `7f78a57f4`. Knob: `TN_STABLE_PASSES=0` (native), `?tnStablePasses=0` (web).
+- Port: UE 5.8.3 cached mesh draw commands. Opaque draws keep a row each (state-first order, a persistent uniform slot
+  per draw), out-of-view rows stay with 0 instances through `drawIndexedIndirect`, and the shadow, normal and velocity
+  passes replay bundles keyed like the main pass.
+- Ceiling: recording plus shadow encode, 0.33 ms a frame on Midway native and 0.85-1.16 ms on the shooter web turn.
+- Result (3 pairs, knob off then on): Midway native 0.164/0.165/0.212 → 0.044/0.061/0.094 ms (63%), order rebuilds
+  about 630 → 0; shooter web turn 0.721/0.387/0.440 → 0.243/0.163/0.228 ms (59%), order rebuilds 80-100 → 0.
+  `--gpu-calls` 184 → 46 WebGPU calls a frame. Judge NEUTRAL. The PRD gate asks an 80% fall, so it is Deferred.
+- 2026-10-28, head `a9caf82d3`: a draw seen for the first time records alone in a delta bundle per pass, after the
+  sorted rows, and an unchanged per-draw key skips the row checks. Midway 0.137 → 0.031 ms (77%), shooter web turn
+  0.317 → 0.144 ms (55%), frame p50/p95 no worse, judge NEUTRAL again. Midway's remainder is mostly cost both arms
+  pay (shadow pass setup 0.017 ms, transparent re-sorts); the web remainder is a pass that still records about 119
+  draws on a third of the turn frames.
+- 2026-10-28, head `c58d8f16f`: that pass was the velocity pass's transparent responsive marks (a batch's material
+  pointer moves every frame); they now record their own tail (web 78%, Midway 75%). A slot asked for after the frame's
+  appended blocks overwrote a transparent draw's block for one frame under TRAA; fixed. Then a third judge read
+  REGRESSION: the state order swaps exactly coplanar draws (the shooter's door trim), and the first two judges missed
+  it. Depth-ordered rows keep the pixels but record 105 rows a camera lap against 57 direct. The knob is off by default.
+- Insight: "order is free under the depth test" is false at exactly equal depth. Before porting UE's state order,
+  diff BEFORE/AFTER per pixel against all BEFORE runs (pixels where every AFTER differs from every BEFORE), not by eye.
+- Rejected inside the lever: keeping transparent draws as rows. Their depth order moves every turn, and the row
+  bookkeeping cost what the recording saved (native shooter 0.151 against 0.153 ms). They now record their own
+  bundle keyed as direct encode keys them (native shooter 0.115 against 0.142 ms).
+- Insight: a retained-row cache pays only where rows hold still. Count the share of draws whose order the camera can
+  move (transparent, depth-sorted) before porting a cache: for those, recording again is the cheaper path.
+- Left: the shooter's render database alternates its transparent batches between batched and unbatched frames, which
+  re-records the tail and adds first-seen rows (PRD-753). Frame p50/p95 needs quiet-host pairs.
+
 ### 2026-10-27 — Web engine bridge: keep what game code reads again (three-native back end) — KEEP
 - Where: `packages/three-native/src/browser-backend.ts`, PRD-748; commits `b088dc46f` (round 1) and the round-3 commit beside this entry.
 - Ceiling: the shooter census read 2,054 crossings per idle frame, at about 0.8 µs each; the top classes were
@@ -409,3 +439,15 @@ no COOP/COEP); that lane is open.
 - Result: instructions decrease in both pairs at all poses; CPU fails every-candidate-below-every-baseline. Four PASS reports with exact windows; dashboard 179 runs.
 - Insight: capture serialization does not establish low CPU load. Higher load and lower IPC confound pair 2 CPU attribution; no causal explanation or qualified win. No third retry or integration.
 - Artifact: `screens/visible-queue-{base,on}-{1,2}/`; recovery cycle terminal 2026-10-15T06:49:37.800Z.
+
+### 2026-10-28 — PRD-754 recorded passes survive a camera turn — KEEP (native shadow bundles), DEFER (rows)
+- Where: [PRD-754](docs/PRDs/Unreal/performance/PRD-754-a-camera-turn-re-records-no-pass.md), PR #584; `4a7e82414`, `b5021ba1d`.
+- Result: state-ordered opaque rows cut recording plus shadow CPU 75-78% on a camera turn, but swapped the winner of
+  exactly coplanar draws (shooter door trim): judge REGRESSION, missed by two earlier NEUTRAL judges. Depth-ordered rows
+  keep the pixels but record more than direct encode (105 against 57 rows a lap). The owner kept three's order: the
+  shadow bundles and uniform slots alone give 17% on Midway native and nothing on the web turn, so the web engine
+  compiles them out (it was 74 KB over its 4 MiB budget).
+- Insight: a draw order that the camera does not change must still keep the coplanar winner, or the "free" order costs
+  pixels. Count pixels where every AFTER run differs from every BEFORE run; a judge reading a sheet misses a thin stripe.
+- Revisit when: an opaque order that keeps the coplanar winner exists (depth order only among intersecting bounds).
+

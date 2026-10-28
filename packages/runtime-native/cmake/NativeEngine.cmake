@@ -130,6 +130,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_history_depth_rows=history_depth_rows
         native_engine_raw_target_scene_only=raw_target_scene_only
         native_engine_renderer_resize_readback=resize_readback
+        native_engine_renderer_camera_turn_records=camera_turn_records
+        native_engine_renderer_coplanar_keeps_winner=coplanar_keeps_winner
+        native_engine_renderer_cull_keeps_main_bundle=cull_keeps_main_bundle
         native_engine_renderer_emissive_target=emissive_target
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
@@ -310,6 +313,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_callback=render_callback
         native_engine_renderer_instanced=instanced
         native_engine_batched_vs_unbatched=batched_vs_unbatched
+        native_engine_stable_passes_match_direct=stable_passes_match_direct
+        native_engine_camera_cull_keeps_bundle=camera_cull_keeps_bundle
         native_engine_skinned_batched_vs_unbatched=skinned_crowd
         native_engine_skinned_decline_cadence=skinned_decline_cadence
         native_engine_skinned_projecting_cadence=skinned_projecting_cadence
@@ -329,6 +334,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_flat_shading_needs_no_normals=flat_shading_needs_no_normals
         native_engine_renderer_map_sampleability_changes=map_sampleability_changes
         native_engine_renderer_batch_caches_stay_put=batch_caches_stay_put
+        native_engine_renderer_batch_keeps_member_id=batch_keeps_member_id
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow

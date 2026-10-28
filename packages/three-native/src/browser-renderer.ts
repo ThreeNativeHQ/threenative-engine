@@ -232,6 +232,17 @@ export function defineWebRenderer(
           lampMapMax: 0,
           keptMaps: 0,
         },
+        // The last frame's recorded passes (PRD-754): the draws the main pass recorded into its bundle, why its key
+        // moved (0 held, 1 draw order, 2 uniform offsets, 3 visible count, 4 other; the web engine reads 1 and 2 as
+        // 4), the aux and velocity draws recorded, and the ms spent recording bundles and encoding the shadow passes.
+        passes: {
+          mainRecorded: 0,
+          recordCause: 0,
+          auxRecorded: 0,
+          shadowRecorded: 0,
+          recordMs: 0,
+          shadowEncodeMs: 0,
+        },
         // The bytes of per-draw uniforms the last frame uploaded.
         uniformBytes: 0,
       },
@@ -591,6 +602,15 @@ export function defineWebRenderer(
       temporal.outputWidth = module._tnw_web_frame(38);
       temporal.outputHeight = module._tnw_web_frame(39);
       engine.samples = module._tnw_web_frame(18);
+      const passes = engine.passes;
+      passes.mainRecorded = module._tnw_web_frame(60);
+      passes.recordCause = module._tnw_web_frame(61);
+      passes.auxRecorded = module._tnw_web_frame(62);
+      passes.recordMs = module._tnw_web_frame(63);
+      passes.shadowEncodeMs = module._tnw_web_frame(64);
+      passes.shadowRecorded = module._tnw_web_frame(65);
+      // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
+      (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */

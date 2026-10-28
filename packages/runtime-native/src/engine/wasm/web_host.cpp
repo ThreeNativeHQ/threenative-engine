@@ -751,6 +751,15 @@ extern "C" double tnw_web_frame(int field) {
         case 37: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
         case 38: return renderer->width();
         case 39: return renderer->height();
+        // PRD-754, 60 to 65: the draws the main pass recorded into its bundle,
+        // why its key moved (Renderer::RecordCause), the draws the aux and velocity passes recorded, the ms spent
+        // recording bundles, and the ms spent encoding the shadow passes directly. Zero while every bundle holds.
+        case 60: return double(renderer->lastFrame().mainRecorded);
+        case 61: return double(renderer->lastFrame().recordCause);
+        case 62: return double(renderer->lastFrame().auxRecorded);
+        case 63: return renderer->lastFrame().recordMs;
+        case 64: return renderer->lastFrame().shadowEncodeMs;
+        case 65: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
         // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
         // 41: the bytes of per-draw uniforms it uploaded.
         case 40: return double(renderer->lastFrame().keptShadowMaps);
