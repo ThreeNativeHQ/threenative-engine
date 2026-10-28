@@ -328,6 +328,16 @@ tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader
     native_engine_tsl_unsupported=unsupported)
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
+tn_native_engine_test(tn-native-engine-material-uniforms-test tests/native-engine/material_uniforms_test.cpp
+    native_engine_material_uniforms_name_hash=material-uniforms-resolve-by-name-hash
+    native_engine_material_uniforms_conflict=material-uniforms-conflict-throws
+    native_engine_material_uniforms_shadow_field=material-uniforms-shadow-field)
+target_link_libraries(tn-native-engine-material-uniforms-test PRIVATE tn_engine_shader)
+if(EMSCRIPTEN)
+    # The conflict case throws a named runtime_error; enable Wasm EH on the test only, as material-test does.
+    target_compile_options(tn-native-engine-material-uniforms-test PRIVATE -fwasm-exceptions)
+endif()
+
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
     native_engine_material_alpha_hash=alpha_hash
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth

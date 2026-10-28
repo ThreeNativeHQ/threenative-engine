@@ -37,6 +37,13 @@ struct Counters {
     std::atomic<uint64_t> bufferAllocs{0};
     /** `GpuResources::createTexture` calls. */
     std::atomic<uint64_t> textureAllocs{0};
+    /**
+     * String compares `Renderer::putMaterialNodes` made resolving a material uniform by name: one per
+     * hash hit, where a field is a value the draw binds. The per-field scan it replaced compared the
+     * names of every field of every stage of every draw of every frame, 59% of the shooter's frame memcmp
+     * time (#574); a spec bounds this so a name compare per field cannot come back.
+     */
+    std::atomic<uint64_t> uniformNameCompares{0};
 };
 
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "the web back end reads the counters' bytes in place");
