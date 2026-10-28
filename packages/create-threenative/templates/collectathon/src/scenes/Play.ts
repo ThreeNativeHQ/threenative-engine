@@ -403,11 +403,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         }
       }
 
-      // The course is clear the moment the third Sunseed is held: the HUD says so and the state
-      // carries it, so a scenario can assert the end of the game instead of inferring it.
+      // The course is clear the moment the third Sunseed is held: the HUD banner is the one win
+      // surface and the state carries it, so a scenario asserts the end instead of inferring it.
       if (!won && seeds === SEEDS) {
         won = true;
-        toast("COURSE CLEAR!", Number.POSITIVE_INFINITY);
         emitPlaytestEvent({ entity: "player", name: "won" });
       }
 

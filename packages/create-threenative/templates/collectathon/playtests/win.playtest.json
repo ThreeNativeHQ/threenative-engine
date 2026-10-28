@@ -148,12 +148,6 @@
         "path": "won",
         "equals": true,
         "changed": true
-      },
-      {
-        "id": "state",
-        "path": "toast",
-        "equals": "COURSE CLEAR!",
-        "changed": true
       }
     ],
     "signals": [
