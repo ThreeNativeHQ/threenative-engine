@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { symlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -65,7 +67,99 @@ function session() {
   };
 }
 
+/** The path an installed package actually runs: `node_modules/.bin/<name>` is a symlink, and a
+ * server that compares `argv[1]` to `import.meta.url` literally starts nothing through it. */
+async function linkedBin(directory: string): Promise<string> {
+  const link = path.join(directory, "threenative-animation-mcp");
+  await symlink(ENTRY, link);
+  return link;
+}
+
+const BUNDLE = path.resolve(ROOT, "packages", "animation-mcp", "dist", "index.js");
+
 describe("threenative-animation stdio server", () => {
+  // The committed bundle is what a game actually runs, and it inlines every module — so a module
+  // with a top-level CLI block fires inside it. That printed `Pose Lab: http://...` on stdout, the
+  // JSON-RPC stream, before the first response. Skipped until the package is built (CI builds the
+  // workspace before its units).
+  it.skipIf(!existsSync(BUNDLE))(
+    "writes nothing but JSON-RPC to stdout",
+    async () => {
+      const child = spawn(process.execPath, [BUNDLE], { stdio: ["pipe", "pipe", "pipe"] });
+      try {
+        const firstLine = await new Promise<string>((resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("the built server said nothing")),
+            30_000,
+          );
+          let buffer = "";
+          child.stdout.on("data", (chunk: Buffer) => {
+            buffer += chunk.toString();
+            const line = buffer.split("\n")[0] ?? "";
+            if (line.includes("\n") || buffer.includes("\n")) {
+              clearTimeout(timer);
+              resolve(line);
+            }
+          });
+          child.stdin.write(
+            `${JSON.stringify({
+              id: 1,
+              jsonrpc: "2.0",
+              method: "initialize",
+              params: {
+                capabilities: {},
+                clientInfo: { name: "spec", version: "0.0.0" },
+                protocolVersion: "2025-06-18",
+              },
+            })}\n`,
+          );
+        });
+        expect(() => JSON.parse(firstLine) as unknown).not.toThrow();
+        expect(JSON.parse(firstLine)).toMatchObject({ id: 1 });
+      } finally {
+        child.kill();
+      }
+    },
+    40_000,
+  );
+
+  it("answers when it is started through the bin symlink an install creates", async () => {
+    const directory = await makeTempDir("animation-mcp-bin-");
+    const link = await linkedBin(directory);
+    const child = spawn(process.execPath, ["--import", "tsx", link], {
+      cwd: ROOT,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const errors: string[] = [];
+    child.stderr.on("data", (chunk: Buffer) => errors.push(chunk.toString()));
+    try {
+      const answered = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 30_000);
+        child.stdout.on("data", (chunk: Buffer) => {
+          if (chunk.toString().includes('"protocolVersion"')) {
+            clearTimeout(timer);
+            resolve(true);
+          }
+        });
+        child.stdin.write(
+          `${JSON.stringify({
+            id: 1,
+            jsonrpc: "2.0",
+            method: "initialize",
+            params: {
+              capabilities: {},
+              clientInfo: { name: "spec", version: "0.0.0" },
+              protocolVersion: "2025-06-18",
+            },
+          })}\n`,
+        );
+      });
+      expect(answered, `no initialize through the symlink. ${errors.join("")}`).toBe(true);
+    } finally {
+      child.kill();
+    }
+  }, 40_000);
+
   it("answers tools/list with every tool it implements", async () => {
     const server = session();
     try {
