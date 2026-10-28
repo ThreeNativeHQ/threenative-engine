@@ -508,6 +508,9 @@ struct Renderer::MainRows {
     std::vector<uint32_t> args;                    // the indirect records as last written
     std::vector<uint64_t> planKey;                 // the per-draw key the rows were last resolved from
     std::vector<uint32_t> planRows, planSource;    // its row starts, and each plan draw's row: rows, kLoose or kAfter
+    // The transparent rows in the bundle's order: a slot, or (no slot) a loose index. Kept while the visible ones keep
+    // their relative order in the plan, so a transparent draw leaving view moves no other.
+    std::vector<std::pair<bool, uint64_t>> transparent;
     uint64_t frame = 0, destroys = 0, generation = 0;
     Handle indirect{};
     uint64_t capacity = 0;
@@ -517,6 +520,7 @@ struct Renderer::MainRows {
     }
     void clear() {
         rows.clear(); index.clear(); loose.clear(); after.clear(); ordered.reset(); source.clear(); planKey.clear();
+        transparent.clear();
     }
 };
 
@@ -4271,6 +4275,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         }
         if (!quiet) retained.planSource.assign(draws.size(), 0);
+        std::vector<std::pair<bool, uint64_t>> transparentNow;  // this frame's transparent draws, in plan order
         if (!quiet) for (std::size_t k = 0; k < draws.size(); ++k) {
             const Planned& p = draws[k];
             const DrawItem& item = *p.item;
@@ -4280,13 +4285,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (afterAt == retained.after.size()) { retained.after.emplace_back(); fresh = true; }
                 retained.planSource[k] = MainRows::kAfter | uint32_t(afterAt);
                 row = &retained.after[afterAt++];
-            } else if (!item.transparent && p.slot) {
+            } else if (p.slot) {
+                if (item.transparent) transparentNow.emplace_back(true, p.slot);
                 const auto [at, added] = retained.index.try_emplace(p.slot, uint32_t(retained.rows.size()));
                 if (added) retained.rows.emplace_back();
                 retained.planSource[k] = at->second;
                 row = &retained.rows[at->second];
                 fresh = added;
             } else {
+                if (item.transparent) transparentNow.emplace_back(false, looseAt);
                 if (looseAt == retained.loose.size()) { retained.loose.emplace_back(); fresh = true; }
                 retained.planSource[k] = MainRows::kLoose | uint32_t(looseAt);
                 row = &retained.loose[looseAt++];
@@ -4340,6 +4347,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             row.instances = 0;
             ++i;
         }
+        if (!quiet) {
+            // The kept transparent order holds while this frame's transparent draws appear in it in plan order.
+            const auto kept = [&](const std::pair<bool, uint64_t>& t) {  // and still transparent
+                if (!t.first) return t.second < retained.loose.size() && retained.loose[t.second].transparent;
+                const auto at = retained.index.find(t.second);
+                return at != retained.index.end() && retained.rows[at->second].transparent;
+            };
+            const auto visible = [&](const std::pair<bool, uint64_t>& t) {
+                return t.first ? retained.rows[retained.index.at(t.second)].seen == retained.frame : true;
+            };
+            std::size_t matched = 0;
+            bool holds = true;
+            for (const auto& t : retained.transparent) {
+                if (!kept(t)) { holds = false; break; }
+                if (!visible(t)) continue;
+                if (matched == transparentNow.size() || transparentNow[matched] != t) { holds = false; break; }
+                ++matched;
+            }
+            if (!holds || matched != transparentNow.size()) {
+                for (const auto& t : retained.transparent)  // out of view and still kept: after the visible ones
+                    if (kept(t) && !visible(t)) transparentNow.push_back(t);
+                retained.transparent = std::move(transparentNow);
+                changed = true;
+            }
+        }
         if (moved)  // a kept row took an evicted row's place
             for (std::size_t k = 0; k < split; ++k)
                 if (!(retained.planSource[k] & (MainRows::kLoose | MainRows::kAfter)))
@@ -4348,15 +4380,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (changed || !retained.ordered) {
             std::vector<uint32_t>& source = retained.source;
             source.clear();
-            for (uint32_t i = 0; i < retained.rows.size(); ++i) source.push_back(i);
+            for (uint32_t i = 0; i < retained.rows.size(); ++i)
+                if (!retained.rows[i].transparent) source.push_back(i);
             for (uint32_t i = 0; i < retained.loose.size(); ++i)
                 if (!retained.loose[i].transparent) source.push_back(MainRows::kLoose | i);
             const auto rowOf = [&](uint32_t at) -> const MainRow& {
                 return at & MainRows::kLoose ? retained.loose[at & ~MainRows::kLoose] : retained.rows[at];
             };
             std::sort(source.begin(), source.end(), [&](uint32_t a, uint32_t b) { return rowOf(a).order() < rowOf(b).order(); });
-            for (uint32_t i = 0; i < retained.loose.size(); ++i)
-                if (retained.loose[i].transparent) source.push_back(MainRows::kLoose | i);
+            for (const auto& [slotted, at] : retained.transparent)
+                source.push_back(slotted ? retained.index.at(at) : MainRows::kLoose | uint32_t(at));
             auto ordered = std::make_shared<std::vector<MainRow>>();
             ordered->reserve(source.size());
             for (uint32_t at : source) {

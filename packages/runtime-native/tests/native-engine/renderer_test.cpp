@@ -2987,7 +2987,8 @@ void cameraTurnRecords() {
 // PRD-754: a draw that leaves the frame (the render database culled it) keeps its row in the main bundle with no
 // instances, so the visible set changing records nothing; the pixels and three's Info match the depth-order path that
 // re-records, and the draw coming back records nothing either.
-void cullKeepsMainBundle() {
+// PRD-754: a transparent draw keeps its row too, so one leaving view moves no other and records nothing.
+void cullKeepsMain(bool transparent) {
     using R = Renderer;
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
@@ -3004,6 +3005,7 @@ void cullKeepsMainBundle() {
         all[i].positions = &geometries[i]->positions; all[i].indices = &geometries[i]->indices;
         all[i].material = &materials[i];
         all[i].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x[i], 0, 0, 1};
+        all[i].transparent = transparent;
     }
     const std::vector<DrawItem> three(all.begin(), all.end()), two{all[0], all[2]};
     struct Seen { std::vector<uint8_t> pixels; uint32_t recorded, draws; uint64_t triangles; };
@@ -3031,8 +3033,8 @@ void cullKeepsMainBundle() {
             differ += !std::equal(direct[k].pixels.begin() + std::ptrdiff_t(p), direct[k].pixels.begin() + std::ptrdiff_t(p + 4),
                                   stable[k].pixels.begin() + std::ptrdiff_t(p));
         }
-        std::printf("cull frame %zu: %zu covered pixels, %zu differ; recorded %u direct, %u stable; draws %u/%u, triangles %llu/%llu\n",
-                    k, covered, differ, direct[k].recorded, stable[k].recorded, direct[k].draws, stable[k].draws,
+        std::printf("cull%s frame %zu: %zu covered pixels, %zu differ; recorded %u direct, %u stable; draws %u/%u, triangles %llu/%llu\n",
+                    transparent ? " transparent" : "", k, covered, differ, direct[k].recorded, stable[k].recorded, direct[k].draws, stable[k].draws,
                     (unsigned long long)direct[k].triangles, (unsigned long long)stable[k].triangles);
         CHECK(!direct[k].pixels.empty() && direct[k].pixels.size() == stable[k].pixels.size());
         CHECK(covered > 0 && differ == 0);
@@ -3042,6 +3044,8 @@ void cullKeepsMainBundle() {
     CHECK(direct[0].recorded == 2 && direct[2].recorded == 3 && direct[2].draws == direct[0].draws + 1);
     (void)sizeof(R);
 }
+
+void cullKeepsMainBundle() { cullKeepsMain(false); cullKeepsMain(true); }
 
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }
