@@ -1,0 +1,7 @@
+shooter-web spawn       BEFORE-BEFORE 0.00 AFTER-AFTER 0.00 BEFORE-AFTER 0.00 / 0.00 | consistent-diff px 0
+shooter-web turned      BEFORE-BEFORE 0.30 AFTER-AFTER 0.59 BEFORE-AFTER 0.53 / 0.54 | consistent-diff px 2792
+shooter-web turned-far  BEFORE-BEFORE 0.44 AFTER-AFTER 0.43 BEFORE-AFTER 0.19 / 0.14 | consistent-diff px 63
+shooter-web after       BEFORE-BEFORE 0.30 AFTER-AFTER 0.25 BEFORE-AFTER 0.15 / 0.03 | consistent-diff px 12
+midway-native takeoff     BEFORE-BEFORE 0.00 AFTER-AFTER 0.00 BEFORE-AFTER 0.00 / 0.00 | consistent-diff px 0
+midway-native cockpit     BEFORE-BEFORE 0.28 AFTER-AFTER 0.28 BEFORE-AFTER 0.01 / 0.00 | consistent-diff px 0
+midway-native reargun     BEFORE-BEFORE 0.63 AFTER-AFTER 0.63 BEFORE-AFTER 0.63 / 0.63 | consistent-diff px 0
