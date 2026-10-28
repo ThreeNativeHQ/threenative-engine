@@ -599,22 +599,13 @@ before the next author step. Row 3's retro named two kit-layer frictions (no win
 Sunseeds; a 22 KB `AGENTS.md` read twice) and AC-3 of PRD-750 asks this kit to carry the reference
 citations. All three land in this phase so the next cold build measures them.
 
-- [x] The kit ends: the third Sunseed publishes `won`, draws COURSE CLEAR with the run's coins and
-gems, and emits a `won` signal. proof: `playtests/win.playtest.json` on a scaffolded collectathon
+- [x] The kit ends: the third Sunseed publishes `won`, draws COURSE CLEAR with the run's coins and gems, and emits a `won` signal. proof: `playtests/win.playtest.json` on a scaffolded collectathon
 (branch tarballs, `--genre mario`, headed, `--browser-recipe webgpu`) — red on the pre-change kit
 (exit 2, `TN_PLAYTEST_OBSERVATION_UNAVAILABLE`: the `won` path did not exist), green after (pass
 true, `seeds: 3`, `won: true`, `toast: "COURSE CLEAR!"`, one `won` signal).
-- [x] The kit `AGENTS.md` stops restating the installed references: the asset-cook paragraph a
-kit with no authored asset never runs, the eighteen-path recipe list, and one CI-collector
-paragraph are gone (22,455 B -> 20,103 B, 58 lines either side), and no engine rule is lost.
-proof: `pnpm sync:agents` mirror, `scaffold.spec` + `template.spec` 126/126 on the rebased head.
-- [x] The SM64 reference cards are cited with their pinned sources: see the card table above
-(`engine_search_references` / `engine_reference_detail`, `n64decomp/sm64` sha `9921382a`), one row
-per card with the kit constant it became.
-- [ ] AC-8: the kit passes every registration gate and the template lane. proof (pending):
-`pnpm budgets`, the doc and CI-structure specs, and `TN_TEMPLATE_ONLY=collectathon pnpm test:templates`
-on an idle host — the first attempt ran beside five CI legs on the same machine and failed only its
-performance rows (`TN_PLAYTEST_PERF_WARNING`, `TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED` at load 52).
+- [x] The kit `AGENTS.md` stops restating the installed references: the asset-cook paragraph a kit with no authored asset never runs, the eighteen-path recipe list and one CI-collector paragraph are gone (22,455 B -> 20,103 B, 58 lines either side) and no engine rule is lost. proof: `pnpm sync:agents` mirror, `scaffold.spec` + `template.spec` 126/126 on the rebased head.
+- [x] The SM64 reference cards are cited with their pinned sources, one row per card with the kit constant it became. proof: the card table above (`engine_search_references` / `engine_reference_detail`, `n64decomp/sm64` sha `9921382a`).
+- [ ] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets` (green, 2026-10-28) and the doc/CI-structure specs 200/200 are done; `TN_TEMPLATE_ONLY=collectathon pnpm test:templates` is owed on an idle host — the first attempt ran beside five CI legs on the same machine and failed only its performance rows (`TN_PLAYTEST_PERF_WARNING`, `TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED` at load 52).
 
 #### Phase 3: Registered, native and judged
 
