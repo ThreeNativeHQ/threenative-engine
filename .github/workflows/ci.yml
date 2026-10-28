@@ -604,7 +604,11 @@ jobs:
           # The old 90 s cap sat under the floor and killed a healthy run at exactly 90 s (exit
           # 124). Only this outer watchdog moves: every runtime, assertion, sample and duration
           # budget inside the collector is unchanged, so a hang still dies, just not a slow run.
-          timeout 180s node packages/runtime-native/scripts/profile-production.mjs \
+          # 300 s, not 180 (PR #574): hosted runs took 103 s and 138 s, then two runs of one
+          # unchanged tree were killed at exactly 180 s while their build steps ran no slower; four
+          # local replays on 4 cores took 68-83 s with no stall. The collector now prints a
+          # TN_PROD_PHASE line per phase into collector.log, so a killed run names its phase.
+          timeout 300s node packages/runtime-native/scripts/profile-production.mjs \
             --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
             --hosted-software \
             --prebuilt-artifact "$GITHUB_WORKSPACE/packages/runtime-native/build/tn-linux/mystral" \
