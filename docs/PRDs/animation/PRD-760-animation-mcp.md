@@ -60,7 +60,7 @@ flowchart LR
 #### Phase 2 — clip edits and motion perception
 
 - [ ] AC-4 [local]: `animation_modify` applies trim, retime, loop point, mirror, resample, root-motion extraction and foot lock to a Quaternius clip. Each op lands in the op log, and replaying the log from the source GLB gives byte-identical output. proof: `pnpm exec vitest run packages/animation-mcp/__tests__/modify.spec.ts` — Evidence: pending.
-- [ ] AC-5 [local]: `animation_verify` fails a seeded defective clip (foot skate over 2 cm per planted step, loop seam over 5°, one jitter spike) with each defect named by bone and frame range. It passes the same clip after `animation_modify` repairs it, and it writes a non-blank filmstrip PNG. proof: `pnpm exec vitest run packages/animation-mcp/__tests__/verify.spec.ts` — Evidence: pending.
+- [ ] AC-5 [local]: `animation_verify` fails a seeded defective clip (foot skate over 2 cm per planted step, loop seam over 5°, one jitter spike) with each defect named by bone and frame range. It passes the same clip after `animation_modify` repairs it, and it writes a non-blank filmstrip PNG. proof: `pnpm exec vitest run packages/animation-mcp/__tests__/verify.spec.ts` — Evidence: **detectors shipped and green, box open on the filmstrip and the repair.** `pnpm exec vitest run packages/animation-mcp/__tests__/verify.spec.ts` passes 8/8: a clean clip reports no defect; a planted foot sliding 15 cm is named `foot-skate` on `mixamorigRightFoot` across frames 0–30; a foot 9 cm under the floor is `ground-penetration` on that bone alone; a 30° end offset is one `loop-seam` on the worst bone (a 30° hip offset rotates every child, so sixty copies would be noise); a one-keyframe excursion is `jitter` within 4 frames, not the clip; a foot translated up 41 cm is `bone-stretch`; and the scale knob is proven by one fixture read as metres (skate) and as centimetres (clean, 1 cm drift). Sampling is headless — glTF TRS sampled and composed, no GPU, no browser — and `CUBICSPLINE` is sampled by value with its tangents dropped (exact at keys, straight between; `ponytail:` in `sample.ts`). `animation_verify` is registered and answered through a real `tools/call` in `mcp.spec.ts`. **Not done:** the filmstrip PNG, and the clause "passes after `animation_modify` repairs it", which needs AC-4.
 
 #### Phase 3 — pose language, library search, web view
 
@@ -104,7 +104,7 @@ Baked clips and attachments reach the screen. AC-3 and AC-6 therefore need a vis
 **Status:** IN PROGRESS (phase 1 merged, phase 2 next)
 **Files:** `packages/animation-mcp/src/ops/{modify,verify}.ts`, `src/report/filmstrip.ts`.
 **Implementation:** use gltf-transform for the clip ops. Verify samples world bone positions per frame (three `AnimationMixer`, headless), measures planted-foot slip, floor penetration, first/last pose distance, jerk spikes and bone length drift, and renders the filmstrip through the moved preview renderer.
-**Verification:** AC-4 and AC-5 specs.
+**Verification:** AC-5's detector half passes (8 tests); AC-4 and the filmstrip are not started.
 
 #### Phase 3: Pose language, library search, web view
 **Status:** IN PROGRESS (phase 1 merged, phase 2 next)

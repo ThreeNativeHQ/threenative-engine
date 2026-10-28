@@ -17,6 +17,7 @@ import {
   upgradeLog,
   writeLog,
 } from "./ops/log.js";
+import { verifyClip } from "./ops/verify.js";
 import { startPoseLab } from "./server.js";
 
 const TransformSchema = z.object({
@@ -85,6 +86,45 @@ const AttachOutputSchema = z.object({
   file: z.string(),
   log: z.string(),
   node: z.string(),
+});
+
+const VerifyInputSchema = z.object({
+  clip: z.string().min(1).max(200),
+  file: z.string().min(1),
+  fps: z.number().int().min(1).max(240).default(30),
+  scale: z.number().positive().default(1),
+});
+
+const VerifyOutputSchema = z.object({
+  bones: z.number(),
+  clip: z.string(),
+  defects: z.array(
+    z.object({
+      bone: z.string(),
+      detail: z.string(),
+      fromFrame: z.number(),
+      fromTime: z.number(),
+      kind: z.enum(["bone-stretch", "foot-skate", "ground-penetration", "jitter", "loop-seam"]),
+      limit: z.number(),
+      measured: z.number(),
+      toFrame: z.number(),
+      toTime: z.number(),
+    }),
+  ),
+  duration: z.number(),
+  file: z.string(),
+  fps: z.number(),
+  frames: z.number(),
+  passed: z.boolean(),
+  scale: z.number(),
+  thresholds: z.object({
+    contact: z.number(),
+    jitter: z.number(),
+    penetration: z.number(),
+    seam: z.number(),
+    skate: z.number(),
+    stretch: z.number(),
+  }),
 });
 
 const ViewInputSchema = z.object({
@@ -234,6 +274,32 @@ export function createAnimationServer(): McpServer {
       try {
         const result = AttachOutputSchema.parse(await attach(AttachInputSchema.parse(input)));
         return { content: text(result), structuredContent: result };
+      } catch (error) {
+        return {
+          content: text({ message: error instanceof Error ? error.message : String(error) }),
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "animation_verify",
+    {
+      annotations: annotations(true),
+      description:
+        "Measure one clip for the defects a still frame cannot show: a planted foot that slides (2 cm), ground penetration (1 cm), a loop seam (5°), a one-frame jitter spike, and bones whose length changes. Every defect names the bone and the frame range it spans. Thresholds are in metres; pass `scale` for a model that is not (Mixamo and Quaternius are centimetres: 0.01).",
+      inputSchema: VerifyInputSchema,
+      outputSchema: VerifyOutputSchema,
+      title: "Verify a clip's motion",
+    },
+    async (input) => {
+      try {
+        const parsed = VerifyInputSchema.parse(input);
+        const report = VerifyOutputSchema.parse(
+          await verifyClip(parsed.file, parsed.clip, { fps: parsed.fps, scale: parsed.scale }),
+        );
+        return { content: text(report), structuredContent: report };
       } catch (error) {
         return {
           content: text({ message: error instanceof Error ? error.message : String(error) }),

@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { writeRigFixture } from "./rig-fixture.js";
+import { type IPoseFixture, writePoseFixture, writeRigFixture } from "./rig-fixture.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const ENTRY = path.resolve(ROOT, "packages", "animation-mcp", "src", "index.ts");
@@ -176,6 +176,7 @@ describe("threenative-animation stdio server", () => {
         "animation_attach",
         "animation_inspect",
         "animation_open_view",
+        "animation_verify",
       ]);
     } finally {
       server.close();
@@ -203,6 +204,55 @@ describe("threenative-animation stdio server", () => {
       const report = called.result?.structuredContent ?? {};
       expect(report.bones).toEqual(["mixamorigHips", "mixamorigRightHand_035"]);
       expect(report.inPlace).toBe(true);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("verifies a clip through a tools/call and names the bone it blames", async () => {
+    const directory = await makeTempDir("animation-mcp-verify-");
+    const joints: IPoseFixture["joints"] = [
+      { name: "mixamorigHips", translation: [0, 0.9, 0] },
+      { name: "mixamorigRightUpLeg", parent: "mixamorigHips", translation: [0.2, -0.05, 0] },
+      { name: "mixamorigRightFoot", parent: "mixamorigRightUpLeg", translation: [0, -0.81, 0] },
+    ];
+    const file = await writePoseFixture(directory, {
+      channels: [
+        {
+          node: "mixamorigRightFoot",
+          path: "translation",
+          times: [0, 1],
+          values: [
+            [0, -0.81, 0],
+            [0.12, -0.81, 0],
+          ],
+        },
+      ],
+      clip: "RifleWalk",
+      joints,
+    });
+    const server = session();
+    try {
+      await server.send("initialize", {
+        capabilities: {},
+        clientInfo: { name: "spec", version: "0.0.0" },
+        protocolVersion: "2025-06-18",
+      });
+      server.notify("notifications/initialized");
+
+      const called = await server.send("tools/call", {
+        arguments: { clip: "RifleWalk", file },
+        name: "animation_verify",
+      });
+
+      const report = called.result?.structuredContent ?? {};
+      expect(report.passed).toBe(false);
+      const defects = (report.defects ?? []) as { bone: string; kind: string }[];
+      expect(
+        defects.some(
+          (defect) => defect.kind === "foot-skate" && defect.bone === "mixamorigRightFoot",
+        ),
+      ).toBe(true);
     } finally {
       server.close();
     }

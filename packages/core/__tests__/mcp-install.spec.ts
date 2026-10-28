@@ -270,6 +270,7 @@ describe("MCP_SERVERS", () => {
         "animation_attach",
         "animation_inspect",
         "animation_open_view",
+        "animation_verify",
       ]);
     } finally {
       child.kill();
