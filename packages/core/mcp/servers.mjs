@@ -46,8 +46,8 @@ export const MCP_SERVERS = Object.freeze({
 export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.14.0" }),
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
-  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.6" }),
-  blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.6" }),
+  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.7" }),
+  blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.7" }),
   animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.3" }),
 });
 

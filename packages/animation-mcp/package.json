@@ -1,6 +1,6 @@
 {
   "name": "threenative-animation-mcp",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "license": "MIT",
   "description": "Author, repair and verify character animation through one MCP: inspect rigs, attach props, edit and verify clips, and open a calibrator view.",
   "keywords": [
