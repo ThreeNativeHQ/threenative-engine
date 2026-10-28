@@ -310,7 +310,7 @@ inline constexpr uint64_t kFnvPrime = 0x100000001b3ull;
 
 // What a change to a geometry's data moves: its revision, and each attribute's store, version and length.
 inline uint64_t contentVersionKey(const BufferGeometry& g) {
-    ++waste::counters().contentVersionKeys;
+    waste::count(waste::counters().contentVersionKeys);
     uint64_t h = kFnvBasis ^ g.revision();
     const auto mix = [&](uint64_t v) { h = (h ^ v) * kFnvPrime; };
     const auto attribute = [&](const BufferAttribute* a) {
@@ -397,7 +397,7 @@ inline std::unordered_map<uint64_t, std::vector<std::weak_ptr<GeometryContentCla
 
 // The class whose bytes equal this geometry's, or a new one it is canonical for.
 inline std::shared_ptr<GeometryContentClass> classify(const std::shared_ptr<BufferGeometry>& geometry, uint64_t epoch) {
-    ++waste::counters().classifies;
+    waste::count(waste::counters().classifies);
     auto& classes = contentClasses();
     // Unique content (a streamed terrain tile) would leave a dead entry per hash: sweep when the table doubles.
     static std::size_t sweepAt = 64;
@@ -431,7 +431,7 @@ inline std::shared_ptr<GeometryContentClass> classify(const std::shared_ptr<Buff
  * drawn from the first unchanged member that resolves to it.
  */
 inline const GeometryContentClass& contentClassOf(const std::shared_ptr<BufferGeometry>& geometry) {
-    ++waste::counters().contentClassCalls;
+    waste::count(waste::counters().contentClassCalls);
     BufferGeometry& g = *geometry;
     const uint64_t epoch = detail::uniformEpoch();
     if (g.contentEpoch_ == epoch && g.contentClass_) return *g.contentClass_;

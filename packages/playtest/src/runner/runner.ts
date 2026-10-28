@@ -1,6 +1,6 @@
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { advanceFixedStep, completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
@@ -445,6 +445,10 @@ async function runStandalonePlaytestOnce(
       // evaluated is one the engine never saw. The wire name is literal because the other end of
       // it is the page's engine, not this package.
       if (liveClock) (globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+      // The engine counts its work into TN_FRAME_BUDGET.counters.engine (and three-native prints its
+      // census) for the run; the worker host forwards every __THREENATIVE_ page global, so a worker
+      // game reports them too.
+      (globalThis as Record<string, unknown>).__THREENATIVE_ENGINE_COST__ = true;
       window.addEventListener("unhandledrejection", (event) => {
         const reason = event.reason instanceof Error
           ? event.reason.stack || event.reason.message
@@ -786,6 +790,16 @@ async function runStandalonePlaytestOnce(
     const sightLine = sightLineAssertion === undefined || sightLineEntity === undefined
       ? undefined
       : { entity: sightLineEntity, samples: [] as IPlaytestSightLineObservation[] };
+    // The engine's cost windows count per drawn frame, so every tick draws one: with ticks advanced
+    // undrawn, a slower machine folds more ticks into each frame and the same game reads costlier.
+    const drawnTicks = scenario.assert?.engineCost === undefined || bridge === undefined
+      || activeConfig.liveClock === true || !bridge.description.capabilities.includes("runtime.fixedStep")
+      ? undefined
+      : async (ticks: number) => {
+          await advanceFixedStep(activePage, bridge, ticks, true);
+          await samplePathPosition(bridge, pathEntity, pathPositions);
+          await sampleSightLine(bridge, sightLine);
+        };
     for (const [index, step] of scenario.steps.entries()) {
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (framebufferAssertion !== undefined
@@ -837,7 +851,7 @@ async function runStandalonePlaytestOnce(
               await setBrowserPointers(activePage, inputState, [], scenario.viewport);
             });
           completionWindow.setupSnapshot = setupSnapshot;
-        } : footSlipAt(step.label) === undefined ? undefined : async (ticks) => {
+        } : footSlipAt(step.label) === undefined ? drawnTicks : async (ticks) => {
           const assertion = footSlipAt(step.label)!;
           const entity = assertion.entity ?? scenario.subject;
           if (bridge === undefined || entity === undefined || activeConfig.liveClock === true

@@ -12,7 +12,13 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BRIDGE_WARNING_MARKER, WARMUP_FRAMES, WINDOW_FRAMES } from "../src/bridge-meter.js";
+import {
+  BRIDGE_CENSUS_MARKER,
+  BRIDGE_WARNING_MARKER,
+  ENGINE_COST_KNOB,
+  WARMUP_FRAMES,
+  WINDOW_FRAMES,
+} from "../src/bridge-meter.js";
 import {
   type EngineValue,
   type IBrowserRuntime,
@@ -30,6 +36,8 @@ const registry = JSON.parse(
 
 /** The engine's hierarchy counter sits at this byte address, as Object3D::hierarchyVersionAddress. */
 const HIERARCHY = 64;
+/** The fake engine's one work total (`__engineCounters`), a matrix compose count. */
+const COMPOSES = 72;
 
 /** A scene-graph engine over plain maps; every get, set and call is logged, and a get costs 1 us of clock. */
 function sceneRuntime(clock: { ms: number }) {
@@ -107,6 +115,7 @@ function sceneRuntime(clock: { ms: number }) {
       clock.ms += 0.001;
       if (property === "__address") return Number(self.key.split(":")[1]) * 32;
       if (property === "__hierarchy") return HIERARCHY;
+      if (property === "__engineCounters") return `matrixEvaluations@${COMPOSES}`;
       calls.push(`get ${names.get(self.type)}.${property}`);
       if (property === "children") return [...(children.get(self.key) ?? [])];
       if (property === "parent") return parents.get(self.key) ?? null;
@@ -170,10 +179,12 @@ function scene(clock = { ms: 0 }) {
 const host = globalThis as {
   __THREENATIVE_BRIDGE_CACHE__?: unknown;
   __tnPlaytestObserving?: number;
+  __THREENATIVE_ENGINE_COST__?: unknown;
 };
 
 afterEach(() => {
   host.__THREENATIVE_BRIDGE_CACHE__ = undefined;
+  host[ENGINE_COST_KNOB as "__THREENATIVE_ENGINE_COST__"] = undefined;
   vi.restoreAllMocks();
 });
 
@@ -353,5 +364,64 @@ describe("the bridge census", () => {
     // sample's own scene walk (countMaterials, Box3.setFromObject) inside the census frame.
     host.__THREENATIVE_BRIDGE_CACHE__ = false;
     expect(frames(500, true)).toEqual([]);
+  });
+});
+
+describe("the engine cost totals", () => {
+  it("answers children reads, walk visits, hierarchy moves and the engine's own totals, read in place", () => {
+    const { Light, Group, counters, words, count } = scene();
+    const root = new Group();
+    const key = new Light(0xffffff, 1);
+    root.add(key);
+    words[COMPOSES / 4] = 9_000;
+    const before = counters();
+    for (let read = 0; read < 50; read++) void root.children;
+    root.traverse(() => {});
+    root.remove(key);
+    root.add(key);
+    words[COMPOSES / 4] = 9_040;
+    const after = counters();
+    const delta = (name: string) => (after[name] ?? Number.NaN) - (before[name] ?? Number.NaN);
+    expect(delta("childrenReads")).toBe(50);
+    // A kept walk answers its nodes without a visit; the first walk after a move visits both.
+    expect(delta("walkVisits")).toBe(2);
+    expect(delta("hierarchyMoves")).toBe(2);
+    expect(delta("matrixEvaluations")).toBe(40);
+    // Reading them costs no crossing: the totals are JS counts and words read in place.
+    const crossed = count("get Group.__engineCounters");
+    counters();
+    expect(count("get Group.__engineCounters")).toBe(crossed);
+  });
+
+  it("prints each census with its top crossings and callers only when a playtest asks", () => {
+    const run = (asked: boolean) => {
+      host[ENGINE_COST_KNOB as "__THREENATIVE_ENGINE_COST__"] = asked;
+      host.__THREENATIVE_BRIDGE_CACHE__ = false;
+      const clock = { ms: 0 };
+      vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+      const lines: string[] = [];
+      vi.spyOn(console, "warn").mockImplementation((line: unknown) => {
+        lines.push(String(line));
+      });
+      const { Light, collect } = scene(clock);
+      const key = new Light(0xffffff, 3);
+      const readTwice = () => key.intensity + key.intensity;
+      for (let frame = 0; frame < WARMUP_FRAMES + WINDOW_FRAMES * 2; frame++) {
+        collect();
+        readTwice();
+        clock.ms += 16;
+      }
+      vi.restoreAllMocks();
+      return lines.filter((line) => line.startsWith(BRIDGE_CENSUS_MARKER));
+    };
+    expect(run(false)).toEqual([]);
+    const [line] = run(true);
+    const census = JSON.parse((line as string).slice(BRIDGE_CENSUS_MARKER.length + 1)) as {
+      crossings: number;
+      top: { name: string; perFrame: number; caller: string }[];
+    };
+    expect(census.crossings).toBe(2);
+    expect(census.top[0]).toMatchObject({ name: "get DirectionalLight.intensity", perFrame: 2 });
+    expect(census.top[0]?.caller).toContain("readTwice");
   });
 });

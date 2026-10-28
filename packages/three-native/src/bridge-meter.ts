@@ -20,6 +20,14 @@ export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
  * Set above zero by the playtest bridge while it samples: its scene walk reads every mesh's material
  * and bounds inside the census frame, and no player run makes those reads.
  */
+/**
+ * Set to `true` by a playtest that bounds engine counters (`engineCost`): every census then prints
+ * `TN_BRIDGE_CENSUS` with its top crossings and their callers, so an over-bound counter names who
+ * crossed. The counters themselves ride TN_FRAME_BUDGET.counters.engine.
+ */
+export const ENGINE_COST_KNOB = "__THREENATIVE_ENGINE_COST__";
+export const BRIDGE_CENSUS_MARKER = "TN_BRIDGE_CENSUS";
+
 export const PLAYTEST_OBSERVING_GLOBAL = "__tnPlaytestObserving";
 
 /** Safe points before the first census: loading and the first frames build, so their reads are not steady. */
@@ -35,6 +43,8 @@ interface ICensus {
   readonly byRead: Map<string, number>;
   readonly redundantByName: Map<string, number>;
   readonly callers: Map<string, string>;
+  /** The census prints itself (ENGINE_COST_KNOB), so it names a caller for every crossing, not only re-reads. */
+  readonly printed: boolean;
 }
 
 export interface IBridgeMeterHost {
@@ -92,6 +102,19 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
   let window = 0;
   const finish = (done: ICensus): void => {
     window += 1;
+    if (done.printed) {
+      let crossed = 0;
+      for (const count of done.byName.values()) crossed += count;
+      const top = [...done.byName]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([name, perFrame]) => ({
+          name,
+          perFrame,
+          caller: done.callers.get(name) ?? "unknown",
+        }));
+      host.report(`${BRIDGE_CENSUS_MARKER}:${JSON.stringify({ window, crossings: crossed, top })}`);
+    }
     let redundant = 0;
     for (const count of done.redundantByName.values()) redundant += count;
     if (redundant === 0 || intervals.length === 0) return;
@@ -133,6 +156,8 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
         return;
       const label = `${kind} ${host.typeName(self.type)}.${name}`;
       census.byName.set(label, (census.byName.get(label) ?? 0) + 1);
+      if (census.printed && !census.callers.has(label))
+        census.callers.set(label, callerOf(host.stack()));
       if (kind !== "get") return;
       const read = `${self.key} ${name}`;
       const seen = (census.byRead.get(read) ?? 0) + 1;
@@ -159,6 +184,7 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
           byRead: new Map(),
           redundantByName: new Map(),
           callers: new Map(),
+          printed: (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true,
         };
       }
     },

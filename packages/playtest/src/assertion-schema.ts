@@ -609,6 +609,28 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
   {
     cardinality: "object",
     description:
+      "Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's counters.engine (and counters.bridgeCrossings): JS-to-Wasm crossings, children reads, scene-walk visits, hierarchy moves, matrix composes, handle shares, content classification, GPU allocations, physics crossings and any counter an engine module adds to globalThis.__tnEngineCost. Each window must hold every bound; a run with fewer windows than minWindows, or a window missing a bounded counter, fails closed. A failure names the counter, the window and the top caller of the TN_BRIDGE_CENSUS before it.",
+    example: { engineCost: { maxPerFrame: { bridgeCrossings: 2000, childrenReads: 60 }, skipWindows: 1, source: "shooter after-value 1,024 per frame on 2026-10-27, about 2x headroom" } },
+    fields: [
+      { description: "Counter name to its bound on a window's per-frame mean.", name: "maxPerFrame", type: "{ [counter: string]: number }" },
+      { description: "Counter name to its bound on any single frame of a window.", name: "maxInFrame", type: "{ [counter: string]: number }" },
+      { description: "Windows the run must report; default 1.", name: "minWindows", type: "positive integer" },
+      { description: "Windows left unbounded first, the boot (loading, first builds); still and moving count after them. Default 0.", name: "skipWindows", type: "non-negative integer" },
+      { description: "Per-frame bounds on the first `windows` windows only, which the scenario keeps still.", name: "still", type: "{ windows: positive integer, maxPerFrame: { [counter: string]: number } }" },
+      { description: "Bounds on the windows after the still ones, which the scenario fills with play; needs still.", name: "moving", type: "{ maxPerFrame?: { [counter: string]: number }, maxInFrame?: { [counter: string]: number } }" },
+      { description: "Where the bounds came from: the measured after-values and the headroom on them.", name: "source", required: true, type: "string" },
+    ],
+    kind: "engineCost",
+    observationPath: "console",
+    requiredCapabilities: ["browser.console"],
+    resultIdPrefix: "engineCost.",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The counters are measured across the run's frames; an initial value has no frames to count.",
+  },
+  {
+    cardinality: "object",
+    description:
       "Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved.",
     example: { hudAudit: { minContrast: 3, noDebugText: true } },
     fields: [

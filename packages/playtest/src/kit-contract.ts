@@ -20,6 +20,12 @@ export interface IKitContractEntry {
   readonly explore?: { readonly actions?: readonly string[]; readonly pointer?: boolean; readonly seed?: number };
   /** Object3D names of the soles, for the planted-foot bound. */
   readonly feet?: readonly string[];
+  /**
+   * The engine-cost row's bounds for this kit (an `engineCost` assertion without `minWindows`): this kit's
+   * worst after-value of each web engine counter, measured with headroom, and the measurement in `source`.
+   * A kit on the web engine either declares them or opts out of the row.
+   */
+  readonly engineCost?: Json;
   /** Keys that move the subject. */
   readonly move: readonly string[];
   /** Row id to the written reason this kit does not follow it. */
@@ -64,7 +70,7 @@ export interface IKitContractRow {
 const DIAGNOSTICS = { noConsoleErrors: true, noNetworkErrors: true, noRuntimeDiagnostics: true, runtimeReady: true };
 const VIEWPORT = { height: 720, width: 1280 };
 
-function scenario(row: string, entry: IKitContractEntry, steps: readonly Json[], assert: Json): Json {
+function scenario(row: string, entry: IKitContractEntry, steps: readonly Json[], assert: Json, viewport: Json = VIEWPORT): Json {
   return {
     assert,
     name: `contract-${row}`,
@@ -72,7 +78,7 @@ function scenario(row: string, entry: IKitContractEntry, steps: readonly Json[],
     steps: [...(entry.start ?? []), ...steps],
     subject: entry.subject,
     target: "web",
-    viewport: VIEWPORT,
+    viewport,
     warmupFrames: 10,
   };
 }
@@ -136,6 +142,27 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
     id: "no-hitch",
     needs: always,
     summary: "play holds the frame budget with no spike",
+  },
+  {
+    build: (entry) =>
+      scenario(
+        "engine-cost",
+        entry,
+        [
+          // TN_FRAME_BUDGET closes a window every 300 fixed-step ticks: window 1 holds the boot (the
+          // scene build, the first batch merge) and stays unbounded, window 2 is still, 3 and 4 are play.
+          { kind: "wait", label: "still", release: true, waitTicks: 600 },
+          explore(entry, 660, "moving"),
+        ],
+        // The counters do not depend on resolution, and a software adapter in PR CI is slow, so the
+        // row draws a small canvas.
+        { diagnostics: DIAGNOSTICS, engineCost: { ...(entry.engineCost as object | undefined), minWindows: 4, skipWindows: 1 } },
+        { height: 360, width: 640 },
+      ),
+    id: "engine-cost",
+    // The bounds are the kit's own measured after-values, so a kit without them opts out with its reason.
+    needs: (entry) => entry.engineCost !== undefined,
+    summary: "the engine pays no cost class fixed on 2026-10-27 again: its TN_FRAME_BUDGET work counters (bridge crossings, children reads, scene walks, hierarchy moves, matrix composes, handle shares, physics crossings) stay under the kit's measured bounds, still and moving",
   },
   {
     build: (entry) =>

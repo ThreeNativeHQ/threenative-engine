@@ -921,6 +921,8 @@ jobs:
           # in, or this lane would quietly stop covering 21 scenarios it has always covered.
           extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
           if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
+          # PRD-748: the engine-cost contract row runs on every PR, for every kit that does not opt out.
+          pnpm exec tsx scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}" "$target/playtests"
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0

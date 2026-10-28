@@ -127,6 +127,8 @@ export interface IBrowserEngine {
   collect(): void;
   /** Engine crossings so far (construct, get, set, invoke, engineReferences): a bench rung's bridgeCalls. */
   crossings(): number;
+  /** Running work totals by name (this back end's and the engine's), for TN_FRAME_BUDGET.counters.engine. */
+  counters(): Record<string, number>;
   /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
   wrap(ref: IEngineRef): object;
 }
@@ -276,6 +278,7 @@ function defineTraversal(
   hasChildren: boolean,
   walks: boolean,
   keep?: (object: object) => Record<string, unknown> | undefined,
+  visited?: (count: number) => void,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
@@ -289,6 +292,7 @@ function defineTraversal(
     if (entry !== undefined && entry.__walk !== undefined) return entry.__walk as object[];
     const found = (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
     if (entry !== undefined) entry.__walk = found;
+    visited?.(found.length);
     return found;
   };
   const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
@@ -297,6 +301,7 @@ function defineTraversal(
         for (const object of walk(this, false)) callback(object);
         return;
       }
+      visited?.(1);
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverse(c: TraverseCallback): void }).traverse(callback);
@@ -307,6 +312,7 @@ function defineTraversal(
         return;
       }
       if ((this as { visible: boolean }).visible === false) return;
+      visited?.(1);
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverseVisible(c: TraverseCallback): void }).traverseVisible(callback);
@@ -545,12 +551,21 @@ export function defineBrowserClasses(
   const knob = "__THREENATIVE_BRIDGE_CACHE__";
   const cacheWanted = () => (globalThis as Record<string, unknown>)[knob] !== false;
   let caching = cacheWanted();
+  // Running totals a playtest bounds per frame (TN_FRAME_BUDGET.counters.engine): JS reads of
+  // `children` (core's auto batch read the scene's each still frame) and the objects a `traverse`
+  // visits (the projection window line walked 8,900 nodes every five seconds). One add each.
+  let childrenReads = 0;
+  let walkVisits = 0;
+  const walked = (count: number) => {
+    walkVisits += count;
+  };
   // The hierarchy cache: `children`, `parent` and a whole-subtree walk are kept until the engine's
   // process-wide hierarchy counter (Object3D::hierarchyVersion, read in place) moves. Every add,
   // remove, attach, clear and destructor moves it, and nothing else in the engine writes a children
   // list, so a kept answer is never stale. The table is replaced when the counter moves, so a kept
   // array never holds a removed subtree alive past the next read or safe point.
   let hierarchyAt: number | undefined;
+  let engineCountersAt: readonly (readonly [string, number])[] = [];
   let keptVersion = -1;
   let kept = new WeakMap<object, Record<string, unknown>>();
   const readWord = source.readWord;
@@ -1285,9 +1300,16 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
-        // The hierarchy counter's address, asked once a process at the first scene node made.
-        if (hierarchyAt === undefined && hierarchyClass)
+        // The hierarchy counter's address, asked once a process at the first scene node made, and the
+        // engine's work counts ("name@address,..."), each read in place per frame by counters().
+        if (hierarchyAt === undefined && hierarchyClass) {
           hierarchyAt = runtime.get(refOf(this), "__hierarchy") as number;
+          if (binding.getters.includes("__engineCounters"))
+            engineCountersAt = String(runtime.get(refOf(this), "__engineCounters"))
+              .split(",")
+              .map((entry) => entry.split("@"))
+              .map(([counter, address]) => [String(counter), Number(address)] as const);
+        }
         if (materialClass) defineOwn(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
         // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
@@ -1664,6 +1686,11 @@ export function defineBrowserClasses(
           ((property === "children" || property === "parent") &&
           binding.getters.includes("__hierarchy")
             ? function (this: object) {
+                if (property === "children") {
+                  childrenReads += 1;
+                  // The census names who reads it, though the cache answers without a crossing.
+                  if (meter.counting) meter.record("read", refOf(this), "children");
+                }
                 const entry = hierarchyKept(this);
                 if (entry === undefined) return fromEngine(runtime.get(refOf(this), property));
                 if (!(property in entry))
@@ -1930,6 +1957,7 @@ export function defineBrowserClasses(
         binding.members.includes("children") || binding.getters.includes("children"),
         binding.methods.includes("__walk"),
         binding.getters.includes("__hierarchy") ? hierarchyKept : undefined,
+        walked,
       );
     }
     classes[name] = cls;
@@ -2005,6 +2033,17 @@ export function defineBrowserClasses(
     classes,
     wrap,
     crossings: () => crossings,
+    // The back end's running totals, for TN_FRAME_BUDGET.counters.engine. `hierarchyMoves` is the
+    // engine's hierarchy counter itself: each move drops every cache keyed on it, here and in C++.
+    counters: () => {
+      // Crossings ride their own series, TN_FRAME_BUDGET.counters.bridgeCrossings (__tnCrossingCount).
+      const totals: Record<string, number> = { childrenReads, walkVisits };
+      if (readWord === undefined) return totals;
+      if (hierarchyAt !== undefined) totals.hierarchyMoves = readWord(hierarchyAt);
+      // The low word of each 64-bit total: core takes per-frame differences, which stay exact.
+      for (const [counter, address] of engineCountersAt) totals[counter] = readWord(address) >>> 0;
+      return totals;
+    },
     collect() {
       meter.frame();
       const wanted = cacheWanted();

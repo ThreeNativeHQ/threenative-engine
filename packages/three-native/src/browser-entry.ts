@@ -140,13 +140,16 @@ export async function bindWebEngine(
     globalThis.crossOriginIsolated === true,
   );
   const runtime = createWasmRuntime(module);
-  const { classes, wrap, collect, crossings } = defineBrowserClasses(
+  const { classes, wrap, collect, crossings, counters } = defineBrowserClasses(
     registry as IRegistryDump,
     runtime,
     engineCatalog,
   );
   // Engine crossings so far, for a bench page's per-frame bridgeCalls (the pair's crossing budget).
   (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount = crossings;
+  // The engine's running work totals by name, which core puts per frame into TN_FRAME_BUDGET.counters.engine.
+  (globalThis as { __tnEngineCounters?: () => Record<string, number> }).__tnEngineCounters =
+    counters;
   defineTypeFlags(classes);
   // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
   // buffers with the object, so the call has nothing to release (core's projection mirror makes it).

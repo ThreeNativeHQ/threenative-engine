@@ -443,6 +443,8 @@ export interface IFrameBudgetWindow {
     readonly jsAllocBytes?: IFrameBudgetSummary;
     /** JS->Wasm crossings per frame, when the back end counts them (`createCrossingReader`). */
     readonly bridgeCrossings?: IFrameBudgetSummary;
+    /** Engine work counts per frame by name, when a playtest asked for them (`createEngineCounterReader`). */
+    readonly engine?: Readonly<Record<string, IFrameBudgetSummary>>;
     readonly simulationTick?: number;
   };
 }
@@ -665,6 +667,8 @@ export class FrameBudget {
   #gpuBytes: Ring;
   #jsAllocBytes: Ring;
   #bridgeCrossings: Ring;
+  #engine = new Map<string, Ring>();
+  readonly #capacity: number;
   #countersThisFrame: IFrameCounters | undefined;
   // The latest tick fed this window. It is not a boundary count and does not sum across frames: it
   // is the loop's fixed-step count at the last frame that fed one, so consecutive window closes read
@@ -721,6 +725,7 @@ export class FrameBudget {
     this.minFrames = requirePositiveInteger(options.minFrames, 1, "minFrames");
     this.hitchMs = requirePositiveNumber(options.hitchMs, DEFAULT_HITCH_MS, "hitchMs");
     const capacity = requirePositiveInteger(options.capacity, DEFAULT_CAPACITY, "capacity");
+    this.#capacity = capacity;
     this.#report = options.report ?? ((line) => console.log(line));
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
@@ -1142,6 +1147,14 @@ export class FrameBudget {
     if (counters?.jsAllocBytes !== undefined) this.#jsAllocBytes.push(counters.jsAllocBytes);
     if (counters?.bridgeCrossings !== undefined)
       this.#bridgeCrossings.push(counters.bridgeCrossings);
+    for (const [name, value] of Object.entries(counters?.engine ?? {})) {
+      let ring = this.#engine.get(name);
+      if (ring === undefined) {
+        ring = new Ring(this.#capacity);
+        this.#engine.set(name, ring);
+      }
+      ring.push(value);
+    }
     this.#framesInWindow += 1;
     this.#maybeReport();
     return sample;
@@ -1214,10 +1227,18 @@ export class FrameBudget {
       gpuBytes === undefined &&
       jsAllocBytes === undefined &&
       bridgeCrossings === undefined &&
+      this.#engine.size === 0 &&
       simulationTick === undefined
         ? undefined
         : {
             ...(bridgeCrossings === undefined ? {} : { bridgeCrossings }),
+            ...(this.#engine.size === 0
+              ? {}
+              : {
+                  engine: Object.fromEntries(
+                    [...this.#engine].map(([name, ring]) => [name, ring.summarize(this.#scratch)]),
+                  ),
+                }),
             ...(gpuBytes === undefined ? {} : { gpuBytes }),
             ...(hostCalls === undefined ? {} : { hostCalls }),
             ...(jsAllocBytes === undefined ? {} : { jsAllocBytes }),
@@ -1402,6 +1423,7 @@ export class FrameBudget {
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();
     this.#bridgeCrossings.reset();
+    this.#engine.clear();
     this.#simulationTick = undefined;
     this.#gpuStaleInWindow = 0;
     this.#renderSkipsInWindow = 0;

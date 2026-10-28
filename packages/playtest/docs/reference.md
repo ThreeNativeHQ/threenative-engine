@@ -313,6 +313,22 @@ transparent surface are not solid. `maxBlockedRatio` (0..1) is the share of samp
 over the share fails `TN_PLAYTEST_SIGHT_LINE_BLOCKED`. The check runs on the browser target only and
 fails `TN_PLAYTEST_SIGHT_LINE_UNOBSERVED` when it sampled nothing.
 
+`assert.engineCost: { maxPerFrame?, maxInFrame?, minWindows?, skipWindows?, still?, moving?, source }` bounds the
+engine's own work counters. The runner sets `__THREENATIVE_ENGINE_COST__`, and core then puts each
+frame's counts into every `TN_FRAME_BUDGET` window as `counters.engine` (a per-frame summary per name):
+the web back end's `childrenReads`, `walkVisits` and `hierarchyMoves`, the engine's `matrixEvaluations`,
+`share`, `shareHits`, `shareMints`, `contentClassOf`, `contentVersionKeys`, `classify`, `buffers` and
+`textures`, and every name a module adds to `globalThis.__tnEngineCost` (core's `cullRigRebuilds` and
+`cullRigWalks`, physics' `physicsTransformReads` and `physicsForceResets`). `counters.bridgeCrossings`
+joins as `bridgeCrossings`. `maxPerFrame` bounds a window's mean and `maxInFrame` its largest frame.
+`skipWindows` (default 0) leaves the first windows, the boot, unbounded. Every later window must hold
+every top-level bound; `still: { windows, maxPerFrame }` bounds only the first `windows` of them, which
+the scenario keeps still, and `moving: { maxPerFrame?, maxInFrame? }` only the
+windows after them. Fewer windows than `minWindows` (default 1), an unreadable window, or a bounded
+counter a window omits fails `TN_PLAYTEST_ENGINE_COST_UNOBSERVED` or `TN_PLAYTEST_ENGINE_COST_OVER_BOUND`;
+an over-bound message names the counter, the window and the top caller of the three-native
+`TN_BRIDGE_CENSUS` printed before it. `source` states where each bound came from.
+
 `assert.hudAudit: { noDebugText?, minContrast? }` reads the text the page draws after the last step.
 `noDebugText` (only `true`) fails when an item reads like developer copy — debug, TODO, FIXME,
 lorem ipsum, placeholder, probe, raycast, hitbox, wall ray, an unresolved `undefined`, `null` or

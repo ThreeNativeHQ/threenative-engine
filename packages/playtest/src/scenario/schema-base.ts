@@ -305,6 +305,28 @@ export interface IPlaytestSightLineAssertion {
  * the same colour as its backing plate is unreadable while every node count stays healthy.
  * Browser target only; elsewhere it fails unobserved.
  */
+/**
+ * Bounds on the engine's own work counters (PRD-748): per-frame means and single-frame maxima over each
+ * `TN_FRAME_BUDGET` window (`counters.engine`, plus `counters.bridgeCrossings`), read off the console.
+ * Fails closed when no window arrives or a bounded counter is missing from one.
+ */
+export interface IPlaytestEngineCostAssertion {
+  /** Counter name to its bound on the window's per-frame mean. */
+  maxPerFrame?: Readonly<Record<string, number>>;
+  /** Counter name to its bound on any single frame in the window. */
+  maxInFrame?: Readonly<Record<string, number>>;
+  /** Windows the run must report (default 1). */
+  minWindows?: number;
+  /** Windows left unbounded before every other bound applies: the boot (loading, first builds). Default 0. */
+  skipWindows?: number;
+  /** Bounds on the first `windows` windows only, which the scenario keeps still (no input). */
+  still?: { readonly windows: number; readonly maxPerFrame: Readonly<Record<string, number>> };
+  /** Bounds on the windows after the still ones, which the scenario fills with play. Needs `still`. */
+  moving?: { readonly maxPerFrame?: Readonly<Record<string, number>>; readonly maxInFrame?: Readonly<Record<string, number>> };
+  /** Where the bounds came from: the measured after-values and their headroom. */
+  source: string;
+}
+
 export interface IPlaytestHudAuditAssertion {
   /** WCAG 2.x contrast ratio, 1..21, every judged text item must reach. */
   minContrast?: number;
@@ -712,6 +734,7 @@ export interface IPlaytestScenarioAssertions {
   footSlip?: IPlaytestFootSlipAssertion[];
   sightLine?: IPlaytestSightLineAssertion;
   hudAudit?: IPlaytestHudAuditAssertion;
+  engineCost?: IPlaytestEngineCostAssertion;
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];

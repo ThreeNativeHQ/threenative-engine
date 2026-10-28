@@ -157,7 +157,7 @@ Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage) {
 }
 
 Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const void* data, uint64_t bytes) {
-    ++waste::counters().bufferAllocs;
+    waste::count(waste::counters().bufferAllocs);
     WGPUBufferDescriptor desc = {};
     desc.size = size;
     desc.usage = usage;
@@ -182,7 +182,7 @@ Handle GpuResources::createBuffer(uint64_t size, WGPUBufferUsage usage, const vo
 
 Handle GpuResources::createTexture(uint32_t width, uint32_t height, WGPUTextureFormat format,
                                    WGPUTextureUsage usage) {
-    ++waste::counters().textureAllocs;
+    waste::count(waste::counters().textureAllocs);
     WGPUTextureDescriptor desc = {};
     desc.dimension = WGPUTextureDimension_2D;
     desc.size = {width, height, 1};

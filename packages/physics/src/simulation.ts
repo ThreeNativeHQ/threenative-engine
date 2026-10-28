@@ -10,6 +10,13 @@ import {
 } from "./handles.js";
 
 /** One record is logical body id, xyz position, and xyzw rotation. */
+/** Adds `count` to the running total `name` in `globalThis.__tnEngineCost`, which core puts per frame into TN_FRAME_BUDGET.counters.engine. */
+function countEngineCost(name: string, count: number): void {
+  const host = globalThis as { __tnEngineCost?: Record<string, number> };
+  host.__tnEngineCost ??= {};
+  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + count;
+}
+
 export const PHYSICS_TRANSFORM_STRIDE = 8;
 
 export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
@@ -1407,6 +1414,7 @@ export function createWebPhysicsSimulation(
         entry.body.resetTorques(true);
         crossings.forceResets += 1;
       }
+      countEngineCost("physicsForceResets", crossings.forceResets);
       dirtyBodies.clear();
     },
     readVisibleTransforms: (renderBuffer) => {
@@ -1420,6 +1428,7 @@ export function createWebPhysicsSimulation(
         if (written === "read") crossings.transformReads += 1;
         index += 1;
       }
+      countEngineCost("physicsTransformReads", crossings.transformReads);
       return index;
     },
     readBodySleepStates: (buffer) => {

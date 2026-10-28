@@ -219,7 +219,7 @@ function hierarchyRevision(object: Object3D): number | undefined {
 
 /**
  * Counts one costly step by name in `globalThis.__tnEngineCost`, the bag a playtest reads per frame
- * (three-native reports it as TN_ENGINE_COST), so a kit that brings back a per-frame walk fails its bound.
+ * (core reports it per frame in TN_FRAME_BUDGET.counters.engine), so a kit that brings back a per-frame walk fails its bound.
  */
 function countEngineCost(name: string): void {
   const host = globalThis as { __tnEngineCost?: Record<string, number> };

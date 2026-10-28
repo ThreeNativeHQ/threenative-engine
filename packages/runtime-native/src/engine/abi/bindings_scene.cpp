@@ -13,6 +13,7 @@
 // notify through the Euler member's own setters.
 
 #include "engine/renderer/projection/plan.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/projected_cull.h"
 #include "engine/abi/bindings.h"
 #include "engine/abi/pooled_shared.h"
@@ -548,6 +549,25 @@ void registerObject3D(ClassBinding& b) {
     // The process-wide hierarchy counter's address: the Wasm back end keeps `children` and `parent` until it moves.
     b.getters["__hierarchy"] = [](void*) {
         return Value::of(double(reinterpret_cast<uintptr_t>(Object3D::hierarchyVersionAddress())));
+    };
+    // The engine's running work counts as "name@address,...": the Wasm back end reads each total's low
+    // word in place every frame, so core's TN_FRAME_BUDGET.counters.engine costs no crossing (PRD-748).
+    b.getters["__engineCounters"] = [](void*) {
+        auto& w = tn::engine::waste::counters();
+        const std::pair<const char*, const void*> totals[] = {
+            {"contentClassOf", &w.contentClassCalls}, {"contentVersionKeys", &w.contentVersionKeys},
+            {"classify", &w.classifies},              {"share", &w.shareCalls},
+            {"shareHits", &w.shareHits},              {"shareMints", &w.shareMints},
+            {"buffers", &w.bufferAllocs},             {"textures", &w.textureAllocs},
+            {"matrixEvaluations", &Object3D::matrixEvaluations_}};
+        std::string text;
+        for (const auto& [name, address] : totals) {
+            if (!text.empty()) text += ',';
+            text += name;
+            text += '@';
+            text += std::to_string(reinterpret_cast<uintptr_t>(address));
+        }
+        return Value{Value::Kind::String, 0, text};
     };
     b.getters["type"] = [](void* self) {
         return Value{Value::Kind::String, 0, std::string(as<Object3D>(self)->type())};

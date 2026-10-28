@@ -36,7 +36,12 @@ import { ScenePicker } from "./picking.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { getPlatform, hostDocument, hostWindow } from "./platform.js";
 import { PointerEvents3D } from "./pointer-events.js";
-import { FrameCounters, counterDeviceOf, createCrossingReader } from "./profiling/FrameCounters.js";
+import {
+  FrameCounters,
+  counterDeviceOf,
+  createCrossingReader,
+  createEngineCounterReader,
+} from "./profiling/FrameCounters.js";
 import {
   SPANS,
   SpanRecorder,
@@ -1833,6 +1838,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // The engine's own ABI crossings ride every budget window, not the spans flag: one difference of
     // two reads per frame, and the series a fix for repeated crossings is judged on.
     const bridgeCrossings = createCrossingReader();
+    // Every engine work counter, per frame, when a playtest bounds them (PRD-748 engine-cost row).
+    const engineCounters = createEngineCounterReader();
     // The parity oracle for the static freeze. Off by default and expensive on purpose: it
     // recomputes every world matrix the long way and throws on the first that disagrees with what
     // the frame is about to draw.
@@ -2211,9 +2218,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // fed every frame so a plain `TN_FRAME_BUDGET` log can join a window's start and end ticks
         // without `TN_FRAME_SPANS`. `addCounters` keeps the last tick a caller did provide.
         const crossings = bridgeCrossings();
+        const engine = engineCounters();
         frameBudget?.addCounters({
           ...(frameCounters?.read() ?? {}),
           ...(crossings === undefined ? {} : { bridgeCrossings: crossings }),
+          ...(engine === undefined ? {} : { engine }),
           simulationTick: gameLoop.tick(),
         });
         const uiHost = globalThis as { __tnUiCompositeMs?: () => number };
