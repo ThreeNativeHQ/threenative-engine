@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-
 import {
   BufferAttribute,
   BufferGeometry,
@@ -21,11 +19,13 @@ import { describe, expect, it, vi } from "vitest";
 import { formatProjectionWindow } from "../src/projection-marker.js";
 import {
   DEFAULT_MINIMUM_PROJECTED_PIXELS,
+  type IAnimationRateState,
   RenderCameraCull,
   alwaysRender,
   inFrustum,
   rayMeetsSphere,
   setFrustumPlanes,
+  trackAnimationRate,
 } from "../src/render-camera-cull.js";
 
 // The camera pass tests its frustum and forward ray in plain numbers: on the web engine three's Frustum,
@@ -33,13 +33,48 @@ import {
 describe("the cull's plain frustum and ray math", () => {
   // The win is the class, not the answer: the equivalence test below passes just as well if the math is
   // right while an engine Ray, Frustum or Sphere comes back to hold it, which is the cost the lever
-  // removed (66e637840: cull 0.78 -> 0.66 ms on the laptop). Count the constructions in the cull's source.
-  it("constructs no three Frustum, Ray or Sphere, which are engine objects on the web", () => {
-    const source = readFileSync(new URL("../src/render-camera-cull.ts", import.meta.url), "utf8");
-    // Comments name the types the plain code replaces, so they are not constructions.
-    const code = source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/.*$/gmu, "");
-    for (const name of ["Frustum", "Ray", "Sphere"])
-      expect(code, `new ${name}(`).not.toMatch(new RegExp(`new ${name}\\(`, "u"));
+  // removed (66e637840: cull 0.78 -> 0.66 ms on the laptop, about 70 boundary calls a shooter frame).
+  // So count what a real cull frame constructs, not what the source spells: on the web engine each of
+  // these is an object across the boundary, whichever helper or alias reaches it.
+  it("constructs no three Frustum, Ray or Sphere in a real cull frame", () => {
+    // One frame of a small scene, one object per plain-math path: a rig part on the camera's forward
+    // ray (near band), a rig part off it (the band test), an off-camera shadow caster (the frustum
+    // test) and a sub-pixel prop to cull.
+    const onRay = new Group();
+    onRay.add(ball(1, -60));
+    const lateral = ball(1, -60);
+    lateral.position.x = 8;
+    const offRay = new Group();
+    offRay.add(lateral);
+    const onRayState = rateState();
+    const offRayState = rateState();
+    trackAnimationRate(onRay, onRayState);
+    trackAnimationRate(offRay, offRayState);
+    const caster = ball(0.01, -1_000);
+    caster.position.set(100_000, 0, -1_000);
+    caster.castShadow = true;
+    const scene = sceneWith(onRay, offRay, caster, ball(0.1, -1_000));
+    const view = camera();
+
+    // The scene above is scaffolding. Everything from here is the cull: its own fields and its frame,
+    // since the engine objects the lever removed were built once per cull and reused every frame.
+    engineObjects.Frustum = 0;
+    engineObjects.Ray = 0;
+    engineObjects.Sphere = 0;
+    const cull = new RenderCameraCull();
+    cull.prepareAnimation(scene, view, 720);
+    cull.apply(scene, view, 720);
+
+    // The frame reached every path, so the zero below is not vacuous: the on-ray rig took the near
+    // band, the lateral one the band test (4, not the unseen 8), and the caster the frustum test.
+    expect([onRayState.rate, offRayState.rate]).toEqual([1, 4]);
+    expect(cull.report.exemptShadowCasters).toBe(1);
+    expect(cull.report.culled).toBe(1);
+    expect({
+      Frustum: engineObjects.Frustum,
+      Ray: engineObjects.Ray,
+      Sphere: engineObjects.Sphere,
+    }).toEqual({ Frustum: 0, Ray: 0, Sphere: 0 });
   });
 
   it("answers as three's Frustum and Ray for cameras and spheres all around", () => {
@@ -98,6 +133,8 @@ describe("the cull's plain frustum and ray math", () => {
  */
 
 const vector3Allocations = vi.hoisted(() => ({ count: 0 }));
+/** Constructions of the three classes that are engine objects on the web engine, counted, not spied. */
+const engineObjects = vi.hoisted(() => ({ Frustum: 0, Ray: 0, Sphere: 0 }));
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three")>();
@@ -109,8 +146,31 @@ vi.mock("three", async (importOriginal) => {
         vector3Allocations.count += 1;
       }
     },
+    Frustum: class CountingFrustum extends actual.Frustum {
+      constructor(...planes: ConstructorParameters<typeof actual.Frustum>) {
+        super(...planes);
+        engineObjects.Frustum += 1;
+      }
+    },
+    Ray: class CountingRay extends actual.Ray {
+      constructor(...args: ConstructorParameters<typeof actual.Ray>) {
+        super(...args);
+        engineObjects.Ray += 1;
+      }
+    },
+    Sphere: class CountingSphere extends actual.Sphere {
+      constructor(...args: ConstructorParameters<typeof actual.Sphere>) {
+        super(...args);
+        engineObjects.Sphere += 1;
+      }
+    },
   };
 });
+
+/** A rig's rate state, as `AnimationPlayer` registers one (the cull only writes `rate` and `frame`). */
+function rateState(): IAnimationRateState {
+  return { rate: 1, frame: 0, source: undefined, evaluated: false, evaluation: 0 };
+}
 
 /** A perspective camera at the origin looking down -Z, matching the default Three camera. */
 function camera(fov = 60): PerspectiveCamera {
