@@ -97,7 +97,7 @@ describe("parsePerformanceMarkers", () => {
     expect(parsed.passRecording?.recordMs).toBeCloseTo(0.575);
     expect(parsed.passRecording?.stagesMs.other).toBeCloseTo(0.4);
     const report = formatPerfReport(assessPerfMarkers(parsed, { requireWindows: 0 }, "fixture"));
-    expect(report).toContain("main bundle rebuilds: 2 order, 0 uniform offset, 1 visible count, 0 other");
+    expect(report).toContain("main bundle rebuilds: 2 order, 0 uniform offset, 1 visible count, 0 other; 358 main, 15 aux/velocity and 0 shadow draws recorded");
     expect(report).toContain("(the three stages cover 96.0%)");
     expect(() => summarizePassRecording([{ recordCause: 9, cpuFrameMs: 1 }])).toThrow(/TN_PERF_MARKER_MALFORMED/u);
   });

@@ -626,7 +626,7 @@ public:
         uint32_t auxPasses = 0, auxRecorded = 0;
         /** PRD-754: the draws the main pass recorded into its bundle this frame (zero while it holds), why its key
          *  moved (RecordCause), and the wall ms spent recording bundles and encoding the shadow passes directly. */
-        uint32_t mainRecorded = 0;
+        uint32_t mainRecorded = 0, shadowRecorded = 0;
         uint8_t recordCause = 0;
         double recordMs = 0, shadowEncodeMs = 0;
     };
@@ -652,6 +652,14 @@ public:
      * set and reads it back, a cost every frame pays and only a caller of lastGpuMs wants.
      */
     void setGpuTimer(bool on) { passTimer_->enabled = on; }
+    /**
+     * PRD-754, on by default: the shadow passes replay recorded bundles. Off encodes them directly, as before, so a
+     * paired A/B runs from one build and a test compares the two.
+     */
+    void setStablePasses(bool on) {
+        if (on != stablePasses_) dropBundles();
+        stablePasses_ = on;
+    }
     /**
      * The caller's frame id for the next timed render, reported with its sample once the readback
      * lands. The caller owns the id: the engine's own render ids are not one per present.
@@ -1103,6 +1111,17 @@ private:
     // The aux and TRAA velocity passes' draws, recorded once and replayed while their plans hold (PRD-740).
     WGPURenderBundle auxBundle_ = nullptr, velocityBundle_ = nullptr;
     std::vector<uint64_t> auxBundleKey_, velocityBundleKey_;
+    /** Each shadow pass's draws by pass index, recorded once and replayed while its key holds (PRD-754), with the
+     *  shadow counters its recording tallied. */
+    struct ShadowBundle {
+        WGPURenderBundle bundle = nullptr;
+        std::vector<uint64_t> key;
+        uint32_t draws = 0;
+        uint64_t triangles = 0;
+        FrameStats::SkinnedPass skinned;
+    };
+    std::vector<ShadowBundle> shadowBundles_;
+    bool stablePasses_ = true;
     /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
     void dropBundles();
     FrameStats mainBundleStats_;

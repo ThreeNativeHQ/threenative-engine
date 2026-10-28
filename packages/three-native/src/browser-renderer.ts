@@ -203,7 +203,14 @@ export function defineWebRenderer(
         // The last frame's recorded passes (PRD-754): the draws the main pass recorded into its bundle, why its key
         // moved (0 held, 1 draw order, 2 uniform offsets, 3 visible count, 4 other), the aux and velocity draws
         // recorded, and the ms spent recording bundles and encoding the shadow passes directly.
-        passes: { mainRecorded: 0, recordCause: 0, auxRecorded: 0, recordMs: 0, shadowEncodeMs: 0 },
+        passes: {
+          mainRecorded: 0,
+          recordCause: 0,
+          auxRecorded: 0,
+          shadowRecorded: 0,
+          recordMs: 0,
+          shadowEncodeMs: 0,
+        },
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -524,6 +531,7 @@ export function defineWebRenderer(
       passes.auxRecorded = module._tnw_web_frame(38);
       passes.recordMs = module._tnw_web_frame(39);
       passes.shadowEncodeMs = module._tnw_web_frame(40);
+      passes.shadowRecorded = module._tnw_web_frame(41);
       // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
       (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
     }

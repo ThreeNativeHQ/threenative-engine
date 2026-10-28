@@ -548,6 +548,7 @@ export interface IPlayerFrameJson {
   readonly mainRecorded?: number;
   readonly recordCause?: number;
   readonly auxRecorded?: number;
+  readonly shadowRecorded?: number;
   readonly shadowDraws?: number;
   readonly recordMs?: number;
   readonly shadowEncodeMs?: number;
@@ -565,6 +566,7 @@ export interface IPassRecordingSummary {
   readonly rebuilds: { readonly order: number; readonly offset: number; readonly count: number; readonly other: number };
   readonly mainRecordedDraws: number;
   readonly auxRecordedDraws: number;
+  readonly shadowRecordedDraws: number;
   readonly shadowDraws: number;
   readonly recordMs: number;
   readonly shadowEncodeMs: number;
@@ -603,6 +605,7 @@ export function summarizePassRecording(frames: readonly IPlayerFrameJson[]): IPa
     rebuilds,
     mainRecordedDraws: recorded.reduce((sum, frame) => sum + (frame.mainRecorded ?? 0), 0),
     auxRecordedDraws: recorded.reduce((sum, frame) => sum + (frame.auxRecorded ?? 0), 0),
+    shadowRecordedDraws: recorded.reduce((sum, frame) => sum + (frame.shadowRecorded ?? 0), 0),
     shadowDraws: mean((frame) => frame.shadowDraws),
     recordMs: mean((frame) => frame.recordMs),
     shadowEncodeMs: mean((frame) => frame.shadowEncodeMs),
@@ -1683,7 +1686,8 @@ function formatPassRecording(summary: IPassRecordingSummary): string[] {
       `render encode ${stages.renderEncode.toFixed(3)} + other ${stages.other.toFixed(3)} ` +
       `(the three stages cover ${summary.cpuFrameMs > 0 ? ((100 * covered) / summary.cpuFrameMs).toFixed(1) : "0.0"}%)`,
     `  main bundle rebuilds: ${rebuilds.order} order, ${rebuilds.offset} uniform offset, ${rebuilds.count} visible count, ` +
-      `${rebuilds.other} other; ${summary.mainRecordedDraws} main and ${summary.auxRecordedDraws} aux/velocity draws recorded`,
+      `${rebuilds.other} other; ${summary.mainRecordedDraws} main, ${summary.auxRecordedDraws} aux/velocity and ` +
+      `${summary.shadowRecordedDraws} shadow draws recorded`,
     `  recording ${summary.recordMs.toFixed(3)} ms, shadow direct encode ${summary.shadowEncodeMs.toFixed(3)} ms ` +
       `(${summary.shadowDraws.toFixed(1)} shadow draws)`,
   ];

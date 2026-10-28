@@ -768,6 +768,8 @@ int Session::initialize() {
     const uint32_t width = presenter ? presenter->width() : surfaceConfig().width;
     const uint32_t height = presenter ? presenter->height() : surfaceConfig().height;
     renderer->setGpuTimer(gpuTiming);
+    // PRD-754's A/B knob: TN_STABLE_PASSES=0 encodes the passes as before it, for a paired run from one build.
+    if (const char* flag = std::getenv("TN_STABLE_PASSES"); flag && std::strcmp(flag, "0") == 0) renderer->setStablePasses(false);
     renderer->setSize(width, height);
     renderer->setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
 #if !defined(__ANDROID__)
@@ -1129,6 +1131,7 @@ int Session::initialize() {
                     members.emplace_back("recordCause", json::Value::makeNumber(double(frame.recordCause)));
                     members.emplace_back("auxRecorded", json::Value::makeNumber(double(frame.auxRecorded)));
                     members.emplace_back("shadowDraws", json::Value::makeNumber(double(frame.shadowDraws)));
+                    members.emplace_back("shadowRecorded", json::Value::makeNumber(double(frame.shadowRecorded)));
                     members.emplace_back("recordMs", json::Value::makeNumber(frame.recordMs));
                     members.emplace_back("shadowEncodeMs", json::Value::makeNumber(frame.shadowEncodeMs));
                     members.emplace_back("batchGroups", json::Value::makeNumber(double(groups)));

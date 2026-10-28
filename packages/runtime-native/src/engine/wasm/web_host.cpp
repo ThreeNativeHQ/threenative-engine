@@ -740,6 +740,7 @@ extern "C" double tnw_web_frame(int field) {
         case 38: return double(renderer->lastFrame().auxRecorded);
         case 39: return renderer->lastFrame().recordMs;
         case 40: return renderer->lastFrame().shadowEncodeMs;
+        case 41: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
         default: return 0;
     }
 }
