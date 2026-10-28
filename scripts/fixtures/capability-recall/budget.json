@@ -98,7 +98,7 @@
     "request.two-sided-foliage",
     "request.terrain-forest-world"
   ],
-  "rejectHits": 16,
+  "rejectHits": 15,
   "rowCount": 104,
   "rowIds": [
     "brief.endless-runner.1",
