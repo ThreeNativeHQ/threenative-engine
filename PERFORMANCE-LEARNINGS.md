@@ -76,6 +76,8 @@ All levers are engine-layer, each with a spec that fails before the fix. Paired 
 | AutoBatch guard compares in C++, a whole lap a frame | not kept | guard still fills its 0.5 ms budget (0.58-0.65 ms, C++ costs ~70 ns a source in cache misses); staleness 40 → 1-3 frames, mean tie | REJECT (tie) |
 | AutoBatch guard compares in C++, one lap per settle window (3 frames) | this row's commit | laptop: guard 0.60-0.62 → 0.18-0.23 ms in 6/6 runs; mean 5 of 6 valid pairs −0.27 to −0.98 ms; staleness 18-75 → 3 frames | KEEP |
 | The sun's ordinary shadow map is kept while nothing it draws changed, as lamps were (render lane); its signature hashes each word through a finalizer | this commit | laptop Iris Xe, 3 pairs, load 6.5-9.2, 97-99 °C: GPU 27.2/29.2/28.5 → 25.9/26.0/28.4 ms, drawn fps 32.8/30.2/30.6 → 34.2/32.9/30.3, main pass span 1.93/2.04/1.99 → 1.93/1.87/1.81 ms; shooter shadow draws 46 → 0 per frame, direct WebGPU state calls about 250 → 30, uploads 230 → 196 KB; visual judge NEUTRAL | KEEP |
+| Bridge glue per crossing: heap views by identity, word-zeroed scratch, loan lane copy, in-place single set, address on the object | this lane | crossing mean 466 → 340 ns, 4/4 laptop pairs; about 0.04-0.13 ms a frame at 311-1,000 crossings (estimate) | KEEP |
+| A node the engine raycasts nothing for (Group, Bone, light, camera) keeps three's empty `raycast` | this lane | platformer crossings 873-894 → 690-707 a frame (`intersectObject` 309 → 131); spec 7 → 0 | KEEP |
 | `kMaxFramesOnGpu` 2 → 3 | not built | absorbs ~40 ms GPU stalls at +1 frame of latency; stalls come from outside the engine | REJECT |
 
 Rapier export names lie: wasm-bindgen folds identical getters into one export, so `rawintegrationparameters_dt`,
@@ -86,7 +88,7 @@ replay (about 66 calls, 7 µs a step) and the shooter enemies' per-step `telepor
 (5 zero-motion controller moves, about 35 µs a step). Ceiling: the laptop split after the fix is character
 controller 76-188 µs, `world.step` 77-99 µs and JS glue about 150 µs a step, so no physics bucket reaches 0.3 ms a
 frame at one step a frame.
-| Waste counters (6 classes) on the shooter: crossings 457/frame (0.37 ms), transform visits 9,387/frame (0.31 ms), uniform write attempts 1,360/frame, geometry classification 0.02 ms, GPU allocations 0 | this lane | see `### 2026-10-27 — Wasted work, counted by class` below | DIAGNOSTIC |
+| Waste counters (6 classes) on the shooter: crossings 457/frame (0.37 ms, an estimate: count x per-call cost), transform visits 9,387/frame (0.31 ms), uniform write attempts 1,360/frame, geometry classification 0.02 ms, GPU allocations 0 | this lane | see `### 2026-10-27 — Wasted work, counted by class` below | DIAGNOSTIC |
 
 Renderer classes counted on the shooter (render lane, 2026-10-27; a JS probe on every WebGPU call, desktop, and a
 named-Wasm worker profile at load 15-21): 36 passes per frame, 24 of them post targets that core's bloom and local
@@ -123,6 +125,56 @@ no COOP/COEP); that lane is open.
   clipAction exemption) took 825 and 340 crossings; the next candidates are each under 40 per frame.
 - Knob: `__THREENATIVE_BRIDGE_CACHE__ = false` turns the whole cache off for a paired A/B in one code state.
 
+### 2026-10-27 — Bridge glue per crossing: heap views by identity, word-zeroed scratch, loans copied lane by lane — KEEP
+- Where: `packages/three-native/src/browser-backend.ts` `createWasmRuntime` and the value loans, PRD-748.
+- Census first (lane head, shooter worker, NVIDIA, idle, `profile:wasm-page --calls`): 311 crossings per frame. The
+  reads the engines lane named on `327167c20` are gone (`DirectionalLight.intensity` 424, `.color` 212,
+  `matrixAutoUpdate` 181, `parent`/`renderOrder` 90 each: none in the top 30; `isScheduled` 127 → 3.9). So what is
+  left is the cost inside each crossing, not a class of crossings.
+- Sizing (node CPU profile of the real Wasm ABI module, 6 crossing kinds): JS glue 67% of a crossing, Wasm 22%. The
+  top JS self time was `view()`/`wordView()` reading two `.buffer`s per use, `alloc`'s `fill` per scratch slot, the
+  loan's `read`/`write` lists, and a one-item list per `set`.
+- Change: the heap views are made again only when `HEAPU8` is replaced (one identity test); a call's scratch (at most
+  64 bytes) is zeroed with word stores; a loan copies its lanes with no list between; `set` writes its one value in
+  place; an engine object's address is an own property instead of a WeakMap entry.
+- Result: paired A/B on the quiet laptop (load 0.3-1.5, node 20, pinned to one CPU, 4 alternating pairs, 15 rounds of
+  20,000 calls each): `updateWorldMatrix` 682-714 → 543-565 ns, `getWorldPosition` 1,585-1,650 → 1,161-1,198,
+  `__tnVisibleInWorld` 322-342 → 237-246, attribute `version` 222-239 → 134-144, a material `opacity` write 766-788 →
+  564-576; a lane read+write 16-17 → 5-9 ns. Crossing mean 733 → 535 ns (-27%), 4/4 pairs.
+- Ceiling: at 311 (idle) to about 1,000 (play) crossings per frame this saves 0.06-0.2 ms per frame, and the glue now
+  costs about 0.1-0.4 ms per frame (estimates: count x per-call cost). The DevTools traces that read 6.5 ms of glue run
+  with async stack tagging, which inflates JS self time several times; read them as a rank, not a size.
+- Rejected on the same bench: a special-step-free method wrapper (-5%, 35 duplicated lines, under 0.02 ms per frame)
+  and a ref kept per handle slot in `keyOf` (-17% on methods that return `this`, but about 60 such crossings per
+  shooter frame: 5 µs; the entry below says the same). What remains is the crossing count itself.
+- Bench: `packages/three-native/tests/browser-backend-glue-bench.ts <abi module> [rounds]`; for a CPU profile with
+  line numbers, bundle it with esbuild first (tsx's transform puts a file on one line).
+
+### 2026-10-27 — Regression net: the kit contract's engine-cost row — GUARD
+- Where: `packages/playtest/src/kit-contract.ts` (`engine-cost`), `evaluators/engine-cost.ts`, bounds in
+  `create-threenative/template-playtests/contract.json`, PRD-748.
+- One counter surface: `TN_FRAME_BUDGET.counters.engine`, one getter per source (core `createEngineCounterReader`).
+  Read it there before you add a stdout line or a census for a new cost class, and add the class's counter to it.
+- Bounds: each kit's after-values from 2 NVIDIA runs, max(1.5x, value + floor), boot window skipped. A floor that
+  hides a fix's red is too loose: the `childrenReads` floor went 10 → 5 when the AutoBatch poll read 11 against 12
+  on minimal. Adventure needs no such tightening to catch crossings and hierarchy moves, but its picker reads
+  `children` 108 times a frame, so the AutoBatch poll (+40) hides under its 1.5x there; the red shows on minimal.
+- What does not separate: a once-per-run cost inside the boot window (the 5 s projection line). Guard those
+  with a unit spec instead.
+
+### 2026-10-27 — A node with no engine raycast crosses nothing for a ray (three-native back end) — KEEP
+- Where: `packages/three-native/src/browser-backend.ts` `defineTraversal`, PRD-748.
+- Census (platformer, GPU sweep of the engine-cost row): `call Raycaster.intersectObject` 309 a frame from
+  `ScenePicker` `#hitTest`. Each Group and Bone under a pick target crossed to the engine, whose
+  `Object3D::raycast` answers nothing; three's `Object3D.raycast` is empty.
+- Change: the engine raycasts `Mesh`, `Line`, `Sprite` (each a `Mesh` in C++) and `LOD`, and their kinds, found
+  on the catalog chain; any other node gets three's empty `raycast`. Without a catalog every node still asks.
+- Proof: `bridge-reads.spec.ts` "ray tests": 7 crossings for 7 non-mesh nodes before, 0 after; the 8 raycasting
+  kinds still cross once each. Platformer engine-cost row, NVIDIA, one run per arm: crossings per frame 873-894 →
+  690-707 (windows 2-4), `intersectObject` 309 → 131. About 0.06 ms a frame (estimate: 185 x 0.34 µs).
+- Next on the same path, not taken: `#treeFor` reads `morphTargetInfluences` (131 a frame on the platformer) and
+  the position `version` per mesh per ray, about 0.05 ms a frame together.
+
 ### 2026-10-27 — A scratch object's death leaves the hierarchy counter alone (native engine) — KEEP
 - Where: `runtime-native/src/engine/scene/object3d.cpp` `Object3D::~Object3D`, PRD-748.
 - Cause: the destructor moved `hierarchyVersion` on every destruction, and `InstancedMesh::raycast` builds a stack
@@ -153,15 +205,17 @@ no COOP/COEP); that lane is open.
 
 ### 2026-10-27 — Wasted work on the shooter, counted by class — DIAGNOSTIC (2 of 6 classes have a fix in another lane)
 - Where: lane "waste", worktree `.claude/worktrees/pr574-waste`; counters in
-  `packages/runtime-native/src/engine/foundation/waste_counters.h` (`TN_WASTE:`, one line per 300 drawn
-  frames), `TN_FRAME_BUDGET.counters.bridgeCrossings` (core), and two reused ones (`TN_PROJECTION.matrixWorld.visited`,
-  `TN_FRAME_SPANS`); scratch patches for the two sibling-owned classes.
+  `packages/runtime-native/src/engine/foundation/waste_counters.h` (first printed as `TN_WASTE:`, one line per 300 drawn
+  frames; now running totals read in place into `TN_FRAME_BUDGET.counters.engine`, no stdout line),
+  `TN_FRAME_BUDGET.counters.bridgeCrossings` (core), and two reused ones (`TN_PROJECTION.matrixWorld.visited`,
+  `TN_FRAME_SPANS`); scratch patches for the two sibling-owned classes. `shareHits`/`shareMints` first counted inside
+  `identity()`, which `adoptAlias` also calls, so hits exceeded calls (22,796 vs 23,580); they now count in `share()` only.
 - Result (shooter, worker `index.html`, uncapped, desktop at load 31, 900 steady frames):
   contentClassOf 276/frame with 132 `contentVersionKey` recomputes and 0 `classify`; `share` 76/frame all cached
   (0.2 mints); render bundles 0.4 encodes vs 25 replays/frame; GPU buffers/textures 0/frame after warm-up;
-  transform visits 9,387/frame = `sceneUpdate` 0.31 ms; crossings 457/frame ≈ 0.37 ms; TSL uniform syncs 34/frame,
+  transform visits 9,387/frame = `sceneUpdate` 0.31 ms; crossings 457/frame ≈ 0.37 ms (estimate: count x per-call cost); TSL uniform syncs 34/frame,
   1,360 write attempts/frame of which 99.6 % are unchanged (the array `uniformLanes()` allocates is the cost).
-- Cause: the three classes the brief named as leads are 4 µs, 6 µs and (uniform) ~0.1 ms when sized by a counter;
+- Cause: the three classes the brief named as leads are about 4 µs, 6 µs and (uniform) ~0.1 ms, estimates (count x per-call cost), not measurements;
   the two ≥0.3 ms buckets are a bridge cache (bridge's file) and the authored `markStatic` freeze the shooter never
   asks for (a settled-subtree freeze the engine decides is feature-sized, not a lane lever).
 - Insight: **count the class before naming a fix.** "share allocates a std::string per returned handle" is true and

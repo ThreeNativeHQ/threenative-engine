@@ -109,6 +109,7 @@ function sceneRuntime(clock: { ms: number }) {
       if (method === "update")
         for (const props of values.values()) if (props.has("intensity")) props.set("intensity", 7);
       if (method === "test") return true;
+      if (method === "intersectObject") return [];
       return null;
     },
     get(self, property) {
@@ -364,6 +365,48 @@ describe("the bridge census", () => {
     // sample's own scene walk (countMaterials, Box3.setFromObject) inside the census frame.
     host.__THREENATIVE_BRIDGE_CACHE__ = false;
     expect(frames(500, true)).toEqual([]);
+  });
+});
+
+describe("ray tests", () => {
+  it("asks the engine for hits only on objects that can have any, as three's empty Object3D.raycast", () => {
+    // The platformer's picker raycast each Group and Bone of its targets: 309 crossings a frame that
+    // answered nothing (2026-10-27 census). The engine raycasts a Mesh (and its kinds) and a LOD only.
+    const { classes, count } = scene();
+    const caster = new (classes.Raycaster as unknown as new () => object)();
+    const hits: unknown[] = [];
+    const cast = (names: readonly string[]) => {
+      for (const name of names) {
+        const object = new (
+          classes[name] as unknown as new () => {
+            raycast(raycaster: object, intersects: unknown[]): void;
+          }
+        )();
+        object.raycast(caster, hits);
+      }
+    };
+    cast([
+      "Object3D",
+      "Group",
+      "Scene",
+      "Bone",
+      "PerspectiveCamera",
+      "DirectionalLight",
+      "PointLight",
+    ]);
+    expect(count("call Raycaster.intersectObject")).toBe(0);
+    cast([
+      "Mesh",
+      "SkinnedMesh",
+      "InstancedMesh",
+      "BatchedMesh",
+      "Line",
+      "LineSegments",
+      "Sprite",
+      "LOD",
+    ]);
+    expect(count("call Raycaster.intersectObject")).toBe(8);
+    expect(hits).toEqual([]);
   });
 });
 

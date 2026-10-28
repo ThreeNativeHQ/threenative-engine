@@ -270,6 +270,9 @@ export const LANGUAGE_MEMBERS = [
 
 type TraverseCallback = (object: object) => void;
 
+/** The engine classes with their own raycast (`Mesh::raycast`, `Line::raycast`, `LOD::raycast`). */
+const RAYCASTERS = new Set(["Mesh", "Line", "Sprite", "LOD"]);
+
 /**
  * The `traverse` family, written over `children`, as three writes it. A class whose engine binding
  * has no `children` refuses by name instead of visiting only the root.
@@ -281,6 +284,7 @@ function defineTraversal(
   walks: boolean,
   keep?: (object: object) => Record<string, unknown> | undefined,
   visited?: (count: number) => void,
+  raycasts = true,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
@@ -357,17 +361,19 @@ function defineTraversal(
   for (const [name, value] of Object.entries(lookups))
     Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
   // three's Object3D.raycast(raycaster, intersects): push this object's own hits, no recursion. The engine
-  // answers them through Raycaster.intersectObject (the object's native raycast; a Group answers none).
+  // answers them through Raycaster.intersectObject (the object's native raycast). A class the engine
+  // raycasts nothing for (a Group, a Bone, a light) keeps three's empty raycast and crosses nothing.
+  const raycast = function (
+    this: object,
+    raycaster: { intersectObject(object: object, recursive: boolean): unknown[] },
+    intersects: unknown[],
+  ) {
+    intersects.push(...raycaster.intersectObject(this, false));
+  };
   Object.defineProperty(prototype, "raycast", {
     configurable: true,
     writable: true,
-    value(
-      this: object,
-      raycaster: { intersectObject(object: object, recursive: boolean): unknown[] },
-      intersects: unknown[],
-    ) {
-      intersects.push(...raycaster.intersectObject(this, false));
-    },
+    value: raycasts ? raycast : () => undefined,
   });
 }
 
@@ -1284,6 +1290,19 @@ export function defineBrowserClasses(
     "setIndex",
   ]);
 
+  const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
+  // The engine raycasts a Mesh, a Line, a Sprite (each a Mesh in C++) and a LOD, and every kind of
+  // them; any other node answers no hits. Without a catalog the chain is unknown, so every node asks.
+  const raycasts = (name: string): boolean => {
+    if (catalog === undefined) return true;
+    for (
+      let link = entries.get(name);
+      link !== undefined;
+      link = link.extends ? entries.get(link.extends) : undefined
+    )
+      if (RAYCASTERS.has(link.name)) return true;
+    return false;
+  };
   for (const [name, binding] of Object.entries(registry.classes)) {
     const adopts =
       attributeWrite !== undefined &&
@@ -1966,6 +1985,7 @@ export function defineBrowserClasses(
         binding.methods.includes("__walk"),
         binding.getters.includes("__hierarchy") ? hierarchyKept : undefined,
         walked,
+        raycasts(name),
       );
     }
     classes[name] = cls;
@@ -2015,7 +2035,6 @@ export function defineBrowserClasses(
         });
     }
   }
-  const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
   const isFlag = (field: { name: string; type: string; mutable?: boolean }) =>
     /^is[A-Z]/u.test(field.name) &&
     (field.type === "true" || (field.type === "boolean" && field.mutable === false));

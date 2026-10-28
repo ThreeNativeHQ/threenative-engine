@@ -126,7 +126,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 507,
           "buffers": 3,
-          "childrenReads": 14,
+          "childrenReads": 9,
           "contentClassOf": 520,
           "contentVersionKeys": 189,
           "cullRigRebuilds": 1,
@@ -148,7 +148,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 485,
           "buffers": 3,
-          "childrenReads": 12,
+          "childrenReads": 7,
           "contentClassOf": 610,
           "contentVersionKeys": 200,
           "cullRigRebuilds": 1,
@@ -209,7 +209,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 247,
           "buffers": 3,
-          "childrenReads": 13,
+          "childrenReads": 8,
           "contentClassOf": 119,
           "contentVersionKeys": 94,
           "hierarchyMoves": 1,
@@ -228,7 +228,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 244,
           "buffers": 3,
-          "childrenReads": 12,
+          "childrenReads": 7,
           "contentClassOf": 137,
           "contentVersionKeys": 98,
           "hierarchyMoves": 1,
@@ -257,7 +257,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 202,
           "buffers": 3,
-          "childrenReads": 13,
+          "childrenReads": 8,
           "contentClassOf": 113,
           "contentVersionKeys": 82,
           "cullRigRebuilds": 1,
@@ -279,7 +279,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 197,
           "buffers": 3,
-          "childrenReads": 12,
+          "childrenReads": 7,
           "contentClassOf": 112,
           "contentVersionKeys": 81,
           "cullRigRebuilds": 1,
@@ -402,7 +402,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 174,
           "buffers": 3,
-          "childrenReads": 13,
+          "childrenReads": 8,
           "contentClassOf": 258,
           "contentVersionKeys": 92,
           "hierarchyMoves": 1,
@@ -423,7 +423,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 173,
           "buffers": 3,
-          "childrenReads": 12,
+          "childrenReads": 7,
           "contentClassOf": 267,
           "contentVersionKeys": 93,
           "hierarchyMoves": 1,
@@ -475,7 +475,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 188,
           "buffers": 3,
-          "childrenReads": 13,
+          "childrenReads": 8,
           "contentClassOf": 211,
           "contentVersionKeys": 129,
           "hierarchyMoves": 1,
@@ -496,7 +496,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 187,
           "buffers": 3,
-          "childrenReads": 12,
+          "childrenReads": 7,
           "contentClassOf": 255,
           "contentVersionKeys": 147,
           "hierarchyMoves": 1,
@@ -530,7 +530,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 140,
           "buffers": 3,
-          "childrenReads": 13,
+          "childrenReads": 8,
           "contentClassOf": 65,
           "contentVersionKeys": 64,
           "hierarchyMoves": 1,
@@ -549,7 +549,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 140,
           "buffers": 3,
-          "childrenReads": 12,
+          "childrenReads": 7,
           "contentClassOf": 65,
           "contentVersionKeys": 64,
           "hierarchyMoves": 1,
@@ -582,7 +582,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 1734,
           "buffers": 3,
-          "childrenReads": 13,
+          "childrenReads": 8,
           "contentClassOf": 176,
           "contentVersionKeys": 138,
           "hierarchyMoves": 1,
@@ -601,7 +601,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 1693,
           "buffers": 3,
-          "childrenReads": 12,
+          "childrenReads": 7,
           "contentClassOf": 180,
           "contentVersionKeys": 140,
           "hierarchyMoves": 1,
@@ -737,7 +737,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 404,
           "buffers": 2,
-          "childrenReads": 15,
+          "childrenReads": 10,
           "contentClassOf": 398,
           "contentVersionKeys": 189,
           "cullRigRebuilds": 1,
@@ -814,7 +814,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 213,
           "buffers": 3,
-          "childrenReads": 20,
+          "childrenReads": 15,
           "contentClassOf": 118,
           "contentVersionKeys": 85,
           "cullRigRebuilds": 1,
@@ -836,7 +836,7 @@
         "maxPerFrame": {
           "bridgeCrossings": 210,
           "buffers": 3,
-          "childrenReads": 19,
+          "childrenReads": 14,
           "contentClassOf": 123,
           "contentVersionKeys": 87,
           "cullRigRebuilds": 1,
