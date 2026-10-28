@@ -60,7 +60,7 @@ assert.ok(render.indexOf("traa_->seedHistory(encoder, sceneColor_)") < render.in
   "reset must copy previous beauty before the scene overwrites it");
 const seed = source.slice(source.indexOf("void TraaPass::seedHistory("), source.indexOf("void TraaPass::resolve("));
 assert.match(seed, /if \(!needsSeed\(\)\) return;/);
-assert.match(seed, /src\.texture = beauty; dst\.texture = historyColor_;/);
+assert.match(seed, /src\.texture = beauty; dst\.texture = historyColor_\[historySlot_\];/);
 assert.match(seed, /wgpuCommandEncoderCopyTextureToTexture/);
 assert.doesNotMatch(source.slice(source.indexOf("void TraaPass::resolve(")), /copy\(beauty, historyColor_/);
 console.log("TRAA reset copies previous beauty before the scene render");
@@ -91,7 +91,7 @@ function blend(current, old, neighbours) {
   values.clipped = Math.min(values.high, Math.max(values.low, old));
   for (const name of ["compressedCurrent", "compressedHistory", "historyWeight"]) values[name] = expression(name, { ...values, luminance: 1 });
   values.currentWeight /= values.compressedCurrent + 1;
-  const result = source.match(/return Resolved\((\(current \* currentWeight \+ clipped \* historyWeight\) \/ max\(currentWeight \+ historyWeight, 0\.00001\)),/);
+  const result = source.match(/let resolved = (\(current \* currentWeight \+ clipped \* historyWeight\) \/ max\(currentWeight \+ historyWeight, 0\.00001\));/);
   assert.ok(result, "production flicker reduction changed");
   return evaluate(result[1], values);
 }

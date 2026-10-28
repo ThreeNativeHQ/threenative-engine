@@ -20,12 +20,13 @@ TraaPass::Matrix inverse(const TraaPass::Matrix& a) {
 WGPUTextureView view(WGPUTexture texture) { return wgpuTextureCreateView(texture, nullptr); }
 }
 
-void TraaPass::enableDebugDump() {
+void TraaPass::enableDebugDump(uint64_t first, uint64_t last) {
     debugDump_ = std::make_unique<DebugDump>();
+    debugDump_->first = first; debugDump_->last = last;
 }
 
 void TraaPass::stageDebugTexture(WGPUCommandEncoder encoder, WGPUTexture texture, const char* name) {
-    if (!debugDump_ || history_.frame() < 18 || history_.frame() > 23) return;
+    if (!debugDump_ || history_.frame() < debugDump_->first || history_.frame() > debugDump_->last) return;
     if (wgpuTextureGetFormat(texture) != WGPUTextureFormat_RGBA16Float)
         throw std::runtime_error("TN_TRAA_DUMP_FORMAT_INVALID");
     const auto width = wgpuTextureGetWidth(texture), height = wgpuTextureGetHeight(texture);
@@ -133,7 +134,7 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
 }
 const rgbToNeighborhood = mat3x3<f32>(vec3<f32>(1,2,-1), vec3<f32>(2,0,2), vec3<f32>(1,-2,-1));
 const neighborhoodToRgb = mat3x3<f32>(vec3<f32>(.25), vec3<f32>(.25,0,-.25), vec3<f32>(-.25,.25,-.25));
-struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: vec2<f32> }
+struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: vec2<f32>, @location(2) history: vec4<f32> }
 // UE 5.8.3's five-tap Catmull-Rom history fetch (TextureSampling.ush:120-157, TemporalAA.usf:1868-1877): a bilinear fetch
 // blurs the history at every fractional offset, so a fast pan softens it until the raw input wins.
 fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
@@ -370,7 +371,9 @@ fn catmullRomHistory(uv: vec2<f32>, size: vec2<f32>) -> vec4<f32> {
     let luminance = vec3(0.2126, 0.7152, 0.0722);
     let historyWeight = (1 - currentWeight) / (dot(compressedHistory.rgb, luminance) + 1);
     currentWeight /= dot(compressedCurrent.rgb, luminance) + 1;
-    return Resolved((current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001), vec2(select(0.f, 1.f, dynamic || (valid && oldDynamic)), overlay));
+    let resolved = (current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001);
+    // The same resolved colour becomes the next frame's history, written beside it rather than copied after the pass.
+    return Resolved(resolved, vec2(select(0.f, 1.f, dynamic || (valid && oldDynamic)), overlay), resolved);
 }
 )WGSL";
     static constexpr auto stripped = wgslStrip<wgslStripLength(source)>(source);
@@ -429,9 +432,11 @@ TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
     setupShaderModuleWGSL(&moduleDesc, &wgsl, traaResolveWgsl());
     auto module = wgpuDeviceCreateShaderModule(device_, &moduleDesc);
     WGPUColorTargetState color{}; color.format = WGPUTextureFormat_RGBA16Float; color.writeMask = WGPUColorWriteMask_All;
-    WGPUColorTargetState colors[2] = {color, color}; colors[1].format = WGPUTextureFormat_RG8Unorm;
+    // Resolved colour, the motion mask, and the next frame's history beside the resolved colour: the pass writes the
+    // history it will read, so neither it nor the mask is copied (PRD-755).
+    WGPUColorTargetState colors[3] = {color, color, color}; colors[1].format = WGPUTextureFormat_RG8Unorm;
     WGPUFragmentState fragment{}; fragment.module = module; WGPU_SET_ENTRY_POINT(fragment, "fs");
-    fragment.targetCount = 2; fragment.targets = colors;
+    fragment.targetCount = 3; fragment.targets = colors;
     WGPURenderPipelineDescriptor pipeline{};
     pipeline.vertex.module = module; WGPU_SET_ENTRY_POINT(pipeline.vertex, "vs");
     pipeline.fragment = &fragment; pipeline.primitive.topology = WGPUPrimitiveTopology_TriangleList;
@@ -465,11 +470,17 @@ TraaPass::~TraaPass() {
 }
 void TraaPass::releaseTargets() {
     fillGroups_.clear(); resolveGroups_.clear();  // they hold the views released here
-    for (auto v : {historyView_, historyDepthView_, resolveView_, velocityView_, dynamicView_, historyDynamicView_}) if (v) wgpuTextureViewRelease(v);
-    for (auto t : {historyColor_, historyDepth_, resolve_, velocity_, dynamic_, historyDynamic_}) if (t) wgpuTextureRelease(t);
-    historyView_ = historyDepthView_ = resolveView_ = velocityView_ = nullptr;
-    historyColor_ = historyDepth_ = resolve_ = velocity_ = dynamic_ = historyDynamic_ = nullptr;
-    dynamicView_ = historyDynamicView_ = nullptr;
+    for (auto v : {historyView_[0], historyView_[1], historyDepthView_, resolveView_, velocityView_, dynamicView_[0],
+                   dynamicView_[1]}) if (v) wgpuTextureViewRelease(v);
+    for (auto t : {historyColor_[0], historyColor_[1], historyDepth_, resolve_, velocity_, dynamic_[0], dynamic_[1]})
+        if (t) wgpuTextureRelease(t);
+    for (auto& v : historyView_) v = nullptr;
+    for (auto& v : dynamicView_) v = nullptr;
+    for (auto& t : historyColor_) t = nullptr;
+    for (auto& t : dynamic_) t = nullptr;
+    historyDepthView_ = resolveView_ = velocityView_ = nullptr;
+    historyDepth_ = resolve_ = velocity_ = nullptr;
+    historySlot_ = 0;
 }
 void TraaPass::resize(uint32_t width, uint32_t height) {
     resize(width, height, width, height);
@@ -501,9 +512,10 @@ void TraaPass::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uin
                      WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
         return wgpuDeviceCreateTexture(device_, &desc);
     };
-    dynamic_ = texture(WGPUTextureFormat_RG8Unorm, true); dynamicView_ = view(dynamic_);
-    historyDynamic_ = texture(WGPUTextureFormat_RG8Unorm, true); historyDynamicView_ = view(historyDynamic_);
-    historyColor_ = texture(WGPUTextureFormat_RGBA16Float, true); historyView_ = view(historyColor_);
+    dynamic_[0] = texture(WGPUTextureFormat_RG8Unorm, true); dynamicView_[0] = view(dynamic_[0]);
+    dynamic_[1] = texture(WGPUTextureFormat_RG8Unorm, true); dynamicView_[1] = view(dynamic_[1]);
+    historyColor_[0] = texture(WGPUTextureFormat_RGBA16Float, true); historyView_[0] = view(historyColor_[0]);
+    historyColor_[1] = texture(WGPUTextureFormat_RGBA16Float, true); historyView_[1] = view(historyColor_[1]);
     resolve_ = texture(WGPUTextureFormat_RGBA16Float, true); resolveView_ = view(resolve_);
     velocity_ = texture(WGPUTextureFormat_RGBA16Float, false); velocityView_ = view(velocity_);
     historyDepth_ = texture(WGPUTextureFormat_Depth32Float, false); historyDepthView_ = view(historyDepth_);
@@ -589,31 +601,36 @@ void TraaPass::seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty) {
     if (width_ != outputWidth_ || height_ != outputHeight_) return;
     // TRAANode.updateBefore copies the beauty target before the resolve quad updates its scene pass.
     WGPUImageCopyTexture_Compat src{}, dst{};
-    src.texture = beauty; dst.texture = historyColor_;
+    src.texture = beauty; dst.texture = historyColor_[historySlot_];
     src.aspect = dst.aspect = WGPUTextureAspect_All;
     const WGPUExtent3D extent{width_, height_, 1};
     wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
 }
 void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
                         WGPUTexture depth, WGPUTextureView depthView, WGPUTexture output, WGPUTextureView outputView) {
+    copiesLastFrame_ = {};
     const WGPUTexture resolved = output ? output : resolve_;
-    auto copy = [&](WGPUTexture from, WGPUTexture to, bool isDepth) {
+    // The resolve reads the history slot and writes the other, then the two swap: the frame it resolved is the next
+    // frame's history with no copy.
+    const uint32_t next = historySlot_ ^ 1;
+    auto copy = [&](WGPUTexture from, WGPUTexture to, bool isDepth, uint32_t& count) {
         WGPUImageCopyTexture_Compat src{}, dst{};
         src.texture = from; dst.texture = to;
         src.aspect = dst.aspect = isDepth ? WGPUTextureAspect_DepthOnly : WGPUTextureAspect_All;
         const WGPUExtent3D extent{isDepth ? width_ : outputWidth_, isDepth ? height_ : outputHeight_, 1};
         wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
+        ++count;
     };
     // On the initial render/resize there is no previous depth allocation to sample.
     if (history_.frame() == 0 || history_.generation(0) > depthGeneration_) {
-        copy(depth, historyDepth_, true);
+        copy(depth, historyDepth_, true, copiesLastFrame_.depth);
         previousWorld_ = world_; previousInverseProjection_ = inverseProjection_;
     }
     depthGeneration_ = history_.generation(0);
     if (debugDump_) {
         stageDebugTexture(encoder, beauty, "beauty");
         stageDebugTexture(encoder, velocity_, "velocity");
-        stageDebugTexture(encoder, historyColor_, "history");
+        stageDebugTexture(encoder, historyColor_[historySlot_], "history");
     }
     std::array<float, 20> data{};
     const auto rows = historyDepthRows(projection_, view_, previousWorld_, previousInverseProjection_);
@@ -637,24 +654,29 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     for (uint32_t i = 0; i < 9; ++i) entries[i].binding = i;
     entries[0].buffer = uniforms_; entries[0].size = sizeof data;
     entries[1].textureView = beautyView; entries[2].textureView = depthView;
-    entries[3].textureView = velocityView_; entries[4].textureView = historyView_;
+    entries[3].textureView = velocityView_; entries[4].textureView = historyView_[historySlot_];
     entries[5].textureView = historyDepthView_; entries[6].sampler = sampler_;
     entries[7].buffer = stats_; entries[7].size = 8;
-    entries[8].textureView = historyDynamicView_;
+    entries[8].textureView = dynamicView_[historySlot_];
     auto group = resolveGroups_.get(device_, layout_, entries);
     WGPURenderPassColorAttachment color{}; color.view = outputView ? outputView : resolveView_;
     color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
-    WGPURenderPassColorAttachment colors[2] = {color, color}; colors[1].view = dynamicView_;
-    WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 2; desc.colorAttachments = colors;
+    WGPURenderPassColorAttachment colors[3] = {color, color, color};
+    colors[1].view = dynamicView_[next]; colors[2].view = historyView_[next];
+    WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 3; desc.colorAttachments = colors;
     auto pass = beginTimedRenderPass(encoder, &desc, 2, {"traaResolve", outputWidth_, outputHeight_});
     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
     if (debugDump_) stageDebugTexture(encoder, resolved, "resolved");
-    copy(resolved, historyColor_, false); copy(depth, historyDepth_, true);
-    copy(dynamic_, historyDynamic_, false);
+    copy(depth, historyDepth_, true, copiesLastFrame_.depth);
+    // Fixture only: the copied history path, which the swap replaced.
+    if (copyHistoryForTest_) {
+        copy(historyColor_[next], historyColor_[historySlot_], false, copiesLastFrame_.color);
+        copy(dynamic_[next], dynamic_[historySlot_], false, copiesLastFrame_.mask);
+    } else historySlot_ = next;
     history_.endFrame();
 }
 } // namespace tn::engine
