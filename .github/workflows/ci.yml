@@ -1392,6 +1392,10 @@ jobs:
         with:
           ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
           fetch-depth: 0
+          # A PR scans only its own commits, so it fetches commits and trees and then just the blobs
+          # its range reads (below): every blob of the 3.9 GB history outlasted this job's 10 minutes
+          # (PR #574, run 40745026751). Pushes and merge groups scan the full history and keep them.
+          filter: ${{ github.event_name == 'pull_request' && 'blob:none' || '' }}
       - name: Verify the PR commit range is present
         if: github.event_name == 'pull_request'
         env:
@@ -1401,6 +1405,20 @@ jobs:
           set -euo pipefail
           range="$BASE_SHA..$HEAD_SHA"
           test "$(git rev-list --count "$range")" -gt 0
+          # The checkout fetched no blobs. Fetch every blob the range's commits read in one request,
+          # and fail when one is still missing: gitleaks exits 0 after scanning 0 commits when it
+          # cannot read one.
+          blobs="$RUNNER_TEMP/gitleaks-range-blobs"
+          git rev-list --no-merges "$range" | git diff-tree --stdin -r --no-commit-id --raw \
+            | awk '$1 != ":160000" && $2 != "160000" { print $3; print $4 }' | grep -v '^0*$' | sort -u > "$blobs"
+          if [ -s "$blobs" ]; then
+            git -c fetch.negotiationAlgorithm=noop fetch --quiet --no-tags --no-write-fetch-head \
+              --recurse-submodules=no --filter=blob:none --stdin origin < "$blobs"
+          fi
+          if GIT_NO_LAZY_FETCH=1 git cat-file --batch-check < "$blobs" | grep ' missing$'; then
+            echo "::error::the PR range's blobs are missing, so gitleaks would scan nothing"
+            exit 1
+          fi
           echo "TN_GITLEAKS_RANGE=$range" >> "$GITHUB_ENV"
       - name: Scan PR commits for leaked secrets
         if: github.event_name == 'pull_request'
