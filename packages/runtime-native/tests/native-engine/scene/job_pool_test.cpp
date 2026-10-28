@@ -19,10 +19,18 @@ using namespace tn::engine;
 
 namespace {
 
+// A web build without `-pthread` (CI runs this suite as Wasm under node too) starts no threads: the pool
+// is a loop on the caller, so it reports no workers and no pool runs.
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+constexpr bool kThreaded = false;
+#else
+constexpr bool kThreaded = true;
+#endif
+
 void forEachOnce() {
     for (unsigned workers : {0u, 1u, 3u}) {
         JobPool pool(workers);
-        CHECK(pool.workers() == workers);
+        CHECK(pool.workers() == (kThreaded ? workers : 0u));
         std::vector<std::atomic<uint32_t>> runs(4096);
         for (int round = 0; round < 500; ++round) {
             const uint32_t count = uint32_t(round * 7 % 4096 + 1);
@@ -45,16 +53,19 @@ void forEachOnce() {
             }
         }
     }
-    // Two callers at once: the second runs its items inline, and each item still runs once.
-    JobPool pool(3);
-    std::atomic<uint32_t> first{0}, second{0};
-    std::thread other([&] {
-        for (int round = 0; round < 200; ++round) pool.forEach(256, [&](uint32_t) { second.fetch_add(1); });
-    });
-    for (int round = 0; round < 200; ++round) pool.forEach(256, [&](uint32_t) { first.fetch_add(1); });
-    other.join();
-    CHECK(first.load() == 200u * 256u);
-    CHECK(second.load() == 200u * 256u);
+    // Two callers at once: the second runs its items inline, and each item still runs once. A build
+    // without threads has no second caller to start.
+    if constexpr (kThreaded) {
+        JobPool pool(3);
+        std::atomic<uint32_t> first{0}, second{0};
+        std::thread other([&] {
+            for (int round = 0; round < 200; ++round) pool.forEach(256, [&](uint32_t) { second.fetch_add(1); });
+        });
+        for (int round = 0; round < 200; ++round) pool.forEach(256, [&](uint32_t) { first.fetch_add(1); });
+        other.join();
+        CHECK(first.load() == 200u * 256u);
+        CHECK(second.load() == 200u * 256u);
+    }
     std::printf("job pool: every item ran once at 0, 1 and 3 workers, 500 rounds; two callers at once\n");
 }
 
@@ -163,7 +174,7 @@ void matrixWalkJobs() {
                 "%zu compose counts differ; pruned frames: %zu hidden-subtree matrices moved, %zu of %zu hidden "
                 "cameras stale\n", kNodes, (unsigned long long)poolRuns, differing, visitsDiffer, composesDiffer, hiddenWalked, camerasStale,
                 camerasChecked);
-    CHECK(poolRuns > 0);
+    CHECK(kThreaded ? poolRuns > 0 : poolRuns == 0);
     CHECK(hiddenWalked == 0);
     CHECK(camerasChecked > 0);
     CHECK(camerasStale == 0);
@@ -202,7 +213,7 @@ void matrixWalkThreshold() {
     std::printf("matrix walk threshold: 8000 nodes, 200 shown -> %llu pool runs in 5 frames; all shown -> %llu\n",
                 (unsigned long long)hiddenRuns, (unsigned long long)shownRuns);
     CHECK(hiddenRuns == 0);
-    CHECK(shownRuns == 1);
+    CHECK(shownRuns == (kThreaded ? 1u : 0u));
 }
 
 // The pool starts on the first walk that shares out, so a realm that walks no large scene (the page that only
