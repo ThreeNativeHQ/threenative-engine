@@ -516,8 +516,8 @@ export function workerSafeSmaa(node: Parameters<typeof smaa>[0]): ReturnType<typ
   } finally {
     Reflect.deleteProperty(globalThis, "Image");
   }
-  const lookups = effect as unknown as { _areaTexture?: Texture; _searchTexture?: Texture };
-  for (const lookup of [lookups._areaTexture, lookups._searchTexture]) {
+  for (const key of ["_areaTexture", "_searchTexture"]) {
+    const lookup = Reflect.get(effect, key) as Texture | undefined;
     const src = (lookup?.image as { src?: unknown } | undefined)?.src;
     if (lookup === undefined || typeof src !== "string" || src === "") continue;
     void fetch(src)
