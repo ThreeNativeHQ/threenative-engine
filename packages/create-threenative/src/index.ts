@@ -30,6 +30,7 @@ const PACKAGE_SOURCE_FLAGS = {
  * than in a chain of equality checks that a fourth unscoped package would have to be added to in
  * two places. */
 const UNSCOPED_PACKAGE_FLAG_ALIASES: Readonly<Record<string, string>> = {
+  "animation-mcp": "threenative-animation-mcp",
   "blender-mcp": "threenative-blender-mcp",
   cli: "create-threenative",
   "engine-mcp": "threenative-engine-mcp",

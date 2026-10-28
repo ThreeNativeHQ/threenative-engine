@@ -7,11 +7,14 @@ vocabulary.
 **What exists now that this file was written before.** The read-only half of the MCP layer this
 document argues for has shipped: [`threenative-engine-mcp`](../../packages/engine-mcp/) serves
 `engine_search_capabilities` and `engine_capability_detail` over the committed capability
-manifest, and installing `@threenative/core` writes every project a `.mcp.json` wiring four
+manifest, and installing `@threenative/core` writes every project a `.mcp.json` wiring five
 servers — `threenative-assets` (the externally pinned `threenative-asset-mcp`, launched through
-a shim inside core), `threenative-sculpt`, `threenative-engine`, and `threenative-blender`
+a shim inside core), `threenative-sculpt`, `threenative-engine`, `threenative-blender`
 ([`threenative-blender-mcp`](../../packages/blender-mcp/), which drives an installed Blender
-headlessly so a downloaded `.fbx` becomes a GLB, and ships no Blender). What left is Studio: it
+headlessly so a downloaded `.fbx` becomes a GLB, and ships no Blender), and `threenative-animation`
+([`threenative-animation-mcp`](../../packages/animation-mcp/), which inspects a rig, attaches props
+for good, edits and verifies clips, and opens a calibrator page — every operation is a build-time
+edit of one GLB, so no game depends on it at runtime). What left is Studio: it
 moved to a separate private repository (recorded in [`docs/README.md`](../README.md); PRDs
 [084](../PRDs/done/PRD-084-threenative-studio.md),
 [085](../PRDs/done/PRD-085-studio-wiring.md) and
