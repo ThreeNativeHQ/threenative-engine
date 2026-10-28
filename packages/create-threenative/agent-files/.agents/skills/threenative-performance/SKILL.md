@@ -5,7 +5,7 @@ description: Measure ThreeNative frame budgets and report platform evidence with
 
 # ThreeNative performance evidence
 
-Pool objects; load static GLBs via `ctx.assets.model()`; never claim Android/iOS from desktop. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`,
+Pool objects; load static GLBs via `ctx.assets.model()`; Unexecuted platforms stay unverified. `TN_FRAME_BUDGET` reports `fps`, `hostGap`, `update`, `render`, `overlay`,
 `residual` and per-pass draws and triangles. `defineGame({ frameBudget: false })` silences
 output, never measurement.
 
@@ -21,7 +21,7 @@ An uncaught per-frame walk or poll? Fix it, then `file-engine-bug`.
 
 The engine prepares transforms, batches, culls, scales resolution and cooks assets;
 read `node_modules/create-threenative/agent-docs/references/performance-basics.md` before hand-rolling any.
-Withdraw thermally-confounded Tiers 1–3 comparisons; report Tier 4. Bounded proof:
+Withdraw thermally-confounded Tiers 1–3 comparisons; always report Tier 4. Proof:
 `{"performance":{"minFps":60,"maxPhaseMsP95":{"render":12},"maxPassDrawCalls":{"shadow":400}}}`; frame time defaults to 16.7 ms p95 (looser needs `maxFrameMsReason`);
 defined in `node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance`; pass bounds fail closed without a
 per-pass split.

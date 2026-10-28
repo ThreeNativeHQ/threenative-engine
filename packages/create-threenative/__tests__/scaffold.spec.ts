@@ -297,7 +297,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // the sailing and snow core-look migrations on top of the on-demand asset loader.
   // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
   // to its clip; platformer binds R to restart.
-  "action-rpg": "7b08668bd3d5c981ebc6492cdfc9ea6416f2ad1f2856d66636ab9b1c87606bc6",
+  "action-rpg": "45f4bdf304132e883bba41e6356cbaae5bdebe281977aea4fed8602e04c250bc",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -311,7 +311,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "6c6c88eb1b1d78c5442c51327ffc69ca58eb3cf37021e84bcf518ddb898605fe",
+  collectathon: "6c5ecde581f757e71f104eceea8b9b913d3e3af005844770594ebbc8abf0c3c9",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -320,28 +320,28 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "0e0bbb5df3f02c98395d98f826cbd57031ff4888070c1957b6aac282b292b8db",
+  adventure: "531d151aad96cee94cd339bda730249e513e7aa2a694e392e5fb32cc6fb6e784",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "7712f28cfe3da1e9d526c4b21eabc35521952bdf7402ef140d75985117a87ac0",
-  minimal: "51a6dcb9d4f85cb9aa5f5d122a3bbcb3d82a1435439c73357dc35fc1bf6c925f",
-  platformer: "1cfcc191a13da0b6c6c7cead9546bdba8dcae0a69e7114ef6081cfb75b8731c8",
-  puzzle: "6f442b8bb7ad83c38e0e23095e572308b00041e04aa97cf09c8ccbcb71d7b13c",
-  racing: "faa19a2555791d2a69c00be73c9231a0cf07ad07b45b588a401a9c6116df4e8f",
-  rain: "e417d2a7839bd6057f3b55febe79148fd89798509261452b85991ee9ac1d12c1",
-  rts: "8371a8a241fc1d277d54d31dc31571cc1fd11fe2c7ade5d0791893f2aef479c0",
-  runner: "08b4a4be093583ce62ff958ef5018385d730a2e7e2bcc5fe207cd75ce9b2aa00",
+  kart: "83f40d125ecb41bec9d728b24b6297ed4968f2d971a4227c3f868a87cd187ff4",
+  minimal: "d3e95304fe2682c5468fc4a34c10b2196ae87553d0a0b244938fbdf273b60f27",
+  platformer: "260719048013d646e54440c1a983dffbbd27a8e22fea9b2e3855161d84b713b8",
+  puzzle: "990151a039d6c195371bd77d1688d6b698a9ba6db94e00a390970c9069d1d654",
+  racing: "cf5c62416933e0e5eba89ea7695068397fd697c48229d22ee583afd6c7b68814",
+  rain: "4fc60281a573e1be1cb2c5d68471f82bdf18e25127ccbc3ffb6a6dc08490597a",
+  rts: "20c0802c24b4443ec78310dfb445dd019ddad5ba67e3f74be90c435ac7673ae7",
+  runner: "dc9d532edec2256fe95d1998f39df56c5c8684fb494f0c533be87ee03ed9732a",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "0642a9f591632eb9e61b185f31ff1303024ca97a86f93b05d011fd01bc6325c2",
+  sailing: "87a9a4b2406cb1261af7810e3c66543aa6726d55897c545a6750ae6b8f9a2445",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "837e22224ff355b43d8f0f2f51c6ba0127478939f6668ac3a625a867abb2ac84",
-  snow: "9ac935bb9675932070e1fa5ad83af1f9831eb62bb490789ea4d881f862df2972",
+  shooter: "eac44077fe6da6493fdd5076900cf923947c5aa0500cf0b6ef3ee86b170039d9",
+  snow: "45c8c71a3c2d5ced4a99f4c481eeb5e8cf5ab01b478709a0218e5fca8dc81c00",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "146d20bed4a975bd53752f86762887f578ad3d917208f23b5e4a5af8f3bdb5e9",
-  "tower-defense": "ccd47f7e725fc25226520729e759e3a627118b1cad65c4bc76543fe564290c95",
+  starter: "ae17c038eb511e0bdcf02f6b5f2f461bf0c0a36c366a7b4eee638bcb44bd8726",
+  "tower-defense": "c0410155b988eb8667af2747de7cff603f7c2646290abcb5dc58aa2998313d68",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
