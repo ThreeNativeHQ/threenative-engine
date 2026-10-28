@@ -137,6 +137,8 @@ export interface IBrowserEngine {
 const SETTLED_PASS = 64;
 
 const REF = Symbol("tn.engineRef");
+/** An engine object's address, kept on it after the first ask: every lane read and write needs it. */
+const ADDRESS = Symbol("tn.engineAddress");
 
 type TypedArray =
   | Float32Array
@@ -433,7 +435,6 @@ export function defineBrowserClasses(
   // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
   // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
   // Writes still go through the engine's setters, which it reacts to.
-  const addresses = new WeakMap<object, number>();
   // Each object's kept `rotation` Euler (or `quaternion`) -> the object, whose other form a write syncs.
   const rotations = new WeakMap<object, object>();
   const quaternions = new WeakMap<object, object>();
@@ -615,12 +616,12 @@ export function defineBrowserClasses(
       };
     return undefined;
   };
+  // An own property, not a WeakMap: `position.x` and every other lane access reads it (PRD-748).
   const addressOf = (self: object): number => {
-    let address = addresses.get(self);
-    if (address === undefined) {
-      address = runtime.get(refOf(self), "__address") as number;
-      addresses.set(self, address);
-    }
+    const known = (self as { [ADDRESS]?: number })[ADDRESS];
+    if (known !== undefined) return known;
+    const address = runtime.get(refOf(self), "__address") as number;
+    Object.defineProperty(self, ADDRESS, { value: address });
     return address;
   };
   // three's math values are JS (browser-math.ts): `new Vector3()` holds its own lanes. The engine's
@@ -659,6 +660,8 @@ export function defineBrowserClasses(
     args?(values: number[], make: (name: string, values: number[]) => IEngineRef): EngineValue[];
     /** A method argument becomes an engine object in place: whole-object lanes and output targets. */
     promote?: boolean;
+    /** Copies the lanes from one value to another with no list between: a loan's two copies. */
+    copy?(target: IValueLanes, source: IValueLanes): void;
   }
   interface IValueClass {
     name: string;
@@ -671,6 +674,9 @@ export function defineBrowserClasses(
   const defaultPlan = (lanes: readonly string[]): IValuePlan => ({
     lanes,
     drop: lanes,
+    copy: (target, source) => {
+      for (const lane of lanes) target[lane] = source[lane];
+    },
     read: (value) => lanes.map((lane) => value[lane] as number),
     write: (value, values) => {
       lanes.forEach((lane, index) => {
@@ -840,7 +846,8 @@ export function defineBrowserClasses(
     }
     info.top++;
     const lanes = scratch as IValueLanes;
-    info.plan.write(lanes, info.plan.read(value));
+    if (info.plan.copy !== undefined) info.plan.copy(lanes, value);
+    else info.plan.write(lanes, info.plan.read(value));
     loans.push([value, lanes, info]);
     return refOf(scratch);
   };
@@ -849,7 +856,8 @@ export function defineBrowserClasses(
     let result = returned;
     for (let i = loans.length - 1; i >= mark; i--) {
       const [value, scratch, info] = loans[i] as (typeof loans)[number];
-      info.plan.write(value, info.plan.read(scratch));
+      if (info.plan.copy !== undefined) info.plan.copy(value, scratch);
+      else info.plan.write(value, info.plan.read(scratch));
       info.top--;
       if (result === scratch) result = value;
     }
@@ -2446,10 +2454,23 @@ function countCall(kind: string, self: IEngineRef, name: string): void {
 }
 
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
-  let dataView = new DataView(abi.HEAPU8.buffer);
+  // The heap's views, made again only when the memory grows: Emscripten replaces HEAPU8 then, so one
+  // identity test per use stands in for reading two `.buffer`s, which every crossing paid (PRD-748).
+  let heap = abi.HEAPU8;
+  let dataView = new DataView(heap.buffer);
+  let words = new Uint32Array(heap.buffer);
+  const grown = () => {
+    heap = abi.HEAPU8;
+    dataView = new DataView(heap.buffer);
+    words = new Uint32Array(heap.buffer);
+  };
   const view = () => {
-    if (dataView.buffer !== abi.HEAPU8.buffer) dataView = new DataView(abi.HEAPU8.buffer);
+    if (abi.HEAPU8 !== heap) grown();
     return dataView;
+  };
+  const wordView = () => {
+    if (abi.HEAPU8 !== heap) grown();
+    return words;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
   // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
@@ -2467,10 +2488,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       arenaTop += aligned;
     } else {
       // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
-      pointer = abi._malloc(size) >>> 0;
+      pointer = abi._malloc(aligned) >>> 0;
       allocations.push(pointer);
     }
-    abi.HEAPU8.fill(0, pointer, pointer + size);
+    // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
+    // `wordView` first: a `_malloc` above may have grown the memory.
+    const w = wordView();
+    if (aligned > 64) heap.fill(0, pointer, pointer + aligned);
+    else for (let at = pointer >>> 2, end = (pointer + aligned) >>> 2; at < end; at++) w[at] = 0;
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
@@ -2511,11 +2536,6 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   };
   // A handle is three words in memory: type and context as two halves of the first, then index and
   // generation. A ref made here keeps those words, so writing one back is three stores, no parse.
-  let words = new Uint32Array(abi.HEAPU8.buffer);
-  const wordView = () => {
-    if (words.buffer !== abi.HEAPU8.buffer) words = new Uint32Array(abi.HEAPU8.buffer);
-    return words;
-  };
   const keyOf = (pointer: number): IEngineRef => {
     const v = view();
     const type = v.getUint16(pointer, true);
@@ -2811,7 +2831,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     set: (self, path, value) =>
       scoped(() => {
         countCall("set", self, path);
-        const pointer = values([value]);
+        // One value written in place: no one-item list per write.
+        const pointer = alloc(VALUE);
+        writeValue(pointer, value);
         const diag = diagnostic();
         check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
       }),

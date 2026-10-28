@@ -285,3 +285,48 @@ describe("scope cleanup on the Wasm bridge", () => {
     expect(module.frees).toHaveLength(0);
   });
 });
+
+describe("per-crossing glue on the Wasm bridge", () => {
+  /** A module whose invoke answers the handle in `answer` (type|context, index, generation). */
+  function answering(answer: number[]) {
+    const { module, grow } = growableModule();
+    const scratch: number[][] = [];
+    (module as unknown as Record<string, unknown>)._tn_invoke = (
+      _handle: number,
+      _name: number,
+      _args: number,
+      _count: number,
+      out: number,
+      diag: number,
+    ) => {
+      const words = new Uint32Array(module.HEAPU8.buffer);
+      // What the engine finds in its output and diagnostic slots before it writes them.
+      scratch.push([
+        ...words.subarray(out >>> 2, (out + 56) >>> 2),
+        words[diag >>> 2] ?? -1,
+        words[(diag >>> 2) + 1] ?? -1,
+      ]);
+      const v = new DataView(module.HEAPU8.buffer);
+      v.setUint32(out, 4, true); // KIND.handle
+      v.setUint32(out + 16, answer[0] ?? 0, true);
+      v.setUint32(out + 20, answer[1] ?? 0, true);
+      v.setUint32(out + 24, answer[2] ?? 0, true);
+      // Junk the next call must not see.
+      v.setUint32(out + 40, 0xdeadbeef, true);
+      v.setUint32(diag, 0xdeadbeef, true);
+      return 0;
+    };
+    return { module, grow, scratch, runtime: createWasmRuntime(module) };
+  }
+  const self: IEngineRef = { key: "5:0:1:1", type: 5 };
+
+  it("hands every call zeroed output and diagnostic slots, before and after the memory grows", () => {
+    const { runtime, grow, scratch } = answering([5, 7, 9]);
+    runtime.invoke(self, "updateMatrixWorld", []);
+    runtime.invoke(self, "updateMatrixWorld", []);
+    grow();
+    runtime.invoke(self, "updateMatrixWorld", []);
+    expect(scratch).toHaveLength(3);
+    for (const seen of scratch) expect(seen.every((word) => word === 0)).toBe(true);
+  });
+});
