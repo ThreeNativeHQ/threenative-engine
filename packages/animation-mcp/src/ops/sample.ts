@@ -16,6 +16,8 @@ export interface ClipSamples {
   readonly duration: number;
   readonly fps: number;
   readonly frames: readonly FrameSample[];
+  /** Bone → its parent bone, for the bones whose parent is also tracked. */
+  readonly parentsOf: Readonly<Record<string, string>>;
 }
 
 export interface Channel {
@@ -157,6 +159,7 @@ export function samplesOf(document: Document, clip: string, fps = 30): ClipSampl
   );
   const bones = [...tracked];
 
+  const bonesParents: Record<string, string> = {};
   const frameCount = Math.max(1, Math.round(duration * fps));
   const frames: FrameSample[] = [];
   for (let index = 0; index <= frameCount; index += 1) {
@@ -164,7 +167,7 @@ export function samplesOf(document: Document, clip: string, fps = 30): ClipSampl
     const positions: Record<string, [number, number, number]> = {};
     const rotations: Record<string, [number, number, number, number]> = {};
     const parents: Record<string, [number, number, number, number]> = {};
-    const visit = (node: Node, parent: Matrix4): void => {
+    const visit = (node: Node, parent: Matrix4, parentName?: string): void => {
       const world = parent.clone().multiply(trsAt(node, channels, time).matrix);
       const name = node.getName();
       if (tracked.has(name)) {
@@ -174,12 +177,13 @@ export function samplesOf(document: Document, clip: string, fps = 30): ClipSampl
         positions[name] = [position.x, position.y, position.z];
         rotations[name] = [rotation.x, rotation.y, rotation.z, rotation.w];
         parents[name] = [parentRotation.x, parentRotation.y, parentRotation.z, parentRotation.w];
+        if (parentName !== undefined && tracked.has(parentName)) bonesParents[name] = parentName;
       }
-      for (const child of node.listChildren()) visit(child, world);
+      for (const child of node.listChildren()) visit(child, world, name);
     };
     for (const root of roots) visit(root, new Matrix4());
     frames.push({ parents, positions, rotations, time });
   }
 
-  return { bones, duration, fps, frames };
+  return { bones, duration, fps, frames, parentsOf: bonesParents };
 }

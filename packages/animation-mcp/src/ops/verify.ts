@@ -67,14 +67,18 @@ const distance = (a: readonly number[], b: readonly number[]): number =>
 const horizontal = (a: readonly number[], b: readonly number[]): number =>
   Math.hypot((a[0] ?? 0) - (b[0] ?? 0), (a[2] ?? 0) - (b[2] ?? 0));
 
+/** The angle between two orientations. Both are normalised first: authored quaternions are not
+ * always unit length, and an unnormalised one makes `acos` read a 5° drift as 150°. */
 function angleBetween(a: readonly number[], b: readonly number[]): number {
-  const dot = Math.abs(
-    (a[0] ?? 0) * (b[0] ?? 0) +
+  const length = (value: readonly number[]): number =>
+    Math.hypot(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1) || 1;
+  const dot =
+    ((a[0] ?? 0) * (b[0] ?? 0) +
       (a[1] ?? 0) * (b[1] ?? 0) +
       (a[2] ?? 0) * (b[2] ?? 0) +
-      (a[3] ?? 1) * (b[3] ?? 1),
-  );
-  return (2 * Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+      (a[3] ?? 1) * (b[3] ?? 1)) /
+    (length(a) * length(b));
+  return (2 * Math.acos(Math.min(1, Math.abs(dot))) * 180) / Math.PI;
 }
 
 interface Span {
@@ -256,53 +260,38 @@ function jitter(samples: ClipSamples, bones: readonly string[], limit: number): 
 }
 
 /** A skeleton whose bones change length is a bad retarget or a bad bind, and no amount of eye on a
- * contact sheet catches it. `rest` is the first frame, which is the pose the file was authored from.
- * ponytail: the two nearest bones stand in for the parent chain, which is the pair a rig edit
- * actually changes; a full parent-child walk is the upgrade when a false positive shows up. */
+ * contact sheet catches it. Measured against each bone's actual parent, which is the pair a rig edit
+ * changes; nearest neighbours read a weapon bone moving past a hand as a 29% stretch on the root. */
 function boneStretch(samples: ClipSamples, limit: number): Defect[] {
   const rest = samples.frames[0];
   if (rest === undefined) return [];
   const defects: Defect[] = [];
-  for (const bone of samples.bones) {
-    const own = rest.positions[bone];
-    if (own === undefined) continue;
-    const lengths = new Map<string, number>();
-    for (const other of samples.bones) {
-      const position = rest.positions[other];
-      if (position === undefined || other === bone) continue;
-      lengths.set(other, distance(own, position));
-    }
-    const offsets = [...lengths.entries()]
-      .sort((left, right) => left[1] - right[1])
-      .filter(([, length]) => length > 1e-6)
-      .slice(0, 2)
-      .map(([other]) => other);
-    for (const other of offsets) {
-      const base = lengths.get(other) ?? 0;
-      const changes = samples.frames
-        .map((frame, index) => ({
-          index,
-          ratio: Math.abs(
-            distance(frame.positions[bone] ?? [0, 0, 0], frame.positions[other] ?? [0, 0, 0]) /
-              base -
-              1,
-          ),
-        }))
-        .filter(({ ratio }) => ratio > limit);
-      const worst = changes.reduce((high, { ratio }) => Math.max(high, ratio), 0);
-      for (const span of spans(changes.map(({ index }) => index))) {
-        defects.push({
-          bone,
-          detail: `distance to '${other}' changes by ${(worst * 100).toFixed(1)}%`,
-          fromFrame: span.from,
-          fromTime: samples.frames[span.from]?.time ?? 0,
-          kind: "bone-stretch",
-          limit,
-          measured: worst,
-          toFrame: span.to,
-          toTime: samples.frames[span.to]?.time ?? 0,
-        });
-      }
+  for (const [bone, parent] of Object.entries(samples.parentsOf)) {
+    const base = distance(rest.positions[bone] ?? [0, 0, 0], rest.positions[parent] ?? [0, 0, 0]);
+    if (base <= 1e-6) continue;
+    const changes = samples.frames
+      .map((frame, index) => ({
+        index,
+        ratio: Math.abs(
+          distance(frame.positions[bone] ?? [0, 0, 0], frame.positions[parent] ?? [0, 0, 0]) / base -
+            1,
+        ),
+      }))
+      .filter(({ ratio }) => ratio > limit);
+    if (changes.length === 0) continue;
+    const worst = changes.reduce((high, { ratio }) => Math.max(high, ratio), 0);
+    for (const span of spans(changes.map(({ index }) => index))) {
+      defects.push({
+        bone,
+        detail: `distance to its parent '${parent}' changes by ${(worst * 100).toFixed(1)}%`,
+        fromFrame: span.from,
+        fromTime: samples.frames[span.from]?.time ?? 0,
+        kind: "bone-stretch",
+        limit,
+        measured: worst,
+        toFrame: span.to,
+        toTime: samples.frames[span.to]?.time ?? 0,
+      });
     }
   }
   return defects;

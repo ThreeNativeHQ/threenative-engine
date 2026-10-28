@@ -178,7 +178,9 @@ describe("animation_verify", () => {
 
     const stretch = report.defects.filter((defect) => defect.kind === "bone-stretch");
     expect(stretch.length).toBeGreaterThan(0);
-    expect(stretch.some((defect) => defect.detail.includes("mixamorigLeftFoot"))).toBe(true);
+    // The moving foot is the bone whose distance to its own parent changes.
+    expect(stretch[0]?.bone).toBe("mixamorigLeftFoot");
+    expect(stretch[0]?.detail).toMatch(/parent 'mixamorigLeftUpLeg'/u);
   });
 
   it("reads centimetres as metres when the model says so", async () => {
