@@ -1164,6 +1164,15 @@ private:
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
+    /** PRD-754: each main draw's uniform blocks keep one place in frameUniforms_ (keyed by DrawItem::key and its
+     *  occurrence in the frame), so a reorder or a culled neighbour moves no offset and the bundle key holds. A slot
+     *  unseen for kSlotFrames frames is freed for the next block of its size. */
+    struct UniformSlot { uint64_t offset, bytes, seen; };
+    std::unordered_map<uint64_t, UniformSlot> uniformSlots_;
+    std::unordered_map<uint64_t, std::vector<uint64_t>> freeSlots_;  // freed offsets by block bytes
+    std::unordered_map<uint64_t, uint32_t> slotUses_;  // this frame's occurrences per key
+    uint64_t slotArena_ = 0, slotFrame_ = 0;
+    static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
     // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index

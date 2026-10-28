@@ -3112,7 +3112,39 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         lineTopology(target, item);
         return target;
     };
-    frameUniforms_.clear();
+    // The main draws' blocks: a stable slot per draw (PRD-754), or appended in plan order with the knob off.
+    if (stablePasses_ && !compilation) {
+        frameUniforms_.resize(slotArena_);
+        ++slotFrame_;
+        slotUses_.clear();
+    } else {
+        frameUniforms_.clear();
+    }
+    const auto uniformBlocks = [&](uint64_t key, uint64_t bytes) -> uint64_t {
+        if (!stablePasses_ || key == 0) {
+            const uint64_t at = frameUniforms_.size();
+            frameUniforms_.resize(at + bytes, 0);
+            return at;
+        }
+        const uint64_t slotKey = key * 0x9e3779b97f4a7c15ull + slotUses_[key]++;
+        auto slot = uniformSlots_.find(slotKey);
+        if (slot != uniformSlots_.end() && slot->second.bytes != bytes) {
+            freeSlots_[slot->second.bytes].push_back(slot->second.offset);
+            uniformSlots_.erase(slot);
+            slot = uniformSlots_.end();
+        }
+        if (slot == uniformSlots_.end()) {
+            auto& free = freeSlots_[bytes];
+            uint64_t at = slotArena_;
+            if (!free.empty()) { at = free.back(); free.pop_back(); }
+            else slotArena_ += bytes;
+            slot = uniformSlots_.emplace(slotKey, UniformSlot{at, bytes, 0}).first;
+            if (frameUniforms_.size() < slotArena_) frameUniforms_.resize(slotArena_, 0);
+        }
+        slot->second.seen = slotFrame_;
+        std::memset(frameUniforms_.data() + slot->second.offset, 0, bytes);
+        return slot->second.offset;
+    };
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
         if (!item.mainPass) continue;
@@ -3155,9 +3187,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
             if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; }
         }
-        const uint64_t v = frameUniforms_.size();
+        const uint64_t v = uniformBlocks(item.key, aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize));
         const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
-        frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
         const auto* vs = program.vertexSlots;
         const auto* fs = program.fragmentSlots;
         put(frameUniforms_, v, vs[kModelMatrix], item.matrixWorld);
@@ -3277,6 +3308,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
     }
+
+    if (stablePasses_ && !compilation)
+        for (auto slot = uniformSlots_.begin(); slot != uniformSlots_.end();) {
+            if (slotFrame_ - slot->second.seen <= kSlotFrames) { ++slot; continue; }
+            freeSlots_[slot->second.bytes].push_back(slot->second.offset);
+            slot = uniformSlots_.erase(slot);
+        }
 
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
