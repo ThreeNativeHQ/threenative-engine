@@ -5437,4 +5437,5 @@ Recorded passes survive a camera turn. Judge: recording plus shadow encode CPU p
 | L1-03 | a destroy evicts rows only when it was bindable | gpu_resources.cpp | native shooter recorded rows 2 → 0 (test) | web unchanged | keep | f1c4403b8 |
 | L1-04 | transparent draws record their own tail bundle; rows reuse last positions | renderer.cpp/.h | native shooter 0.142/0.143 → 0.115/0.116 ms (load 3-6) | Midway ratio unchanged (68%) | keep | 7f78a57f4 |
 | L1-05 | Phase 3 at 7f78a57f4 | — | Midway 0.180 → 0.066 ms mean (63%); shooter web turn 0.516 → 0.211 ms (59%); gate 80% | judge NEUTRAL; frame p50 not shown | gate deferred | 7f78a57f4 |
+| L1-06 | first-seen rows record alone in a delta bundle per pass; an unchanged key skips the rows | renderer.cpp/.h | Midway 0.137 → 0.031 ms mean (77%, load 5-21); shooter web turn 0.317 → 0.144 ms (55%, load 11-16); gate 80% | first-seen re-sorts 48 → 8 a flight; frame p50 47.7 → 47.6 ms, p95 59.0 → 55.7; GPU p50 ratio 1.00; judge NEUTRAL | keep, gate deferred | a9caf82d3 |
 

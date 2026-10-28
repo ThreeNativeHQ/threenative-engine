@@ -1,6 +1,6 @@
 # PRD-754 — A camera turn re-records no pass
 
-**Status:** DEFERRED (2026-10-27): the mechanism ships and the judge passes, but the Phase 3 gate fails (CPU falls 63% on Midway native and 59% on the shooter web turn, the gate asks 80%). Revisit condition under `## Blocked on`.
+**Status:** DEFERRED (2026-10-28): Phase 2 and the judge are done; the Phase 3 CPU gate fails (recording CPU falls 77% on Midway native and 55% on the shooter web turn, the gate asks 80%). Revisit condition under `## Blocked on`.
 **Priority:** P1 — in a game the camera moves every frame. Today a camera turn changes the opaque draw order, which changes the bundle key, so the main pass records its render bundle again. The shadow, normal and velocity passes encode directly every frame. The same C++ renderer runs on desktop and in the web Wasm engine, where each encode call is also a JS-to-WebGPU call.
 **Complexity:** 7 (HIGH) — renderer, render database and projection batch stores (+3), a new draw order and persistent uniform slots (+2), indirect draws and pixel parity across four passes (+2); risk override: none
 **Owner:** João
@@ -57,7 +57,7 @@ On an opaque scene, a camera turn and a culling change record no bundle again, i
 
 ### Phase 2: Stable recorded passes
 
-**Status:** IN PROGRESS (2026-10-27): 1 of 3 boxes proven; the GPU-time and Chrome CPU proofs are open (see each box).
+**Status:** DONE (2026-10-28) at a9caf82d3.
 
 - [x] The shadow, normal and velocity passes replay bundles, pixel-identical to direct encode. proof: red-green `native_engine_batched_vs_unbatched`; `profile:wasm-page --gpu-calls` ratio below 1.0
   result: `native_engine_render_database_stable_passes_match_direct` (7790 covered pixels, 0 differ; the shadow pass
@@ -65,36 +65,40 @@ On an opaque scene, a camera turn and a culling change record no bundle again, i
   records 0 aux draws stable against 100 direct), red before bcf00660c and green after; `batched_vs_unbatched` stays
   green (0 differ). `profile:wasm-page --gpu-calls` on the shooter (sandbox at 7f78a57f4, NVIDIA Turing, load 44):
   about 46 WebGPU calls a frame knob on against about 184 knob off, ratio 0.25
-- [ ] Opaque draws sort state first (pipeline, then material, then geometry), and each record keeps a persistent uniform slot. A camera turn on an opaque scene rebuilds nothing. proof: red-green `native_engine_batched_vs_unbatched`; the Phase 1 rebuild counter at zero over a scripted turn; `--gpu-time` ratio at most 1.0 (state-first order can cost overdraw: the depth prepass must hold it)
-  result so far: order rebuilds over the scripted turn fall from about 630 to 0 on Midway native and from 80-100 to 0
-  on the shooter web; the rebuilds left are first-seen draws (count cause: about 50 per Midway flight, 7-22 per web
-  turn). Open: `profile:wasm-page` has no `--gpu-time`, and the Midway GPU p50 pairs on a shared GPU disagree (knob on
-  8.74/12.30/13.65 ms, off 8.74/8.09/12.42 ms), so a GPU ratio at most 1.0 is not shown
-- [ ] Batch stores keep their capacity, and draws use `drawIndexedIndirect` (`firstInstance` 0). A culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
-  result so far: `native_engine_renderer_cull_keeps_main_bundle` (opaque and transparent arms: 0 differ, draws and
-  triangles equal to direct encode, the opaque arm records 0) and `native_engine_camera_cull` pass. Chrome: the recording
-  CPU of the turn falls 59% (Phase 3), but `--cpu-work` reads only the page main thread (1% busy) while the game runs in
-  a worker, and it read 1.26x; a still window is inconclusive (pairs disagree in sign). Open until a worker CPU ratio
-  below 1.0 is shown
+- [x] Opaque draws sort state first (pipeline, then material, then geometry), and each record keeps a persistent uniform slot. A camera turn on an opaque scene rebuilds nothing. proof: red-green `native_engine_batched_vs_unbatched`; the Phase 1 rebuild counter at zero over a scripted turn; `--gpu-time` ratio at most 1.0 (state-first order can cost overdraw: the depth prepass must hold it)
+  result: on an opaque scene, `camera_cull_keeps_bundle`'s scripted lap records 0 draws stable against 57 direct
+  (red before bcf00660c). On the games at a9caf82d3, order rebuilds fall from about 600 a Midway flight and 70-74 a web
+  turn to 0; a draw seen for the first time records alone in a delta bundle (`cull_keeps_main_bundle` first-seen arm:
+  1 row recorded, 0 differ), so 7-8 re-sorts a flight and 1 a web turn remain. GPU: `profile:wasm-page` has no
+  `--gpu-time`, so the Midway pairs' GPU timer stands in (see Decisions): p50 10.83 ms off against 10.82 ms on, ratio
+  1.00 (mean ratio 1.015, inside the 8.8-11.9 ms run spread). Judge NEUTRAL (Phase 3)
+- [x] Batch stores keep their capacity, and draws use `drawIndexedIndirect` (`firstInstance` 0). A culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
+  result: `native_engine_renderer_cull_keeps_main_bundle` (opaque arm: a cull and the draw's return record 0, 0 differ,
+  draws and triangles equal to direct encode) and `native_engine_camera_cull` pass. Chrome, the shooter in its worker
+  at a9caf82d3 (3 pairs, load 11-16, NVIDIA Turing): recording CPU of the turn 0.299/0.334/0.318 ms knob off against
+  0.143/0.159/0.131 ms on, ratio 0.45; `--gpu-calls` ratio 0.25. `--cpu-work` reads the page main thread only, so the
+  worker meter stands in (see Decisions)
 
 ### Phase 3: Prove it on games
 
-**Status:** DEFERRED (2026-10-27): the CPU fall is below the gate; the judge passes.
+**Status:** DEFERRED (2026-10-28): the CPU fall is below the gate; frame p50/p95 and the judge pass.
 
 - [ ] Midway native and the shooter on web: CPU per frame falls by at least the Phase 1 ceiling minus 20%, with frame p50 and p95 no worse. Paired A/B from one code state with a knob, three runs per arm, host load recorded. proof: `scripts/midway-bench/flight.sh` and `profile:wasm-page` pairs
-  result (gate FAILS, Deferred): recording plus shadow encode CPU per frame at 7f78a57f4, knob off then on, 3 pairs.
-  Midway native flight (load 16-39): 0.164/0.165/0.212 against 0.044/0.061/0.094 ms, a 63% fall (pairs 73/63/56%).
-  Shooter web camera turn (Wasm meter, load 16-31): 0.721/0.387/0.440 against 0.243/0.163/0.228 ms, a 59% fall (pairs
-  66/58/48%). The gate asks 80%. Frame p50/p95 "no worse" is not shown: Midway frame p50 49.8/48.6/63.6 off against
-  49.0/59.8/83.6 ms on follows host load, and `profile:wasm-page` under Xvfb read the knob-on page 1.10x and 1.19x
-  slower in frame p50 (Xvfb throttles presentation; 2 runs, load 27-44)
+  result (gate FAILS, Deferred): recording plus shadow encode CPU per frame at a9caf82d3, knob off then on, 3 pairs.
+  Midway native flight (load 5-21): 0.132/0.126/0.152 against 0.030/0.033/0.031 ms, a 77% fall (pairs 77/74/80%);
+  frame p50 47.7 against 47.6 ms and p95 59.0 against 55.7 ms, no worse. Shooter web camera turn (Wasm meter, load
+  11-16): 0.299/0.334/0.318 against 0.143/0.159/0.131 ms, a 55% fall (pairs 52/52/59%). The gate asks 80%. What is left
+  knob on: Midway 0.017 ms of shadow pass setup and about 0.007 ms of transparent re-sorts, which the knob-off arm pays
+  too, and 0.007 ms of row checks; on the web, a pass that records about 119 draws on a third of the turn frames
+  (aux or velocity; native holds it) and the row checks in Wasm. Earlier builds: 63% and 59% at 7f78a57f4
 - [x] A fresh visual judge returns NEUTRAL or IMPROVEMENT on BEFORE/AFTER frames of Midway and the shooter (`--browser-recipe webgpu`, `adapter.info` checked, two runs per arm). proof: the verdict in this box and images on PR #574
-  result: NEUTRAL on both games, no criterion fails (a fresh read-only Opus subagent; criteria written before the
-  AFTER frames). Shooter web at 7f78a57f4 (headed, `--browser-recipe webgpu`, `adapter.info` nvidia turing), poses
-  spawn, turned, turned-far, after; Midway native (Dawn/Vulkan, same GPU), poses takeoff, cockpit, reargun; two runs
-  per arm. Mean |diff| BEFORE-AFTER 0.24-0.61 (shooter) and 0.00-0.01 (Midway) against BEFORE-BEFORE 0.23-0.57 and
-  0.00-0.01. Images: `~/.cache/tmp-tn/prd754/judge/sheets/`; posting them on the follow-up PR waits for its branch
-  (the #574 lead names it after the merge)
+  result: NEUTRAL on both games, no criterion fails, judged twice by fresh read-only Opus subagents with criteria
+  written before the AFTER frames: at 7f78a57f4 and again at a9caf82d3 (the delta bundle draws first-seen rows last;
+  the judge checked newly visible objects for z-fighting). Shooter web (headed, `--browser-recipe webgpu`,
+  `adapter.info` nvidia turing), poses spawn, turned, turned-far, after; Midway native (Dawn/Vulkan, same GPU), poses
+  takeoff, cockpit, reargun; two runs per arm. Mean |diff| BEFORE-AFTER at a9caf82d3: 0.20-0.63 (shooter) and 0.00-0.01
+  (Midway) against BEFORE-BEFORE 0.24-0.66 and 0.00-0.63. Images: `~/.cache/tmp-tn/prd754/judge/sheets/`; posting them
+  on the follow-up PR waits for its branch (the #574 lead names it after the merge)
 
 ## Done when
 
@@ -121,12 +125,19 @@ Every box is ticked, `PERFORMANCE-LEARNINGS.md` has the lever entry (keep or rej
 - 2026-10-27 (lane): the knob stays on by default (`TN_STABLE_PASSES=0`, `?tnStablePasses=0` turn it off). The CPU of a
   turn falls on both games and the judge is NEUTRAL; the open risk is the web frame p50 read 1.10x and 1.19x under
   Xvfb on a loaded host, for the owner to weigh with the quiet-host pairs.
+- 2026-10-28 (lane): two proof tools named here do not exist or cannot see the game. `profile:wasm-page` has no
+  `--gpu-time`, so the Midway A/B pairs' GPU timer (`TN_PLAYER_GPU_TIMING`, the same runs) gives the GPU ratio, and
+  `--cpu-work` reads the page main thread (the PRD-752 worker KPI), so the worker's own recording meter over the
+  scripted turn gives the Chrome CPU ratio, as Phase 1 sized it.
+- 2026-10-28 (lane): rows seen for the first time follow the sorted rows in a delta bundle per pass; a full sort waits
+  until they outgrow a quarter of the rows. Opaque order is free under the state-first rule already (same depth test);
+  UE 5.8.3 caches a mesh draw command when its primitive is added and does not rebuild the others.
 - 2026-10-27 (lane): the Midway judge frames are native desktop (the arm the Midway CPU claim covers), not
   `--browser-recipe webgpu`; the shooter frames are the browser arm.
 
 ## Blocked on
 
-- Revisit when (a) the render database stops alternating the shooter's transparent batches between batched and
-  unbatched frames, so the transparent tail and the first-seen rows stop re-recording (PRD-753 batch keys from a change
-  set), and (b) a quiet host (load below 5) or a night exclusive GPU slot is free for frame p50/p95 pairs. Then rerun the
-  Phase 3 pairs; the remaining CPU knob on is rows bookkeeping and the tail bundle, not order rebuilds.
+- The Phase 3 CPU gate (80%) is Deferred at 77% (Midway native) and 55% (shooter web turn). Revisit when (a) the web
+  pass that still records about 119 draws on a third of the turn frames is found (aux or velocity; it holds on native),
+  and (b) shadow pass setup (0.017 ms a Midway frame, both arms) or the translucent re-sort has its own lever (UE 5.8.3
+  re-sorts translucency every frame too). Then rerun the Phase 3 pairs with `ab-midway.sh` and the turn probe.

@@ -97,6 +97,11 @@ no COOP/COEP); that lane is open.
 - Result (3 pairs, knob off then on): Midway native 0.164/0.165/0.212 → 0.044/0.061/0.094 ms (63%), order rebuilds
   about 630 → 0; shooter web turn 0.721/0.387/0.440 → 0.243/0.163/0.228 ms (59%), order rebuilds 80-100 → 0.
   `--gpu-calls` 184 → 46 WebGPU calls a frame. Judge NEUTRAL. The PRD gate asks an 80% fall, so it is Deferred.
+- 2026-10-28, head `a9caf82d3`: a draw seen for the first time records alone in a delta bundle per pass, after the
+  sorted rows, and an unchanged per-draw key skips the row checks. Midway 0.137 → 0.031 ms (77%), shooter web turn
+  0.317 → 0.144 ms (55%), frame p50/p95 no worse, judge NEUTRAL again. Midway's remainder is mostly cost both arms
+  pay (shadow pass setup 0.017 ms, transparent re-sorts); the web remainder is a pass that still records about 119
+  draws on a third of the turn frames.
 - Rejected inside the lever: keeping transparent draws as rows. Their depth order moves every turn, and the row
   bookkeeping cost what the recording saved (native shooter 0.151 against 0.153 ms). They now record their own
   bundle keyed as direct encode keys them (native shooter 0.115 against 0.142 ms).

@@ -291,13 +291,15 @@ Six hazards block a render thread: non-atomic `nextObjectId`/`hierarchyRevision`
 - [ ] Mixers and independent transform subtrees run as jobs, bit-equal to one thread, events dispatched after the join, hazard 1 fixed. proof: `native_engine_skinned_crowd_cpu` and `native_engine_static_transform` with 1 and N workers, under ThreadSanitizer
 
 #### Phase v3.2: Recorded passes survive camera motion
-**Status:** DEFERRED (2026-10-27): PRD-754 shipped the mechanism (knob on by default) with a NEUTRAL judge; recording CPU fell 63% on Midway native and 59% on the shooter web turn against an 80% gate. Revisit condition in PRD-754.
+**Status:** DEFERRED (2026-10-28): PRD-754 shipped the mechanism (knob on by default) with a NEUTRAL judge; recording CPU fell 77% on Midway native and 55% on the shooter web turn against an 80% gate. Revisit condition in PRD-754.
 **Owned by [PRD-754](../Unreal/performance/PRD-754-a-camera-turn-re-records-no-pass.md)** (lane `lane/perf-stable-passes`, 2026-10-27). The boxes below stay as the summary; PRD-754 carries the proof.
 Today the bundle key (`renderer.cpp:2702-2722`) moves with depth order (`sortDraws`), plan-order uniform offsets and visible-count batch stores (`render_database.cpp:893`); shadow, normal and velocity passes encode directly (`renderer.cpp:2693,2784,2813`).
 - [x] Rebuilds by cause and direct encodes by pass are counted, and shadow, normal and velocity passes replay bundles pixel-identically. proof: red-green `native_engine_batched_vs_unbatched`; `profile:wasm-page --gpu-calls` ratio below 1.0
   result: PRD-754 Phase 1 and Phase 2 box 1 (`stable_passes_match_direct`, `camera_cull_keeps_bundle`: 0 differ; `--gpu-calls` ratio 0.25)
-- [ ] State-first opaque order and a persistent uniform slot per record: a camera turn on an opaque scene rebuilds nothing, and the judge passes. proof: red-green `native_engine_batched_vs_unbatched`; a judge subagent; `--gpu-time` ratio at most 1.0
-- [ ] Capacity-stable stores and `drawIndexedIndirect` (`firstInstance` 0): a culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
+- [x] State-first opaque order and a persistent uniform slot per record: a camera turn on an opaque scene rebuilds nothing, and the judge passes. proof: red-green `native_engine_batched_vs_unbatched`; a judge subagent; `--gpu-time` ratio at most 1.0
+  result: PRD-754 Phase 2 box 1 (`camera_cull_keeps_bundle` 0 against 57; judge NEUTRAL twice; GPU p50 ratio 1.00 from the Midway pairs)
+- [x] Capacity-stable stores and `drawIndexedIndirect` (`firstInstance` 0): a culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
+  result: PRD-754 Phase 2 box 2 (`cull_keeps_main_bundle` 0 differ; Chrome worker recording CPU ratio 0.45 over 3 pairs)
 
 #### Phase v3.3: An opt-in render thread
 **Status:** NOT STARTED
