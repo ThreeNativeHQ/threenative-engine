@@ -1145,7 +1145,8 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
           const physical = ctx.physics.directSpaceState.intersectRay({
             from: { x: actor.position.x, y: 300, z: actor.position.z },
             to: { x: actor.position.x + 1, y: -100, z: actor.position.z + 1 },
-            collisionMask: 4,
+            // The kit's ground keeps the default layer, like the player's mask above.
+            collisionMask: stage ? 1 : 4,
           });
           if (!visual || !physical || (stage && physical.body.id !== stage.ground.body.id))
             throw new Error(

@@ -1635,6 +1635,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       throw new Error("TerrainTiles surface is required and must be game-owned.");
     this.#validate = options.validate ?? terrainValidationRequested();
     this.#mergeTiles = options.mergeTiles ?? !terrainMergeOptedOut();
+    // Streamed ground batches itself into blocks; `AutoBatch` merging those again hid the live
+    // terrain from every ray walk of this subtree and re-merged on each stream step.
+    this.userData.batch = "off";
     this.#sampleHeight = options.sampleHeight;
     if (typeof options.sampleHeight !== "function")
       throw new Error("TerrainTiles sampleHeight is required.");
