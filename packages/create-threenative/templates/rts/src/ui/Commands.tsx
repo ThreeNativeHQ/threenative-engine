@@ -1,6 +1,6 @@
-import { useUiIntent, useUiState } from "@threenative/ui";
+import { useUiIntent } from "@threenative/ui";
 import { type BuildingType, type EntityType, TYPES } from "../sim/types.js";
-import type { GameState } from "../state.js";
+import { useUiStateShown } from "./Hud.js";
 
 /** Every structure the rules table knows how to place, in the table's own order. */
 const STRUCTURES = (Object.keys(TYPES) as EntityType[]).filter(
@@ -16,7 +16,7 @@ const STRUCTURES = (Object.keys(TYPES) as EntityType[]).filter(
  * because `canAfford` is the same arithmetic the simulation charges them with.
  */
 export function Commands() {
-  const state = useUiState<GameState>();
+  const state = useUiStateShown((s) => [s.primaryType, s.mode, s.ore, s.gas, s.selection]);
   const send = useUiIntent();
   if (state === undefined) return null;
   const card = state.primaryType === "" ? undefined : TYPES[state.primaryType as EntityType];

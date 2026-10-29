@@ -212,6 +212,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // default. Measured from the committed branch head.
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
+// Recomputed 2026-10-28: only rts moves, its health bars keep a pixel size above the model and its HUD panels
+// re-render only on the values they show; measured by this test.
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
 // Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
 // trees gain the `threenative-animation` server; no other scaffold byte changed.
@@ -334,7 +336,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "e611a8ecaa139fcaaea7eece78abd456ecfb11965c594f0e3557f8f486f401fd",
   racing: "1e527e5e5afa86cdaadc995b9a177625c693c5970da9ed086d28535cd41f3b99",
   rain: "217f2ed3e3d81701525891d1aa70b396479c7c3641e0727b4d7e14bec23b4d05",
-  rts: "be827d5f3d3c47ea34acd19b54b26390df97b68047c572b9d79084466d770521",
+  rts: "516a41cafca798c4a5e87a0f04b18b102376fcc3e2dd374446758c460d56668a",
   runner: "2c7e9d4d30ce061c1f2f3d8324577c1b46e2302fbfce087ef39a375c3f4729d0",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "80a1c2a736e7d681a76b15a5c8cc03ea386a1558f52ec6b25afb2d94b3093775",
