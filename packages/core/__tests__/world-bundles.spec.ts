@@ -1461,7 +1461,9 @@ describe("the main pass's draw bundles", () => {
     cells.update(renderer, playerCamera([0, 1]));
     await flushed(cells, renderer, playerCamera([0, 1]));
     const raw = { _tnPmremSwaps: 0 };
-    const swapping: IRendererLike = Object.assign(Object.create(renderer) as IRendererLike, { raw });
+    const swapping: IRendererLike = Object.assign(Object.create(renderer) as IRendererLike, {
+      raw,
+    });
     cells.update(swapping, playerCamera([0, 1]));
     const groups = mainBundleGroups(cells);
     expect(groups.length).toBeGreaterThan(0);
