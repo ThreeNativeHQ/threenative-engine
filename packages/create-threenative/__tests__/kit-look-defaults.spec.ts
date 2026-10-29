@@ -58,6 +58,7 @@ const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
     "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
   shooter:
     "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
+  rts: "owner 2026-10-28 wants the AstraCraft reference look (ACES, fixed exposure 1.02, no bloom or local exposure), PRD-765",
 };
 
 /** Runtime names imported from `@threenative/core` in one file. */
@@ -137,7 +138,14 @@ describe("PRD-723 phase 1 kit look defaults", () => {
         if (LOOK_OVERRIDES[kit] !== undefined) {
           const previous = LEGACY_PRESETS[kit]?.[tier];
           if (previous === undefined) throw new Error(`Missing legacy preset ${kit}/${tier}`);
-          const expected = { ...LEGACY_DEFAULTS, ...previous, samples: previous.samples ?? 4 };
+          // Owner, 2026-10-28: sharp in motion beats temporal AA and camera motion blur, on every tier.
+          const expected = {
+            ...LEGACY_DEFAULTS,
+            ...previous,
+            samples: previous.samples ?? 4,
+            motionBlurEnabled: false,
+            temporalAA: false,
+          };
           expect(
             Object.fromEntries(Object.keys(expected).map((key) => [key, Reflect.get(preset, key)])),
             `${kit}/${tier} preserves develop options`,
@@ -162,7 +170,14 @@ describe("PRD-723 phase 1 kit look defaults", () => {
     const { exposureSettings } = await import("../templates/rts/src/render/exposure.js");
     const previous = LEGACY_PRESETS.rts?.[tier];
     if (previous === undefined) throw new Error(`Missing legacy preset rts/${tier}`);
-    const expected = { ...LEGACY_DEFAULTS, ...previous, samples: previous.samples ?? 4 };
+    // Owner, 2026-10-28: sharp in motion beats Unreal's temporal AA and camera motion blur, on every tier.
+    const expected = {
+      ...LEGACY_DEFAULTS,
+      ...previous,
+      motionBlurEnabled: false,
+      samples: previous.samples ?? 4,
+      temporalAA: false,
+    };
     const { tonemapMode: _curve, autoExposureEnabled: _meter, ...costs } = expected;
     const preset = qualityPreset(tier);
     expect(

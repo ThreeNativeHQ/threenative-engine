@@ -1,8 +1,9 @@
 /**
  * `BufferAttribute.updateRanges` as three's live array of `{ start, count }` records, on the web facade.
  * The engine hands the getter canonical JSON and takes ranges through `addUpdateRange` and
- * `clearUpdateRanges`, so a mutation (`push`, `splice`, an index write) is written back as a clear plus an
- * add per record. The V8 adapter installs the same behaviour (adapters/v8/adapter.cpp, rangesSource).
+ * `clearUpdateRanges`. Push appends validated records directly; other mutations replay the array.
+ * An explicit clear supplies the next empty snapshot; other reads still observe native upload clears.
+ * The V8 adapter installs the same surface (adapters/v8/adapter.cpp, rangesSource).
  */
 interface IRange {
   start: number;
@@ -24,13 +25,24 @@ const MUTATORS = new Set([
 export function withUpdateRanges(prototype: object): void {
   const read = Object.getOwnPropertyDescriptor(prototype, "updateRanges")?.get;
   const proto = prototype as {
-    addUpdateRange?: (start: number, count: number) => void;
-    clearUpdateRanges?: () => void;
+    addUpdateRange?: (start: number, count: number) => unknown;
+    clearUpdateRanges?: () => unknown;
   };
   const clear = proto.clearUpdateRanges;
   const add = proto.addUpdateRange;
   if (read === undefined || clear === undefined || add === undefined) return;
   const proxies = new WeakMap<object, IRange[]>();
+  const emptied = new WeakSet<object>();
+  proto.clearUpdateRanges = function (this: object) {
+    const result = clear.call(this);
+    emptied.add(this);
+    return result;
+  };
+  proto.addUpdateRange = function (this: object, start: number, count: number) {
+    const result = add.call(this, start, count);
+    emptied.delete(this);
+    return result;
+  };
   Object.defineProperty(prototype, "updateRanges", {
     configurable: true,
     get(this: object) {
@@ -39,13 +51,13 @@ export function withUpdateRanges(prototype: object): void {
       const target: IRange[] = [];
       let snapshot: unknown;
       const refresh = () => {
-        const current = read.call(this) as unknown;
+        const current = emptied.delete(this) ? "[]" : (read.call(this) as unknown);
         if (current === snapshot) return;
         target.splice(0, target.length, ...(JSON.parse(String(current)) as IRange[]));
         snapshot = current;
       };
-      const write = () => {
-        for (const range of target)
+      const validate = (ranges: readonly IRange[]) => {
+        for (const range of ranges)
           if (
             !range ||
             !Number.isSafeInteger(range.start) ||
@@ -56,9 +68,12 @@ export function withUpdateRanges(prototype: object): void {
             throw new TypeError(
               "TN_NATIVE_UNSUPPORTED updateRanges: expected nonnegative integer start and count",
             );
+      };
+      const write = () => {
+        validate(target);
         clear.call(this);
         for (const range of target) add.call(this, range.start, range.count);
-        snapshot = read.call(this);
+        snapshot = undefined;
       };
       const guarded = <T>(change: () => T): T => {
         refresh();
@@ -70,9 +85,17 @@ export function withUpdateRanges(prototype: object): void {
           throw error;
         }
       };
+      const owner = this;
       const proxy: IRange[] = new Proxy(target, {
         get(array, key, receiver) {
-          refresh();
+          if (key === "push")
+            return (...ranges: IRange[]) => {
+              validate(ranges);
+              refresh();
+              for (const range of ranges) add.call(owner, range.start, range.count);
+              snapshot = undefined;
+              return target.push(...ranges);
+            };
           if (typeof key === "string" && MUTATORS.has(key))
             return (...args: unknown[]) =>
               guarded(() => {
@@ -84,6 +107,7 @@ export function withUpdateRanges(prototype: object): void {
                 write();
                 return result === array ? proxy : result;
               });
+          refresh();
           return Reflect.get(array, key, receiver);
         },
         set(array, key, value) {

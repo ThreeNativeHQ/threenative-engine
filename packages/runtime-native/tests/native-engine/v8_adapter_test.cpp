@@ -6,6 +6,7 @@
 #include "engine/animation/mixer.h"
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/foundation/ThreeConstants.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/foundation/math/Color.h"
 #include "engine/shader/standard.h"
 #include "engine/shader/tsl/tsl.h"
@@ -2179,9 +2180,37 @@ void templateRanges() {
     CHECK(got == "[object Object]");
 }
 
+void gcTelemetry() {
+    namespace waste = tn::engine::waste;
+    CHECK(!waste::debugFlagEnabled(nullptr));
+    CHECK(!waste::debugFlagEnabled(""));
+    CHECK(!waste::debugFlagEnabled("0"));
+    CHECK(!waste::debugFlagEnabled("yes"));
+    CHECK(!waste::debugFlagEnabled("true"));
+    CHECK(waste::debugFlagEnabled("1"));
+    Runtime rt;
+    v8::Isolate::Scope isolateScope(rt.isolate);
+    auto& counts = waste::counters();
+    const auto before = counts.gcPauses.load();
+    const auto elapsedBefore = counts.gcPauseMicros.load();
+    {
+        Adapter adapter(rt.isolate, rt.context);
+        rt.isolate->LowMemoryNotification();
+        CHECK(counts.gcPauses.load() == before);
+        adapter.enableGcTelemetry();
+        adapter.enableGcTelemetry();  // Repeated activation must not install duplicate callbacks.
+        rt.isolate->LowMemoryNotification();
+        CHECK(counts.gcPauses.load() > before);
+        CHECK(counts.gcPauseMicros.load() > elapsedBefore);
+    }
+    const auto after = counts.gcPauses.load();
+    rt.isolate->LowMemoryNotification();
+    CHECK(counts.gcPauses.load() == after);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
+TN_TEST_MAIN({"gc_telemetry", gcTelemetry}, {"template_material", templateMaterial}, {"template_bounds", templateBounds}, {"template_ranges", templateRanges}, {"handles", handles}, {"fast_paths", fastPaths}, {"structure_stamp", structureStamp}, {"crossing_histogram", crossingHistogram}, {"collect_visits", collectVisits}, {"native_matrix_world", nativeMatrixWorld}, {"native_projection_report", nativeProjectionReport}, {"unsupported", unsupported}, {"gc_release", gcRelease},
              {"runtime_churn", runtimeChurn}, {"fog_node", fogNode}, {"node_material_fragment", nodeMaterialFragment},
              {"crossing_bench", crossingBench},
              {"scene", scene}, {"raycaster_lod", raycasterLOD}, {"object_raycast", objectRaycast},

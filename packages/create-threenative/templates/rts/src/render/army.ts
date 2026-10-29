@@ -9,40 +9,49 @@
 // geometry that is identical. One `InstancedMesh` per (type, team, material) is a few dozen
 // objects for the whole battlefield, and the count is what `maxDrawCalls` in the performance
 // scenario is really measuring.
-import { lodPixelScale } from "@threenative/core";
 import {
   type BufferAttribute,
-  type BufferGeometry,
   type Camera,
   Color,
   DynamicDrawUsage,
   InstancedMesh,
   MeshBasicMaterial,
   Object3D,
+  type OrthographicCamera,
   PlaneGeometry,
   RingGeometry,
   Vector3,
 } from "three";
 import type { Game } from "../sim/game.js";
 import { HALF, STARTS, terrainHeight } from "../sim/terrain.js";
-import type { IEntity } from "../sim/types.js";
+import { type IEntity, TYPES } from "../sim/types.js";
 import type { IUnitModels } from "./models.js";
-import { palette } from "./palette.js";
+import { legacyColor, palette } from "./palette.js";
 
 /** Copies one (type, team) can be on screen at once. The supply cap is 120 for the whole map. */
 const CAPACITY = 128;
 /** Order markers alive at once, oldest released first. */
 const MARKERS = 24;
 /**
- * Bar sizes in screen pixels, not metres: an orthographic zoom-out shrank a 0.34 m bar to a 3 px line
- * that the model under it cut through. A readout keeps one size on screen, as in every strategy game.
+ * Bar sizes in screen pixels, not metres, as AstraCraft draws them: a 3 px fill inside a 1 px dark
+ * frame, 30 px over a unit and 60 px over a building, and a 2 px build or queue line 6 px below.
+ * A readout keeps one size on screen at every zoom, as in every strategy game.
  */
-const BAR_HEIGHT = 8;
-const BAR_BORDER = 2;
-const BAR_WIDTH = { building: 72, unit: 38 } as const;
-/** Gap between the model's top on screen and the bar's lower edge. */
-const BAR_LIFT = 6;
+const BAR_HEIGHT = 3;
+const BAR_BORDER = 1;
+const BAR_WIDTH = { building: 60, unit: 30 } as const;
+const WORK_HEIGHT = 2;
+const WORK_DROP = 6;
 const MARKER_LIFE = 0.8;
+/**
+ * Where an entity was before the latest rules step: `id, x, z, angle, altitude` per slot, slot =
+ * `id % POSE_SLOTS`. The rules move units 20 times a second and the screen shows 60, so a unit
+ * drawn where the rules left it moves on one frame in three; drawn between its last two poses, it
+ * moves on every frame. ponytail: a slot shared by two live ids (ids 4096 apart) draws the newer
+ * one unblended for that step; key by entity if a match ever holds that many at once.
+ */
+const POSE_SLOTS = 4096;
+const POSE = 5;
 
 interface IBatch {
   readonly list: IEntity[];
@@ -59,13 +68,21 @@ export interface IArmy {
   /** An expanding ring where an order landed, so a click has a visible consequence. */
   readonly marker: (x: number, z: number, hostile: boolean) => void;
   readonly root: Object3D;
+  /** Record every entity's pose. Call it just before each rules step. */
+  readonly step: (game: Game) => void;
+  /** Once per drawn frame: write every transform this frame shows. */
   readonly sync: (
     game: Game,
     selected: ReadonlySet<number>,
     time: number,
     dt: number,
     camera: Camera,
-    viewportHeight: number,
+    /** Screen pixels per metre at depth 1, measured by the scene: a render file imports no package. */
+    pixelsPerMetre: number,
+    /** How far the frame is into the latest rules step, 0 (the pose before it) to 1 (its result). */
+    blend: number,
+    /** Where the camera draws this frame from, so a bar's edges land on whole pixels. */
+    eye: Vector3,
   ) => void;
   readonly dispose: () => void;
 }
@@ -74,10 +91,14 @@ const _dummy = new Object3D();
 const _tint = new Color();
 const _friendly = new Color(0x9be6bb);
 const _hurt = new Color(0xddad71);
-const _hostile = new Color(0xff8756);
+/** A rival's bar is its faction colour, as in AstraCraft. */
+const _teamFill = STARTS.map((start) => new Color(start.css));
 const _work = new Color(0x77eddf);
 const _queue = new Color(0x77cddd);
-const _backing = new Color(palette.unseen);
+const _backing = new Color(0x08151e);
+const _right = new Vector3();
+const _at = { altitude: 0, angle: 0, x: 0, z: 0 };
+const _offset = new Vector3();
 
 export function createArmy(
   models: IUnitModels,
@@ -89,15 +110,16 @@ export function createArmy(
   for (let index = 0; index < MARKERS; index += 1) markers.push({ life: 0, x: 0, z: 0 });
 
   // One ring per faction, because the ring's colour *is* the faction: a single mesh would need a
-  // per-instance colour, and three draws are cheaper than the bookkeeping.
+  // per-instance colour, and three draws are cheaper than the bookkeeping. AstraCraft's thin ring:
+  // its legacy-linear faction colour at 0.75 opacity, no dark underlay (PRD-765 judge round 2).
   const rings = STARTS.map(
     (start) =>
       new InstancedMesh(
-        new RingGeometry(1, 1.075, 40).rotateX(-Math.PI / 2),
+        new RingGeometry(1, 1.095, 40).rotateX(-Math.PI / 2),
         new MeshBasicMaterial({
-          color: start.color,
+          color: legacyColor(start.color),
           depthWrite: false,
-          opacity: 0.85,
+          opacity: 0.75,
           transparent: true,
         }),
         CAPACITY,
@@ -113,25 +135,17 @@ export function createArmy(
   // array for every ring, every frame.
   const ringTeams = STARTS.map((start, index) => start.team ?? index);
 
-  // Dark borders keep the authored faction colours readable on bright ground. Both underlays
-  // share one owned material and follow the foreground transforms without another per-frame walk.
+  // A dark border keeps the order marker readable on bright ground.
   const backingMaterial = new MeshBasicMaterial({ color: palette.unseen, depthWrite: false });
-  const ringBackings = new InstancedMesh(
-    new RingGeometry(0.97, 1.105, 40).rotateX(-Math.PI / 2),
-    backingMaterial,
-    CAPACITY * STARTS.length,
-  );
   const markerBackings = new InstancedMesh(
     new RingGeometry(0.47, 0.69, 24).rotateX(-Math.PI / 2),
     backingMaterial,
     MARKERS,
   );
-  for (const backing of [ringBackings, markerBackings]) {
-    backing.instanceMatrix.setUsage(DynamicDrawUsage);
-    backing.frustumCulled = false;
-    backing.renderOrder = 1;
-    root.add(backing);
-  }
+  markerBackings.instanceMatrix.setUsage(DynamicDrawUsage);
+  markerBackings.frustumCulled = false;
+  markerBackings.renderOrder = 1;
+  root.add(markerBackings);
 
   // Two quads per readout — a coloured fill over the dark backdrop ring that frames it — so a bar
   // reads against any ground. `toneMapped: false` keeps them at the colour they were authored.
@@ -143,6 +157,9 @@ export function createArmy(
   bars.instanceMatrix.setUsage(DynamicDrawUsage);
   bars.frustumCulled = false;
   bars.renderOrder = 3;
+  // The colour attribute exists before the first draw: three.js compiles the material once, and a
+  // batch first drawn without `instanceColor` stays white on that engine (PRD-765 A/B).
+  bars.setColorAt(0, _backing);
   root.add(bars);
 
   const markerRings = new InstancedMesh(
@@ -158,6 +175,7 @@ export function createArmy(
   markerRings.instanceMatrix.setUsage(DynamicDrawUsage);
   markerRings.frustumCulled = false;
   markerRings.renderOrder = 2;
+  markerRings.setColorAt(0, _backing);
   root.add(markerRings);
 
   const batch = (type: string, team: number): IBatch => {
@@ -182,63 +200,85 @@ export function createArmy(
   let barCount = 0;
   /** Screen pixels per metre this frame (orthographic: the same at every depth). */
   let pixels = 1;
-  /** The camera's up axis in world space this frame: what "above the model" means on screen. */
+  /** Half the viewport in pixels, and the camera's up axis in world space this frame. */
+  let halfWidth = 0;
+  let halfHeight = 0;
   const up = new Vector3();
-  /**
-   * How far above its origin each model reaches on screen, in metres along the camera's up axis: the
-   * highest of its vertices, each turned to face the camera (`y·up.y + r·|up.xz|`), so the answer holds
-   * whatever way the model faces. The rig's pitch is fixed, so each model is scanned once.
-   */
-  const tops = new Map<string, number>();
-  let topsPitch = Number.NaN;
-  const screenTop = (type: IEntity["type"]): number => {
-    const tilt = Math.hypot(up.x, up.z);
-    if (Math.abs(tilt - topsPitch) > 1e-4) {
-      tops.clear();
-      topsPitch = tilt;
+  /** The camera position this frame draws from, and how far it is into the latest rules step. */
+  let eye: Vector3 = up;
+  let blend = 1;
+  const poses = new Float64Array(POSE_SLOTS * POSE).fill(-1);
+
+  /** The pose this frame draws `entity` at, between its last two rules steps, written into `_at`. */
+  const pose = (entity: IEntity): typeof _at => {
+    const slot = (entity.id % POSE_SLOTS) * POSE;
+    const altitude = entity.altitude || 0;
+    if (poses[slot] !== entity.id) {
+      _at.x = entity.x;
+      _at.z = entity.z;
+      _at.angle = entity.angle;
+      _at.altitude = altitude;
+      return _at;
     }
-    let top = tops.get(type);
-    if (top === undefined) {
-      top = 0;
-      for (const part of models.parts(type, 0))
-        top = Math.max(top, reach(part.geometry, up.y, tilt));
-      tops.set(type, top);
-    }
-    return top;
+    const x = poses[slot + 1] as number;
+    const z = poses[slot + 2] as number;
+    const angle = poses[slot + 3] as number;
+    const height = poses[slot + 4] as number;
+    // The short way round, so a unit turning through ±π does not spin the long way.
+    let turn = entity.angle - angle;
+    turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
+    _at.x = x + (entity.x - x) * blend;
+    _at.z = z + (entity.z - z) * blend;
+    _at.angle = angle + turn * blend;
+    _at.altitude = height + (altitude - height) * blend;
+    return _at;
   };
 
-  /**
-   * One readout: a coloured fill inset in a dark frame, both camera-facing quads sized in pixels, the
-   * fill growing from the left so a half-full bar reads as "half" rather than as "small". `row` 0 is
-   * the health bar on the model's top; row 1 stacks the build or queue bar above it.
-   */
-  const pushBar = (entity: IEntity, row: number, fraction: number, colour: Color) => {
-    const width = (entity.building ? BAR_WIDTH.building : BAR_WIDTH.unit) / pixels;
-    const height = BAR_HEIGHT / pixels;
+  /** The bar's anchor in world space and on screen, in pixels from the top-left. */
+  const _base = new Vector3();
+  let anchorX = 0;
+  let anchorY = 0;
+  /** One camera-facing quad covering the screen rectangle `x, y, w, h`, in whole pixels. */
+  const quad = (x: number, y: number, w: number, h: number, colour: Color) => {
+    _dummy.position
+      .copy(_base)
+      .addScaledVector(_right, (x + w / 2 - anchorX) / pixels)
+      .addScaledVector(up, (anchorY - y - h / 2) / pixels);
     _dummy.quaternion.copy(camera.quaternion);
-    _dummy.position.set(
-      entity.x,
-      terrainHeight(entity.x, entity.z) + (entity.altitude || 0),
-      entity.z,
-    );
-    // Up the screen, not up the world: the camera's own Y axis lifts the bar clear of the model.
-    _dummy.translateY(
-      screenTop(entity.type) + (BAR_LIFT + BAR_HEIGHT / 2 + row * (BAR_HEIGHT + 2)) / pixels,
-    );
-    _dummy.scale.set(width, height, 1);
-    _dummy.updateMatrix();
-    bars.setMatrixAt(barCount, _dummy.matrix);
-    bars.setColorAt(barCount, _backing);
-    barCount += 1;
-    const inner = width - (2 * BAR_BORDER) / pixels;
-    const fill = inner * Math.max(0, Math.min(1, fraction));
-    if (fill <= 0) return;
-    _dummy.translateX((fill - inner) / 2);
-    _dummy.scale.set(fill, height - (2 * BAR_BORDER) / pixels, 1);
+    _dummy.scale.set(w / pixels, h / pixels, 1);
     _dummy.updateMatrix();
     bars.setMatrixAt(barCount, _dummy.matrix);
     bars.setColorAt(barCount, colour);
     barCount += 1;
+  };
+
+  /**
+   * One readout, AstraCraft's: a fill growing from the left inside a 1 px dark frame, hung from a
+   * point above the model, and an unframed build or queue line under it. Every edge sits on a whole
+   * pixel: a frame on a fractional position is shared by two pixel rows that trade coverage as the
+   * unit moves, which reads as a border that shimmers.
+   */
+  const pushBar = (entity: IEntity, fraction: number, colour: Color, work: number, tone: Color) => {
+    const at = pose(entity);
+    const lift = entity.building ? TYPES[entity.type].r + 1.3 : entity.air ? 2.1 : 3.1;
+    _base.set(at.x, terrainHeight(at.x, at.z) + at.altitude + lift, at.z);
+    _offset.copy(_base).sub(eye);
+    anchorX = halfWidth + _offset.dot(_right) * pixels;
+    anchorY = halfHeight - _offset.dot(up) * pixels;
+    const width = entity.building ? BAR_WIDTH.building : BAR_WIDTH.unit;
+    const left = Math.round(anchorX - width / 2);
+    const top = Math.round(anchorY);
+    quad(
+      left - BAR_BORDER,
+      top - BAR_BORDER,
+      width + 2 * BAR_BORDER,
+      BAR_HEIGHT + 2 * BAR_BORDER,
+      _backing,
+    );
+    const fill = Math.round(width * Math.max(0, Math.min(1, fraction)));
+    if (fill > 0) quad(left, top, fill, BAR_HEIGHT, colour);
+    const done = Math.round(width * Math.max(0, Math.min(1, work)));
+    if (done > 0) quad(left, top + WORK_DROP, done, WORK_HEIGHT, tone);
   };
 
   let camera: Camera;
@@ -254,10 +294,26 @@ export function createArmy(
       slot.z = z;
       markerRings.setColorAt(index, _tint.set(hostile ? 0xff775a : 0x6cfbe2));
     },
-    sync: (game, selected, time, dt, view, viewportHeight) => {
+    step: (game) => {
+      for (const entity of game.entities) {
+        const slot = (entity.id % POSE_SLOTS) * POSE;
+        poses[slot] = entity.id;
+        poses[slot + 1] = entity.x;
+        poses[slot + 2] = entity.z;
+        poses[slot + 3] = entity.angle;
+        poses[slot + 4] = entity.altitude || 0;
+      }
+    },
+    sync: (game, selected, time, dt, view, pixelsPerMetre, share, from) => {
       camera = view;
-      pixels = lodPixelScale(view, viewportHeight, 1);
+      pixels = pixelsPerMetre;
+      blend = Math.max(0, Math.min(1, share));
+      eye = from;
       up.set(0, 1, 0).applyQuaternion(view.quaternion);
+      _right.set(1, 0, 0).applyQuaternion(view.quaternion);
+      const frame = view as OrthographicCamera;
+      halfWidth = (((frame.right - frame.left) / frame.zoom) * pixels) / 2;
+      halfHeight = (((frame.top - frame.bottom) / frame.zoom) * pixels) / 2;
       for (const entry of batches.values()) entry.list.length = 0;
       for (const entity of game.entities) {
         if (entity.garrisonId !== null) continue;
@@ -270,14 +326,15 @@ export function createArmy(
         for (let index = 0; index < list.length; index++) {
           const entity = list[index];
           if (entity === undefined) continue;
+          const at = pose(entity);
           _dummy.position.set(
-            entity.x,
-            terrainHeight(entity.x, entity.z) + (entity.altitude || 0) + bob(entity, time),
-            entity.z,
+            at.x,
+            terrainHeight(at.x, at.z) + at.altitude + bob(entity, time),
+            at.z,
           );
           _dummy.rotation.set(
             0,
-            entity.angle,
+            at.angle,
             entity.air && entity.moving ? Math.sin(time + entity.id) * 0.025 : 0,
           );
           // A site under construction grows out of the ground instead of appearing whole, which
@@ -290,14 +347,13 @@ export function createArmy(
         for (const part of entry.parts) {
           part.count = list.length;
           if (part.count === 0) continue;
+          // No bound is recomputed here: every part mesh is `frustumCulled = false`, so nothing
+          // reads one — and on the native engine the call crosses the bridge and walks every
+          // instance in the batch.
           upload(part.instanceMatrix, part.count);
-          // The instance-aware bound, or the batch is culled by its own geometry's origin-sized
-          // sphere and half the battlefield silently disappears.
-          part.computeBoundingSphere();
         }
       }
 
-      let backingCount = 0;
       for (let teamIndex = 0; teamIndex < rings.length; teamIndex++) {
         const ring = rings[teamIndex];
         const team = ringTeams[teamIndex] ?? 0;
@@ -306,21 +362,20 @@ export function createArmy(
         for (const entity of game.entities) {
           if (entity.garrisonId !== null || entity.team !== team) continue;
           if (team !== 0 && !game.visibleAt(entity.x, entity.z)) continue;
-          if (!entity.building && !selected.has(entity.id)) continue;
-          const radius = entity.r + 0.4;
-          _dummy.position.set(entity.x, terrainHeight(entity.x, entity.z) + 0.13, entity.z);
+          // Only the selection is ringed: the painted apron already frames every building.
+          if (!selected.has(entity.id)) continue;
+          const radius = entity.r + 0.3;
+          const at = pose(entity);
+          _dummy.position.set(at.x, terrainHeight(at.x, at.z) + 0.13, at.z);
           _dummy.rotation.set(0, 0, 0);
           _dummy.scale.set(radius, 1, radius);
           _dummy.updateMatrix();
           ring.setMatrixAt(count, _dummy.matrix);
-          ringBackings.setMatrixAt(backingCount++, _dummy.matrix);
           count += 1;
         }
         ring.count = count;
         upload(ring.instanceMatrix, count);
       }
-      ringBackings.count = backingCount;
-      upload(ringBackings.instanceMatrix, backingCount);
 
       barCount = 0;
       for (const entity of game.entities) {
@@ -330,15 +385,19 @@ export function createArmy(
         // A unit earns a bar once something has happened to it, or once it is selected; a building
         // always has one, because its queue and its build site are the numbers being watched.
         if (!entity.building && !hurt && !selected.has(entity.id)) continue;
+        const health = entity.maxHp > 0 ? entity.hp / entity.maxHp : 0;
+        const building = entity.building && !entity.built;
         pushBar(
           entity,
-          0,
-          entity.maxHp > 0 ? entity.hp / entity.maxHp : 0,
-          entity.team > 0 ? _hostile : hurt ? _hurt : _friendly,
+          health,
+          entity.team > 0
+            ? (_teamFill[entity.team] ?? _friendly)
+            : health < 0.3
+              ? _hurt
+              : _friendly,
+          !entity.building ? 0 : building ? entity.progress : (entity.queue[0]?.progress ?? 0),
+          building ? _work : _queue,
         );
-        if (entity.building && !entity.built) pushBar(entity, 1, entity.progress, _work);
-        else if (entity.queue.length > 0)
-          pushBar(entity, 1, entity.queue[0]?.progress ?? 0, _queue);
       }
       bars.count = barCount;
       upload(bars.instanceMatrix, barCount);
@@ -378,10 +437,9 @@ export function createArmy(
       (bars.material as MeshBasicMaterial).dispose();
       markerRings.geometry.dispose();
       (markerRings.material as MeshBasicMaterial).dispose();
-      ringBackings.geometry.dispose();
       markerBackings.geometry.dispose();
       backingMaterial.dispose();
-      root.remove(ringBackings, markerBackings);
+      root.remove(markerBackings);
     },
   };
 }
@@ -398,18 +456,6 @@ export function createArmy(
  * keyed by the attribute it describes.
  */
 const _ranges = new WeakMap<BufferAttribute, { start: number; count: number }>();
-
-/** The highest point of a geometry along a camera up axis `(rise, tilt)`, whatever way it faces. */
-function reach(geometry: BufferGeometry, rise: number, tilt: number): number {
-  const position = geometry.getAttribute("position");
-  let top = 0;
-  for (let index = 0; index < position.count; index++)
-    top = Math.max(
-      top,
-      position.getY(index) * rise + Math.hypot(position.getX(index), position.getZ(index)) * tilt,
-    );
-  return top;
-}
 
 function upload(attribute: BufferAttribute, live: number): void {
   if (live === 0) return;

@@ -1,3 +1,4 @@
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/raycaster.h"
 #include "engine/foundation/prefetch.h"
 #include "render_database.h"
@@ -741,6 +742,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             type == "LineSegments")) {
             const auto& mesh = static_cast<const Mesh&>(object);
             if (mesh.frustumCulled && !cullExempt_) {
+                waste::debugAdd(waste::counters().cullCandidates);
                 // One world sphere serves the camera's frustum and the shadow frustums.
                 Sphere sphere;
                 bool bounded = false, measured = false;
@@ -752,6 +754,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (shadowCaster && !inShadowFrustum(object, measure() ? &sphere : nullptr)) shadowCaster = false;
             }
             if (!mainPass && !shadowCaster) {
+                if (mesh.frustumCulled && !cullExempt_) waste::debugAdd(waste::counters().culledObjects);
                 // Outside every frustum: keep its record alive and build nothing (PRD-610 AC-10).
                 if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
                     markSeen(*r);

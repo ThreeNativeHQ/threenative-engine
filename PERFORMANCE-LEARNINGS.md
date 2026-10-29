@@ -505,3 +505,21 @@ no COOP/COEP); that lane is open.
   pixels. Count pixels where every AFTER run differs from every BEFORE run; a judge reading a sheet misses a thin stripe.
 - Revisit when: an opaque order that keeps the coplanar winner exists (depth order only among intersecting bounds).
 
+
+### 2026-10-28 — Web frame gate reads frame age, not a count of unfinished frames — KEEP
+- Where: `packages/runtime-native/src/engine/renderer/frame_gate.h`, `wasm/web_host.cpp` (`tnw_web_frame` field 11); `597faf225`.
+- Result: RTS kit, Chrome 153, RTX 2080 shared with other jobs. Frames with no GPU submit 1.52 % -> 0.35 % (1246 vs
+  1155 frames, 20 s each); engine `renderSkips` per 5 s window 11-16 -> 0-6. A 3 ms GPU frame's work-done promise
+  resolved at p90 24 ms and p99 39 ms, so "two frames unfinished" declined frames the GPU had already drawn.
+- Insight: on the web, completion arrives as a promise behind every earlier map; a gate on its count measures browser
+  scheduling, not the GPU. Decline only when the oldest unfinished frame is 4 loop intervals old (queue cap 6).
+- Revisit when: presentation gets its own completion marker (Codex diagnosis: a per-frame mapped buffer), or skips
+  return; the timestamp readback still maps every frame until `trackTimestamp` reaches the native timer.
+
+### 2026-10-28 — AstraCraft (three r140, WebGL) as the RTS reference — KEEP (diagnostic)
+- Result: same Chrome, same host load: AstraCraft holds rAF 59.8 with a main thread as busy as ours, and never skips a
+  frame. Our Wasm RTS: render phase p50 5.5-6.3 ms (three.js 7.4-9.1), GPU p50 2.6-2.8 ms (three.js 3.8), but update
+  phase p50 2.7-3.4 ms against three.js 0.6 ms: about 1,000 ABI crossings per `army.sync`, a 112x112x4 fog texture
+  widened to 401 KB of doubles per refresh, timestamp readbacks every frame. Fixes on `fix/wasm-update-crossings`.
+- Insight: the existing bridge guard flags only redundant reads; writes and distinct reads passed silently
+  (telemetry lane `feat/web-engine-debug-telemetry`).

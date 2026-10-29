@@ -18,6 +18,16 @@ describe("perf warnings read off the console", () => {
     expect(perfWarnings([`[warning] ${bridge}`])).toEqual([bridge]);
   });
 
+  it("flags a hot callback, including an unreadable warning, while ranked debug reports remain diagnostic", () => {
+    const hot = 'TN_HOT_CALL:{"system":"scene.update","share":0.8}';
+    const malformed = "TN_HOT_CALL:{unreadable";
+    expect(perfWarnings([
+      'TN_DEBUG_REPORT:{"window":1,"offenders":[{"name":"sceneUpdateMs","share":0.8}]}',
+      `[warning] ${hot}`,
+      malformed,
+    ])).toEqual([hot, malformed]);
+  });
+
   it("flags a projection decline and prints its cause and hint", () => {
     const line = projection({ projecting: false, reasonCode: "notWorthwhile", sourceRenderables: 40, cause: { code: "uniqueGeometry", hint: "share one geometry", meshes: 3 } });
     const [found] = perfWarnings([line]);
@@ -74,5 +84,11 @@ describe("a run with a perf warning does not pass", () => {
 
   it("passes a clean console", () => {
     expect(run(["hello"]).row?.pass).toBe(true);
+  });
+
+  it("fails a hot callback even with console errors opted out, but passes an informational debug report", () => {
+    expect(run(['TN_HOT_CALL:{"share":0.8}'], { consoleErrorsOptOutReason: "fixture", noConsoleErrors: false }).codes)
+      .toContain("TN_PLAYTEST_PERF_WARNING");
+    expect(run(['TN_DEBUG_REPORT:{"window":1,"findings":[]}']).row?.pass).toBe(true);
   });
 });

@@ -1,10 +1,12 @@
 import { UiLayer } from "@threenative/ui";
 import { Commands } from "./Commands.js";
-import { Hud } from "./Hud.js";
+import { Hud, Selection } from "./Hud.js";
 import { Minimap } from "./Minimap.js";
 
 /**
- * Everything the player sees that is not the battlefield.
+ * Everything the player sees that is not the battlefield, laid out as AstraCraft's command deck:
+ * a top bar, the objective and rival panels, a quick bar, and the minimap, selection card and
+ * command card along the bottom. The look is plain CSS in `src/style.css` under `.astra-hud`.
  *
  * One component, mounted twice by two entries that differ only in what else is on the page:
  * `src/main.ts` puts it beside the canvas on the web target, and `src/ui/main.tsx` is the whole
@@ -14,11 +16,13 @@ import { Minimap } from "./Minimap.js";
 export function GameUi() {
   return (
     <UiLayer>
-      <Hud />
-      {/* One right-hand column, so a tall command panel pushes the map up instead of covering it. */}
-      <div className="pointer-events-none absolute right-4 bottom-14 flex flex-col items-end gap-2">
-        <Minimap />
-        <Commands />
+      <div className="astra-hud">
+        <Hud />
+        <footer className="bottom-hud">
+          <Minimap />
+          <Selection />
+          <Commands />
+        </footer>
       </div>
     </UiLayer>
   );

@@ -1,6 +1,7 @@
 #include "check.h"
 #include "fixture/traa_dump.h"
 #include "engine/foundation/math/Matrix.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/lights.h"
@@ -2155,8 +2156,16 @@ void traaRejection() {
         }
         return counted;
     };
+    auto& debug = waste::counters();
+    const auto active = debug.temporalActiveFrames.load();
+    const auto measured = debug.temporalMeasuredPixels.load();
+    waste::setDebugEnabled(true);
     const auto still = run(0);
     const auto sliding = run(0.4);
+    waste::setDebugEnabled(false);
+    CHECK(debug.temporalActiveFrames.load() == active + 2 * (frames + 1));
+    CHECK(debug.temporalMeasuredPixels.load() > measured);
+    CHECK(debug.velocityCandidates.load() > 0);
     // History frames 16, 32, 48 and 64 are counted; the last one arrives with the render after it.
     CHECK(still.size() >= 3 && sliding.size() >= 3);
     if (still.size() < 3 || sliding.size() < 3) return;

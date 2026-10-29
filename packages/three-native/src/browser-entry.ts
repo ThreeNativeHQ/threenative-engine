@@ -125,10 +125,18 @@ export function webThreadsReport(module: object, isolated: boolean): string {
 }
 
 export async function bindWebEngine(
-  createModule: () => Promise<TnAbiModule>,
+  createModule: (options?: {
+    print: (line: string) => void;
+    printErr: (line: string) => void;
+  }) => Promise<TnAbiModule>,
   names: readonly string[],
 ): Promise<Record<string, unknown>> {
-  const module = await createModule();
+  // Emscripten binds `console.log` once, at load; these read the console per line, so the quiet-marker
+  // routing core installs at `start()` also reaches the engine's own TN_RENDERER notes.
+  const module = await createModule({
+    print: (line) => console.log(line),
+    printErr: (line) => console.error(line),
+  });
   // The engine's linear memory, for a bench page's memory report (`memory.buffer` survives growth).
   const memory = (module as { wasmMemory?: WebAssembly.Memory }).wasmMemory;
   if (memory !== undefined)

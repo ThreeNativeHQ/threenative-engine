@@ -694,6 +694,7 @@ public:
      * lands. The caller owns the id: the engine's own render ids are not one per present.
      */
     void setGpuTimerSourceFrame(uint64_t frame) { sourceFrame_ = frame; }
+    void setDebugTimestampRequested(bool requested) { debugTimestampRequested_ = requested; }
     /**
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
      * scene pass, other passes (offscreen, compute, post, TRAA), output pass.
@@ -705,8 +706,10 @@ public:
     uint32_t gpuTimestampPasses() const { return timing_->passes; }
     /** The caller's frame id of the most recent resolved GPU time: the frame it was submitted with, not the one that read it back. */
     uint64_t gpuSourceFrame() const { return timing_->source; }
+    /** Whether the device negotiated timestamp-query, independent of this frame's sampling flag. */
+    bool gpuTimerAvailable() const { return passTimer_->queries != nullptr; }
     /** Whether frames are actually timed: the device negotiated timestamp-query and the timer is on. */
-    bool gpuTimerEnabled() const { return passTimer_->queries != nullptr && passTimer_->enabled; }
+    bool gpuTimerEnabled() const { return gpuTimerAvailable() && passTimer_->enabled; }
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
     bool gpuTimerBeganAtShadow() const { return timerBeganAtShadow_; }
 
@@ -836,16 +839,48 @@ private:
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
                             WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
                             const GraphTextures* graphTextures = nullptr, RecentBindGroups* cache = nullptr);
-    /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
+    /** The GPU texture and sampler for a material map: rebuilt when its shape or sampler moves, written in place
+     *  when only its pixels do. */
     struct MaterialTexture {
+        // What a record's GPU texture is made of; one per create branch in materialTextureKey.
+        enum Kind : uint8_t { kNone, kDepth, kStorage, kVolume, kImage, kExternal };
+        /** What a `needsUpdate` must leave equal to write into the texture that is already here: the GPU
+         *  texture's shape, usage and origin, and the sampler parameters, which pick the sampler. Equal keys
+         *  mean the view and its sampler stay valid, so no bind group and no recorded bundle has to change. */
+        struct Key {
+            uint32_t width = 0, height = 0, depth = 1;
+            uint32_t levels = 1;
+            uint32_t texelBytes = 4;  // of `format`: what the create path allocates
+            WGPUTextureFormat format = WGPUTextureFormat_Undefined;
+            WGPUTextureUsage usage = WGPUTextureUsage_None;
+            uint8_t kind = kNone;
+            uint16_t wrapS = 0, wrapT = 0, wrapR = 0, magFilter = 0, minFilter = 0;
+            double anisotropy = 0;
+            [[nodiscard]] bool operator==(const Key& other) const {
+                return kind == other.kind && width == other.width && height == other.height && depth == other.depth &&
+                       levels == other.levels && format == other.format && usage == other.usage &&
+                       wrapS == other.wrapS && wrapT == other.wrapT && wrapR == other.wrapR &&
+                       magFilter == other.magFilter && minFilter == other.minFilter && anisotropy == other.anisotropy;
+            }
+            /** Only the two paths that reach `wgpuQueueWriteTexture` can take the new pixels where they are. */
+            [[nodiscard]] bool updatesInPlace() const { return kind == kImage || kind == kVolume; }
+            [[nodiscard]] uint64_t bytes() const { return uint64_t(width) * height * depth * texelBytes; }
+        };
         WGPUTexture texture = nullptr;
         WGPUTextureView view = nullptr;
         WGPUSampler sampler = nullptr;
         uint32_t version = 0;
+        Key key;
         void release();
     };
     friend class GraphCompute;
     const MaterialTexture* materialTexture(const Texture& texture);
+    /** The key `texture` would be created with, from the descriptor its kind needs. */
+    static MaterialTexture::Key materialTextureKey(const Texture& texture);
+    /** Creates a material texture, counting the bytes it allocates as GpuResources counts its own. */
+    WGPUTexture createMaterialTexture(const MaterialTexture::Key& key);
+    /** Writes `texture`'s pixels into `destination` and regenerates the mip chain it was created with. */
+    void uploadMaterialTexture(WGPUTexture destination, const Texture& texture, const MaterialTexture::Key& key);
     // Render-target textures by texture id: views borrowed from each target's renderer, never released here.
     std::unordered_map<uint64_t, MaterialTexture> renderTargetTextures_;
     struct BackgroundCube {
@@ -1182,6 +1217,7 @@ private:
     bool timerBeganAtShadow_ = false;
     std::shared_ptr<FrameGpuTimer> passTimer_;
     bool ownsPassTimer_ = true;
+    bool debugTimestampRequested_ = true;
     uint64_t sourceFrame_ = 0;  // the caller frame id the next timed frame is submitted with
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this

@@ -317,6 +317,13 @@ tn_native_engine_test(tn-native-engine-tsl-material-accessors-test tests/native-
     native_engine_tsl_material_accessors_listed=every_accessor_is_listed)
 target_link_libraries(tn-native-engine-tsl-material-accessors-test PRIVATE tn_engine_abi)
 
+tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame_gate_test.cpp
+    native_engine_frame_gate_debug_reasons=debug_reasons_follow_gate
+    native_engine_frame_gate_late_signal=late_signal_draws_every_frame
+    native_engine_frame_gate_steady_late_signal=steady_late_signal_draws_every_frame
+    native_engine_frame_gate_growing_backlog=growing_backlog_is_declined
+    native_engine_frame_gate_gpu_behind=gpu_behind_is_declined
+    native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
@@ -399,6 +406,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_tsl_ssr_parameters=tsl_ssr_parameters
     native_engine_abi_tsl_texture_store=tsl_texture_store
     native_engine_abi_tsl_mat4_element=tsl_mat4_element
+    native_engine_abi_binding_fn=binding_fn
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
@@ -694,6 +702,7 @@ endif()
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
+    native_engine_scene_debug_counts=debug_scene_counts
     native_engine_scene_hierarchy=hierarchy
     native_engine_scene_alias=alias
     native_engine_scene_revision=revision

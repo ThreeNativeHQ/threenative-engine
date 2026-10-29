@@ -6,6 +6,9 @@
  * lanes do not fit the uniform's type. Either way the engine keeps the program.
  */
 
+import { callerOf } from "./bridge-meter.js";
+import { debugRequested } from "./debug-telemetry.js";
+
 /** three's update `frame`: the rendering camera and scene, with the frame counter. */
 export interface IUpdateFrame {
   frameId: number;
@@ -19,6 +22,8 @@ interface IUniformState {
   update?: (frame: IUpdateFrame) => unknown;
   /** three's update type: "frame" runs once per renderer frame, "render" once per render call. */
   updateType?: string;
+  /** Bounded debug-only callback registration site. */
+  debugSource?: string;
   /** The renderer frame a "frame" update last ran in. */
   ranFrame?: number;
   /** The lanes last written to the engine: an unchanged value is not written again. */
@@ -108,6 +113,32 @@ export function liveUniforms<TNode extends object>(
   reference(property: string, type: string, object?: unknown): TNode;
   sync(frame?: { camera?: unknown; scene?: unknown; frameId?: number }): void;
 } {
+  const debug = debugRequested();
+  const host = globalThis as {
+    __tnEngineCost?: Record<string, number>;
+    __tnDebugSources?: Record<
+      string,
+      { area: string; caller: string; lever: string; unit?: string }
+    >;
+  };
+  if (debug) {
+    host.__tnEngineCost ??= {};
+    host.__tnDebugSources ??= {};
+  }
+  const totals = debug ? host.__tnEngineCost : undefined;
+  const sources = debug ? host.__tnDebugSources : undefined;
+  let callbackSites = 0;
+  const count = (name: string, value = 1, caller = "tsl-uniforms.ts:liveUniforms.sync") => {
+    if (totals === undefined || sources === undefined) return;
+    totals[name] = (totals[name] ?? 0) + value;
+    sources[name] ??= {
+      area: "uniform",
+      caller,
+      ...(name.endsWith("Ms") ? { unit: "ms" } : {}),
+      lever:
+        "PERFORMANCE-LEARNINGS.md#2026-10-28--post-stages-re-run-the-scene-materials-render-callbacks--open-sized-not-cut",
+    };
+  };
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
   // Strong: a hook's node is chained into a material and dropped, so the wrapper is all JS holds, and a
@@ -118,11 +149,25 @@ export function liveUniforms<TNode extends object>(
   // An unchanged value is not written again: an edited Color or vector is found by its lanes, and a
   // hook that returns the same number every render costs no engine write.
   const write = (node: TNode, state: IUniformState, lanes: readonly number[]) => {
-    if (sameLanes(state.lanes, lanes)) return;
+    if (debug) {
+      count("uniformWriteAttempts");
+      count("uniformLaneWriteAttempts", lanes.length);
+    }
+    if (sameLanes(state.lanes, lanes)) {
+      if (debug) {
+        count("uniformUnchangedWriteAttempts");
+        count("uniformUnchangedLaneWriteAttempts", lanes.length);
+      }
+      return;
+    }
     // A snapshot for the sink and the state: `lanes` is the state's scratch, refilled by the next
     // extraction, so a sink that keeps its argument must not see later values.
     const written = lanes.slice();
     setValues(node, written);
+    if (debug) {
+      count("uniformWrites");
+      count("uniformLaneWrites", lanes.length);
+    }
     state.lanes = written;
   };
   const live = {
@@ -154,6 +199,13 @@ export function liveUniforms<TNode extends object>(
         if (state.update === undefined) updating.add(node);
         state.update = (frame) => callback.call(node, frame, node);
         state.updateType = updateType;
+        if (debug) {
+          state.debugSource = undefined;
+          if (callbackSites < 64) {
+            state.debugSource = callerOf(new Error().stack);
+            callbackSites++;
+          }
+        }
         state.ranFrame = undefined;
         return node;
       };
@@ -223,26 +275,46 @@ export function liveUniforms<TNode extends object>(
     sync(extra?: { camera?: unknown; scene?: unknown; frameId?: number }) {
       // `extra.frameId` is the renderer's frame: every render, target draw and compute of one frame
       // shares it. The callbacks see this module's own counter, as three's NodeFrame counts renders.
-      const rendererFrame = extra?.frameId;
-      const frame: IUpdateFrame = { ...extra, frameId: ++frameId };
-      for (const node of updating) {
-        const state = states.get(node);
-        if (state?.update === undefined) continue;
-        if (state.updateType === "frame" && rendererFrame !== undefined) {
-          if (state.ranFrame === rendererFrame) continue;
-          state.ranFrame = rendererFrame;
+      const started = debug ? performance.now() : 0;
+      if (debug) count("uniformSyncCalls");
+      try {
+        const rendererFrame = extra?.frameId;
+        const frame: IUpdateFrame = { ...extra, frameId: ++frameId };
+        for (const node of updating) {
+          const state = states.get(node);
+          if (state?.update === undefined) continue;
+          if (state.updateType === "frame" && rendererFrame !== undefined) {
+            if (state.ranFrame === rendererFrame) continue;
+            state.ranFrame = rendererFrame;
+          }
+          let next: unknown;
+          if (debug) {
+            const callbackStart = performance.now();
+            count(
+              state.updateType === "frame" ? "uniformFrameCallbacks" : "uniformRenderCallbacks",
+            );
+            try {
+              next = state.update(frame);
+            } finally {
+              const elapsed = performance.now() - callbackStart;
+              count("uniformCallbackMs", elapsed);
+              if (state.debugSource !== undefined)
+                count(`uniformCallback:${state.debugSource}Ms`, elapsed, state.debugSource);
+            }
+          } else next = state.update(frame);
+          if (next !== undefined) (node as { value: unknown }).value = next;
         }
-        const next = state.update(frame);
-        if (next !== undefined) (node as { value: unknown }).value = next;
-      }
-      for (const ref of objects) {
-        const node = ref.deref();
-        if (node === undefined) {
-          objects.delete(ref);
-          continue;
+        for (const ref of objects) {
+          const node = ref.deref();
+          if (node === undefined) {
+            objects.delete(ref);
+            continue;
+          }
+          const state = states.get(node);
+          if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
         }
-        const state = states.get(node);
-        if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
+      } finally {
+        if (debug) count("uniformSyncMs", performance.now() - started);
       }
     },
   };

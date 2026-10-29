@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type IBrowserRuntime,
@@ -22,6 +22,7 @@ import {
 } from "../src/browser-renderer.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
+import { debugTelemetry } from "../src/debug-telemetry.js";
 import { defineQuadMesh } from "../src/quad-mesh.js";
 import { defineRendererUtils } from "../src/renderer-utils.js";
 
@@ -38,18 +39,27 @@ function host(
   before?: Parameters<typeof defineWebRenderer>[2],
   tsl?: ITslRuntime,
   poll: () => number = () => 1,
+  debugWords?: Uint32Array,
 ) {
   const types = new Map<string, number>();
   const runtime: IBrowserRuntime = {
     typeId: (name) => types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0,
     construct: (name) => ({ key: `${String(types.get(name) ?? 1)}:0:1:1`, type: 1 }),
     invoke: () => null,
-    get: () => undefined,
+    get: (_self, path) =>
+      path === "__hierarchy"
+        ? 0
+        : path === "__engineCounters"
+          ? "gpuTimestampUnrequestedSamples@8"
+          : undefined,
     set: () => undefined,
     release: () => undefined,
     setCallback: () => undefined,
+    ...(debugWords === undefined
+      ? {}
+      : { readWord: (address: number) => debugWords[address / 4] ?? 0 }),
   };
-  const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+  const { classes, counters } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
   const state = vi.fn((..._args: number[]) => 0);
   const initCalls = vi.fn((..._args: unknown[]) => 0);
   let next = 16;
@@ -79,7 +89,7 @@ function host(
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
-  return { Renderer, canvas, scene, camera, state, classes, initCalls, module };
+  return { Renderer, canvas, scene, camera, state, classes, initCalls, module, counters };
 }
 
 async function drawn(parameters: Record<string, unknown>) {
@@ -1279,5 +1289,175 @@ describe("the Wasm engine's compileAsync", () => {
     expect(draws).toBe(1);
     // The compile waits half the time left at most: the bake drew near 200 ms, not at its deadline.
     expect(performance.now() - started).toBeLessThan(320);
+  });
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+
+describe("debug renderer observations", () => {
+  it("forwards source-frame requests and preserves batched unrequested deliveries when the latest was requested", async () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const words = new Uint32Array(4);
+    const requests: boolean[] = [];
+    let requested = false;
+    const fields: Record<number, number> = { 10: 1, 7: 2 };
+    const { Renderer, canvas, scene, camera, module, counters } = host(
+      (field) => {
+        if (field === -1 || field === -2) requested = field === -1;
+        return fields[field] ?? 0;
+      },
+      () => {
+        requests.push(requested);
+        return 0;
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      words,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      backend: { trackTimestamp: boolean };
+      render(scene: object, camera: object): void;
+    };
+    await renderer.init();
+    for (let source = 0; source < 8; source++) {
+      renderer.backend.trackTimestamp = source === 7;
+      renderer.render(scene, camera);
+    }
+    expect(requests).toEqual([false, false, false, false, false, false, false, true]);
+    // All eight native readbacks complete together, with requested frame 7 delivered last.
+    fields[8] = 8;
+    fields[9] = 7;
+    words[2] = requests.filter((value) => !value).length;
+    renderer.backend.trackTimestamp = false;
+    renderer.render(scene, camera);
+    expect(counters().gpuTimestampUnrequestedSamples).toBe(7);
+    expect(debugTelemetry(module)?.totals).toMatchObject({
+      gpuTimestampRequests: 1,
+      gpuTimestampSamples: 8,
+    });
+  });
+
+  it("keeps a legitimate delayed sample separate from the arrival frame's request", async () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const words = new Uint32Array(4);
+    const fields: Record<number, number> = { 10: 1, 7: 2 };
+    const { Renderer, canvas, scene, camera, counters } = host(
+      (field) => fields[field] ?? 0,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      words,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      backend: { trackTimestamp: boolean };
+      render(scene: object, camera: object): void;
+    };
+    await renderer.init();
+    renderer.backend.trackTimestamp = true;
+    renderer.render(scene, camera);
+    fields[8] = 1;
+    fields[9] = 0;
+    renderer.backend.trackTimestamp = false;
+    renderer.render(scene, camera);
+    expect(counters().gpuTimestampUnrequestedSamples).toBe(0);
+  });
+
+  it("leaves the temporal totals the native renderer counts to it, adding only the pixel sizes it alone knows", async () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const fields: Record<number, number> = {
+      13: 1,
+      15: 0,
+      30: 30,
+      31: 20,
+      32: 100,
+      33: 1,
+      35: 10,
+      36: 10,
+      38: 20,
+      39: 20,
+    };
+    const { Renderer, canvas, scene, camera, module } = host((field) => fields[field] ?? 0);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: object, camera: object): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    fields[15] = 1;
+    renderer.render(scene, camera);
+    const totals = debugTelemetry(module)?.totals ?? {};
+    expect(totals).toMatchObject({ temporalInputPixels: 200, temporalOutputPixels: 800 });
+    // The native renderer exports these under these exact names (foundation/waste_counters.h), so a
+    // JS copy double-counts nothing it overwrites and silently keeps a stale value when it does not.
+    for (const name of [
+      "temporalActiveFrames",
+      "temporalHistoryInvalidFrames",
+      "temporalMeasuredPixels",
+      "temporalRejectedPixels",
+      "temporalClampedPixels",
+    ])
+      expect(totals).not.toHaveProperty(name);
+  });
+
+  it("adds no host calls or allocations with debug off", async () => {
+    vi.stubEnv("TN_DEBUG", "0");
+    const frame = vi.fn(() => 0);
+    const { Renderer, canvas, scene, camera, module } = host(frame);
+    const malloc = vi.spyOn(module, "_malloc");
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: object, camera: object): void;
+    };
+    await renderer.init();
+    frame.mockClear();
+    malloc.mockClear();
+    renderer.render(scene, camera);
+    // Existing renderer ABI census; debug reads existing observations only.
+    expect(frame.mock.calls).toHaveLength(37);
+    expect(malloc).toHaveBeenCalledTimes(1); // existing state-string allocation
+    expect(debugTelemetry(module)).toBeUndefined();
+  });
+});
+
+describe("Wasm timestamp sampling", () => {
+  it("forwards the current sampling flag before secondary and main draws", async () => {
+    const flags: number[] = [];
+    const { Renderer, canvas, scene, camera, state, classes } = host(
+      (field) => (field === 10 ? 1 : 0),
+      () => {
+        flags.push(state.mock.calls.at(-1)?.[7] as number);
+        return 0;
+      },
+      (_size, draw) => draw(target as never, scene as never, camera as never),
+      () => {
+        flags.push(state.mock.calls.at(-1)?.[7] as number);
+        return 0;
+      },
+    );
+    const target = new (classes.RenderTarget as new () => object)();
+    const renderer = new Renderer({ canvas }) as {
+      backend: { trackTimestamp: boolean };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    for (let frame = 0; frame < 16; frame += 1) {
+      renderer.backend.trackTimestamp = frame % 8 === 0;
+      renderer.render(scene, camera);
+    }
+    expect(flags).toEqual(
+      Array.from({ length: 16 }, (_, i) => [i % 8 === 0 ? 1 : 0, i % 8 === 0 ? 1 : 0]).flat(),
+    );
   });
 });
