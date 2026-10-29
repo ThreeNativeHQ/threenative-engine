@@ -77,6 +77,45 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   published state re-renders at the publish rate, not the rate of what it shows. `useUiState(selector)` compares
   the result by identity, so a selector that builds a new object or array renders as often as no selector.
 
+## 2026-10-29 Stress lab (web Wasm engine, Chrome DevTools MCP, RTX 2080)
+
+The sandbox scene `sandbox/stress-lab` (`?stress`, real preset) holds houses, a forest, a skinned crowd, physics
+bodies, fires and a virtual shadow map at the same time. Every row is in `docs/stress-loop/ledger.json` and on the
+`pnpm dashboard` Stress lab tab. FPS went 1.36 -> 8.27 (six-window medians); the goal is 120.
+
+### 2026-10-29 — Virtual-shadow casters batch in the main pass — KEEP
+- Where: `packages/runtime-native/src/engine/renderer/render_database.cpp`; `b4131e881`.
+- Result: main draws 2795 -> 1836 at the same FPS (1.36 -> 1.3); visual judge NEUTRAL. A caster's shadow copy stays an
+  individual draw, so the per-page shadow cull still sees it.
+- Insight: the draw count varied 1803-3168 between windows. A single-window draw claim is invalid; use medians.
+
+### 2026-10-29 — Rig shadow bounds come from bones, not CPU-skinned vertices — KEEP
+- Where: `SkinnedMesh::boneReachBounds` (`animation/skinning/skeleton.cpp`), used by the VSM bounds loop in
+  `renderer.cpp`; `b95f4c8ef`.
+- Result: 1.3 -> 4.8 FPS, GPU p95 125 ms, frame p95 223 ms. The crowd under VSM cost about 760 ms a frame because the
+  bounds loop skinned every vertex on the CPU. Now each bone has a reach radius measured once per geometry revision;
+  a call costs O(bones). Visual judge NEUTRAL on a close-up of a sunlit walker.
+- Insight: UE 5.8.3 fits skinned bounds to bones. A bounds pass that skins vertices costs as much as skinning itself.
+
+### 2026-10-29 — A VSM pan keeps the shadow pages the window still covers — KEEP
+- Where: `shadows/virtual/atlas.cpp`, `pages.cpp`; `8401791aa`.
+- Result: 4.8 -> 8.27 FPS, frame p95 223 -> 159 ms, GPU p95 125 -> 72 ms, presented p95 533 -> 283 ms. The clipmap
+  re-centred at texel precision, so a camera orbit redrew every page of every level each frame. A pan now moves the
+  window by whole pages from its last origin (the first placement and a cut keep the exact texel origin, so the GPU
+  reference renders still match). Visual judge NEUTRAL; the orbit was frozen at 12 s after a real pan path.
+- Insight: a world-grid snap broke the vsm-cut reference render (1.6% pixels). Snap relative to the previous origin
+  and only on a pan.
+
+### 2026-10-29 — Method: name web Wasm hot functions with `--profiling-funcs` — KEEP (method)
+- A trace of the release Wasm shows `wasm-function[N]`. A symbol map from a relink does not match it, because
+  indices move. Relink with `-DCMAKE_EXE_LINKER_FLAGS=--profiling-funcs` and install it; Chrome then names every
+  function. Clear the flag and relink afterwards (a clean relink is byte-identical to the release build).
+- Trap: any relink that changes the glue (`.mjs`) fails in the sandbox (`ASM_CONSTS[code] is not a function`,
+  `reading 'resolveQuerySet'`) until the Vite dev server restarts. Deleting `node_modules/.vite` is not enough: the
+  running server keeps the old prebundled glue in memory.
+- Trap: removing one system (crowd, bodies or fires) cut `mainPass` from 112 ms to 21-38 ms each, so the costs do not
+  add. Bisect with all arms, then profile; do not sum single-system deltas.
+
 ## 2026-10-28 RTS kit probe (Chrome DevTools trace, web Wasm engine, real display)
 
 ### 2026-10-28 — RTS HUD panels re-render only when a shown value changes — KEEP
