@@ -243,7 +243,7 @@
   },
   "rts": {
     "low": {
-      "bloomEnabled": true,
+      "bloomEnabled": false,
       "autoExposureEnabled": false,
       "exposure": 1.02,
       "tonemapMode": "aces",
@@ -252,31 +252,31 @@
       "renderChainTier": "low"
     },
     "medium": {
-      "bloomEnabled": true,
+      "bloomEnabled": false,
       "autoExposureEnabled": false,
       "exposure": 1.02,
       "tonemapMode": "aces",
       "unrealBloomEnabled": true,
       "vignetteAmount": 0.4,
-      "temporalAA": true,
+      "temporalAA": false,
       "gtaoEnabled": true,
       "gtaoRadius": 0.35,
-      "localExposureEnabled": true,
+      "localExposureEnabled": false,
       "motionBlurEnabled": false,
       "gtaoSamples": 8,
       "renderChainTier": "medium"
     },
     "high": {
-      "bloomEnabled": true,
+      "bloomEnabled": false,
       "autoExposureEnabled": false,
       "exposure": 1.02,
       "tonemapMode": "aces",
       "unrealBloomEnabled": true,
       "vignetteAmount": 0.4,
-      "temporalAA": true,
+      "temporalAA": false,
       "gtaoEnabled": true,
       "gtaoRadius": 0.35,
-      "localExposureEnabled": true,
+      "localExposureEnabled": false,
       "motionBlurEnabled": false
     }
   },

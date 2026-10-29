@@ -16,7 +16,7 @@ import {
 import type { Game } from "../sim/game.js";
 import { MAP_CELL, POOLS, WORLD, terrainHeight } from "../sim/terrain.js";
 import { createTerrainMaterial, createWaterMaterial, waterDisc } from "./materials.js";
-import { palette } from "./palette.js";
+import { legacyColor, palette } from "./palette.js";
 
 /**
  * Quads across the map: one every 2 m, which is exactly the simulation's navigation cell, so the
@@ -75,7 +75,7 @@ export function createTerrain(): ITerrain {
   // covered, and the battlefield reads as a plateau over a plain instead of a floating sheet.
   const plain = new Mesh(
     new PlaneGeometry(APRON, APRON).rotateX(-Math.PI / 2),
-    new MeshStandardMaterial({ color: palette.cliff, roughness: 1 }),
+    new MeshStandardMaterial({ color: legacyColor(palette.cliff), roughness: 1 }),
   );
   plain.position.y = APRON_Y;
   root.add(plain);

@@ -18,29 +18,40 @@ import {
   texture,
   time,
   uv,
+  vec3,
 } from "three/tsl";
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { HALF, WORLD } from "../sim/terrain.js";
 import { paintGround } from "./ground.js";
-import { palette } from "./palette.js";
+
+/** AstraCraft's fog of war: rgba(5, 14, 22) over the ground, read as linear light like its canvas. */
+const FOG_OF_WAR = vec3(5 / 255, 14 / 255, 22 / 255);
+/** WebGL blends after the sRGB encode, so AstraCraft's sheet mixes in display space: about gamma 2.2. */
+const GAMMA = 2.2;
+/** What open ground's albedo is multiplied by under the sun, sky and fill of `lighting.ts`. */
+const OPEN_GROUND_LIGHT = 2;
 
 /**
  * The ground: the painted battlefield from `ground.ts`, with the fog of war sampled in the same
  * material rather than painted over it.
  *
- * An overlay plane is one more full-map draw, and it cannot be depth-tested against the very slope
- * it is drawn on without z-fighting it. One material, one texture, one draw — and the fog is lit
- * with the ground, so a shadow crossing unexplored ground darkens both together. The fog texture
- * holds how much of the ground shows through: 1 in sight, 0.76 remembered, 0.41 never seen.
+ * AstraCraft lays an unlit dark-blue sheet over the lit ground, blended on screen in gamma space; a
+ * linear blend kept unseen ground yellow and light. The material scales the albedo by the share
+ * that shows through, raised to the gamma, and adds the rest of that blend as emissive, worked out
+ * on the open ground's lit colour. One draw, no overlay plane to z-fight the slope it covers.
+ * The fog texture holds how much of the ground shows through: 1 in sight, 0.76 remembered, 0.41 never seen.
  */
 export function createTerrainMaterial(fog: DataTexture): MeshStandardNodeMaterial {
   const mapUv = positionWorld.xz.add(HALF).div(WORLD);
   const material = new MeshStandardNodeMaterial({ metalness: 0.025, roughness: 0.94 });
-  material.colorNode = mix(
-    color(palette.unseen),
-    texture(paintGround(), mapUv).rgb,
-    texture(fog, mapUv).r,
-  );
+  const albedo = texture(paintGround(), mapUv).rgb;
+  const through = texture(fog, mapUv).r;
+  const kept = pow(through, float(GAMMA));
+  const lit = albedo.mul(OPEN_GROUND_LIGHT);
+  const sheet = pow(FOG_OF_WAR, vec3(1 / GAMMA));
+  const blended = pow(mix(sheet, pow(lit, vec3(1 / GAMMA)), through), vec3(GAMMA));
+  material.colorNode = albedo.mul(kept);
+  material.emissiveNode = max(blended.sub(lit.mul(kept)), vec3(0));
   return material;
 }
 

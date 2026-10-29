@@ -35,11 +35,18 @@ import {
 } from "../sim/terrain.js";
 import { seeded } from "../sim/types.js";
 import { ROAD_PATHS, padAt, sedimentTexture, segmentDistance } from "./ground.js";
+import { legacyColor } from "./palette.js";
 
 const standard = (
-  color: number,
+  color: number | Color,
   extra: ConstructorParameters<typeof MeshStandardMaterial>[0] = {},
-) => new MeshStandardMaterial({ color, roughness: 0.87, metalness: 0.08, ...extra });
+) =>
+  new MeshStandardMaterial({
+    color: typeof color === "number" ? legacyColor(color) : color,
+    roughness: 0.87,
+    metalness: 0.08,
+    ...extra,
+  });
 
 /** A ten-sided column with a jagged rim and sandstone bands in its vertex colour. */
 function mesaGeometry(): BufferGeometry {
@@ -168,10 +175,10 @@ export function createEnvironment(game: Game): IEnvironment {
   }
   // Three tints of olive, one draw each: per-instance colour is not on every engine path.
   const shades = [0.5, 0.55, 0.6].map((lightness) => {
-    const tint = new Color().setHSL(0.19, 0.25, lightness).multiply(new Color(0x8f9764));
+    const tint = new Color().setHSL(0.19, 0.25, lightness).multiply(legacyColor(0x8f9764));
     const mesh = new InstancedMesh(
       tuftGeometry(),
-      standard(tint.getHex(), { side: DoubleSide, roughness: 1 }),
+      standard(tint, { side: DoubleSide, roughness: 1 }),
       tufts.length,
     );
     mesh.count = 0;
@@ -199,7 +206,7 @@ function props(): Mesh[] {
   const dark = standard(0x283b40);
   const steel = standard(0x728384);
   const stripe = standard(0xc8ab62);
-  const lamp = new MeshBasicMaterial({ color: 0x86efea });
+  const lamp = new MeshBasicMaterial({ color: legacyColor(0x86efea) });
   const parts = new Map<Material, BufferGeometry[]>();
   const box = (
     x: number,
@@ -235,7 +242,7 @@ function props(): Mesh[] {
   };
   for (const site of RESOURCE_SITES.slice(3)) depot(site.baseX + 8, site.baseZ + 7);
   for (const start of STARTS) {
-    const beacon = new MeshBasicMaterial({ color: start.color });
+    const beacon = new MeshBasicMaterial({ color: legacyColor(start.color) });
     for (const [dx, dz] of [
       [-22, -21],
       [22, -21],
