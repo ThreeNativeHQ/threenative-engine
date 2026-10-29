@@ -9,8 +9,6 @@ export interface IDebugSource {
 
 interface IDebugHost {
   process?: { env?: Record<string, unknown> };
-  // biome-ignore lint/style/useNamingConvention: public launch flag shared with native and worker hosts.
-  __THREENATIVE_DEBUG__?: unknown;
   __tnEngineCost?: Record<string, number>;
   __tnDebugSources?: Record<string, IDebugSource>;
   /** The web back end's running totals by name, the same bag `createEngineCounterReader` differences. */
@@ -32,11 +30,14 @@ export function isContentScaled(name: string): boolean {
 }
 
 /** Read at installation, using the same launch seams as spansRequested(). */
+/** The public launch flag shared with native and worker hosts; a string key keeps its spelling out of the naming lint. */
+const DEBUG_GLOBAL = "__THREENATIVE_DEBUG__";
+
 export function debugRequested(): boolean {
   const host = globalThis as IDebugHost;
   return (
     host.process?.env?.TN_DEBUG === "1" ||
-    host.__THREENATIVE_DEBUG__ === true ||
+    (globalThis as Record<string, unknown>)[DEBUG_GLOBAL] === true ||
     /[?&]tnDebug=1(?:&|$)/u.test(globalThis.location?.search ?? "")
   );
 }

@@ -931,6 +931,23 @@ describe("starter postprocessing lifecycle", () => {
   });
 
   it("reports the engine's live temporal state while the chain's own temporal AA runs", async () => {
+    // No shipped tier anti-aliases temporally since core's sharp AA (4x MSAA, owner 2026-10-28), so `high` opts into
+    // the named `temporalAA: true` override here, which is how a kit turns the engine's traa stage back on.
+    const qualityPath = "../templates/starter/src/render/quality.js";
+    vi.resetModules();
+    vi.doMock(qualityPath, async () => {
+      const actual =
+        await vi.importActual<typeof import("../templates/starter/src/render/quality.js")>(
+          qualityPath,
+        );
+      return {
+        ...actual,
+        qualityPreset: (tier: string) => ({
+          ...actual.qualityPreset(tier),
+          ...(tier === "high" ? { temporalAA: true } : {}),
+        }),
+      };
+    });
     const post = await import("../templates/starter/src/render/postprocessing.js");
     const temporal = { active: true, frame: 7, historyValid: true, jitter: [0.25, -0.25] };
     const owned = {
@@ -954,6 +971,8 @@ describe("starter postprocessing lifecycle", () => {
     });
     expect(Object.hasOwn(low.debug(), "temporal")).toBe(false);
     low.dispose();
+    vi.doUnmock(qualityPath);
+    vi.resetModules();
   });
 
   it("replaces only changed graphs and stops consuming windows after scene disposal", async () => {

@@ -340,8 +340,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "35ee73d857095b7026f66bed2d4c49431a0759675fca5bd611dd98bcea39f655",
   racing: "c8462040983a743a51cf1b645c9fb32594cec2dcb6978597864eb4ed034b82ff",
   rain: "6640d55336c2e52899b7b8fee270be13de8693e360a292f1b8377c736a16cad3",
-  // Re-pinned 2026-10-28: develop #589 render imports plus core MSAA with no TRAA or camera motion blur.
-  rts: "766329c91bb8fff82f766170081ae5d6ba1cbdc09baba25ca5594cb3a0d54cf2",
+  // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
+  // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
+  // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
+  // Then merged develop d37156a87: render imports from #589 and lodPixelScale for army.sync.
+  // Re-pinned 2026-10-28 (PRD-765): units drawn between rules steps, AstraCraft's thin pixel-snapped bars,
+  // a blurred slate fog of war, sRGB-decoded environment colours and no vignette.
+  // Then the HUD state on a 50 ms clock and no per-frame instance bound (perf/rts-kit-frame 76baed0bc, 5ab6c8dce).
+  // Then judge rounds 2-3: AstraCraft crystals, thin selection rings, a one-texel shadow kernel, its (-66, 57) start and bar colours made before the first draw.
+  // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
+  // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
+  // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
+  rts: "d36c0f57c332464ee325c1280a6430ef97a957592a3fbdc93927d96464d5ecdf",
   runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "254c4b4b535d5d89b9640c27fa829c2392e7a68ecda5fb58596835452ec7d265",

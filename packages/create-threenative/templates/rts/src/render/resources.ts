@@ -5,7 +5,6 @@
 // ore field visibly shortens as the Surveyors empty it, so the economy is legible from the field
 // alone without opening a panel.
 import {
-  Color,
   ConeGeometry,
   CylinderGeometry,
   IcosahedronGeometry,
@@ -20,8 +19,6 @@ import { HALF, RESOURCE_SITES, terrainHeight } from "../sim/terrain.js";
  * deposit rather than as seven unrelated props. */
 const CRYSTALS = 7;
 const ROCKS = 5;
-const CRYSTAL_TINT = new Color(0x8ae5f1);
-const CRYSTAL_BASE = new Color(0xffffff);
 const CRYSTAL_HEIGHT = [1.05, 1.6, 2.15, 2.7, 3.25] as const;
 
 const _dummy = new Object3D();
@@ -35,16 +32,17 @@ export interface IResources {
 export function createResources(): IResources {
   const root = new Object3D();
   const sites = RESOURCE_SITES.length;
-  const crystals = new InstancedMesh(
-    new ConeGeometry(0.55, 1, 5),
-    new MeshStandardMaterial({
-      color: 0x38a5c5,
-      emissive: 0x065572,
-      metalness: 0.5,
-      roughness: 0.2,
-    }),
-    sites * CRYSTALS * 7,
-  );
+  // AstraCraft's unit cone, scaled 0.46-0.74 wide, in its two crystal materials: one crystal in
+  // three is the pale, less metallic one that catches the sun (PRD-765 judge round 2).
+  const cone = new ConeGeometry(1, 1, 5);
+  const crystal = (color: number, emissive: number, metalness: number, roughness: number) =>
+    new InstancedMesh(
+      cone,
+      new MeshStandardMaterial({ color, emissive, emissiveIntensity: 1.5, metalness, roughness }),
+      sites * CRYSTALS,
+    );
+  const crystals = crystal(0x38a5c5, 0x065572, 0.5, 0.2);
+  const pale = crystal(0x8ae5f1, 0x166984, 0.25, 0.21);
   const vents = new InstancedMesh(
     new CylinderGeometry(2.5, 2.7, 0.35, 6),
     new MeshStandardMaterial({ color: 0x314b39, roughness: 0.9 }),
@@ -56,7 +54,7 @@ export function createResources(): IResources {
     sites * ROCKS,
   );
   // Listed once: the sync below walks this every frame, and a literal here is an array a frame.
-  const meshes = [crystals, vents, rubble];
+  const meshes = [crystals, pale, vents, rubble];
   for (const mesh of meshes) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -67,7 +65,8 @@ export function createResources(): IResources {
   return {
     root,
     sync: (game) => {
-      let crystal = 0;
+      let dark = 0;
+      let light = 0;
       let vent = 0;
       let rock = 0;
       for (const node of game.nodes) {
@@ -78,7 +77,8 @@ export function createResources(): IResources {
           const left = 0.4 + 0.6 * Math.min(1, node.amount / 2100);
           for (let index = 0; index < CRYSTALS; index += 1) {
             const angle = 0.15 + (index / CRYSTALS) * Math.PI * 1.8;
-            const spread = (node.r * 0.78 * (1 + (index % 3))) / 3;
+            // Within 1.25 m of the node, as AstraCraft packs them: one deposit, not a ring of spikes.
+            const spread = (1.25 * (1 + (index % 3))) / 3;
             const height = (CRYSTAL_HEIGHT[index % CRYSTAL_HEIGHT.length] ?? 1) * left;
             _dummy.position.set(
               node.x + Math.cos(angle) * spread,
@@ -88,9 +88,8 @@ export function createResources(): IResources {
             _dummy.rotation.set(((index % 5) - 2) * 0.08, angle, ((index % 3) - 1) * 0.16);
             _dummy.scale.set(0.46 + (index % 3) * 0.14, height, 0.5 + (index % 2) * 0.2);
             _dummy.updateMatrix();
-            crystals.setMatrixAt(crystal, _dummy.matrix);
-            crystals.setColorAt(crystal, index % 3 === 0 ? CRYSTAL_TINT : CRYSTAL_BASE);
-            crystal += 1;
+            if (index % 3 === 0) pale.setMatrixAt(light++, _dummy.matrix);
+            else crystals.setMatrixAt(dark++, _dummy.matrix);
           }
         } else {
           _dummy.position.set(node.x, ground + 0.18, node.z);
@@ -114,13 +113,13 @@ export function createResources(): IResources {
           }
         }
       }
-      crystals.count = crystal;
+      crystals.count = dark;
+      pale.count = light;
       vents.count = vent;
       rubble.count = rock;
       for (const mesh of meshes) {
+        // No bound: every batch is `frustumCulled = false`, so nothing reads one.
         mesh.instanceMatrix.needsUpdate = true;
-        if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true;
-        if (mesh.count > 0) mesh.computeBoundingSphere();
       }
     },
     dispose: () => {

@@ -1,12 +1,13 @@
 import {
   type ICtx,
+  type IRawInputPointerEdge,
   Scene,
   type SceneFrame,
   getPlatform,
   isMobile,
   lodPixelScale,
 } from "@threenative/core";
-import { Object3D, type OrthographicCamera, type Texture, type Vector2 } from "three";
+import { Object3D, type OrthographicCamera, type Texture, Vector2, Vector3 } from "three";
 import { onSceneIntent } from "../orders.js";
 import { createArmy } from "../render/army.js";
 import {
@@ -20,17 +21,25 @@ import {
   panSpeed,
   zoomRts,
 } from "../render/camera.js";
+import { createEnvironment } from "../render/environment.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { type ISun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { createUnitModels } from "../render/models.js";
-import { type PickTarget, pickEntity, unitsInBox } from "../render/picking.js";
+import {
+  DRAG_SLOP,
+  type PickTarget,
+  dragBoxRect,
+  pickEntity,
+  unitsInBox,
+} from "../render/picking.js";
 import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { createResources } from "../render/resources.js";
 import { setupSky } from "../render/sky.js";
 import { createTerrain } from "../render/terrain.js";
+import { unloadGarrison } from "../sim/combat.js";
 import { Game } from "../sim/game.js";
 import { HALF, WORLD, terrainHeight } from "../sim/terrain.js";
 import {
@@ -53,8 +62,6 @@ const STEP = SIM_STEP;
 /** Never run more than a quarter second of catch-up: a tab that was backgrounded must not spend a
  * second of catch-up stalling the frame it came back on. */
 const MAX_CATCH_UP = 0.25;
-/** A drag shorter than this is a click, not a box. */
-const DRAG_SLOP = 4;
 /** The coarse fog raster the HUD draws: 28 cells over 224 m is one every 8 m. */
 const MINIMAP = 28;
 /** Every order the panel can name, in the order the readout lists them. */
@@ -76,6 +83,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   attackMove: "Those units cannot advance under fire.",
   garrison: "Select Vanguards and a friendly bunker with free slots.",
   repair: "Select a Surveyor and a completed friendly structure.",
+  follow: "Select a Mender and a friendly ground unit.",
 };
 
 /** One drag, one canvas pointer. Reused, because a drag is a press, a move and a release. */
@@ -136,11 +144,22 @@ export class Play extends Scene<GameState, undefined> {
   #anchor = new SelectionAnchor();
   #drag: IDrag | undefined;
   #box: number[] = [0, 0, 0, 0];
+  /** The pointer position the band's live count was taken at, so a still pointer rescans nothing. */
+  #boxAt = new Vector2(Number.NaN, Number.NaN);
   #found: number[] = [];
   #kinds = new Uint8Array(ORDER_KINDS.length);
   #mode = "";
+  #edgeScroll = true;
+  /** Whether the current notice is a refusal; the toast draws one in the warning style. */
+  #noticeError = false;
   #pointerSeen = false;
   #accumulator = 0;
+  /** The engine tick the rules clock is fed in, and the camera position before the latest one. */
+  #tick = 0;
+  #eyeFrom = new Vector3();
+  #eye = new Vector3();
+  #drawnAt = -1;
+  #stopDraw: (() => void) | undefined;
   #minimapDirty = true;
   #publishedStep = -1;
   #notice = "";
@@ -148,6 +167,15 @@ export class Play extends Scene<GameState, undefined> {
   #dots: number[] = [];
   #viewCorners: number[] = [];
   #patch: Partial<GameState> = {};
+  /** Game speed the HUD's speed button cycles: 1×, 1.5×, 2×. */
+  #speed = 1;
+  /** Control groups 1-5, set and recalled from the HUD; `#groupCounts` is what it shows. */
+  #groups: number[][] = [[], [], [], [], []];
+  #groupCounts: number[] = [0, 0, 0, 0, 0];
+  /** Selection signature the roster was last built for, so a click while paused still updates it. */
+  #rosterSignature = -1;
+  #contacts = new Uint16Array(3);
+  #rivals: string[] = ["NO CONTACT", "NO CONTACT"];
 
   override async load(ctx: GameCtx): Promise<void> {
     this.#sky = await ctx.assets.texture("sky.jpg");
@@ -167,7 +195,8 @@ export class Play extends Scene<GameState, undefined> {
     // reproducible from the `seed` in src/game.ts.
     const sim = new Game({ seed: Math.floor(ctx.random.range(1, 1_000_000)) });
     this.#sim = sim;
-    const view = createRtsView(-70, 58);
+    // AstraCraft opens on (-66, 57): the same frame beside it (PRD-765 judge round 2).
+    const view = createRtsView(-66, 57);
     this.#view = view;
 
     setupSky(ctx.scene, this.#sky);
@@ -198,7 +227,13 @@ export class Play extends Scene<GameState, undefined> {
     });
     this.#resources = createResources();
     const world = new Object3D();
-    world.add(this.#terrain.root, this.#resources.root, this.#army.root, this.#anchor.object);
+    world.add(
+      this.#terrain.root,
+      createEnvironment(sim).root,
+      this.#resources.root,
+      this.#army.root,
+      this.#anchor.object,
+    );
     ctx.add(world);
     ctx.entities.add("selection", this.#anchor);
     applyRtsCamera(camera, view, ctx.viewport.size, STEP);
@@ -224,26 +259,26 @@ export class Play extends Scene<GameState, undefined> {
       );
     }
 
+    // The army is drawn once per rendered frame, after the frame's last tick, between the rules'
+    // last two steps: the rules move units 20 times a second and the screen shows 60.
+    this.#eyeFrom.copy(camera.position);
+    this.#stopDraw = ctx.beforeRender(() => this.#draw(ctx, sim, camera));
+
     return (frameCtx, dt) => {
       loading.update();
+      this.#tick = dt;
+      this.#eyeFrom.copy(camera.position);
       this.#readInput(frameCtx, dt);
-      this.#accumulator = Math.min(this.#accumulator + dt, MAX_CATCH_UP);
+      this.#accumulator = Math.min(this.#accumulator + dt * this.#speed, MAX_CATCH_UP);
       while (this.#accumulator >= STEP) {
+        this.#army?.step(sim);
         sim.update(STEP);
         this.#accumulator -= STEP;
       }
       this.#drain(sim);
       this.#prune(sim);
       applyRtsCamera(camera, view, frameCtx.viewport.size, dt);
-      sun.follow(view.target.x, view.target.z);
-      this.#army?.sync(
-        sim,
-        this.#selected,
-        sim.time,
-        dt,
-        camera,
-        lodPixelScale(camera, frameCtx.viewport.size.height, 1),
-      );
+      sun.follow(view.target.x, view.target.z, camera);
       if (this.#minimapDirty) {
         this.#minimapDirty = false;
         this.#terrain?.updateFog(sim);
@@ -254,7 +289,36 @@ export class Play extends Scene<GameState, undefined> {
     };
   }
 
+  /**
+   * Write the army for the frame about to be drawn. The engine draws the camera between its last two
+   * ticks (`ctx.alpha`), so the units are drawn at the same moment on the rules' clock, and the bars
+   * are snapped against the camera position the frame really uses. A paused game draws the latest
+   * state, as the engine does.
+   */
+  #draw(ctx: GameCtx, sim: Game, camera: OrthographicCamera): void {
+    const now = ctx.frameTime;
+    const dt = this.#drawnAt < 0 ? 0 : Math.min(0.1, Math.max(0, (now - this.#drawnAt) / 1000));
+    this.#drawnAt = now;
+    const alpha = ctx.state.getState().paused ? 1 : ctx.alpha;
+    const ahead = this.#accumulator + alpha * this.#tick * this.#speed;
+    const blend = Math.min(1, ahead / STEP);
+    this.#eye.lerpVectors(this.#eyeFrom, camera.position, alpha);
+    this.#army?.sync(
+      sim,
+      this.#selected,
+      sim.time - STEP + blend * STEP,
+      dt,
+      camera,
+      lodPixelScale(camera, ctx.viewport.size.height, 1),
+      blend,
+      this.#eye,
+    );
+  }
+
   override exit(ctx: GameCtx): void {
+    this.#stopDraw?.();
+    this.#stopDraw = undefined;
+    this.#drawnAt = -1;
     this.#materialLighting?.dispose();
     this.#materialLighting = undefined;
     this.#post?.dispose();
@@ -305,8 +369,14 @@ export class Play extends Scene<GameState, undefined> {
     const at = raw.pointer.position;
     if (at.x !== 0 || at.y !== 0) this.#pointerSeen = true;
     // Edge scroll: the cursor within `EDGE` pixels of the frame pans, but never while it is
-    // pressing something — a drag that reached the edge was a drag, not a scroll.
-    if (this.#pointerSeen && raw.pointer.buttons === 0 && this.#drag === undefined) {
+    // pressing something — a drag that reached the edge was a drag, not a scroll — and never once
+    // the top bar's toggle has turned it off, which is what the button is for.
+    if (
+      this.#edgeScroll &&
+      this.#pointerSeen &&
+      raw.pointer.buttons === 0 &&
+      this.#drag === undefined
+    ) {
       if (at.x < EDGE) panRts(view, -speed, 0);
       else if (at.x > size.width - EDGE) panRts(view, speed, 0);
       else if (at.y < EDGE) panRts(view, 0, -speed);
@@ -323,10 +393,12 @@ export class Play extends Scene<GameState, undefined> {
     for (const edges of raw.pointerEdges.values())
       for (const edge of edges) {
         if (edge.type !== "down") {
-          this.#release(ctx, edge.id, edge.position);
+          this.#release(ctx, edge, isShifted(keys));
         } else if ((edge.buttons & 2) !== 0) {
           this.#orderAt(ctx, edge.position, isShifted(keys));
-        } else {
+        } else if (this.#mode === "") {
+          // A press while a mode is armed is that order, not a band: the banner says CLICK, and a
+          // box drawn under an attack-move is a gesture that cannot do what it looks like.
           this.#drag = { from: edge.position.clone(), id: edge.id, to: edge.position.clone() };
         }
       }
@@ -338,29 +410,39 @@ export class Play extends Scene<GameState, undefined> {
     if (ctx.input.justPressed("moveOrder")) this.#mode = "move";
     if (ctx.input.justPressed("hold")) sim.command(this.#selection, "hold");
     if (ctx.input.justPressed("stopOrder")) sim.command(this.#selection, "stop");
+    // The two the quick bar prints a key for, through the same door the buttons use.
+    if (ctx.input.justPressed("retreat")) this.#intent("retreat");
+    if (ctx.input.justPressed("idle")) this.#intent("idle");
   }
 
-  #release(ctx: GameCtx, id: number, at: Vector2): void {
-    const drag = this.#drag;
+  /** A release: the armed order if there is one, otherwise the band the press opened. */
+  #release(ctx: GameCtx, edge: IRawInputPointerEdge, shift: boolean): void {
     const sim = this.#sim;
     const view = this.#view;
-    if (drag === undefined || drag.id !== id || sim === undefined || view === undefined) return;
+    if (sim === undefined || view === undefined) return;
+    if (this.#mode !== "") {
+      // A cancel is not a click: a mode survives the pointer leaving, as it does in AstraCraft.
+      if (edge.type === "up") this.#orderAt(ctx, edge.position, shift);
+      return;
+    }
+    const drag = this.#drag;
+    if (drag === undefined || drag.id !== edge.id) return;
     this.#drag = undefined;
     const camera = ctx.camera as OrthographicCamera;
     const size = ctx.viewport.size;
-    const keys = ctx.input.raw.keys;
+    const at = edge.position;
     if (Math.hypot(at.x - drag.from.x, at.y - drag.from.y) <= DRAG_SLOP) {
       const hit = pickEntity(sim, camera, view, size, at.x, at.y);
       if (hit === undefined) {
-        if (!isShifted(keys)) this.#selectIds([]);
+        if (!shift) this.#selectIds([]);
         return;
       }
-      this.#toggleSelection(hit, isShifted(keys));
+      this.#toggleSelection(hit, shift);
       return;
     }
     // Shift adds to what is selected; a fresh drag replaces it.
-    const keep = isShifted(keys) ? this.#selection.filter((id) => sim.get(id)?.team === 0) : [];
-    unitsInBox(sim, camera, view, size, drag.from, drag.to, isAlt(keys), this.#found);
+    const keep = shift ? this.#selection.filter((id) => sim.get(id)?.team === 0) : [];
+    unitsInBox(sim, camera, view, size, drag.from, drag.to, isAlt(ctx.input.raw.keys), this.#found);
     this.#selectIds(keep.concat(this.#found));
   }
 
@@ -391,9 +473,11 @@ export class Play extends Scene<GameState, undefined> {
       const result = sim.build(type, ground.x, ground.z, 0);
       if (!result.ok) {
         this.#notice = result.message ?? "That site cannot be built there.";
+        this.#noticeError = true;
         return;
       }
       this.#notice = `${TYPES[type].name} ordered. Its Surveyor must stay on site.`;
+      this.#noticeError = false;
       this.#army?.marker(ground.x, ground.z, false);
       this.#mode = "";
       return;
@@ -401,14 +485,28 @@ export class Play extends Scene<GameState, undefined> {
     if (this.#selection.length === 0) return;
     const ground = groundAt(camera, at.x, at.y, ctx.viewport.size);
     if (ground === null) return;
-    const hit = pickEntity(sim, camera, view, ctx.viewport.size, at.x, at.y);
+    this.#orderGround(ground, append, pickEntity(sim, camera, view, ctx.viewport.size, at.x, at.y));
+  }
+
+  /**
+   * An order at a ground point, with whatever the cursor could have hit.
+   *
+   * The right-click on the battlefield and the right-click on the overview land here: the overview
+   * has no entity under the mouse (the panel is not the scene), so it passes no hit and the order
+   * is the same `#contextual` answer a click on bare ground gives.
+   */
+  #orderGround(ground: IPoint, append: boolean, hit?: PickTarget): void {
+    const sim = this.#sim;
+    if (sim === undefined || this.#selection.length === 0) return;
     const choice = this.#contextual(sim, ground, hit);
     const result = sim.command(this.#selection, choice.kind, choice.target, 0, append);
     if (!result.ok) {
       this.#notice = REFUSALS[choice.kind] ?? "No selected unit can do that.";
+      this.#noticeError = true;
       return;
     }
     this.#notice = "";
+    this.#noticeError = false;
     this.#army?.marker(
       ground.x,
       ground.z,
@@ -434,7 +532,8 @@ export class Play extends Scene<GameState, undefined> {
         ? { kind: "attack", target: { id: hit.id } }
         : { kind: "attackMove", target: ground };
     if (mode === "rally" || mode === "move") return move;
-    if (mode === "garrison" || mode === "repair") return { kind: mode, target: { id: hit?.id } };
+    if (mode === "garrison" || mode === "repair" || mode === "follow")
+      return { kind: mode, target: { id: hit?.id } };
     if (hit !== undefined && hit.team > 0) return { kind: "attack", target: { id: hit.id } };
     const has = (type: EntityType) => this.#selection.some((id) => sim.get(id)?.type === type);
     if (hit !== undefined && hit.team === 0 && hit.type === "bunker" && has("ranger"))
@@ -467,9 +566,25 @@ export class Play extends Scene<GameState, undefined> {
       case "base":
         this.#focusBase(sim);
         break;
+      case "edge":
+        this.#edgeScroll = !this.#edgeScroll;
+        this.#notice = this.#edgeScroll ? "Edge scrolling enabled." : "Edge scrolling disabled.";
+        this.#noticeError = false;
+        break;
       case "order":
         this.#mode = value;
         break;
+      case "focus": {
+        const point = readPoint(payload);
+        if (point !== undefined && this.#view !== undefined) focusRts(this.#view, point.x, point.z);
+        break;
+      }
+      case "orderAt": {
+        // The overview's right-click: an order at a ground point, with nothing under the cursor.
+        const point = readPoint(payload);
+        if (point !== undefined) this.#orderGround(point, false);
+        break;
+      }
       case "place":
         this.#mode = `build:${value}`;
         break;
@@ -485,6 +600,7 @@ export class Play extends Scene<GameState, undefined> {
         this.#notice = result.ok
           ? `${TYPES[value as EntityType].name} queued.`
           : (result.message ?? "That cannot be trained here.");
+        this.#noticeError = !result.ok;
         break;
       }
       case "cancelTrain": {
@@ -502,6 +618,76 @@ export class Play extends Scene<GameState, undefined> {
           sim.command(this.#selection, "move", { x: core.x + 9, z: core.z + 8 });
           this.#army?.marker(core.x + 9, core.z + 8, false);
         }
+        break;
+      }
+      case "hold":
+      case "stop":
+        sim.command(this.#selection, intent);
+        break;
+      case "idle": {
+        const idle = sim
+          .own()
+          .filter((entity) => entity.type === "worker" && entity.order.kind === "idle");
+        this.#selectIds(idle.map((entity) => entity.id));
+        const first = idle[0];
+        if (first !== undefined && this.#view !== undefined) focusRts(this.#view, first.x, first.z);
+        this.#notice =
+          idle.length > 0
+            ? `${idle.length} idle Surveyors selected.`
+            : "All Surveyors are working.";
+        this.#noticeError = false;
+        break;
+      }
+      case "unload": {
+        const bunker = this.#primary();
+        if (bunker === undefined || bunker.type !== "bunker") break;
+        const result = unloadGarrison(sim, bunker.id, 0);
+        this.#notice = result.ok
+          ? `${result.count ?? 0} Vanguards deployed.`
+          : (result.message ?? "No infantry inside.");
+        this.#noticeError = !result.ok;
+        break;
+      }
+      case "builder": {
+        // The site's own Surveyor, selected and framed, so a stalled build has a clickable cause.
+        const site = this.#primary();
+        const builder = site?.builderId == null ? undefined : sim.get(site.builderId);
+        if (builder === undefined) {
+          this.#notice = "No Surveyor is assigned to this site.";
+          this.#noticeError = true;
+          break;
+        }
+        this.#selectIds([builder.id]);
+        if (this.#view !== undefined) focusRts(this.#view, builder.x, builder.z);
+        this.#notice = "";
+        this.#noticeError = false;
+        break;
+      }
+      case "select":
+        this.#selectIds([Number(value)]);
+        break;
+      case "group": {
+        // "3" recalls group 3 (or sets it while it is empty), "set:3" always sets it.
+        const assign = value.startsWith("set:");
+        const index = Number(assign ? value.slice(4) : value) - 1;
+        const group = this.#groups[index];
+        if (group === undefined) break;
+        if (assign || group.length === 0)
+          this.#groups[index] = this.#selection.filter((id) => sim.get(id)?.team === 0);
+        else this.#selectIds(group.filter((id) => sim.get(id) !== undefined));
+        break;
+      }
+      case "speed":
+        this.#speed = this.#speed === 1 ? 1.5 : this.#speed === 1.5 ? 2 : 1;
+        break;
+      case "cancelBuild": {
+        const site = this.#primary();
+        if (site === undefined || site.team !== 0 || site.built) break;
+        const result = sim.cancelBuild(site.id);
+        this.#notice = result.ok
+          ? "Construction cancelled. 75% refunded."
+          : (result.message ?? "That site cannot be cancelled.");
+        this.#noticeError = !result.ok;
         break;
       }
       default:
@@ -549,14 +735,23 @@ export class Play extends Scene<GameState, undefined> {
   #drain(sim: Game): void {
     for (const event of sim.drainEvents()) {
       const team = Number(event.team ?? -1);
-      if (event.type === "trained" && team === 0) this.#notice = `${String(event.name)} ready.`;
-      else if (event.type === "complete" && team === 0)
+      if (event.type === "trained" && team === 0) {
+        this.#notice = `${String(event.name)} ready.`;
+        this.#noticeError = false;
+      } else if (event.type === "complete" && team === 0) {
         this.#notice = `${String(event.name)} online.`;
-      else if (event.type === "eliminated" && team > 0)
+        this.#noticeError = false;
+      } else if (event.type === "eliminated" && team > 0) {
         this.#notice = `${String(event.name)} command network destroyed.`;
-      else if (event.type === "constructionLost" && team === 0)
+        this.#noticeError = false;
+      } else if (event.type === "constructionLost" && team === 0) {
+        // A lost site is bad news; a refunded one is a bill, not a failure, as in the reference.
         this.#notice = `${String(event.name)}: ${String(event.reason)}`;
-      else if (event.type === "end") this.#notice = "";
+        this.#noticeError = Number(event.refund ?? 0) === 0;
+      } else if (event.type === "end") {
+        this.#notice = "";
+        this.#noticeError = false;
+      }
     }
   }
 
@@ -574,10 +769,18 @@ export class Play extends Scene<GameState, undefined> {
     let teams = 0;
     let x = 0;
     let z = 0;
+    let hp = 0;
+    let maxHp = 0;
+    let airborne = 0;
+    let signature = 0;
     for (const id of this.#selection) {
       const entity = sim.get(id);
       if (entity === undefined || entity.garrisonId !== null) continue;
       count += 1;
+      hp += Math.ceil(entity.hp);
+      maxHp += entity.maxHp;
+      if (entity.air) airborne += 1;
+      signature = (signature * 31 + id) | 0;
       teams |= 1 << entity.team;
       x += entity.x;
       z += entity.z;
@@ -600,6 +803,7 @@ export class Play extends Scene<GameState, undefined> {
     patch.gathered = sim.gathered;
     patch.gas = Math.floor(sim.resources.gas);
     patch.kills = sim.kills;
+    patch.edgeScroll = this.#edgeScroll;
     patch.mode = this.#mode;
     patch.ore = Math.floor(sim.resources.ore);
     patch.primaryBuilt = primary?.built ?? true;
@@ -607,6 +811,7 @@ export class Play extends Scene<GameState, undefined> {
     patch.primaryHp = Math.ceil(primary?.hp ?? 0);
     patch.primaryMaxHp = primary?.maxHp ?? 0;
     patch.primaryProgress = primary?.progress ?? 0;
+    patch.primaryGarrison = primary?.garrison.length ?? 0;
     patch.primaryTeam = primary?.team ?? 0;
     patch.primaryType = primary?.type ?? "";
     patch.result = sim.result ?? "";
@@ -618,19 +823,53 @@ export class Play extends Scene<GameState, undefined> {
     patch.simTime = Math.floor(sim.time * 20);
     patch.supplyCap = supply.cap;
     patch.supplyUsed = supply.used;
+    patch.groupHp = hp;
+    patch.groupMaxHp = maxHp;
+    patch.airborne = airborne;
+    patch.speed = this.#speed;
+    for (let index = 0; index < 5; index += 1)
+      this.#groupCounts[index] = this.#groups[index]?.length ?? 0;
+    patch.groups = this.#groupCounts;
+    const stepped = this.#publishedStep !== Math.floor(sim.time * 20);
+    if (stepped || this.#rosterSignature !== signature) {
+      this.#rosterSignature = signature;
+      this.#roster(sim, patch);
+    }
     if (this.#drag === undefined) {
       patch.dragBox = null;
     } else {
+      const rect = dragBoxRect(this.#drag.from, this.#drag.to);
       // Mutated in place: the store holds the reference and the bridge clones at the boundary, so
       // a rubber band does not allocate a fresh array on every frame it is being dragged.
-      this.#box[0] = Math.min(this.#drag.from.x, this.#drag.to.x);
-      this.#box[1] = Math.min(this.#drag.from.y, this.#drag.to.y);
-      this.#box[2] = Math.abs(this.#drag.to.x - this.#drag.from.x);
-      this.#box[3] = Math.abs(this.#drag.to.y - this.#drag.from.y);
-      patch.dragBox = this.#box;
+      if (rect === null) {
+        patch.dragBox = null;
+      } else {
+        this.#box[0] = rect[0];
+        this.#box[1] = rect[1];
+        this.#box[2] = rect[2];
+        this.#box[3] = rect[3];
+        patch.dragBox = this.#box;
+        // What a release right now would take, from the scan that release runs: the badge cannot
+        // promise a number the selection does not deliver. Only while the pointer is moving.
+        const to = this.#drag.to;
+        if (this.#boxAt.x !== to.x || this.#boxAt.y !== to.y) {
+          this.#boxAt.copy(to);
+          patch.dragCount = unitsInBox(
+            sim,
+            ctx.camera as OrthographicCamera,
+            view,
+            ctx.viewport.size,
+            this.#drag.from,
+            to,
+            isAlt(ctx.input.raw.keys),
+            this.#found,
+          ).length;
+        }
+      }
     }
-    if (this.#publishedStep !== Math.floor(sim.time * 20)) {
+    if (stepped) {
       this.#publishedStep = Math.floor(sim.time * 20);
+      this.#commanders(sim, patch);
       // The fog texture and the overview are rebuilt on the simulation's clock, not the frame's:
       // a fog raster is 784 cells and a contact is a quad, and neither moves faster than the
       // rules that move it.
@@ -638,6 +877,7 @@ export class Play extends Scene<GameState, undefined> {
       patch.minimapDots = this.#dots;
       patch.minimapFog = this.#fogText;
       patch.notice = this.#notice;
+      patch.noticeError = this.#noticeError;
       patch.queue = (primary?.queue ?? []).map(
         (item) => `${item.type}:${item.progress.toFixed(2)}`,
       );
@@ -646,6 +886,51 @@ export class Play extends Scene<GameState, undefined> {
     if (this.#viewQuad(ctx.camera as OrthographicCamera, ctx.viewport.size))
       patch.minimapView = this.#viewCorners;
     ctx.state.set(patch);
+  }
+
+  /** The selection card's roster (`"<id>:<type>:<hp tenths>"`, first 16) and its distinct types. */
+  #roster(sim: Game, patch: Partial<GameState>): void {
+    const roster: string[] = [];
+    const types: string[] = [];
+    for (const id of this.#selection) {
+      const entity = sim.get(id);
+      if (entity === undefined || entity.garrisonId !== null) continue;
+      if (!types.includes(entity.type)) types.push(entity.type);
+      if (roster.length < 16)
+        roster.push(`${id}:${entity.type}:${Math.ceil((entity.hp / entity.maxHp) * 10)}`);
+    }
+    patch.roster = roster;
+    patch.selectionTypes = types;
+  }
+
+  /** The objective panel and the rival-commanders panel, on the simulation's clock. */
+  #commanders(sim: Game, patch: Partial<GameState>): void {
+    const contacts = this.#contacts;
+    contacts.fill(0);
+    let skyport = false;
+    let air = 0;
+    let idle = 0;
+    for (const entity of sim.entities) {
+      if (entity.hp <= 0 || entity.garrisonId !== null) continue;
+      if (entity.team > 0) {
+        if (sim.visibleAt(entity.x, entity.z))
+          contacts[entity.team] = (contacts[entity.team] ?? 0) + 1;
+      } else if (entity.type === "starport" && entity.built) skyport = true;
+      else if (entity.air) air += 1;
+      else if (entity.type === "worker" && entity.order.kind === "idle") idle += 1;
+    }
+    let defeated = 0;
+    for (let team = 1; team <= 2; team += 1) {
+      const seen = contacts[team] ?? 0;
+      const out = sim.players[team]?.eliminated === true;
+      if (out) defeated += 1;
+      this.#rivals[team - 1] = out ? "DEFEATED" : seen > 0 ? `${seen} CONTACTS` : "NO CONTACT";
+    }
+    patch.rivals = this.#rivals;
+    patch.defeated = defeated;
+    patch.skyport = skyport;
+    patch.airWing = air;
+    patch.idleWorkers = idle;
   }
 
   /**
@@ -718,6 +1003,15 @@ function nodeNear(sim: Game, x: number, z: number): IResourceNode | undefined {
     if (dist(node, { x, z }) < node.r + 3.5) return node;
   }
   return undefined;
+}
+
+/** A `{ x, z }` world point out of an intent payload, or nothing if it is not one. */
+function readPoint(payload: unknown): IPoint | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const { x, z } = payload as { x?: unknown; z?: unknown };
+  return typeof x === "number" && Number.isFinite(x) && typeof z === "number" && Number.isFinite(z)
+    ? { x, z }
+    : undefined;
 }
 
 function cellIndex(sim: Game, x: number, z: number): number {
