@@ -17,6 +17,8 @@ import { MeshStandardNodeMaterial, NodeUpdateType } from "three/webgpu";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import {
+  IMPOSTOR_BISECTION_STEPS,
+  IMPOSTOR_MARCH_STEPS,
   IMPOSTOR_SURFACE_PARALLAX,
   WorldImpostorSurface,
   impostorFrameBasis,
@@ -337,10 +339,14 @@ describe("WorldImpostorSurface far cull contract", () => {
 
 // Independent geometric oracle for the covered-continuous crossing contract. Hardware captures
 // exercise the actual TSL graph; these controls distinguish intersections from alpha/depth jumps.
-function coveredCrossing(sample: (t: number) => { alpha: number; gap: number }): number | null {
+function coveredCrossing(
+  sample: (t: number) => { alpha: number; gap: number },
+  steps = IMPOSTOR_MARCH_STEPS,
+  bisections = IMPOSTOR_BISECTION_STEPS,
+): number | null {
   let previous = { t: 1.3, ...sample(1.3) };
-  for (let i = 1; i <= 128; i++) {
-    const current = { t: 1.3 * (1 - (2 * i) / 128), ...sample(1.3 * (1 - (2 * i) / 128)) };
+  for (let i = 1; i <= steps; i++) {
+    const current = { t: 1.3 * (1 - (2 * i) / steps), ...sample(1.3 * (1 - (2 * i) / steps)) };
     const before = previous;
     previous = current;
     if (before.alpha <= 0.5 || current.alpha <= 0.5 || before.gap <= 0 || current.gap > 0) continue;
@@ -348,7 +354,7 @@ function coveredCrossing(sample: (t: number) => { alpha: number; gap: number }):
       let front = before.t;
       let back = current.t;
       let valid = true;
-      for (let j = 0; j < 8; j++) {
+      for (let j = 0; j < bisections; j++) {
         const mid = (front + back) / 2;
         const value = sample(mid);
         if (value.alpha <= 0.5) valid = false;
@@ -372,6 +378,17 @@ describe("covered continuous depth geometry controls", () => {
     const expected = (0.6 - 0.75) / Math.sqrt(2);
     expect((0.6 - (hit as number)) / Math.sqrt(2)).toBeCloseTo(expected, 4);
     expect(Math.abs(0.6 / Math.sqrt(2) - expected)).toBeGreaterThan(0.5);
+  });
+  it("places a crossing as tightly at the shipped coarse march as at one step per baked texel", () => {
+    // A quarter of the 128-texel steps, so the march costs a quarter of the atlas reads; two more
+    // bisection steps keep the crossing as precise as the old 128 x 8.
+    expect(IMPOSTOR_MARCH_STEPS).toBeLessThanOrEqual(32);
+    const plane = (t: number) => ({ alpha: 1, gap: (t - 0.3141) / Math.sqrt(3) });
+    expect(coveredCrossing(plane) as number).toBeCloseTo(
+      coveredCrossing(plane, 128, 8) as number,
+      4,
+    );
+    expect(coveredCrossing(plane) as number).toBeCloseTo(0.3141, 4);
   });
   it("rejects late coverage behind an alpha hole", () => {
     expect(coveredCrossing((t) => ({ alpha: t < -0.4 ? 1 : 0, gap: t }))).toBeNull();
