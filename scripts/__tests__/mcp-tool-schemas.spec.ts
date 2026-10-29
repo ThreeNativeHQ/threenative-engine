@@ -63,6 +63,7 @@ describe("recorded MCP tool schemas", () => {
     "asset-mcp-tools.json",
     "sculpt-mcp-tools.json",
     "animation-mcp-tools.json",
+    "devtools-mcp-tools.json",
   ]) {
     it(`${name} records an argument list for every tool it lists`, () => {
       const snapshot = JSON.parse(

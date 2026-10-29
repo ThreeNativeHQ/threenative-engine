@@ -37,6 +37,14 @@ export const MCP_SERVERS = Object.freeze({
     command: "node",
     args: Object.freeze(["./node_modules/@threenative/core/mcp/animation.mjs"]),
   }),
+  // Google's Chrome DevTools server: performance traces, GPU timing, network, heap and console of
+  // the running game. It starts Chrome only on its first tool call, so a project that never
+  // inspects a page pays nothing. Its async stack capture inflates CPU time several times, so
+  // `trace-a-slow-frame.md` sends absolute CPU questions to `playtest trace` first.
+  "threenative-devtools": Object.freeze({
+    command: "node",
+    args: Object.freeze(["./node_modules/@threenative/core/mcp/devtools.mjs"]),
+  }),
 });
 
 /** The external package each shim launches. Core installs asset and sculpt transitively and bundles
@@ -49,6 +57,24 @@ export const MCP_PACKAGES = Object.freeze({
   engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.7" }),
   blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.7" }),
   animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.3" }),
+  // `args` fixes the launch for every host. The Chrome flags are `WEBGPU_BROWSER_ARGS` from
+  // `@threenative/playtest`, so a DevTools trace profiles the same adapter a playtest does and not
+  // SwiftShader. An isolated profile keeps the user's own Chrome profile out, and the two opt-outs
+  // keep local game URLs from leaving the machine.
+  devtools: Object.freeze({
+    name: "chrome-devtools-mcp",
+    version: "1.11.0",
+    args: Object.freeze([
+      "--isolated",
+      "--no-usage-statistics",
+      "--no-performance-crux",
+      "--chromeArg=--ozone-platform=x11",
+      "--chromeArg=--enable-unsafe-webgpu",
+      "--chromeArg=--disable-gpu-sandbox",
+      "--chromeArg=--ignore-gpu-blocklist",
+      "--chromeArg=--enable-features=Vulkan",
+    ]),
+  }),
 });
 
 /** How one host spells a stdio MCP server. Hosts agree on what to run and disagree on where to

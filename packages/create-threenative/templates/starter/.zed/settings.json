@@ -38,6 +38,13 @@
       "args": [
         "./node_modules/@threenative/core/mcp/animation.mjs"
       ]
+    },
+    "threenative-devtools": {
+      "source": "custom",
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/devtools.mjs"
+      ]
     }
   }
 }

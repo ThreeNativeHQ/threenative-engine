@@ -43,7 +43,7 @@ function serverEntry(directory) {
 
 /** Runs an MCP server the project may or may not have installed. Nothing here may write to stdout:
  * that stream is the JSON-RPC transport, and one stray line makes the server unusable. */
-export async function launchMcpServer({ name, version, env = {} }) {
+export async function launchMcpServer({ name, version, env = {}, args = [] }) {
   for (const [key, value] of Object.entries(env)) process.env[key] ??= value;
   const directory = packageDirectory(name);
   const entry = directory === undefined ? undefined : serverEntry(directory);
@@ -53,12 +53,13 @@ export async function launchMcpServer({ name, version, env = {} }) {
     // this line loads the module and starts nothing, and the host reports a server that connected
     // and then went silent.
     process.argv[1] = entry;
+    process.argv.push(...args);
     await import(pathToFileURL(entry).href);
     return;
   }
   // Not installed. `npx` keeps the server available in a project that never listed it, which is the
   // whole point of wiring these in from the library rather than from a scaffold.
-  const child = spawn("npx", ["--yes", `${name}@${version}`], {
+  const child = spawn("npx", ["--yes", `${name}@${version}`, ...args], {
     env: process.env,
     stdio: "inherit",
   });

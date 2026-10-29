@@ -163,6 +163,7 @@ function happyRunner(): CommandRunner {
             "threenative-animation": { command: "node", args: ["animation.mjs"] },
             "threenative-assets": { command: "node", args: ["assets.mjs"] },
             "threenative-blender": { command: "node", args: ["blender.mjs"] },
+            "threenative-devtools": { command: "node", args: ["devtools.mjs"] },
             "threenative-engine": { command: "node", args: ["engine.mjs"] },
             "threenative-sculpt": { command: "node", args: ["sculpt.mjs"] },
           },
@@ -323,6 +324,7 @@ function happyMcpRunner(): McpRunner {
       "threenative-animation": ["animation_inspect"],
       "threenative-assets": ["asset_search_sources"],
       "threenative-blender": ["blender_status", "blender_convert"],
+      "threenative-devtools": ["performance_start_trace"],
       "threenative-engine": ["engine_search_capabilities", "engine_capability_detail"],
       "threenative-sculpt": ["sculpt_grimoire"],
     };

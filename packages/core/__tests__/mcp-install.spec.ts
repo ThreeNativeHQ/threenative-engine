@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { WEBGPU_BROWSER_ARGS } from "../../playtest/src/runner/browser.js";
 import {
   MCP_HOSTS,
   ensureCodexMcpConfig,
@@ -35,6 +36,7 @@ describe("mergeMcpServers", () => {
       "threenative-engine",
       "threenative-blender",
       "threenative-animation",
+      "threenative-devtools",
     ]);
   });
 
@@ -87,12 +89,13 @@ describe("MCP_SERVERS", () => {
     // `package.json` and left this spec asserting the version before it. `servers.mjs` is
     // JavaScript, so its record is typed as possibly-missing; a missing entry is a broken shim,
     // which fails here rather than quietly asserting nothing.
-    const { assets, sculpt } = MCP_PACKAGES;
-    if (assets === undefined || sculpt === undefined) {
-      throw new Error("MCP_PACKAGES must declare the asset and sculpt servers.");
+    const { assets, devtools, sculpt } = MCP_PACKAGES;
+    if (assets === undefined || devtools === undefined || sculpt === undefined) {
+      throw new Error("MCP_PACKAGES must declare the asset, DevTools and sculpt servers.");
     }
     expect(manifest.dependencies).toMatchObject({
       [assets.name]: assets.version,
+      [devtools.name]: devtools.version,
       [sculpt.name]: sculpt.version,
     });
     // The blender server rides inside core as a built copy, exactly as the engine server does, so
@@ -112,17 +115,31 @@ describe("MCP_SERVERS", () => {
     expect(MCP_PACKAGES.blender?.version).toBe(blender.version);
   });
 
-  // The five are ordered, not merely present: a host renders the table in declaration order and
+  // The six are ordered, not merely present: a host renders the table in declaration order and
   // the golden-path snapshot probes them by index. A server appended in the wrong place is the
   // kind of change that passes every set-shaped assertion and moves what a user sees.
-  it("should declare five ThreeNative servers", () => {
+  it("should declare six ThreeNative servers", () => {
     expect(Object.keys(MCP_SERVERS)).toEqual([
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
       "threenative-animation",
+      "threenative-devtools",
     ]);
+  });
+
+  // A DevTools trace on SwiftShader names software rendering's functions, so the server launches
+  // Chrome with the playtest's own WebGPU recipe. A flag changed on one side only is caught here.
+  it("launches DevTools Chrome with the playtest WebGPU recipe", () => {
+    const chromeArgs = (MCP_PACKAGES.devtools?.args ?? [])
+      .filter((argument) => argument.startsWith("--chromeArg="))
+      .map((argument) => argument.slice("--chromeArg=".length));
+
+    expect(chromeArgs).toEqual([...WEBGPU_BROWSER_ARGS]);
+    expect(MCP_PACKAGES.devtools?.args).toEqual(
+      expect.arrayContaining(["--isolated", "--no-usage-statistics", "--no-performance-crux"]),
+    );
   });
 
   // The npx fallback in `launch.mjs` names the package `MCP_PACKAGES` declares, so a shim whose
