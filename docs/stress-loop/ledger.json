@@ -478,6 +478,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 10,
+      "at": "2026-10-29T22:16:53.134Z",
+      "commit": "core@0.3.7",
+      "label": "B: 660 bridge crossings cut (hierarchy revision, JS visibility walk, in-place matrix flag)",
+      "decision": "keep",
+      "notes": "d9bfd2aa4; same-session develop-core baseline 13.45 fps -> 14.03, crossings p50 2520 -> 1838, frame p50 48.0 -> 45.4 ms; arms on develop core (sandbox core tarball replaced); judge NEUTRAL",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 58.37,
+      "windows": 9,
+      "metrics": {
+        "presentedP50Ms": 50,
+        "presentedP95Ms": 150.02,
+        "fps": 14.03,
+        "gpuP50Ms": 5.96,
+        "gpuP95Ms": 89.46,
+        "renderP50Ms": 32.49,
+        "updateP50Ms": 11.6,
+        "frameP50Ms": 45.42,
+        "frameP95Ms": 158.51,
+        "mainDraws": 1791,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 2430,
+        "loadMs": 2768,
+        "bridgeCrossingsP50": 1838,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
