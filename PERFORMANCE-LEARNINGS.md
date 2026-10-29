@@ -116,6 +116,15 @@ bodies, fires and a virtual shadow map at the same time. Every row is in `docs/s
 - Trap: removing one system (crowd, bodies or fires) cut `mainPass` from 112 ms to 21-38 ms each, so the costs do not
   add. Bisect with all arms, then profile; do not sum single-system deltas.
 
+### 2026-10-29 — Method: the renderer's CPU stages are engine counters — KEEP (telemetry)
+- Where: `Renderer::CpuStage` (`renderer.h`), `tnw_web_frame` 66-70, three-native `CPU_STAGE_FIELDS`; `5c6a695aa`.
+- Use: set `window.__THREENATIVE_ENGINE_COST__ = true` (or debug); `TN_FRAME_BUDGET.counters.engine` then carries
+  `cpuVirtualPagesMs`, `cpuPlanMs`, `cpuShadowBuildMs`, `cpuPrepareMs`, `cpuEncodeMs` per frame (p50/p95).
+- First reading, stress lab: virtual pages 11.3/64.4 ms, shadow build 1.9/89.1 ms, prepare 17/113 ms. The VSM
+  stages spike on page-redraw frames, so read p95, not p50.
+- Insight: `renderPrepared` runs about 25 times a frame here; per-call checkpoints with a per-call threshold hid a
+  70 ms total. Keep running totals and difference them per frame.
+
 ## 2026-10-28 RTS kit probe (Chrome DevTools trace, web Wasm engine, real display)
 
 ### 2026-10-28 — RTS HUD panels re-render only when a shown value changes — KEEP
