@@ -1845,6 +1845,32 @@ void data_texture_bytes() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+// three's EventDispatcher on a material: material.dispose() tells its listeners, a clone starts with none, and
+// MeshPhysicalNodeMaterial is a class the engine constructs.
+void material_events() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    for (const char* cls : {"MeshStandardMaterial", "MeshPhysicalNodeMaterial"}) {
+        tn_handle_t material{};
+        CHECK(tn_construct(ctx, cls, nullptr, 0, &material, &d.value) == TN_OK);
+        Calls disposed;
+        CHECK(tn_set_callback(material, "dispose", recordCall, &disposed, releaseCall, &d.value) == TN_OK);
+        tn_value_t result{};
+        CHECK(tn_invoke(material, "dispose", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(disposed.invoked == 1);
+        tn_value_t copy{};
+        CHECK(tn_invoke(material, "clone", nullptr, 0, &copy, &d.value) == TN_OK && copy.kind == TN_VALUE_HANDLE);
+        CHECK(tn_invoke(copy.handle, "dispose", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(disposed.invoked == 1);
+        CHECK(tn_set_callback(material, "dispose", nullptr, nullptr, nullptr, &d.value) == TN_OK);
+        CHECK(tn_invoke(material, "dispose", nullptr, 0, &result, &d.value) == TN_OK);
+        CHECK(disposed.invoked == 1);
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // The Wasm view reports the store's write count (out[3]): a write through the view, which the JS
 // mirror made itself, leaves it; an engine write moves it.
 void attribute_view_writes() {
@@ -2991,6 +3017,6 @@ void tsl_mat4_element() {
 
 TN_TEST_MAIN({"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

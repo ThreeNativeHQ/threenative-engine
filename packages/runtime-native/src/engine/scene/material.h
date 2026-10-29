@@ -20,6 +20,7 @@
 #include "engine/foundation/math/Color.h"
 #include "engine/foundation/uuid.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/scene/object3d.h"
 #include "engine/scene/texture.h"
 #include "engine/shader/position_node.h"
 
@@ -29,6 +30,13 @@ enum class MaterialType : uint8_t { Basic, Lambert, Phong, Standard, Physical };
 enum class Side : uint8_t { Front = 0, Back = 1, Double = 2 };  // three's FrontSide/BackSide/DoubleSide
 /** three's NoBlending, NormalBlending and AdditiveBlending, premultipliedAlpha false. */
 enum class Blending : uint8_t { None = 0, Normal = 1, Additive = 2 };
+
+/** three's EventDispatcher on a material: a copy or a clone starts with no listeners, as three's does. */
+struct MaterialEvents : EventDispatcher {
+    MaterialEvents() = default;
+    MaterialEvents(const MaterialEvents&) {}
+    MaterialEvents& operator=(const MaterialEvents&) { return *this; }
+};
 
 class Material {
 private:
@@ -133,6 +141,9 @@ public:
     Material& copy(const Material& source);
     /** three's `material.needsUpdate = true`: the renderer rebuilds what depends on the material. */
     void needsUpdate() { ++version_; }
+    MaterialEvents events;
+    /** three's Material.dispose(): listeners hear "dispose". The engine frees GPU state when the material is released. */
+    void dispose() { Event event{"dispose"}; events.dispatchEvent(event); }
     [[nodiscard]] uint32_t version() const { return version_; }
 
     mutable std::size_t cachedUniformHash_ = 0;  // projection::detail::uniformHash, valid for one prepare

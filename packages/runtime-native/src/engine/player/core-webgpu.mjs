@@ -29,12 +29,13 @@ import { defineTempNode } from "../../../../three-native/src/temp-node.ts";
 import { defineRendererUtils } from "../../../../three-native/src/renderer-utils.ts";
 import { GPU_STAGES, SHADOW_STAGE } from "../../../../three-native/src/gpu-stages.ts";
 
-export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(StorageTexture.prototype, globalThis.Texture.prototype);
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
 Object.setPrototypeOf(MeshStandardNodeMaterial.prototype, globalThis.MeshStandardMaterial.prototype);
+Object.setPrototypeOf(MeshPhysicalNodeMaterial.prototype, globalThis.MeshPhysicalMaterial.prototype);
 Object.setPrototypeOf(SpriteNodeMaterial.prototype, globalThis.SpriteMaterial.prototype);
-for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial]) {
+for (const material of [MeshBasicNodeMaterial, MeshStandardNodeMaterial, MeshPhysicalNodeMaterial, SpriteNodeMaterial]) {
   material.prototype.isNodeMaterial = true;
   material.prototype[`is${material.name}`] = true;
 }
@@ -279,7 +280,6 @@ export const MeshLambertNodeMaterial = unsupportedExport("MeshLambertNodeMateria
 export const MeshMatcapNodeMaterial = unsupportedExport("MeshMatcapNodeMaterial");
 export const MeshNormalNodeMaterial = unsupportedExport("MeshNormalNodeMaterial");
 export const MeshPhongNodeMaterial = unsupportedExport("MeshPhongNodeMaterial");
-export const MeshPhysicalNodeMaterial = unsupportedExport("MeshPhysicalNodeMaterial");
 export const MeshToonNodeMaterial = unsupportedExport("MeshToonNodeMaterial");
 
 // three's BlendMode (renderers/common/BlendMode.js): the blend state an MRT output names through

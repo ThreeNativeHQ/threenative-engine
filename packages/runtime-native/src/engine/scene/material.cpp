@@ -42,7 +42,9 @@ std::string_view Material::typeName() const {
         return "NodeMaterial";
     if (spriteMaterial) return nodeMaterial ? "SpriteNodeMaterial" : "SpriteMaterial";
     if (lineMaterial) return "LineBasicMaterial";
-    if (nodeMaterial) return type == MaterialType::Basic ? "MeshBasicNodeMaterial" : "MeshStandardNodeMaterial";
+    if (nodeMaterial)
+        return type == MaterialType::Basic ? "MeshBasicNodeMaterial"
+               : type == MaterialType::Physical ? "MeshPhysicalNodeMaterial" : "MeshStandardNodeMaterial";
     switch (type) {
         case MaterialType::Basic: return "MeshBasicMaterial";
         case MaterialType::Lambert: return "MeshLambertMaterial";

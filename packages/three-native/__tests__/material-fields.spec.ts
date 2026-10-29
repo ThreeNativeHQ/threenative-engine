@@ -250,4 +250,26 @@ describe("a native material's fields are enumerable", () => {
     expect(Object.keys(new (classes.Mesh as Constructible)())).toEqual([]);
     expect(Object.keys(new (classes.BoxGeometry as Constructible)())).toEqual([]);
   });
+
+  it("is an EventDispatcher: a dispose listener registers natively and hears the engine's event", () => {
+    const callbacks = new Map<string, ((args: EngineValue[]) => void) | null>();
+    const base = runtime();
+    const { classes } = defineBrowserClasses(registry, {
+      ...base,
+      setCallback: (_self, name, fn) => void callbacks.set(name, fn),
+    });
+    type Dispatcher = {
+      addEventListener(type: string, listener: (event: { target: unknown }) => void): void;
+      removeEventListener(type: string, listener: (event: { target: unknown }) => void): void;
+    };
+    const material = new (classes.MeshPhysicalNodeMaterial as Constructible)() as Dispatcher;
+    const heard: unknown[] = [];
+    const release = (event: { target: unknown }) => heard.push(event.target);
+    material.addEventListener("dispose", release);
+    expect(callbacks.get("dispose")).toBeTypeOf("function");
+    callbacks.get("dispose")?.([{ type: "dispose" } as unknown as EngineValue]);
+    expect(heard).toEqual([material]);
+    material.removeEventListener("dispose", release);
+    expect(callbacks.get("dispose")).toBeNull();
+  });
 });

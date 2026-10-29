@@ -125,7 +125,8 @@ void registerMaterialBase(ClassBinding& b) {
     // three's Material.dispose(): it tells the renderer to free the material's GPU programs. The
     // engine frees a material's GPU state when the material itself is released, so there is nothing to
     // free early; the material stays usable, as three's does after dispose().
-    b.methods["dispose"] = [](void*, const Args&, Store&) { return Value{}; };
+    registerEventBindings(b, [](void* self) -> EventDispatcher* { return &as<Material>(self)->events; }, {"dispose"});
+    b.methods["dispose"] = [](void* self, const Args&, Store&) { as<Material>(self)->dispose(); return Value{}; };
     b.methods["copy"] = [](void* self, const Args& a, Store& store) {
         as<Material>(self)->copy(*store.shared<Material>(a.at(0), "Material"));
         return chain();
@@ -872,6 +873,7 @@ void registerMaterialBindings(Registry& classes) {
     registerMeshMaterial(classes["NodeMaterial"], MaterialType::Basic, true, true);
     registerMeshMaterial(classes["MeshBasicNodeMaterial"], MaterialType::Basic, true);
     registerMeshMaterial(classes["MeshStandardNodeMaterial"], MaterialType::Standard, true);
+    registerMeshMaterial(classes["MeshPhysicalNodeMaterial"], MaterialType::Physical, true);
     registerMeshMaterial(classes["MeshLambertMaterial"], MaterialType::Lambert);
     registerMeshMaterial(classes["MeshPhongMaterial"], MaterialType::Phong);
     registerMeshMaterial(classes["MeshStandardMaterial"], MaterialType::Standard);

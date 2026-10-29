@@ -1208,6 +1208,14 @@ userData: Record<string, any>;
   copy(source: Material): this;
 
   dispose(): void;
+  /** callback listener: EventListener */
+  addEventListener(type: string, listener: EventListener): void;
+
+  dispatchEvent(event: BaseEvent): void;
+  /** callback listener: EventListener */
+  hasEventListener(type: string, listener: EventListener): boolean;
+  /** callback listener: EventListener */
+  removeEventListener(type: string, listener: EventListener): void;
 }
 
 /** Catalog partial (native-not-implemented): three/MaterialBlending. */
@@ -3627,4 +3635,25 @@ export declare function modelWorldMatrix(): void;
 /** Catalog supported: three/DataArrayTexture. */
 export declare class DataArrayTexture extends Texture {
 constructor();
+}
+
+/** Catalog supported: three/MeshPhysicalNodeMaterial. */
+export declare class MeshPhysicalNodeMaterial extends MeshStandardNodeMaterial {
+constructor();
+anisotropy: number;
+clearcoat: number;
+clearcoatRoughness: number;
+dispersion: number;
+ior: number;
+iridescence: number;
+sheen: number;
+specularIntensity: number;
+transmission: number;
+clearcoatMap: Texture | null;
+clearcoatNormalMap: Texture | null;
+clearcoatNormalScale: Vector2;
+clearcoatRoughnessMap: Texture | null;
+specularColor: Color;
+specularColorMap: Texture | null;
+specularIntensityMap: Texture | null;
 }

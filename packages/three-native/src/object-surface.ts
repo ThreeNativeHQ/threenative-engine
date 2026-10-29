@@ -200,6 +200,7 @@ const FLAGGED_CLASSES = [
   "NodeMaterial",
   "MeshBasicNodeMaterial",
   "MeshStandardNodeMaterial",
+  "MeshPhysicalNodeMaterial",
   "SpriteNodeMaterial",
   "Texture",
   "DataTexture",

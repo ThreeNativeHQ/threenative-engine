@@ -416,6 +416,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_array_offset=array_offset
     native_engine_abi_tsl_matrix_columns=tsl_matrix_columns
     native_engine_abi_data_texture_bytes=data_texture_bytes
+    native_engine_abi_material_events=material_events
     native_engine_abi_attribute_view_writes=attribute_view_writes
     native_engine_abi_attribute_defer=attribute_defer
     native_engine_abi_material_alpha_hash=material_alpha_hash
