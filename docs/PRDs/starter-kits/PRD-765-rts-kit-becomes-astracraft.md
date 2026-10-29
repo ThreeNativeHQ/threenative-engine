@@ -69,6 +69,14 @@ disc, not reflective).
 - [x] Judge round 2. proof: fresh Opus judge on ASTRACRAFT / OURS WASM / OURS THREEJS sheets, two runs: tone MATCH, bars MATCH, motion MATCH, smoothness MATCH; palette CLOSE (crystals deep blue, cyan rings), shadows CLOSE; engine A/B: threejs drew white bars. Fixes (kit): bar and marker colour attributes made before the first draw (three.js compiles once; `rts-motion.spec.ts` red without it), AstraCraft's two crystal materials and unit cone (crystal pixels `(125,183,206)` vs `(118,180,202)`, was `(82,147,181)`), thin legacy-colour selection rings without an underlay, shadow radius 1, AstraCraft's `(-66, 57)` start target (frames now pixel-aligned, were 56 x 16 px off)
 - [x] Judge round 3. proof: fresh Opus judge on pixel-aligned sheets, two runs: tone MATCH, health bars MATCH, motion MATCH, smoothness MATCH or better; palette CLOSE (crystal field sparser and bluer), shadows CLOSE (tank shadow / lit sand 0.60 vs 0.57; a hard PCF arm read the same 0.60, so the kernel is not the cause); no render difference between Wasm and threejs, so no engine bug in the look. Left: world-space building labels and building paint details (content, not the six criteria)
 
+### Deferred (2026-10-28, owner: "just finish and merge this lane")
+
+- Deferred: palette CLOSE — the crystal field reads sparser and bluer than AstraCraft's, and mesa tops read lighter. Revisit when a judge round names it the largest gap.
+- Deferred: shadows CLOSE — tank shadow against lit sand 0.60, AstraCraft 0.57. The same in Wasm and threejs, and a hard-PCF arm also read 0.60. Revisit with a tone-curve A/B (r140 ACES against today's).
+- Deferred: the world-space building labels (COMMAND CORE and so on). AstraCraft draws them on a 2D canvas, and the engine has no text capability. Revisit after a design call on portable world text.
+- Deferred: the building paint details (barracks stripes and vents, extractor trim). Revisit as a model-art task in `src/render/models.ts`.
+- Deferred: about 40% of headed boots start 44-88 px off the start pose (an edge pan while the pointer sits at the window edge during boot). Players are unverified. Revisit if a player capture shows it.
+
 ## Open engine issues (layer: engine, not fixed in this kit)
 
 - TSL `pow` through `material.outputNode` (the `output` node) fails on the Wasm engine: `TN_START_FAILED: TN_ABI_1: TSL pow: TN_ABI_ARGUMENT expected a TSL node or number`. It works on `engine: "threejs"`. The kit's fog-of-war blend uses `colorNode` plus `emissiveNode` instead.
