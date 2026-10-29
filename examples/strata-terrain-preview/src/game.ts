@@ -1156,8 +1156,12 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               direction: new Vector3(1, -400, 1).normalize(),
               targets: terrainTargets,
             });
+          // The same line as the visual ray, started a metre above the feet: from 300 m, a stage
+          // tree the player stands against is the first body under it, not the ground.
+          const start = stage ? actor.position.y + 1 : 300;
+          const lead = (300 - start) / 400;
           const physical = ctx.physics.directSpaceState.intersectRay({
-            from: { x: actor.position.x, y: 300, z: actor.position.z },
+            from: { x: actor.position.x + lead, y: start, z: actor.position.z + lead },
             to: { x: actor.position.x + 1, y: -100, z: actor.position.z + 1 },
             // The kit's ground keeps the default layer, like the player's mask above.
             collisionMask: stage ? 1 : 4,
