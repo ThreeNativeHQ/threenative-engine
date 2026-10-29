@@ -370,6 +370,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 8,
+      "at": "2026-10-29T21:05:04.262Z",
+      "commit": "core@0.3.7",
+      "label": "VSM levers: instance page cull, static bounds cache, eviction (Codex)",
+      "decision": "keep",
+      "notes": "5ed299d6c; judge NEUTRAL; threaded engine on",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 40.75,
+      "windows": 6,
+      "metrics": {
+        "presentedP50Ms": 66.63,
+        "presentedP95Ms": 150.01,
+        "fps": 12.56,
+        "gpuP50Ms": 6.29,
+        "gpuP95Ms": 62,
+        "renderP50Ms": 38.39,
+        "updateP50Ms": 13.19,
+        "frameP50Ms": 54.97,
+        "frameP95Ms": 155.97,
+        "mainDraws": 1809,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 1639,
+        "loadMs": 3570,
+        "bridgeCrossingsP50": 3108,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
