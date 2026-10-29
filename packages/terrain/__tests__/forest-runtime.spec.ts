@@ -514,6 +514,13 @@ describe("forest runtime", () => {
     ).toBeUndefined();
   });
 
+  it("casts shadows from every tree LOD, so a refilter past 45 m keeps the shadow", async () => {
+    const { ctx } = await context();
+    await addForest(ctx, new Object3D());
+    // The cooked fir has LOD0 to LOD3; the default casts LOD0 only.
+    expect(loads.world.mock.calls[0]?.[0].shadows).toMatchObject({ cast: true, castLevels: 4 });
+  });
+
   it("loads the canonical placement and height buffers once for streaming and ground collision", async () => {
     const { ctx } = await context();
     const forest = await addForest(ctx, new Object3D());

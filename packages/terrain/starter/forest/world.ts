@@ -103,7 +103,8 @@ const spec: IStarterWorldSpec<IForestWater> = {
     ring: 5,
     impostors: true,
     gpuScene: false,
-    shadows: { cast: true, receive: true },
+    // Every LOD casts: with only LOD0 (the default), each tree past 45 m dropped its shadow on the first refilter.
+    shadows: { cast: true, castLevels: 4, receive: true },
     budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
     terrain: { streamRadius: 6 },
   },
