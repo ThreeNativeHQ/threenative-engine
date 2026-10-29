@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-limits",
+  "target": "web",
+  "subject": "wasm-limits",
+  "viewport": {
+    "width": 320,
+    "height": 180
+  },
+  "warmupFrames": 1,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "sampled",
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-limits",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here."
+      },
+      {
+        "entity": "wasm-limits",
+        "component": "probe",
+        "path": "done",
+        "equals": true
+      },
+      {
+        "entity": "wasm-limits",
+        "component": "probe",
+        "path": "last",
+        "equals": "255,0,0,255"
+      }
+    ]
+  }
+}

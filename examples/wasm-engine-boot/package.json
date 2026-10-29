@@ -13,7 +13,8 @@
     "playtest:compute": "node ../../packages/playtest/dist/runner/cli.js playtests/compute.playtest.json --url http://127.0.0.1:5293/compute.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
     "playtest:array": "node ../../packages/playtest/dist/runner/cli.js playtests/array.playtest.json --url http://127.0.0.1:5293/array.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
     "playtest:post": "node ../../packages/playtest/dist/runner/cli.js playtests/post.playtest.json --url http://127.0.0.1:5293/post.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
-    "playtest:post-normal-node": "node ../../packages/playtest/dist/runner/cli.js playtests/post-normal-node.playtest.json --url http://127.0.0.1:5293/post.html?nodenormal=1 --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed"
+    "playtest:post-normal-node": "node ../../packages/playtest/dist/runner/cli.js playtests/post-normal-node.playtest.json --url http://127.0.0.1:5293/post.html?nodenormal=1 --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed",
+    "playtest:limits": "node ../../packages/playtest/dist/runner/cli.js playtests/limits.playtest.json --url http://127.0.0.1:5293/limits.html --server-command \"pnpm exec vite preview --host 127.0.0.1 --port 5293 --strictPort\" --browser-recipe webgpu --headed"
   },
   "dependencies": {
     "@threenative/core": "workspace:*",

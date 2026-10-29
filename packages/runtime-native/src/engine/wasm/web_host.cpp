@@ -163,6 +163,13 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     WGPUDeviceDescriptor desc = {};
     desc.requiredFeatureCount = features.size();
     desc.requiredFeatures = features.data();
+    // The limits the desktop host asks for (webgpu/context.cpp): the adapter's own, not the defaults. A default
+    // device caps a fragment stage at 16 sampled textures; a terrain splat material reads more.
+    WGPULimits limits = {};
+    if (wgpuAdapterGetLimits(adapter, &limits) == WGPUStatus_Success) {
+        if (limits.maxColorAttachmentBytesPerSample >= 64) limits.maxColorAttachmentBytesPerSample = 64;
+        desc.requiredLimits = &limits;
+    }
     desc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const*, WGPUErrorType, WGPUStringView message, void*, void*) {
         events.post([message = text(message)] { fail("TN_WASM_DEVICE_ERROR: " + message); });
     };
