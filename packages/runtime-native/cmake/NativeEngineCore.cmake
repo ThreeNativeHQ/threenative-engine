@@ -852,7 +852,8 @@ tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/j
     native_engine_job_pool=for_each_once
     native_engine_matrix_walk_jobs=matrix_walk_jobs
     native_engine_matrix_walk_threshold=matrix_walk_threshold
-    native_engine_job_pool_starts_on_need=pool_starts_on_need)
+    native_engine_job_pool_starts_on_need=pool_starts_on_need
+    native_engine_job_pool_is_always_on=pool_is_always_on)
 target_link_libraries(tn-native-engine-job-pool-test PRIVATE tn_engine_scene)
 
 # The engine's JSON reader and writer (header-only), against JSON.parse, JSON.stringify and

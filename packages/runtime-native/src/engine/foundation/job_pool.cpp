@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 #include <memory>
+#include <stdexcept>
+#include <string>
 
 #ifdef __EMSCRIPTEN_PTHREADS__
 #include <emscripten/em_js.h>
@@ -49,11 +51,16 @@ unsigned JobPool::defaultWorkers() {
     if (const char* named = std::getenv("TN_JOB_WORKERS"); named != nullptr && *named != '\0') {
         char* end = nullptr;
         const unsigned long value = std::strtoul(named, &end, 10);
-        if (end != nullptr && *end == '\0') return unsigned(value);
+        // Worker threads are on everywhere (owner, 2026-10-29: "force on native too"): no count turns them off.
+        if (end == nullptr || *end != '\0' || value == 0)
+            throw std::runtime_error(std::string("TN_JOB_WORKERS_OFF: TN_JOB_WORKERS=") + named +
+                                     " leaves the engine without worker threads; name 1 or more, or unset it");
+        return unsigned(value);
     }
 #endif
+    // One hardware thread still gets one worker: the pool is never off where threads can start.
     const unsigned hardware = std::thread::hardware_concurrency();
-    const unsigned spare = hardware > 1 ? hardware - 1 : 0;
+    const unsigned spare = hardware > 1 ? hardware - 1 : 1;
     return spare < kMaxWorkers ? spare : kMaxWorkers;
 }
 

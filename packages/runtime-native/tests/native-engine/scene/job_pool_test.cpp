@@ -10,8 +10,11 @@
 #include <atomic>
 #include <bit>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <random>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -241,7 +244,29 @@ void poolStartsOnNeed() {
     CHECK(JobPool::started());
 }
 
+// Worker threads are on wherever a thread can start: the default count is never 0, and naming 0 workers
+// (or a count that is not a number) refuses instead of running the engine on one thread.
+void poolIsAlwaysOn() {
+    if constexpr (!kThreaded) return;
+    CHECK(JobPool::defaultWorkers() >= 1);
+#ifndef __EMSCRIPTEN__
+    for (const char* off : {"0", "none"}) {
+        setenv("TN_JOB_WORKERS", off, 1);
+        bool refused = false;
+        try {
+            (void)JobPool::defaultWorkers();
+        } catch (const std::runtime_error& error) {
+            refused = std::string(error.what()).rfind("TN_JOB_WORKERS_OFF", 0) == 0;
+        }
+        CHECK(refused);
+    }
+    setenv("TN_JOB_WORKERS", "2", 1);
+    CHECK(JobPool::defaultWorkers() == 2);
+    unsetenv("TN_JOB_WORKERS");
+#endif
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"for_each_once", forEachOnce}, {"matrix_walk_jobs", matrixWalkJobs},
-             {"matrix_walk_threshold", matrixWalkThreshold}, {"pool_starts_on_need", poolStartsOnNeed})
+             {"matrix_walk_threshold", matrixWalkThreshold}, {"pool_starts_on_need", poolStartsOnNeed}, {"pool_is_always_on", poolIsAlwaysOn})

@@ -31,9 +31,9 @@ public:
     JobPool& operator=(const JobPool&) = delete;
 
     /**
-     * The process pool: min(hardware threads - 1, kMaxWorkers) workers, started on first use (the first
-     * walk that shares out). On native `TN_JOB_WORKERS=<n>` names the count (0 turns the pool off); on the
-     * web each worker is a pthread started then, and a job never waits for one to load.
+     * The process pool: min(hardware threads - 1, kMaxWorkers) workers, at least 1, started on first use (the
+     * first walk that shares out). On native `TN_JOB_WORKERS=<n>` names the count; 0 or a non-number throws
+     * TN_JOB_WORKERS_OFF. On the web each worker is a pthread started then, and a job never waits for one to load.
      */
     static JobPool& shared();
     /** Replaces the process pool with one of `workers` workers: tests run one case at 1 and N threads. */
