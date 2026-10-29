@@ -1,6 +1,3 @@
-import { OggVorbisDecoder } from "@wasm-audio-decoders/ogg-vorbis";
-import { createOggEncoder } from "wasm-media-encoders";
-
 /**
  * Decoding and encoding for the audio pass, in-process through WASM.
  *
@@ -88,6 +85,7 @@ export async function decodeAudioBytes(bytes: Buffer, logicalPath: string): Prom
 }
 
 async function decodeVorbis(bytes: Buffer, logicalPath: string): Promise<IDecodedAudio> {
+  const { OggVorbisDecoder } = await import("@wasm-audio-decoders/ogg-vorbis");
   const decoder = new OggVorbisDecoder();
   await decoder.ready;
   try {
@@ -254,6 +252,7 @@ export async function encodeVorbis(
       `TN_ASSETS_AUDIO_CHANNELS: '${logicalPath}' reached the encoder with ${String(channels.length)} channel(s); Vorbis encoding here handles mono and stereo.`,
     );
   }
+  const { createOggEncoder } = await import("wasm-media-encoders");
   const encoder = await createOggEncoder();
   encoder.configure({
     channels: channels.length,

@@ -2,8 +2,87 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import { Mask, Terrain, bakeMesh } from "@threenative/terrain";
+import { Heightfield } from "@threenative/core/world";
+import { BufferGeometry, Float32BufferAttribute, Mesh } from "three";
+import { register } from "tsx/esm/api";
+
+register();
+import { MATERIAL_IDS, Mask, Terrain, bakeMesh } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
+
+const { BIOMES } = await import("../src/render/biomes.js");
+const { GROUND_MAPS, GROUND_TILE } = await import("../src/world/terrainAssets.js");
+
+/** Existing surface-loader descriptor; raw planes preserve all eight authored material channels. */
+export function terrainSurfacePackage(name, state, maps) {
+  const count = state.resolution ** 2;
+  assert.equal(state.height.length, count, `${name}: invalid height grid`);
+  assert.equal(state.splat.length, count * MATERIAL_IDS.length, `${name}: invalid splat grid`);
+  const splat = new Uint8Array(count * 8);
+  for (let row = 0; row < state.resolution; row += 1)
+    for (let column = 0; column < state.resolution; column += 1)
+      for (let channel = 0; channel < MATERIAL_IDS.length; channel += 1) {
+        const value = state.splat[(row * state.resolution + column) * 8 + channel];
+        assert(Number.isFinite(value), `${name}: nonfinite splat channel`);
+        // Package ground is (x, -z): reverse the evaluator's increasing-Z rows.
+        const pixel = (state.resolution - 1 - row) * state.resolution + column;
+        splat[Math.floor(channel / 4) * count * 4 + pixel * 4 + (channel % 4)] = Math.round(
+          Math.max(0, Math.min(1, value)) * 255,
+        );
+      }
+  const layer = (id) => {
+    // Match loadGroundMaps' CC0 fallback; licensed overrides stay game-owned and are not staged.
+    const source = maps[id].diffuse.startsWith("temperate/") ? GROUND_MAPS[id] : maps[id];
+    return {
+      id,
+      tile: GROUND_TILE[id],
+      tint: [1, 1, 1],
+      roughness: 0.95,
+      metalness: 0,
+      normal: source.normal !== undefined,
+      maps: {
+        diffuse: `../${source.diffuse}`,
+        ...(source.normal === undefined ? {} : { normal: `../${source.normal}` }),
+      },
+    };
+  };
+  return {
+    world: {
+      version: 1,
+      extent: {
+        minX: -state.size / 2,
+        minZ: -state.size / 2,
+        sizeX: state.size,
+        sizeZ: state.size,
+      },
+      terrain: { layers: { table: `${name}.layers.json`, splat: `${name}.splat.rgba8` } },
+    },
+    table: {
+      base: layer("grass"),
+      layers: ["dirt", "moss", "sand", "rock", "snow"].map((id) => ({
+        ...layer(id),
+        mask: id,
+        channel: "r",
+        lo: 0,
+        hi: 1,
+      })),
+      breakup: { scale: 1, push: 0 },
+      macro: { scale: 1, min: 1, max: 1 },
+      textures: "",
+      splat: {
+        size: state.resolution,
+        planes: 2,
+        masks: Object.fromEntries(
+          MATERIAL_IDS.map((id, index) => [
+            id,
+            [Math.floor(index / 4), ["r", "g", "b", "a"][index % 4]],
+          ]),
+        ),
+      },
+    },
+    splat,
+  };
+}
 
 // Authoring runs before either runtime is bundled. The game imports only the baked JSON.
 
@@ -301,6 +380,12 @@ const fingerprint = createHash("sha256")
     ),
   )
   .update(JSON.stringify(terrainPalette))
+  .update(await readFile(new URL("../src/render/scatter.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/render/terrain.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/render/biomes.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/world/terrainAssets.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/render/benchmark.ts", import.meta.url)))
+  .update(await readFile(new URL("../src/render/placements.ts", import.meta.url)))
   .update(await readFile(new URL(import.meta.url)))
   .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
   .digest("hex");
@@ -319,7 +404,17 @@ if (!(isEntry && process.argv.includes("--force"))) {
     const undrawn = Object.keys(recipes).filter((name) => !drawn.has(name));
     const stale = (
       await Promise.all(
-        ["baked.json", "horizon.json", ...undrawn.map((name) => `${name}.json`)].map((file) =>
+        [
+          "baked.json",
+          "horizon.json",
+          ...undrawn.map((name) => `${name}.json`),
+          ...Object.keys(recipes).flatMap((name) => [
+            `${name}.placements.bin`,
+            `${name}.world.json`,
+            `${name}.layers.json`,
+            `${name}.splat.rgba8`,
+          ]),
+        ].map((file) =>
           stat(new URL(file, outputDir)).then(
             (s) => s.mtimeMs > out.mtimeMs,
             () => true,
@@ -339,6 +434,7 @@ if (!(isEntry && process.argv.includes("--force"))) {
 if (!baked) {
   const bakeStarted = performance.now();
   const worlds = {};
+  await mkdir(outputDir, { recursive: true });
   for (const [name, terrain] of Object.entries(recipes)) {
     const started = performance.now();
     const state = terrain.evaluate();
@@ -360,6 +456,16 @@ if (!baked) {
       );
       assert(state.erosion[channel].every(Number.isFinite), `${name}: nonfinite ${channel}`);
     }
+    const maps =
+      name === "forest" || name === "coastal"
+        ? { ...GROUND_MAPS, dirt: BIOMES.alpine.maps.dirt }
+        : BIOMES[name].maps;
+    const surface = terrainSurfacePackage(name, state, maps);
+    await Promise.all([
+      writeFile(new URL(`${name}.world.json`, outputDir), JSON.stringify(surface.world)),
+      writeFile(new URL(`${name}.layers.json`, outputDir), JSON.stringify(surface.table)),
+      writeFile(new URL(`${name}.splat.rgba8`, outputDir), surface.splat),
+    ]);
     const mesh = bakeMesh(state, { palette: terrainPalette });
     worlds[name] = {
       size: state.size,
@@ -383,7 +489,6 @@ if (!baked) {
       `${name}: ${((performance.now() - started) / 1000).toFixed(2)} s; ${Buffer.byteLength(JSON.stringify(worlds[name]))} JSON bytes`,
     );
   }
-  await mkdir(outputDir, { recursive: true });
   const started = performance.now();
   const horizon = JSON.stringify({
     ...Object.fromEntries(
@@ -411,6 +516,40 @@ if (!baked) {
   for (const [name, world] of Object.entries(worlds))
     if (!drawn.has(name))
       await writeFile(new URL(`${name}.json`, outputDir), JSON.stringify(world));
+  // Import after the JSON outputs exist: terrain's horizon reads the newly baked continuation.
+  const { scatterProps } = await import("../src/render/scatter.js");
+  const { paintCanopy } = await import("../src/render/terrain.js");
+  const { BENCHMARK } = await import("../src/render/benchmark.js");
+  const { encodePlacements } = await import("../src/render/placements.js");
+  for (const [name, data] of Object.entries(worlds)) {
+    const field = new Heightfield({
+      rows: data.resolution,
+      columns: data.resolution,
+      width: data.size,
+      depth: data.size,
+      origin: { x: 0, z: 0 },
+      heights: Float32Array.from(data.heights),
+    });
+    const scatter = scatterProps(
+      { ...data, field, world: name },
+      BENCHMARK[name].focus,
+      Object.values(BENCHMARK[name].poses)
+        .filter((pose) => pose.eye < 20)
+        .map((pose) => [...pose.at, 10]),
+    );
+    const mesh = new Mesh(new BufferGeometry());
+    mesh.geometry.setAttribute(
+      "canopy",
+      new Float32BufferAttribute(new Float32Array(data.resolution ** 2), 1),
+    );
+    paintCanopy(mesh, data, scatter.placements);
+    const table = encodePlacements(scatter, mesh.geometry.getAttribute("canopy").array);
+    await writeFile(new URL(`${name}.placements.bin`, outputDir), new Uint8Array(table));
+    mesh.geometry.dispose();
+    console.log(
+      `${name}: ${scatter.placements.length} baked placements; ${table.byteLength} bytes`,
+    );
+  }
   await writeFile(new URL(".bake-stamp", outputDir), `${fingerprint}\n`);
   console.log(
     `Cold bake total: ${((performance.now() - bakeStarted) / 1000).toFixed(2)} s; five worlds plus continuation.`,

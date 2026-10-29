@@ -173,6 +173,7 @@ const STOP_WORDS = new Set([
   "is",
   "it",
   "its",
+  "keep",
   "let",
   "made",
   "make",
@@ -433,7 +434,8 @@ export function capabilitySituationTokens(value: string): string[] {
     .toLocaleLowerCase()
     .split(/[^a-z0-9]+/u)
     .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
-    .map(stem);
+    .map(stem)
+    .filter((token) => !STOP_WORDS.has(token));
 }
 
 const tokens = capabilitySituationTokens;

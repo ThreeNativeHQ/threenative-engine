@@ -4,16 +4,22 @@
 // One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
 // sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import type { Node } from "three/webgpu";
 import { ARENA, GROUND_Y } from "./arena.js";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
+// The engine's `VirtualShadowNode` class. The scene passes it in, because this folder imports no
+// framework package.
+type VirtualShadowClass<T> = new (light: DirectionalLight, options: { clipExtents: number[] }) => T;
 
-export function setupLighting(
+export function setupLighting<T extends Node = never>(
   scene: Scene,
   renderer: ShadowRenderer,
   mobile = false,
-): { key: DirectionalLight } {
+  shadowExtents?: readonly number[],
+  VirtualShadowNode?: VirtualShadowClass<T>,
+): { key: DirectionalLight; shadows?: T; dispose: () => void } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
@@ -42,10 +48,37 @@ export function setupLighting(
   // Small biases: a large normal bias is what lifted the mannequin's shadow off its own feet.
   key.shadow.bias = -0.0002;
   key.shadow.normalBias = 0.005;
+  // Named override for a world wider than the arena, such as a streamed forest. `shadowExtents`
+  // are the wider windows in metres that the caller measures from its terrain. The finest window
+  // stays the arena window above, so near shadows keep this map's texel and softness. Each level inherits the map
+  // size, radius and biases above, re-renders when its window moves, and redraws only the region
+  // an `invalidateRegion` names. Godrays need an ordinary shadow map and refuse this light by name.
+  let shadows: T | undefined;
+  if (shadowExtents !== undefined) {
+    if (VirtualShadowNode === undefined)
+      throw new Error("setupLighting: shadowExtents needs the VirtualShadowNode class.");
+    const clipExtents = [extent, ...shadowExtents];
+    if (
+      !clipExtents.every((value, i) => Number.isFinite(value) && value > (clipExtents[i - 1] ?? 0))
+    )
+      throw new RangeError(
+        `setupLighting: shadowExtents must increase past ${extent} m, got [${shadowExtents.join(", ")}].`,
+      );
+    shadows = new VirtualShadowNode(key, { clipExtents });
+    key.shadow.shadowNode = shadows;
+  }
   scene.add(key);
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.
-  return { key };
+  return {
+    key,
+    shadows,
+    dispose: () => {
+      shadows?.dispose();
+      key.removeFromParent();
+      key.dispose();
+    },
+  };
 }
 
 /** Material conventions are game-owned; each scene gets independent mutable controls. */

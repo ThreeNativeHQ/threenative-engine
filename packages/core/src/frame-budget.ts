@@ -452,10 +452,12 @@ export interface IFrameBudgetWindow {
 export interface IFrameBudgetSimulation {
   readonly tick: () => number;
   readonly step: number;
+  /** False counts presented frames while the simulation has not advanced in the window. */
+  readonly clockFrozen?: boolean;
 }
 
 export interface IFrameBudgetOptions {
-  /** Simulation ticks per report window when a clock is supplied, otherwise presented frames. Default 300. */
+  /** Simulation ticks per window; presented frames without a clock or while a live one is held. Default 300. */
   readonly reportEvery?: number;
   /** Minimum measured rendered frames per report window. Default 1. */
   readonly minFrames?: number;
@@ -1052,6 +1054,20 @@ export class FrameBudget {
         : 0;
     if (drawn) this.#lastDrawnTimestamp = this.#frameTimestamp;
 
+    const update = Math.max(0, simulationEnd - this.#frameStart);
+    const tail = Math.max(0, nowMs - simulationEnd);
+    const residual = Math.max(0, tail - this.#renderMs - this.#overlayMs - this.#uiMs);
+    const sample: IFramePhaseSample | undefined = wantSample
+      ? {
+          hostGap: round(this.#hostGap),
+          overlay: round(this.#overlayMs),
+          render: round(this.#renderMs),
+          residual: round(residual),
+          ui: round(this.#uiMs),
+          update: round(update),
+        }
+      : undefined;
+
     const isHitch = this.#presentedDelta >= this.hitchMs;
     if (isHitch) {
       // The gap is excluded, so the next drawn interval must not start before it.
@@ -1066,22 +1082,10 @@ export class FrameBudget {
         })}`,
       );
       this.#maybeReport();
-      return undefined;
+      // Exclude the present gap from windows; diagnostics still need the measured callback phases.
+      return sample;
     }
 
-    const update = Math.max(0, simulationEnd - this.#frameStart);
-    const tail = Math.max(0, nowMs - simulationEnd);
-    const residual = Math.max(0, tail - this.#renderMs - this.#overlayMs - this.#uiMs);
-    const sample: IFramePhaseSample | undefined = wantSample
-      ? {
-          hostGap: round(this.#hostGap),
-          overlay: round(this.#overlayMs),
-          render: round(this.#renderMs),
-          residual: round(residual),
-          ui: round(this.#uiMs),
-          update: round(update),
-        }
-      : undefined;
     this.#frame.push(frameMs);
     this.#substeps.push(this.#substepCount);
     // The first frame has no predecessor, so it has neither an interval nor a host gap; pushing a
@@ -1398,11 +1402,17 @@ export class FrameBudget {
   }
 
   #maybeReport(): void {
-    // Callers without a loop clock retain presented-frame window boundaries.
-    const elapsed =
+    // A window counts simulation ticks, so the first one spans startup plus `reportEvery` ticks of
+    // play. A live clock whose simulation has not advanced in this window counts presented frames,
+    // so a held game still reports.
+    const ticks =
       this.#simulation === undefined
-        ? this.#framesInWindow
+        ? 0
         : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
+    const elapsed =
+      this.#simulation === undefined || (this.#simulation.clockFrozen === false && ticks === 0)
+        ? this.#framesInWindow
+        : ticks;
     if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);

@@ -88,14 +88,6 @@
       "metresPerTile": null,
       "note": "The lichen-crusted weathered boulder set. Seam 11.5 against an interior 12.1: tileable. Distinct from the existing mossy_rock set, which is moss rather than lichen, so a boulder bed does not read as one surface twice."
     },
-    "forest_leaves_02": {
-      "asset": "Forest Leaves 02",
-      "author": "Rob Tuytel (All)",
-      "license": "CC0",
-      "groundLayer": null,
-      "metresPerTile": null,
-      "note": "Leaf litter and forest floor for the ground under trees. Seam 19.7 against an interior 17.2: tileable. metresPerTile is deliberately null: the tiling is the terrain render layer's choice, not this folder's."
-    },
     "river_small_rocks": {
       "asset": "River Small Rocks",
       "author": "Rob Tuytel (Photography, Processing), Rico Cilliers (Minor adjustment)",
@@ -107,14 +99,6 @@
     "fern_02": {
       "asset": "Fern 02",
       "author": "Rob Tuytel, Rico Cilliers",
-      "license": "CC0",
-      "groundLayer": null,
-      "metresPerTile": null,
-      "note": "Alpha-cut card atlas only (diffuse, alpha, OpenGL normal at 512 px). The upstream plant meshes are not shipped: cut to the starter budget they kept one blade or frond of each plant, so the game builds its own cards on this atlas."
-    },
-    "grass_medium_02": {
-      "asset": "Grass Medium 02",
-      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
       "license": "CC0",
       "groundLayer": null,
       "metresPerTile": null,
@@ -651,54 +635,6 @@
       "sha256": "cccadfc7b806a15bd396cc433175c80fdb386009674726a8a17e48ba50ce50cb"
     },
     {
-      "set": "forest_leaves_02",
-      "asset": "Forest Leaves 02",
-      "author": "Rob Tuytel (All)",
-      "license": "CC0",
-      "map": "diff",
-      "file": "forest_leaves_02/forest_leaves_02_diff_512.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_leaves_02/forest_leaves_02_diffuse_1k.jpg",
-      "bytes": 131897,
-      "dimensions": "512x512",
-      "colourSpace": "srgb",
-      "metresPerTile": null,
-      "groundLayer": null,
-      "sampledByTemperateGround": false,
-      "sha256": "3041025c2bb5c57530d2e611618d8f8bcf75f54cd1a092f323fdc87520f6e2d0"
-    },
-    {
-      "set": "forest_leaves_02",
-      "asset": "Forest Leaves 02",
-      "author": "Rob Tuytel (All)",
-      "license": "CC0",
-      "map": "nor_gl",
-      "file": "forest_leaves_02/forest_leaves_02_nor_gl_512.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_leaves_02/forest_leaves_02_nor_gl_1k.jpg",
-      "bytes": 155946,
-      "dimensions": "512x512",
-      "colourSpace": "linear",
-      "metresPerTile": null,
-      "groundLayer": null,
-      "sampledByTemperateGround": false,
-      "sha256": "248afab4b44e078501a2363856e679909560a70587c1314a1c17f3f8063218ba"
-    },
-    {
-      "set": "forest_leaves_02",
-      "asset": "Forest Leaves 02",
-      "author": "Rob Tuytel (All)",
-      "license": "CC0",
-      "map": "arm",
-      "file": "forest_leaves_02/forest_leaves_02_arm_512.jpg",
-      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_leaves_02/forest_leaves_02_arm_1k.jpg",
-      "bytes": 105808,
-      "dimensions": "512x512",
-      "colourSpace": "linear",
-      "metresPerTile": null,
-      "groundLayer": null,
-      "sampledByTemperateGround": false,
-      "sha256": "415b28f50e5bca6ef188dee4c9a66a4e2e6668bb909c310e0cb596f746f297cd"
-    },
-    {
       "set": "river_small_rocks",
       "asset": "River Small Rocks",
       "author": "Rob Tuytel (Photography, Processing), Rico Cilliers (Minor adjustment)",
@@ -783,42 +719,6 @@
       "sha256": "72d64f5a9632cf5cc26969b8e60b1a5da5432bbde562b87a6fccef29949e28a8"
     },
     {
-      "set": "grass_medium_02",
-      "asset": "Grass Medium 02",
-      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
-      "license": "CC0",
-      "map": "alpha",
-      "file": "grass_medium_02/grass_medium_02_alpha_512.png",
-      "url": "https://polyhaven.com/a/grass_medium_02",
-      "bytes": 24268,
-      "dimensions": [512, 512],
-      "sha256": "4f94afff57290dae13e02ea16742ec2fa446f7c596f71eb44da6e92f5b2e17ad"
-    },
-    {
-      "set": "grass_medium_02",
-      "asset": "Grass Medium 02",
-      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
-      "license": "CC0",
-      "map": "diff",
-      "file": "grass_medium_02/grass_medium_02_diff_512.jpg",
-      "url": "https://polyhaven.com/a/grass_medium_02",
-      "bytes": 26341,
-      "dimensions": [512, 512],
-      "sha256": "0df2de1764006ceebe633be49dcfaadab6b27b78c7c21f869b1c93f029b92a74"
-    },
-    {
-      "set": "grass_medium_02",
-      "asset": "Grass Medium 02",
-      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
-      "license": "CC0",
-      "map": "nor_gl",
-      "file": "grass_medium_02/grass_medium_02_nor_gl_512.jpg",
-      "url": "https://polyhaven.com/a/grass_medium_02",
-      "bytes": 16575,
-      "dimensions": [512, 512],
-      "sha256": "bc6c9eaf576fd396347c5ea5b3931907cb9ace0943f0159c20d4824c4b2fe0d0"
-    },
-    {
       "set": "kloofendal_48d_partly_cloudy",
       "asset": "Kloofendal 48d Partly Cloudy",
       "author": "Greg Zaal",
@@ -838,10 +738,10 @@
       "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
-      "bytes": 321934,
+      "bytes": 320942,
       "dimensions": "1024x1024 (4 cells of 512x512)",
       "preprocessing": "none. Drawn from a seeded PRNG and deflated as PNG by the script itself: no image library, no upload, byte-identical on every run.",
-      "sha256": "d2f1fd6eb3f87083a1c72a07add0c485f477b7b5e64e1d9db0108298c75eae50",
+      "sha256": "f320c76ff8f07c053f7ff392f5fc792a00f4c2e176f022b2233685b3c6b7d363",
       "why": "A photograph of foliage does not give a card with the twig down the middle and needles fanning off both sides, which is what makes an alpha-cutout branch read as a branch from every angle."
     },
     "needle-surface.png": {
@@ -849,10 +749,10 @@
       "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
-      "bytes": 1021932,
+      "bytes": 1024122,
       "dimensions": "1024x1024 (4 cells of 512x512)",
       "preprocessing": "none. Cooked from the coverage and ridge the same run recorded while drawing the albedo, and deflated as PNG by the script itself: no image library, byte-identical on every run.",
-      "sha256": "45d236f6b61f745753fd86b06b0c27d451ae118c9f0164ce44dda51f297ecbf5",
+      "sha256": "30bbf3302df729aaa8e13872bc04cea3e7c3c4139bcebcab171c17486ae31bd3",
       "why": "An alpha-tested quad has no thickness, so a crown built from cards had exactly one flat normal per card and read as stacked flat quads. A normal per needle plus the spray's own occlusion is what makes a card a mass of needles rather than a silhouette."
     }
   },

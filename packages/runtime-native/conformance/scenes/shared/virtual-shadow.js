@@ -15,7 +15,24 @@ export function assertVirtualShadowProof({ renderer, light, node }) {
 }
 
 export function startScene(canvas, dimensions) {
-  return startVisualScene(canvas, dimensions, "virtual-shadow", ({ renderer, scene, camera }) => {
+  return startVisualScene(canvas, dimensions, "virtual-shadow", (context) => {
+    const { renderer, scene, camera } = context;
+    const subject = buildVirtualShadowScene(context);
+    let frame = 0;
+    return {
+      ...subject,
+      detail: { ...subject.detail, automaticMover: true },
+      render() {
+        // Exercise automatic departure from the cache, then quiet-frame readmission at a fixed pose.
+        frame += 1;
+        if (frame <= 30) subject.ball.position.x = frame / 15;
+        renderer.render(scene, camera);
+      },
+    };
+  });
+}
+
+export function buildVirtualShadowScene({ renderer, scene, camera }) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     camera.position.set(0, 4, 7);
@@ -46,16 +63,5 @@ export function startScene(canvas, dimensions) {
     assertVirtualShadowProof({ renderer, light, node });
 
     scene.add(floor, ball, light, light.target, new THREE.AmbientLight(0xffffff, 0.15));
-    let frame = 0;
-    return {
-      ball, floor, light, node,
-      detail: { levels: node.options.clipExtents.length, automaticMover: true },
-      render() {
-        // Exercise automatic departure from the cache, then quiet-frame readmission at a fixed pose.
-        frame += 1;
-        if (frame <= 30) ball.position.x = frame / 15;
-        renderer.render(scene, camera);
-      },
-    };
-  });
+    return { ball, floor, light, node, detail: { levels: node.options.clipExtents.length } };
 }

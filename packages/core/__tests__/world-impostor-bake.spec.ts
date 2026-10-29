@@ -18,6 +18,7 @@ import {
   type IImpostorRawRenderer,
   IMPOSTOR_FRAME_PIXELS,
   IMPOSTOR_VIEWS,
+  IMPOSTOR_VIEW_GRID,
   VIEW_DIRECTIONS,
   WorldImpostorAtlas,
   WorldImpostorBaker,
@@ -196,20 +197,17 @@ describe("WorldImpostorBaker octahedral frame", () => {
     expect(VIEW_DIRECTIONS).toHaveLength(IMPOSTOR_VIEWS);
     for (const direction of VIEW_DIRECTIONS) expect(direction.length()).toBeCloseTo(1, 6);
     expect(octahedralViewOf(0, 0).z).toBeLessThan(0);
-    expect(octahedralViewOf(3, 3).z).toBeLessThan(0);
+    expect(octahedralViewOf(IMPOSTOR_VIEW_GRID - 1, IMPOSTOR_VIEW_GRID - 1).z).toBeLessThan(0);
   });
 
   it("blends the three corners of a view's own cell with weight one at interior points", () => {
-    for (const [ix, iy] of [
-      [1, 1],
-      [2, 1],
-      [1, 2],
-      [2, 2],
-    ] as const) {
-      const blend = impostorViewWeights(octahedralViewOf(ix, iy));
-      const dominant = blend.weights.indexOf(Math.max(...blend.weights));
-      expect(blend.nearest[dominant]).toBe(iy * 4 + ix);
-      expect(blend.weights[dominant]).toBeCloseTo(1, 5);
+    for (let iy = 1; iy < IMPOSTOR_VIEW_GRID - 1; iy += 1) {
+      for (let ix = 1; ix < IMPOSTOR_VIEW_GRID - 1; ix += 1) {
+        const blend = impostorViewWeights(octahedralViewOf(ix, iy));
+        const dominant = blend.weights.indexOf(Math.max(...blend.weights));
+        expect(blend.nearest[dominant]).toBe(iy * IMPOSTOR_VIEW_GRID + ix);
+        expect(blend.weights[dominant]).toBeCloseTo(1, 5);
+      }
     }
   });
 
@@ -220,7 +218,8 @@ describe("WorldImpostorBaker octahedral frame", () => {
     let previous: readonly number[] = [];
     let sawThirdCorner = false;
     for (let step = 0; step <= 600; step += 1) {
-      const t = -1 / 3 + (2 / 3) * (step / 600);
+      const cell = Math.floor((IMPOSTOR_VIEW_GRID - 2) / 2);
+      const t = (2 * (cell + step / 600)) / (IMPOSTOR_VIEW_GRID - 1) - 1;
       const direction = new Vector3(t, t, 1 - 2 * Math.abs(t)).normalize();
       const blend = impostorViewWeights(direction);
       const sum = blend.weights[0] + blend.weights[1] + blend.weights[2];
@@ -252,11 +251,11 @@ describe("WorldImpostorBaker octahedral frame", () => {
       for (let index = 0; index < 3; index += 1) {
         const layer = blend.nearest[index] as number;
         const weight = blend.weights[index] as number;
-        gx += weight * (layer % 4);
-        gy += weight * Math.floor(layer / 4);
+        gx += weight * (layer % IMPOSTOR_VIEW_GRID);
+        gy += weight * Math.floor(layer / IMPOSTOR_VIEW_GRID);
       }
-      expect(gx).toBeCloseTo((t * 0.5 + 0.5) * 3, 5);
-      expect(gy).toBeCloseTo((s * 0.5 + 0.5) * 3, 5);
+      expect(gx).toBeCloseTo((t * 0.5 + 0.5) * (IMPOSTOR_VIEW_GRID - 1), 5);
+      expect(gy).toBeCloseTo((s * 0.5 + 0.5) * (IMPOSTOR_VIEW_GRID - 1), 5);
     }
   });
 
@@ -305,14 +304,19 @@ describe("WorldImpostorAtlas", () => {
     expect(atlas.target.textures[0]?.name).toBe("output");
     expect(atlas.target.textures[1]?.name).toBe("normal");
     expect(atlas.color.generateMipmaps).toBe(true);
-    // 8 levels of 128x128x16 RGBA8, two attachments: 2 * 64 * 21845.
-    expect(atlas.bytes).toBe(2_796_160);
+    // Two RGBA8 attachments, every view, and the full mip chain down to 1x1.
+    let bytes = 0;
+    for (let level = 0; level <= Math.floor(Math.log2(atlas.pixels)); level += 1) {
+      const edge = Math.max(1, atlas.pixels >> level);
+      bytes += 2 * edge * edge * IMPOSTOR_VIEWS * 4;
+    }
+    expect(atlas.bytes).toBe(bytes);
     atlas.dispose();
   });
 });
 
 describe("WorldImpostorBaker", () => {
-  it("captures all sixteen views, stages every source part, and regenerates mips only last", () => {
+  it("captures every view, stages every source part, and regenerates mips only last", () => {
     const sourceMap = new Texture();
     const source = new MeshStandardMaterial({ alphaTest: 0.4, map: sourceMap });
     const geometry = boxedGeometry(new Vector3(-1, -1, -1), new Vector3(1, 1, 1));

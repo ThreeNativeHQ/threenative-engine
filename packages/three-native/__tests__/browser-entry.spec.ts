@@ -70,6 +70,8 @@ describe("bindUpstreamExports", () => {
     const Pipeline = bound.RenderPipeline as new () => object;
     class Sub extends Pipeline {}
     expect(() => new Sub()).toThrow("TN_NATIVE_UNSUPPORTED_RENDERPIPELINE");
+    // Core asks `shadowNode instanceof VirtualShadowNode` every startup frame; asking is not a use.
+    expect({} instanceof Sub).toBe(false);
     expect(() => (bound.RenderPipeline as { render: unknown }).render).toThrow(
       "TN_NATIVE_UNSUPPORTED_RENDERPIPELINE",
     );

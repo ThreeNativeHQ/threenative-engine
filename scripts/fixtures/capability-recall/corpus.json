@@ -875,6 +875,14 @@
       "source": "sandbox:wildwood-backlit#scenes/CalibrationScene.ts",
       "expect": ["addFoliageBackLight"],
       "reject": []
+    },
+    {
+      "id": "request.terrain-forest-world",
+      "query": "generate a forest for my game",
+      "scope": "request",
+      "source": "template:starter#Budget real time for the look \u2014 see `node_modules/create-threenative/agent-docs/references/dream-loop.md`",
+      "expect": ["cookTerrainWorld"],
+      "reject": []
     }
   ]
 }

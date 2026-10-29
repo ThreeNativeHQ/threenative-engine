@@ -15,6 +15,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -116,7 +117,7 @@ try {
     const queries = [
       ["request", "a walkable island with seeded noise hills, rivers and scattered trees", "Terrain", "@threenative/terrain"],
       ["mechanic", "procedural heightmap landscape for the game", "Terrain", "@threenative/terrain"],
-      ["mechanic", "export the terrain as a glb for another three.js project", "exportWorldGLB", "@threenative/terrain/export"],
+      ["mechanic", "export the terrain as a glb for another three.js project", "prepareWorldGLTF", "@threenative/terrain/export"],
       ["mechanic", "open the terrain brush and layer GUI around game-owned rendering", "mountTerrainEditor", "@threenative/terrain/editor"],
     ];
     const found = queries.map(([scope, situation, symbol, importPath]) => {
@@ -188,7 +189,7 @@ try {
   for (const required of [
     "npm install --save-dev @threenative/terrain",
     "@threenative/terrain/editor/server",
-    "exportWorldGLB",
+    "prepareWorldGLTF",
     "node_modules/@threenative/terrain/AGENT_GUIDE.md",
   ])
     assert(workflow.includes(required), `The shipped terrain workflow lacks: ${required}`);
@@ -470,7 +471,7 @@ try {
       "stale conflict",
       "validatePlacementOverrides/applyPlacementOverrides",
       "toGeometry",
-      "exportWorldGLB",
+      "prepareWorldGLTF",
     ],
     glbBytes: handoff.glbBytes,
     polished: {
@@ -486,6 +487,62 @@ try {
     join(consumer, "recipes.json"),
     JSON.stringify(Object.fromEntries(worldNames.map((name) => [name, recipes[name].toJSON()]))),
   );
+
+  // The forest starter's cooked world, copied into this isolated install as the fixture its
+  // vanilla-loader proof reads. A missing fixture fails instead of silently skipping the proof.
+  const forestWorld = join(repo, "packages/terrain/starter/forest/world");
+  const hasForest =
+    existsSync(join(forestWorld, "world.glb")) && existsSync(join(forestWorld, "world.json"));
+  if (!hasForest)
+    throw new Error(
+      "Missing cooked forest fixture: run node packages/terrain/starter/forest/bake.mjs first",
+    );
+  if (hasForest) {
+    copyFileSync(join(forestWorld, "world.glb"), join(consumer, "forest-world.glb"));
+    copyFileSync(join(forestWorld, "world.json"), join(consumer, "forest-world.json"));
+  }
+
+  // PRD-583 AC-3: the cooked forest `world.glb` read by the stock three loader in this install,
+  // inside the same generated script. The loader makes one `InstancedMesh` per source primitive,
+  // so every child mesh's count is compared to the manifest's logical placement count for its
+  // species — never a sum of primitive copies — and no species may draw per-tree mesh copies.
+  const forestBlock = hasForest
+    ? `
+    const manifest = JSON.parse(readFileSync("forest-world.json", "utf8"));
+    const logical = {};
+    for (const cell of manifest.cells)
+      for (const run of cell.runs) logical[run.asset] = (logical[run.asset] ?? 0) + run.count;
+    const forestBytes = readFileSync("forest-world.glb");
+    const forestScene = await new Promise((resolve, reject) =>
+      new GLTFLoader().parse(forestBytes.buffer.slice(forestBytes.byteOffset, forestBytes.byteOffset + forestBytes.byteLength), "", resolve, reject));
+    const bySpecies = {};
+    for (const species of Object.keys(logical)) {
+      const node = forestScene.scene.getObjectByName(species + "_instances");
+      if (node === undefined) throw new Error("forest GLB has no instancing node for species " + species);
+      let primitives = 0;
+      node.traverse((child) => {
+        if (!child.isInstancedMesh) return;
+        primitives++;
+        if (child.count !== logical[species])
+          throw new Error("forest GLB species " + species + ": InstancedMesh count " + child.count + " != placement count " + logical[species]);
+      });
+      if (primitives === 0) throw new Error("forest GLB species " + species + " has no InstancedMesh");
+      bySpecies[species] = { placements: logical[species], primitives };
+    }
+    let perTreeCopies = 0;
+    forestScene.scene.traverse((object) => {
+      if (object.isMesh && !object.isInstancedMesh && !object.name.startsWith("terrain_")) perTreeCopies++;
+    });
+    if (perTreeCopies > 0) throw new Error("forest GLB draws " + perTreeCopies + " per-tree mesh copies");
+    const forest = {
+      species: bySpecies,
+      speciesCount: Object.keys(bySpecies).length,
+      placements: Object.values(logical).reduce((sum, count) => sum + count, 0),
+      perTreeCopies,
+      glbBytes: forestBytes.length,
+    };`
+    : "\n    const forest = null;";
+
   const author = `
     import { createHash } from "node:crypto";
     import { readFileSync, writeFileSync } from "node:fs";
@@ -493,6 +550,7 @@ try {
     import * as editor from "@threenative/terrain/editor";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     import { Box3 } from "three";
+    Object.assign(globalThis, { self: globalThis });
     if (typeof editor.mountTerrainEditor !== "function" || typeof editor.TerrainEditorController !== "function")
       throw new Error("The packed editor entry does not export the editor");
     const recipes = JSON.parse(readFileSync("recipes.json", "utf8"));
@@ -530,11 +588,18 @@ try {
         glbBytes: bytes.length, evaluateMs, exportMs,
       });
     }
-    console.log(JSON.stringify(report));
+${forestBlock}
+    console.log(JSON.stringify({ report, forest }));
   `;
   writeFileSync(join(consumer, "author.mjs"), author);
-  const authored = JSON.parse(run("node", ["author.mjs"], { cwd: consumer }));
+  const authoredResult = JSON.parse(run("node", ["author.mjs"], { cwd: consumer }));
+  const authored = authoredResult.report;
   assert.equal(authored.length, worldNames.length);
+  if (hasForest) {
+    assert(authoredResult.forest, "the forest GLB fixture was not checked");
+    assert.equal(authoredResult.forest.perTreeCopies, 0);
+    assert(authoredResult.forest.placements > 0);
+  }
   for (const entry of authored) {
     const sha = (heights) => createHash("sha256").update(JSON.stringify(heights)).digest("hex");
     assert.equal(
@@ -566,6 +631,7 @@ try {
       optionalTooling: optional,
       gameHandoff,
       fullWorlds,
+      forestWorld: authoredResult.forest,
       worlds: authored.map((entry) => ({
         world: entry.world,
         heights: entry.heights,

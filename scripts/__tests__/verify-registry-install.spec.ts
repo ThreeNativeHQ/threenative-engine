@@ -165,6 +165,7 @@ function happyRunner(): CommandRunner {
             "threenative-blender": { command: "node", args: ["blender.mjs"] },
             "threenative-engine": { command: "node", args: ["engine.mjs"] },
             "threenative-sculpt": { command: "node", args: ["sculpt.mjs"] },
+            "threenative-terrain": { command: "node", args: ["terrain.mjs"] },
           },
         }),
       );
@@ -325,6 +326,7 @@ function happyMcpRunner(): McpRunner {
       "threenative-blender": ["blender_status", "blender_convert"],
       "threenative-engine": ["engine_search_capabilities", "engine_capability_detail"],
       "threenative-sculpt": ["sculpt_grimoire"],
+      "threenative-terrain": ["terrain_patch"],
     };
     const result =
       toolName === "asset_search_sources"
@@ -342,51 +344,55 @@ function happyMcpRunner(): McpRunner {
                   },
                 ],
               }
-            : toolName === "engine_search_capabilities"
+            : toolName === "terrain_patch"
               ? {
-                  content: [
-                    {
-                      text: JSON.stringify({
-                        guidance: "",
-                        results: [
-                          {
-                            constraints: ["requires a navigation world"],
-                            example: "const agent = new NavigationAgent3D(world);",
-                            importPath: "@threenative/physics/navigation",
-                            summary: "Move an agent around obstacles.",
-                            symbol: "NavigationAgent3D",
-                          },
-                        ],
-                      }),
-                    },
-                  ],
+                  content: [{ text: JSON.stringify({ config: {}, layers: [], version: 1 }) }],
                 }
-              : toolName === "engine_capability_detail"
+              : toolName === "engine_search_capabilities"
                 ? {
                     content: [
                       {
                         text: JSON.stringify({
-                          importPath: "@threenative/physics/navigation",
-                          symbol: "NavigationAgent3D",
+                          guidance: "",
+                          results: [
+                            {
+                              constraints: ["requires a navigation world"],
+                              example: "const agent = new NavigationAgent3D(world);",
+                              importPath: "@threenative/physics/navigation",
+                              summary: "Move an agent around obstacles.",
+                              symbol: "NavigationAgent3D",
+                            },
+                          ],
                         }),
                       },
                     ],
                   }
-                : toolName === "blender_status"
+                : toolName === "engine_capability_detail"
                   ? {
                       content: [
                         {
                           text: JSON.stringify({
-                            available: true,
-                            detail: "Blender 4.2",
-                            installCommand: "install Blender",
+                            importPath: "@threenative/physics/navigation",
+                            symbol: "NavigationAgent3D",
                           }),
                         },
                       ],
                     }
-                  : {
-                      content: [{ text: JSON.stringify({ ok: true }) }],
-                    };
+                  : toolName === "blender_status"
+                    ? {
+                        content: [
+                          {
+                            text: JSON.stringify({
+                              available: true,
+                              detail: "Blender 4.2",
+                              installCommand: "install Blender",
+                            }),
+                          },
+                        ],
+                      }
+                    : {
+                        content: [{ text: JSON.stringify({ ok: true }) }],
+                      };
     const output = [
       mcpMessage(1, { serverInfo: { name: serverName } }),
       mcpMessage(2, { tools: (tools[serverName] ?? []).map((name) => ({ name })) }),

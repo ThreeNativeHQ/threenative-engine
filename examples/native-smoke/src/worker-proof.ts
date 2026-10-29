@@ -29,8 +29,10 @@ self.onmessage = function(event) {
   if (input.kind !== "compute") throw new Error("unexpected worker proof message");
   console.info("TN_NATIVE_WORKER_PROOF_COMPUTE_ENTER:" + JSON.stringify({ atMs: Date.now(), iterations: input.iterations }));
   var checksum = input.seed >>> 0;
-  for (var index = 0; index < input.iterations; index += 1) {
-    checksum = (Math.imul((checksum ^ index) >>> 0, 1664525) + 1013904223) >>> 0;
+  var iterations = input.iterations;
+  var imul = Math.imul;
+  for (var index = 0; index < iterations; index += 1) {
+    checksum = (imul((checksum ^ index) >>> 0, 1664525) + 1013904223) >>> 0;
   }
   console.info("TN_NATIVE_WORKER_PROOF_COMPUTE_COMPLETE:" + JSON.stringify({ atMs: Date.now(), checksum: checksum }));
   postMessage({

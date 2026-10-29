@@ -70,6 +70,14 @@ function model(): Object3D {
   return group;
 }
 
+function cutoutModel(): Object3D {
+  const group = new Group();
+  const needles = new MeshBasicMaterial({ alphaTest: 0.5, transparent: true });
+  group.add(new Mesh(new BoxGeometry(8, 8, 8), needles));
+  group.add(new Mesh(new BoxGeometry(4, 8, 4), new MeshBasicMaterial()));
+  return group;
+}
+
 function fileResponse(buffer: Buffer): object {
   return {
     arrayBuffer: async () =>
@@ -81,8 +89,8 @@ function fileResponse(buffer: Buffer): object {
   };
 }
 
-function stubFixtureFetch(): void {
-  const body = JSON.stringify(manifest);
+function stubFixtureFetch(world: IWorldPackage = manifest): void {
+  const body = JSON.stringify(world);
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: unknown): Promise<object> => {
@@ -91,7 +99,7 @@ function stubFixtureFetch(): void {
         return {
           arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
           headers: new Headers(),
-          json: async () => manifest,
+          json: async () => world,
           ok: true,
           status: 200,
         };
@@ -203,12 +211,23 @@ afterEach(() => {
 });
 
 describe("a streamed world's caster prewarm", () => {
-  it("draws every prewarmed caster in a shadow render before the gate settles, and never builds one on the walk", async () => {
+  it.each([false, true])("terminal impostor=%s", async (withTerminalImpostor) => {
     const markers: string[] = [];
     vi.spyOn(console, "info").mockImplementation((line: unknown) => {
       if (String(line).startsWith("TN_WORLD_PREWARM")) markers.push(String(line));
     });
-    stubFixtureFetch();
+    const pine = manifest.assets.pine;
+    if (pine === undefined) throw new Error("the fixture has no pine asset");
+    const worldPackage: IWorldPackage = withTerminalImpostor
+      ? {
+          ...manifest,
+          assets: {
+            ...manifest.assets,
+            pine: { ...pine, impostorDistance: 150 },
+          },
+        }
+      : manifest;
+    stubFixtureFetch(worldPackage);
 
     const scene = new Scene();
     const light = new DirectionalLight(0xffffff, 1);
@@ -229,9 +248,13 @@ describe("a streamed world's caster prewarm", () => {
       admissionBudgetMs: Number.POSITIVE_INFINITY,
       budgets,
       follow,
-      loadModel: async () => model(),
+      loadModel: async (url) =>
+        withTerminalImpostor && url.endsWith("pine.glb") ? cutoutModel() : model(),
       prefetchSeconds: 0,
       ring: 0,
+      ...(withTerminalImpostor
+        ? { gpuScene: false, impostors: true, preserveAuthoredParts: true }
+        : {}),
       // The one hook the gate has to reach the levels with: what a game passes to make them redraw
       // when the world streams records is exactly what makes a caster's prewarm draw happen.
       shadows: { cast: true, castLevels: 2, invalidate: () => node.invalidateAll() },
@@ -241,6 +264,32 @@ describe("a streamed world's caster prewarm", () => {
     // In a scene: a world nothing projects is a world nothing draws, and the gate is a promise about
     // draws rather than about mints.
     scene.add(world);
+    // Build the opted-in terminal atlas behind the same loading gate. The baked far aggregate is a
+    // real layer-0 and wide-shadow mesh, so the existing first-draw harness below must see its debt
+    // alongside the authored shared casters.
+    const bakeRenderer = {
+      compileAsync: async (): Promise<void> => {},
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: {
+        autoClear: true,
+        getActiveCubeFace: () => 0,
+        getActiveMipmapLevel: () => 0,
+        getClearAlpha: () => 1,
+        getClearColor: (target: unknown) => target,
+        getMRT: () => null,
+        getRenderTarget: () => null,
+        isWebGPURenderer: true,
+        initRenderTarget: () => {},
+        render: () => {},
+        setClearAlpha: () => {},
+        setClearColor: () => {},
+        setMRT: () => {},
+        setRenderTarget: () => {},
+        xr: { enabled: false },
+      },
+      readback: async (): Promise<ArrayBuffer> => new ArrayBuffer(0),
+    } as unknown as Parameters<WorldCells["update"]>[0];
     // Real RenderObjects and NodeManager caches; only shader compilation is replaced by a counter.
     const render = {
       _currentSourceMaterial: null as unknown,
@@ -264,7 +313,10 @@ describe("a streamed world's caster prewarm", () => {
     const objects = new RenderObjects(
       render,
       nodes,
-      { getIndex: (object: { geometry: BufferGeometry }) => object.geometry.index },
+      {
+        getIndex: (object: { geometry: BufferGeometry }) => object.geometry.index,
+        releaseRenderObject: vi.fn(),
+      },
       { delete: vi.fn() },
       { deleteForRender: vi.fn() },
       {},
@@ -348,20 +400,56 @@ describe("a streamed world's caster prewarm", () => {
 
     const prewarmed = new Set<string>();
     const camera = cameraAt(follow.position.x, follow.position.z);
+    const mainDrawGroup = new Group();
     let clock = 0;
     let settled = false;
-    for (let frame = 0; frame < 200 && !settled; frame += 1) {
-      world.update(undefined, camera);
+    let settledAt = Number.POSITIVE_INFINITY;
+    let far: InstancedMesh | undefined;
+    let terminalMainDebtObserved = false;
+    let terminalMainFirstDraw = Number.POSITIVE_INFINITY;
+    for (let frame = 0; frame < 200; frame += 1) {
+      world.update(withTerminalImpostor ? bakeRenderer : undefined, camera);
       // Read between the mint and the level render: this is the prewarm's own list, not a guess at
       // which keys were prewarmed rather than streamed.
       for (const name of pending()) prewarmed.add(name);
       clock += 1;
+      far = scene.children
+        .flatMap((child) => child.children)
+        .find((object) => object.name === "tn-far:pine") as InstancedMesh | undefined;
+      let terminalMain: InstancedMesh | undefined;
+      scene.traverse((object) => {
+        if (object.name === "pine:2:0" && (object as InstancedMesh).isInstancedMesh === true)
+          terminalMain = object as InstancedMesh;
+      });
+      if (
+        terminalMain?.visible &&
+        terminalMain.layers.test(camera.layers) &&
+        Object.hasOwn(terminalMain, "onBeforeRender")
+      ) {
+        if (Object.hasOwn(terminalMain, "onBeforeRender")) {
+          terminalMainDebtObserved = true;
+          if (terminalMainFirstDraw === Number.POSITIVE_INFINITY) terminalMainFirstDraw = clock;
+          terminalMain.onBeforeRender(
+            {} as Parameters<Object3D["onBeforeRender"]>[0],
+            scene,
+            camera,
+            terminalMain.geometry,
+            terminalMain.material as MeshBasicMaterial,
+            mainDrawGroup,
+          );
+        }
+      }
       tally.frame = clock;
       node.updateBefore({ camera, renderer: {}, time: clock } as unknown as NodeFrame);
       await flush(4);
-      settled = markers.length > 0;
+      if (!settled && markers.length > 0) {
+        settled = true;
+        settledAt = clock;
+      }
+      if (settled && (!withTerminalImpostor || far !== undefined)) break;
     }
-    const settledAt = clock;
+    if (withTerminalImpostor)
+      expect(far, "the preserved-part bake creates a whole-map far mesh").toBeDefined();
 
     // Asserted before awaiting the gate, so a prewarm that never settles is a failed assertion
     // rather than a hanging await. The gate settles, and it says what it paid: every caster it
@@ -369,6 +457,22 @@ describe("a streamed world's caster prewarm", () => {
     expect(settled, "the prewarm gate settled").toBe(true);
     await world.prewarmed;
     expect(prewarmed.size, "the prewarm minted caster halves").toBeGreaterThan(0);
+    if (withTerminalImpostor)
+      expect(
+        {
+          mainDrawDebtRegistered: terminalMainDebtObserved,
+          mainFirstDrawBeforeGate: terminalMainFirstDraw < settledAt,
+          shadowDrawDebtRegistered: prewarmed.has("pine:2:0@*"),
+          shadowFirstDrawBeforeGate:
+            (tally.first.get("pine:2:0@*") ?? Number.POSITIVE_INFINITY) < settledAt,
+        },
+        "the actual far aggregate's main and wide-shadow first draws are paid before prewarm settles",
+      ).toEqual({
+        mainDrawDebtRegistered: true,
+        mainFirstDrawBeforeGate: true,
+        shadowDrawDebtRegistered: true,
+        shadowFirstDrawBeforeGate: true,
+      });
     expect(world.stats().pendingPrewarm).toBe(0);
     const [marker] = markers;
     expect(marker).toContain(`shadowPrewarmed=${String(prewarmed.size)}`);

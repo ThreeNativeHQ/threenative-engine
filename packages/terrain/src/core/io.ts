@@ -270,7 +270,9 @@ export async function decodeHeightPNG(
       const text = decoder.decode(data);
       if (text.startsWith("StrataHeightRange\0")) {
         try {
-          metadata = JSON.parse(text.slice(18));
+          const parsed = JSON.parse(text.slice(18));
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw Error();
+          metadata = parsed;
         } catch {
           throw Error("Invalid PNG height range metadata");
         }
@@ -403,7 +405,7 @@ export function encodeGLB(input: IBakedMesh | readonly IBakedMesh[]) {
   }
   const binary = join(chunks);
   const doc = {
-    asset: { version: "2.0", generator: "Strata Terrain 0.1.0" },
+    asset: { version: "2.0", generator: "@threenative/terrain 0.1.2" },
     scene: 0,
     scenes: [{ nodes: meshes.map((_, i) => i) }],
     nodes: meshes.map((m, i) => ({ mesh: i, name: m.name ?? `Terrain ${i}` })),

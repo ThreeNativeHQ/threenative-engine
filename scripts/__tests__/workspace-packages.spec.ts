@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   assertWebEngineBuilt,
@@ -12,9 +12,12 @@ import {
 } from "../workspace-packages.js";
 
 const temporaryRoots: string[] = [];
-// The repo-wide AST scan takes about 12 s on a loaded host and passed 30 s on a tn-local runner
-// (main run 39217177505, attempt 3), so the tests that run it get a load margin.
+let checkedInViolations: readonly string[] = [];
 const SCAN_TIMEOUT_MS = 120_000;
+
+beforeAll(() => {
+  checkedInViolations = findLiteralPackageEnumerationViolations(process.cwd());
+}, SCAN_TIMEOUT_MS);
 
 afterEach(async () => {
   await Promise.all(
@@ -105,7 +108,7 @@ describe("workspace package derivation", () => {
       );
       // The L1 scan still inspects the workflow; these assertions follow its composite action
       // to keep the package/archive stream tied to the derivation helper.
-      expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
+      expect(checkedInViolations).toEqual([]);
     },
     SCAN_TIMEOUT_MS,
   );
@@ -159,7 +162,7 @@ describe("workspace package derivation", () => {
   it(
     "keeps the checked-in call sites on derived package lists",
     async () => {
-      expect(findLiteralPackageEnumerationViolations(process.cwd())).toEqual([]);
+      expect(checkedInViolations).toEqual([]);
     },
     SCAN_TIMEOUT_MS,
   );
@@ -323,9 +326,7 @@ describe("workspace package derivation", () => {
   it(
     "keeps checked-in workflow package inventories on the derived stream",
     async () => {
-      expect(findLiteralPackageEnumerationViolations(process.cwd())).not.toContain(
-        ".github/workflows/native-platforms.yml",
-      );
+      expect(checkedInViolations).not.toContain(".github/workflows/native-platforms.yml");
       const workflow = await readFile(
         path.join(process.cwd(), ".github/workflows/native-platforms.yml"),
         "utf8",

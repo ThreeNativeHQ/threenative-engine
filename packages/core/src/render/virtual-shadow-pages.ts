@@ -806,6 +806,11 @@ export class ShadowInvalidationTracker {
     this.clipmap = clipmap;
   }
 
+  /** Dirty page keys not yet consumed by the next shadow render. */
+  get pending(): number {
+    return this.#invalidated.size;
+  }
+
   get trackedCount(): number {
     return this.#tracked.size;
   }

@@ -1,14 +1,18 @@
 import {
+  BoxGeometry,
   DepthTexture,
   DirectionalLight,
   DoubleSide,
   LessEqualCompare,
+  Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
   PointLight,
   SpotLight,
 } from "three";
-import { float, vec3 } from "three/tsl";
+import { float, renderGroup, vec3 } from "three/tsl";
+import { type Node, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import {
   LAMP_PENUMBRA_SCALE,
@@ -21,6 +25,58 @@ import {
   sourceAngleShadowFilter,
   sourceRadiusShadowFilter,
 } from "../src/render/soft-shadow.js";
+
+/** The CPU-written scalar and vector uniforms a filter's graph reads once compiled, without a GPU. */
+function uniformsOf(filter: Node): Array<Node & { groupNode?: Node }> {
+  const renderer = {
+    backend: {
+      isWebGPUBackend: true,
+      utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+    },
+    hasCompatibility: () => true,
+    hasFeature: () => false,
+    library: { fromMaterial: () => null },
+    shadowMap: { enabled: true, type: 1 },
+  };
+  const builder = new WGSLNodeBuilder(
+    new Mesh(new BoxGeometry(), new MeshBasicMaterial()),
+    renderer as never,
+  );
+  builder.camera = new PerspectiveCamera();
+  builder.setShaderStage("fragment");
+  builder.flowStagesNode(filter, "float");
+  return [...(builder as unknown as { nodes: Set<Node> }).nodes].filter((node) => {
+    const value = (node as { value?: unknown }).value;
+    return (
+      (node as { isUniformNode?: boolean }).isUniformNode === true &&
+      (typeof value === "number" ||
+        (value as { isVector2?: boolean } | null)?.isVector2 === true ||
+        (value as { isVector3?: boolean } | null)?.isVector3 === true)
+    );
+  });
+}
+
+it("keeps every shadow-camera input in the render group, where a settled static receiver still reads it", () => {
+  // The patched renderer skips object-group uploads for a settled static object, so a shadow camera's
+  // near, far, frustum or map size in that group froze at the value the receiver settled with: the
+  // forest kit's firs drew black under a sun whose virtual levels had moved on.
+  const depthTexture = new DepthTexture(512, 512);
+  depthTexture.compareFunction = LessEqualCompare;
+  const inputs = { depthTexture, shadowCoord: vec3(0.5) };
+  const sun = sourceAngleShadowFilter({ sourceAngleRad: 0.02 })({
+    ...inputs,
+    shadow: new DirectionalLight().shadow,
+  });
+  const spot = sourceRadiusShadowFilter({ sourceRadius: 0.05 })({
+    ...inputs,
+    shadow: new SpotLight().shadow,
+  });
+  for (const filter of [sun, spot]) {
+    const uniforms = uniformsOf(filter as Node);
+    expect(uniforms.length).toBeGreaterThan(0);
+    for (const uniform of uniforms) expect(uniform.groupNode).toBe(renderGroup);
+  }
+});
 
 describe("source-angle soft shadows", () => {
   it("grows linearly with the gap above the texel floor", () => {

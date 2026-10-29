@@ -33,6 +33,12 @@
       "args": [
         "./node_modules/@threenative/core/mcp/animation.mjs"
       ]
+    },
+    "threenative-terrain": {
+      "command": "node",
+      "args": [
+        "./node_modules/@threenative/core/mcp/terrain.mjs"
+      ]
     }
   }
 }

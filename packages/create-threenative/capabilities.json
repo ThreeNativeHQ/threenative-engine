@@ -86,6 +86,23 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "await cookTerrainWorld({ state, species, out: \"assets/world\" });",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function cookTerrainWorld( options: IPreparedTerrainWorldOptions, ): Promise< { … }",
+      "situations": [
+        "bake a terrain world headlessly into a GLB with instanced trees and rocks",
+        "generate a forest world for my game"
+      ],
+      "summary": "Bake evaluated terrain and static species into an instanced GLB and streaming world package.",
+      "supersedes": [],
+      "symbol": "cookTerrainWorld"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the signature ignores the material name, which is what made every imported part a singleton, and keeps materials apart on any field it does not understand",
         "the census reads geometry and materials only: no GPU, no runtime, no game"
@@ -434,6 +451,22 @@
     {
       "aliases": [],
       "constraints": [
+        "mutates the supplied document; rejects unsupported MASK topology and invalid ratios"
+      ],
+      "example": "thinFoliageCards(document, 0.14);",
+      "importPath": "@threenative/assets",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/assets",
+      "signature": "export function thinFoliageCards(document: Document, keepRatio: number): number { … }",
+      "situations": ["prepare a far foliage mesh by thinning whole cards instead of triangles"],
+      "summary": "Build a standalone card-thinned foliage mesh, preserving opaque parts and vertex attributes.",
+      "supersedes": [],
+      "symbol": "thinFoliageCards"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "reads geometry and materials only: no GPU, no runtime, no game",
         "a texture whose size the document does not state is reported excluded, never assumed square",
         "a model the reader cannot open is named, never skipped silently"
@@ -569,7 +602,7 @@
         "add hundreds of built objects to the scene without one multi-second frame",
         "stream a detail tier in behind a loading curtain without the page looking hung"
       ],
-      "summary": "Attach hundreds of built objects to the scene in slices, presenting a frame between each.",
+      "summary": "Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.",
       "supersedes": [],
       "symbol": "addInSlices"
     },
@@ -4401,6 +4434,24 @@
     {
       "aliases": [],
       "constraints": [
+        "url names the loaded GLB; tnTerrainSurface extras name a relative world package JSON"
+      ],
+      "example": "await applyTerrainSurface(world.scene, { assets: ctx.assets, renderer: ctx.renderer, url: \"world/world.glb\" });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [
+        "`table` may replace `base`, `breakup`, `macro` and `layers`; baked `splat` and `textures` stay package-owned"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function applyTerrainSurface( root: Object3D, options: ILoadTerrainSplatOptions, ): Promise<void> { … }",
+      "situations": ["apply the authored layered terrain surface after loading a cooked world GLB"],
+      "summary": "Apply a cooked GLB's package-authored layered surface to its marked terrain meshes. `url` is the loaded GLB URL; extras pointers are relative to it. Uses the same asset/fetch path as loadTerrainSplat on web and native. The caller owns the assigned materials' lifetime.",
+      "supersedes": [],
+      "symbol": "applyTerrainSurface"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the returned view aliases the caller's buffer; writing to it mutates the source"
       ],
       "example": "const records = cellPlacements(buffer, { asset: \"tree\", offset: 0, count: 120 });",
@@ -4490,7 +4541,7 @@
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [
-        "every value comes from the package's table; the returned material is the game's to adjust"
+        "`table` may replace `base`, `breakup`, `macro` and `layers` from game source; baked `splat` and `textures` stay package-owned"
       ],
       "package": "@threenative/core",
       "signature": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
@@ -4626,6 +4677,7 @@
         "surface is the game's; this class creates no material, colour or geometry",
         "a cell's model loads at `soon` priority, so a file the running scene awaits through `ctx.assets` starts first",
         "budgets are hard caps that report pressure instead of over-committing",
+        "`whenSpawnReady(position, radius, timeoutMs)` snapshots a fixed region and settles from existing updates or disposal; it does not drive streaming, and `prewarmed` remains the separate draw gate",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
         "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has",
@@ -7592,7 +7644,7 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function bakeWorldPackage( state: ITerrainState, options: IBakeWorldPackageOptions, ): IBakedWorldPackage { … }",
       "situations": ["hand an evaluated Strata terrain to a game without a Blender round trip"],
-      "summary": "Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.",
+      "summary": "Bake an evaluated terrain into the engine's world package: a `world.json` manifest, a uint16 heightmap, a splat mask array, a placement buffer of eight float32 per instance, a placement ID sidecar and the square cells that stream them. The encodings and row orders are the ones the Blender recipe `export_world.py` writes, so one runtime streams both without a second reader.",
       "supersedes": [],
       "symbol": "bakeWorldPackage"
     },
@@ -7745,7 +7797,7 @@
       "overrides": [],
       "package": "@threenative/terrain",
       "requires": ["npm i @threenative/terrain"],
-      "signature": "export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }",
+      "signature": "export function makeExport( state: ITerrainState | null, recipe: ITerrainDocument, kind: \"project\", ): Promise<IExportArchive>;",
       "situations": ["export a terrain recipe and its numerical runtime data"],
       "summary": "Recovered numerical/project exports; GLB/runtime outputs contain terrain only.",
       "supersedes": [],
@@ -7910,6 +7962,72 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the caller supplies the TransformControls, proxy, controller and every drawing callback"
+      ],
+      "example": "const selection = createEditorSelection({ gizmo, proxy, controller, grounding, surface, defaultFootprintSize, refreshPose, drawFootprint, restorePlacement, previewPlacement, setSaving, selectedChanged, setNavigation, message });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function createEditorSelection( { … }",
+      "situations": ["drive terrain-editor selection, gizmo drags, undo and saved transactions"],
+      "summary": "Gesture and transaction mechanics; the caller owns the controls, proxy and all rendering.",
+      "supersedes": [],
+      "symbol": "createEditorSelection"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the point is multiplied in place; the pose needs finite position, quaternion and scale"
+      ],
+      "example": "const centre = editorPlacementCenter(localCentre.clone(), placement);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorPlacementCenter(point: Vector3, pose: IPlacementOverride): Vector3 { … }",
+      "situations": ["find the world-space centre of a placed terrain-editor instance"],
+      "summary": "Transform the caller's measured geometry centre into the evaluated placement's world space.",
+      "supersedes": [],
+      "symbol": "editorPlacementCenter"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the point is projected in place; pass a clone to keep the original"],
+      "example": "const [x, y] = editorPointToClient(point.clone(), camera, canvas.getBoundingClientRect());",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorPointToClient( point: Vector3, camera: Camera, box: { … }",
+      "situations": ["convert a terrain-editor world point to viewport client pixels"],
+      "summary": "Project an injected world point to client pixels in the caller's viewport.",
+      "supersedes": [],
+      "symbol": "editorPointToClient"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the supplied mesh and raycast determine the surface; missing intersections return undefined"
+      ],
+      "example": "const height = editorSurfaceHeight(ctx, terrainMesh, x, z);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function editorSurfaceHeight( ctx: { … }",
+      "situations": ["query terrain-editor surface elevation at world X/Z coordinates"],
+      "summary": "Query the rendered heightfield, including its triangulation rather than an interpolated bake.",
+      "supersedes": [],
+      "symbol": "editorSurfaceHeight"
+    },
+    {
+      "aliases": [],
       "constraints": ["framing only; an unknown target returns a named diagnostic and no camera"],
       "example": "const outcome = focusCamera(camera, { target: { kind: \"prop\", id: \"pine-3\" }, aspect: 16 / 9 }, resolve);",
       "importPath": "@threenative/terrain/editor",
@@ -7968,6 +8086,23 @@
     {
       "aliases": [],
       "constraints": [
+        "the caller supplies world and default footprint sizes; unsupported layers return undefined"
+      ],
+      "example": "const pose = landformPose(layer, terrain.size, footprintSize);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function landformPose(layer: Layer, worldSize: number, defaultSize: number) { … }",
+      "situations": ["derive a terrain-editor gizmo pose from a landform layer"],
+      "summary": "Recipe footprints are heights over X/Z, never independently transformed solids.",
+      "supersedes": [],
+      "symbol": "landformPose"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "browser authoring only; createView and materialColours are required game choices"
       ],
       "example": "await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });",
@@ -7981,6 +8116,40 @@
       "summary": "Mount recovered terrain controls around the project-owned ThreeNative view.",
       "supersedes": [],
       "symbol": "mountTerrainEditor"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the caller supplies the raycast context, terrain mesh, instanced meshes and evaluated placements"
+      ],
+      "example": "const id = pickEditorPlacement(ctx, terrainMesh, meshes, placements, event.clientX, event.clientY);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function pickEditorPlacement( ctx: Parameters<typeof pickEditorSurface>[0], terrain: Mesh, meshes: readonly Object3D[], placements: Iterable< { … }",
+      "situations": [
+        "pick a placed instance in the terrain editor from viewport client coordinates"
+      ],
+      "summary": "A foreground terrain hit occludes placements; matching uses the evaluated world position.",
+      "supersedes": [],
+      "symbol": "pickEditorPlacement"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the caller supplies the raycast implementation and ordered targets"],
+      "example": "const hit = pickEditorSurface(ctx, [terrainMesh], event.clientX, event.clientY);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function pickEditorSurface( ctx: { … }",
+      "situations": ["pick a terrain-editor surface from viewport client coordinates"],
+      "summary": "Convert viewport client coordinates once; the installed picker owns ray intersection.",
+      "supersedes": [],
+      "symbol": "pickEditorSurface"
     },
     {
       "aliases": [],
@@ -8087,6 +8256,23 @@
       "summary": "HTTP controller for the project-local terrain editor.",
       "supersedes": [],
       "symbol": "TerrainEditorController"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "finite coordinates and positive scales are required; X/Z rotations that overhang throw"
+      ],
+      "example": "const next = transformedLandform(layer, position, quaternion, scale, surfaceHeight);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function transformedLandform( layer: Layer, position: Vector3, quaternion: Quaternion, scale: Vector3, anchor: number, ): Layer { … }",
+      "situations": ["apply a terrain-editor gizmo transform to a landform layer"],
+      "summary": "Convert a terrain-editor gizmo pose into a heightfield landform footprint.",
+      "supersedes": [],
+      "symbol": "transformedLandform"
     },
     {
       "aliases": [],
@@ -8260,24 +8446,105 @@
     {
       "aliases": [],
       "constraints": [
-        "browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless"
+        "browser authoring FileReader/canvas; all appearance and coherent water come from the game"
       ],
-      "example": "const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });",
+      "example": "const prepared = await prepareWorldGLTF(input);",
       "importPath": "@threenative/terrain/export",
       "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function prepareWorldGLTF(input: IWorldGLBInput): Promise< { … }",
+      "situations": [
+        "export the terrain as a glb for another three.js project via the headless cook",
+        "prepare the terrain editor's resolved world for headless portable GLB cooking"
+      ],
+      "summary": "Prepare the game's validated, frozen portable scene; the server cook owns GLB encoding.",
+      "supersedes": [],
+      "symbol": "prepareWorldGLTF"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Node authoring only; recipes, asset tables and sky paths stay in the game"],
+      "example": "await bakeKit(import.meta.url, { sky: \"hdri/game-sky.hdr\" });",
+      "importPath": "@threenative/terrain/kit",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function bakeKit( url: string, { … }",
+      "situations": ["bake a copied terrain starter kit into its offline world package"],
+      "summary": "Bake a copied kit, optionally using the caller's installed world cook.",
+      "supersedes": [],
+      "symbol": "bakeKit"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "Node authoring only; verifies archive size and SHA256 before atomic extraction"
+      ],
+      "example": "const assets = await starterAssetsDir();",
+      "importPath": "@threenative/terrain/kit",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function starterAssetsDir(): Promise<string> { … }",
+      "situations": ["resolve terrain kit models and textures for offline baking"],
+      "summary": "Resolve shared starter assets locally, or download the package's pinned archive on demand.",
+      "supersedes": [],
+      "symbol": "starterAssetsDir"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Runtime subpath; the game supplies every appearance and collision choice"],
+      "example": "await addStarterWorld(ctx, follow, spec);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function addStarterWorld<Extra extends { … }",
+      "situations": [
+        "attach a baked starter world with game-owned surfaces, prop dressing and water"
+      ],
+      "summary": "Load caller-authored starter data with one scene lifetime; all appearance comes from spec.",
+      "supersedes": [],
+      "symbol": "addStarterWorld"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const edited = editWorldPlacements(data, { remove: [\"scree:candidate:7:41\"] }, (x, z) => field.heightAt(x, z));",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "function",
       "overrides": [
-        "actual static models, final matrices and baked PBR maps are supplied by the game"
+        "grounding defaults on, while `grounding: false` preserves the authored Y coordinate"
       ],
       "package": "@threenative/terrain",
       "requires": ["npm i -D @threenative/terrain"],
-      "signature": "export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }",
+      "signature": "export function editWorldPlacements( data: { … }",
       "situations": [
-        "export terrain, resolved models and final manual placement transforms as a portable GLB",
-        "export the whole terrain world as one glb for another three.js project"
+        "change generated terrain composition from game source without rebaking the world"
       ],
-      "summary": "Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.",
+      "summary": "Apply deterministic startup edits to the decoded placement data before a world is loaded.",
       "supersedes": [],
-      "symbol": "exportWorldGLB"
+      "symbol": "editWorldPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": ["Shapes and reach are supplied by the game; detach releases every body"],
+      "example": "new PropColliders(ctx, follow, manifest, records, shapes, reach, name);",
+      "importPath": "@threenative/terrain/starter",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export class PropColliders extends Object3D implements IComputeDriven { … }",
+      "situations": ["attach nearby prop collision bodies from baked placement records"],
+      "summary": "Stream caller-specified fixed collision shapes around a moving follow object.",
+      "supersedes": [],
+      "symbol": "PropColliders"
     },
     {
       "aliases": [],
@@ -9091,7 +9358,7 @@
         "procedural trees",
         "swaying trees",
         "tree foliage wind sway",
-        "generate a forest of trees"
+        "grow procedural tree meshes"
       ]
     },
     {

@@ -102,15 +102,28 @@ export interface ICardChain {
   readonly lod0Triangles: number;
 }
 
+/** Reducible cards and triangles retained unchanged. */
+interface ICardSet {
+  readonly cards: ICard[];
+  /**
+   * Triangle start offsets of components larger than {@link MAX_CARD_TRIANGLES}. They are not cards,
+   * so they cannot be scaled or dropped; every derived level keeps them verbatim beside the cards.
+   */
+  readonly preserved: readonly number[];
+}
+
 /**
- * Connected components of the index buffer, or `null` when the primitive is not a card set.
+ * Connected components of the index buffer, or `null` when the primitive has no thinable card.
  *
  * Union-find over shared vertices, which is the only cheap definition of "card" that does not need a
  * per-export convention: an exporter that duplicates the four corners of every quad, one that
- * shares a stem vertex, and a folded card all decompose the same way. `null` means a component was
- * too large to be a card, and the caller keeps the primitive's existing behaviour.
+ * shares a stem vertex, and a folded card all decompose the same way. A component larger than
+ * {@link MAX_CARD_TRIANGLES} is a shell or a trunk fan, not a card: it is collected into
+ * {@link ICardSet.preserved} rather than aborting the whole primitive, so one such component cannot
+ * veto the thousands of eligible cards beside it. `null` means there is no eligible card at all, and
+ * the caller keeps the primitive's existing behaviour.
  */
-function findCards(positions: Float32Array, indices: Uint32Array): ICard[] | null {
+function findCards(positions: Float32Array, indices: Uint32Array): ICardSet | null {
   const vertexCount = Math.floor(positions.length / 3);
   const parent = new Int32Array(vertexCount);
   for (let vertex = 0; vertex < vertexCount; vertex += 1) parent[vertex] = vertex;
@@ -141,12 +154,17 @@ function findCards(positions: Float32Array, indices: Uint32Array): ICard[] | nul
     const group = grouped.get(root);
     if (group === undefined) grouped.set(root, [triangle]);
     else group.push(triangle);
-    if ((group?.length ?? 1) > MAX_CARD_TRIANGLES) return null;
   }
 
   const cards: ICard[] = [];
+  const preserved: number[] = [];
   for (const triangles of grouped.values()) {
     if (triangles.length === 0) continue;
+    // Too large to be a card: keep every triangle, in index order, in every level.
+    if (triangles.length > MAX_CARD_TRIANGLES) {
+      for (const triangle of triangles) preserved.push(triangle);
+      continue;
+    }
     let area = 0;
     let sx = 0;
     let sy = 0;
@@ -185,8 +203,31 @@ function findCards(positions: Float32Array, indices: Uint32Array): ICard[] | nul
       triangles,
     });
   }
-  // A primitive with no triangles, or with fewer cards than levels, has nothing to spend.
-  return cards.length > 0 ? cards : null;
+  // No eligible card means no thinning: preserve the primitive's existing behaviour rather than
+  // inventing a level from components this reducer may not touch.
+  if (cards.length === 0) return null;
+  preserved.sort((a, b) => a - b);
+  return { cards, preserved };
+}
+
+/** The original index values of the listed triangles, copied verbatim to keep in every level. */
+function preservedIndices(triangles: readonly number[], source: Uint32Array): Uint32Array {
+  if (triangles.length === 0) return new Uint32Array(0);
+  const out = new Uint32Array(triangles.length * TRIANGLE);
+  let at = 0;
+  for (const triangle of triangles)
+    for (let corner = 0; corner < TRIANGLE; corner += 1, at += 1)
+      out[at] = source[triangle + corner] as number;
+  return out;
+}
+
+/** `cards` with the preserved triangles in front, so a level draws both from the same index buffer. */
+function withPreserved(preserved: Uint32Array, cards: Uint32Array): Uint32Array {
+  if (preserved.length === 0) return cards;
+  const out = new Uint32Array(preserved.length + cards.length);
+  out.set(preserved);
+  out.set(cards, preserved.length);
+  return out;
 }
 
 /**
@@ -378,6 +419,8 @@ function cardTriangles(card: ICard): number {
  * then spends what is left of the target on further cards within each cell. Every occupied coarse
  * region stays populated, the level is never empty, and the triangle count reaches the target.
  *
+ * The caller subtracts preserved triangles from `target`; `null` means the cards cannot fit.
+ *
  * Returns the level and the grid factor that reached it, so the caller can report the coarse cell
  * width as the level's error (see {@link generateCardChain}).
  */
@@ -390,7 +433,7 @@ function terminalCardLevel(
   target: number,
   previousTriangles: number,
 ): { cards: ICard[]; factor: number; summary: ICardLevelSummary } | null {
-  if (target >= previousTriangles) return null;
+  if (target <= 0 || target >= previousTriangles) return null;
   let factor = 1;
   let { buckets, cells } = bucketsOf(lod0Placed);
   const baseTriangles = (): number =>
@@ -399,12 +442,13 @@ function terminalCardLevel(
         total + cardTriangles((buckets.get(cell) as IPlacedCard[])[0]?.card as ICard),
       0,
     );
-  // Widen the grid until one card per occupied coarse cell fits the target. `factor` growing without
-  // bound ends at a single cell and a single card, which is always under the target.
+  // Widen the grid until one card per occupied coarse cell fits, or only one cell remains.
   while (baseTriangles() > target && cells.length > 1) {
     factor *= 2;
     ({ buckets, cells } = bucketsOf(placeCards(cards, cellSize * factor).placed));
   }
+  // Even one card cannot fit the remaining budget.
+  if (baseTriangles() > target) return null;
   const kept: ICard[] = [];
   const keptSet = new Set<ICard>();
   let triangles = 0;
@@ -457,8 +501,14 @@ function terminalCardLevel(
  * which is the distance from a kept card to the nearest surface the level no longer draws. It rises
  * as the level coarsens, which is the monotonicity the runtime's selection requires.
  *
- * `terminalTriangles`, when given, is the triangle target of one extra terminal level past the
- * ratio ladder (see {@link terminalCardLevel}); it reaches below the ladder's per-cell floor.
+ * `terminalTriangles`, when given, is the triangle ceiling of one extra terminal level past the
+ * ratio ladder (see {@link terminalCardLevel}); it reaches below the ladder's per-cell floor. The
+ * triangles of any preserved component are subtracted before the terminal's cards are budgeted, so
+ * the level it adds keeps the whole primitive — cards plus preserved geometry — at or under it.
+ *
+ * A component too large to be a card is not a reason to abandon the primitive: it rides verbatim at
+ * the front of every level's index buffer, so one weld-fused shell cannot veto the eligible cards
+ * beside it. Only a primitive with no eligible card returns `null`.
  */
 export function generateCardChain(
   positions: Float32Array,
@@ -469,8 +519,11 @@ export function generateCardChain(
   keepRatios: readonly number[] = CARD_KEEP_RATIOS,
   terminalTriangles?: number,
 ): ICardChain | null {
-  const cards = findCards(positions, indices);
-  if (cards === null) return null;
+  const found = findCards(positions, indices);
+  if (found === null) return null;
+  const { cards } = found;
+  // Components too large to thin, kept verbatim at the front of every level's index buffer.
+  const preserved = preservedIndices(found.preserved, indices);
   const lod0Triangles = Math.floor(indices.length / TRIANGLE);
   if (lod0Triangles <= 0) return null;
 
@@ -510,8 +563,8 @@ export function generateCardChain(
     const level = thinLevel(placed, keep, lod0Area, lod0Cells);
     // Never empty: a level that drops the last card draws nothing at all.
     if (level.cards.length === 0 || level.cards.length === cards.length) continue;
-    const buffer = indicesOf(level.cards, indices);
-    const triangles = Math.floor(buffer.length / TRIANGLE);
+    const cardIndices = indicesOf(level.cards, indices);
+    const triangles = Math.floor((preserved.length + cardIndices.length) / TRIANGLE);
     if (triangles >= previousTriangles) continue;
     if ((previousTriangles - triangles) / previousTriangles < minSaving) continue;
     const absoluteError = cellSize * (1 - keep);
@@ -521,7 +574,7 @@ export function generateCardChain(
     counts.push(triangles);
     absoluteErrors.push(absoluteError);
     errors.push(absoluteError / Math.max(scale, 1e-6));
-    buffers.push(scaled.indices);
+    buffers.push(withPreserved(preserved, scaled.indices));
     copies.push(scaled.copies);
     previousTriangles = triangles;
   }
@@ -537,12 +590,13 @@ export function generateCardChain(
       lod0Cells,
       lod0Area,
       cellSize,
-      terminalTriangles,
-      previousTriangles,
+      // Preserved geometry counts against both the target and the previous rung.
+      terminalTriangles - Math.floor(preserved.length / TRIANGLE),
+      previousTriangles - Math.floor(preserved.length / TRIANGLE),
     );
     if (terminal !== null) {
-      const buffer = indicesOf(terminal.cards, indices);
-      const triangles = Math.floor(buffer.length / TRIANGLE);
+      const cardIndices = indicesOf(terminal.cards, indices);
+      const triangles = Math.floor((preserved.length + cardIndices.length) / TRIANGLE);
       if (triangles > 0 && triangles < previousTriangles) {
         const absoluteError = cellSize * terminal.factor;
         const scaled = scaledLevel(terminal, indices, positions, base);
@@ -551,7 +605,7 @@ export function generateCardChain(
         counts.push(triangles);
         absoluteErrors.push(absoluteError);
         errors.push(absoluteError / Math.max(scale, 1e-6));
-        buffers.push(scaled.indices);
+        buffers.push(withPreserved(preserved, scaled.indices));
         copies.push(scaled.copies);
         previousTriangles = triangles;
       }

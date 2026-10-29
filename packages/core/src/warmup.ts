@@ -233,6 +233,19 @@ export interface IWarmUpReport {
   readonly visibilityForced?: number;
 }
 
+const warmUpCompletions = new WeakMap<IWarmUpReport, Promise<void>>();
+
+/** Internal launch-gate result. The live compiler promise stays out of the serializable report. */
+export async function warmUpSceneWithCompletion(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+  camera: Camera,
+  options: IWarmUpOptions = {},
+): Promise<{ readonly report: IWarmUpReport; readonly completion: Promise<void> }> {
+  const report = await warmUpScene(renderer, scene, camera, options);
+  return { report, completion: warmUpCompletions.get(report) ?? Promise.resolve() };
+}
+
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
@@ -787,24 +800,31 @@ interface IReflectorNodeLike {
  *
  * Three's `reflector()` hangs a `_reflectorBaseNode` off a `ReflectorNode` that a material's
  * `colorNode` (or a node composed around it) references. The walk is bounded and only descends
- * real nodes, so a material with no reflector costs one shallow pass.
+ * real nodes, so a material with no reflector costs one shallow pass. `seen` holds the shallowest
+ * depth each node was reached at: a TSL graph shares subgraphs, and without it every path to a
+ * shared node walks it again.
  */
-function nodeHasReflector(root: unknown, depth: number): boolean {
+function nodeHasReflector(root: unknown, depth: number, seen: WeakMap<object, number>): boolean {
   if (depth > 64 || typeof root !== "object" || root === null) return false;
   const node = root as IReflectorNodeLike;
   if (node._reflectorBaseNode !== undefined) return true;
   if (node.isNode !== true || typeof node.getChildren !== "function") return false;
+  const reached = seen.get(root);
+  if (reached !== undefined && reached <= depth) return false;
+  seen.set(root, depth);
   try {
     for (const child of node.getChildren()) {
-      if (nodeHasReflector(child, depth + 1)) return true;
+      if (nodeHasReflector(child, depth + 1, seen)) return true;
     }
   } catch {
+    seen.delete(root);
     return false;
   }
   return false;
 }
 
 function hasReflector(scene: Object3D): boolean {
+  const seen = new WeakMap<object, number>();
   const stack: Object3D[] = [scene];
   // A material is read once however many objects draw with it: on the engine, every field of its
   // values is a call into the host.
@@ -820,7 +840,7 @@ function hasReflector(scene: Object3D): boolean {
     ) {
       read.add(material);
       for (const value of Object.values(material as Record<string, unknown>)) {
-        if (nodeHasReflector(value, 0)) return true;
+        if (nodeHasReflector(value, 0, seen)) return true;
       }
     }
     const children = object.children ?? [];
@@ -1143,6 +1163,7 @@ export async function warmUpScene(
   }
   const compileAsync = renderer.compileAsync.bind(renderer);
   let attempted = 0;
+  const pendingCompiles: Promise<void>[] = [];
   const invokeCompile = (object: Object3D, targetScene?: Object3D): Promise<void> => {
     const compileDeadline =
       (options.granularity ?? "scene") === "scene"
@@ -1178,12 +1199,25 @@ export async function warmUpScene(
       .then(async () => {
         const pass = await renderWarmPassesOnce();
         if (pass === undefined) {
+          // Skipped because the budget ran out first: lazy work, like any compile that never
+          // started. Rejecting here failed a held startup whose compile merely ran long.
+          if (passError === undefined && now() >= startedAt + budgetMs) return;
           throw passError ?? new Error("covered world warm render did not settle");
         }
       });
   };
 
   let gpuDrainSettled = true;
+  const compileWithinDeadline = async (
+    deadline: number,
+    work: Promise<void>,
+    yieldFrame: () => Promise<void>,
+    now: () => number,
+  ): Promise<boolean> => {
+    const finished = await withinDeadline(deadline, work, yieldFrame, now);
+    if (!finished) pendingCompiles.push(work);
+    return finished;
+  };
   const finish = (report: IWarmUpReport): IWarmUpReport => {
     const coveredPassIncomplete =
       renderer.warmUpWorldPass !== undefined && passResult === undefined;
@@ -1212,7 +1246,13 @@ export async function warmUpScene(
       complete && cacheIdentity !== undefined
         ? storeWarmUpCache(cacheIdentity, candidates, computeNodes.length)
         : cacheStatus;
-    return reconcileWarmUpObservation({ ...normalized, cache: finalCache });
+    const finishedReport = reconcileWarmUpObservation({ ...normalized, cache: finalCache });
+    if (pendingCompiles.length > 0) {
+      const completion = Promise.all(pendingCompiles).then(() => undefined);
+      void completion.catch(() => undefined);
+      warmUpCompletions.set(finishedReport, completion);
+    }
+    return finishedReport;
   };
 
   // The hidden pass render runs once, after the compile and before the ending census snapshot, so
@@ -1278,7 +1318,7 @@ export async function warmUpScene(
       const deadline = startedAt + budgetMs;
       const finished =
         now() < deadline
-          ? await withinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
+          ? await compileWithinDeadline(deadline, invokeSceneCompile(), yieldFrame, now)
           : false;
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
       await renderWarmPassesOnce();
@@ -1301,7 +1341,7 @@ export async function warmUpScene(
     const remaining = Math.max(0, startedAt + budgetMs - now());
     const finished =
       remaining > 0
-        ? await withinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
+        ? await compileWithinDeadline(startedAt + budgetMs, invokeSceneCompile(), yieldFrame, now)
         : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
     await renderWarmPassesOnce();
@@ -1364,7 +1404,7 @@ export async function warmUpScene(
     // identity; this layer must not guess which objects are safe to drop before it observes them.
     //
     // Bounded, because an unbounded await here is what held a real launch open forever.
-    const finished = await withinDeadline(
+    const finished = await compileWithinDeadline(
       Math.min(deadline, now() + compileTimeoutMs),
       invokeCompile(renderables[index] as Object3D, options.targetScene ?? scene),
       yieldFrame,

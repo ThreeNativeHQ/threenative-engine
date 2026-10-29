@@ -1,16 +1,14 @@
-// Mossy boulders and the meadow's ground cover: grass clumps and poppy clusters.
+// Weathered boulders and the meadow's ground cover: grass clumps and poppy clusters.
 //
-// All three are appearance, all three are built here, and none of them is a primitive. A
-// `SphereGeometry` with vertex noise on it is a ball with lumps; a boulder is a rock with facets
-// that catch the sun along their edges, a flattened top where something rolled off it, a base
-// buried in the ground so it grows out of the hillside instead of resting on it, and moss on the
-// upward faces only, because moss does not grow on a vertical face.
+// Rocks use smooth weathering, fracture planes and a flattened contact base.
 //
 // Grass is the other thing a cone cannot be. A blade is a tapered curved strip, dark at the root
 // and light at the tip, and a clump is a handful of them at different angles — which is what makes
 // a lawn read as depth rather than as a green plane with a texture on it.
 import { createRandom } from "@threenative/core";
-import { BufferAttribute, BufferGeometry, IcosahedronGeometry, Vector3 } from "three";
+import { Box3, BufferAttribute, BufferGeometry, IcosahedronGeometry, Vector3 } from "three";
+import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
 /** How the boulders read, in metres. Sized against a spruce's 12-17 m, not in the abstract. */
 export const ROCK = {
@@ -20,73 +18,98 @@ export const ROCK = {
   flatten: 0.62,
   /** How much of the base sits below the placement point, as a share of its height. */
   buried: 0.34,
-  /** Facet noise, as a share of the radius. Past a third it stops being a rock and becomes a cloud. */
+  /** Weathering amplitude as a share of the radius. */
   rough: 0.26,
-  /** How flat the noise is: 1 is a smooth blob, high values are shattered facets. */
-  facets: 3,
+  /** Three.js subdivision detail: 20 * (detail + 1)^2 = 500 triangles. */
+  facets: 4,
 } as const;
 
-/**
- * One seeded boulder: a displaced icosphere, flat-shaded, buried at the base.
- *
- * `IcosahedronGeometry` at detail 2 already has 320 faces, which is the right budget for a rock you
- * see from four metres away: enough that the facets read as fracture, few enough that four hundred
- * of them are affordable. The displacement is a sum of sines at incommensurate frequencies, so no
- * two boulders share a lump pattern, and the whole surface is then `toNonIndexed()` so every facet
- * gets its own normal — smooth-shaded noise reads as a melted blob, not as stone.
- */
+/** Smooth weathered stone with two softened fracture planes and a broad, flat contact base. */
 export function boulder(seed: number): BufferGeometry {
   const random = createRandom(seed);
-  const geometry = new IcosahedronGeometry(ROCK.radius, ROCK.facets);
+  const source = new IcosahedronGeometry(ROCK.radius, ROCK.facets);
+  // UV seams and the source's per-face normals must not keep identical positions apart.
+  source.deleteAttribute("uv");
+  source.deleteAttribute("normal");
+  const geometry = mergeVertices(source);
+  source.dispose();
   const position = geometry.getAttribute("position") as BufferAttribute;
-  const phase = random() * Math.PI * 2;
-  const phase2 = random() * Math.PI * 2;
-  const phase3 = random() * Math.PI * 2;
+  const noise = new ImprovedNoise();
+  const offset = new Vector3(random() * 100, random() * 100, random() * 100);
+  const stretch = new Vector3(
+    0.85 + random() * 0.3,
+    ROCK.flatten * (0.92 + random() * 0.16),
+    0.85 + random() * 0.3,
+  );
+  const cuts = Array.from({ length: 2 }, () => ({
+    normal: new Vector3(random() * 2 - 1, 0.25 + random() * 0.65, random() * 2 - 1).normalize(),
+    distance: ROCK.radius * (0.85 + random() * 0.12),
+  }));
   const point = new Vector3();
+  const direction = new Vector3();
+  const base = -ROCK.radius * stretch.y * 0.88;
   for (let i = 0; i < position.count; i += 1) {
-    point.fromBufferAttribute(position, i);
-    const direction = point.clone().normalize();
-    // Three sine lobes at different frequencies: broad swells, a mid facet and a fine chip.
-    const swell = Math.sin(direction.x * ROCK.facets + phase) * 0.55;
-    const facet = Math.sin(direction.y * ROCK.facets * 2.3 + phase2) * 0.3;
-    const chip = Math.sin(direction.z * ROCK.facets * 5.1 + phase3) * 0.15;
-    const displaced = ROCK.radius * (1 + (swell + facet + chip) * ROCK.rough);
-    point.copy(direction).multiplyScalar(displaced);
-    point.y *= ROCK.flatten;
-    // Flatten the top and round the bottom: a boulder that has sat in a hillside for a century has
-    // a plane where the ground pushes on it, and a rounded underside where the soil closes under.
-    if (point.y > 0) point.y = point.y * 0.86;
+    direction.fromBufferAttribute(position, i).normalize();
+    let weathering = 0;
+    for (let octave = 0; octave < 3; octave += 1) {
+      const frequency = 1.8 * 2 ** octave;
+      weathering +=
+        noise.noise(
+          direction.x * frequency + offset.x,
+          direction.y * frequency + offset.y,
+          direction.z * frequency + offset.z,
+        ) *
+        0.62 ** octave;
+    }
+    point.copy(direction).multiplyScalar(ROCK.radius * (1 + weathering * ROCK.rough));
+    for (const cut of cuts) {
+      const excess = point.dot(cut.normal) - cut.distance;
+      // A rounded clamp keeps a fracture from ending in a knife edge.
+      const bevel = ROCK.radius * 0.12;
+      const rounded = Math.max(0, 1 - Math.abs(excess) / bevel);
+      point.addScaledVector(
+        cut.normal,
+        -(Math.max(0, excess) + (bevel * rounded * rounded) / 4) * 0.4,
+      );
+    }
+    point.multiply(stretch);
+    point.y = Math.max(base, point.y);
     position.setXYZ(i, point.x, point.y, point.z);
   }
-  // `IcosahedronGeometry` is already non-indexed — every facet owns its vertices — so this is a
-  // copy, and disposing the source here used to dispose the buffer that was about to be drawn.
-  const flat = geometry.index === null ? geometry : geometry.toNonIndexed();
-  if (flat !== geometry) geometry.dispose();
-  flat.computeVertexNormals();
-  // Bury the base: the placement point is the ground, and the rock has to come out of it.
-  flat.translate(0, -ROCK.radius * ROCK.flatten * ROCK.buried, 0);
-  flat.computeBoundingSphere();
-  return flat;
+  // Keep the committed seed's envelope: weathering must not thin the river cluster.
+  const reference = new IcosahedronGeometry(ROCK.radius, 3);
+  const vertices = reference.getAttribute("position");
+  const bounds = new Box3();
+  const phase = offset.clone().multiplyScalar((Math.PI * 2) / 100);
+  for (let i = 0; i < vertices.count; i++) {
+    direction.fromBufferAttribute(vertices, i).normalize();
+    const swell = Math.sin(direction.x * 3 + phase.x) * 0.55;
+    const facet = Math.sin(direction.y * 3 * 2.3 + phase.y) * 0.3;
+    const chip = Math.sin(direction.z * 3 * 5.1 + phase.z) * 0.15;
+    point.copy(direction).multiplyScalar(ROCK.radius * (1 + (swell + facet + chip) * ROCK.rough));
+    point.y *= ROCK.flatten * (point.y > 0 ? 0.86 : 1);
+    bounds.expandByPoint(point);
+  }
+  reference.dispose();
+  geometry.computeBoundingBox();
+  const size = geometry.boundingBox?.getSize(new Vector3());
+  if (!size) throw new Error("Rock has no measured bounds");
+  const scale = bounds.getSize(point).divide(size);
+  geometry.scale(scale.x, scale.y, scale.z);
+  geometry.computeVertexNormals();
+  geometry.translate(0, -ROCK.radius * ROCK.flatten * ROCK.buried, 0);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
-/**
- * One grass clump's blade count and height, in metres. Knee-high meadow grass, not a lawn.
- *
- * Twelve blades, not seven, and wider and taller than the first pass: at eye height a seven-blade
- * clump one clump every half metre reads as scattered wires on a green plane, and the count that
- * fixes it is the count of blades, not the number of clumps. The curve is deeper too, because a
- * straight blade is a line and a curved one catches the sun along its length.
- */
+/** Knee-high meadow grass: fourteen slender curved blades per clump. */
 export const GRASS = {
   blades: 14,
   /** Height range of a clump, in metres. */
   height: [0.5, 0.95],
-  /**
-   * Blade width range, in metres. A grass blade is two or three millimetres of edge-on leaf and a
-   * sedge's is nearer fifteen; four centimetres of it, seen from a metre and a half, is a strap of
-   * agave, which is what the first pass of this lane grew.
-   */
-  width: [0.017, 0.031],
+  /** Blade width range, in metres, capped against each blade's own height below. */
+  width: [0.006, 0.012],
   /** How far a blade leans from vertical at its tip, as a share of its length. */
   bend: 0.72,
   /** Wind sway at the tip, in metres. */
@@ -133,12 +156,18 @@ class CoverBuffer {
     corners: readonly Vector3[],
     normal: Vector3,
     colors: readonly Vector3[],
-    weight: number,
+    weight: number | readonly [number, number, number, number],
     uvs?: readonly (readonly [number, number])[],
   ): void {
     const base = this.sway.length;
     corners.forEach((point, i) =>
-      this.vertex(point, normal, colors[i] as Vector3, weight, uvs?.[i]),
+      this.vertex(
+        point,
+        normal,
+        colors[i] as Vector3,
+        typeof weight === "number" ? weight : (weight[i] as number),
+        uvs?.[i],
+      ),
     );
     this.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
@@ -194,10 +223,17 @@ const MEADOW_GREENS = [
  * tip. The bend is per blade and the direction is per blade, which is the entire difference between
  * "grass" and "several identical green triangles".
  */
-export function grassClump(seed: number): BufferGeometry {
+export function grassClump(seed: number, species = 0): BufferGeometry {
   const random = createRandom(seed);
   const buffer = new CoverBuffer();
   const segments = 3;
+  // Meadow grass, fine arching fescue and upright sedge share one opaque material.
+  const habits = [
+    { height: 1, width: 1, bend: 1, spread: 0.075 },
+    { height: 0.85, width: 0.7, bend: 1.35, spread: 0.11 },
+    { height: 0.95, width: 1.1, bend: 0.8, spread: 0.055 },
+  ] as const;
+  const habit = habits[species % habits.length] ?? habits[0];
   // Root occlusion: the bottom of a clump sits in its own shade, and a blade that starts at the same
   // brightness as its tip looks pasted onto the ground. The fade runs over the first third of the
   // blade, which is about as far down as the neighbours of a clump reach.
@@ -215,28 +251,36 @@ export function grassClump(seed: number): BufferGeometry {
   // grass in the same metre, and a clump that is always `GRASS.height`'s midpoint is the other half
   // of the lattice.
   const clumpHeight = 0.62 + random() * 0.62;
+  const phase = random() * Math.PI * 2;
   for (let blade = 0; blade < GRASS.blades; blade += 1) {
-    const azimuth = random() * Math.PI * 2;
+    const azimuth = phase + blade * 2.399963229728653 + (random() - 0.5) * 0.6;
     // Per blade, not per clump: a clump whose blades are all one height is a fan, and the outer
     // blades of a real clump are the ones that have fallen over.
-    const height = (GRASS.height[0] + random() * (GRASS.height[1] - GRASS.height[0])) * clumpHeight;
-    const bend = GRASS.bend * (0.35 + random() * 1.1);
+    const height =
+      (GRASS.height[0] + random() * (GRASS.height[1] - GRASS.height[0])) *
+      clumpHeight *
+      habit.height;
+    const bend = GRASS.bend * (0.35 + random() * 1.1) * habit.bend;
     // Blades lean outward from the clump's own centre, so the clump is round, not a flat fan.
     const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
-    const width = GRASS.width[0] + random() * (GRASS.width[1] - GRASS.width[0]);
+    const width = Math.min(
+      (GRASS.width[0] + random() * (GRASS.width[1] - GRASS.width[0])) * habit.width,
+      height * 0.022,
+    );
     const side = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth));
+    const basal = habit.spread * Math.sqrt(random());
     // The blade's spine at `at`: rising, and leaning over further the higher it goes.
     const spine = (at: number) =>
       new Vector3(
-        outward.x * height * bend * at * at,
-        height * at,
-        outward.z * height * bend * at * at,
+        outward.x * (basal + height * bend * (0.2 * at + 0.8 * at * at)),
+        height * (at - 0.3 * at ** 3),
+        outward.z * (basal + height * bend * (0.2 * at + 0.8 * at * at)),
       );
     for (let i = 0; i < segments; i += 1) {
       const at0 = i / segments;
       const at1 = (i + 1) / segments;
-      const half0 = (width * (1 - at0 * 0.92)) / 2;
-      const half1 = (width * (1 - at1 * 0.92)) / 2;
+      const half0 = (width * (0.02 + 0.98 * (1 - at0) ** 1.3)) / 2;
+      const half1 = (width * (0.02 + 0.98 * (1 - at1) ** 1.3)) / 2;
       const a = spine(at0).addScaledVector(side, -half0);
       const b = spine(at0).addScaledVector(side, half0);
       const c = spine(at1).addScaledVector(side, half1);
@@ -257,7 +301,7 @@ export function grassClump(seed: number): BufferGeometry {
           root.clone().lerp(tip, at1).multiplyScalar(rootAo(at1)),
           root.clone().lerp(tip, at1).multiplyScalar(rootAo(at1)),
         ],
-        at0 * at0,
+        [at0 * at0, at0 * at0, at1 * at1, at1 * at1],
       );
     }
   }
@@ -302,10 +346,11 @@ export function fernClump(seed: number): BufferGeometry {
   const phase = random() * Math.PI * 2;
   const white = new Vector3(1, 1, 1);
   for (let f = 0; f < fronds; f += 1) {
-    const azimuth = phase + (f / fronds) * Math.PI * 2 + (random() - 0.5) * 0.5;
+    const azimuth = phase + f * 2.399963229728653 + (random() - 0.5) * 0.35;
     const length = FERN.length[0] + random() * (FERN.length[1] - FERN.length[0]);
     const width = length * FERN.width * (0.8 + random() * 0.4);
-    const rise = FERN.rise * (0.7 + random() * 0.6);
+    const young = f / (fronds - 1);
+    const rise = FERN.rise * (0.7 + random() * 0.4 + young * 0.65);
     const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
     const side = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth));
     const rect = FROND_RECTS[Math.floor(random() * FROND_RECTS.length)] as readonly number[];
@@ -314,7 +359,7 @@ export function fernClump(seed: number): BufferGeometry {
     const spine = (at: number) =>
       outward
         .clone()
-        .multiplyScalar(length * (0.25 + 0.75 * at) * at)
+        .multiplyScalar(length * (1 - young * 0.35) * (0.25 + 0.75 * at) * at)
         .setY(length * rise * (2.2 * at - 1.6 * at * at));
     // A frond's own twist: the outer half rolls a little, so the clump is not a set of flat paddles.
     const roll = (random() - 0.5) * 0.6;
@@ -343,7 +388,7 @@ export function fernClump(seed: number): BufferGeometry {
         [a, b, c, d],
         normal,
         [shade(at0), shade(at0), shade(at1), shade(at1)],
-        at0 * at0,
+        [at0 * at0, at0 * at0, at1 * at1, at1 * at1],
         [
           [u0, va],
           [u1, va],
@@ -440,7 +485,7 @@ export function poppyCluster(
           stemGreen.clone().lerp(stemLight, at1),
           stemGreen.clone().lerp(stemLight, at1),
         ],
-        at0 * at0 * 0.8,
+        [at0 * at0 * 0.8, at0 * at0 * 0.8, at1 * at1 * 0.8, at1 * at1 * 0.8],
       );
     }
     // Five cupped petals, each a small strip of quads rather than one flat quad. A poppy is a bowl:
@@ -449,7 +494,7 @@ export function poppyCluster(
     // and as a line from anywhere else, which is what the last captures showed.
     const head = spine(1);
     const twist = random() * Math.PI * 2;
-    const radius = POPPY.disc;
+    const radius = POPPY.disc * (0.8 + random() * 0.4);
     // The dark centre every poppy has: the ring of stamens around the ovary, which is nearly black
     // and which is the single detail that makes a red disc read as a flower.
     const centreR = radius * POPPY.centre;

@@ -202,6 +202,11 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
         if (args.importer.startsWith(`${resolve(core, "src")}/`))
           return { path: resolve(player, "core-assets.mjs") };
       });
+      // The browser WebGPU upload lane; the engine uploads compressed textures itself.
+      builder.onResolve({ filter: /(?:^|\/)compressed-texture-preparation\.js$/ }, (args) => {
+        if (args.importer.startsWith(`${resolve(core, "src")}/`))
+          return { path: resolve(player, "core-compressed-texture-preparation.mjs") };
+      });
       builder.onResolve({ filter: /^tn:game$/ }, () => ({ path: "game", namespace: "native-game" }));
       builder.onLoad({ filter: /.*/, namespace: "native-game" }, () => ({ contents: code, resolveDir: repo }));
       builder.onResolve({ filter: /^@threenative\/core$/ }, () => ({ path: "core", namespace: "native-core" }));

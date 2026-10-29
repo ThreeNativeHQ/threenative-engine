@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   type BufferGeometry,
   Camera,
+  Float32BufferAttribute,
   type Material,
   Mesh,
   MeshBasicMaterial,
@@ -184,7 +185,7 @@ function renderObjectsProbe(): {
   const manager = new RenderObjects(
     renderer,
     nodes,
-    {},
+    { getIndex: () => null, releaseRenderObject: vi.fn() },
     pipelines,
     bindings,
     {},
@@ -323,6 +324,46 @@ describe("three shadow override material cache", () => {
 });
 
 describe("three RenderObjects source invalidation", () => {
+  it("rebuilds cached morph bindings when geometry is replaced and the old geometry is disposed", () => {
+    const probe = renderObjectsProbe();
+    const source = probe.makeSource(0);
+    const object = probe.makeObject(source);
+    const oldGeometry = object.geometry;
+    oldGeometry.morphAttributes.position = [
+      new Float32BufferAttribute(
+        new Float32Array(oldGeometry.getAttribute("position").count * 3),
+        3,
+      ),
+    ];
+    oldGeometry.morphTargetsRelative = true;
+    object.updateMorphTargets();
+    const cached = probe.get(object, source);
+    Reflect.set(
+      Reflect.get(cached, "_nodes"),
+      "getForRender",
+      (renderObject: IRenderObjectProbe) => ({
+        geometry: renderObject.geometry,
+        createBindings: () => [{ geometry: renderObject.geometry }],
+      }),
+    );
+    const oldBuilder = Reflect.get(cached, "getNodeBuilderState").call(cached);
+    const oldBindings = Reflect.get(cached, "getBindings").call(cached);
+    const dispose = vi.spyOn(cached, "dispose");
+    object.geometry = oldGeometry.clone();
+    object.updateMorphTargets();
+    oldGeometry.dispose();
+
+    const refreshed = probe.get(object, source);
+    const builder = Reflect.get(refreshed, "getNodeBuilderState").call(refreshed);
+    const bindings = Reflect.get(refreshed, "getBindings").call(refreshed);
+    expect(refreshed).not.toBe(cached);
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(builder).not.toBe(oldBuilder);
+    expect(bindings).not.toBe(oldBindings);
+    expect(builder.geometry).toBe(object.geometry);
+    expect(bindings[0].geometry).toBe(object.geometry);
+  });
+
   it("does not validate an unchanged source and override pair", () => {
     const probe = renderObjectsProbe();
     const source = probe.makeSource(0.5);

@@ -12,7 +12,13 @@ export default defineConfig({
       name: "scripts-resolve-three-from-core",
       enforce: "pre",
       async resolveId(
-        this: { resolve(source: string, importer: string, options: object): Promise<unknown> },
+        this: {
+          resolve(
+            source: string,
+            importer: string,
+            options: object,
+          ): Promise<{ id: string } | null>;
+        },
         source: string,
         importer: string | undefined,
         options: object,
@@ -33,10 +39,11 @@ export default defineConfig({
     environment: "node",
     include: [
       "scripts/**/*.spec.ts",
+      "examples/strata-terrain-preview/__tests__/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.tsx",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "examples/**"],
+    exclude: ["**/node_modules/**", "**/dist/**"],
     reporters: ["default"],
     coverage: {
       provider: "v8",

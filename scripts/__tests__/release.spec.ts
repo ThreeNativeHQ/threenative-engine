@@ -120,6 +120,7 @@ describe("pnpm release ordering", () => {
       "threenative-sculpt",
       "threenative-engine",
       "threenative-blender",
+      "threenative-terrain",
       "threenative-animation",
     ]);
     expect(cohort.templatePins).toEqual([]);

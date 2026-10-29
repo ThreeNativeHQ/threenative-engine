@@ -5,6 +5,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { extname, join, normalize, resolve } from "node:path";
+import { cookTerrainWorld } from "@threenative/assets";
 
 const TYPES = { ".js": "text/javascript", ".mjs": "text/javascript", ".json": "application/json" };
 const MAP = {
@@ -17,7 +18,7 @@ const MAP = {
   },
 };
 
-export async function openConsumerPage({ consumer, repo, port = 5184 }) {
+export async function openConsumerPage({ consumer, repo, port = 0 }) {
   const root = resolve(consumer);
   const server = createServer((request, response) => {
     const path = normalize(decodeURIComponent(new URL(request.url, "http://x").pathname));
@@ -37,18 +38,25 @@ export async function openConsumerPage({ consumer, repo, port = 5184 }) {
     server.once("error", fail);
     server.listen(port, "127.0.0.1", done);
   });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Consumer server has no port");
+  const origin = `http://127.0.0.1:${address.port}/`;
   const { chromium } = createRequire(join(repo, "packages/playtest/package.json"))("playwright");
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
+  await page.exposeFunction("cookPreparedWorld", async (preparedWorld) => {
+    const { worldGlb } = await cookTerrainWorld({ preparedWorld });
+    return Buffer.from(worldGlb).toString("base64");
+  });
   const problems = [];
   page.on("pageerror", (error) => problems.push(error.message));
   page.on("console", (message) => message.type() === "error" && problems.push(message.text()));
   await page.route("**/*", (route) => {
-    if (route.request().url().startsWith(`http://127.0.0.1:${port}/`)) return route.continue();
+    if (route.request().url().startsWith(origin)) return route.continue();
     problems.push(`external request ${route.request().url()}`);
     return route.abort();
   });
-  await page.goto(`http://127.0.0.1:${port}/`);
+  await page.goto(origin);
   return {
     problems,
     /** Export one saved document in the page and read the file back with a plain GLTFLoader. */

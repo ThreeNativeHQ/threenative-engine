@@ -1,6 +1,7 @@
 import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
+  type IPlacement,
   type ITerrainState,
   applyPlacementOverrides,
   bakeMesh,
@@ -18,10 +19,14 @@ import {
   type IViewEnvironment,
   type IViewerPose,
   type TerrainEditorController,
+  editorSurfaceHeight,
   focusCamera,
+  landformPose,
+  pickEditorPlacement,
+  pickEditorSurface,
 } from "@threenative/terrain/editor";
 import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
-import { type IWorldGLBExport, exportWorldGLB } from "@threenative/terrain/export";
+import { type IWorldGLBExport, prepareWorldGLTF } from "@threenative/terrain/export";
 import {
   Box3,
   BufferAttribute,
@@ -34,7 +39,7 @@ import {
   Line,
   LineBasicMaterial,
   LinearToneMapping,
-  Matrix4,
+  type Matrix4,
   Mesh,
   type MeshStandardMaterial,
   NoToneMapping,
@@ -46,18 +51,19 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createEnvironmentImages } from "./environmentImages.js";
 import { createImportedModels } from "./imports.js";
-import { landformPose } from "./landforms.js";
 import { OCEAN_LOOK, createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
 import { createPortableGround, createPortableProps } from "./portable.js";
 import { createPropSurfaces } from "./propMaterials.js";
+import { createStreamedProps } from "./propStreaming.js";
 import {
   PROP_ASSETS,
   type PropGroundQuery,
   buildPropVariants,
-  createProps,
+  preparePose,
   preparePropTransform,
   readPropTransform,
+  variantFor,
   writePropTransform,
 } from "./props.js";
 import { createPropSelection } from "./selection.js";
@@ -95,6 +101,29 @@ const initialState = {
   renderedRevision: "",
   renderedCount: 0,
   renderedFrames: 0,
+  editorTool: "",
+  editorFocus: "",
+  editorRadius: 0,
+  editorLayerCount: 0,
+  editorPointCount: 0,
+  editorLiveRegionCount: 0,
+  editorLiveMode: "",
+  editorAnnouncement: "",
+  editorFocusVisible: false,
+  editorBrushCaptured: false,
+  editorPersistedStrokes: -1,
+  editorPersistenceError: "",
+  editorUnsentVisible: false,
+  editorUnsentCount: 0,
+  editorUnsentText: "",
+  editorUnsentRetry: false,
+  editorUnsentDiscard: false,
+  editorStaleWriteConflicts: 0,
+  editorCommitWrites: "",
+  editorWorkerBusy: false,
+  editorBuildCancelled: false,
+  editorRebuiltAfterCancel: false,
+
   vertexCount: 0,
   heightSum: 0,
   evaluationMs: 0,
@@ -147,13 +176,25 @@ export async function createEditorView(
   // The exported world's water, and the meshes drawn live: one bake, used by both, so what the
   // editor shows is what the GLB carries rather than two shapes that only agree sometimes.
   let waterSurfaces: IWaterSurface[] = [];
-  let props: ReturnType<typeof createProps> | undefined;
+  let props: Awaited<ReturnType<typeof createStreamedProps>> | undefined;
+  let prewarmedProps: typeof props;
   // The loop's settling frame can tick before the surfaces exist; the view answers when it can.
   // biome-ignore lint/style/useConst: the settling frame reads this before the line that assigns it.
   let propSurfaces: Awaited<ReturnType<typeof createPropSurfaces>> | undefined;
+  const initialDisk = await controller.snapshot();
+  const initialStrokes = initialDisk.document.recipe.layers.filter(
+    (layer) => layer.name === "Sculpt stroke",
+  ).length;
+  let persistedStrokes = 0;
+  let persistenceError = "";
+  let stateAtCancellation: ITerrainState | null = null;
   let authoring: IAuthoringDocument | undefined;
   let renderedRecipe: string | undefined;
   let groundAt: PropGroundQuery | undefined;
+  let streamGeneration = 0;
+  let streamPending = false;
+  let propsDirty = false;
+  let disposed = false;
   let elapsed = 0;
   let first = true;
   let hemisphere!: HemisphereLight;
@@ -201,6 +242,75 @@ export async function createEditorView(
     for (const material of materials) material.dispose();
     water = undefined;
   }
+  async function streamProps(
+    placements: readonly IPlacement[],
+    query: PropGroundQuery,
+    size: number,
+  ) {
+    if (!propSurfaces) throw new Error("Prop surfaces are not loaded yet");
+    const generation = ++streamGeneration;
+    streamPending = true;
+    try {
+      const next = await createStreamedProps({
+        placements,
+        groundAt: query,
+        parts: propParts,
+        materials: propSurfaces.materials,
+        follow: ctx.camera,
+        size,
+        assets: ctx.assets,
+        // The editor has no virtual shadow maps to draw streamed caster layers.
+        castShadows: false,
+        // Live model and texture edits must rebind resources on the next draw.
+        bundles: false,
+        whileCurrent: () => !disposed && generation === streamGeneration,
+      });
+      if (!next) return undefined;
+      if (disposed || generation !== streamGeneration) {
+        next.dispose();
+        return undefined;
+      }
+      for (const instance of next.byId.values())
+        instance.onTransform = (transform) => {
+          instance.placement = { ...instance.placement, transform };
+          if (propsDirty) return;
+          propsDirty = true;
+          queueMicrotask(() => {
+            propsDirty = false;
+            if (disposed || !props || !groundAt || !terrain) return;
+            const placements = [...props.byId.values()].map((instance) => instance.placement);
+            void streamProps(placements, groundAt, terrain.size)
+              .then((next) => {
+                if (next) replaceProps(next);
+              })
+              .catch(streamFailure);
+          });
+        };
+      return next;
+    } finally {
+      if (generation === streamGeneration) streamPending = false;
+    }
+  }
+  function replaceProps(next: NonNullable<typeof props>): void {
+    if (props) {
+      for (const world of props.worlds) ctx.scene.remove(world);
+      props.dispose();
+    }
+    props = next;
+    for (const world of props.worlds) ctx.add(world);
+    void Promise.all(next.worlds.map((world) => world.prewarmed)).then(() => {
+      if (!disposed && props === next) prewarmedProps = next;
+    });
+  }
+  function streamFailure(error: unknown): void {
+    const status = document.getElementById("save-status");
+    if (status) status.textContent = "Preview failed · last preview retained";
+    const toast = document.getElementById("toast");
+    if (toast) {
+      toast.textContent = String(error);
+      toast.classList.remove("hidden");
+    }
+  }
   function readPose(): IViewerPose {
     // The engine camera is configured perspective at start; its planes are the live ones.
     const live = ctx.camera as PerspectiveCamera;
@@ -247,18 +357,12 @@ export async function createEditorView(
     const instance = props?.byId.get(id);
     if (!instance) return undefined;
     const box = new Box3();
-    const world = new Matrix4();
-    for (const part of instance.parts) {
-      part.mesh.updateWorldMatrix(true, false);
-      part.mesh.geometry.computeBoundingBox();
-      const local = part.mesh.geometry.boundingBox;
-      if (!local) continue;
-      // One instance matrix, so a nonuniformly scaled prop frames its own geometry.
-      world.multiplyMatrices(
-        part.mesh.matrixWorld,
-        new Matrix4().fromArray(part.mesh.instanceMatrix.array, part.index * 16),
-      );
-      box.union(local.clone().applyMatrix4(world));
+    const key = `${instance.placement.asset}:${variantFor(instance.placement, instance.placement.asset)}`;
+    for (const part of propParts.get(key) ?? []) {
+      if ((part.level ?? 0) !== 0) continue;
+      part.geometry.computeBoundingBox();
+      const local = part.geometry.boundingBox;
+      if (local) box.union(local.clone().applyMatrix4(instance.pose));
     }
     return box.isEmpty()
       ? undefined
@@ -290,7 +394,7 @@ export async function createEditorView(
       );
       if (!placed.length) {
         const layer = authoring?.recipe.layers.find((entry) => entry.id === id);
-        const pose = layer ? landformPose(layer, terrain.size) : undefined;
+        const pose = layer ? landformPose(layer, terrain.size, 120) : undefined;
         if (!pose) return undefined;
         const size = new Vector3(...pose.scale);
         const centre = new Vector3(...pose.position);
@@ -587,8 +691,71 @@ export async function createEditorView(
               0,
             ) ?? 0,
         });
-        ctx.state.set({ renderedFrames: ctx.state.getState().renderedFrames + 1 });
-        if (!requestedRevision || seen === requestedRevision) return;
+        const focused = document.activeElement as HTMLElement | null;
+        const cancelled =
+          document.getElementById("save-status")?.textContent?.startsWith("Build cancelled") ??
+          false;
+        // The editor page publishes its API on `window.strata`; this view reads two fields of it.
+        const strata = (
+          window as {
+            strata?: { state?: NonNullable<typeof stateAtCancellation>; workerBusy?: boolean };
+          }
+        ).strata;
+        if (cancelled && strata?.state) stateAtCancellation ??= strata.state;
+        ctx.state.set({
+          renderedFrames: ctx.state.getState().renderedFrames + 1,
+          editorWorkerBusy: strata?.workerBusy ?? false,
+          editorBuildCancelled: cancelled,
+          editorRebuiltAfterCancel: !!stateAtCancellation && strata?.state !== stateAtCancellation,
+          editorTool: document.body.dataset.terrainTool ?? "",
+          editorUnsentVisible:
+            !!document.getElementById("not-saved") && !document.getElementById("not-saved")?.hidden,
+          editorUnsentCount: document.querySelectorAll("#not-saved-list > li").length,
+          editorUnsentText: document.getElementById("not-saved")?.textContent ?? "",
+          editorUnsentRetry: !!document.querySelector(
+            '#not-saved-list button[data-save-action="retry"]',
+          ),
+          editorUnsentDiscard: !!document.querySelector(
+            '#not-saved-list button[data-save-action="discard"]',
+          ),
+          editorStaleWriteConflicts: Number(document.body.dataset.staleWriteConflicts ?? 0),
+          editorCommitWrites: Object.values(
+            JSON.parse(document.body.dataset.commitWrites ?? "{}"),
+          ).join(","),
+          editorPersistedStrokes: persistedStrokes,
+          editorPersistenceError: persistenceError,
+          editorBrushCaptured: document.getElementById("viewport")?.hasPointerCapture(1) ?? false,
+          editorFocus: focused?.dataset.tool ?? focused?.id ?? "",
+          editorFocusVisible:
+            !!focused?.matches(":focus-visible") &&
+            Number.parseFloat(getComputedStyle(focused).outlineWidth) > 0,
+          editorAnnouncement: document.getElementById("editor-announcements")?.textContent ?? "",
+          editorRadius: Number(
+            (document.getElementById("brush-radius") as HTMLInputElement | null)?.value ?? 0,
+          ),
+          editorLayerCount: authoring?.recipe.layers.length ?? 0,
+          editorPointCount: Number(
+            document.getElementById("spline-count")?.textContent?.split(" ")[0] ?? 0,
+          ),
+          editorLiveRegionCount: document.querySelectorAll("[aria-live]").length,
+          editorLiveMode:
+            document.getElementById("editor-announcements")?.getAttribute("aria-live") ?? "",
+        });
+        const streaming = props?.stats();
+        if (
+          !requestedRevision ||
+          seen === requestedRevision ||
+          streamPending ||
+          propsDirty ||
+          !streaming ||
+          prewarmedProps !== props ||
+          streaming.loadsInFlight !== 0 ||
+          streaming.loadsQueued !== 0 ||
+          streaming.admissionBacklog !== 0 ||
+          streaming.pendingPrewarm !== 0 ||
+          streaming.failures !== 0
+        )
+          return;
         seen = requestedRevision;
         mesh.userData.revision = seen;
         ctx.state.set({ renderedRevision: seen });
@@ -631,14 +798,23 @@ export async function createEditorView(
   // hash-named URLs so a replaced file can never be served from a stale cache.
   const assetUrl = (asset: { path: string }): string =>
     new URL(`api/assets/${asset.path}`, document.baseURI).href;
-  const surfaces = createSurfaceBindings(ctx.assets, propSurfaces.inputs, assetUrl, (texture) => {
-    const backend = (
-      ctx.renderer.raw as {
-        backend?: { get(object: unknown): { texture?: { format?: string } } | undefined };
-      }
-    ).backend;
-    return backend?.get(texture)?.texture?.format;
-  });
+  const surfaces = createSurfaceBindings(
+    ctx.assets,
+    propSurfaces.inputs,
+    assetUrl,
+    (texture) => {
+      const backend = (
+        ctx.renderer.raw as {
+          backend?: { get(object: unknown): { texture?: { format?: string } } | undefined };
+        }
+      ).backend;
+      return backend?.get(texture)?.texture?.format;
+    },
+    () => {
+      for (const material of Object.values(propSurfaces?.materials ?? {}))
+        material.needsUpdate = true;
+    },
+  );
   const imported = createImportedModels(ctx.assets, propParts, assetUrl);
   envImages = createEnvironmentImages(ctx.assets, assetUrl, () => syncImages(environmentOverrides));
   const selection = createPropSelection(
@@ -649,25 +825,11 @@ export async function createEditorView(
     () => groundAt,
     (x, y) => {
       if (!props || !mesh) return undefined;
-      const box = ctx.renderer.domElement.getBoundingClientRect();
-      const hit = ctx.raycast({
-        screen: new Vector2(x - box.left, y - box.top),
-        targets: [mesh, ...props.meshes],
-      });
-      if (hit?.instanceId === undefined) return undefined;
-      const id = hit.object.userData.placementIds?.[hit.instanceId];
-      return typeof id === "string" ? id : undefined;
+      return pickEditorPlacement(ctx, mesh, props.meshes, props.byId.values(), x, y);
     },
     (x, z) => {
       if (!mesh) return undefined;
-      mesh.geometry.computeBoundingBox();
-      const top = mesh.geometry.boundingBox?.max.y;
-      if (top === undefined) return undefined;
-      return ctx.raycast({
-        origin: new Vector3(x, top + 1, z),
-        direction: new Vector3(0, -1, 0),
-        targets: [mesh],
-      })?.point.y;
+      return editorSurfaceHeight(ctx, mesh, x, z);
     },
     (target) => cameras.focus({ target }),
   );
@@ -727,10 +889,21 @@ export async function createEditorView(
         requestedRevision = revision;
       }
       authoring = next;
+      void controller
+        .snapshot()
+        .then((snapshot) => {
+          persistedStrokes =
+            snapshot.document.recipe.layers.filter((layer) => layer.name === "Sculpt stroke")
+              .length - initialStrokes;
+        })
+        .catch((error: unknown) => {
+          persistenceError = String(error);
+        });
       selection.sync({ document: next, revision, diagnostic: null }, sameRecipe);
       selection.refresh();
     },
     update(state): ITerrainState {
+      const recipe = authoring ? JSON.stringify(authoring.recipe) : undefined;
       const resolved = applyPlacementOverrides(state, authoring?.placementOverrides ?? {});
       const baked = bakeMesh(state, { palette: terrainPalette });
       if (!baked.colors) throw new Error("Editor surface colours missing");
@@ -747,78 +920,98 @@ export async function createEditorView(
       next.geometry.computeBoundingBox();
       const top = next.geometry.boundingBox?.max.y;
       if (top === undefined) throw new Error("Terrain bounds unavailable for prop grounding");
-      let nextProps: ReturnType<typeof createProps>;
+      let nextGround: PropGroundQuery;
       try {
-        const nextGround: PropGroundQuery = (placement, at) => {
+        nextGround = (placement, at) => {
           const [x, , z] = at;
-          const hit = ctx.raycast({
-            origin: new Vector3(x, top + 1, z),
-            direction: new Vector3(0, -1, 0),
-            targets: [next],
-          });
+          const height = editorSurfaceHeight(ctx, next, x, z, top + 1);
           const [originalX, originalY, originalZ] = placement.position;
           return {
-            height: hit?.point.y ?? null,
+            height: height ?? null,
             offset: originalY - sampleHeight(state, originalX, originalZ),
           };
         };
         if (!propSurfaces) throw new Error("Prop surfaces are not loaded yet");
-        nextProps = createProps(resolved.instances, nextGround, propParts, propSurfaces.materials);
-        groundAt = nextGround;
+        for (const placement of resolved.instances) {
+          const key = `${placement.asset}:${variantFor(placement, placement.asset)}`;
+          const parts = propParts.get(key);
+          const foot =
+            parts?.find((part) => part.role === "bark" || part.role === "stone") ?? parts?.[0];
+          if (!foot) throw new Error(`Prop asset '${key}' has no parts`);
+          preparePose(
+            foot.geometry,
+            foot.material ?? propSurfaces.materials[foot.role],
+            placement,
+            placement.transform,
+            nextGround,
+          );
+        }
       } catch (error) {
         next.geometry.dispose();
         next.material.dispose();
         throw error;
       }
-      if (data.waterLevel !== null && !sea) sea = ctx.add(createOcean());
-      const nextWater = data.waterLevel === null || !sea ? undefined : createWaterMesh(sea, data);
-      // Water comes out of the evaluated state, never out of the recipe's intent: the ribbon is the
-      // carved bed and the flooded extent is the mask the evaluator resolved, so a baked surface and
-      // the live scene are the same body rather than two shapes that agree by accident.
-      const nextWaterSurfaces = bakeWater(state, (x, z) => sampleHeight(state, x, z));
-      for (const previous of waterSurfaces) {
-        ctx.scene.remove(previous.mesh);
-        previous.mesh.geometry.dispose();
-        (previous.mesh.material as MeshStandardMaterial).dispose();
-      }
-      waterSurfaces = nextWaterSurfaces;
-      // An ocean body is drawn by the spectral sea above; its baked twin is for the export, because
-      // a GLB cannot carry a per-frame simulation. Everything else is drawn from the bake, which is
-      // what puts a river in an editor preview that had none.
-      for (const entry of waterSurfaces) {
-        if (state.waters.find((candidate) => candidate.id === entry.id)?.kind === "ocean") continue;
-        ctx.add(entry.mesh);
-      }
-      if (mesh) {
-        ctx.scene.remove(mesh);
-        mesh.geometry.dispose();
-        mesh.material.dispose();
-      }
-      clearWater();
-      if (props) {
-        ctx.scene.remove(props.object);
-        props.dispose();
-      }
-      props = nextProps;
-      ctx.add(props.object);
-      mesh = next;
-      ctx.add(mesh);
-      terrain = state;
-      if (nextWater) {
-        water = nextWater;
-        ctx.add(water);
-      }
-      ctx.state.set({ vertexCount: mesh.geometry.getAttribute("position").count });
-      const positions = mesh.geometry.getAttribute("position");
-      let heightSum = 0;
-      for (let i = 0; i < positions.count; i++) heightSum += positions.getY(i);
-      ctx.state.set({ heightSum });
-      renderedRecipe = authoring ? JSON.stringify(authoring.recipe) : undefined;
-      if (first) {
-        first = false;
-        frame();
-      }
-      selection.refresh();
+      propsDirty = false;
+      void streamProps(resolved.instances, nextGround, state.size)
+        .then((nextProps) => {
+          if (!nextProps) {
+            next.geometry.dispose();
+            next.material.dispose();
+            return;
+          }
+          if (data.waterLevel !== null && !sea) sea = ctx.add(createOcean());
+          const nextWater =
+            data.waterLevel === null || !sea ? undefined : createWaterMesh(sea, data);
+          // Water comes out of the evaluated state, never out of the recipe's intent: the ribbon is the
+          // carved bed and the flooded extent is the mask the evaluator resolved, so a baked surface and
+          // the live scene are the same body rather than two shapes that agree by accident.
+          const nextWaterSurfaces = bakeWater(state, (x, z) => sampleHeight(state, x, z));
+          for (const previous of waterSurfaces) {
+            ctx.scene.remove(previous.mesh);
+            previous.mesh.geometry.dispose();
+            (previous.mesh.material as MeshStandardMaterial).dispose();
+          }
+          waterSurfaces = nextWaterSurfaces;
+          // An ocean body is drawn by the spectral sea above; its baked twin is for the export, because
+          // a GLB cannot carry a per-frame simulation. Everything else is drawn from the bake, which is
+          // what puts a river in an editor preview that had none.
+          for (const entry of waterSurfaces) {
+            if (state.waters.find((candidate) => candidate.id === entry.id)?.kind === "ocean")
+              continue;
+            ctx.add(entry.mesh);
+          }
+          if (mesh) {
+            ctx.scene.remove(mesh);
+            mesh.geometry.dispose();
+            mesh.material.dispose();
+          }
+          clearWater();
+          replaceProps(nextProps);
+          groundAt = nextGround;
+          mesh = next;
+          ctx.add(mesh);
+          terrain = state;
+          if (nextWater) {
+            water = nextWater;
+            ctx.add(water);
+          }
+          ctx.state.set({ vertexCount: mesh.geometry.getAttribute("position").count });
+          const positions = mesh.geometry.getAttribute("position");
+          let heightSum = 0;
+          for (let i = 0; i < positions.count; i++) heightSum += positions.getY(i);
+          ctx.state.set({ heightSum });
+          renderedRecipe = recipe;
+          if (first) {
+            first = false;
+            frame();
+          }
+          selection.refresh();
+        })
+        .catch((error: unknown) => {
+          next.geometry.dispose();
+          next.material.dispose();
+          streamFailure(error);
+        });
       return resolved;
     },
     // This project's own placeable assets, so the recovered scatter palette is the project's art and
@@ -828,11 +1021,7 @@ export async function createEditorView(
     },
     pick(clientX, clientY) {
       if (!mesh) return null;
-      const box = ctx.renderer.domElement.getBoundingClientRect();
-      const hit = ctx.raycast({
-        screen: new Vector2(clientX - box.left, clientY - box.top),
-        targets: [mesh],
-      });
+      const hit = pickEditorSurface(ctx, [mesh], clientX, clientY);
       return hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
     },
     setMode(value): void {
@@ -842,16 +1031,14 @@ export async function createEditorView(
     setBrush(value): void {
       brush.visible = !!value && !!terrain;
       if (!value || !terrain) return;
-      const hit = ctx.raycast({
-        origin: new Vector3(value.at[0], 10000, value.at[1]),
-        direction: new Vector3(0, -1, 0),
-        targets: mesh ? [mesh] : [],
-      });
-      if (!hit) {
+      const height = mesh
+        ? editorSurfaceHeight(ctx, mesh, value.at[0], value.at[1], 10000)
+        : undefined;
+      if (height === undefined) {
         brush.visible = false; // engine-override: no terrain target exists; prewarm handles meshes, not this Line. // engine-override: this target-dependent Line is not a mesh handled by prewarm.
         return;
       }
-      brush.position.set(value.at[0], hit.point.y + 0.2, value.at[1]);
+      brush.position.set(value.at[0], height + 0.2, value.at[1]);
       brush.scale.setScalar(value.radius);
     },
     showSpline(points): void {
@@ -944,24 +1131,24 @@ export async function createEditorView(
       for (const instance of props.byId.values()) {
         const model = new Group();
         model.name = instance.placement.asset;
-        for (const part of instance.parts) {
+        const key = `${instance.placement.asset}:${variantFor(instance.placement, instance.placement.asset)}`;
+        const parts = propParts.get(key);
+        if (!parts) throw new Error(`Missing export prop '${key}'`);
+        for (const part of parts.filter((part) => (part.level ?? 0) === 0)) {
           // The draw's own name ends in its role (`props:spruce:0:crown`), which is exactly the key
           // the portable surfaces are chosen by.
-          const role = part.mesh.name.split(":").at(-1) ?? "crown";
+          const role = part.role;
           // An imported model keeps the materials its file was authored with; only the starter's own
           // shapes are re-dressed in the portable starter surfaces.
-          const own = part.mesh.userData.ownMaterial === true ? part.mesh.material : undefined;
+          const own = part.material;
           const surface = own ?? portableProps.materials[role];
           if (!surface) throw new Error(`No portable surface for prop role '${role}'`);
-          const draw = new Mesh(part.mesh.geometry, surface);
+          const draw = new Mesh(part.geometry, surface);
           draw.name = role;
           model.add(draw);
         }
         models.set(instance.placement.id, model);
-        instance.mesh.updateWorldMatrix(true, false);
-        const matrix = new Matrix4();
-        instance.mesh.getMatrixAt(instance.index, matrix);
-        transforms.set(instance.placement.id, matrix.premultiply(instance.mesh.matrixWorld));
+        transforms.set(instance.placement.id, instance.pose.clone());
       }
       const geometry = mesh.geometry.clone();
       geometry.setAttribute("uv", new BufferAttribute(bakeMesh(terrain).uvs, 2));
@@ -975,7 +1162,7 @@ export async function createEditorView(
         staleFrames: 0,
       }));
       try {
-        return await exportWorldGLB({
+        const prepared = await prepareWorldGLTF({
           revision: accepted.revision,
           snapshotTime: elapsed,
           state: applyPlacementOverrides(terrain, accepted.document.placementOverrides ?? {}),
@@ -984,6 +1171,21 @@ export async function createEditorView(
           transforms,
           ...(water.length ? { water } : {}),
         });
+        const response = await fetch(new URL("export", controller.baseUrl), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ baseRevision: accepted.revision, preparedWorld: prepared.json }),
+        });
+        if (!response.ok) {
+          const error = (await response.json()) as { error?: string };
+          throw new Error(error.error ?? `World cook failed (${response.status})`);
+        }
+        return {
+          name: "world.glb",
+          mime: "model/gltf-binary",
+          bytes: new Uint8Array(await response.arrayBuffer()),
+          report: prepared.report,
+        };
       } finally {
         geometry.dispose();
         material.dispose();
@@ -998,6 +1200,8 @@ export async function createEditorView(
       evaluationMs = ms;
     },
     dispose(): void {
+      disposed = true;
+      streamGeneration++;
       selection.dispose();
       envImages?.dispose();
       surfaces.dispose();

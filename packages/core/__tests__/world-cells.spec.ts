@@ -765,6 +765,35 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
+  it("clears cloned streamed render children on the clone's first update", async () => {
+    stubFixtureFetch();
+    const start = cellCenter(1, 1);
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(start.x, start.z),
+      loadModel: controlledLoader().load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    await flushed(world);
+    const streamed = world.children.find(
+      (child) => (child as InstancedMesh).isInstancedMesh === true,
+    );
+    expect(streamed).toBeDefined();
+
+    const copy = world.clone();
+    const copiedStream = copy.children.find(
+      (child) => (child as InstancedMesh).isInstancedMesh === true,
+    );
+    expect(copiedStream).toBeDefined();
+    copy.update();
+    expect(copy.children).not.toContain(copiedStream);
+    expect(world.children).toContain(streamed);
+    copy.dispose();
+    world.dispose();
+  });
+
   it("creates at most freshMeshesPerUpdate new meshes a frame, and still builds them all", async () => {
     stubFixtureFetch();
     const center = cellCenter(1, 1);

@@ -16,12 +16,18 @@
   "type": "module",
   "files": [
     "dist",
-    "starter",
-    "starter-assets",
+    "starter/*/*.json",
+    "starter/*/*.r16",
+    "starter/*/*.mjs",
+    "starter/*/*.ts",
+    "starter/*/*.md",
+    "starter-assets.json",
+    "starter-credits.json",
     "README.md",
     "AGENT_GUIDE.md",
     "THIRD_PARTY_NOTICES.md"
   ],
+  "bin": "./dist/mcp/server.js",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -38,6 +44,10 @@
       "types": "./dist/export.d.ts",
       "import": "./dist/export.js"
     },
+    "./kit": {
+      "types": "./dist/kit.d.ts",
+      "import": "./dist/kit.js"
+    },
     "./package.json": "./package.json",
     "./editor/server": {
       "types": "./dist/editor/server.d.ts",
@@ -46,6 +56,10 @@
     "./editor": {
       "types": "./dist/editor/index.d.ts",
       "import": "./dist/editor/index.js"
+    },
+    "./starter": {
+      "types": "./dist/starter.d.ts",
+      "import": "./dist/starter.js"
     }
   },
   "publishConfig": {
@@ -70,10 +84,14 @@
     "@threenative/physics": "workspace:*"
   },
   "peerDependencies": {
+    "@threenative/core": ">=0.3.4 <0.4.0",
+    "@threenative/physics": ">=0.3.4 <0.4.0",
     "three": ">=0.185.0 <0.186.0",
     "vite": ">=7.0.0 <9.0.0"
   },
   "peerDependenciesMeta": {
+    "@threenative/core": { "optional": true },
+    "@threenative/physics": { "optional": true },
     "vite": {
       "optional": true
     }

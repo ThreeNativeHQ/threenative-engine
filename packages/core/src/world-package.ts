@@ -53,6 +53,8 @@ export interface IWorldAssetBounds {
 }
 
 export interface IWorldAsset {
+  /** Caller-owned terminal impostor distance in world metres; requires WorldCells impostors opt-in. */
+  readonly impostorDistance?: number;
   readonly glb: string;
   readonly lods?: readonly IWorldAssetLod[];
   readonly bounds: IWorldAssetBounds;
@@ -95,6 +97,8 @@ export interface IWorldPackage {
   readonly terrain: IWorldTerrain;
   readonly assets: Readonly<Record<string, IWorldAsset>>;
   readonly placements: string;
+  /** Optional package-relative JSON array of placement IDs in binary record order. */
+  readonly placementIds?: string;
   readonly cells: readonly IWorldCell[];
 }
 
@@ -110,6 +114,16 @@ const PLACEMENT_RECORD_BYTES = 32;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPackageRelativePath(value: string): boolean {
+  return (
+    !value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\") &&
+    !/^[A-Za-z][A-Za-z\d+.-]*:/u.test(value) &&
+    !value.split("/").includes("..")
+  );
 }
 
 /**
@@ -295,6 +309,13 @@ export function validateWorldPackage(
             );
         }
       }
+      if (
+        value.impostorDistance !== undefined &&
+        (typeof value.impostorDistance !== "number" ||
+          !Number.isFinite(value.impostorDistance) ||
+          value.impostorDistance <= 0)
+      )
+        malformed(`${path}.impostorDistance`, "impostorDistance must be positive finite.");
       if (value.lods !== undefined) {
         if (!Array.isArray(value.lods)) {
           malformed(`${path}.lods`, `${path}.lods must be an array.`);
@@ -307,6 +328,15 @@ export function validateWorldPackage(
             }
             text(lod.glb, `${lodPath}.glb`);
             finite(lod.distance, `${lodPath}.distance`);
+            if (
+              typeof value.impostorDistance === "number" &&
+              typeof lod.distance === "number" &&
+              value.impostorDistance <= lod.distance
+            )
+              malformed(
+                `${path}.impostorDistance`,
+                "impostorDistance must follow every authored LOD gate.",
+              );
           });
         }
       }
@@ -315,6 +345,11 @@ export function validateWorldPackage(
   }
 
   text(manifest.placements, "placements");
+  if (manifest.placementIds !== undefined) {
+    const placementIds = text(manifest.placementIds, "placementIds");
+    if (placementIds !== undefined && !isPackageRelativePath(placementIds))
+      malformed("placementIds", "placementIds must be a package-relative path.");
+  }
 
   const maximumCellX =
     extent !== undefined && cellSize !== undefined ? Math.ceil(extent.sizeX / cellSize) : undefined;

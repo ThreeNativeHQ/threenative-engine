@@ -16,6 +16,7 @@
     "scripts/**/*.ts",
     "test-support/**/*.ts",
     "hosting/**/*.ts",
+    "packages/assets/src/jspeg.d.ts",
     "packages/**/__tests__/**/*.ts",
     "examples/**/__tests__/**/*.ts",
     "vitest.config.ts",

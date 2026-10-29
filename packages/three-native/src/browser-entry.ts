@@ -31,7 +31,12 @@ import {
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { withMathUtilsExtras } from "./math-utils.js";
-import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
+import {
+  Material,
+  defineObjectSurface,
+  defineReleaseNoops,
+  defineTypeFlags,
+} from "./object-surface.js";
 import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
@@ -51,7 +56,8 @@ const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 /**
  * A value that throws `diagnostic` on any call, construction or property access. Its `prototype`
  * alone reads, so a module may declare a subclass (core's `VirtualShadowNode extends ShadowBaseNode`)
- * and fail only when it constructs one.
+ * and fail only when it constructs one. `Symbol.hasInstance` reads as absent, so `x instanceof Sub`
+ * is the ordinary prototype check (always false here) instead of a throw on every caller.
  */
 function refused(name: string, diagnostic: string): unknown {
   const fail = (): never => {
@@ -60,7 +66,8 @@ function refused(name: string, diagnostic: string): unknown {
   return new Proxy(function refusedExport() {}, {
     apply: fail,
     construct: fail,
-    get: (target, key) => (key === "prototype" ? target.prototype : fail()),
+    get: (target, key) =>
+      key === "prototype" ? target.prototype : key === Symbol.hasInstance ? undefined : fail(),
     set: fail,
     has: fail,
     ownKeys: fail,
@@ -151,13 +158,7 @@ export async function bindWebEngine(
   (globalThis as { __tnEngineCounters?: () => Record<string, number> }).__tnEngineCounters =
     counters;
   defineTypeFlags(classes);
-  // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
-  // buffers with the object, so the call has nothing to release (core's projection mirror makes it).
-  for (const name of ["BatchedMesh", "InstancedMesh"]) {
-    const prototype = (classes[name] as { prototype: { dispose?: () => void } } | undefined)
-      ?.prototype;
-    if (prototype !== undefined) prototype.dispose ??= () => {};
-  }
+  defineReleaseNoops(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
   const entries = engineCatalog.entries;
   const extending = (base: string) =>

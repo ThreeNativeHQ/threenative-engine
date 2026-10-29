@@ -250,7 +250,7 @@ function resolveConfig(spec0, data) {
     flexBlend: spec.flexBlend || [3.5, 6],
     gaits: (spec.gaits || []).map((g) => ({
       f: 1,
-      D: 0.6,
+      "D": 0.6,
       liftF: 0.06,
       liftH: 0.06,
       bobF: 0,
@@ -955,7 +955,13 @@ export class QuadrupedMotion {
     this.gaits = [...new Set(cfg.gaits.map((g) => g.name))];
     this.gears = cfg.gears;
     // ---- gait sample (reused)
-    this.gait = { name: "walk", blend: 0, gallop: 0, off: [0, 0, 0, 0], DL: [0.6, 0.6, 0.6, 0.6] };
+    this.gait = {
+      name: "walk",
+      blend: 0,
+      gallop: 0,
+      off: [0, 0, 0, 0],
+      "DL": [0.6, 0.6, 0.6, 0.6],
+    };
     for (const k of GAIT_KEYS) this.gait[k] = 0;
     // ---- springs
     this.bank = new Spring(0);
@@ -990,9 +996,9 @@ export class QuadrupedMotion {
     this.lift = 0; // vertical body offset (jump flight), set by the action layer
     this.speedOverride = null; // ground speed imposed by an action (jump push-off)
     // airborne state (jump)
-    this.air = { active: false, t: 0, vy: 0, y0: 0, vh: 0, T: 0 };
+    this.air = { active: false, t: 0, vy: 0, y0: 0, vh: 0, "T": 0 };
     // landing sag of the fore / hind girdles after a touchdown (see touchDown, pose)
-    this.sag = { on: false, F: new Spring(0), H: new Spring(0), wF: 17, wH: 17 };
+    this.sag = { on: false, "F": new Spring(0), "H": new Spring(0), wF: 17, wH: 17 };
     // ---- legs
     this.legs = cfg.legs.map((L) => ({
       def: L,
@@ -1072,9 +1078,9 @@ export class QuadrupedMotion {
       n,
       p: Array.from({ length: n + 1 }, () => new three.Vector3()),
       len: Array.from({ length: n }, (_, i) => J[`tail${i}`].distanceTo(J[`tail${i + 1}`])),
-      D: Array.from({ length: n }, () => new three.Vector3()),
-      W: Array.from({ length: n }, () => new three.Vector3()),
-      U: Array.from({ length: n }, () => new three.Vector3()),
+      "D": Array.from({ length: n }, () => new three.Vector3()),
+      "W": Array.from({ length: n }, () => new three.Vector3()),
+      "U": Array.from({ length: n }, () => new three.Vector3()),
       rel: Array.from({ length: n }, () => new three.Quaternion()),
       pitch: new Float64Array(n),
       yaw: new Float64Array(n),
@@ -1129,8 +1135,8 @@ export class QuadrupedMotion {
       tailBase: V(),
       hipC: V(),
       shC: V(),
-      F: V(),
-      Lf: V(),
+      "F": V(),
+      "Lf": V(),
       pos: V(),
       comp: 0,
       bs: 1,

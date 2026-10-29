@@ -490,6 +490,9 @@ async function runStandalonePlaytestOnce(
       pageLifecycle.closed = true;
     });
     const activePage = page;
+    if (activeConfig.cpuProfilePath !== undefined) {
+      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
+    }
     // Started before navigation: the frames a player sees first are the ones a cover must own.
     const coverRecorder = scenario.assert?.startup?.steadyCover === true ? await recordStartupCover(page) : undefined;
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
@@ -779,9 +782,6 @@ async function runStandalonePlaytestOnce(
           : {})
       : undefined;
     let framebufferCoverage: IPlaytestFramebufferCoverageObservation | undefined;
-    if (activeConfig.cpuProfilePath !== undefined) {
-      cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
-    }
     const footSlip: IPlaytestFootSlipObservation[] = [];
     const footSlipAt = (label: string | undefined) =>
       label === undefined ? undefined : scenario.assert?.footSlip?.find(({ atStep }) => atStep === label);

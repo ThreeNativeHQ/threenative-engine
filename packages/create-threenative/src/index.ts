@@ -70,6 +70,7 @@ const TEXT_FILE_EXTENSIONS = new Set([".css", ".html", ".json", ".md", ".svg", "
 const TEMPLATE_NAME = /^[a-z][a-z0-9-]*$/u;
 const SHARED_AGENT_MARKER_LINE = /^<!--\s*(?:shared:\s*[^>]+|\/shared)\s*-->\r?\n?/gmu;
 const DEFAULT_TEMPLATE = "starter";
+const SUPPORTED_PACKAGE_MANAGER = "pnpm@10.25.0";
 
 export function templateRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../templates");
@@ -678,14 +679,19 @@ async function applyPackageSources(
   target: string,
   packageSources: IScaffoldOptions["packageSources"],
 ): Promise<void> {
-  if (packageSources === undefined) return;
   const packagePath = path.join(target, "package.json");
   const packageJson = JSON.parse(await readFile(packagePath, "utf8")) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
     optionalDependencies?: Record<string, string>;
+    packageManager?: string;
     pnpm?: { overrides?: Record<string, string> };
   };
+  packageJson.packageManager = SUPPORTED_PACKAGE_MANAGER;
+  if (packageSources === undefined) {
+    await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+    return;
+  }
   const localSource = (source: string): string => {
     const filePath = source.startsWith("file:") ? source.slice("file:".length) : source;
     return `file:${path.resolve(filePath)}`;

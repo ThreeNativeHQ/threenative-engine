@@ -5,10 +5,15 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliDecompressSync } from "node:zlib";
 
 const THREE_VERSION = "0.185.1";
+const PIN_COMMIT = "2431a09f46f34c560bc8e44b33be0e567723d5b9";
 const PATCH_NAME = `three@${THREE_VERSION}.patch`;
 const UPGRADE_PATCH_NAME = `three@${THREE_VERSION}-prd269-upgrade.patch`;
+const UPGRADE_JSON_VERSION = 2;
+const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
+const HEX40 = /^[a-f0-9]{40}$/u;
 
 /** Apply the package-owned Three.js patch to the dependency resolved for the consumer. */
 export async function applyThreePatch(options = {}) {
@@ -32,10 +37,10 @@ export async function applyThreePatch(options = {}) {
   const patchPath = path.join(packageRoot, "patches", PATCH_NAME);
   const patch = parsePatch(await readFile(patchPath, "utf8"), patchPath);
   const upgradePath = path.join(packageRoot, "patches", UPGRADE_PATCH_NAME);
-  const upgrades = existsSync(upgradePath)
-    ? parsePatch(await readFile(upgradePath, "utf8"), upgradePath)
-    : [];
-  const plans = await planPatch(threeRoot, patch, upgrades);
+  const upgrade = existsSync(upgradePath)
+    ? parseUpgrade(await readFile(upgradePath, "utf8"), upgradePath, patch)
+    : { legacy: [] };
+  const plans = await planPatch(threeRoot, patch, upgrade);
   // `planPatch` refuses any file it does not fully recognise, so every plan that is not already
   // `patched` is safe to write — including the files an older release of this patch already
   // touched, which is the state a project upgrading from the previous `latest` is in.
@@ -217,7 +222,190 @@ function patchPathFromHeader(header, patchPath) {
   return relative;
 }
 
-async function planPatch(threeRoot, files, upgrades) {
+function invalid(message, file, cause) {
+  return new Error(
+    `TN_THREE_PATCH_INVALID: ${message} in ${file}${cause === undefined ? "" : `: ${String(cause)}`}.`,
+  );
+}
+
+function isSafeRelativePath(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    !value.startsWith("/") &&
+    !value.includes("\\") &&
+    value.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+  );
+}
+
+/**
+ * The upgrade patch is either the current versioned JSON document or the legacy unified diff an
+ * older release shipped. The JSON is detected by its opening brace; anything else stays the
+ * legacy reader's input, byte for byte.
+ */
+function parseUpgrade(text, upgradePath, baseFiles) {
+  if (!text.trimStart().startsWith("{")) return { legacy: parsePatch(text, upgradePath) };
+  return { json: parseUpgradeJson(text, upgradePath, baseFiles), legacy: [] };
+}
+
+function parseUpgradeJson(text, upgradePath, baseFiles) {
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (error) {
+    throw invalid("upgrade patch is not valid JSON", upgradePath, error);
+  }
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalid("upgrade patch JSON is not an object", upgradePath);
+  }
+  if (raw.version !== UPGRADE_JSON_VERSION) {
+    throw invalid(`unsupported upgrade version ${String(raw.version)}`, upgradePath);
+  }
+  if (
+    raw.pin === null ||
+    typeof raw.pin !== "object" ||
+    raw.pin.version !== THREE_VERSION ||
+    raw.pin.commit !== PIN_COMMIT
+  ) {
+    throw invalid("upgrade pin must name the supported three version and commit", upgradePath);
+  }
+
+  const compatOldHashes = new Map();
+  if (!Array.isArray(raw.acceptedLegacyCompatPairs) || raw.acceptedLegacyCompatPairs.length === 0) {
+    throw invalid("acceptedLegacyCompatPairs must be a non-empty array", upgradePath);
+  }
+  const seenPairs = new Set();
+  for (const pair of raw.acceptedLegacyCompatPairs) {
+    if (pair === null || typeof pair !== "object") {
+      throw invalid("acceptedLegacyCompatPairs has a non-object entry", upgradePath);
+    }
+    if (!isSafeRelativePath(pair.path))
+      throw invalid(`unsafe compat path '${pair.path}'`, upgradePath);
+    if (!HEX40.test(pair.oldHash ?? "") || !HEX40.test(pair.newHash ?? "")) {
+      throw invalid(`invalid 40-hex compat hash for '${pair.path}'`, upgradePath);
+    }
+    const key = `${pair.path}\0${pair.oldHash}`;
+    if (seenPairs.has(key)) throw invalid(`duplicate compat pair '${pair.path}'`, upgradePath);
+    seenPairs.add(key);
+    const hashes = compatOldHashes.get(pair.path) ?? new Set();
+    hashes.add(pair.oldHash);
+    compatOldHashes.set(pair.path, hashes);
+  }
+
+  const acceptedLegacyFinalHashes = validateHashMap(
+    raw.acceptedLegacyFinalHashes,
+    "acceptedLegacyFinalHashes",
+    upgradePath,
+  );
+  const generatedFinalHashes = validateHashMap(
+    raw.generatedFinalHashes,
+    "generatedFinalHashes",
+    upgradePath,
+  );
+  for (const pair of raw.acceptedLegacyCompatPairs) {
+    if (pair.newHash !== acceptedLegacyFinalHashes[pair.path]) {
+      throw invalid(
+        `compat pair '${pair.path}' does not match its accepted final hash`,
+        upgradePath,
+      );
+    }
+  }
+
+  if (typeof raw.bundleBrotliBase64 !== "string" || raw.bundleBrotliBase64.length === 0) {
+    throw invalid("bundleBrotliBase64 must be a non-empty string", upgradePath);
+  }
+  if (
+    !/^[A-Za-z0-9+/]*={0,2}$/u.test(raw.bundleBrotliBase64) ||
+    raw.bundleBrotliBase64.length % 4 !== 0
+  ) {
+    throw invalid("bundleBrotliBase64 is not valid base64", upgradePath);
+  }
+  let bundleBuffer;
+  try {
+    bundleBuffer = Buffer.from(raw.bundleBrotliBase64, "base64");
+  } catch (error) {
+    throw invalid("bundleBrotliBase64 is not valid base64", upgradePath, error);
+  }
+  let bundleText;
+  try {
+    bundleText = brotliDecompressSync(bundleBuffer, { maxOutputLength: MAX_BUNDLE_BYTES });
+  } catch (error) {
+    throw invalid("upgrade bundle is not a bounded Brotli payload", upgradePath, error);
+  }
+  let targetTexts;
+  try {
+    targetTexts = JSON.parse(bundleText.toString("utf8"));
+  } catch (error) {
+    throw invalid("upgrade bundle is not valid JSON", upgradePath, error);
+  }
+  if (targetTexts === null || typeof targetTexts !== "object" || Array.isArray(targetTexts)) {
+    throw invalid("upgrade bundle is not a path-to-text object", upgradePath);
+  }
+
+  const baseByPath = new Map(baseFiles.map((file) => [file.oldPath, file]));
+  for (const [rel, base] of baseByPath) {
+    if (generatedFinalHashes[rel] !== base.newBlob) {
+      throw invalid(`base patch target '${rel}' has no matching generated hash`, upgradePath);
+    }
+    if (acceptedLegacyFinalHashes[rel] === undefined) {
+      throw invalid(`base patch target '${rel}' has no matching accepted final hash`, upgradePath);
+    }
+  }
+  for (const rel of Object.keys(generatedFinalHashes)) {
+    if (!baseByPath.has(rel)) {
+      throw invalid(`generated hash '${rel}' is not in the base patch`, upgradePath);
+    }
+  }
+  for (const rel of Object.keys(acceptedLegacyFinalHashes)) {
+    if (!baseByPath.has(rel)) {
+      throw invalid(`accepted final hash '${rel}' is not in the base patch`, upgradePath);
+    }
+  }
+  for (const pair of raw.acceptedLegacyCompatPairs) {
+    if (!baseByPath.has(pair.path)) {
+      throw invalid(`compat pair '${pair.path}' is not in the base patch`, upgradePath);
+    }
+  }
+  for (const [rel, contents] of Object.entries(targetTexts)) {
+    if (!isSafeRelativePath(rel) || typeof contents !== "string") {
+      throw invalid(`unsafe or invalid upgrade target '${rel}'`, upgradePath);
+    }
+    if (!baseByPath.has(rel)) {
+      throw invalid(`upgrade target '${rel}' is not in the base patch`, upgradePath);
+    }
+    if (blobHash(contents) !== generatedFinalHashes[rel]) {
+      throw invalid(`upgrade target '${rel}' does not match its generated hash`, upgradePath);
+    }
+  }
+  for (const [rel] of baseByPath) {
+    const needsTarget =
+      compatOldHashes.has(rel) || generatedFinalHashes[rel] !== acceptedLegacyFinalHashes[rel];
+    if (needsTarget && targetTexts[rel] === undefined) {
+      throw invalid(`upgrade bundle is missing the target for '${rel}'`, upgradePath);
+    }
+    if (!needsTarget && targetTexts[rel] !== undefined) {
+      throw invalid(`upgrade bundle has an unneeded target for '${rel}'`, upgradePath);
+    }
+  }
+
+  return { acceptedLegacyFinalHashes, compatOldHashes, generatedFinalHashes, targetTexts };
+}
+
+function validateHashMap(map, name, upgradePath) {
+  if (map === null || typeof map !== "object" || Array.isArray(map)) {
+    throw invalid(`${name} must be a path-to-hash object`, upgradePath);
+  }
+  const keys = Object.keys(map);
+  if (keys.length === 0) throw invalid(`${name} must be non-empty`, upgradePath);
+  for (const rel of keys) {
+    if (!isSafeRelativePath(rel)) throw invalid(`unsafe ${name} path '${rel}'`, upgradePath);
+    if (!HEX40.test(map[rel]))
+      throw invalid(`invalid 40-hex ${name} hash for '${rel}'`, upgradePath);
+  }
+  return map;
+}
+
+async function planPatch(threeRoot, files, upgrade) {
   const plans = [];
   for (const file of files) {
     const target = path.resolve(threeRoot, file.oldPath);
@@ -227,7 +415,11 @@ async function planPatch(threeRoot, files, upgrades) {
       );
     }
     const original = await readFile(target, "utf8");
-    const recognised = upgradeKnownFile(original, file.oldPath, upgrades);
+    if (upgrade.json !== undefined) {
+      plans.push(planJsonFile(original, file, upgrade.json, target));
+      continue;
+    }
+    const recognised = upgradeKnownFile(original, file.oldPath, upgrade.legacy);
     const lines = recognised.replaceAll("\r\n", "\n").split("\n");
     const states = classifyFile(lines, file.hunks);
     const unknown = states.findIndex((state) => state === "unknown");
@@ -241,7 +433,7 @@ async function planPatch(threeRoot, files, upgrades) {
       : states.some((state) => state === "patched")
         ? "extended"
         : "stock";
-    assertKnownExtension(status, recognised === original, file.oldPath, upgrades);
+    assertKnownExtension(status, recognised === original, file.oldPath, upgrade.legacy);
     if (status === "patched") {
       plans.push({
         contents: recognised,
@@ -250,13 +442,65 @@ async function planPatch(threeRoot, files, upgrades) {
       });
       continue;
     }
-    plans.push({
-      contents: applyFile(lines, file.hunks, states, target).join("\n"),
-      file: target,
-      status,
-    });
+    const contents = applyFile(lines, file.hunks, states, target).join("\n");
+    if (file.newBlob !== undefined && blobHash(contents) !== file.newBlob) {
+      throw invalid(
+        "patched output does not match the base patch index blob",
+        file.oldPath,
+        target,
+      );
+    }
+    plans.push({ contents, file: target, status });
   }
   return plans;
+}
+
+/**
+ * Plan one file against the versioned JSON upgrade: an exact current target is idempotent, an
+ * exact known predecessor (legacy compat hash or the previously shipped final hash) is replaced
+ * wholesale by the bundle's current target, and an exact stock file takes the base patch hunks.
+ * Anything else on a registered path is refused before any file is written.
+ */
+function planJsonFile(original, file, json, target) {
+  const rel = file.oldPath;
+  const normalized = original.replaceAll("\r\n", "\n");
+  const hash = blobHash(normalized);
+  if (hash === json.generatedFinalHashes[rel]) {
+    return {
+      contents: normalized,
+      file: target,
+      status: original === normalized ? "patched" : "extended",
+    };
+  }
+  const legacy = json.compatOldHashes.get(rel);
+  if (legacy?.has(hash) === true || hash === json.acceptedLegacyFinalHashes[rel]) {
+    const contents = json.targetTexts[rel];
+    if (contents === undefined) throw partialError(rel, undefined, target);
+    return { contents, file: target, status: "extended" };
+  }
+  if (hash === file.oldBlob) {
+    const lines = normalized.split("\n");
+    const states = classifyFile(lines, file.hunks);
+    const unknown = states.findIndex((state) => state === "unknown");
+    if (unknown !== -1) throw partialError(rel, unknown, target);
+    const applied = applyFile(lines, file.hunks, states, target).join("\n");
+    if (blobHash(applied) !== file.newBlob) {
+      throw invalid("patched output does not match the base patch index blob", rel, target);
+    }
+    return {
+      contents: applied,
+      file: target,
+      status: applied === original ? "patched" : "extended",
+    };
+  }
+  throw partialError(rel, undefined, target);
+}
+
+function partialError(rel, hunkNumber, target) {
+  const where = hunkNumber === undefined ? "" : `hunk ${String(hunkNumber + 1)} of `;
+  return new Error(
+    `TN_THREE_PATCH_PARTIAL: ${where}${rel} matches neither a supported predecessor nor the current patch in ${target}; refusing to modify an installation this package does not recognise.`,
+  );
 }
 
 /** Registered migration files must not fall through to permissive hunk-only upgrades. */
@@ -318,7 +562,13 @@ function classifyFile(lines, hunks) {
   for (const hunk of hunks) {
     const oldLines = hunkLines(hunk, "old");
     const newLines = hunkLines(hunk, "new");
-    if (locate(lines, newLines, hunk.newStart - 1) !== undefined) states.push("patched");
+    // A deletion's remaining context also occurs in stock; its full old text wins.
+    if (
+      !hunk.lines.some((line) => line[0] === "+") &&
+      locate(lines, oldLines, hunk.oldStart - 1 + offset) !== undefined
+    )
+      states.push("stock");
+    else if (locate(lines, newLines, hunk.newStart - 1) !== undefined) states.push("patched");
     else if (locate(lines, oldLines, hunk.oldStart - 1 + offset) !== undefined)
       states.push("stock");
     else states.push("unknown");

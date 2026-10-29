@@ -2,12 +2,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import { PerspectiveCamera, Scene } from "three/webgpu";
 
 import { createMixerAnimationProof } from "../conformance/scenes/shared/mixer-animation.js";
-import { createMorphTargetAnimationProof } from "../conformance/scenes/shared/morph-target-animation.js";
-import { THREE } from "../conformance/scenes/shared/scene-support.js";
+import { createMorphTargetAnimationProof, startScene as startMorphScene } from "../conformance/scenes/shared/morph-target-animation.js";
+import { startVisualScene, THREE } from "../conformance/scenes/shared/scene-support.js";
+
+vi.mock("../conformance/scenes/shared/scene-support.js", async (original) => ({
+  ...await original(),
+  startVisualScene: vi.fn(),
+}));
 import {
   assertAnimatedGltf,
   assertPbrHelmet,
@@ -88,6 +93,46 @@ test("rows 51 through 53 exercise mixer, skeleton, and morph target semantics", 
   const morph = createMorphTargetAnimationProof();
   assert.equal(morph.mesh.morphTargetInfluences.length, 1);
   assert.ok(Math.abs(morph.mesh.morphTargetInfluences[0] - 0.65) < 1e-6);
+});
+
+test("row 53 replaces rendered morph geometry between completed frames and disposes the original once", async () => {
+  const events = [];
+  const geometries = [];
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+  const renderer = {
+    backend: { device: { queue: { onSubmittedWorkDone: async () => { events.push("completed"); } } } },
+    render(currentScene, currentCamera) {
+      assert.equal(currentScene, scene);
+      assert.equal(currentCamera, camera);
+      const mesh = scene.children[0];
+      assert.ok(Math.abs(mesh.morphTargetInfluences[0] - 0.65) < 1e-6);
+      assert.deepEqual(mesh.rotation.toArray(), [-0.25, 0.55, 0.1, "XYZ"]);
+      geometries.push(mesh.geometry);
+      events.push("render");
+      if (geometries.length === 1) mesh.geometry.addEventListener("dispose", () => events.push("disposed"));
+    },
+  };
+  startVisualScene.mockImplementationOnce(async (_canvas, _dimensions, _type, build) => build({ renderer, scene, camera }));
+  vi.stubGlobal("requestAnimationFrame", (callback) => {
+    events.push("raf");
+    queueMicrotask(() => callback(0));
+  });
+  try {
+    const subject = await startMorphScene({}, { width: 1280, height: 720 });
+    assert.equal(geometries.length, 2, "both old and replacement geometry must be drawn");
+    assert.notEqual(geometries[0].uuid, geometries[1].uuid);
+    assert.equal(subject.mesh.geometry, geometries[1]);
+    assert.deepEqual(geometries[0].morphAttributes.position[0].array, geometries[1].morphAttributes.position[0].array);
+    assert.equal(subject.detail.originalGeometry, geometries[0].uuid);
+    assert.equal(subject.detail.replacementGeometry, geometries[1].uuid);
+    assert.equal(subject.detail.originalDisposals, 1);
+    assert.deepEqual(events, ["raf", "render", "completed", "disposed", "raf", "render", "completed"]);
+    subject.mesh.geometry.dispose();
+    subject.mesh.material.dispose();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 test("row 52 RAW fixture owns genuine players and independently retiring display slots", () => {

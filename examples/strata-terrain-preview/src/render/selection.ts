@@ -1,26 +1,16 @@
 import type { ICtx } from "@threenative/core";
+import type { IPlacementOverride, Layer } from "@threenative/terrain";
 import {
-  type IPlacementOverride,
-  type Layer,
-  validatePlacementOverrides,
-} from "@threenative/terrain";
-import type { TerrainEditorController } from "@threenative/terrain/editor";
+  type TerrainEditorController,
+  createEditorSelection,
+  editorPlacementCenter,
+  editorPointToClient,
+  landformPose,
+} from "@threenative/terrain/editor";
 import type { IEditorSnapshot } from "@threenative/terrain/editor/server";
-import {
-  BufferGeometry,
-  Euler,
-  Line,
-  LineBasicMaterial,
-  Mesh,
-  Object3D,
-  PerspectiveCamera,
-  Quaternion,
-  Vector2,
-  Vector3,
-} from "three";
+import { BufferGeometry, Line, LineBasicMaterial, Mesh, Object3D, Vector3 } from "three";
 import type { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
-import { landformPose, transformedLandform } from "./landforms.js";
 import {
   type IPropInstance,
   type PropGroundQuery,
@@ -64,7 +54,7 @@ export function createPropSelection(
     <button class="secondary full" type="submit">Apply transform</button></form>
     <div class="segmented"><button type="button" id="placement-reset">Reset</button><button type="button" id="placement-undo">Undo transform</button></div>
     <p class="small muted">Y translation disables grounding. Escape cancels the current drag. XYZ rotations apply to props.</p>
-    <div id="placement-orphans"></div><p id="placement-status" role="status" aria-live="polite"></p>`;
+    <div id="placement-orphans"></div><p id="placement-status" class="small muted"></p>`;
   const style = document.createElement("style");
   style.textContent =
     "#placement-inspector [hidden]{display:none!important}body[data-terrain-tool=select] .brush-section>.slider-label,body[data-terrain-tool=select] .brush-section>input[type=range],body[data-terrain-tool=select] .brush-section>.advanced{display:none}.right-sidebar[data-selecting=true]>.inspector:not(#placement-inspector){display:none}.right-sidebar[data-selecting=true]>.layer-list{flex:none;max-height:170px}#placement-inspector{overflow-y:auto;min-height:0;flex:1}#placement-inspector h3{margin-bottom:12px}#placement-inspector fieldset{border:0;padding:0;margin:0 0 12px}#placement-inspector legend{font-size:10px;margin-bottom:6px}.transform-vector{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.transform-vector label{font-size:10px}.transform-vector input{width:100%}#placement-status{margin-top:10px;overflow-wrap:anywhere}";
@@ -86,39 +76,48 @@ export function createPropSelection(
   const groundingLabel = control<HTMLElement>("#placement-grounding-label");
   const fields = [...form.querySelectorAll<HTMLInputElement>("[data-transform-group]")];
   const abort = new AbortController();
-  let snapshot: IEditorSnapshot | undefined;
-  let selected: string | undefined;
-  let selectedLayer: string | undefined;
-  let anchor = 0;
-  let layerDraft: Layer | undefined;
-  let layerHistory: { before: Layer; after: Layer } | undefined;
-  let active = false;
-  let drag:
-    | { id: string; base: IEditorSnapshot; grounding: boolean; layer?: Layer; anchor: number }
-    | undefined;
-  let cancelled = false;
-  let saving = false;
-  let draft: { id: string; transform: IPlacementOverride } | undefined;
-  let history: { id: string; before?: IPlacementOverride; after?: IPlacementOverride } | undefined;
+  const selection = createEditorSelection({
+    gizmo,
+    proxy,
+    controller,
+    surface,
+    refreshPose,
+    drawFootprint,
+    message,
+    defaultFootprintSize: 120,
+    grounding: () => grounding.checked,
+    setSaving: (value) => {
+      form.inert = value;
+    },
+    selectedChanged: (id, isLayer) => {
+      list.value = id ? `${isLayer ? "landform" : "placement"}:${id}` : "";
+    },
+    setNavigation: (value) => {
+      orbit.enabled = value;
+    },
+    restorePlacement(id, value) {
+      const instance = instances()?.get(id);
+      const query = ground();
+      if (instance && query)
+        writePropTransform(instance, preparePropTransform(instance, value, query));
+    },
+    previewPlacement(id, value) {
+      const instance = instances()?.get(id);
+      const query = ground();
+      if (!instance || !query) throw new Error("Selected placement is unavailable");
+      writePropTransform(instance, preparePropTransform(instance, value, query));
+    },
+  });
   function center(id: string): Vector3 | undefined {
     const instance = instances()?.get(id);
     if (!instance) return undefined;
     const pose = readPropTransform(instance);
-    instance.mesh.geometry.computeBoundingSphere();
-    const point = instance.mesh.geometry.boundingSphere?.center.clone() ?? new Vector3();
-    return point
-      .multiply(new Vector3().fromArray(pose.scale))
-      .applyQuaternion(new Quaternion().fromArray(pose.quaternion))
-      .add(new Vector3().fromArray(pose.position));
+    instance.geometry.computeBoundingSphere();
+    const point = instance.geometry.boundingSphere?.center.clone() ?? new Vector3();
+    return editorPlacementCenter(point, pose);
   }
   function pixel(point: Vector3): [number, number] {
-    point.project(ctx.camera);
-    const box = ctx.renderer.domElement.getBoundingClientRect();
-    const value = new Vector2(
-      ((point.x + 1) * box.width) / 2 + box.left,
-      ((1 - point.y) * box.height) / 2 + box.top,
-    );
-    return [value.x, value.y];
+    return editorPointToClient(point, ctx.camera, ctx.renderer.domElement.getBoundingClientRect());
   }
   /** One framing path: the validated focus operation the camera panel and a controller share. */
   function focus(target: { kind: "prop" | "region"; id: string }): { diagnostic: string | null } {
@@ -128,7 +127,7 @@ export function createPropSelection(
     status.textContent = text;
   }
   function drawFootprint(layer: Layer): void {
-    const pose = landformPose(layer, snapshot?.document.recipe.config.size ?? 0);
+    const pose = landformPose(layer, selection.snapshot?.document.recipe.config.size ?? 0, 120);
     if (!pose) return;
     const vertices = pose.rectangular
       ? [
@@ -155,12 +154,14 @@ export function createPropSelection(
     footprint.geometry.dispose();
     if (points[0]) points.push(points[0].clone());
     footprint.geometry = new BufferGeometry().setFromPoints(points);
-    footprint.visible = active;
+    footprint.visible = selection.active;
   }
   function refreshPose(): void {
-    const layer = snapshot?.document.recipe.layers.find((l) => l.id === selectedLayer);
+    const layer = selection.snapshot?.document.recipe.layers.find(
+      (l) => l.id === selection.selectedLayer,
+    );
     const landformTransform = layer
-      ? landformPose(layer, snapshot?.document.recipe.config.size ?? 0)
+      ? landformPose(layer, selection.snapshot?.document.recipe.config.size ?? 0, 120)
       : undefined;
     const landform = !!landformTransform && !!layer;
     title.textContent = landform ? "Recipe landform" : "Individual placement";
@@ -170,27 +171,10 @@ export function createPropSelection(
     fields.forEach((input, i) => {
       input.disabled = landform && (i === 3 || i === 5);
     });
-    gizmo.showX = !landform || gizmo.getMode() !== "rotate";
-    gizmo.showZ = !landform || gizmo.getMode() !== "rotate";
     if (landform) {
       form.hidden = false;
-      anchor =
-        (surface(landformTransform.position[0], landformTransform.position[2]) ?? 0) -
-        landformTransform.position[1];
-      proxy.position.fromArray(landformTransform.position);
-      proxy.position.y += anchor;
-      proxy.quaternion.copy(landformTransform.quaternion);
-      proxy.scale.fromArray(landformTransform.scale);
-      proxy.updateMatrixWorld(true);
-      if (active) gizmo.attach(proxy);
-      const values = [
-        ...landformTransform.position,
-        0,
-        (-2 * Math.atan2(landformTransform.quaternion.y, landformTransform.quaternion.w) * 180) /
-          Math.PI,
-        0,
-        ...landformTransform.scale,
-      ];
+      const values = selection.applyPose(layer);
+      if (!values) throw new Error("Missing landform pose");
       fields.forEach((input, i) => {
         const value = values[i];
         if (value === undefined) throw new Error("Landform field mismatch");
@@ -203,27 +187,18 @@ export function createPropSelection(
     }
     footprint.visible = false; // engine-override: no landform is selected.
 
-    const instance = selected ? instances()?.get(selected) : undefined;
+    const instance = selection.selected ? instances()?.get(selection.selected) : undefined;
     form.hidden = !instance;
     if (!instance) {
-      gizmo.detach();
-      clearance.textContent = selected
+      selection.applyPose();
+      clearance.textContent = selection.selected
         ? "Placement no longer evaluates; override retained."
         : "Select a prop.";
       return;
     }
     const pose = readPropTransform(instance);
-    proxy.position.fromArray(pose.position);
-    proxy.quaternion.fromArray(pose.quaternion);
-    proxy.scale.fromArray(pose.scale);
-    proxy.updateMatrixWorld(true);
-    if (active) gizmo.attach(proxy);
-    const angles = new Euler().setFromQuaternion(proxy.quaternion, "XYZ");
-    const values = [
-      ...pose.position,
-      ...[angles.x, angles.y, angles.z].map((v) => (v * 180) / Math.PI),
-      ...pose.scale,
-    ];
+    const values = selection.applyPose(undefined, pose);
+    if (!values) throw new Error("Missing placement pose");
     fields.forEach((input, index) => {
       const value = values[index];
       if (value === undefined) throw new Error("Placement transform field mismatch");
@@ -231,159 +206,6 @@ export function createPropSelection(
     });
     grounding.checked = pose.grounding;
     clearance.textContent = `Measured clearance: ${instance.clearance === null ? "unknown (outside terrain)" : `${instance.clearance.toFixed(4)} m`} · grounding ${pose.grounding ? "on" : "overridden"}`;
-  }
-  function restore(): void {
-    if (selectedLayer) {
-      refreshPose();
-      return;
-    }
-    const instance = selected ? instances()?.get(selected) : undefined;
-    const query = ground();
-    if (instance && query)
-      writePropTransform(
-        instance,
-        preparePropTransform(
-          instance,
-          snapshot?.document.placementOverrides?.[instance.placement.id],
-          query,
-        ),
-      );
-    refreshPose();
-  }
-  function preview(id: string, transform: IPlacementOverride): void {
-    const value = validatePlacementOverrides({ [id]: transform })[id];
-    const instance = instances()?.get(id);
-    const query = ground();
-    if (!value || !instance || !query) throw new Error("Selected placement is unavailable");
-    writePropTransform(instance, preparePropTransform(instance, value, query));
-    draft = { id, transform: value };
-    refreshPose();
-  }
-  async function save(
-    id: string,
-    value: IPlacementOverride | undefined,
-    base = snapshot,
-    remember = true,
-  ): Promise<void> {
-    if (saving || !base) {
-      message("Wait for the current transform save.");
-      return;
-    }
-    saving = true;
-    form.inert = true;
-    gizmo.enabled = false;
-    const overrides = { ...base.document.placementOverrides };
-    if (value) overrides[id] = value;
-    else delete overrides[id];
-    try {
-      const next = await controller.commit({
-        baseRevision: base.revision,
-        document: { ...base.document, placementOverrides: overrides },
-      });
-      if (remember) {
-        history = { id, before: base.document.placementOverrides?.[id], after: value };
-        layerHistory = undefined;
-      }
-      if (!snapshot || snapshot.revision === base.revision || snapshot.revision === next.revision)
-        snapshot = next;
-      draft = undefined;
-      restore();
-      message(`Saved ${next.revision.slice(0, 8)} · one transform transaction`);
-    } catch (error) {
-      message(
-        `${error instanceof Error ? error.message : String(error)} · draft retained; apply again to rebase explicitly.`,
-      );
-      try {
-        snapshot = await controller.snapshot();
-        restore();
-      } catch {
-        message("Connection interrupted · transform draft retained.");
-      }
-    } finally {
-      saving = false;
-      form.inert = false;
-      gizmo.enabled = active;
-    }
-  }
-  async function saveLayer(layer: Layer, base = snapshot, remember = true): Promise<void> {
-    if (saving || !base) return;
-    saving = true;
-    form.inert = true;
-    gizmo.enabled = false;
-    try {
-      const before = base.document.recipe.layers.find((l) => l.id === layer.id);
-      const next = await controller.commit({
-        baseRevision: base.revision,
-        commands: [{ op: "upsert", layer }],
-      });
-      if (remember && before) {
-        layerHistory = { before, after: layer };
-        history = undefined;
-      }
-      if (!snapshot || snapshot.revision === base.revision || snapshot.revision === next.revision)
-        snapshot = next;
-      layerDraft = undefined;
-      message(`Saved ${next.revision.slice(0, 8)} · one landform transaction`);
-    } catch (error) {
-      message(`${String(error)} · landform draft retained; apply again to rebase explicitly.`);
-      snapshot = await controller.snapshot();
-    } finally {
-      saving = false;
-      form.inert = false;
-      gizmo.enabled = active;
-      refreshPose();
-    }
-  }
-  function select(id: string | undefined, isLayer = false): void {
-    if (gizmo.dragging || saving) return;
-    if (selected !== id) {
-      restore();
-      draft = undefined;
-    }
-    selectedLayer = isLayer ? id : undefined;
-    selected = selectedLayer ? undefined : id;
-    layerDraft = undefined;
-    list.value = id ? `${isLayer ? "landform" : "placement"}:${id}` : "";
-    refreshPose();
-  }
-  async function undo(): Promise<void> {
-    if (saving) return;
-    if (selectedLayer && layerHistory) {
-      const entry = layerHistory;
-      const current = await controller.snapshot();
-      const layer = current.document.recipe.layers.find((l) => l.id === entry.after.id);
-      const keys = ["at", "radius", "size", "rotation", "scale", "offset"];
-      const after = entry.after.params as Record<string, unknown>;
-      const before = entry.before.params as Record<string, unknown>;
-      const params = { ...layer?.params } as Record<string, unknown>;
-      if (
-        !layer ||
-        layer.type !== entry.after.type ||
-        keys.some((key) => JSON.stringify(params[key]) !== JSON.stringify(after[key]))
-      ) {
-        message("Undo conflict: another actor changed this landform; their edit is retained.");
-        return;
-      }
-      for (const key of keys) {
-        if (before[key] === undefined) delete params[key];
-        else params[key] = before[key];
-      }
-      await saveLayer({ ...layer, params } as Layer, current, false);
-      if (!layerDraft) layerHistory = undefined;
-      return;
-    }
-    if (!history) return;
-    const entry = history;
-    const current = await controller.snapshot();
-    if (
-      JSON.stringify(current.document.placementOverrides?.[entry.id]) !==
-      JSON.stringify(entry.after)
-    ) {
-      message("Undo conflict: another actor changed this placement; their edit is retained.");
-      return;
-    }
-    await save(entry.id, entry.before, current, false);
-    if (!draft) history = undefined;
   }
   panel.addEventListener(
     "click",
@@ -396,12 +218,16 @@ export function createPropSelection(
         for (const button of panel.querySelectorAll<HTMLElement>("[data-transform-mode]"))
           button.classList.toggle("active", button.dataset.transformMode === mode);
       }
-      if (target?.id === "placement-reset" && selected) void save(selected, undefined);
+      if (target?.id === "placement-reset" && selection.selected)
+        void selection.save(selection.selected, undefined);
       if (target?.id === "placement-focus") {
-        if (selectedLayer) message(focus({ kind: "region", id: selectedLayer }).diagnostic ?? "");
-        else if (selected) message(focus({ kind: "prop", id: selected }).diagnostic ?? "");
+        if (selection.selectedLayer)
+          message(focus({ kind: "region", id: selection.selectedLayer }).diagnostic ?? "");
+        else if (selection.selected)
+          message(focus({ kind: "prop", id: selection.selected }).diagnostic ?? "");
       }
-      if (target?.id === "placement-undo") void undo().catch((error) => message(String(error)));
+      if (target?.id === "placement-undo")
+        void selection.undo().catch((error) => message(String(error)));
     },
     { signal: abort.signal },
   );
@@ -409,7 +235,7 @@ export function createPropSelection(
     "change",
     () => {
       const isLayer = list.value.startsWith("landform:");
-      select(list.value ? list.value.slice(isLayer ? 9 : 10) : undefined, isLayer);
+      selection.select(list.value ? list.value.slice(isLayer ? 9 : 10) : undefined, isLayer);
     },
     { signal: abort.signal },
   );
@@ -417,201 +243,61 @@ export function createPropSelection(
     "submit",
     (event) => {
       event.preventDefault();
-      if (selectedLayer && snapshot) {
-        const layer = snapshot.document.recipe.layers.find((l) => l.id === selectedLayer);
-        if (!layer) return;
-        try {
-          const values = fields.map((field) => Number(field.value));
-          const [
-            x = Number.NaN,
-            y = Number.NaN,
-            z = Number.NaN,
-            ,
-            ry = Number.NaN,
-            ,
-            sx = Number.NaN,
-            sy = Number.NaN,
-            sz = Number.NaN,
-          ] = values;
-          const position = new Vector3(x, y + anchor, z);
-          const rotation = new Quaternion().setFromAxisAngle(
-            new Vector3(0, 1, 0),
-            (-ry * Math.PI) / 180,
-          );
-          const next = layerDraft
-            ? ({
-                ...layer,
-                params: {
-                  ...layer.params,
-                  ...Object.fromEntries(
-                    Object.entries(layerDraft.params).filter(([key]) =>
-                      ["at", "radius", "size", "rotation", "scale", "offset"].includes(key),
-                    ),
-                  ),
-                },
-              } as Layer)
-            : transformedLandform(layer, position, rotation, new Vector3(sx, sy, sz), anchor);
-          layerDraft = next;
-          void saveLayer(next);
-        } catch (error) {
-          message(String(error));
-        }
-        return;
-      }
-      if (!selected) return;
-      try {
-        const values = fields.map((field) => Number(field.value));
-        const position = values.slice(0, 3) as IPlacementOverride["position"];
-        const rotation = values.slice(3, 6).map((v) => (v * Math.PI) / 180);
-        const quaternion = new Quaternion()
-          .setFromEuler(new Euler(rotation[0], rotation[1], rotation[2], "XYZ"))
-          .toArray();
-        const scale = values.slice(6, 9) as IPlacementOverride["scale"];
-        const value =
-          draft?.id === selected
-            ? draft.transform
-            : { position, quaternion, scale, grounding: grounding.checked };
-        preview(selected, value);
-        void save(selected, value);
-      } catch (error) {
-        message(String(error));
-      }
+      selection.applyFields(
+        fields.map((field) => Number(field.value)),
+        grounding.checked,
+      );
     },
     { signal: abort.signal },
   );
   form.addEventListener(
     "input",
     () => {
-      draft = undefined;
-      layerDraft = undefined;
+      selection.clearDrafts();
     },
     { signal: abort.signal },
   );
-  gizmo.addEventListener("dragging-changed", ({ value }) => {
-    orbit.enabled = !value;
-  });
-  gizmo.addEventListener("mouseDown", () => {
-    const id = selectedLayer ?? selected;
-    if (!id || !snapshot || saving) {
-      cancelled = true;
-      gizmo.pointerUp(null);
-      return;
-    }
-    if (selectedLayer && gizmo.getMode() === "rotate" && gizmo.axis !== "Y") {
-      cancelled = true;
-      gizmo.pointerUp(null);
-      message("Only Y rotation is supported: a heightfield cannot overhang.");
-      return;
-    }
-    drag = {
-      id,
-      base: snapshot,
-      layer: snapshot.document.recipe.layers.find((l) => l.id === selectedLayer),
-      anchor,
-      grounding:
-        grounding.checked && !(gizmo.getMode() === "translate" && gizmo.axis?.includes("Y")),
-    };
-    cancelled = false;
-  });
-  gizmo.addEventListener("objectChange", () => {
-    if (!drag || cancelled) return;
-    try {
-      if (drag.layer) {
-        layerDraft = transformedLandform(
-          drag.layer,
-          proxy.position,
-          proxy.quaternion,
-          proxy.scale,
-          drag.anchor,
-        );
-        drawFootprint(layerDraft);
-        return;
-      }
-      preview(drag.id, {
-        position: proxy.position.toArray(),
-        quaternion: proxy.quaternion.clone().normalize().toArray(),
-        scale: proxy.scale.toArray(),
-        grounding: drag.grounding,
-      });
-    } catch (error) {
-      message(String(error));
-      cancelled = true;
-      restore();
-    }
-  });
-  gizmo.addEventListener("mouseUp", () => {
-    const gesture = drag;
-    drag = undefined;
-    if (!cancelled && gesture?.layer && layerDraft) {
-      void saveLayer(layerDraft, gesture.base);
-      return;
-    }
-    if (cancelled || !gesture || !draft) {
-      restore();
-      return;
-    }
-    void save(gesture.id, draft.transform, gesture.base);
-  });
   ctx.renderer.domElement.addEventListener(
     "pointerdown",
     (event) => {
-      if (!active || event.button !== 0 || event.altKey || gizmo.axis || gizmo.dragging) return;
-      select(pick(event.clientX, event.clientY));
+      if (!selection.canPick(event)) return;
+      selection.select(pick(event.clientX, event.clientY));
     },
     { signal: abort.signal },
   );
   window.addEventListener(
     "keydown",
     (event) => {
-      if (!active || ["INPUT", "TEXTAREA", "SELECT"].includes((event.target as Element).tagName))
+      if (
+        !selection.active ||
+        (event.key !== "Escape" &&
+          ["INPUT", "TEXTAREA", "SELECT"].includes((event.target as Element).tagName))
+      )
         return;
       if (event.key === "Escape") {
-        cancelled = true;
-        draft = undefined;
-        layerDraft = undefined;
-        gizmo.reset();
-        restore();
-        message("Drag cancelled · no transaction");
+        selection.cancel();
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        void undo().catch((error) => message(String(error)));
+        void selection.undo().catch((error) => message(String(error)));
       }
     },
     { signal: abort.signal },
   );
   return {
-    selectLayer(id: string): void {
-      const layer = snapshot?.document.recipe.layers.find((entry) => entry.id === id);
-      if (active && layer && landformPose(layer, snapshot?.document.recipe.config.size ?? 0))
-        select(id, true);
-    },
+    selectLayer: selection.selectLayer,
     setActive(enabled: boolean): void {
-      active = enabled;
       sidebar.dataset.selecting = String(enabled);
       panel.style.display = enabled ? "block" : "none";
-      gizmo.enabled = enabled;
-      if (!enabled) {
-        cancelled = true;
-        draft = undefined;
-        layerDraft = undefined;
-        gizmo.pointerUp(null);
-        footprint.visible = false; // engine-override: selection tooling is inactive.
-        gizmo.reset();
-        restore();
-        gizmo.detach();
-        orbit.enabled = true;
-      } else refreshPose();
+      if (!enabled) footprint.visible = false; // engine-override: selection tooling is inactive.
+      selection.setActive(enabled);
     },
-    sync(next: IEditorSnapshot, matchesPreview: boolean): void {
-      snapshot = next;
-      if (matchesPreview && !drag && !saving) restore();
-    },
+    sync: selection.sync,
     refresh(): void {
       const entries = [...(instances()?.values() ?? [])];
       list.replaceChildren(
         new Option("Select a placement or landform", ""),
-        ...(snapshot?.document.recipe.layers
+        ...(selection.snapshot?.document.recipe.layers
           .filter((layer) => ["stamp", "paste", "heightmap"].includes(layer.type))
           .map(
             (layer) => new Option(`Landform · ${layer.name ?? layer.id}`, `landform:${layer.id}`),
@@ -624,13 +310,13 @@ export function createPropSelection(
             ),
         ),
       );
-      list.value = selectedLayer
-        ? `landform:${selectedLayer}`
-        : selected
-          ? `placement:${selected}`
+      list.value = selection.selectedLayer
+        ? `landform:${selection.selectedLayer}`
+        : selection.selected
+          ? `placement:${selection.selected}`
           : "";
       orphans.replaceChildren();
-      for (const id of Object.keys(snapshot?.document.placementOverrides ?? {})) {
+      for (const id of Object.keys(selection.snapshot?.document.placementOverrides ?? {})) {
         if (instances()?.has(id)) continue;
         const row = document.createElement("div");
         const label = document.createElement("p");
@@ -638,46 +324,30 @@ export function createPropSelection(
         const remove = document.createElement("button");
         remove.textContent = "Remove override";
         remove.onclick = () => {
-          void save(id, undefined);
+          void selection.save(id, undefined);
         };
         const reassign = document.createElement("button");
         reassign.textContent = "Reassign to selected";
-        reassign.onclick = async () => {
-          if (!selected || !snapshot || saving) return;
-          const current = snapshot;
-          const value = current.document.placementOverrides?.[id];
-          if (!value || current.document.placementOverrides?.[selected]) {
-            message("Choose a placement without an existing override.");
-            return;
-          }
-          const overrides = { ...current.document.placementOverrides, [selected]: value };
-          delete overrides[id];
-          try {
-            await controller.commit({
-              baseRevision: current.revision,
-              document: { ...current.document, placementOverrides: overrides },
-            });
-          } catch (error) {
-            message(String(error));
-          }
+        reassign.onclick = () => {
+          void selection.reassign(id);
         };
         row.append(label, remove, reassign);
         orphans.append(row);
       }
-      if (!drag && !saving) refreshPose();
+      if (!selection.drag && !selection.saving) refreshPose();
     },
     inspect() {
       return {
-        selected,
-        selectedLayer,
-        landformDraft: layerDraft,
+        selected: selection.selected,
+        selectedLayer: selection.selectedLayer,
+        landformDraft: selection.layerDraft,
         footprintVisible: footprint.visible,
         rotationAxes: { x: gizmo.showX, y: gizmo.showY, z: gizmo.showZ },
         mode: gizmo.getMode(),
         dragging: gizmo.dragging,
         orbitEnabled: orbit.enabled,
-        draft,
-        saving,
+        draft: selection.draft,
+        saving: selection.saving,
         axis: gizmo.axis,
       };
     },
@@ -710,6 +380,7 @@ export function createPropSelection(
     },
     dispose(): void {
       abort.abort();
+      selection.dispose();
       gizmo.dispose();
       ctx.scene.remove(proxy, gizmo.getHelper(), footprint);
       footprint.geometry.dispose();

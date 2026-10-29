@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   Mask,
   Terrain,
+  TerrainEvaluator,
   bakeMesh,
   bakeTerrain,
   decodeRAW16,
@@ -12,6 +14,7 @@ import {
 import { toGeometry } from "@threenative/terrain/three";
 import { BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { finiteTree } from "../src/core/validation.js";
 
 describe("public terrain consumer", () => {
   it("returns measured erosion transport, respects masks and isolates cached arrays", () => {
@@ -20,6 +23,7 @@ describe("public terrain consumer", () => {
       .erode({ id: "rain", method: "hydraulic", droplets: 3000, erosion: 0.15 })
       .erode({ id: "talus", method: "thermal", iterations: 12, talus: 25 });
     const state = terrain.evaluate();
+    expect(new TerrainEvaluator({ cacheMB: 0 }).evaluate(terrain.toJSON())).toEqual(state);
     expect(state.erosion).toBeDefined();
     for (const values of Object.values(state.erosion ?? {})) {
       expect(values.length).toBe(state.height.length);
@@ -256,5 +260,43 @@ describe("public terrain consumer", () => {
     mesh.positions[0] = Number.NaN;
     expect(() => encodeGLB(mesh)).toThrow();
     expect(() => toGeometry(mesh)).toThrow();
+  });
+  it("names the shipped package as the GLB generator", () => {
+    const glb = encodeGLB(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));
+    const jsonLength = new DataView(glb.buffer, glb.byteOffset).getUint32(12, true);
+    const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength)));
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    expect(json.asset.generator).toBe(`@threenative/terrain ${pkg.version}`);
+  });
+});
+it("rejects a scatter layer without asset", () => {
+  expect(() =>
+    new Terrain({ resolution: 17 }).scatter({
+      id: "trees",
+      // @ts-expect-error testing missing asset validation
+      asset: undefined,
+    }),
+  ).toThrow(/asset/);
+});
+
+describe("finiteTree validation fast-path and edge guards", () => {
+  it("accepts numeric leaves at depth 32 and rejects them at depth 33", () => {
+    let d32: unknown = 42;
+    for (let i = 0; i < 32; i++) d32 = [d32];
+    expect(() => finiteTree(d32)).not.toThrow();
+
+    let d33: unknown = 42;
+    for (let i = 0; i < 33; i++) d33 = [d33];
+    expect(() => finiteTree(d33)).toThrow(`value${".0".repeat(33)}: nesting is too deep`);
+  });
+
+  it("names the non-finite array entry", () => {
+    expect(() => finiteTree([1, 2, Number.NaN], "samples")).toThrow("samples.2 must be finite");
+  });
+
+  it("rejects an unsafe own array key", () => {
+    const unsafeArray = [1, 2];
+    Object.defineProperty(unsafeArray, "constructor", { value: 123, enumerable: true });
+    expect(() => finiteTree(unsafeArray, "samples")).toThrow("samples: unsafe object key");
   });
 });

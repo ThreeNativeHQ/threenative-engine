@@ -157,6 +157,8 @@ export class ResolutionSubrect implements IResolutionSubrect {
             capacityChanged = widthCapacity !== binding.width || heightCapacity !== binding.height;
             binding.width = widthCapacity;
             binding.height = heightCapacity;
+            binding.viewWidth = Math.max(1, Math.round(width));
+            binding.viewHeight = Math.max(1, Math.round(height));
           } else {
             if (binding.width === 0 || binding.height === 0)
               throw new Error("TN_RESOLUTION_SUBRECT: target capacity not reserved");

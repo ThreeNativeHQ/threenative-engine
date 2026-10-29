@@ -11,7 +11,9 @@ manifest, and installing `@threenative/core` writes every project a `.mcp.json` 
 servers — `threenative-assets` (the externally pinned `threenative-asset-mcp`, launched through
 a shim inside core), `threenative-sculpt`, `threenative-engine`, `threenative-blender`
 ([`threenative-blender-mcp`](../../packages/blender-mcp/), which drives an installed Blender
-headlessly so a downloaded `.fbx` becomes a GLB, and ships no Blender), and `threenative-animation`
+headlessly so a downloaded `.fbx` becomes a GLB, and ships no Blender), `threenative-terrain`
+(a shim inside core that starts the project's installed `@threenative/terrain` bin and cooks a
+starter terrain kit into a `world.glb`), and `threenative-animation`
 ([`threenative-animation-mcp`](../../packages/animation-mcp/), which inspects a rig, attaches props
 for good, edits and verifies clips, and opens a calibrator page — every operation is a build-time
 edit of one GLB, so no game depends on it at runtime). What left is Studio: it
