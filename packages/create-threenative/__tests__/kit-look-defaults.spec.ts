@@ -137,7 +137,14 @@ describe("PRD-723 phase 1 kit look defaults", () => {
         if (LOOK_OVERRIDES[kit] !== undefined) {
           const previous = LEGACY_PRESETS[kit]?.[tier];
           if (previous === undefined) throw new Error(`Missing legacy preset ${kit}/${tier}`);
-          const expected = { ...LEGACY_DEFAULTS, ...previous, samples: previous.samples ?? 4 };
+          // Owner, 2026-10-28: sharp in motion beats temporal AA and camera motion blur, on every tier.
+          const expected = {
+            ...LEGACY_DEFAULTS,
+            ...previous,
+            samples: previous.samples ?? 4,
+            motionBlurEnabled: false,
+            temporalAA: false,
+          };
           expect(
             Object.fromEntries(Object.keys(expected).map((key) => [key, Reflect.get(preset, key)])),
             `${kit}/${tier} preserves develop options`,
