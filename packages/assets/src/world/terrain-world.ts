@@ -28,9 +28,16 @@ import {
 } from "@gltf-transform/functions";
 import { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } from "@threenative/terrain";
 import type { IPlacement, ITerrainState } from "@threenative/terrain";
+import { MeshoptSimplifier } from "meshoptimizer";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../lod/extension.js";
-import { LOD_ERROR_TARGETS, generateDiscreteLod, validateDiscreteLod } from "../lod/generate.js";
+import {
+  LOD_ERROR_TARGETS,
+  LOD_MIN_SAVING,
+  generateDiscreteLod,
+  thinFoliageCards,
+  validateDiscreteLod,
+} from "../lod/generate.js";
 import { createSimplifyPool } from "../lod/simplify-pool.js";
 import { modelPass } from "../passes/model.js";
 
@@ -246,6 +253,111 @@ async function parseSpecies(bytes: Uint8Array): Promise<Document> {
   const doc = await readGltfDocument(reader, input);
   validateDiscreteLod(doc.getRoot());
   return doc;
+}
+
+/**
+ * How much of a species' coarsest level each derived far level keeps: alpha cards by whole-card
+ * thinning (`thinFoliageCards`, scaled so the crown keeps its coverage), every other primitive by
+ * the simplifier.
+ *
+ * Without them a chain ends where the author stopped. The fir kit stops at a 55k-triangle mid that
+ * holds out to 600 m, so a 512 m forest drew 62.5M triangles a frame for ~1,100 trees in view:
+ * 113-120 ms GPU on an Iris Xe laptop and 18-31 ms on an RTX 2080. With these two levels the same
+ * pose drew 10-22M (the adaptive LOD bias moves it) at 47-61 ms and 9 ms (PRD-762).
+ */
+const FAR_LEVEL_KEEP_RATIOS: readonly number[] = [0.25, 0.06];
+
+function documentTriangles(doc: Document): number {
+  let total = 0;
+  for (const mesh of doc.getRoot().listMeshes())
+    for (const primitive of mesh.listPrimitives())
+      total += Math.floor((primitive.getIndices()?.getCount() ?? 0) / 3);
+  return total;
+}
+
+/** Simplify every indexed triangle primitive that is not an alpha card set to `keep` of its count. */
+function simplifySolidParts(doc: Document, keep: number): void {
+  for (const mesh of doc.getRoot().listMeshes())
+    for (const primitive of mesh.listPrimitives()) {
+      const indices = primitive.getIndices();
+      const position = primitive.getAttribute("POSITION");
+      if (
+        primitive.getMaterial()?.getAlphaMode() === "MASK" ||
+        primitive.getMode() !== 4 ||
+        indices === null ||
+        position === null
+      )
+        continue;
+      const positions = new Float32Array(position.getCount() * 3);
+      const element: number[] = [];
+      for (let vertex = 0; vertex < position.getCount(); vertex += 1)
+        positions.set(position.getElement(vertex, element), vertex * 3);
+      const source = Uint32Array.from(indices.getArray() ?? []);
+      // A bad index is the cook's own named error at flatten time, not the simplifier's crash.
+      if (source.some((index) => index >= position.getCount())) continue;
+      const target = Math.max(3, Math.floor((source.length * keep) / 3) * 3);
+      // Permissive collapses across UV and normal seams, which is what a far level can afford.
+      const [kept] = MeshoptSimplifier.simplify(source, positions, 3, target, 1, [
+        "Prune",
+        "Permissive",
+      ]);
+      primitive.setIndices(indices.clone().setArray(kept));
+    }
+}
+
+/** One far level of `bytes` at `keep`, or `undefined` when its alpha cards cannot be thinned. */
+async function farLevelDocument(bytes: Uint8Array, keep: number): Promise<Document | undefined> {
+  const doc = await parseSpecies(bytes);
+  // A level's own index-only chain indexes the triangles simplification replaces.
+  for (const extension of doc.getRoot().listExtensionsUsed())
+    if (extension.extensionName === TN_DISCRETE_LOD) extension.dispose();
+  try {
+    thinFoliageCards(doc, keep);
+  } catch {
+    return undefined;
+  }
+  simplifySolidParts(doc, keep);
+  // Drop the vertices no kept triangle reaches, so a far level does not stream the mid's buffers.
+  for (const mesh of doc.getRoot().listMeshes())
+    for (const primitive of mesh.listPrimitives()) compactPrimitive(primitive);
+  await doc.transform(prune({ keepSolidTextures: true }));
+  return doc;
+}
+
+/**
+ * Far levels past a species' coarsest level, each switched in where it holds the same on-screen
+ * triangle density the coarsest level had at its own switch: a level with `1/k` of the triangles
+ * takes over at `sqrt(k)` times the distance, since projected area falls with distance squared.
+ * A level that saves less than `LOD_MIN_SAVING` of the one before it, or would switch at or past
+ * `maxDistance`, is not shipped. A species whose alpha cards cannot be thinned keeps its chain.
+ */
+async function deriveFarLevels(
+  speciesId: string,
+  coarsest: { readonly distance: number; readonly glb: Uint8Array; readonly doc: Document },
+  firstIndex: number,
+  maxDistance: number | undefined,
+): Promise<{ distance: number; glb: Uint8Array; filename: string; doc: Document }[]> {
+  await MeshoptSimplifier.ready;
+  const anchor = documentTriangles(coarsest.doc);
+  const levels: { distance: number; glb: Uint8Array; filename: string; doc: Document }[] = [];
+  let previous = anchor;
+  for (const keep of FAR_LEVEL_KEEP_RATIOS) {
+    const doc = await farLevelDocument(coarsest.glb, keep);
+    if (doc === undefined) return levels;
+    const triangles = documentTriangles(doc);
+    if (triangles <= 0 || triangles > (1 - LOD_MIN_SAVING) * previous) continue;
+    const distance = coarsest.distance * Math.sqrt(anchor / triangles);
+    if (maxDistance !== undefined && distance >= maxDistance) break;
+    const writer = new NodeIO().registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod]);
+    levels.push({
+      distance: Math.round(distance * 10) / 10,
+      glb: await writer.writeBinary(doc),
+      filename: `${speciesId}_lod${firstIndex + levels.length}.glb`,
+      doc,
+    });
+    previous = triangles;
+  }
+  return levels;
 }
 
 /** Optimize only streamed images; restore the document used to assemble the combined world. */
@@ -592,6 +704,12 @@ export async function cookTerrainWorld(
         assertInstancable(speciesId, doc);
         lods.push({ distance: 40, glb: bytes, filename: `${speciesId}_lod1.glb`, doc });
       }
+
+      const coarsest = lods.at(-1);
+      if (coarsest !== undefined)
+        lods.push(
+          ...(await deriveFarLevels(speciesId, coarsest, lods.length + 1, spec.maxDistance)),
+        );
 
       // Optimize streamed bytes before adding the combined world's own index-only chain.
       for (const level of lods)

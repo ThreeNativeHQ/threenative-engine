@@ -1258,6 +1258,42 @@ describe("cookTerrainWorld", () => {
     await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
   });
 
+  it("derives far levels past the kit fir's 55k-triangle mid, each inside maxDistance (PRD-762)", async () => {
+    // The forest kit's fir stops at a 55k mid held to 600 m: 62.6M triangles a frame, 122 ms GPU on
+    // an Iris Xe. The cook must keep descending past the coarsest authored level.
+    const assets = path.resolve("packages/terrain/starter-assets/fir_tree_01");
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: {
+        fir: {
+          glb: path.join(assets, "fir-b-lod1.glb"),
+          lods: [{ distance: 45, glb: path.join(assets, "fir-b-lod2.glb") }],
+          maxDistance: 600,
+        },
+      },
+      out: dir,
+    });
+    const lods = result.manifest.assets.fir?.lods ?? [];
+    expect(lods[0]).toEqual({ distance: 45, glb: "models/fir_lod1.glb" });
+    expect(lods.length).toBeGreaterThanOrEqual(3);
+    const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+    const triangles = async (glb: string): Promise<number> => {
+      let total = 0;
+      const doc = await io.read(path.join(dir, glb));
+      for (const mesh of doc.getRoot().listMeshes())
+        for (const primitive of mesh.listPrimitives())
+          total += (primitive.getIndices()?.getCount() ?? 0) / 3;
+      return total;
+    };
+    const counts = await Promise.all(lods.map((level) => triangles(level.glb)));
+    for (let level = 1; level < lods.length; level += 1) {
+      expect(counts[level]).toBeLessThan(0.8 * (counts[level - 1] as number));
+      expect(lods[level]?.distance).toBeGreaterThan(lods[level - 1]?.distance as number);
+      expect(lods[level]?.distance).toBeLessThan(600);
+    }
+    expect(counts.at(-1)).toBeLessThan(12_000);
+  });
+
   it("discovers an authored -mid sibling before falling back to simplification", async () => {
     const nearPath = path.join(dir, "pine.glb");
     const midPath = path.join(dir, "pine-mid.glb");
