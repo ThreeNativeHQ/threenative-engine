@@ -9,7 +9,6 @@
 // geometry that is identical. One `InstancedMesh` per (type, team, material) is a few dozen
 // objects for the whole battlefield, and the count is what `maxDrawCalls` in the performance
 // scenario is really measuring.
-import { lodPixelScale } from "@threenative/core";
 import {
   type BufferAttribute,
   type BufferGeometry,
@@ -65,7 +64,8 @@ export interface IArmy {
     time: number,
     dt: number,
     camera: Camera,
-    viewportHeight: number,
+    /** Screen pixels per metre at depth 1, measured by the scene: a render file imports no package. */
+    pixelsPerMetre: number,
   ) => void;
   readonly dispose: () => void;
 }
@@ -254,9 +254,9 @@ export function createArmy(
       slot.z = z;
       markerRings.setColorAt(index, _tint.set(hostile ? 0xff775a : 0x6cfbe2));
     },
-    sync: (game, selected, time, dt, view, viewportHeight) => {
+    sync: (game, selected, time, dt, view, pixelsPerMetre) => {
       camera = view;
-      pixels = lodPixelScale(view, viewportHeight, 1);
+      pixels = pixelsPerMetre;
       up.set(0, 1, 0).applyQuaternion(view.quaternion);
       for (const entry of batches.values()) entry.list.length = 0;
       for (const entity of game.entities) {
