@@ -303,6 +303,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_normal_pass_is_not_tallied=normal_pass_is_not_tallied
         native_engine_renderer_gtao_screen_reach=gtao_screen_reach
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
+        native_engine_renderer_depth_test_off_draws_over_nearer=depth_test_off_draws_over_nearer
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
         native_engine_target_samples_late_traa_output=target_samples_late_traa_output

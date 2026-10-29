@@ -160,6 +160,7 @@ struct DrawItem {
     bool transparent = false;  // material.transparent: drawn after opaques, back to front, blended
     bool forceSinglePass = false;  // material.forceSinglePass: a transparent DoubleSide draws once
     bool depthWrite = true;    // material.depthWrite
+    bool depthTest = true;     // material.depthTest: false draws over nearer surfaces (compare Always)
     bool colorWrite = true;    // material.colorWrite
     // SkinnedMesh: the skin attributes, the skeleton's palette this frame and the bind matrices.
     BufferStore* skinIndices = nullptr; // u8, u16 or u32 ×4
