@@ -361,42 +361,54 @@ async function deriveFarLevels(
   return levels;
 }
 
+/**
+ * Losslessly re-encode a streamed document's JPEG textures where that shrinks them, in place, and
+ * return the images it replaced so a caller that shares the document can put them back.
+ */
+async function optimizeStreamedImages(
+  loadedDocument: Document,
+  asset: string,
+): Promise<Map<ReturnType<Document["createTexture"]>, Uint8Array>> {
+  const originals = new Map<ReturnType<Document["createTexture"]>, Uint8Array>();
+  for (const texture of loadedDocument.getRoot().listTextures()) {
+    if (texture.getMimeType() !== "image/jpeg") continue;
+    const image = texture.getImage();
+    try {
+      if (image === null) throw new Error("JPEG has no image bytes");
+      const sharp = (await import("sharp")).default;
+      const decoder = sharp(image, { failOn: "warning" });
+      const metadata = await decoder.metadata();
+      await decoder.stats();
+      if (
+        metadata.isProgressive ||
+        metadata.space === "cmyk" ||
+        metadata.depth !== "uchar" ||
+        (metadata.bitsPerSample !== undefined && metadata.bitsPerSample !== 8)
+      )
+        continue;
+      const { optimize } = await import("jspeg");
+      const optimized = optimize(image, { strip: false });
+      if (optimized.byteLength < image.byteLength) {
+        originals.set(texture, image);
+        texture.setImage(optimized);
+      }
+    } catch (cause) {
+      throw new Error(`cookTerrainWorld: ${asset} texture '${texture.getName()}' JPEG failed.`, {
+        cause,
+      });
+    }
+  }
+  return originals;
+}
+
 /** Optimize only streamed images; restore the document used to assemble the combined world. */
 async function optimizeStreamedJpegs(
   bytes: Uint8Array,
   loadedDocument: Document,
   asset: string,
 ): Promise<Uint8Array> {
-  const originals = new Map<ReturnType<Document["createTexture"]>, Uint8Array>();
+  const originals = await optimizeStreamedImages(loadedDocument, asset);
   try {
-    for (const texture of loadedDocument.getRoot().listTextures()) {
-      if (texture.getMimeType() !== "image/jpeg") continue;
-      const image = texture.getImage();
-      try {
-        if (image === null) throw new Error("JPEG has no image bytes");
-        const sharp = (await import("sharp")).default;
-        const decoder = sharp(image, { failOn: "warning" });
-        const metadata = await decoder.metadata();
-        await decoder.stats();
-        if (
-          metadata.isProgressive ||
-          metadata.space === "cmyk" ||
-          metadata.depth !== "uchar" ||
-          (metadata.bitsPerSample !== undefined && metadata.bitsPerSample !== 8)
-        )
-          continue;
-        const { optimize } = await import("jspeg");
-        const optimized = optimize(image, { strip: false });
-        if (optimized.byteLength < image.byteLength) {
-          originals.set(texture, image);
-          texture.setImage(optimized);
-        }
-      } catch (cause) {
-        throw new Error(`cookTerrainWorld: ${asset} texture '${texture.getName()}' JPEG failed.`, {
-          cause,
-        });
-      }
-    }
     return originals.size === 0
       ? bytes
       : await new NodeIO()
@@ -405,6 +417,56 @@ async function optimizeStreamedJpegs(
   } finally {
     for (const [texture, image] of originals) texture.setImage(image);
   }
+}
+
+/**
+ * One streamed file per species: the default scene draws level 0 and every upper level is its own
+ * named scene, so the levels share the file's textures instead of embedding an identical copy each.
+ * Each level keeps the authored node transforms and its own accessors; only the images are shared.
+ * The source documents stay untouched — the combined `world.glb` is assembled from them afterwards.
+ */
+async function assembleSpeciesFile(
+  speciesId: string,
+  nearDoc: Document,
+  lods: readonly { readonly doc: Document }[],
+): Promise<{ bytes: Uint8Array; scenes: readonly string[] }> {
+  const doc = new Document();
+  doc.createBuffer();
+  const defaultScene = doc.createScene(speciesId);
+  doc.getRoot().setDefaultScene(defaultScene);
+  const copyInto = (source: Document, target: Scene): void => {
+    for (const extension of source.getRoot().listExtensionsUsed()) {
+      const ctor = extension.constructor;
+      if (!isExtensionConstructor(ctor))
+        throw new TypeError(`Invalid species extension constructor: ${extension.extensionName}`);
+      doc.createExtension(ctor);
+    }
+    const resolve = createDefaultPropertyResolver(doc, source);
+    // An authored GLB often names no default scene; the loader then draws scene 0, so we do too.
+    const root = source.getRoot();
+    for (const node of (root.getDefaultScene() ?? root.listScenes()[0])?.listChildren() ?? []) {
+      const copy = copyToDocument(doc, source, [node], resolve).get(node) as Node | undefined;
+      if (copy !== undefined) target.addChild(copy);
+    }
+  };
+  copyInto(nearDoc, defaultScene);
+  const scenes: string[] = [];
+  for (const [index, level] of lods.entries()) {
+    const name = `${speciesId}_lod${index + 1}`;
+    copyInto(level.doc, doc.createScene(name));
+    scenes.push(name);
+  }
+  await doc.transform(unpartition());
+  // Species materials are authored, so a flat image stays; only byte-identical copies collapse.
+  await doc.transform(prune({ keepSolidTextures: true }));
+  await doc.transform(dedup({ propertyTypes: [PropertyType.TEXTURE] }));
+  await optimizeStreamedImages(doc, `${speciesId}.glb`);
+  return {
+    bytes: await new NodeIO()
+      .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
+      .writeBinary(doc),
+    scenes,
+  };
 }
 
 /**
@@ -670,7 +732,7 @@ export async function cookTerrainWorld(
   const assets: Record<string, IWorldPackageAsset> = {};
   const speciesFiles: {
     speciesId: string;
-    lod0: Uint8Array;
+    glb: Uint8Array;
     nearDoc: Document;
     lods: { distance: number; glb: Uint8Array; filename: string; doc: Document }[];
   }[] = [];
@@ -681,7 +743,6 @@ export async function cookTerrainWorld(
       const lod0 = await resolveBytes(spec.glb);
       const nearDoc = await parseSpecies(lod0);
       assertInstancable(speciesId, nearDoc);
-      const streamedLod0 = await optimizeStreamedJpegs(lod0, nearDoc, `${speciesId}.glb`);
 
       // Authored LODs first: explicit `spec.lods`, then a sibling `-mid`/`-lod1` file beside a path
       // species. Only when neither exists does simplification invent a level.
@@ -725,9 +786,8 @@ export async function cookTerrainWorld(
           ...(await deriveFarLevels(speciesId, coarsest, lods.length + 1, spec.maxDistance)),
         );
 
-      // Optimize streamed bytes before adding the combined world's own index-only chain.
-      for (const level of lods)
-        level.glb = await optimizeStreamedJpegs(level.glb, level.doc, level.filename);
+      // One file carries every level of this species, so its levels share one texture set.
+      const streamed = await assembleSpeciesFile(speciesId, nearDoc, lods);
 
       // The combined world's near meshes need their own index-only chain; streamed files stay authored.
       await generateDiscreteLod(
@@ -743,13 +803,14 @@ export async function cookTerrainWorld(
       const asset: IWorldPackageAsset = {
         glb: `models/${speciesId}.glb`,
         bounds: spec.bounds ?? sourceBounds(nearDoc),
-        lods: lods.map((level) => ({
+        lods: lods.map((level, index) => ({
           distance: level.distance,
-          glb: `models/${level.filename}`,
+          glb: `models/${speciesId}.glb`,
+          scene: streamed.scenes[index],
         })),
         ...(spec.maxDistance === undefined ? {} : { maxDistance: spec.maxDistance }),
       };
-      return { speciesId, lod0: streamedLod0, nearDoc, lods, asset };
+      return { speciesId, glb: streamed.bytes, nearDoc, lods, asset };
     });
     const prepared = await Promise.all(tasks);
     // Promise.all preserves source order; completion order must not change GLB or manifest bytes.
@@ -957,10 +1018,8 @@ export async function cookTerrainWorld(
   const outputs = new Map<string, string | Uint8Array>([["world.glb", worldGlb]]);
   for (const [name, bytes] of textureFiles) outputs.set(path.join("textures", name), bytes);
   for (const [name, bytes] of Object.entries(files)) outputs.set(name, bytes);
-  for (const { speciesId, lod0, lods } of speciesFiles) {
-    outputs.set(path.join("models", `${speciesId}.glb`), lod0);
-    for (const level of lods) outputs.set(path.join("models", level.filename), level.glb);
-  }
+  for (const { speciesId, glb } of speciesFiles)
+    outputs.set(path.join("models", `${speciesId}.glb`), glb);
   outputs.set("world.json", `${JSON.stringify(manifest, null, 2)}\n`);
   await mkdir(out, { recursive: true });
   await mkdir(path.join(out, "models"), { recursive: true });

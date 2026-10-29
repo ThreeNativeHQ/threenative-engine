@@ -258,15 +258,20 @@ async function lightProps(
   try {
     assertCurrent();
     // Every LOD of an asset, not only its nearest: a far boulder left undressed shows its raw scan.
-    const models = Object.entries(manifest.assets).flatMap(([id, asset]) =>
-      [asset.glb, ...(spec.lighting.lods ? (asset.lods ?? []).map((lod) => lod.glb) : [])].map(
-        (glb) => ({ id, glb }),
-      ),
-    );
-    for (const { id, glb } of models) {
-      const model = await ctx.assets.model<{ scene: Object3D }>(base + glb);
+    // A cooked species keeps every level in one file, so each level names the scene it draws there.
+    const models = Object.entries(manifest.assets).flatMap(([id, asset]) => [
+      { id, glb: asset.glb, scene: undefined },
+      ...(spec.lighting.lods
+        ? (asset.lods ?? []).map((lod) => ({ id, glb: lod.glb, scene: lod.scene }))
+        : []),
+    ]);
+    for (const { id, glb, scene } of models) {
+      const model = await ctx.assets.model<{ scene: Object3D; scenes?: Object3D[] }>(base + glb);
       assertCurrent();
-      model.scene.traverse((object) => {
+      const root = scene === undefined ? model.scene : model.scenes?.find((s) => s.name === scene);
+      if (root === undefined)
+        throw new Error(`TN_STARTER_SCENE: '${glb}' names no scene '${scene}'.`);
+      root.traverse((object) => {
         const mesh = object as Mesh;
         for (const material of [mesh.material ?? []].flat() as MeshStandardMaterial[])
           if (!originals.has(material))

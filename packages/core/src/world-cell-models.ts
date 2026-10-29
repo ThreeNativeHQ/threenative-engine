@@ -40,6 +40,11 @@ export interface IAssetState {
   distances: readonly number[];
   /** The package-relative GLB per level, index-aligned with `distances`. */
   readonly glbs: readonly string[];
+  /**
+   * The scene each level draws, index-aligned with `glbs`; `undefined` means the file's own default
+   * scene, which is every package that stores one level per file.
+   */
+  readonly scenes: readonly (string | undefined)[];
   /** Every distance the level or cull answer changes at, `threshold` being the nearest. */
   gates: readonly number[];
   /** The nearest distance this asset's batching can be crossed at, or `undefined` when it cannot. */
@@ -75,13 +80,26 @@ export interface IAssetState {
   impostor?: IImpostorState;
 }
 
-export async function loadModelWith(assets: IAssetLoader, path: string): Promise<Object3D> {
+export async function loadModelWith(
+  assets: IAssetLoader,
+  path: string,
+  sceneName?: string,
+): Promise<Object3D> {
   // A cell load is one the ring asks for ahead of the camera, so it takes `soon`: a direct
   // `ctx.assets.model` call from the running scene still starts first.
-  const gltf = await assets.model<{ scene?: Object3D }>(path, { priority: "soon" });
-  const scene = gltf?.scene;
+  const gltf = await assets.model<{ scene?: Object3D; scenes?: Object3D[] }>(path, {
+    priority: "soon",
+  });
+  // One file can hold every level of a model; its levels select a scene instead of a file. Each
+  // level is then its own scene graph sharing that file's textures, never a second parse.
+  const scene =
+    sceneName === undefined ? gltf?.scene : gltf?.scenes?.find((s) => s.name === sceneName);
   if (!(scene instanceof Object3D))
-    throw new Error(`World asset '${path}' loaded without an Object3D scene.`);
+    throw new Error(
+      sceneName === undefined
+        ? `World asset '${path}' loaded without an Object3D scene.`
+        : `World asset '${path}' has no scene '${sceneName}'.`,
+    );
   return scene;
 }
 
@@ -188,11 +206,13 @@ function assetLevels(definition: IWorldAsset): {
   readonly distances: readonly number[];
   readonly gates: readonly number[];
   readonly glbs: readonly string[];
+  readonly scenes: readonly (string | undefined)[];
   readonly threshold: number | undefined;
 } {
   const maxDistance = definition.maxDistance;
   const distances: number[] = [0];
   const glbs: string[] = [definition.glb];
+  const scenes: (string | undefined)[] = [undefined];
   const gates: number[] = [];
   for (const lod of definition.lods ?? []) {
     // A level at or beyond the cull distance is never drawn: an instance that far out is gone by
@@ -200,6 +220,7 @@ function assetLevels(definition: IWorldAsset): {
     if (maxDistance !== undefined && lod.distance >= maxDistance) continue;
     distances.push(lod.distance);
     glbs.push(lod.glb);
+    scenes.push(lod.scene);
     gates.push(lod.distance);
   }
   const cull = cullDistance(maxDistance);
@@ -208,6 +229,7 @@ function assetLevels(definition: IWorldAsset): {
     distances,
     gates,
     glbs,
+    scenes,
     threshold: gates.length === 0 ? undefined : Math.min(...gates),
   };
 }
@@ -233,8 +255,9 @@ async function assetSignature(
   };
   try {
     const parts = [await url(definition.glb)];
+    // A scene names the level inside a shared file, so two levels of one file never alias.
     for (const lod of definition.lods ?? [])
-      parts.push(`${await url(lod.glb)}@${String(lod.distance)}`);
+      parts.push(`${await url(lod.glb)}#${lod.scene ?? ""}@${String(lod.distance)}`);
     parts.push(
       definition.maxDistance === undefined ? "" : String(definition.maxDistance),
       definition.impostorDistance === undefined ? "" : String(definition.impostorDistance),
@@ -669,9 +692,9 @@ export class CellModels {
    * authored url, so a game's own GLB loader is unchanged; without it the logical path goes to
    * `assets.model`, which is what makes a compiled package and its KTX2 textures work.
    */
-  model(path: string): Promise<Object3D> {
+  model(path: string, scene?: string): Promise<Object3D> {
     return this.#loadModel === undefined
-      ? loadModelWith(this.#loader, path)
+      ? loadModelWith(this.#loader, path, scene)
       : this.#loadModel(resolveRelative(this.#baseUrl, path));
   }
 
@@ -698,11 +721,12 @@ export class CellModels {
     // `Promise.all` hands back the levels in `glbs` order, and the limiter is what bounds them: it
     // already caps every load in flight across the resident cells, assets and chunks together.
     const loads: Array<Promise<Object3D | undefined>> = [];
-    for (const glb of asset.glbs) {
+    for (const [index, glb] of asset.glbs.entries()) {
       const path = resolveRelative(this.#logicalBase, glb);
+      const scene = asset.scenes[index];
       loads.push(
         this.#limiter
-          .load(() => this.model(path), wanted)
+          .load(() => this.model(path, scene), wanted)
           .catch((error: unknown) => {
             asset.failed = true;
             this.#host.setFailures(this.#host.failures() + 1);

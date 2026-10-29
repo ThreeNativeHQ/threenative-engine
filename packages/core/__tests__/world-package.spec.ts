@@ -62,6 +62,38 @@ describe("validateWorldPackage", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts one file holding every level, named by scene, and refuses a blank scene", () => {
+    // A cooked species stores its levels in one GLB: every level names the same `glb` and a scene.
+    const manifest = validPackage();
+    const tree = manifest.assets.tree;
+    if (tree === undefined) throw new Error("the fixture has no tree asset.");
+    const shared = {
+      ...manifest,
+      assets: {
+        ...manifest.assets,
+        tree: {
+          ...tree,
+          lods: [
+            { distance: 60, glb: tree.glb, scene: "tree_lod1" },
+            { distance: 140, glb: tree.glb, scene: "tree_lod2" },
+          ],
+        },
+      },
+    };
+    expect(validateWorldPackage(shared, options).errors).toEqual([]);
+    const blank = {
+      ...shared,
+      assets: {
+        ...shared.assets,
+        tree: { ...tree, lods: [{ distance: 60, glb: tree.glb, scene: "" }] },
+      },
+    };
+    const error = validateWorldPackage(blank, options).errors.find((entry) =>
+      entry.path.endsWith(".lods[0].scene"),
+    );
+    expect(error?.message).toBe("assets.tree.lods[0].scene must be a nonempty string.");
+  });
+
   it("accepts a package without optional layers, lods, chunks or maxDistance", () => {
     const manifest = validPackage();
     const minimal = {

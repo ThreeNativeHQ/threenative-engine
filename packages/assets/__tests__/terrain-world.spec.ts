@@ -1141,26 +1141,29 @@ describe("cookTerrainWorld", () => {
       species: { fir: { glb, lods: [{ distance: 45, glb }] } },
       out: dir,
     });
-    for (const name of ["fir.glb", "fir_lod1.glb"]) {
-      const bytes = await readFile(path.join(dir, "models", name));
-      expect(bytes.length).toBeLessThan(glb.length);
-      const output = await io().readBinary(bytes);
-      const image = output.getRoot().listTextures()[0]?.getImage();
-      assert.ok(image);
-      expect(image.length).toBeLessThan(jpeg.length);
-      expect(await sharp(image).ensureAlpha().raw().toBuffer()).toEqual(
-        await sharp(jpeg).ensureAlpha().raw().toBuffer(),
-      );
-      const { size: originalSize, ...originalMetadata } = await sharp(jpeg).metadata();
-      const { size: optimizedSize, ...optimizedMetadata } = await sharp(image).metadata();
-      expect(optimizedSize).toBeLessThan(originalSize ?? jpeg.length);
-      expect(optimizedMetadata).toEqual(originalMetadata);
-      const before = await io().writeJSON(doc);
-      const after = await io().writeJSON(output);
-      expect(after.json).toEqual(before.json);
-      assert.ok(before.resources["buffer.bin"]);
-      expect(after.resources["buffer.bin"]).toEqual(before.resources["buffer.bin"]);
-    }
+    // Both levels live in one file, so it is smaller than two authored copies of the same model.
+    const bytes = await readFile(path.join(dir, "models", "fir.glb"));
+    expect(bytes.length).toBeLessThan(glb.length * 2);
+    const output = await io().readBinary(bytes);
+    expect(
+      output
+        .getRoot()
+        .listScenes()
+        .map((scene) => scene.getName()),
+    ).toEqual(["fir", "fir_lod1"]);
+    // One texture set for both levels, entropy-optimized without changing a pixel or its metadata.
+    const images = output.getRoot().listTextures();
+    expect(images).toHaveLength(1);
+    const image = images[0]?.getImage();
+    assert.ok(image);
+    expect(image.length).toBeLessThan(jpeg.length);
+    expect(await sharp(image).ensureAlpha().raw().toBuffer()).toEqual(
+      await sharp(jpeg).ensureAlpha().raw().toBuffer(),
+    );
+    const { size: originalSize, ...originalMetadata } = await sharp(jpeg).metadata();
+    const { size: optimizedSize, ...optimizedMetadata } = await sharp(image).metadata();
+    expect(optimizedSize).toBeLessThan(originalSize ?? jpeg.length);
+    expect(optimizedMetadata).toEqual(originalMetadata);
     const combined = await io().readBinary(cooked.worldGlb);
     const combinedJpegs = combined
       .getRoot()
@@ -1184,8 +1187,10 @@ describe("cookTerrainWorld", () => {
       species: { fir: { glb, lods: [{ distance: 45, glb }] } },
       out: dir,
     });
-    for (const name of ["fir.glb", "fir_lod1.glb"])
-      expect(new Uint8Array(await readFile(path.join(dir, "models", name)))).toEqual(glb);
+    const streamed = await io().readBinary(await readFile(path.join(dir, "models", "fir.glb")));
+    const images = streamed.getRoot().listTextures();
+    expect(images).toHaveLength(1);
+    expect(images[0]?.getImage()).toEqual(new Uint8Array(jpeg));
   });
 
   it("fails with asset context for malformed streamed JPEGs before writing", async () => {
@@ -1210,7 +1215,7 @@ describe("cookTerrainWorld", () => {
     await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
   });
 
-  it("writes explicit LOD files and authored bounds without changing them", async () => {
+  it("writes one species file holding every level, with authored bounds and distances", async () => {
     const near = await simpleSpecies();
     const lod = await simpleSpecies();
     const result = await cookTerrainWorld({
@@ -1228,10 +1233,34 @@ describe("cookTerrainWorld", () => {
     expect(result.manifest.assets.fir).toMatchObject({
       glb: "models/fir.glb",
       bounds: { min: [-1, 0, -1], max: [1, 2, 1] },
-      lods: [{ distance: 45, glb: "models/fir_lod1.glb" }],
+      lods: [{ distance: 45, glb: "models/fir.glb", scene: "fir_lod1" }],
     });
-    expect(new Uint8Array(await readFile(path.join(dir, "models", "fir.glb")))).toEqual(near);
-    expect(new Uint8Array(await readFile(path.join(dir, "models", "fir_lod1.glb")))).toEqual(lod);
+    const streamed = await io().readBinary(await readFile(path.join(dir, "models", "fir.glb")));
+    expect(
+      streamed
+        .getRoot()
+        .listScenes()
+        .map((scene) => scene.getName()),
+    ).toEqual(["fir", "fir_lod1"]);
+    // Both scenes draw the authored triangle unchanged: the level is a scene, not a re-simplification.
+    for (const scene of streamed.getRoot().listScenes()) {
+      const positions: number[] = [];
+      for (const node of scene.listChildren()) {
+        const mesh = node.getMesh();
+        if (mesh === null) continue;
+        for (const primitive of mesh.listPrimitives())
+          positions.push(...((primitive.getAttribute("POSITION")?.getArray() ?? []) as number[]));
+      }
+      const authored = await io().readBinary(near);
+      const expected = authored
+        .getRoot()
+        .listMeshes()
+        .flatMap((mesh) => mesh.listPrimitives())
+        .flatMap((primitive) => [
+          ...((primitive.getAttribute("POSITION")?.getArray() ?? []) as number[]),
+        ]);
+      expect(positions).toEqual(expected);
+    }
   });
 
   it("fails before writing when a placement names a species that is not in the map", async () => {
@@ -1318,18 +1347,25 @@ describe("cookTerrainWorld", () => {
       out: dir,
     });
     const lods = result.manifest.assets.fir?.lods ?? [];
-    expect(lods[0]).toEqual({ distance: 45, glb: "models/fir_lod1.glb" });
+    expect(lods[0]).toEqual({ distance: 45, glb: "models/fir.glb", scene: "fir_lod1" });
     expect(lods.length).toBeGreaterThanOrEqual(3);
     const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-    const triangles = async (glb: string): Promise<number> => {
+    const triangles = async (level: { glb: string; scene?: string }): Promise<number> => {
       let total = 0;
-      const doc = await io.read(path.join(dir, glb));
-      for (const mesh of doc.getRoot().listMeshes())
+      const doc = await io.read(path.join(dir, level.glb));
+      const scene = doc
+        .getRoot()
+        .listScenes()
+        .find((entry) => entry.getName() === level.scene);
+      for (const node of scene?.listChildren() ?? []) {
+        const mesh = node.getMesh();
+        if (mesh === null) continue;
         for (const primitive of mesh.listPrimitives())
           total += (primitive.getIndices()?.getCount() ?? 0) / 3;
+      }
       return total;
     };
-    const counts = await Promise.all(lods.map((level) => triangles(level.glb)));
+    const counts = await Promise.all(lods.map((level) => triangles(level)));
     for (let level = 1; level < lods.length; level += 1) {
       expect(counts[level]).toBeLessThan(0.8 * (counts[level - 1] as number));
       expect(lods[level]?.distance).toBeGreaterThan(lods[level - 1]?.distance as number);
@@ -1353,11 +1389,25 @@ describe("cookTerrainWorld", () => {
     });
 
     expect(result.manifest.assets.fir?.lods).toHaveLength(1);
-    expect(result.manifest.assets.fir?.lods?.[0]?.glb).toBe("models/fir_lod1.glb");
-    // The written level is the sibling's bytes, not a simplification of the near model.
-    expect(new Uint8Array(await readFile(path.join(dir, "models", "fir_lod1.glb")))).toEqual(
-      new Uint8Array(mid.glb),
-    );
+    expect(result.manifest.assets.fir?.lods?.[0]).toEqual({
+      distance: 40,
+      glb: "models/fir.glb",
+      scene: "fir_lod1",
+    });
+    // The level is the sibling's two-mesh model and its texture, not a simplification of the near one.
+    const streamed = await io().readBinary(await readFile(path.join(dir, "models", "fir.glb")));
+    const lod1 = streamed
+      .getRoot()
+      .listScenes()
+      .find((scene) => scene.getName() === "fir_lod1");
+    assert.ok(lod1);
+    expect(lod1.listChildren().flatMap((node) => node.getMesh() ?? [])).toHaveLength(2);
+    expect(
+      streamed
+        .getRoot()
+        .listTextures()
+        .map((texture) => new Uint8Array(texture.getImage() ?? [])),
+    ).toContainEqual(new Uint8Array(mid.png));
   });
 
   it("propagates a real IO error from a sibling probe instead of treating it as absent", async () => {

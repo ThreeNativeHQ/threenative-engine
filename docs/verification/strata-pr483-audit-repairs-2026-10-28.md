@@ -13,7 +13,7 @@ against this head, not taken from the audit text.
 | Finding | Status | Evidence |
 | --- | --- | --- |
 | F01 asset pin vs source pack | ⚠️ pin reproducible, release missing | `kit-assets.spec.ts` green: pack 32,212,004 B, SHA `1bca8689…` equals `starter-assets.json`. The release `terrain-starter-assets-sha256-1bca8689…` is **not published** (`gh release list` has only `…db382c88…`). Publishing is a release action, not covered here. |
-| F02 streamed forest ≥ 25 MiB | ❌ reproduced, design decision needed | Reproduced: 40,378,000 B against 26,214,400 B. Census below: 15,090,205 B of it is byte-identical texture copies inside the per-LOD GLBs. Removing that duplication lands at 25,287,795 B, but no cheap fix respects the "every GLB is self-contained" contract (`starter-kit.spec.ts:241`). |
+| F02 streamed forest ≥ 25 MiB | ✅ fixed, headed playtest owed | One file per species holding every level as a named scene (`lods[].scene`): streamed **40,378,000 → 25,275,134 B**, 939,266 B under the unchanged cap. Level geometry, materials and switch distances are untouched; the 15,090,205 B of repeated textures are stored once. See "F02 — the layout that ships". |
 | F03 PNG map labelled JPEG | ✅ fixed | `authoredMime()` in `assets/src/world/terrain-world.ts` sniffs the bytes when no MIME is named, reusing `sniffImageMime` from `health.ts`; unknown bytes fail closed. New spec case red then green. **The live defect was worse than reported:** the mislabelled texture makes `dedup` throw `Corrupt JPG, exceeded buffer limits`, so a PNG cook failed outright. |
 | F04 generator version drift | ✅ fixed | `core/io.ts` generator `0.1.2` → `0.1.3`. `terrain-consumer.spec.ts` green. |
 | F05 landform double-failure rejection | ✅ fixed | `editor/selection.ts` `saveLayer` now wraps its recovery `snapshot()` like the placement path. New spec case reproduces the audit's case: `Unhandled Rejection: Error: socket closed` before, green after. |
@@ -23,6 +23,43 @@ against this head, not taken from the audit text.
 | V01 nearshore water discontinuity | ⏭️ not touched | A separate lane already has it in flight (`prd766-shore-breakers-underwater`, `core/src/water-surface.ts` + native reflector edits in the `pr483-recall` worktree). Not duplicated here. |
 | Forest performance attribution | ⏭️ not touched | Needs a quiet-GPU, persistent-trace browser run with a valid settled window; nothing in this session can produce an acceptable measurement. The audit's own numbers stay diagnostic. |
 | A01–A09 architecture | ⏭️ follow-ups | No code change. A01 (save owners), A02 (readiness in a 2,800-line scene), A04 (duplicated bake/export preparation) are real and each is a PR, not a repair in an audit pass. |
+
+### F02 — the layout that ships
+
+A cooked species writes **one** `models/<species>.glb`: the default scene draws level 0, and each
+upper level is its own named scene in the same file. The levels keep their own accessors, materials
+and distances and share one texture set, so nothing about what is drawn changes — only where it is
+stored. The manifest names it per level:
+
+```json
+"fir": {
+  "glb": "models/fir.glb",
+  "lods": [
+    { "distance": 45, "glb": "models/fir.glb", "scene": "fir_lod1" },
+    { "distance": 45, "glb": "models/fir.glb", "scene": "fir_lod2" }
+  ]
+}
+```
+
+`scene` is optional: a package that stores one level per file validates and loads exactly as
+before, which is what keeps existing cooked worlds working.
+
+Measured on the forest bake, before → after:
+
+| | before | after |
+| --- | --- | --- |
+| `models/` | 29,850,296 | 14,409,596 |
+| — fir | 12,814,712 | 7,388,736 |
+| — fir-c | 10,398,504 | 4,597,568 |
+| — boulder | 5,397,012 | 2,111,892 |
+| **streamed total** | **40,378,000** | **25,275,134** (cap 26,214,400) |
+| combined `world.glb` | 25,825,628 | 25,825,628 (unchanged) |
+
+Runtime changes: `loadModelWith` picks the named scene out of the one cached parse
+(`packages/core/src/world-cell-models.ts`), `assetLevels`/`IAssetState` carry the scene per level,
+`assetSignature` includes it so two levels of one file never alias, and the starter's LOD prewarm
+dresses each level's own scene (`packages/terrain/src/starter.ts`). The native host reads no
+streamed species file, and its `world.json` validator ignores the new optional field.
 
 ### Extra finding this pass
 
@@ -89,16 +126,22 @@ Run in `.worktrees/pr483-audit-fixes` on `bb8657245` + these changes.
 | `pnpm --filter @threenative/terrain typecheck` | ✅ 0 errors |
 | `vitest run packages/terrain/__tests__/{terrain-consumer,terrain-mcp,editor-mechanics}.spec.ts` | ✅ 79/79 |
 | `vitest run packages/assets/__tests__/terrain-world.spec.ts` | ✅ 36/36 |
-| `vitest run packages/terrain/__tests__/{kit-assets,starter-kit}.spec.ts` | ✅ kit-assets (F01 pin) and 30 of 31 starter tests; ❌ 1 failed: the F02 streamed budget |
-| Final sweep: 6 spec files | ✅ 145 passed, ❌ 1 failed (F02, above) |
+| `vitest run packages/core/__tests__/world-* packages/terrain/__tests__` | ✅ 1,228 passed / 4 skipped, ❌ 2 failed — both pre-existing, reproduced at this head with the change stashed |
+| `tsc --noEmit` for core, assets and terrain | ✅ 0 errors |
+| `vitest run packages/terrain/__tests__/{kit-assets,starter-kit}.spec.ts` | ✅ 31/31 — the F01 pin and the forest byte contract, with the forest `world.json` hash re-pinned |
+| Final sweep: 8 spec files (cook, kits, core manifest, world-cells) | ✅ 285/285 |
 | New cases red on the unfixed source | ✅ F03 (`Corrupt JPG`), F05 (`Unhandled Rejection: socket closed`), F06 (message lacks the instruction), F08 (no error thrown) |
 
-F02 stays red: `starter-kit.spec.ts` "bakes a world package …" fails on the streamed budget by
-14,163,600 B. The cap is unchanged, as the audit requires.
+F02's byte contract is green with the cap unchanged (`starter-kit.spec.ts`, forest bake).
 
 ## Open, in the repair order the audit set
 
-1. **Publish the pinned starter asset pack** through the existing release path; until then a
+1. **Run the headed forest playtest and a visual judge** for the one-file layout. The levels draw
+   the same geometry, materials and textures at the same distances, so the expected verdict is
+   NEUTRAL; that is a claim a still cannot prove, and the repo requires the judge for anything that
+   changes the path a shipped kit draws through. `pnpm --filter strata-terrain-preview
+   test:terrain:web` plus a matched BEFORE/AFTER pair is the recipe.
+2. **Publish the pinned starter asset pack** through the existing release path; until then a
    published `@threenative/terrain` cannot resolve its art, and `starterAssetsDir()` fails closed with
    `TN_TERRAIN_ASSETS_HTTP: 404 <pinned url>`. The bytes are reproducible:
 
@@ -108,5 +151,7 @@ F02 stays red: `starter-kit.spec.ts` "bakes a world package …" fails on the st
    gh release create terrain-starter-assets-sha256-1bca8689b8e872ba5db3c70697e10fa99917932f84cb682327dabaa7a2fd7fe4 \
      /tmp/terrain-starter-assets-0.1.1.tar.gz --title "Terrain starter asset revision 1bca8689"
    ```
-2. **Decide F02's representation** (option 1 above) and land it with web + native proof.
 3. Forest frame attribution and V01 stay with their own lanes.
+4. **F10 — two pre-existing reds at this head**, unrelated to this pass and reproduced with the pass
+   stashed: `world-cells-view-distance.spec.ts` ("moves the bodies with the follow point", 42 < 49
+   bodies) and `world-impostor-surface.spec.ts` ("shadow cutout uses the view sampled alpha").

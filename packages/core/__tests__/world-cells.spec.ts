@@ -37,6 +37,7 @@ vi.mock("../src/assets.js", async (importOriginal) => {
 
 import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
 import type { IRendererLike } from "../src/renderer.js";
+import { loadModelWith } from "../src/world-cell-models.js";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
 /**
@@ -2749,5 +2750,28 @@ describe("WorldCells", () => {
     expect(created).toContain("1:0");
     expect(disposed).toContain("0:0");
     world.dispose();
+  });
+});
+
+describe("loadModelWith", () => {
+  it("selects the named scene when one file carries every level", async () => {
+    const near = new Group();
+    near.name = "pine";
+    const far = new Group();
+    far.name = "pine_lod1";
+    const model = vi.fn(async () => ({ scene: near, scenes: [near, far] }));
+    const loader = {
+      model,
+      resolve: vi.fn(async () => []),
+    } as unknown as IAssetLoader;
+    // A package that stores one level per file names no scene and gets the default one.
+    expect(await loadModelWith(loader, "models/pine.glb")).toBe(near);
+    // A cooked species stores every level in one file; each level selects its own scene.
+    expect(await loadModelWith(loader, "models/pine.glb", "pine_lod1")).toBe(far);
+    await expect(loadModelWith(loader, "models/pine.glb", "pine_lod9")).rejects.toThrow(
+      /'models\/pine\.glb' has no scene 'pine_lod9'/u,
+    );
+    // Both levels come from the one cached parse: the file is fetched and decoded once.
+    expect(model).toHaveBeenCalledTimes(3);
   });
 });

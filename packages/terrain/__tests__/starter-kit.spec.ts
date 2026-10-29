@@ -18,7 +18,7 @@ const GOLDEN_HASHES: Record<string, Record<string, string>> = {
     "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
     "placements.bin": "c5e1222c0b827544560d7ad76624db7293eb92f5f29337225a9a0f407707567d",
     "splat.rgba": "0ba7d09157e6f4d4cb894a35152be0c05098417b88d68175cfbe6b4ff7c41364",
-    "world.json": "4dd42cf8f6dacf9d0306c16d8f877f349f64d7bcef5ca945dda28c577b5d6d71",
+    "world.json": "50cdf9757554372259cfe20b00ad65faea71c07a9900cef0589ad249f1c84d16",
   },
   alpine: {
     "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
@@ -162,7 +162,7 @@ describe("forest starter kit", () => {
       "0ba7d09157e6f4d4cb894a35152be0c05098417b88d68175cfbe6b4ff7c41364",
     );
     expect(files.get("world.json")).toBe(
-      "4dd42cf8f6dacf9d0306c16d8f877f349f64d7bcef5ca945dda28c577b5d6d71",
+      "50cdf9757554372259cfe20b00ad65faea71c07a9900cef0589ad249f1c84d16",
     );
 
     // One recipe and seed, one package: a second bake is byte-identical.
