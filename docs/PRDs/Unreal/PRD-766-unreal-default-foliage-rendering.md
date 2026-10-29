@@ -56,6 +56,14 @@ Risks: a prepass doubles vertex work for dense instancing; the ring change must 
 horizon (visual judge per phase). Each default carries a named override on the same object and the
 override is reported (`/AGENTS.md` conventions rule).
 
+## Decisions
+
+- **2026-10-29, coordinator for owner: phase 2 deferred (option 2).** The masked depth prepass needs the
+  read-only base-pass pair — a prepass plus `depthWrite: false` on every masked material, which is an
+  engine-wide material policy, not a core-local switch, because `depthWrite` is WebGPU pipeline state
+  and the alpha test is a `discard` (evidence under phase 2). It moves to its own PRD if it is ever
+  taken. Revisit only if phase 3 leaves the walk over 33 ms.
+
 ## Acceptance Criteria
 
 - AC-1 [local]: an asset whose `maxDistance` ends inside the near ring builds no `tn-far:` mesh. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: **PASS** 49/49 on 2026-10-29 (`builds no far aggregate for an asset whose authored cull ends inside the near ring`, red first: `expected [ 'tn-far:ground_cover', …(2) ] to not include 'tn-far:ground_cover'`).
@@ -109,7 +117,7 @@ as stale-dist.
 - [x] Phase 1 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: **NEUTRAL** on both after runs; the judge found no thinning and no hard ring edge, and the BEFORE runs differ from each other as much as from AFTER. Captures: `artifacts/prd766/before-pose-run{1,2}.png`, `artifacts/prd766/after-pose-run{1,2}.png`.
 
 #### Phase 2: Masked depth prepass on desktop
-**Status:** BLOCKED — decision needed, nothing built (see the exploration below)
+**Status:** DEFERRED — option 2 of the decision recorded under `## Decisions`; nothing built (see the exploration below)
 **Files:** core renderer main-pass owner (found in the phase's exploration step), one spec.
 **Implementation:** depth-only pass for opaque and alpha-tested meshes, then the main pass reads depth.
 Default on for desktop, off for mobile, named override reported.
@@ -161,11 +169,60 @@ by default. **Decision needed (owner):**
 - [ ] Phase 2 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: blocked with the phase.
 
 #### Phase 3: Far trees as HLOD rings
-**Status:** NOT STARTED
+**Status:** BLOCKED — nothing built; two findings below decide the shape (owner pick needed)
 **Files:** `packages/core/src/world-cell-impostors.ts`, `packages/core/src/render/world-impostor-surface.ts`, spec.
 **Implementation:** first profile the far impostor fragment with a Chrome DevTools trace. Then draw the
 cooked far mesh LOD out to the first ring and impostors only past it.
 **Verification:** AC-3, AC-4, AC-5.
-- [ ] AC-3: far trees past the first ring draw from their ring representation, with no whole-map impostor draw for trees. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: pending.
-- [ ] AC-4: Wildwood walking pose presented p95 at or under 33 ms on the RTX 2080, 2 runs, with no console errors in a 10 s walk. proof: Chrome DevTools MCP walk on `http://127.0.0.1:5174/?world=forest&stage=wildwood` — Evidence: pending.
-- [ ] AC-5: visual judge NEUTRAL or IMPROVEMENT at the walking pose and the floor view (V), 2 runs per arm. proof: fresh judge subagent on before/after captures — Evidence: pending.
+
+##### Profile (2026-10-29): the far half is unmeasurable on a shared GPU, and this stage has no cooked far mesh
+
+Protocol: `artifacts/prd766/measure.mjs`, the Wildwood walking pose, `?tnAdaptiveLod=0`, per-second
+buckets so a contended second cannot pose as the arm. Two runs, four summary arms each:
+
+| Arm | run A median / best second | run B median / best second |
+| --- | --- | --- |
+| pose (first arm) | 86.63 / 62.39 | 59.71 / 55.14 |
+| far meshes unparented (8 draws) | 41.71 / 27.69 | 30.35 / 29.06 |
+| every instanced mesh unparented (1,377) | 45.39 / 39.76 | 30.85 / 30.30 |
+| every mesh unparented (653) | 52.14 / – (one resolved frame) | 28.30 / – |
+| pose again (control) | 52.14 | 28.30 |
+
+- **No arm separates from the control.** The stress-loop lane shares this RTX 2080; the same arm swings
+  27-72 ms between runs, and `renderer.gpuFrameSample()` resolves one frame every N, so a low-fps arm
+  reports `n=1` rather than a stale number. Unparenting the far meshes does drop the main pass 41 → 33
+  draws — that structural fact holds — but no millisecond here is attributable. AC-4 needs a quiet slot
+  agreed through `~/.cache/tmp-tn/gpu-measure.owner` before anything is claimed.
+- **Wildwood has nothing to draw as "the cooked far mesh LOD":** 0 of its 1,009 cells carry a `proxy`
+  (the cooked cell HLOD `IWorldCellProxy` that `world-cells` already knows how to draw) and none carry
+  chunks. Cooking them is exporter work (`packages/terrain` plus a re-bake of the staged arm), not a
+  runtime change. The assets' own chains are short too — pine LODs end at 46 m, after which the baked
+  terminal impostor draws — so a "cooked LOD out to the first ring" is a merged, opaque, cell-scoped
+  mesh that does not exist for this stage.
+- **The two tiers are split by cell residency, not by distance.** `#addPlacements`
+  (`packages/core/src/world-cells.ts:2356`) filters a resident run by `cullDistance(maxDistance)` —
+  787.5 m for a pine authored at 900 — while the far aggregate covers the same 320-787 m band for runs
+  no cell owns. A tree at 500 m draws the *near* impostor quad when its cell is resident and the *far*
+  aggregate's quad when it is not: same atlas, same geometry, two draw paths, and a handoff
+  (`disableFar`/`restoreFar`) that zeroes whole runs instead of gating their distance. That split is
+  the real deviation from UE's rings (`CellSize(25600)`, `LoadingRange(51200)`, each level doubling —
+  UE 5.8.3: `Engine/Source/Runtime/Engine/Private/WorldPartition/HLOD/HLODLayer.cpp:36-39`).
+
+**Owner pick (one is needed before code):**
+
+1. Cook cell proxies for Wildwood (exporter PRD): merged opaque cell meshes to the first ring, the
+   impostor aggregate past it. This is the AC-3 reading that also wins frame time — one opaque merged
+   cell writes depth for hundreds of trees in one draw instead of thousands of alpha-tested quads — and
+   it needs the art pipeline, not just core. ← recommended if AC-4 must be reached.
+2. Ring the existing representations by *distance* instead of residency: cap the near batches at the
+   near ring's radius (`min(cullDistance(maxDistance), ring * cellSize)`) and give every far record a
+   per-instance near gate, so a resident run draws its quad only past the ring and the far aggregate
+   draws it before. The picture is identical (same quad, same atlas) and the handoff stops being
+   all-or-nothing; it costs a `tnFarNear` attribute and a rewrite of the handoff contract in
+   `world-impostors.spec.ts`, and its win is small because both paths draw the same quad.
+3. Close AC-3 as not applicable to this stage (the impostor aggregate *is* the far representation) and
+   chase AC-4 elsewhere.
+
+- [ ] AC-3: far trees past the first ring draw from their ring representation, with no whole-map impostor draw for trees. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: blocked, no cooked far mesh exists for this stage.
+- [ ] AC-4: Wildwood walking pose presented p95 at or under 33 ms on the RTX 2080, 2 runs, with no console errors in a 10 s walk. proof: Chrome DevTools MCP walk on `http://127.0.0.1:5174/?world=forest&stage=wildwood` — Evidence: unmeasurable on a shared GPU; every arm on the settled phase-1 build lands 28-31 ms GPU and presented p95 33.4 ms, with 0 console errors in a 10 s walk.
+- [ ] AC-5: visual judge NEUTRAL or IMPROVEMENT at the walking pose and the floor view (V), 2 runs per arm. proof: fresh judge subagent on before/after captures — Evidence: pending the shape above.
