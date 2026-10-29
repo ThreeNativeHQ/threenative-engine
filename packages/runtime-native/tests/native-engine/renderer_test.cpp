@@ -3326,7 +3326,7 @@ void emissiveValidation() { emissivePass(false); }
 // no draw. Each target still holds its own value at the lit plane's centre. An alpha-tested plane writes its targets
 // where its fragment survives the test and leaves them clear where it is cut, as three's MRT and Unreal's base pass do,
 // whether the graph reads every target or the normal alone.
-void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false) {
+void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t samples = 1, bool alphaHash = false, bool normalNode = false) {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
     CHECK(initialized);
@@ -3357,6 +3357,8 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
     item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
     item.material = &material;
     item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    // PRD-762: a normalNode (a constant +Y in view space) is what the draw writes, not its geometric +Z.
+    if (normalNode) item.nodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(0)});
     for (int frame = 0; frame < 3; ++frame)
         renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
     std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
@@ -3392,7 +3394,7 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
         return same;
     };
     // The plane faces the camera; its alpha packs metalness level 7 and roughness 0.5: 2 * 7 + 0.25 + 0.25.
-    CHECK(near(centre(&Renderer::readNormalPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0, 0, 1, 14.5f}));
+    CHECK(near(centre(&Renderer::readNormalPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0, normalNode ? 1.f : 0.f, normalNode ? 0.f : 1.f, 14.5f}));
     if (normalOnly) return;
     CHECK(near(centre(&Renderer::readAlbedoPixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{0.25f, 0.5f, 1, 1}));
     CHECK(near(centre(&Renderer::readEmissivePixels), cut ? std::array<float, 4>{0, 0, 0, 0} : std::array<float, 4>{4, 2, 0, 1}));
@@ -3464,10 +3466,15 @@ void auxTargetsAlphaTested() {
     auxTargets(false, 0.5f, 0.4f, 4);
     auxTargets(true, 0, 0, 4, true);  // an alpha-hashed draw at opacity 0 hashes every pixel away, at 4x too
 }
+// PRD-762: a normalNode draw writes its shading normal to the post target, normal-only and merged, and the frame survives.
+void auxTargetsNormalNode() {
+    auxTargets(true, 0, 1, 1, false, true);
+    auxTargets(false, 0, 1, 1, false, true);
+}
 
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

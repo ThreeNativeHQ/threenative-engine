@@ -337,6 +337,24 @@ void albedoOutput() {
             }
         }
     }
+    // A normalNode's shading normal is a further output of the lit fragment (the post normal target, PRD-762): it
+    // exists for Standard and Physical, and writing it keeps the fragment's layout.
+    for (int kind = 3; kind < 5; ++kind) {
+        VertexVariant lit;
+        lit.nodes.normalNode = graph::normalize(graph::add(graph::varying("normalViewGeometry", Type::vec(3)),
+                                                         graph::vec3({graph::float_(0.3), graph::float_(0), graph::float_(0)})));
+        const auto build = [&] { return kind == 3 ? buildStandard({}, lit) : buildPhysical({}, lit); };
+        auto targets = build();
+        CHECK(targets.normal != kInvalid);
+        auto& f = targets.fragment;
+        f.output("aux1", f.construct(Type::vec(4), {targets.normal, f.constant(0.f)}));
+        const auto litFragment = buildStage(build().fragment, 1), auxFragment = buildStage(f, 1);
+        CHECK(litFragment.wgsl.ok() && auxFragment.wgsl.ok());
+        CHECK(auxFragment.uniforms.size() == litFragment.uniforms.size());
+        CHECK(auxFragment.bindings.size() == litFragment.bindings.size());
+        CHECK(auxFragment.uniformBlockSize == litFragment.uniformBlockSize);
+        CHECK(auxFragment.wgsl.code.find("@location(1) o_aux1") != std::string::npos);
+    }
 }
 
 void emissiveOutput() { albedoOutput(); }

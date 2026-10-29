@@ -99,10 +99,12 @@ try {
   const box = new Mesh(new BoxGeometry(1.5, 1.5, 1.5), glow);
   box.rotation.set(0.4, 0.6, 0);
   // A dark floor behind it gives GTAO depth and normals to read; it stays far below `nonblank`.
-  const floor = new Mesh(
-    new PlaneGeometry(40, 40),
-    new MeshStandardNodeMaterial({ color: 0x000000 }),
-  );
+  const floorMaterial = new MeshStandardNodeMaterial({ color: 0x000000 });
+  // `?nodenormal=1` gives the floor a normalNode (PRD-762): GTAO's normal target holds its shading normal, and the
+  // frame is not lost to `TN_POST_NORMAL_UNSUPPORTED`. The node is the geometry normal, so the picture is unchanged.
+  if (new URLSearchParams(location.search).get("nodenormal") === "1")
+    floorMaterial.normalNode = normalView;
+  const floor = new Mesh(new PlaneGeometry(40, 40), floorMaterial);
   floor.position.z = -3;
   scene.add(box, floor);
 

@@ -1638,6 +1638,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
     out.albedo = diffuseColor;
     out.emissive = emissive;
+    out.normal = n;
     f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash)));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);

@@ -2336,8 +2336,16 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
 // so the integer half is the metalness level, the fraction is roughness, and 0 (nothing written) is no surface at all.
 // Half-float spacing stays well under the 0.25 offset. The material's own `metalness` and `roughness` uniforms are
 // read, so a fragment that declares only these two finds them at the lit block's offsets 0 and 4.
-static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSide, bool surface) {
+//
+// `shading` is the fragment's own view-space normal (a normalNode, already faced): the draw writes that instead.
+static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSide, bool surface,
+                                   shader::ExprId shading = shader::kInvalid) {
     auto normal = f.varying("normalView", shader::Type::vec(3));
+    if (shading != shader::kInvalid) {
+        flat = false;
+        doubleSide = false;
+        normal = shading;
+    }
     if (flat) {
         const auto position = f.varying("positionView", shader::Type::vec(3));
         normal = f.call("cross", {f.call("dFdx", {position}), f.call("dFdy", {position})});
@@ -2378,7 +2386,11 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
         const bool surface = (program.kind == MaterialKind::Standard || program.kind == MaterialKind::Physical) &&
                              !variant.nodes.metalnessNode && !variant.nodes.roughnessNode;
         std::vector<shader::ExprId> outputs;
-        if (mask & kAuxNormal) outputs.push_back(normalTarget(f, variant.flatShading, variant.doubleSide, surface));
+        // A normalNode draw writes the normal it shades with, as three's MRT normalView does; a program that does not
+        // read the node (Lambert, Phong) has none, and writes the geometric one it shades with.
+        if (mask & kAuxNormal)
+            outputs.push_back(normalTarget(f, variant.flatShading, variant.doubleSide, surface,
+                                           variant.nodes.normalNode ? source.normal : shader::kInvalid));
         if (mask & kAuxMaterial)
             outputs.push_back(source.materialProperties != shader::kInvalid ? source.materialProperties :
                 f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
@@ -3839,11 +3851,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
-            if (normalPass && item.nodes.normalNode)
-                throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
+            // A normalNode draw takes the merged fragment, which evaluates the node with the program's own layout.
+            const bool nodeNormal = normalPass && item.nodes.normalNode;
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
             const shader::StageModule* fragment =
-                auxMask == kAuxNormal && !cut ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+                auxMask == kAuxNormal && !cut && !nodeNormal ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+            if (!fragment && nodeNormal && auxMask == kAuxNormal && !cut) {
+                // The builder could not re-run on this layout: the draw writes its geometric normal, named once a frame.
+                const std::string note = "TN_POST_NORMAL_GEOMETRIC: a material normalNode reaches the post normal target as its geometric normal";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                fragment = normalFragment(draw);
+            }
             if (!fragment) {
                 const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
