@@ -2635,6 +2635,9 @@ describe("WorldCells", () => {
     // 2 m data under 64 m tiles holds 32 segments; a 129-sample tile would interpolate 16x the work.
     expect(manifest.terrain.spacing).toBe(2);
     expect(terrainOf(world).tileResolution).toBe(manifest.cellSize / manifest.terrain.spacing + 1);
+    // The fine default's farthest level was already 2 m (129 samples at a quarter): a coarser level
+    // over this data would shrink far silhouettes, so one level at the data's spacing remains.
+    expect(terrainOf(world).lodLevelCount).toBe(1);
     world.dispose();
   });
 
