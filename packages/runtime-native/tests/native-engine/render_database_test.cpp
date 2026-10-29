@@ -6669,7 +6669,133 @@ void boneReachBoundsHoldPosedVertices() {
     CHECK(!rig->boneReachBounds(box));
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+void virtualShadowBoundsCache() {
+    auto geometry = makeBoxGeometry(2, 2, 2);
+    DrawItem item;
+    item.positions = geometry->getAttribute("position")->store.get();
+    Matrix4 model;
+    item.matrixWorld = model.elements;
+    DrawCache cache;
+    const auto sample = [&] { return cache.virtualShadowBounds(item); };
+    CHECK(sample().first.min.equals(Vector3(-1, -1, -1)));
+    CHECK(std::abs(sample().second - std::sqrt(12.0)) < 1e-12);
+    const auto built = cache.shadowBoundsBuilds;
+    sample();
+    CHECK(cache.shadowBoundsBuilds == built);
+    model.makeTranslation(3, 0, 0); item.matrixWorld = model.elements;
+    CHECK(sample().first.max.x == 4);
+    const float changed[3] = {20, 2, 3};
+    CHECK(item.positions->write(0, changed, sizeof(changed)) == BufferError::None);
+    CHECK(sample().first.max.x == 23);
+    item.positions->needsUpdate();
+    const auto beforeVersion = cache.shadowBoundsBuilds;
+    sample();
+    CHECK(cache.shadowBoundsBuilds == beforeVersion + 1);
+    CHECK(item.positions->resize(3));
+    CHECK(sample().first.min.equals(Vector3(23, 2, 3)));
+    CHECK(sample().first.max.equals(Vector3(23, 2, 3)));
+    geometry = makeBoxGeometry(2, 2, 2);
+    item.positions = geometry->getAttribute("position")->store.get();
+    auto matrices = std::make_shared<BufferStore>(Scalar::F32, 32);
+    std::array<float, 32> values{};
+    for (int i = 0; i < 2; ++i) for (int j = 0; j < 16; ++j) values[i * 16 + j] = model.elements[j];
+    values[28] = 10;
+    CHECK(matrices->write(0, values.data(), sizeof(values)) == BufferError::None);
+    item.instanceMatrices = matrices.get(); item.instanceCount = 2;
+    CHECK(sample().first.max.x == 14);
+    item.instanceCount = 1;
+    CHECK(sample().first.max.x == 7);
+    values[12] = 4;
+    CHECK(matrices->write(0, values.data(), 16 * sizeof(float)) == BufferError::None);
+    CHECK(sample().first.max.x == 8);
+    const auto beforeInstanceVersion = cache.shadowBoundsBuilds;
+    matrices->needsUpdate(); sample();
+    CHECK(cache.shadowBoundsBuilds == beforeInstanceVersion + 1);
+    const auto settled = cache.shadowBoundsBuilds;
+    sample();
+    CHECK(cache.shadowBoundsBuilds == settled);
+    std::vector<float> bones;
+    item.boneMatrices = &bones;
+    const auto deforming = cache.shadowBoundsBuilds;
+    sample(); sample();
+    CHECK(cache.shadowBoundsBuilds == deforming + 2);
+    item.boneMatrices = nullptr;
+    sample();
+    const auto staticAgain = cache.shadowBoundsBuilds;
+    sample();
+    CHECK(cache.shadowBoundsBuilds == staticAgain);
+    item.morphGeometry = geometry.get();
+    sample();
+    const auto morphing = cache.shadowBoundsBuilds;
+    sample();
+    CHECK(cache.shadowBoundsBuilds == morphing + 1);
+    item.morphGeometry = nullptr; item.instanceMatrices = nullptr; item.instanceCount = 1;
+    item.matrixWorld = Matrix4().elements;
+    alignas(BufferStore) std::byte storage[sizeof(BufferStore)];
+    const auto fresh = [&] {
+        return std::shared_ptr<BufferStore>(new (storage) BufferStore(Scalar::F32, 3),
+                                           [](BufferStore* store) { store->~BufferStore(); });
+    };
+    auto original = fresh();
+    const float oldPoint[3] = {1, 2, 3};
+    CHECK(original->write(0, oldPoint, sizeof(oldPoint)) == BufferError::None);
+    item.positions = original.get();
+    CHECK(sample().first.max.z == 3);
+    original.reset();
+    auto replacement = fresh();
+    const float newPoint[3] = {9, 8, 7};
+    CHECK(replacement->write(0, newPoint, sizeof(newPoint)) == BufferError::None);
+    item.positions = replacement.get();
+    CHECK(sample().first.max.z == 7);  // same address, versions, writes and matrix; a new owner
+}
+
+void virtualShadowInstancePages() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    const auto draws = [&](bool instanced, uint32_t count, double offset) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(64, 64);
+        Scene scene;
+        PerspectiveCamera camera(50, 1, 0.1, 200);
+        camera.position.set(0, 6, 10); camera.lookAt(0, 0, 0);
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 8, 2); sun.setCastShadow(true);
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {32}; atlas.mapSize = 256; atlas.pageTexels = 64;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        scene.add(sun);
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        std::shared_ptr<Mesh> caster;
+        if (instanced) {
+            auto mesh = std::make_shared<InstancedMesh>(makeBoxGeometry(2, 2, 2), material, count);
+            for (uint32_t i = 0; i < count; ++i) {
+                Matrix4 matrix; matrix.makeTranslation(i * 10, 0, 0);
+                mesh->setMatrixAt(i, matrix);
+            }
+            caster = mesh;
+        } else {
+            caster = std::make_shared<Mesh>(makeBoxGeometry(count == 1 ? 2 : 12, 2, 2), material);
+        }
+        caster->position.set(offset + (!instanced && count == 2 ? 5 : 0), 1, 0);
+        caster->setCastShadow(true); caster->setReceiveShadow(true);
+        scene.add(*caster);
+        RenderDatabase database; database.shadowMapEnabled = true; database.batching = false;
+        database.render(renderer, scene, camera);
+        const auto* plan = renderer.virtualShadowAtlas(0);
+        CHECK(plan != nullptr);
+        return std::pair(renderer.lastFrame().shadowDraws, plan ? plan->pageCount() : 0);
+    };
+    for (uint32_t count : {1u, 2u}) for (double offset : {0.0, 18.0}) {
+        const auto regular = draws(false, count, offset), instanced = draws(true, count, offset);
+        std::printf("instance page cull: %u instances, offset %.0f, ordinary %u, instanced %u, pages %d\n",
+                    count, offset, regular.first, instanced.first, regular.second);
+        CHECK(regular.first > 0 && regular.first < uint32_t(regular.second));
+        CHECK(instanced.first == regular.first);
+    }
+}
+
+TN_TEST_MAIN({"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

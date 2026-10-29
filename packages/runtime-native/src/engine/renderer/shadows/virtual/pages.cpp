@@ -142,9 +142,8 @@ std::optional<PhysicalPageAllocation> PhysicalPagePool::allocate(const std::stri
     if (freeSlots_.empty()) {
         // The least recently used unpinned, unprotected page; a slot tie breaks toward the lower
         // slot, exactly as the reference's `(lastUsedFrame, slot)` sort does.
-        const std::vector<PhysicalPageEntry> all = entries();
         const PhysicalPageEntry* candidate = nullptr;
-        for (const PhysicalPageEntry& entry : all) {
+        for (const auto& [key, entry] : resident_) {
             if (entry.pinned || protectedKeys.count(entry.key) != 0)
                 continue;
             if (candidate == nullptr || entry.lastUsedFrame < candidate->lastUsedFrame ||

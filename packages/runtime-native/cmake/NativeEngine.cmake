@@ -283,6 +283,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     set_tests_properties(native_engine_update_scaling PROPERTIES LABELS "tn-perf" TIMEOUT 300)
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
+        native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
+        native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_gpu_joint_production=gpu_joint_production
         native_engine_unchanged_frame_storage=unchanged_frame_storage
         native_engine_uniform_batch_preparation=uniform_batch_preparation

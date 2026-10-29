@@ -569,6 +569,58 @@ struct Renderer::FrameJob {
     std::vector<std::vector<uint64_t>> shadowKeys;
 };
 
+const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
+    const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints && !item.positionNode && !item.nodes.positionNode;
+    const BufferStore* instances = item.instanceMatrices;
+    const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
+                             instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
+                             instances ? instances->writes() : 0, item.instanceCount, item.matrixWorld};
+    // A released store's address can be reused with the same revisions.
+    if (cacheable && shadowBoundsKey == key && !shadowPositionsOwner.expired() &&
+        (!instances || !shadowInstancesOwner.expired())) return shadowBounds;
+    ++shadowBoundsBuilds;
+    Box3 bounds;
+    // A rig's box comes from its bones (O(bones)); skinning each vertex on the CPU here cost the
+    // stress lab's 120-rig crowd about 760 ms a frame.
+    const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
+        ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
+    if (rig && rig->boneReachBounds(bounds)) {
+    } else if (item.positions->scalar() == Scalar::F32) {
+        for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
+            float p[3]; item.positions->read(idx * 4, p, sizeof(p));
+            Vector3 vertex(p[0], p[1], p[2]);
+            if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
+                const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
+                if (mesh) mesh->getVertexPosition(idx / 3, vertex);
+            }
+            bounds.expandByPoint(vertex);
+        }
+    }
+    Matrix4 model; model.elements = item.matrixWorld;
+    const double localDiameter = bounds.min.distanceTo(bounds.max);
+    double diameter = localDiameter * model.getMaxScaleOnAxis();
+    if (item.instanceMatrices) {
+        Box3 instances;
+        diameter = 0;
+        const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
+        for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
+            Matrix4 transform;
+            for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
+            Box3 box = bounds; box.applyMatrix4(transform);
+            instances.unionWith(box);
+            transform.premultiply(model);
+            diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
+        }
+        bounds = instances;
+    }
+    bounds.applyMatrix4(model);
+    shadowBounds = {bounds, diameter};
+    shadowBoundsKey = cacheable ? std::optional<ShadowBoundsKey>(key) : std::nullopt;
+    shadowPositionsOwner = item.positions->weak_from_this();
+    shadowInstancesOwner = instances ? instances->weak_from_this() : std::weak_ptr<const BufferStore>{};
+    return shadowBounds;
+}
+
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
     : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(std::make_shared<PipelineCache>(device)), layouts_(std::make_shared<PipelineLayoutCache>(device)), retired_(TextureId::watch()) {
     geometry_->gpu.shareSubmissions(gpu_);
@@ -2775,6 +2827,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
+    DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
     std::map<std::size_t, std::map<uint64_t, Box3>> casterBounds;
     std::map<std::size_t, std::map<uint64_t, double>> casterDiameters;
@@ -2791,41 +2844,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.castShadow && shadow.atlas.options().autoDepth &&
                 (item.positionNode || item.nodes.positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
-            Box3 bounds;
-            // A rig's box comes from its bones (O(bones)); skinning each vertex on the CPU here cost the
-            // stress lab's 120-rig crowd about 760 ms a frame.
-            const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
-                ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
-            if (rig && rig->boneReachBounds(bounds)) {
-            } else if (item.positions->scalar() == Scalar::F32) {
-                for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
-                    float p[3]; item.positions->read(idx * 4, p, sizeof(p));
-                    Vector3 vertex(p[0], p[1], p[2]);
-                    if ((item.boneMatrices || item.morphGeometry) && item.shadowObject) {
-                        const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
-                        if (mesh) mesh->getVertexPosition(idx / 3, vertex);
-                    }
-                    bounds.expandByPoint(vertex);
-                }
-            }
-            Matrix4 model; model.elements = item.matrixWorld;
-            const double localDiameter = bounds.min.distanceTo(bounds.max);
-            double diameter = localDiameter * model.getMaxScaleOnAxis();
-            if (item.instanceMatrices) {
-                Box3 instances;
-                diameter = 0;
-                const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
-                for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
-                    Matrix4 transform;
-                    for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
-                    Box3 box = bounds; box.applyMatrix4(transform);
-                    instances.unionWith(box);
-                    transform.premultiply(model);
-                    diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
-                }
-                bounds = instances;
-            }
-            bounds.applyMatrix4(model);
+            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
             if (item.castShadow) { lightCasterBounds[item.key] = bounds; casterDiameters[i][item.key] = diameter; }
             depthCasters.push_back(bounds);
             if (item.receiveShadow) receivers.push_back(bounds);
@@ -3567,7 +3586,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
             if (page && !page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
-                !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
+                !item.gpuJoints && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
             // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
             if (variant.alphaHash && (item.nodes.colorNode || item.nodes.opacityNode || variant.vertexColors == 4))

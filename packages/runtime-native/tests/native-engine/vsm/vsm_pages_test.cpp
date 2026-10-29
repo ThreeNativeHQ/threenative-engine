@@ -12,13 +12,28 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <iterator>
+#include <new>
 #include <set>
 #include <string>
 #include <vector>
 
 using namespace tn::engine;
 using namespace tn::engine::shadows;
+
+namespace {
+bool trackAllocation = false;
+std::size_t largestAllocation = 0;
+}
+
+void* operator new(std::size_t bytes) {
+    if (trackAllocation && bytes > largestAllocation) largestAllocation = bytes;
+    if (void* memory = std::malloc(bytes ? bytes : 1)) return memory;
+    throw std::bad_alloc();
+}
+void operator delete(void* memory) noexcept { std::free(memory); }
+void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
 
 namespace {
 
@@ -232,6 +247,25 @@ void vsmInvalidation() {
     CHECK(moves > 0 && mismatched == 0);
 }
 
+void evictionAllocation() {
+    std::string error;
+    constexpr int capacity = 128;
+    auto pool = PhysicalPagePool::create(capacity, error);
+    CHECK(pool.has_value());
+    if (!pool) return;
+    for (int i = 0; i < capacity; ++i) CHECK(pool->allocate(std::to_string(i), 1).has_value());
+    CHECK(pool->allocate("0", 1, true).has_value());
+    const std::set<std::string> protectedKeys{"1"};
+    largestAllocation = 0;
+    trackAllocation = true;
+    const auto allocation = pool->allocate("replacement", 2, false, protectedKeys);
+    trackAllocation = false;
+    CHECK(allocation && allocation->hasEvicted && allocation->evictedKey == "2" && allocation->entry.slot == 2);
+    std::printf("eviction largest allocation: %zu bytes, pool snapshot: %zu bytes\n",
+                largestAllocation, capacity * sizeof(PhysicalPageEntry));
+    CHECK(largestAllocation < capacity * sizeof(PhysicalPageEntry));
+}
+
 } // namespace
 
-TN_TEST_MAIN({"pages", vsmPages}, {"invalidation", vsmInvalidation})
+TN_TEST_MAIN({"pages", vsmPages}, {"invalidation", vsmInvalidation}, {"eviction_allocation", evictionAllocation})

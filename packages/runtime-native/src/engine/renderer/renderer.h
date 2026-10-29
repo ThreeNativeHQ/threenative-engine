@@ -82,6 +82,7 @@ using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
  * fields the renderer compares are the same inputs three keys its program cache on. The handle fields
  * are the renderer's opaque types (Program*, WGPURenderPipeline, WGPUBindGroup).
  */
+struct DrawItem;
 struct DrawCache {
     MaterialKind kind = MaterialKind::Standard;
     shader::VertexVariant variant;
@@ -95,6 +96,13 @@ struct DrawCache {
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
+    std::pair<Box3, double> shadowBounds;
+    using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
+                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix>;
+    std::optional<ShadowBoundsKey> shadowBoundsKey;
+    std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
+    uint64_t shadowBoundsBuilds = 0;
+    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item);
 };
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
