@@ -6,7 +6,7 @@ import {
   isMobile,
   lodPixelScale,
 } from "@threenative/core";
-import { Object3D, type OrthographicCamera, type Texture, type Vector2 } from "three";
+import { Object3D, type OrthographicCamera, type Texture, type Vector2, Vector3 } from "three";
 import { onSceneIntent } from "../orders.js";
 import { createArmy } from "../render/army.js";
 import {
@@ -142,6 +142,12 @@ export class Play extends Scene<GameState, undefined> {
   #mode = "";
   #pointerSeen = false;
   #accumulator = 0;
+  /** The engine tick the rules clock is fed in, and the camera position before the latest one. */
+  #tick = 0;
+  #eyeFrom = new Vector3();
+  #eye = new Vector3();
+  #drawnAt = -1;
+  #stopDraw: (() => void) | undefined;
   #minimapDirty = true;
   #publishedStep = -1;
   #notice = "";
@@ -240,11 +246,19 @@ export class Play extends Scene<GameState, undefined> {
       );
     }
 
+    // The army is drawn once per rendered frame, after the frame's last tick, between the rules'
+    // last two steps: the rules move units 20 times a second and the screen shows 60.
+    this.#eyeFrom.copy(camera.position);
+    this.#stopDraw = ctx.beforeRender(() => this.#draw(ctx, sim, camera));
+
     return (frameCtx, dt) => {
       loading.update();
+      this.#tick = dt;
+      this.#eyeFrom.copy(camera.position);
       this.#readInput(frameCtx, dt);
       this.#accumulator = Math.min(this.#accumulator + dt * this.#speed, MAX_CATCH_UP);
       while (this.#accumulator >= STEP) {
+        this.#army?.step(sim);
         sim.update(STEP);
         this.#accumulator -= STEP;
       }
@@ -252,14 +266,6 @@ export class Play extends Scene<GameState, undefined> {
       this.#prune(sim);
       applyRtsCamera(camera, view, frameCtx.viewport.size, dt);
       sun.follow(view.target.x, view.target.z, camera);
-      this.#army?.sync(
-        sim,
-        this.#selected,
-        sim.time,
-        dt,
-        camera,
-        lodPixelScale(camera, frameCtx.viewport.size.height, 1),
-      );
       if (this.#minimapDirty) {
         this.#minimapDirty = false;
         this.#terrain?.updateFog(sim);
@@ -270,7 +276,36 @@ export class Play extends Scene<GameState, undefined> {
     };
   }
 
+  /**
+   * Write the army for the frame about to be drawn. The engine draws the camera between its last two
+   * ticks (`ctx.alpha`), so the units are drawn at the same moment on the rules' clock, and the bars
+   * are snapped against the camera position the frame really uses. A paused game draws the latest
+   * state, as the engine does.
+   */
+  #draw(ctx: GameCtx, sim: Game, camera: OrthographicCamera): void {
+    const now = ctx.frameTime;
+    const dt = this.#drawnAt < 0 ? 0 : Math.min(0.1, Math.max(0, (now - this.#drawnAt) / 1000));
+    this.#drawnAt = now;
+    const alpha = ctx.state.getState().paused ? 1 : ctx.alpha;
+    const ahead = this.#accumulator + alpha * this.#tick * this.#speed;
+    const blend = Math.min(1, ahead / STEP);
+    this.#eye.lerpVectors(this.#eyeFrom, camera.position, alpha);
+    this.#army?.sync(
+      sim,
+      this.#selected,
+      sim.time - STEP + blend * STEP,
+      dt,
+      camera,
+      lodPixelScale(camera, ctx.viewport.size.height, 1),
+      blend,
+      this.#eye,
+    );
+  }
+
   override exit(ctx: GameCtx): void {
+    this.#stopDraw?.();
+    this.#stopDraw = undefined;
+    this.#drawnAt = -1;
     this.#materialLighting?.dispose();
     this.#materialLighting = undefined;
     this.#post?.dispose();

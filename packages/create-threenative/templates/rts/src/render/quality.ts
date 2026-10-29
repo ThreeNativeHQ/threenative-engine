@@ -82,7 +82,9 @@ const shared: IWorldEnvironmentOptions = {
   exposure: 1.02,
   // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
   unrealBloomEnabled: true,
-  vignetteAmount: 0.4,
+  // AstraCraft draws no vignette: one darkened the fog at the frame's edges to an olive grey where
+  // the reference reads slate blue (PRD-765, headed Brave beside it).
+  vignetteAmount: 0,
 };
 
 /**

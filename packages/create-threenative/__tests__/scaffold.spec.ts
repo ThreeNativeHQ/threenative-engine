@@ -344,7 +344,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
   // Then merged develop d37156a87: render imports from #589 and lodPixelScale for army.sync.
-  rts: "ddf3e617373bb8df271892f39c697aeb1820428e703f6c0ce15d581c12df9930",
+  // Re-pinned 2026-10-28 (PRD-765): units drawn between rules steps, AstraCraft's thin pixel-snapped bars,
+  // a blurred slate fog of war, sRGB-decoded environment colours and no vignette.
+  rts: "d378161304e5d5262ee28295153528bdb5b5c903328eedf4401bd0a5d7c47d4f",
   runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "254c4b4b535d5d89b9640c27fa829c2392e7a68ecda5fb58596835452ec7d265",

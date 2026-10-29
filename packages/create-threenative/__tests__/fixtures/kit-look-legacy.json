@@ -248,7 +248,7 @@
       "exposure": 1.02,
       "tonemapMode": "aces",
       "unrealBloomEnabled": true,
-      "vignetteAmount": 0.4,
+      "vignetteAmount": 0,
       "renderChainTier": "low"
     },
     "medium": {
@@ -257,7 +257,7 @@
       "exposure": 1.02,
       "tonemapMode": "aces",
       "unrealBloomEnabled": true,
-      "vignetteAmount": 0.4,
+      "vignetteAmount": 0,
       "temporalAA": false,
       "gtaoEnabled": true,
       "gtaoRadius": 0.35,
@@ -272,7 +272,7 @@
       "exposure": 1.02,
       "tonemapMode": "aces",
       "unrealBloomEnabled": true,
-      "vignetteAmount": 0.4,
+      "vignetteAmount": 0,
       "temporalAA": false,
       "gtaoEnabled": true,
       "gtaoRadius": 0.35,

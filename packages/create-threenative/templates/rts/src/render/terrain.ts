@@ -5,6 +5,7 @@
 // *looks* like is `materials.ts`; this file is the ground itself, its water, and the one texture
 // the fog of war lives in.
 import {
+  Color,
   DataTexture,
   InstancedMesh,
   LinearFilter,
@@ -16,7 +17,7 @@ import {
 import type { Game } from "../sim/game.js";
 import { MAP_CELL, POOLS, WORLD, terrainHeight } from "../sim/terrain.js";
 import { createTerrainMaterial, createWaterMaterial, waterDisc } from "./materials.js";
-import { legacyColor, palette } from "./palette.js";
+import { palette } from "./palette.js";
 
 /**
  * Quads across the map: one every 2 m, which is exactly the simulation's navigation cell, so the
@@ -38,6 +39,15 @@ const SEGMENTS = 112;
 const APRON = 800;
 const APRON_Y = -1.75;
 
+/**
+ * AstraCraft blurs its fog sheet by 5 px at 4 px a cell, a Gaussian of 1.25 cells: the sheet reaches
+ * into the edge of what a unit sees and the lit ground fades out over about 5 m. Unblurred, the lit
+ * sand ran full-bright up to the fog's edge, and the frame read as a ring of yellow (owner,
+ * 2026-10-28). Weights for distances 0..3 cells, summing to one over -3..3.
+ */
+const FOG_BLUR = [0, 1, 2, 3].map((d) => Math.exp(-(d * d) / (2 * 1.25 * 1.25)));
+const FOG_BLUR_SUM = FOG_BLUR.reduce((sum, w, d) => sum + (d === 0 ? w : 2 * w), 0);
+
 export interface ITerrain {
   /** Rewrite the fog texture from the simulation's vision arrays. Cheap; not every frame. */
   readonly updateFog: (game: Game) => void;
@@ -57,6 +67,8 @@ export function createTerrain(): ITerrain {
   const cells = WORLD / MAP_CELL;
   const fogBytes = new Uint8Array(cells * cells * 4);
   const fog = new DataTexture(fogBytes, cells, cells);
+  const sheet = new Float32Array(cells * cells);
+  const pass = new Float32Array(cells * cells);
   fog.minFilter = LinearFilter;
   fog.magFilter = LinearFilter;
   fog.needsUpdate = true;
@@ -75,7 +87,8 @@ export function createTerrain(): ITerrain {
   // covered, and the battlefield reads as a plateau over a plain instead of a floating sheet.
   const plain = new Mesh(
     new PlaneGeometry(APRON, APRON).rotateX(-Math.PI / 2),
-    new MeshStandardMaterial({ color: legacyColor(palette.cliff), roughness: 1 }),
+    // AstraCraft's underlay is an `envStandard`, which decodes its hex from sRGB.
+    new MeshStandardMaterial({ color: new Color(palette.cliff), roughness: 1 }),
   );
   plain.position.y = APRON_Y;
   root.add(plain);
@@ -97,8 +110,13 @@ export function createTerrain(): ITerrain {
     root,
     updateFog: (game) => {
       const size = game.gridSize;
+      for (let cell = 0; cell < size * size; cell += 1)
+        sheet[cell] = game.visible[cell] === 1 ? 255 : game.explored[cell] === 1 ? 194 : 105;
+      // Separable: along x into `pass`, then along z back into `sheet`, clamped at the map's rim.
+      blur(sheet, pass, size, 1);
+      blur(pass, sheet, size, size);
       for (let cell = 0; cell < size * size; cell += 1) {
-        const value = game.visible[cell] === 1 ? 255 : game.explored[cell] === 1 ? 194 : 105;
+        const value = Math.round(sheet[cell] as number);
         fogBytes[cell * 4] = value;
         fogBytes[cell * 4 + 1] = value;
         fogBytes[cell * 4 + 2] = value;
@@ -107,4 +125,17 @@ export function createTerrain(): ITerrain {
       fog.needsUpdate = true;
     },
   };
+}
+
+/** One pass of the fog blur along a row (`stride` 1) or a column (`stride` = `size`). */
+function blur(from: Float32Array, to: Float32Array, size: number, stride: number): void {
+  for (let cell = 0; cell < size * size; cell += 1) {
+    const at = stride === 1 ? cell % size : Math.floor(cell / size);
+    let sum = 0;
+    for (let d = -3; d <= 3; d += 1) {
+      const step = Math.max(-at, Math.min(size - 1 - at, d));
+      sum += (from[cell + step * stride] as number) * (FOG_BLUR[Math.abs(d)] as number);
+    }
+    to[cell] = sum / FOG_BLUR_SUM;
+  }
 }

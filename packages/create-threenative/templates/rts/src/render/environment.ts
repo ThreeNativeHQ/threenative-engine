@@ -16,6 +16,7 @@ import {
   DoubleSide,
   Float32BufferAttribute,
   InstancedMesh,
+  LinearSRGBColorSpace,
   type Material,
   Mesh,
   MeshBasicMaterial,
@@ -37,12 +38,17 @@ import { seeded } from "../sim/types.js";
 import { ROAD_PATHS, padAt, sedimentTexture, segmentDistance } from "./ground.js";
 import { legacyColor } from "./palette.js";
 
+/**
+ * AstraCraft's `envStandard`: unlike its other colours, it decodes the hex from sRGB
+ * (`convertSRGBToLinear`), which is what `new Color(hex)` does today. Read as legacy linear, the
+ * mesas came out 0.17 lighter and paler than the reference (PRD-765, headed Brave beside it).
+ */
 const standard = (
   color: number | Color,
   extra: ConstructorParameters<typeof MeshStandardMaterial>[0] = {},
 ) =>
   new MeshStandardMaterial({
-    color: typeof color === "number" ? legacyColor(color) : color,
+    color: typeof color === "number" ? new Color(color) : color,
     roughness: 0.87,
     metalness: 0.08,
     ...extra,
@@ -175,7 +181,10 @@ export function createEnvironment(game: Game): IEnvironment {
   }
   // Three tints of olive, one draw each: per-instance colour is not on every engine path.
   const shades = [0.5, 0.55, 0.6].map((lightness) => {
-    const tint = new Color().setHSL(0.19, 0.25, lightness).multiply(legacyColor(0x8f9764));
+    // The per-tuft HSL is AstraCraft's legacy linear; the base colour is its decoded `envStandard`.
+    const tint = new Color()
+      .setHSL(0.19, 0.25, lightness, LinearSRGBColorSpace)
+      .multiply(new Color(0x8f9764));
     const mesh = new InstancedMesh(
       tuftGeometry(),
       standard(tint, { side: DoubleSide, roughness: 1 }),
