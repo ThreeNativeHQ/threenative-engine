@@ -320,6 +320,8 @@ target_link_libraries(tn-native-engine-tsl-material-accessors-test PRIVATE tn_en
 tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame_gate_test.cpp
     native_engine_frame_gate_debug_reasons=debug_reasons_follow_gate
     native_engine_frame_gate_late_signal=late_signal_draws_every_frame
+    native_engine_frame_gate_steady_late_signal=steady_late_signal_draws_every_frame
+    native_engine_frame_gate_growing_backlog=growing_backlog_is_declined
     native_engine_frame_gate_gpu_behind=gpu_behind_is_declined
     native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
@@ -404,6 +406,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_tsl_ssr_parameters=tsl_ssr_parameters
     native_engine_abi_tsl_texture_store=tsl_texture_store
     native_engine_abi_tsl_mat4_element=tsl_mat4_element
+    native_engine_abi_binding_fn=binding_fn
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
     native_engine_abi_tsl_uniform_value=tsl_uniform_value

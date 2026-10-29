@@ -71,12 +71,20 @@ const legacyDefaults: IWorldEnvironmentOptions = {
 };
 
 const shared: IWorldEnvironmentOptions = {
-  // Bloom cost: unmeasured here; PRD-636 records it in ms.
-  bloomEnabled: true,
-  exposure: 0.62,
+  // Override: AstraCraft draws no bloom; a bloom with no threshold lifted the sand 0.1 lighter
+  // than the reference (PRD-765, measured against its frame).
+  bloomEnabled: false,
+  // Override: the AstraCraft reference look (owner, 2026-10-28, PRD-765) is ACES at a fixed
+  // 1.02 exposure under a hemisphere, a warm key and a cool fill; a metered exposure brightened
+  // the concrete aprons to white.
+  tonemapMode: "aces",
+  autoExposureEnabled: false,
+  exposure: 1.02,
   // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
   unrealBloomEnabled: true,
-  vignetteAmount: 0.4,
+  // AstraCraft draws no vignette: one darkened the fog at the frame's edges to an olive grey where
+  // the reference reads slate blue (PRD-765, headed Brave beside it).
+  vignetteAmount: 0,
 };
 
 /**
@@ -90,8 +98,8 @@ const high: IWorldEnvironmentOptions = {
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,
-  // Measures against `exposure` while auto exposure is off. Cost: unmeasured.
-  localExposureEnabled: true,
+  // Override: AstraCraft has no local exposure; it lifted the shaded sand off the reference.
+  localExposureEnabled: false,
 };
 
 /** The rung in between: the same occlusion at half the directions. Saving unmeasured. */

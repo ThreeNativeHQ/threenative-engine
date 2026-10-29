@@ -48,11 +48,11 @@ describe("native engine game spans", () => {
     );
     expect(webHost).toMatch(/desc\.requiredFeatureCount = features\.size\(\);/u);
     expect(webHost).toMatch(/desc\.requiredFeatures = features\.data\(\);/u);
-    expect(webHost).toMatch(/renderer->setGpuTimer\(true\)/u);
+    expect(webHost).toMatch(/renderer->setGpuTimer\(timestampTracking\)/u);
     expect(webHost).toMatch(/case 7:\s*return renderer->lastGpuMs\(\);/u);
     expect(webHost).toMatch(/case 8:\s*return double\(renderer->gpuSamples\(\)\);/u);
     expect(webHost).toMatch(/case 9:\s*return double\(renderer->gpuSourceFrame\(\)\);/u);
-    expect(webHost).toMatch(/case 10:\s*return renderer->gpuTimerEnabled\(\) \? 1 : 0;/u);
+    expect(webHost).toMatch(/case 10:\s*return renderer->gpuTimerAvailable\(\) \? 1 : 0;/u);
     expect(webHost).toMatch(/renderer->setGpuTimerSourceFrame\(sourceFrame\)/u);
     expect(webHost).toMatch(/int tnw_web_render\([^)]*uint32_t sourceFrame\)/u);
   });
