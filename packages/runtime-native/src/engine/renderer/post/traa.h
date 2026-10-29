@@ -56,6 +56,16 @@ public:
                  WGPUTexture depth, WGPUTextureView depthView, WGPUTexture output = nullptr,
                  WGPUTextureView outputView = nullptr);
     bool needsSeed() const { return !history_.historyValid(0); }
+    // Texture copies the last `resolve` recorded, by kind (PRD-755). The scene depth is the caller's texture and the
+    // resolve only reads it, so its history is the one copy a steady frame keeps.
+    struct Copies {
+        uint32_t color = 0, depth = 0, mask = 0;
+        uint32_t total() const { return color + depth + mask; }
+    };
+    Copies copiesLastFrame() const { return copiesLastFrame_; }
+    // Fixture only: keep copying the resolved frame into the history instead of swapping the slots, the path before
+    // PRD-755. One test renders both ways and reads back both, so the swap is proven bit-identical.
+    void setHistoryCopyForTest(bool copy) { copyHistoryForTest_ = copy; }
     // What the host reads for `debug().temporal`: the frames begun, the sub-pixel offset the last one jittered by, and
     // whether the next resolve has history to read.
     struct Status {
@@ -71,7 +81,7 @@ public:
                 velocity_ ? wgpuTextureGetWidth(velocity_) : 0, velocity_ ? wgpuTextureGetHeight(velocity_) : 0,
                 resolve_ ? wgpuTextureGetWidth(resolve_) : 0, resolve_ ? wgpuTextureGetHeight(resolve_) : 0,
                 historyDepth_ ? wgpuTextureGetWidth(historyDepth_) : 0, historyDepth_ ? wgpuTextureGetHeight(historyDepth_) : 0,
-                historyColor_ ? wgpuTextureGetWidth(historyColor_) : 0, historyColor_ ? wgpuTextureGetHeight(historyColor_) : 0,
+                historyColor_[0] ? wgpuTextureGetWidth(historyColor_[0]) : 0, historyColor_[0] ? wgpuTextureGetHeight(historyColor_[0]) : 0,
                 jitterLength_};
     }
     // One resolve in `kMeasureEvery` counts the pixels whose history it discarded (stats[0]) and pulled into the colour
@@ -89,8 +99,9 @@ public:
         return Measure{measuredFrame_, outputWidth_ * outputHeight_};
     }
     const graph::RenderGraph& renderGraph() const { return graph_; }
-    // Fixture diagnostics only. No allocation/readback unless explicitly enabled by the driver.
-    void enableDebugDump();
+    // Fixture diagnostics only. No allocation/readback unless explicitly enabled by the driver. `first` and `last` are
+    // the frames it stages; the default is the window the fixture's capture reads, a test may widen it.
+    void enableDebugDump(uint64_t first = 18, uint64_t last = 23);
     struct DebugDump {
         struct Texture {
             WGPUBuffer buffer;
@@ -102,6 +113,7 @@ public:
         std::vector<Texture> pending;
         std::string metadata;
         uint64_t frame = 0;
+        uint64_t first = 18, last = 23;
         uint32_t width = 0, height = 0;
         ~DebugDump() { for (const auto& texture : pending) wgpuBufferRelease(texture.buffer); }
     };
@@ -122,11 +134,16 @@ private:
     std::array<double, 2> jitter_{};
     std::array<double, 2> previousJitter_{};
     uint32_t depthGeneration_ = 0;
-    WGPUTexture historyColor_ = nullptr, historyDepth_ = nullptr, resolve_ = nullptr, velocity_ = nullptr;
-    WGPUTextureView historyView_ = nullptr, historyDepthView_ = nullptr, resolveView_ = nullptr, velocityView_ = nullptr;
-    WGPUTexture dynamic_ = nullptr, historyDynamic_ = nullptr;
-    WGPUTextureView dynamicView_ = nullptr, historyDynamicView_ = nullptr;
+    WGPUTexture historyDepth_ = nullptr, resolve_ = nullptr, velocity_ = nullptr;
+    WGPUTextureView historyDepthView_ = nullptr, resolveView_ = nullptr, velocityView_ = nullptr;
+    // The colour and the motion mask the resolve reads and writes: it reads one slot and writes the other, then they
+    // swap, so the frame it just resolved is the next frame's history with no copy (PRD-755).
+    WGPUTexture historyColor_[2] = {}, dynamic_[2] = {};
+    WGPUTextureView historyView_[2] = {}, dynamicView_[2] = {};
+    uint32_t historySlot_ = 0;
+    bool copyHistoryForTest_ = false;
     WGPUBuffer uniforms_ = nullptr;
+    Copies copiesLastFrame_{};
     WGPUBuffer ownStats_ = nullptr, stats_ = nullptr;
     bool measured_ = false;
     uint64_t measuredFrame_ = 0;

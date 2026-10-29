@@ -1355,6 +1355,154 @@ void traaLateResolve() {
     CHECK(late > 40);
 }
 
+// The resolve keeps the frame it just resolved as the history the next one reads: the colour and the motion mask swap
+// between two targets instead of being copied (PRD-755). The scene depth is the caller's texture, so its one copy stays.
+void traaHistorySwap() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto device = context.getDevice();
+    const auto queue = context.getQueue();
+    constexpr uint32_t inputWidth = 16, inputHeight = 12, outputWidth = 24, outputHeight = 18;
+    WGPUTextureDescriptor descriptor{};
+    descriptor.dimension = WGPUTextureDimension_2D;
+    descriptor.size = {inputWidth, inputHeight, 1};
+    descriptor.mipLevelCount = descriptor.sampleCount = 1;
+    descriptor.format = WGPUTextureFormat_RGBA16Float;
+    descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc;
+    const auto beauty = wgpuDeviceCreateTexture(device, &descriptor);
+    const auto beautyView = wgpuTextureCreateView(beauty, nullptr);
+    descriptor.format = WGPUTextureFormat_Depth32Float;
+    descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_RenderAttachment;
+    const auto depth = wgpuDeviceCreateTexture(device, &descriptor);
+    const auto depthView = wgpuTextureCreateView(depth, nullptr);
+    descriptor.size = {outputWidth, outputHeight, 1};
+    descriptor.format = WGPUTextureFormat_RGBA16Float;
+    descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_RenderAttachment;
+    const auto target = wgpuDeviceCreateTexture(device, &descriptor);
+    const auto targetView = wgpuTextureCreateView(target, nullptr);
+    TraaPass temporal(device, queue, TraaOptions{});
+    temporal.resize(inputWidth, inputHeight, outputWidth, outputHeight);
+    const TraaPass::Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const TraaPass::Matrix projection{1.2, 0, 0, 0, 0, 1.6, 0, 0, 0, 0, -1.002, -1, 0, 0, -0.2002, 0};
+    // One frame with the pass's own result target, or the one a post graph hands it.
+    const auto resolve = [&](WGPUTexture output, WGPUTextureView outputView) {
+        temporal.begin(projection, identity, identity);
+        WGPUCommandEncoderDescriptor encoderDesc{};
+        auto encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
+        temporal.resolve(encoder, beauty, beautyView, depth, depthView, output, outputView);
+        const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
+        wgpuQueueSubmit(queue, 1, &commands);
+        wgpuCommandBufferRelease(commands); wgpuCommandEncoderRelease(encoder);
+        return temporal.copiesLastFrame();
+    };
+    std::array<TraaPass::Copies, 4> own{}, caller{};
+    for (auto& copies : own) copies = resolve(nullptr, nullptr);
+    for (auto& copies : caller) copies = resolve(target, targetView);
+    std::fprintf(stderr, "TN_TRAA_HISTORY_COPIES steady=%u (colour %u, depth %u, mask %u), into a caller's target=%u "
+                 "(colour %u, depth %u, mask %u)\n", own[3].total(), own[3].color, own[3].depth, own[3].mask,
+                 caller[3].total(), caller[3].color, caller[3].depth, caller[3].mask);
+    // The first frame also seeds the depth history from the scene depth no earlier frame sampled.
+    CHECK(own[0].depth == 2);
+    // A steady frame copies the scene depth alone: the resolve writes the colour and the mask the next frame reads.
+    for (const auto& copies : {own[3], caller[3]}) {
+        CHECK(copies.color == 0);
+        CHECK(copies.mask == 0);
+        CHECK(copies.depth == 1);
+    }
+    wgpuTextureViewRelease(targetView); wgpuTextureRelease(target);
+    wgpuTextureViewRelease(depthView); wgpuTextureRelease(depth);
+    wgpuTextureViewRelease(beautyView); wgpuTextureRelease(beauty);
+}
+
+// The swap must not change a pixel of what the resolve produces: 60 frames of a moving scene, once through the copy the
+// pass made before PRD-755 and once through the swapped history, read back byte for byte.
+void traaHistorySwapIsBitIdentical() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto device = context.getDevice();
+    const auto queue = context.getQueue();
+    constexpr uint32_t inputWidth = 16, inputHeight = 12, outputWidth = 24, outputHeight = 18;
+    constexpr int frames = 60;
+    WGPUTextureDescriptor descriptor{};
+    descriptor.dimension = WGPUTextureDimension_2D;
+    descriptor.size = {inputWidth, inputHeight, 1};
+    descriptor.mipLevelCount = descriptor.sampleCount = 1;
+    descriptor.format = WGPUTextureFormat_RGBA16Float;
+    descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst | WGPUTextureUsage_CopySrc;
+    const auto beauty = wgpuDeviceCreateTexture(device, &descriptor);
+    const auto beautyView = wgpuTextureCreateView(beauty, nullptr);
+    descriptor.format = WGPUTextureFormat_Depth32Float;
+    descriptor.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_RenderAttachment;
+    const auto depth = wgpuDeviceCreateTexture(device, &descriptor);
+    const auto depthView = wgpuTextureCreateView(depth, nullptr);
+    const TraaPass::Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const TraaPass::Matrix projection{1.2, 0, 0, 0, 0, 1.6, 0, 0, 0, 0, -1.002, -1, 0, 0, -0.2002, 0};
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("traa-history-swap-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    // A camera sliding over a ramp that scrolls with it. The pass's velocity target stays zero, so every pixel takes the
+    // dynamic clamp and the mask the resolve writes feeds the next frame: a wrong slot shows in the pixels.
+    const auto arm = [&](bool copyHistory) {
+        const auto folder = directory / (copyHistory ? "copy" : "swap");
+        TraaPass temporal(device, queue, TraaOptions{});
+        temporal.resize(inputWidth, inputHeight, outputWidth, outputHeight);
+        temporal.setHistoryCopyForTest(copyHistory);
+        temporal.enableDebugDump(0, frames - 1);
+        for (int frame = 0; frame < frames; ++frame) {
+            std::vector<uint16_t> pixels(size_t{inputWidth} * inputHeight * 4);
+            for (uint32_t y = 0; y < inputHeight; ++y) for (uint32_t x = 0; x < inputWidth; ++x) {
+                const auto step = (x + y + uint32_t(frame)) % 4;
+                const auto texel = (size_t(y) * inputWidth + x) * 4;
+                pixels[texel] = uint16_t(0x3400 * step);
+                pixels[texel + 1] = uint16_t(0x3c00 - 0x1000 * step);
+                pixels[texel + 2] = uint16_t(0x2000 + 0x0800 * step);
+                pixels[texel + 3] = 0x3c00;  // opaque half white
+            }
+            WGPUImageCopyTexture_Compat destination{};
+            destination.texture = beauty;
+            destination.aspect = WGPUTextureAspect_All;
+            WGPUTextureDataLayout_Compat layout{};
+            layout.bytesPerRow = inputWidth * 8; layout.rowsPerImage = inputHeight;
+            const WGPUExtent3D extent{inputWidth, inputHeight, 1};
+            wgpuQueueWriteTexture(queue, &destination, pixels.data(), pixels.size() * 2, &layout, &extent);
+            auto view = identity;
+            view[12] = 0.03 * frame;
+            temporal.begin(projection, identity, view);
+            WGPUCommandEncoderDescriptor encoderDesc{};
+            auto encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
+            temporal.resolve(encoder, beauty, beautyView, depth, depthView);
+            const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
+            wgpuQueueSubmit(queue, 1, &commands);
+            wgpuCommandBufferRelease(commands); wgpuCommandEncoderRelease(encoder);
+            tn::fixture::finishTraaDump(temporal, context.getInstance(), folder);
+        }
+        return folder;
+    };
+    const auto swapped = arm(false), copied = arm(true);
+    const auto bytes = [](const std::filesystem::path& file) {
+        std::ifstream in(file, std::ios::binary);
+        return std::vector<char>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    };
+    size_t compared = 0, differing = 0;
+    for (int frame = 0; frame < frames; ++frame) for (const char* name : {"resolved", "history"}) {
+        const auto file = std::string("frame-") + std::to_string(frame) + "-" + name + ".bin";
+        const auto read = bytes(swapped / file), copiedBytes = bytes(copied / file);
+        CHECK(!read.empty() && read.size() == copiedBytes.size());
+        if (read.empty() || read.size() != copiedBytes.size()) continue;
+        if (read != copiedBytes) ++differing;
+        ++compared;
+    }
+    std::fprintf(stderr, "TN_TRAA_HISTORY_SWAP %zu frames compared, %zu differing\n", compared, differing);
+    CHECK(compared == size_t(frames) * 2);
+    CHECK(differing == 0);
+    std::filesystem::remove_all(directory);
+    wgpuTextureViewRelease(depthView); wgpuTextureRelease(depth);
+    wgpuTextureViewRelease(beautyView); wgpuTextureRelease(beauty);
+}
+
 // Temporal AA replaces multisampling, as one method does in Unreal. The velocity pass tests depth Equal against the colour
 // pass, and 4x multisampling hands it one resolved sample of depth: Equal fails on every sloped surface. The engine draws
 // single-sampled while a traa() effect is in the graph, says so once, and returns to the requested count when it leaves.
@@ -3335,6 +3483,8 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_replaces_multisampling", traaReplacesMultisampling},
              {"traa_converges_edges", traaConvergesEdges},
              {"traa_late_resolve", traaLateResolve},
+             {"traa_history_swap", traaHistorySwap},
+             {"traa_history_swap_is_bit_identical", traaHistorySwapIsBitIdentical},
              {"sibling_reads_the_live_scene", siblingReadsTheLiveScene},
              {"traa_ghosting", traaGhosting},
              {"traa_camera_pan", traaCameraPan},
