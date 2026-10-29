@@ -1,132 +1,211 @@
 import { useUiIntent } from "@threenative/ui";
+import { useState } from "react";
 import { type BuildingType, type EntityType, TYPES } from "../sim/types.js";
 import { useUiStateShown } from "./Hud.js";
+import { Icon } from "./icons.js";
 
-/** Every structure the rules table knows how to place, in the table's own order. */
-const STRUCTURES = (Object.keys(TYPES) as EntityType[]).filter(
-  (type) => TYPES[type].building === true,
-) as BuildingType[];
+/** The construct deck, in AstraCraft's order. */
+const STRUCTURES: readonly BuildingType[] = [
+  "barracks",
+  "factory",
+  "relay",
+  "turret",
+  "refinery",
+  "core",
+  "starport",
+  "bunker",
+  "antiair",
+];
+
+type ICommand = {
+  readonly cost?: EntityType;
+  readonly icon: string;
+  readonly intent: string;
+  /** The bound key in `src/game.ts`, shown in the corner; empty when no key does this. */
+  readonly key?: string;
+  readonly label: string;
+  readonly payload?: string;
+  readonly testid: string;
+};
 
 /**
- * The command panel: orders for what is selected, and the build menu.
+ * The command card: COMMAND orders for what is selected, and the CONSTRUCT deck.
  *
- * The panel never decides anything. Each button names an intent — `order`, `place`, `train` — and
+ * The panel never decides anything. Each tile names an intent — `order`, `place`, `train` — and
  * the scene decides what it means, which is why the same rules table the pathfinder reads is also
- * the one that prices these buttons: a structure the player cannot afford is greyed out here
- * because `canAfford` is the same arithmetic the simulation charges them with.
+ * the one that prices these tiles: a tile the player cannot afford is dimmed here because
+ * `canAfford` is the same arithmetic the simulation charges them with. A structure whose
+ * prerequisite is missing stays lit: the scene refuses it with a reason, which says more than a
+ * dimmed tile.
  */
 export function Commands() {
-  const state = useUiStateShown((s) => [s.primaryType, s.mode, s.ore, s.gas, s.selection]);
+  const state = useUiStateShown((s) => [
+    s.primaryType,
+    s.primaryTeam,
+    s.primaryBuilt,
+    s.mode,
+    s.ore,
+    s.gas,
+    s.selection,
+    s.selectionTypes,
+  ]);
   const send = useUiIntent();
+  // The deck remembers which selection opened it, so a new selection opens on its orders.
+  const [deck, setDeck] = useState("");
+  const selectionKey = `${state?.primaryType}|${state?.selection}`;
+  const construct = deck === selectionKey;
+  const setConstruct = (open: boolean) => setDeck(open ? selectionKey : "");
   if (state === undefined) return null;
   const card = state.primaryType === "" ? undefined : TYPES[state.primaryType as EntityType];
-  const producer = card?.building === true ? (state.primaryType as EntityType) : undefined;
   const placing = state.mode.startsWith("build:") ? state.mode.slice(6) : "";
+  const base: ICommand[] = [
+    { icon: "build", intent: "construct", label: "Construct", testid: "cmd-construct" },
+    { icon: "army", intent: "army", key: "F2", label: "All army", testid: "cmd-army" },
+  ];
+  let commands: ICommand[];
+  if (construct)
+    commands = STRUCTURES.map((type) => ({
+      cost: type,
+      icon: type,
+      intent: "place",
+      label: TYPES[type].name,
+      payload: type,
+      testid: `build-${type}`,
+    }));
+  else if (card?.building === true && state.primaryTeam === 0) {
+    if (!state.primaryBuilt)
+      commands = [
+        { icon: "stop", intent: "cancelBuild", label: "Cancel · 75%", testid: "cancel-build" },
+        ...base,
+      ];
+    else
+      commands = [
+        ...(card.trains ?? []).map((type) => ({
+          cost: type,
+          icon: type,
+          intent: "train",
+          label: TYPES[type].name,
+          payload: type,
+          testid: `train-${type}`,
+        })),
+        ...(card.trains === undefined
+          ? []
+          : [
+              {
+                icon: "rally",
+                intent: "order",
+                label: "Set rally",
+                payload: "rally",
+                testid: "order-rally",
+              },
+            ]),
+        ...base,
+      ];
+  } else {
+    commands = [
+      {
+        icon: "attack",
+        intent: "order",
+        key: "A",
+        label: "Attack",
+        payload: "attack",
+        testid: "order-attack",
+      },
+      {
+        icon: "move",
+        intent: "order",
+        key: "M",
+        label: "Move",
+        payload: "move",
+        testid: "order-move",
+      },
+      { icon: "hold", intent: "hold", key: "H", label: "Hold", testid: "order-hold" },
+      { icon: "stop", intent: "stop", key: "X", label: "Stop", testid: "order-stop" },
+      ...base,
+    ];
+    if (state.selectionTypes.includes("ranger"))
+      commands.push({
+        icon: "garrison",
+        intent: "order",
+        label: "Garrison",
+        payload: "garrison",
+        testid: "order-garrison",
+      });
+    if (state.selectionTypes.includes("worker"))
+      commands.push({
+        icon: "build",
+        intent: "order",
+        label: "Repair",
+        payload: "repair",
+        testid: "order-repair",
+      });
+    if (commands.length > 6 && commands.length < 9)
+      commands.push({ icon: "rally", intent: "retreat", label: "Retreat", testid: "cmd-retreat" });
+  }
 
   return (
-    <section className="pointer-events-none flex max-w-80 flex-col gap-2">
-      {producer === undefined ? null : (
-        <div className="flex flex-wrap justify-end gap-1">
-          {(card?.trains ?? []).map((type) => {
-            const cost = TYPES[type];
-            const afford = state.ore >= cost.ore && state.gas >= cost.gas;
-            return (
-              <Button
-                afford={afford}
-                key={type}
-                label={cost.name}
-                onClick={() => send("train", type)}
-                testid={`train-${type}`}
-              />
-            );
-          })}
-        </div>
-      )}
-      <div className="flex flex-wrap justify-end gap-1">
-        {state.selection === 0 ? null : (
-          <>
-            <Button
-              label="attack-move"
-              onClick={() => send("order", "attack")}
-              testid="order-attack"
-            />
-            <Button label="move" onClick={() => send("order", "move")} testid="order-move" />
-            <Button
-              label="garrison"
-              onClick={() => send("order", "garrison")}
-              testid="order-garrison"
-            />
-            <Button label="repair" onClick={() => send("order", "repair")} testid="order-repair" />
-            <Button label="retreat" onClick={() => send("retreat")} testid="order-retreat" />
-          </>
-        )}
-        <Button label="all army" onClick={() => send("army")} testid="order-army" />
-        <Button label="base" onClick={() => send("base")} testid="order-base" />
+    <section className="command-panel panel" data-tn-interactive>
+      <div className="command-heading">
+        <button
+          className={construct ? "" : "active"}
+          data-tn-interactive
+          data-testid="tab-command"
+          onClick={() => setConstruct(false)}
+          type="button"
+        >
+          COMMAND
+        </button>
+        <button
+          className={construct ? "active" : ""}
+          data-tn-interactive
+          data-testid="tab-construct"
+          onClick={() => setConstruct(true)}
+          type="button"
+        >
+          CONSTRUCT
+        </button>
       </div>
-      <div className="flex flex-wrap justify-end gap-1">
-        {STRUCTURES.map((type) => {
-          const cost = TYPES[type];
-          // Greying an unaffordable structure is the same arithmetic the simulation charges with.
-          // A structure whose prerequisite is missing is left enabled: the scene refuses it with a
-          // reason, which is more useful than a button that silently does nothing.
-          const afford = state.ore >= cost.ore && state.gas >= cost.gas;
+      <div className={`command-grid ${commands.length > 6 ? "expanded" : ""}`}>
+        {commands.slice(0, 9).map((command) => {
+          const cost = command.cost === undefined ? undefined : TYPES[command.cost];
+          const afford = cost === undefined || (state.ore >= cost.ore && state.gas >= cost.gas);
+          const active = command.intent === "place" && placing === command.payload;
           return (
-            <Button
-              afford={afford}
-              key={type}
-              label={cost.name}
-              onClick={() => send("place", type)}
-              testid={`build-${type}`}
-              active={placing === type}
-              title={`${cost.name} — ${cost.ore} ore${cost.gas > 0 ? `, ${cost.gas} gas` : ""}`}
-            />
+            <button
+              aria-label={command.label}
+              className={`command ${afford ? "" : "unaffordable"} ${active ? "active" : ""}`}
+              data-tn-interactive
+              data-testid={command.testid}
+              key={command.testid}
+              onClick={() =>
+                command.intent === "construct"
+                  ? setConstruct(true)
+                  : send(command.intent, command.payload)
+              }
+              title={cost === undefined ? command.label : `${cost.name} — ${cost.role}`}
+              type="button"
+            >
+              {command.key === undefined ? null : <kbd>{command.key}</kbd>}
+              <Icon name={command.icon} />
+              <span>{command.label}</span>
+              {cost === undefined ? null : (
+                <small>
+                  ◆ {cost.ore}
+                  {cost.gas > 0 ? <em> ⬡ {cost.gas}</em> : null}
+                </small>
+              )}
+            </button>
           );
         })}
       </div>
-      <p
-        className="bg-black/80 text-right text-[10px] uppercase tracking-[0.14em] text-dim"
-        id="command-hint"
-      >
-        {placing === ""
-          ? "drag to select · right-click to order · wheel to zoom"
-          : `placing ${TYPES[placing as BuildingType].name} — click the ground, esc to cancel`}
-      </p>
+      <div className="command-hint" id="command-hint">
+        <span className="live-dot" />{" "}
+        {placing !== ""
+          ? `PLACING ${TYPES[placing as BuildingType].name.toUpperCase()} · CLICK THE GROUND · ESC CANCELS`
+          : construct
+            ? "SURVEYOR REQUIRED · DO NOT ABANDON THE SITE"
+            : "RIGHT-CLICK TO ISSUE AN ORDER"}
+      </div>
     </section>
-  );
-}
-
-function Button({
-  active = false,
-  afford = true,
-  label,
-  onClick,
-  testid,
-  title,
-}: {
-  readonly active?: boolean;
-  readonly afford?: boolean;
-  readonly label: string;
-  readonly onClick: () => void;
-  readonly testid: string;
-  readonly title?: string;
-}) {
-  return (
-    <button
-      // The panel is `pointer-events-none` so its empty space hands the click to the battlefield
-      // underneath, which is what a strategy game needs: the only pixels that take a gesture are
-      // the buttons. A button inside a `none` island is inert until it opts back in, so this
-      // class is load-bearing rather than decoration — without it every order in this panel is
-      // dead to a mouse and only the keyboard can issue one.
-      className={`pointer-events-auto border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${
-        active ? "border-lume bg-lume/20 text-lume" : "border-line bg-black/80 text-text"
-      } ${afford ? "" : "text-dim/60 line-through"}`}
-      data-tn-interactive
-      data-testid={testid}
-      onClick={onClick}
-      title={title}
-      type="button"
-    >
-      {label}
-    </button>
   );
 }

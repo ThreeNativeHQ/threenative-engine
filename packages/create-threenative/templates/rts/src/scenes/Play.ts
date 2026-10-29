@@ -141,6 +141,15 @@ export class Play extends Scene<GameState, undefined> {
   #dots: number[] = [];
   #viewCorners: number[] = [];
   #patch: Partial<GameState> = {};
+  /** Game speed the HUD's speed button cycles: 1×, 1.5×, 2×. */
+  #speed = 1;
+  /** Control groups 1-5, set and recalled from the HUD; `#groupCounts` is what it shows. */
+  #groups: number[][] = [[], [], [], [], []];
+  #groupCounts: number[] = [0, 0, 0, 0, 0];
+  /** Selection signature the roster was last built for, so a click while paused still updates it. */
+  #rosterSignature = -1;
+  #contacts = new Uint16Array(3);
+  #rivals: string[] = ["NO CONTACT", "NO CONTACT"];
 
   override async load(ctx: GameCtx): Promise<void> {
     this.#sky = await ctx.assets.texture("sky.jpg");
@@ -220,7 +229,7 @@ export class Play extends Scene<GameState, undefined> {
     return (frameCtx, dt) => {
       loading.update();
       this.#readInput(frameCtx, dt);
-      this.#accumulator = Math.min(this.#accumulator + dt, MAX_CATCH_UP);
+      this.#accumulator = Math.min(this.#accumulator + dt * this.#speed, MAX_CATCH_UP);
       while (this.#accumulator >= STEP) {
         sim.update(STEP);
         this.#accumulator -= STEP;
@@ -490,6 +499,49 @@ export class Play extends Scene<GameState, undefined> {
         }
         break;
       }
+      case "hold":
+      case "stop":
+        sim.command(this.#selection, intent);
+        break;
+      case "idle": {
+        const idle = sim
+          .own()
+          .filter((entity) => entity.type === "worker" && entity.order.kind === "idle");
+        this.#selectIds(idle.map((entity) => entity.id));
+        const first = idle[0];
+        if (first !== undefined && this.#view !== undefined) focusRts(this.#view, first.x, first.z);
+        this.#notice =
+          idle.length > 0
+            ? `${idle.length} idle Surveyors selected.`
+            : "All Surveyors are working.";
+        break;
+      }
+      case "select":
+        this.#selectIds([Number(value)]);
+        break;
+      case "group": {
+        // "3" recalls group 3 (or sets it while it is empty), "set:3" always sets it.
+        const assign = value.startsWith("set:");
+        const index = Number(assign ? value.slice(4) : value) - 1;
+        const group = this.#groups[index];
+        if (group === undefined) break;
+        if (assign || group.length === 0)
+          this.#groups[index] = this.#selection.filter((id) => sim.get(id)?.team === 0);
+        else this.#selectIds(group.filter((id) => sim.get(id) !== undefined));
+        break;
+      }
+      case "speed":
+        this.#speed = this.#speed === 1 ? 1.5 : this.#speed === 1.5 ? 2 : 1;
+        break;
+      case "cancelBuild": {
+        const site = this.#primary();
+        if (site === undefined || site.team !== 0 || site.built) break;
+        const result = sim.cancelBuild(site.id);
+        this.#notice = result.ok
+          ? "Construction cancelled. 75% refunded."
+          : (result.message ?? "That site cannot be cancelled.");
+        break;
+      }
       default:
         break;
     }
@@ -560,10 +612,18 @@ export class Play extends Scene<GameState, undefined> {
     let teams = 0;
     let x = 0;
     let z = 0;
+    let hp = 0;
+    let maxHp = 0;
+    let airborne = 0;
+    let signature = 0;
     for (const id of this.#selection) {
       const entity = sim.get(id);
       if (entity === undefined || entity.garrisonId !== null) continue;
       count += 1;
+      hp += Math.ceil(entity.hp);
+      maxHp += entity.maxHp;
+      if (entity.air) airborne += 1;
+      signature = (signature * 31 + id) | 0;
       teams |= 1 << entity.team;
       x += entity.x;
       z += entity.z;
@@ -604,6 +664,18 @@ export class Play extends Scene<GameState, undefined> {
     patch.simTime = Math.floor(sim.time * 20);
     patch.supplyCap = supply.cap;
     patch.supplyUsed = supply.used;
+    patch.groupHp = hp;
+    patch.groupMaxHp = maxHp;
+    patch.airborne = airborne;
+    patch.speed = this.#speed;
+    for (let index = 0; index < 5; index += 1)
+      this.#groupCounts[index] = this.#groups[index]?.length ?? 0;
+    patch.groups = this.#groupCounts;
+    const stepped = this.#publishedStep !== Math.floor(sim.time * 20);
+    if (stepped || this.#rosterSignature !== signature) {
+      this.#rosterSignature = signature;
+      this.#roster(sim, patch);
+    }
     if (this.#drag === undefined) {
       patch.dragBox = null;
     } else {
@@ -615,8 +687,9 @@ export class Play extends Scene<GameState, undefined> {
       this.#box[3] = Math.abs(this.#drag.to.y - this.#drag.from.y);
       patch.dragBox = this.#box;
     }
-    if (this.#publishedStep !== Math.floor(sim.time * 20)) {
+    if (stepped) {
       this.#publishedStep = Math.floor(sim.time * 20);
+      this.#commanders(sim, patch);
       // The fog texture and the overview are rebuilt on the simulation's clock, not the frame's:
       // a fog raster is 784 cells and a contact is a quad, and neither moves faster than the
       // rules that move it.
@@ -632,6 +705,51 @@ export class Play extends Scene<GameState, undefined> {
     if (this.#viewQuad(ctx.camera as OrthographicCamera, ctx.viewport.size))
       patch.minimapView = this.#viewCorners;
     ctx.state.set(patch);
+  }
+
+  /** The selection card's roster (`"<id>:<type>:<hp tenths>"`, first 16) and its distinct types. */
+  #roster(sim: Game, patch: Partial<GameState>): void {
+    const roster: string[] = [];
+    const types: string[] = [];
+    for (const id of this.#selection) {
+      const entity = sim.get(id);
+      if (entity === undefined || entity.garrisonId !== null) continue;
+      if (!types.includes(entity.type)) types.push(entity.type);
+      if (roster.length < 16)
+        roster.push(`${id}:${entity.type}:${Math.ceil((entity.hp / entity.maxHp) * 10)}`);
+    }
+    patch.roster = roster;
+    patch.selectionTypes = types;
+  }
+
+  /** The objective panel and the rival-commanders panel, on the simulation's clock. */
+  #commanders(sim: Game, patch: Partial<GameState>): void {
+    const contacts = this.#contacts;
+    contacts.fill(0);
+    let skyport = false;
+    let air = 0;
+    let idle = 0;
+    for (const entity of sim.entities) {
+      if (entity.hp <= 0 || entity.garrisonId !== null) continue;
+      if (entity.team > 0) {
+        if (sim.visibleAt(entity.x, entity.z))
+          contacts[entity.team] = (contacts[entity.team] ?? 0) + 1;
+      } else if (entity.type === "starport" && entity.built) skyport = true;
+      else if (entity.air) air += 1;
+      else if (entity.type === "worker" && entity.order.kind === "idle") idle += 1;
+    }
+    let defeated = 0;
+    for (let team = 1; team <= 2; team += 1) {
+      const seen = contacts[team] ?? 0;
+      const out = sim.players[team]?.eliminated === true;
+      if (out) defeated += 1;
+      this.#rivals[team - 1] = out ? "DEFEATED" : seen > 0 ? `${seen} CONTACTS` : "NO CONTACT";
+    }
+    patch.rivals = this.#rivals;
+    patch.defeated = defeated;
+    patch.skyport = skyport;
+    patch.airWing = air;
+    patch.idleWorkers = idle;
   }
 
   /**

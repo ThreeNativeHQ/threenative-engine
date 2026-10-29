@@ -66,9 +66,40 @@ export type GameState = {
   paused: boolean;
   /** True once the UI layer has rendered and published its interactive rectangles. */
   uiReady: boolean;
+  /** The selection card: summed health, how many fly, distinct types, and the roster tiles. */
+  groupHp: number;
+  groupMaxHp: number;
+  airborne: number;
+  selectionTypes: string[];
+  /** Up to 16 `"<id>:<type>:<hp tenths 0..10>"` entries, in selection order. */
+  roster: string[];
+  /** The objective panel: a Skyport built, aircraft in the field, rivals eliminated (of 2). */
+  skyport: boolean;
+  airWing: number;
+  defeated: number;
+  /** One line per rival commander: "NO CONTACT", "<n> CONTACTS" or "DEFEATED". */
+  rivals: string[];
+  /** Surveyors with no order, for the IDLE button. */
+  idleWorkers: number;
+  /** Unit count in control groups 1-5. */
+  groups: number[];
+  /** Game speed multiplier: 1, 1.5 or 2. */
+  speed: number;
 };
 
 export const INITIAL_STATE: GameState = {
+  airborne: 0,
+  airWing: 0,
+  defeated: 0,
+  groupHp: 0,
+  groupMaxHp: 0,
+  groups: [0, 0, 0, 0, 0],
+  idleWorkers: 0,
+  rivals: ["NO CONTACT", "NO CONTACT"],
+  roster: [],
+  selectionTypes: [],
+  skyport: false,
+  speed: 1,
   cameraX: 0,
   cameraZoom: 30,
   cameraZ: 0,

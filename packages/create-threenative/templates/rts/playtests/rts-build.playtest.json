@@ -9,8 +9,14 @@
     { "kind": "wait", "label": "settle", "waitTicks": 60, "release": true },
     {
       "kind": "click",
+      "label": "construct-tab",
+      "at": { "element": { "selector": "[data-testid=tab-construct]" } },
+      "waitTicks": 4
+    },
+    {
+      "kind": "click",
       "label": "build-menu",
-      "at": { "x": 1117, "y": 555 },
+      "at": { "element": { "selector": "[data-testid=build-barracks]" } },
       "waitTicks": 6
     },
     {
