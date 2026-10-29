@@ -127,7 +127,12 @@ describe("DiscreteLodPlugin", () => {
     const parser = parserFor(target, definition());
     plugin.setParser(parser as never);
     await plugin.afterRoot({ scene: target });
+    // The shadow LOD sync re-walks only when this moved, so registration must bump it.
+    const host = globalThis as Record<symbol, unknown>;
+    const versionKey = Symbol.for("threenative.discreteLodChainsVersion");
+    const before = host[versionKey] as number | undefined;
     expect(plugin.attach(target, { hysteresis: 0.15, maxPixelError: 1 })).toBe(1);
+    expect(host[versionKey] as number).toBeGreaterThan(before ?? -1);
 
     const scene = new Scene();
     scene.add(target);

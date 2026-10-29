@@ -2018,6 +2018,12 @@ export function defineBrowserClasses(
                     labels.delete(this);
                     animated.delete(this);
                   }
+                  // The shadow LOD sync skips its scene walk until this or the hierarchy moves.
+                  if (property === "geometry") {
+                    const host = globalThis as Record<symbol, unknown>;
+                    const key = Symbol.for("threenative.geometryAssignments");
+                    host[key] = ((host[key] as number | undefined) ?? 0) + 1;
+                  }
                   runtime.set(refOf(this), property, toEngine(value));
                   if (shape) {
                     let known = shapes.get(this);

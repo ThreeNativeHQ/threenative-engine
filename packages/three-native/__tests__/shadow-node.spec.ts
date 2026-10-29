@@ -229,6 +229,97 @@ it("passes a lamp's source-radius filter and refuses a bad radius", () => {
   expect(() => shadowFilterOptions(() => {})).toThrow("TN_VIRTUAL_SHADOW_UNSUPPORTED");
 });
 
+it("walks the light root only when the hierarchy or a registered chain moved", () => {
+  class VirtualShadowNode extends ShadowBaseNode {
+    static override get type() {
+      return "VirtualShadowNode";
+    }
+    options = { selectionGuard: [0.775], refreshStep: [0.125] };
+  }
+  const chainsKey = Symbol.for("threenative.discreteLodChains");
+  const versionKey = Symbol.for("threenative.discreteLodChainsVersion");
+  const host = globalThis as Record<symbol, unknown>;
+  const previousChains = host[chainsKey];
+  const previousVersion = host[versionKey];
+  const assignmentsKey = Symbol.for("threenative.geometryAssignments");
+  const previousAssignments = host[assignmentsKey];
+  const geometry = {};
+  const coarse = {};
+  const chain = { levels: [geometry, coarse], errors: [0, 0.25] };
+  const finer = {};
+  const nextChain = { levels: [geometry, finer], errors: [0, 0.5] };
+  host[chainsKey] = new WeakMap([[geometry, { chain }]]);
+  let revision = 12;
+  const casters = [{ id: 7, geometry }];
+  const root = {
+    id: 1,
+    parent: undefined as object | undefined,
+    get __hierarchyRevision(): number {
+      return revision;
+    },
+    traverse: vi.fn((callback: (child: { id: number; geometry?: object }) => void) => {
+      for (const child of casters) callback(child);
+    }),
+  };
+  const node = new VirtualShadowNode(root);
+  const dispatch = vi.fn();
+  virtualShadowOptions(node, dispatch);
+  try {
+    // (a) the first call has nothing to compare against, so it walks and dispatches the chain.
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenLastCalledWith({
+      command: "lod",
+      id: 7,
+      geometries: [coarse],
+      errors: [0.25],
+    });
+    // (b) neither number moved: the walk is skipped and nothing is re-sent.
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    // (c) the hierarchy moved: exactly one walk, and the same answer is not re-sent.
+    revision += 1;
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(2);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    // (d) a chain registered on a geometry already in the scene: one walk, and the new rung reaches native.
+    host[chainsKey] = new WeakMap([[geometry, { chain: nextChain }]]);
+    host[versionKey] = ((host[versionKey] as number | undefined) ?? 0) + 1;
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(3);
+    expect(dispatch).toHaveBeenLastCalledWith({
+      command: "lod",
+      id: 7,
+      geometries: [finer],
+      errors: [0.5],
+    });
+    // (f) a mesh's geometry swapped with no hierarchy change: the facade's geometry setter bumps its
+    // counter, and the walk drops the chain the caster no longer draws.
+    casters[0] = { id: 7, geometry: {} };
+    host[assignmentsKey] = ((host[assignmentsKey] as number | undefined) ?? 0) + 1;
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(4);
+    expect(dispatch).toHaveBeenLastCalledWith({ command: "unlod", id: 7 });
+  } finally {
+    node.dispose();
+    host[chainsKey] = previousChains;
+    host[versionKey] = previousVersion;
+    host[assignmentsKey] = previousAssignments;
+  }
+  // (e) a backend with no hierarchy counter (JSDOM, another engine) never skips the walk.
+  const plainRoot = { id: 3, parent: undefined as object | undefined, traverse: vi.fn() };
+  const fallbackNode = new VirtualShadowNode(plainRoot);
+  try {
+    virtualShadowOptions(fallbackNode, vi.fn());
+    syncVirtualShadowLods();
+    syncVirtualShadowLods();
+    expect(plainRoot.traverse).toHaveBeenCalledTimes(2);
+  } finally {
+    fallbackNode.dispose();
+  }
+});
+
 it("transfers registered LOD chain data once and clears its dispatch on disposal", () => {
   class VirtualShadowNode extends ShadowBaseNode {
     static override get type() {
