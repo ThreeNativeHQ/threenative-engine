@@ -1,12 +1,13 @@
 import {
   type ICtx,
+  type IRawInputPointerEdge,
   Scene,
   type SceneFrame,
   getPlatform,
   isMobile,
   lodPixelScale,
 } from "@threenative/core";
-import { Object3D, type OrthographicCamera, type Texture, type Vector2, Vector3 } from "three";
+import { Object3D, type OrthographicCamera, type Texture, Vector2, Vector3 } from "three";
 import { onSceneIntent } from "../orders.js";
 import { createArmy } from "../render/army.js";
 import {
@@ -26,7 +27,13 @@ import { type ISun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { createUnitModels } from "../render/models.js";
-import { type PickTarget, pickEntity, unitsInBox } from "../render/picking.js";
+import {
+  DRAG_SLOP,
+  type PickTarget,
+  dragBoxRect,
+  pickEntity,
+  unitsInBox,
+} from "../render/picking.js";
 import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { createResources } from "../render/resources.js";
@@ -54,8 +61,6 @@ const STEP = SIM_STEP;
 /** Never run more than a quarter second of catch-up: a tab that was backgrounded must not spend a
  * second of catch-up stalling the frame it came back on. */
 const MAX_CATCH_UP = 0.25;
-/** A drag shorter than this is a click, not a box. */
-const DRAG_SLOP = 4;
 /** The coarse fog raster the HUD draws: 28 cells over 224 m is one every 8 m. */
 const MINIMAP = 28;
 /** Every order the panel can name, in the order the readout lists them. */
@@ -137,6 +142,8 @@ export class Play extends Scene<GameState, undefined> {
   #anchor = new SelectionAnchor();
   #drag: IDrag | undefined;
   #box: number[] = [0, 0, 0, 0];
+  /** The pointer position the band's live count was taken at, so a still pointer rescans nothing. */
+  #boxAt = new Vector2(Number.NaN, Number.NaN);
   #found: number[] = [];
   #kinds = new Uint8Array(ORDER_KINDS.length);
   #mode = "";
@@ -374,10 +381,12 @@ export class Play extends Scene<GameState, undefined> {
     for (const edges of raw.pointerEdges.values())
       for (const edge of edges) {
         if (edge.type !== "down") {
-          this.#release(ctx, edge.id, edge.position);
+          this.#release(ctx, edge, isShifted(keys));
         } else if ((edge.buttons & 2) !== 0) {
           this.#orderAt(ctx, edge.position, isShifted(keys));
-        } else {
+        } else if (this.#mode === "") {
+          // A press while a mode is armed is that order, not a band: the banner says CLICK, and a
+          // box drawn under an attack-move is a gesture that cannot do what it looks like.
           this.#drag = { from: edge.position.clone(), id: edge.id, to: edge.position.clone() };
         }
       }
@@ -391,27 +400,34 @@ export class Play extends Scene<GameState, undefined> {
     if (ctx.input.justPressed("stopOrder")) sim.command(this.#selection, "stop");
   }
 
-  #release(ctx: GameCtx, id: number, at: Vector2): void {
-    const drag = this.#drag;
+  /** A release: the armed order if there is one, otherwise the band the press opened. */
+  #release(ctx: GameCtx, edge: IRawInputPointerEdge, shift: boolean): void {
     const sim = this.#sim;
     const view = this.#view;
-    if (drag === undefined || drag.id !== id || sim === undefined || view === undefined) return;
+    if (sim === undefined || view === undefined) return;
+    if (this.#mode !== "") {
+      // A cancel is not a click: a mode survives the pointer leaving, as it does in AstraCraft.
+      if (edge.type === "up") this.#orderAt(ctx, edge.position, shift);
+      return;
+    }
+    const drag = this.#drag;
+    if (drag === undefined || drag.id !== edge.id) return;
     this.#drag = undefined;
     const camera = ctx.camera as OrthographicCamera;
     const size = ctx.viewport.size;
-    const keys = ctx.input.raw.keys;
+    const at = edge.position;
     if (Math.hypot(at.x - drag.from.x, at.y - drag.from.y) <= DRAG_SLOP) {
       const hit = pickEntity(sim, camera, view, size, at.x, at.y);
       if (hit === undefined) {
-        if (!isShifted(keys)) this.#selectIds([]);
+        if (!shift) this.#selectIds([]);
         return;
       }
-      this.#toggleSelection(hit, isShifted(keys));
+      this.#toggleSelection(hit, shift);
       return;
     }
     // Shift adds to what is selected; a fresh drag replaces it.
-    const keep = isShifted(keys) ? this.#selection.filter((id) => sim.get(id)?.team === 0) : [];
-    unitsInBox(sim, camera, view, size, drag.from, drag.to, isAlt(keys), this.#found);
+    const keep = shift ? this.#selection.filter((id) => sim.get(id)?.team === 0) : [];
+    unitsInBox(sim, camera, view, size, drag.from, drag.to, isAlt(ctx.input.raw.keys), this.#found);
     this.#selectIds(keep.concat(this.#found));
   }
 
@@ -735,13 +751,34 @@ export class Play extends Scene<GameState, undefined> {
     if (this.#drag === undefined) {
       patch.dragBox = null;
     } else {
+      const rect = dragBoxRect(this.#drag.from, this.#drag.to);
       // Mutated in place: the store holds the reference and the bridge clones at the boundary, so
       // a rubber band does not allocate a fresh array on every frame it is being dragged.
-      this.#box[0] = Math.min(this.#drag.from.x, this.#drag.to.x);
-      this.#box[1] = Math.min(this.#drag.from.y, this.#drag.to.y);
-      this.#box[2] = Math.abs(this.#drag.to.x - this.#drag.from.x);
-      this.#box[3] = Math.abs(this.#drag.to.y - this.#drag.from.y);
-      patch.dragBox = this.#box;
+      if (rect === null) {
+        patch.dragBox = null;
+      } else {
+        this.#box[0] = rect[0];
+        this.#box[1] = rect[1];
+        this.#box[2] = rect[2];
+        this.#box[3] = rect[3];
+        patch.dragBox = this.#box;
+        // What a release right now would take, from the scan that release runs: the badge cannot
+        // promise a number the selection does not deliver. Only while the pointer is moving.
+        const to = this.#drag.to;
+        if (this.#boxAt.x !== to.x || this.#boxAt.y !== to.y) {
+          this.#boxAt.copy(to);
+          patch.dragCount = unitsInBox(
+            sim,
+            ctx.camera as OrthographicCamera,
+            view,
+            ctx.viewport.size,
+            this.#drag.from,
+            to,
+            isAlt(ctx.input.raw.keys),
+            this.#found,
+          ).length;
+        }
+      }
     }
     if (stepped) {
       this.#publishedStep = Math.floor(sim.time * 20);

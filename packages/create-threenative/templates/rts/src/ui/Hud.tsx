@@ -581,12 +581,21 @@ export function Selection() {
   );
 }
 
+/**
+ * The rubber band and the count it stands for.
+ *
+ * AstraCraft paints the band's badge with `#drag-box:after { content: attr(data-count) }` and the
+ * `data-count` attribute is what puts text in it: set nothing and the padded, bordered `:after`
+ * still renders as an empty little square hanging over the corner of the band. So the badge is
+ * part of the element's contract, never an ornament bolted on with CSS.
+ */
 function DragBox() {
-  const state = useUiStateShown((s) => s.dragBox);
+  const state = useUiStateShown((s) => (s.dragBox === null ? null : [s.dragBox, s.dragCount]));
   if (state?.dragBox == null) return null;
   const [left, top, width, height] = state.dragBox;
   return (
     <div
+      data-count={`${state.dragCount} UNITS`}
       id="drag-box"
       style={{ height: `${height}px`, left: `${left}px`, top: `${top}px`, width: `${width}px` }}
     />

@@ -62,6 +62,8 @@ export type GameState = {
   minimapView: number[];
   /** The rubber band, in client pixels, or null. Drawn by the UI, not the scene. */
   dragBox: number[] | null;
+  /** Units a release would take under the band right now, for the badge above it. */
+  dragCount: number;
   /** Set from the UI's pause and resume intents, and read back by the menu. */
   paused: boolean;
   /** True once the UI layer has rendered and published its interactive rectangles. */
@@ -104,6 +106,7 @@ export const INITIAL_STATE: GameState = {
   cameraZoom: 30,
   cameraZ: 0,
   dragBox: null,
+  dragCount: 0,
   gathered: 0,
   gas: 0,
   kills: 0,
