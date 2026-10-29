@@ -154,6 +154,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 4,
+      "at": "2026-10-29T19:31:39.235Z",
+      "commit": "core@0.3.7",
+      "label": "VSM pan keeps covered pages",
+      "decision": "keep",
+      "notes": "uncommitted candidate; visual judge pending; VSM ctest 15/15 incl. GPU reference renders; pans move whole pages (UE clipmap panning)",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 54.85,
+      "windows": 6,
+      "metrics": {
+        "presentedP50Ms": 133.33,
+        "presentedP95Ms": 283.32,
+        "fps": 8.27,
+        "gpuP50Ms": 13.5,
+        "gpuP95Ms": 72.29,
+        "renderP50Ms": 44.97,
+        "updateP50Ms": 15.18,
+        "frameP50Ms": 66.71,
+        "frameP95Ms": 159.32,
+        "mainDraws": 1827,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 1931,
+        "loadMs": 2171,
+        "bridgeCrossingsP50": 6610,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
