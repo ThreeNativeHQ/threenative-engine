@@ -109,13 +109,56 @@ as stale-dist.
 - [x] Phase 1 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: **NEUTRAL** on both after runs; the judge found no thinning and no hard ring edge, and the BEFORE runs differ from each other as much as from AFTER. Captures: `artifacts/prd766/before-pose-run{1,2}.png`, `artifacts/prd766/after-pose-run{1,2}.png`.
 
 #### Phase 2: Masked depth prepass on desktop
-**Status:** NOT STARTED
+**Status:** BLOCKED — decision needed, nothing built (see the exploration below)
 **Files:** core renderer main-pass owner (found in the phase's exploration step), one spec.
 **Implementation:** depth-only pass for opaque and alpha-tested meshes, then the main pass reads depth.
 Default on for desktop, off for mobile, named override reported.
 **Verification:** AC-2; Wildwood walking pose GPU (2 runs per arm); AC-5 judge.
-- [ ] AC-2: desktop draws alpha-tested meshes through a depth prepass, and the named override turns it off and is reported. proof: unit test in `packages/core/__tests__/` named in phase 2 — Evidence: pending.
-- [ ] Phase 2 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: pending.
+
+##### Exploration result (2026-10-29): a prepass alone buys nothing here
+
+The main pass is `renderer.render(renderRoot, camera)` in `packages/core/src/game.ts:2194`, which
+reaches `raw.render(scene, camera)` in `packages/core/src/renderer.ts:764` — three's
+`WebGPURenderer`, not the native engine. Four facts decided this phase's shape:
+
+1. **There is no prepass in three or in this engine.** `docs/verification/strata-pr483-audit-repairs-2026-10-28.md:183`
+   already recorded it: "a masked depth prepass (Unreal `r.EarlyZPass` masked; none in the engine)".
+   `scene.overrideMaterial` is one material for *every* object in the render root
+   (`three/src/renderers/common/Renderer.js:748`, `:3591`), so it cannot carry the per-material alpha
+   map and cutoff UE's masked prepass needs
+   (`r.EarlyZPassOnlyMaterialMasking`, `RendererScene.cpp:133-152`) — a correct masked prepass needs a
+   depth proxy per source material, built and kept in sync by whichever code owns the material list.
+2. **The alpha test *is* a `discard`** — `three/src/materials/nodes/NodeMaterial.js:882`
+   (`diffuseColor.a.lessThanEqual( alphaTestNode ).discard()`), which is the shader that draws 15-18 ms
+   of Wildwood. A prepass writes the depth buffer, but a `discard`ing pipeline still cannot early-Z
+   against it, so on its own it leaves the frame's dominant cost untouched and only adds a second
+   vertex pass over every batched placement — the risk this PRD already names.
+3. **UE's arrangement is a pair, not a prepass.** `r.BasePassWriteDepthEvenWithFullPrepass` defaults to
+   0 (UE 5.8.3: `RendererScene.cpp:167-171`) precisely so the base pass runs *read-only*: "allows
+   masked materials to get EarlyZ (writing to depth while doing clip() disables EarlyZ)". The prepass
+   is useful only together with a main pass whose masked materials do **not** write depth.
+4. **`depthWrite` is pipeline state in WebGPU** (`three/src/renderers/webgpu/utils/WebGPUPipelineUtils.js:225`),
+   so turning it off is a decision taken once per material for its whole lifetime and pays one
+   pipeline build — not a per-frame flag. This repository's own three patch already encodes the same
+   rule from the other side: a pipeline is a depth proof only while its shader holds no `discard`
+   (`packages/core/patches/three@0.185.1.patch:2617`).
+
+So phase 2 as written is not a local change: it is (a) a depth proxy per material (alpha map + cutoff
++ side, one extra pipeline per masked surface), (b) `depthWrite: false` for masked materials as the
+desktop default with a named override, (c) the two-call render seam (pass 1 clears colour and depth
+and writes depth only; pass 2 no longer clears), and (d) proof that it wins — with the risk that the
+read-only base pass changes nothing on an adapter that keeps early-Z off for `discard` anyway.
+
+That is an engine-wide material policy, not this PRD's slice, and it changes every game's materials
+by default. **Decision needed (owner):**
+
+1. Take it as its own PRD — the design above, measured on Wildwood; AC-2 moves there. ← recommended
+   if the forest must reach 33 ms by shading less.
+2. Skip it and let phase 3 (far-tree rings, the 16-25 ms impostor half) carry AC-4 first; revisit the
+   prepass only if the rings leave the frame over budget.
+
+- [ ] AC-2: desktop draws alpha-tested meshes through a depth prepass, and the named override turns it off and is reported. proof: unit test in `packages/core/__tests__/` named in phase 2 — Evidence: blocked, see above.
+- [ ] Phase 2 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: blocked with the phase.
 
 #### Phase 3: Far trees as HLOD rings
 **Status:** NOT STARTED
