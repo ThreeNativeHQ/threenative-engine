@@ -1806,7 +1806,7 @@ export class WorldGpuScene {
     // The chain first, then the camera the chain belongs to: last frame's, which is what the
     // previous frame's depth recorded.
     this.#pyramid.build(renderer, depth.texture, camera.near, camera.far, samples);
-    this.#occlusionView.value.copy(this.#previousView);
+    this.#occlusionMatrix.copy(this.#previousView);
     this.#previousView.copy(_view);
     this.#previousEye.copy(_eye);
   }
@@ -1913,7 +1913,10 @@ export class WorldGpuScene {
       }
     | undefined;
   readonly #previousEye = new Vector3();
-  readonly #occlusionView = uniform(new Matrix4());
+  /** The previous view the occlusion test reprojects into; its uniform is made by the first kernel
+   * that reads it, so a world whose GPU scene never builds one asks the backend for no mat4 uniform. */
+  readonly #occlusionMatrix = new Matrix4();
+  #occlusionView: ReturnType<typeof uniform> | undefined;
   readonly #occlusionCut = uniform(1);
   /** Why the measure mode measured nothing, or `""` while it is measuring. */
   #occlusionReason = "";
@@ -2626,7 +2629,12 @@ export class WorldGpuScene {
       const hidden = float(0).toVar();
       if (this.#occlusion !== "off" && this.#pyramid.levels > 0)
         hidden.assign(
-          this.#pyramid.occluded(centre.xyz, radius, this.#occlusionView, this.#occlusionCut),
+          this.#pyramid.occluded(
+            centre.xyz,
+            radius,
+            (this.#occlusionView ??= uniform(this.#occlusionMatrix)),
+            this.#occlusionCut,
+          ),
         );
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
