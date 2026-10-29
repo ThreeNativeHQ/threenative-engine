@@ -28,6 +28,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 ## Pull requests
 
 - **Small changes skip the PR**: a tiny fix, a docs-only edit, a mirror regeneration — anything with no PRD — commits directly to local `develop` after its relevant checks pass.
+- **Open a PR only when a PRD or the owner asks for one** (owner, 2026-10-28: "stop opening fucking PRs all the time"). Fix a red on an open PR by pushing to that PR's branch. Fix a red on `develop` by committing to the PR already in flight, or ask. A second PR for one release or one red is the failure, even when it looks small.
 - **One PR per PRD**, opened as a draft at the first commit — never one per phase, never several PRDs in one PR. Label it with the `prd:25/50/75/100` that `pnpm prd:progress` prints and update the label as phases land.
 - Branch from `origin/develop` (not a local branch that may be ahead of it), target `develop`, squash-merge. Set `git config threenative.integrationBranch develop` per checkout.
 - The commit that finishes a PRD also `git mv`s it to `docs/PRDs/done/`.
