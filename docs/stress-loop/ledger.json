@@ -532,6 +532,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 11,
+      "at": "2026-10-29T22:23:58.072Z",
+      "commit": "core@0.3.7",
+      "label": "develop F2+B stacked (loaded host)",
+      "decision": "baseline",
+      "notes": "e68933ce6; 15.33 fps, frame p50 57.7 ms; host load ~10/16 (next-server 122% CPU, two fixer C++ builds), every CPU phase slower than the F2-only arm: re-measure on a quiet host",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 54.8,
+      "windows": 10,
+      "metrics": {
+        "presentedP50Ms": 66.66,
+        "presentedP95Ms": 116.66,
+        "fps": 15.33,
+        "gpuP50Ms": 5.9,
+        "gpuP95Ms": 61.73,
+        "renderP50Ms": 39.53,
+        "updateP50Ms": 14.06,
+        "frameP50Ms": 57.69,
+        "frameP95Ms": 105.38,
+        "mainDraws": 1800,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 4433,
+        "loadMs": 3752,
+        "bridgeCrossingsP50": 2386,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
