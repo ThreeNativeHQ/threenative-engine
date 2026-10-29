@@ -318,6 +318,7 @@ tn_native_engine_test(tn-native-engine-tsl-material-accessors-test tests/native-
 target_link_libraries(tn-native-engine-tsl-material-accessors-test PRIVATE tn_engine_abi)
 
 tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame_gate_test.cpp
+    native_engine_frame_gate_debug_reasons=debug_reasons_follow_gate
     native_engine_frame_gate_late_signal=late_signal_draws_every_frame
     native_engine_frame_gate_gpu_behind=gpu_behind_is_declined
     native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
@@ -698,6 +699,7 @@ endif()
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
+    native_engine_scene_debug_counts=debug_scene_counts
     native_engine_scene_hierarchy=hierarchy
     native_engine_scene_alias=alias
     native_engine_scene_revision=revision

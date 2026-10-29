@@ -1,8 +1,8 @@
 # PRD-762 — One debug switch covers every engine hot path
 
-**Status:** PARTIAL — coverage audit complete; implementation pending.
+**Status:** PARTIAL — common producers implemented; review corrections and platform proof pending.
 **Priority:** P1 — ordinary engine activity can consume a frame without an actionable warning.
-**Progress:** Phase 0 complete, phases 1–2 pending.
+**Progress:** Phase 0 committed; phases 1–2 in progress.
 **Owner:** João · 2026-10-28
 **Branch:** `feat/web-engine-debug-telemetry` (this checkout only; local commits, no push).
 **Complexity:** 9 → HIGH; risk override: none. Crosses JS/Wasm and native renderer boundaries.
@@ -17,11 +17,11 @@ Reuse `Spans.ts`, `FrameCounters.ts`, `frame-budget.ts`, `render-pass-budget.ts`
 
 The always-on bridge rule uses the existing `REDUNDANT_SHARE` against the observed median interval and a measured crossing calibration, extended to all crossings. Other findings are debug-only. A count/share trigger derives from an observed denominator (submitted draws, requested samples, live bytes, available arena, interval or measured baseline); diagnostic presentation limits are not warning thresholds. GPU saturation, callback delivery delay and host contention remain separate observations, not inferred causes.
 
-## Phase 0 — audited coverage matrix
+### Phase 0 — audited coverage matrix
 
-- [x] Every critical area has a producer, gap, derived rule and proof below. proof: source audit below; `pnpm prd:progress docs/PRDs/PRD-762-debug-telemetry-covers-every-hot-path.md` (run before commit).
+- [x] Every critical area has a producer, gap, derived rule and proof below, committed before code. proof: source audit, commit `ef6d60aaf` before implementation; `node --import tsx scripts/prd-progress.ts <file>` recognizes all three phases (pnpm wrapper IPC denied by sandbox).
 
-Anchors name the audited baseline; implementation can move line numbers. All listed proofs are local agent lanes unless the blocker section says otherwise.
+Anchors name the audited baseline; implementation can move line numbers. All listed proofs are local agent lanes unless the blocker section says otherwise. Ratios with absent/zero denominators are unobserved, not breaches. Population, scene churn, batching eligibility and upload ratios remain observations until an invariant or measured cost fails: normal allocations and static hierarchy reads are not automatically leaks or waste. Getter calibration is an estimated getter-equivalent cost, separate from directly timed work. Timestamp requests/commands retain their source frame: delayed delivery on an unsampled frame is legitimate. Queue timing endpoints are submit→backend callback and callback→event drain; actual GPU-complete→callback delay is unobservable here. Native debug keeps the existing render-thread and scheduling settings; it does not enable the metrics/GPU-time flags that alter scheduling.
 
 | Area | Waste it can hide | Existing signal (file:line, marker) | Gap | Signal to add | Derived threshold | Proof test |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -42,13 +42,13 @@ Anchors name the audited baseline; implementation can move line numbers. All lis
 | Loading/streaming | Compile-on-first-view and main-thread texture decode hitches | Pipeline compile above; core asset loader and `createImageBitmap` integration | Loading attribution disappears from steady counters | Decode count/elapsed and loading/streaming callback elapsed with source URL; compile counter shared above | Measured synchronous decode/compile work / interval; async wall time labelled separately | Loader stubs with slow decode and cold compile in a later frame |
 | Native host parity | Desktop/Android renderer work bypasses JS device wrappers | `abi/bindings_scene.cpp:555`, `__engineCounters` only read by Wasm; V8 player globals in `player/v8_main.cpp:1246` | No native producer for same budget reader; flags not forwarded consistently | Common C++ totals exposed to native JS using same counter names and debug switch | Same counter semantics and derived frame rules on each host | Native C++ counter tests and host bridge test; desktop/Android execution separately recorded |
 
-## Phase 1 — producers and common window
+### Phase 1 — producers and common window
 
-- [ ] Bridge diagnostics detect the RTS crossing/widening/overflow classes, with debug-off census unchanged. proof: focused `packages/three-native/__tests__/debug-telemetry.spec.ts` and related bridge specs.
+- [x] Bridge diagnostics detect the RTS crossing/widening/overflow classes, with debug-off census unchanged. proof: 105 related bridge tests plus 32 uniform/TSL tests pass; actual ABI allocation/crossing census, 995 distinct calls, fog expansion, 64-bit rollover and off timing checks included. Source-frame batch review correction pending separately.
 - [ ] Shared native renderer/scene/GPU/lifetime counters cover the matrix and expose the same names to Wasm and native JS. proof: matching native-engine C++ tests and `pnpm wasm:build`.
-- [ ] Core activates incumbent diagnostics from one switch and feeds counters, measured callers, HUD/loading/main-thread observations into the existing frame budget. proof: focused core debug/loop/UI/loader Vitest specs.
+- [x] Core activates incumbent diagnostics from one switch and feeds counters, measured callers, HUD/loading/main-thread observations into the existing frame budget. proof: 261 focused core tests across 10 files pass; package `tsc --noEmit -p .` exits 0. Browser observer availability remains explicit; native GC is still open in the memory row.
 
-## Phase 2 — verdicts, consumer proof and documentation
+### Phase 2 — verdicts, consumer proof and documentation
 
 - [ ] One report per budget window ranks offenders with explicit cost/share basis, source and matching lever; missing/malformed observations fail closed. proof: core report/window integration specs; playtest engine-cost evaluator and warning specs.
 - [ ] A runnable playtest scenario bounds the debug counters through `engineCost`. proof: focused playtest scenario/bridge integration (runtime lane recorded explicitly).
@@ -63,10 +63,22 @@ Anchors name the audited baseline; implementation can move line numbers. All lis
 | Ranked detection | Loop → FrameBudget window callback → `TN_DEBUG_REPORT` | One window owner, no independent engine report cadence | Phase 2 window integration |
 | Regression gate | Playtest `engineCost` → `TN_FRAME_BUDGET.counters.engine` | Existing evaluator; warnings retain existing fail-closed lane | Phase 2 consumer proof |
 
+## Acceptance criteria
+
+- [ ] The launch switch reaches all matrix producers and the consumer receives one ranked report in each budget window with unchanged debug-off crossings/allocations. proof: phase 1–2 integration checks above (pending).
+
 ## Blocked on
 
-None established. Native build dependencies are absent in this checkout at audit time; attempt the shipped build before claiming a blocker. No push or remote PR is authorized. Desktop and Android execution claims require their actual lanes; C++ unit coverage alone is not a device run.
+Browser playtest: both attempts stop before frame 1. Default headless Chromium aborts in `sandbox_host_linux.cc` with `EPERM`/SIGTRAP; the required headed attempt cannot start Xvfb (30-second display timeout). Doctor passed installed tools; no adapter identity or runtime counters observed. Requires a host session that permits browser/Xvfb startup. The runnable scenario exists, but no browser pass is claimed.
+
+Android owned-renderer parity: `packages/runtime-native/cmake/NativeEngineAdapters.cmake:6` rejects Android/iOS. The new owned-renderer snapshot is in the desktop V8 player; forwarding `TN_DEBUG` to the legacy host does not make that renderer run there. This is an implementation/support gap, separate from missing device execution; the parity box remains open. No fabricated zero snapshot on a host that runs another renderer.
+
+No push or remote PR is authorized. The initial phase-0 commit completed asynchronously as `ef6d60aaf`; a later retry failed against read-only Git metadata. This did not prevent the committed-before-code ordering. Recheck Git writes at each phase commit.
 
 ## Validation results
 
-Audit only. Implementation checks not yet run. Results are updated in the owning commit; final per-row status also goes in the requested uncommitted `CODEX-RESULT.md`.
+Current evidence: 261 focused core tests across 10 files pass, including 15 debug integration regressions; 105 initial bridge tests and later 67 bridge/renderer/uniform regressions pass; 31 playtest consumer/scenario specs pass. Three-native, core and playtest typechecks pass after building the playtest declarations. Software-Vulkan native GPU resources: 7/7 pass using `/usr/lib/electron43/vk_swiftshader_icd.json`; core C++: 23/23 pass. Actual timestamp producer test `native_engine_gpu_timer_covers_offscreen`: 1/1 passes, including debug-off zero and debug-on one actual unsampled resolve. V8 player/adapter build passes; five V8 handle/scene/GC-release/wrapper-lifetime tests pass. Registry snapshot equals live native dump (1/1). `pnpm wasm:build` passes with a writable temporary Emscripten cache. These are correctness checks, not physical-GPU performance or Android proof.
+
+Additional software renderer run: 10/18 pass. `cull_keeps_main_bundle`, `traa_reset_seed`, `traa_camera_velocity`, `traa_rejection` abort in Naga WGSL validation (`textureSampleLevel` exact-level type); `pipeline_cache`, `sibling_pipelines`, `pipeline_compile_async`, `recent_bind_groups` request the Dawn Null backend, absent from the wgpu-native test build. These eight checks are not passes; appearance/shader changes are outside this detection task. Native V8 GC pause telemetry remains an implementation gap. Independent review found timing-unit, population-gauge, temporal-name and batched-timestamp defects; corrected cases pass focused executable probes and regressions, including the actual native timestamp producer.
+
+`pnpm prd:progress`, `pnpm sync:agents` and `pnpm check:docs` wrappers encounter tsx IPC `EPERM`; their source-script fallbacks run without that listener. Mirrors: 31 checked, three expected updates. Documentation link checker: 1,528 files / 3,584 links, zero missing; Unreal status checker up to date. Biome exits 0 with existing/changed complexity warnings. Final per-row status also goes in the requested uncommitted `CODEX-RESULT.md`.

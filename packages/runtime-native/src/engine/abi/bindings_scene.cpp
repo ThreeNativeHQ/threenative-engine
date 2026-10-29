@@ -552,6 +552,9 @@ void registerObject3D(ClassBinding& b) {
     };
     // The engine's running work counts as "name@address,...": the Wasm back end reads each total's low
     // word in place every frame, so core's TN_FRAME_BUDGET.counters.engine costs no crossing (PRD-748).
+    b.setters["__debugTelemetry"] = [](void*, const Value& value) {
+        tn::engine::waste::setDebugEnabled(flag(value));
+    };
     b.getters["__engineCounters"] = [](void*) {
         auto& w = tn::engine::waste::counters();
         const std::pair<const char*, const void*> totals[] = {
@@ -566,6 +569,11 @@ void registerObject3D(ClassBinding& b) {
             text += name;
             text += '@';
             text += std::to_string(reinterpret_cast<uintptr_t>(address));
+        }
+        if (tn::engine::waste::debugEnabled().load(std::memory_order_relaxed)) {
+#define TN_COUNTER_ADDRESS(name) text += "," #name "@" + std::to_string(reinterpret_cast<uintptr_t>(&w.name));
+            TN_DEBUG_COUNTERS(TN_COUNTER_ADDRESS)
+#undef TN_COUNTER_ADDRESS
         }
         return Value{Value::Kind::String, 0, text};
     };

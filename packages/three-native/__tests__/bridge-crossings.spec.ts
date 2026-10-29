@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type IBrowserRuntime,
@@ -19,6 +19,11 @@ import {
   createWasmRuntime,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 const registry = JSON.parse(
   readFileSync(
@@ -357,5 +362,72 @@ describe("per-crossing glue on the Wasm bridge", () => {
       runtime.invoke(self, "updateMatrixWorld", []);
     expect((bufferReads - readsBefore) / 50).toBeLessThanOrEqual(1);
     expect(fills - fillsBefore).toBe(0);
+  });
+});
+
+describe("debug bridge ABI observations", () => {
+  it("preserves actual off malloc/free/crossing census and reports Uint8 fog widening on", () => {
+    function run(enabled: boolean) {
+      vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
+      vi.stubGlobal("__THREENATIVE_DEBUG__", false);
+      vi.stubGlobal("location", { search: "" });
+      const { module, grow } = growableModule();
+      const sets = vi.fn(() => 0);
+      module._tn_set = sets;
+      const runtime = createWasmRuntime(module);
+      const ref = { key: "1:0:1:1", type: 1 };
+      runtime.set(ref, "image.data", new Uint8Array(112 * 112 * 4));
+      const before = module.mallocs.length;
+      for (let i = 0; i < 995; i++) runtime.get(ref, "count");
+      expect(module.mallocs.length).toBe(before + 1); // one interned property name
+      grow();
+      runtime.get(ref, "count");
+      return {
+        mallocs: module.mallocs,
+        frees: module.frees,
+        crossings: sets.mock.calls.length,
+        debug: runtime.debugTelemetry,
+      };
+    }
+    const off = run(false);
+    expect(off.debug).toBeUndefined();
+    const on = run(true);
+    expect(on.mallocs).toEqual(off.mallocs);
+    expect(on.frees).toEqual(off.frees);
+    expect(on.crossings).toBe(off.crossings);
+    expect(on.debug?.totals).toMatchObject({
+      bridgeTypedSourceBytes: 50176,
+      bridgeTypedEncodedBytes: 401408,
+      bridgeOverflowAllocations: 1,
+      bridgeOverflowBytes: 401408,
+      wasmGrowthEvents: 1,
+      wasmGrowthBytes: 1048576,
+    });
+    expect(on.debug?.totals.bridgeScratchBytes).toBeGreaterThan(401408);
+    expect(on.debug?.totals["bridge:widen image.data"]).toBe(401408);
+  });
+
+  it("routes bridge totals through the existing browser engine counter reader", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnDebugSources", {});
+    const { runtime } = memoryRuntime();
+    const get = runtime.get;
+    runtime.get = (self, path) => (path === "name" ? "" : get(self, path));
+    const engine = defineBrowserClasses(registry, runtime);
+    const Object3D = engine.classes.Object3D as new () => { count: number };
+    new Object3D();
+    const counters = engine.counters();
+    expect(counters.bridgeConstructCrossings).toBe(1);
+    expect(counters.bridgeWrappersCreated).toBe(1);
+    expect(counters.bridgeLiveWrappers).toBe(1);
+    expect(
+      (globalThis as { __tnDebugSources?: Record<string, { unit: string }> }).__tnDebugSources
+        ?.bridgeLiveWrappers?.unit,
+    ).toBe("gauge");
+    expect(counters.bridgeCrossingMs).toBeGreaterThanOrEqual(0);
+    expect(
+      (globalThis as { __tnDebugSources?: Record<string, { unit: string }> }).__tnDebugSources
+        ?.bridgeCrossingMs?.unit,
+    ).toContain("estimated");
   });
 });

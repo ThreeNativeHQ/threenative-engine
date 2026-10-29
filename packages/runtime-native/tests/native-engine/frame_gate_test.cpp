@@ -1,4 +1,5 @@
 #include "check.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/renderer/frame_gate.h"
 
 #include <cstdint>
@@ -67,8 +68,31 @@ void unthrottledLoopStaysBounded() {
     CHECK(submitted >= 150);  // about one frame per GPU frame still gets through
 }
 
+void debugReasonsFollowGate() {
+    namespace waste = tn::engine::waste;
+    auto& counts = waste::counters();
+    waste::setDebugEnabled(false);
+    const auto before = counts.gateAttempts.load();
+    FrameGate off;
+    off.decline(0, 0);
+    CHECK(counts.gateAttempts.load() == before);
+    waste::setDebugEnabled(true);
+    FrameGate age;
+    age.submitted(1, 0);
+    age.submitted(2, 0);
+    CHECK(age.decline(0, 100));
+    CHECK(counts.gateDeclinedAge.load() == 1);
+    FrameGate capacity;
+    for (uint64_t i = 1; i <= FrameGate::kMaxFrames; ++i) capacity.submitted(i, 0);
+    CHECK(capacity.decline(0, 1));
+    CHECK(counts.gateDeclinedCapacity.load() == 1);
+    CHECK(counts.gateAttempts.load() == before + 2);
+    waste::setDebugEnabled(false);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"late_signal_draws_every_frame", lateSignalDrawsEveryFrame},
+TN_TEST_MAIN({"debug_reasons_follow_gate", debugReasonsFollowGate},
+             {"late_signal_draws_every_frame", lateSignalDrawsEveryFrame},
              {"gpu_behind_is_declined", gpuBehindIsDeclined},
              {"unthrottled_loop_stays_bounded", unthrottledLoopStaysBounded})

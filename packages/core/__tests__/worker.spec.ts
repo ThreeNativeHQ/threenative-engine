@@ -96,6 +96,22 @@ afterEach(() => {
 });
 
 describe("worker game host (PRD-752)", () => {
+  it("forwards the page debug query before the worker starts", async () => {
+    vi.stubGlobal("location", { search: "?tnDebug=1" });
+    const { scope, worker } = link();
+    const { container } = page();
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    try {
+      await handle.ready;
+      expect(scope.__THREENATIVE_DEBUG__).toBe(true);
+    } finally {
+      handle.stop();
+    }
+  });
   it("forwards gamepad snapshots each connected frame and stops polling on disconnect or stop", async () => {
     const { scope, worker, toWorker } = link();
     const { container, view, frame, frames } = page();

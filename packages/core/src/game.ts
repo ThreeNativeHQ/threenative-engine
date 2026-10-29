@@ -53,6 +53,12 @@ import {
   spanNow,
   spansRequested,
 } from "./profiling/Spans.js";
+import {
+  countDebug,
+  debugRequested,
+  measureDebug,
+  observeDebugGc,
+} from "./profiling/debug-telemetry.js";
 import { applyOpacityConvention } from "./profiling/opacity-convention.js";
 import {
   RenderListValidator,
@@ -1124,6 +1130,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   }
 
   async #boot(): Promise<void> {
+    const debug = debugRequested();
     const bootSceneName = this.#resumeScene ?? this.#config.start;
     this.#resumeScene = undefined;
     const SceneType = this.#config.scenes[bootSceneName];
@@ -1185,6 +1192,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     );
     this.#state.start();
     const threeScene = new ThreeScene();
+    if (debug && "__debugTelemetry" in threeScene)
+      (threeScene as ThreeScene & { __debugTelemetry: boolean }).__debugTelemetry = true;
     const camera = createCamera(this.#config.camera);
     const interpolation = new PhysicsInterpolation(this.#config.physicsInterpolation);
     this.#interpolation = interpolation;
@@ -1842,6 +1851,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const bridgeCrossings = createCrossingReader();
     // Every engine work counter, per frame, when a playtest bounds them (PRD-748 engine-cost row).
     const engineCounters = createEngineCounterReader();
+    if (debug) engineCounters();
     // The parity oracle for the static freeze. Off by default and expensive on purpose: it
     // recomputes every world matrix the long way and throws on the first that disagrees with what
     // the frame is about to draw.
@@ -1855,6 +1865,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       });
     }
     if (frameCounters !== undefined) this.#cleanup.push(() => frameCounters.uninstall());
+    if (debug) {
+      const stopGc = observeDebugGc();
+      if (stopGc !== undefined) this.#cleanup.push(stopGc);
+    }
     // Holds no hook and does no work between requests, so an idle game pays nothing for it.
     const geometryCapture = new GeometryCapture();
     this.#geometryCapture = geometryCapture;
@@ -1885,7 +1899,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         observeCompilation();
         // Before the first world pass compiles anything: the merged meshes it compiles are the ones
         // the player will see. A scene that has not entered has nothing built to settle.
-        if (this.#sceneEntered) autoBatch.update();
+        if (this.#sceneEntered) {
+          if (debug)
+            measureDebug("autoBatch", "renderer", "AutoBatch.update", () => autoBatch.update());
+          else autoBatch.update();
+        }
         renderPassBudget?.beginFrame();
         // Runs on web as well as native, so the two stay one behaviour rather than diverging into
         // a fast path nobody tests. When the world is drawn, reconciliation happens immediately
@@ -1994,7 +2012,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             for (const callback of this.#beforeRenderCallbacks) snapshot.push(callback);
             beginSpan(SPANS.beforeRender);
             try {
-              for (const callback of snapshot) callback();
+              for (const callback of snapshot) {
+                if (debug)
+                  measureDebug(
+                    `beforeRender.${callback.name || "anonymous"}`,
+                    "update",
+                    callback.name || "ctx.beforeRender",
+                    callback,
+                  );
+                else callback();
+              }
             } finally {
               endSpan(SPANS.beforeRender);
               this.#beforeRenderDepth -= 1;
@@ -2220,9 +2247,25 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // fed every frame so a plain `TN_FRAME_BUDGET` log can join a window's start and end ticks
         // without `TN_FRAME_SPANS`. `addCounters` keeps the last tick a caller did provide.
         const crossings = bridgeCrossings();
+        if (debug) {
+          const matrix = this.#matrixWorld?.report;
+          if (matrix !== undefined)
+            countDebug("matrixWorldVisits", matrix.visited, "scene", "MatrixWorldPass");
+          const cull = this.#cameraCull?.report;
+          if (cull !== undefined) {
+            countDebug("cullConsidered", cull.considered, "renderer", "RenderCameraCull");
+            countDebug("cullRejected", cull.culled, "renderer", "RenderCameraCull");
+          }
+          const batch = autoBatch.census;
+          countDebug("autoBatchSources", batch.meshes, "renderer", "AutoBatch.census");
+          countDebug("autoBatchDraws", batch.draws, "renderer", "AutoBatch.census");
+          countDebug("autoBatchRefused", batch.refused, "renderer", "AutoBatch.census");
+          countDebug("autoBatchUnsettled", batch.unsettled, "renderer", "AutoBatch.census");
+        }
+        const boundary = frameCounters?.read();
         const engine = engineCounters();
         frameBudget?.addCounters({
-          ...(frameCounters?.read() ?? {}),
+          ...(boundary ?? {}),
           ...(crossings === undefined ? {} : { bridgeCrossings: crossings }),
           ...(engine === undefined ? {} : { engine }),
           simulationTick: gameLoop.tick(),
@@ -2254,32 +2297,88 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       },
       onAfterPhysics: (dt) => {
         if (this.#paused) return;
-        afterPhysicsPhase.run(dt);
+        if (debug)
+          measureDebug("afterPhysics", "update", "afterPhysicsPhase.run", () =>
+            afterPhysicsPhase.run(dt),
+          );
+        else afterPhysicsPhase.run(dt);
       },
       onUpdate: (dt) => {
         if (this.#paused) return;
-        this.#input?.tick();
-        scheduler.tick(dt);
-        pointerEvents.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
-        for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
+        if (debug) {
+          measureDebug("input", "update", "Input.tick", () => this.#input?.tick());
+          measureDebug("scheduler", "update", "Scheduler.tick", () => scheduler.tick(dt));
+          measureDebug("picking", "update", "PointerEvents3D.tick", () =>
+            pointerEvents.tick(
+              input.raw.pointers,
+              picker,
+              input.raw.pointer,
+              input.raw.pointerEdges,
+            ),
+          );
+        } else {
+          this.#input?.tick();
+          scheduler.tick(dt);
+          pointerEvents.tick(input.raw.pointers, picker, input.raw.pointer, input.raw.pointerEdges);
+        }
+        for (const plugin of this.#activePlugins) {
+          if (debug && plugin.beforeUpdate !== undefined)
+            measureDebug(
+              `beforeUpdate.${plugin.beforeUpdate.name || "anonymous"}`,
+              "update",
+              plugin.beforeUpdate.name || "plugin.beforeUpdate",
+              () => plugin.beforeUpdate?.(ctx, dt),
+            );
+          else plugin.beforeUpdate?.(ctx, dt);
+        }
         const scene = this.#scene;
         const frame = this.#sceneFrame;
         if (this.#sceneEntered && frame !== undefined) {
-          frame(ctx, dt);
+          if (debug)
+            measureDebug(
+              "sceneCallbacks",
+              "update",
+              `${scene?.constructor.name}.${frame.name || "frame"}`,
+              () => frame(ctx, dt),
+            );
+          else frame(ctx, dt);
           updates += 1;
         }
         // An async goto() installs the incoming scene before its load resolves; until enter()
         // has run there is no gameplay to step and a game-overridden update() would run against
         // a cleared graph.
         else if (this.#sceneEntered && scene !== undefined) {
-          scene.update(ctx, dt);
+          if (debug)
+            measureDebug("sceneCallbacks", "update", `${scene.constructor.name}.update`, () =>
+              scene.update(ctx, dt),
+            );
+          else scene.update(ctx, dt);
           updates += 1;
         }
         if (this.#scene !== scene || this.#sceneFrame !== frame) return;
-        for (const plugin of this.#activePlugins) plugin.update?.(ctx, dt);
-        this.#entities?.sweep();
-        if (this.#renderer !== undefined && this.#sceneEntered)
-          this.#computeDriven.process(this.#renderer);
+        for (const plugin of this.#activePlugins) {
+          if (debug && plugin.update !== undefined)
+            measureDebug(
+              `plugins.${plugin.update.name || "anonymous"}`,
+              "update",
+              plugin.update.name || "plugin.update",
+              () => plugin.update?.(ctx, dt),
+            );
+          else plugin.update?.(ctx, dt);
+        }
+        if (debug)
+          measureDebug("entities", "update", "Registry.sweep", () => this.#entities?.sweep());
+        else this.#entities?.sweep();
+        if (this.#renderer !== undefined && this.#sceneEntered) {
+          if (debug)
+            measureDebug(
+              "computeDriven",
+              "update",
+              "ComputeDriven.process",
+              () => this.#renderer && this.#computeDriven.process(this.#renderer),
+            );
+          else this.#computeDriven.process(this.#renderer);
+        }
       },
       // A frame the renderer declined to draw (the Wasm engine's gate: two frames still on the GPU)
       // is no frame at all for the readiness window. Counted, five cheap declined frames closed the

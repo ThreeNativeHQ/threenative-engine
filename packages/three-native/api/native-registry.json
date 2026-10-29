@@ -106,6 +106,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -447,6 +448,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -678,6 +680,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -1099,6 +1102,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "coordinateSystem",
         "frustumCulled",
@@ -1902,6 +1906,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -2409,6 +2414,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -2577,6 +2583,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -3042,6 +3049,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "boundingBox",
         "boundingSphere",
         "castShadow",
@@ -3286,6 +3294,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "autoUpdate",
         "castShadow",
         "frustumCulled",
@@ -3616,6 +3625,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -3974,6 +3984,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -4366,6 +4377,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -5396,6 +5408,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -5653,6 +5666,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "bottom",
         "castShadow",
         "coordinateSystem",
@@ -5875,6 +5889,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "aspect",
         "castShadow",
         "coordinateSystem",
@@ -6178,6 +6193,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -6658,6 +6674,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "background",
         "backgroundBlurriness",
         "backgroundIntensity",
@@ -7041,6 +7058,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "bindMatrix",
         "bindMatrixInverse",
         "bindMode",
@@ -7422,6 +7440,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "angle",
         "castShadow",
         "color",
@@ -7690,6 +7709,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "center.x",
         "center.y",

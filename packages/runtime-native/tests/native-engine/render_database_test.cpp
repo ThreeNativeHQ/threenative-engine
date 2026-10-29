@@ -5,6 +5,7 @@
 
 #include "check.h"
 #include "engine/animation/property_binding.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/animation/mixer.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
@@ -3577,7 +3578,10 @@ void gpuTimerCoversOffscreen() {
     RenderDatabase database;
     const auto target = RenderTarget::make(32, 24, kTextureHalfFloatType);
     renderer.setGpuTimer(true);
+    const auto unrequestedBefore = waste::counters().gpuTimestampUnrequestedSamples.load();
     for (const bool deferred : {false, true}) {
+        waste::setDebugEnabled(deferred);
+        renderer.setDebugTimestampRequested(false);
         const auto before = renderer.gpuSamples();
         renderer.setGpuTimerSourceFrame(deferred ? 42 : 41);
         CHECK(renderToTarget(renderer, *target, s.scene, s.camera, {}, false, deferred).empty());
@@ -3588,6 +3592,7 @@ void gpuTimerCoversOffscreen() {
             events.drain();
         }
         CHECK(renderer.gpuSamples() == before + 1);
+        CHECK(waste::counters().gpuTimestampUnrequestedSamples.load() == unrequestedBefore + (deferred ? 1 : 0));
         CHECK(renderer.gpuSourceFrame() == (deferred ? 42 : 41));
         // Two scene passes and one output pass: the offscreen sibling's image is read through its
         // scene colour, so it records no output pass of its own (a0ecc6f0d).
@@ -3598,6 +3603,8 @@ void gpuTimerCoversOffscreen() {
         CHECK(segments[4] == 0);  // nothing is labelled as the screen-space gather here
         CHECK(renderer.lastGpuMs() == segments[0] + segments[1] + segments[2] + segments[3] + segments[4]);
     }
+    waste::setDebugEnabled(false);
+    renderer.setDebugTimestampRequested(true);
     // A separately submitted compute encoder is part of the next rendered frame too.
     namespace g = shader::graph;
     auto values = BufferAttribute::fromFloats({0}, 1);

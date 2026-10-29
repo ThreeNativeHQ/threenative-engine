@@ -23,6 +23,7 @@ import {
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
+import { countDebug, debugRequested } from "./profiling/debug-telemetry.js";
 
 export interface IAssetLoaderOptions {
   readonly basePath?: string;
@@ -563,9 +564,18 @@ async function loadBitmapTexture(
   const flipsAtUpload =
     renderer === undefined ||
     (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
-  const bitmap = await (flipsAtUpload
+  const debug = debugRequested();
+  const start = debug ? performanceNow() : 0;
+  const pending = flipsAtUpload
     ? createImageBitmap(blob)
-    : createImageBitmap(blob, { imageOrientation: "flipY" }));
+    : createImageBitmap(blob, { imageOrientation: "flipY" });
+  if (debug) countDebug("textureDecodeDispatchMs", performanceNow() - start, "loading", url, "ms");
+  const bitmap = await pending;
+  if (debug) {
+    countDebug("textureDecodes", 1, "loading", url);
+    countDebug("textureDecodeBytes", data.byteLength, "loading", url);
+    countDebug("textureDecodeWallMs", performanceNow() - start, "loading", url, "async-ms");
+  }
   const texture = new Texture(bitmap);
   texture.flipY = flipsAtUpload;
   texture.needsUpdate = true;

@@ -1,6 +1,6 @@
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { booleanUniforms, liveUniforms } from "../src/tsl-uniforms.js";
 
 setFlagsFromString("--expose-gc");
@@ -321,5 +321,80 @@ describe("uniform sync cost", () => {
     live.sync({ frameId: 8 } as never);
     expect(frames).toBe(2);
     expect(renders).toBe(11);
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
+
+describe("debug uniform repeated post work", () => {
+  it("counts repeated quad syncs, unchanged lanes and callback CPU with call sites", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnEngineCost", {});
+    vi.stubGlobal("__tnDebugSources", {});
+    let clock = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => ++clock);
+    const { live, pushed } = setup();
+    live.uniform({ x: 1, y: 2, z: 3 });
+    const callback = vi.fn(() => 7);
+    live.uniform(0).onRenderUpdate?.(callback);
+    for (let quad = 0; quad < 10; quad++) live.sync({ frameId: 7 });
+    expect(callback).toHaveBeenCalledTimes(10);
+    expect(pushed).toEqual([[7], [1, 2, 3]]);
+    const host = globalThis as {
+      __tnEngineCost?: Record<string, number>;
+      __tnDebugSources?: Record<string, { caller: string; lever?: string; unit?: string }>;
+    };
+    expect(host.__tnEngineCost).toMatchObject({
+      uniformSyncCalls: 10,
+      uniformWriteAttempts: 20,
+      uniformLaneWriteAttempts: 40,
+      uniformUnchangedWriteAttempts: 18,
+      uniformUnchangedLaneWriteAttempts: 36,
+      uniformWrites: 2,
+      uniformLaneWrites: 4,
+      uniformRenderCallbacks: 10,
+      uniformCallbackMs: 10,
+    });
+    expect(host.__tnEngineCost?.uniformSyncMs).toBeGreaterThan(10);
+    const name = Object.keys(host.__tnEngineCost ?? {}).find(
+      (key) => key.startsWith("uniformCallback:") && key.endsWith("Ms"),
+    );
+    expect(name).toBeDefined();
+    expect(host.__tnDebugSources?.[name ?? ""]?.caller).toContain("tsl-uniforms.spec");
+    expect(host.__tnDebugSources?.uniformSyncMs?.unit).toBe("ms");
+    expect(host.__tnDebugSources?.uniformCallbackMs?.unit).toBe("ms");
+    expect(host.__tnDebugSources?.[name ?? ""]?.unit).toBe("ms");
+    expect(host.__tnDebugSources?.uniformSyncMs?.lever).toContain("PERFORMANCE-LEARNINGS.md#");
+  });
+
+  it("keeps off backend writes and lane-snapshot allocations identical without clocks or stacks", () => {
+    function run(enabled: boolean) {
+      vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
+      vi.stubGlobal("__tnEngineCost", undefined);
+      const { live, writes } = setupLaneIdentity();
+      const value = { x: 1, y: 2 };
+      live.uniform(value);
+      const now = vi.spyOn(performance, "now");
+      const slice = vi.spyOn(Array.prototype, "slice");
+      for (let quad = 0; quad < 10; quad++) live.sync({ frameId: 7 });
+      const census = {
+        clocks: now.mock.calls.length,
+        snapshots: slice.mock.calls.length,
+        writes: writes.map((write) => write.lanes),
+      };
+      now.mockRestore();
+      slice.mockRestore();
+      return census;
+    }
+    const off = run(false);
+    const on = run(true);
+    expect(off).toEqual({ clocks: 0, snapshots: 1, writes: [[1, 2]] });
+    expect(on.snapshots).toBe(off.snapshots);
+    expect(on.writes).toEqual(off.writes);
+    expect(on.clocks).toBeGreaterThan(0);
   });
 });

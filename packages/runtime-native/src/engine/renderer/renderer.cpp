@@ -1,3 +1,4 @@
+#include "engine/foundation/waste_counters.h"
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
@@ -554,6 +555,7 @@ struct Renderer::FrameJob {
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
     bool timed = false;
+    bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
@@ -1174,6 +1176,9 @@ void Renderer::readTraaCounts() {
         if (status != GpuStatus::Ok || bytes.size() != 8) return;
         uint32_t values[2];
         std::memcpy(values, bytes.data(), sizeof values);
+        waste::debugAdd(waste::counters().temporalRejectedPixels, values[0]);
+        waste::debugAdd(waste::counters().temporalClampedPixels, values[1]);
+        waste::debugAdd(waste::counters().temporalMeasuredPixels, measure.pixels);
         counts->rejected = values[0];
         counts->clamped = values[1];
         counts->pixels = measure.pixels;
@@ -2661,6 +2666,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) {
         readTraaCounts();
         const auto status = traa_ ? traa_->status() : TraaPass::Status{};
+        if (traa_) {
+            waste::debugAdd(waste::counters().temporalActiveFrames);
+            if (!status.historyValid) waste::debugAdd(waste::counters().temporalInvalidFrames);
+        }
         temporalStatus_ = {traa_ != nullptr, status.historyValid, status.frame, status.jitterX, status.jitterY,
                            traaCounts_->rejected, traaCounts_->clamped, traaCounts_->pixels, traaCounts_->frame};
     }
@@ -3648,6 +3657,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::vector<std::pair<size_t, WGPURenderPipeline>> responsiveDraws;
     if (traa_) {
         for (const Planned& draw : plan) {
+            if (!compilation) waste::debugAdd(waste::counters().velocityCandidates);
             const DrawItem& item = *draw.item;
             const auto& variant = draw.program->variant;
             // Alpha-tested and alpha-hashed draws need no coverage test here: the equal depth test keeps only the
@@ -3655,6 +3665,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const bool unsupported = item.morphGeometry || item.sprite || item.background ||
                 item.positionNode || item.nodes.vertexNode || item.transparent;
             const auto skip = [&](const char* reason) {
+                if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
                     "; camera motion only";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -3671,6 +3682,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
                 if (!pipeline) throw std::runtime_error("TN_TRAA_RESPONSIVE_PIPELINE_REFUSED");
                 responsiveDraws.emplace_back(size_t(&draw - plan.data()), pipeline);
+                if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
                 continue;
             }
             if (unsupported) { skip("unsupported vertex/coverage"); continue; }
@@ -4580,6 +4592,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.color = color;
     job.depth = depth;
     job.timed = timed;
+    job.debugTimestampRequested = debugTimestampRequested_;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
     job.auxMask = auxMask;
@@ -5174,6 +5187,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (!timestampResolve_.type)
             timestampResolve_ = gpu_.createBuffer(FrameGpuTimer::maxPasses * 16, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
         wgpuCommandEncoderResolveQuerySet(encoder, passTimer_->queries, 0, uint32_t(segments.size()) * 2, gpu_.buffer(timestampResolve_), 0);
+        waste::debugAdd(waste::counters().timestampResolves);
+        if (!job.debugTimestampRequested) waste::debugAdd(waste::counters().gpuTimestampUnrequestedSamples);
     }
     WGPUCommandBufferDescriptor commandDesc = {};
     submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
@@ -5231,6 +5246,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             t->passes = uint32_t(segments.size());
             t->source = source;
             ++t->samples;
+            waste::debugAdd(waste::counters().timestampSamplesDelivered);
         });
     }
     if (ownsPassTimer_) {
@@ -5242,6 +5258,11 @@ void Renderer::encodeFrame(FrameJob& job) {
         std::lock_guard lock(frameMailMutex_);
         lastFrame_.keptShadowMaps = job.keptShadowMaps;
         lastFrame_.uniformBytes = job.uniformBytes;
+        waste::debugAdd(waste::counters().renderFrames);
+        waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
+        waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);
+        waste::debugAdd(waste::counters().auxPasses, lastFrame_.auxPasses);
+        waste::debugAdd(waste::counters().uniformUploadBytes, job.uniformBytes);
         frameMail_ = lastFrame_;
     }
 }

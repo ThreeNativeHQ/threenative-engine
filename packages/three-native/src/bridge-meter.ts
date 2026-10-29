@@ -9,11 +9,13 @@
  * a redundant read, nothing changed it in between that the game could not have kept. The census frame
  * also takes one stack for each name read redundantly, so the verdict names the caller.
  *
- * **The rule is derived, never a constant an author revisits.** It fires when the redundant reads,
+ * **The rule is derived, never a constant an author revisits.** It fires when all crossings,
  * at this host's own measured cost per crossing, take more than `REDUNDANT_SHARE` of the frame's
  * median interval: the frame's own length, so the guard holds on Xvfb and on a loaded host. The line
  * is `TN_BRIDGE_WARNING`, which a playtest fails on (`packages/playtest` perf warnings).
  */
+
+import { debugRequested } from "./debug-telemetry.js";
 
 export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
 /**
@@ -34,7 +36,7 @@ export const PLAYTEST_OBSERVING_GLOBAL = "__tnPlaytestObserving";
 export const WARMUP_FRAMES = 120;
 /** One census frame in each window, so the census costs a frame in this many. */
 export const WINDOW_FRAMES = 120;
-/** The share of the frame that redundant reads may take; past it the waste is worth a named fix. */
+/** The share of the frame that bridge crossings may take; past it the waste is worth a named fix. */
 export const REDUNDANT_SHARE = 1 / 50;
 
 interface ICensus {
@@ -78,7 +80,11 @@ export function callerOf(stack: string | undefined): string {
     .map((line) => line.slice(3));
   const fileOf = (frame: string) => /\(?([^()\s]+?)(?::\d+){1,2}\)?$/u.exec(frame)?.[1] ?? frame;
   const own = new Set(frames.slice(0, 2).map(fileOf));
-  let at = frames.findIndex((frame) => !own.has(fileOf(frame)));
+  let at = frames.findIndex(
+    (frame) =>
+      !own.has(fileOf(frame)) &&
+      !/(?:browser-backend|debug-telemetry|bridge-meter)\.[jt]s(?:[:?]|$)/u.test(fileOf(frame)),
+  );
   if (at < 0) at = Math.min(3, frames.length - 1);
   const short = (frame: string) =>
     frame.replace(
@@ -102,9 +108,9 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
   let window = 0;
   const finish = (done: ICensus): void => {
     window += 1;
+    let crossed = 0;
+    for (const count of done.byName.values()) crossed += count;
     if (done.printed) {
-      let crossed = 0;
-      for (const count of done.byName.values()) crossed += count;
       const top = [...done.byName]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
@@ -117,19 +123,22 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
     }
     let redundant = 0;
     for (const count of done.redundantByName.values()) redundant += count;
-    if (redundant === 0 || intervals.length === 0) return;
+    if (crossed === 0 || intervals.length === 0) return;
     micros ??= host.crossingMicros();
+    if (!Number.isFinite(micros) || micros < 0)
+      throw new Error("TN_BRIDGE_WARNING: invalid crossing calibration.");
     const sorted = [...intervals].sort((a, b) => a - b);
     const frameMs = sorted[Math.floor(sorted.length / 2)] as number;
     const redundantMs = (redundant * micros) / 1000;
-    if (!(redundantMs > frameMs * REDUNDANT_SHARE)) return;
-    const top = [...done.redundantByName]
+    const crossingMs = (crossed * micros) / 1000;
+    if (!(crossingMs > frameMs * REDUNDANT_SHARE)) return;
+    const top = [...done.byName]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, count]) => ({
         name,
         perFrame: done.byName.get(name) ?? count,
-        redundant: count,
+        redundant: done.redundantByName.get(name) ?? 0,
         caller: done.callers.get(name) ?? "unknown",
       }));
     const round = (value: number) => Math.round(value * 1000) / 1000;
@@ -138,11 +147,13 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
         window,
         frameMs: round(frameMs),
         crossingUs: round(micros),
+        crossings: crossed,
+        crossingMs: round(crossingMs),
         redundantReads: redundant,
         redundantMs: round(redundantMs),
-        share: round(redundantMs / frameMs),
+        share: round(crossingMs / frameMs),
         top,
-        fix: `${top[0]?.name ?? "a property"} is read again in one frame from ${top[0]?.caller ?? "unknown"}: read it once per frame into a local and pass that, or move the check out of the per-frame callback.`,
+        fix: `${top[0]?.name ?? "a crossing"} from ${top[0]?.caller ?? "unknown"}: batch writes, keep stable reads, or move work out of the per-frame callback.`,
       })}`,
     );
   };
@@ -184,7 +195,8 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
           byRead: new Map(),
           redundantByName: new Map(),
           callers: new Map(),
-          printed: (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true,
+          printed:
+            debugRequested() || (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true,
         };
       }
     },

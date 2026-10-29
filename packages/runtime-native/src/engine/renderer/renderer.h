@@ -694,6 +694,7 @@ public:
      * lands. The caller owns the id: the engine's own render ids are not one per present.
      */
     void setGpuTimerSourceFrame(uint64_t frame) { sourceFrame_ = frame; }
+    void setDebugTimestampRequested(bool requested) { debugTimestampRequested_ = requested; }
     /**
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
      * scene pass, other passes (offscreen, compute, post, TRAA), output pass.
@@ -1182,6 +1183,7 @@ private:
     bool timerBeganAtShadow_ = false;
     std::shared_ptr<FrameGpuTimer> passTimer_;
     bool ownsPassTimer_ = true;
+    bool debugTimestampRequested_ = true;
     uint64_t sourceFrame_ = 0;  // the caller frame id the next timed frame is submitted with
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this

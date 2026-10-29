@@ -24,6 +24,8 @@
 // the names the endpoint's injected input carries.
 #include <libplatform/libplatform.h>
 #include "engine/abi/binding.h"
+#include "engine/foundation/waste_counters.h"
+#include "engine/scene/object3d.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/post/traa.h"
 
@@ -1235,6 +1237,34 @@ bool V8Game::start(const std::string& path, std::string& error) {
     // The bench's phase clock: thread CPU ms, the clock presentCpuMs uses; the legacy host installs the same name.
     ctx->Global()->Set(ctx, v8str(isolate_, "__tnThreadCpuMs"), v8::Function::New(ctx,
         [](const v8::FunctionCallbackInfo<v8::Value>& info) { info.GetReturnValue().Set(player::threadCpuMs()); }).ToLocalChecked()).Check();
+    if (const char* debug = std::getenv("TN_DEBUG");
+        debug && std::strcmp(debug, "1") == 0) {
+        tn::engine::waste::setDebugEnabled(true);
+        ctx->Global()->Set(ctx, v8str(isolate_, "__THREENATIVE_DEBUG__"), v8::True(isolate_)).Check();
+    }
+    ctx->Global()->Set(ctx, v8str(isolate_, "__tnEngineCounters"), v8::Function::New(ctx,
+        [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            auto* isolate = info.GetIsolate();
+            auto context = isolate->GetCurrentContext();
+            auto result = v8::Object::New(isolate);
+            auto& w = tn::engine::waste::counters();
+            const auto put = [&](const char* name, const std::atomic<uint64_t>& value) {
+                result->Set(context, v8str(isolate, name), v8::Number::New(isolate, double(value.load(std::memory_order_relaxed)))).Check();
+            };
+            put("contentClassOf", w.contentClassCalls);
+            put("contentVersionKeys", w.contentVersionKeys);
+            put("classify", w.classifies);
+            put("share", w.shareCalls);
+            put("shareHits", w.shareHits);
+            put("shareMints", w.shareMints);
+            put("buffers", w.bufferAllocs);
+            put("textures", w.textureAllocs);
+            result->Set(context, v8str(isolate, "matrixEvaluations"), v8::Number::New(isolate, double(tn::engine::Object3D::matrixEvaluations()))).Check();
+#define TN_COUNTER_VALUE(name) { std::string key = #name; if (key.ends_with("Micros")) { key.replace(key.size() - 6, 6, "Ms"); result->Set(context, v8str(isolate, key), v8::Number::New(isolate, double(w.name.load(std::memory_order_relaxed)) / 1000)).Check(); } else put(#name, w.name); }
+            TN_DEBUG_COUNTERS(TN_COUNTER_VALUE)
+#undef TN_COUNTER_VALUE
+            info.GetReturnValue().Set(result);
+        }).ToLocalChecked()).Check();
     // TN_PLAYER_CROSSINGS=1: the live per-name crossing counts as JSON, so the bench can diff them per rung.
     if (std::getenv("TN_PLAYER_CROSSINGS") != nullptr)
         ctx->Global()->Set(ctx, v8str(isolate_, "__tnCrossingHistogram"), v8::Function::New(ctx,

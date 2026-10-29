@@ -703,6 +703,8 @@ extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
     if (!lastDrawn) lastDrawn = renderer.get();
     switch (field) {
+        case -1: renderer->setDebugTimestampRequested(true); return 0;
+        case -2: renderer->setDebugTimestampRequested(false); return 0;
         // three's renderer.info.render counts every pass of a render(), the shadow pass's included, as the
         // V8 player's frameDrawn does: one scene is counted the same on every backend.
         case 0: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);

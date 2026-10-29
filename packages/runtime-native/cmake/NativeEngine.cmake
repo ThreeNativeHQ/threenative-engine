@@ -81,6 +81,7 @@ endif()
 get_directory_property(tn_tests_before_gpu TESTS)
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     tn_native_engine_test(tn-native-engine-gpu-resources-test tests/native-engine/gpu_resources_test.cpp
+        native_engine_gpu_debug_counters=debug_counters
         native_engine_gpu_upload_readback=upload_readback
         native_engine_gpu_deferred_destroy=deferred_destroy
         native_engine_gpu_async_only=async_only

@@ -15,6 +15,7 @@
 import { ENGINE_COST_KNOB, createBridgeMeter } from "./bridge-meter.js";
 import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
+import { type DebugTelemetry, debugTelemetry } from "./debug-telemetry.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
 
@@ -64,6 +65,7 @@ export type EngineValue =
 
 /** What the classes call; the Wasm ABI implements it, and a surface-only runtime refuses every call. */
 export interface IBrowserRuntime {
+  readonly debugTelemetry?: DebugTelemetry;
   typeId(className: string): number;
   construct(className: string, args: readonly EngineValue[]): IEngineRef;
   invoke(self: IEngineRef, method: string, args: readonly EngineValue[]): EngineValue;
@@ -389,18 +391,26 @@ export function defineBrowserClasses(
   // Every call into the engine counts, one increment each: the bench's crossing budget reads it per frame.
   // A census frame (bridge-meter.ts) also records each one by name, so a redundant read is named.
   let crossings = 0;
+  const debug = source.debugTelemetry ?? debugTelemetry(source);
+  let debugActivated = false;
+  let crossingMicros: number | undefined;
   const typeNames = new Map<number, string>();
-  const meter = createBridgeMeter({
-    now: () => performance.now(),
-    // One getter crossing, timed over a thousand on a scratch Group through the uncounted runtime.
-    crossingMicros() {
+  const calibratedCrossingMicros = (): number => {
+    if (crossingMicros === undefined) {
       const ref = source.construct("Group", []);
       const start = performance.now();
       for (let i = 0; i < 1000; i++) source.get(ref, "name");
-      const micros = performance.now() - start;
+      crossingMicros = performance.now() - start;
       source.release(ref);
-      return micros;
-    },
+      if (!Number.isFinite(crossingMicros) || crossingMicros < 0)
+        throw new Error("TN_DEBUG: invalid crossing calibration.");
+    }
+    return crossingMicros;
+  };
+  const meter = createBridgeMeter({
+    now: () => performance.now(),
+    // Getter-equivalent microseconds: a thousand crossings measured in milliseconds.
+    crossingMicros: calibratedCrossingMicros,
     typeName: (type) => typeNames.get(type) ?? String(type),
     stack: () => new Error().stack,
     report: (line) => console.warn(line),
@@ -409,21 +419,27 @@ export function defineBrowserClasses(
     ...source,
     construct: (className, args) => {
       crossings++;
-      return source.construct(className, args);
+      const ref = source.construct(className, args);
+      if (meter.counting) meter.record("construct", ref, className);
+      debug?.crossing("construct", ref, className, className);
+      return ref;
     },
     get: (self, path) => {
       crossings++;
       if (meter.counting) meter.record("get", self, path);
+      debug?.crossing("get", self, path, typeNames.get(self.type) ?? String(self.type));
       return source.get(self, path);
     },
     set: (self, path, value) => {
       crossings++;
       if (meter.counting) meter.record("set", self, path);
+      debug?.crossing("set", self, path, typeNames.get(self.type) ?? String(self.type));
       source.set(self, path, value);
     },
     invoke: (self, method, args) => {
       crossings++;
       if (meter.counting) meter.record("call", self, method);
+      debug?.crossing("call", self, method, typeNames.get(self.type) ?? String(self.type));
       return source.invoke(self, method, args);
     },
     ...(source.engineReferences === undefined
@@ -431,10 +447,52 @@ export function defineBrowserClasses(
       : {
           engineReferences: (refs: readonly IEngineRef[]) => {
             crossings++;
+            const first = refs[0];
+            if (meter.counting && first !== undefined)
+              meter.record("engineReferences", first, "engineReferences");
+            if (debug !== undefined)
+              debug.crossing(
+                "engineReferences",
+                first ?? { key: "batch", type: 0 },
+                "engineReferences",
+                "Object3D",
+              );
             return source.engineReferences?.(refs) ?? [];
           },
         }),
   };
+  if (debug !== undefined) {
+    runtime.release = (self) => {
+      debug.crossing("release", self, "release", typeNames.get(self.type) ?? String(self.type));
+      source.release(self);
+    };
+    runtime.setCallback = (self, name, callback) => {
+      debug.crossing("callback", self, name, typeNames.get(self.type) ?? String(self.type));
+      source.setCallback(self, name, callback);
+    };
+    const attributeArray = source.attributeArray;
+    if (attributeArray !== undefined)
+      runtime.attributeArray = (self, offset, count) => {
+        debug.crossing(
+          "attributeRead",
+          self,
+          "array",
+          typeNames.get(self.type) ?? String(self.type),
+        );
+        return attributeArray(self, offset, count);
+      };
+    const attributeWrite = source.attributeWrite;
+    if (attributeWrite !== undefined)
+      runtime.attributeWrite = (self, value, offset) => {
+        debug.crossing(
+          "attributeWrite",
+          self,
+          "array",
+          typeNames.get(self.type) ?? String(self.type),
+        );
+        attributeWrite(self, value, offset);
+      };
+  }
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object; own?: readonly IOwnField[] }>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
@@ -1149,6 +1207,7 @@ export function defineBrowserClasses(
   };
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
+      debug?.add("bridgeWrappersReleased");
       wrappers.delete(ref.key);
       shaderNodes.delete(ref.key); // the engine material keeps its graph; the JS nodes may go
       for (const name of callbackNames.get(ref.key) ?? []) runtime.setCallback(ref, name, null);
@@ -1158,12 +1217,14 @@ export function defineBrowserClasses(
   });
 
   const adopt = (target: object, ref: IEngineRef): object => {
+    debug?.add("bridgeWrappersCreated");
     (target as IWrapped)[REF] = ref;
     wrappers.set(ref.key, new WeakRef(target));
     released.register(target, ref);
     return target;
   };
   const wrap = (ref: IEngineRef): object => {
+    debug?.add("bridgeWrapRequests");
     const live = wrappers.get(ref.key)?.deref();
     if (live !== undefined) return live;
     const cls = byType.get(ref.type);
@@ -1337,6 +1398,14 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        if (
+          debug !== undefined &&
+          !debugActivated &&
+          binding.setters.includes("__debugTelemetry")
+        ) {
+          runtime.set(refOf(this), "__debugTelemetry", true);
+          debugActivated = true;
+        }
         // The hierarchy counter's address, asked once a process at the first scene node made, and the
         // engine's work counts ("name@address,..."), each read in place per frame by counters().
         if (hierarchyAt === undefined && hierarchyClass) {
@@ -2086,15 +2155,46 @@ export function defineBrowserClasses(
         propertyReads,
         walkVisits,
       };
+      if (debug !== undefined) {
+        // Getter-equivalent estimate, calibrated on this host; no per-crossing timer.
+        const estimated = ((debug.totals.bridgeCrossings ?? 0) * calibratedCrossingMicros()) / 1000;
+        debug.add(
+          "bridgeCrossingMs",
+          Math.max(0, estimated - (debug.totals.bridgeCrossingMs ?? 0)),
+          "bridge",
+          "browser-backend.ts",
+          "estimated-ms",
+        );
+        debug.add("bridgeLiveWrappers", 0, "bridge", "browser-backend.ts", "gauge");
+        Object.assign(totals, debug.totals, { bridgeLiveWrappers: wrappers.size });
+      }
       if (readWord === undefined) return totals;
       if (hierarchyAt !== undefined) totals.hierarchyMoves = readWord(hierarchyAt);
-      // The low word of each 64-bit total: core takes per-frame differences, which stay exact.
-      for (const [counter, address] of engineCountersAt) totals[counter] = readWord(address) >>> 0;
+      // Debug uses coherent 64-bit totals; off retains the original single-word census.
+      for (const [counter, address] of engineCountersAt) {
+        let value: number;
+        if (debug === undefined) value = readWord(address) >>> 0;
+        else {
+          let before: number;
+          let high: number;
+          let low: number;
+          do {
+            before = readWord(address + 4) >>> 0;
+            low = readWord(address) >>> 0;
+            high = readWord(address + 4) >>> 0;
+          } while (before !== high);
+          value = high * 0x100000000 + low;
+        }
+        if (counter.endsWith("Micros")) totals[`${counter.slice(0, -6)}Ms`] = value / 1000;
+        else totals[counter] = value;
+      }
       return totals;
     },
     collect() {
       meter.frame();
-      glueCounting = (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
+      debug?.frame();
+      glueCounting =
+        debug !== undefined || (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
       const wanted = cacheWanted();
       // A setter or method drops an object's kept answers whether or not the cache is on, so turning it
       // back on keeps nothing stale; the two tables that other calls drop are emptied anyway.
@@ -2495,13 +2595,19 @@ function countCall(kind: string, self: IEngineRef, name: string): void {
 }
 
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
+  const debug = debugTelemetry(abi);
+  let encoding = "arguments";
   // The heap's views, made again only when the memory grows: Emscripten replaces HEAPU8 then, so one
   // identity test per use stands in for reading two `.buffer`s, which every crossing paid (PRD-748).
   let heap = abi.HEAPU8;
+  let heapBytes = heap.byteLength;
   let dataView = new DataView(heap.buffer);
   let words = new Uint32Array(heap.buffer);
   const grown = () => {
+    debug?.add("wasmGrowthEvents");
+    debug?.add("wasmGrowthBytes", Math.max(0, abi.HEAPU8.byteLength - heapBytes), "memory");
     heap = abi.HEAPU8;
+    heapBytes = heap.byteLength;
     dataView = new DataView(heap.buffer);
     words = new Uint32Array(heap.buffer);
   };
@@ -2523,6 +2629,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   const allocations: number[] = [];
   const alloc = (size: number): number => {
     const aligned = (size + 7) & ~7;
+    debug?.add("bridgeScratchBytes", aligned);
     let pointer: number;
     if (arenaTop + aligned <= arenaBase + arenaSize) {
       pointer = arenaTop;
@@ -2531,6 +2638,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
       pointer = abi._malloc(aligned) >>> 0;
       allocations.push(pointer);
+      debug?.add("bridgeOverflowAllocations");
+      debug?.add("bridgeOverflowBytes", aligned);
     }
     // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
     // `wordView` first: a `_malloc` above may have grown the memory.
@@ -2644,6 +2753,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
       // A forwarded typed array (see `toEngine`): one heap copy, its view bounds kept, no boxed list.
       const typed = value as TypedArray;
+      debug?.widen(typed, encoding);
       const numbers = alloc(Math.max(8, typed.length * 8));
       abi.HEAPF64.set(typed, numbers / 8);
       const name = string(typed.constructor.name).pointer;
@@ -2808,6 +2918,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
+    ...(debug === undefined ? {} : { debugTelemetry: debug }),
     typedArrays: true,
     typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
@@ -2831,6 +2942,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     invoke: (self, method, args) =>
       scoped(() => {
         countCall("call", self, method);
+        if (debug !== undefined) encoding = method;
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(
@@ -2872,6 +2984,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     set: (self, path, value) =>
       scoped(() => {
         countCall("set", self, path);
+        if (debug !== undefined) encoding = path;
         // One value written in place: no one-item list per write.
         const pointer = alloc(VALUE);
         writeValue(pointer, value);

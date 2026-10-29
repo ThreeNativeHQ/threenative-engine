@@ -23,6 +23,12 @@
 
 import type { IFrameCounters } from "./profiling/FrameCounters.js";
 import {
+  countDebug,
+  debugHotCalls,
+  debugRequested,
+  formatDebugReport,
+} from "./profiling/debug-telemetry.js";
+import {
   FRAME_PASS_KINDS,
   type FramePassKind,
   type IRenderPassSample,
@@ -625,6 +631,7 @@ function round1(value: number): number {
  * exception is `addSimulation`, which reports simulation that ran outside any frame — see it.
  */
 export class FrameBudget {
+  readonly #debug = debugRequested();
   #taskObserver: PerformanceObserver | undefined;
   #taskCount = 0;
   #longestTaskMs = 0;
@@ -737,6 +744,10 @@ export class FrameBudget {
     if (globalThis.PerformanceObserver?.supportedEntryTypes.includes("longtask")) {
       this.#taskObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
+          if (this.#debug) {
+            countDebug("longTasks", 1, "host", "PerformanceObserver.longtask");
+            countDebug("longTaskMs", entry.duration, "host", "PerformanceObserver.longtask", "ms");
+          }
           this.#taskCount++;
           this.#longestTaskMs = Math.max(this.#longestTaskMs, entry.duration);
           if (
@@ -985,6 +996,11 @@ export class FrameBudget {
    */
   addCounters(counters: IFrameCounters): void {
     if (!this.#open) throw new Error("FrameBudget.addCounters called outside a frame.");
+    if (this.#debug)
+      for (const [name, value] of Object.entries(counters.engine ?? {})) {
+        if (!Number.isFinite(value) || value < 0)
+          throw new Error(`Frame budget engine counter ${name} must be non-negative and finite.`);
+      }
     for (const [name, value] of [
       ["hostCalls", counters.hostCalls],
       ["gpuBytes", counters.gpuBytes],
@@ -1406,6 +1422,11 @@ export class FrameBudget {
     if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
+    if (this.#debug) {
+      this.#report(formatDebugReport(completed));
+      const hotCalls = debugHotCalls(completed);
+      if (hotCalls !== undefined) this.#report(hotCalls);
+    }
     this.#windowIndex += 1;
     this.#presented.reset();
     this.#drawn.reset();

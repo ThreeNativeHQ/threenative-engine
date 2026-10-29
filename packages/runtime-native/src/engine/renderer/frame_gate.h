@@ -1,5 +1,7 @@
 #pragma once
 
+#include "engine/foundation/waste_counters.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -23,12 +25,18 @@ public:
 
     // Called once per frame attempt, before the draw: true declines the frame.
     bool decline(uint64_t completedSerial, double nowMs) {
+        waste::debugAdd(waste::counters().gateAttempts);
         if (lastAttemptMs_ >= 0 && nowMs > lastAttemptMs_)
             intervalMs_ += 0.1 * (std::clamp(nowMs - lastAttemptMs_, 1.0, 100.0) - intervalMs_);
         lastAttemptMs_ = nowMs;
         while (!frames_.empty() && frames_.front().serial <= completedSerial) frames_.pop_front();
-        if (frames_.size() >= kMaxFrames) return true;
-        return frames_.size() >= 2 && nowMs - frames_.front().submittedMs > kBehindIntervals * intervalMs_;
+        if (frames_.size() >= kMaxFrames) {
+            waste::debugAdd(waste::counters().gateDeclinedCapacity);
+            return true;
+        }
+        const bool behind = frames_.size() >= 2 && nowMs - frames_.front().submittedMs > kBehindIntervals * intervalMs_;
+        if (behind) waste::debugAdd(waste::counters().gateDeclinedAge);
+        return behind;
     }
 
     // Called after a drawn frame's submit, with the serial the frame ended at.
