@@ -16,7 +16,7 @@ it.each([
   const scene = new Scene();
   const sun = setupLighting(scene, { shadowMap: { enabled: false, type: 0 } });
   const camera = new OrthographicCamera();
-  const view = createRtsView(-70, 58);
+  const view = createRtsView(-66, 57);
   view.zoom = zoom;
   view.desiredZoom = zoom;
   applyRtsCamera(camera, view, { width: 913 * aspect, height: 913 }, 0);

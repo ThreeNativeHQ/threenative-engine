@@ -133,3 +133,21 @@ it("publishes the HUD state on a 50 ms clock, not once per rendered frame", () =
   const source = readFileSync(new URL("../templates/rts/src/game.ts", import.meta.url), "utf8");
   expect(source, "the kit names a UI publication interval").toMatch(/stateFlushMs:\s*50\b/);
 });
+
+it("gives the bars and order markers their colour attribute before the first draw", () => {
+  // three.js compiles a material once: a batch first drawn without `instanceColor` stays white on
+  // `engine: "threejs"`, as the bars did beside AstraCraft (PRD-765 judge round 2).
+  const models = createUnitModels();
+  const army = createArmy(models);
+  const coloured = army.root.children.filter(
+    (child) =>
+      child instanceof InstancedMesh &&
+      (child.geometry instanceof PlaneGeometry ||
+        (child.material as { opacity?: number }).opacity === 0.7),
+  ) as InstancedMesh[];
+  expect(coloured.length, "the bar batch and the marker ring batch").toBe(2);
+  for (const mesh of coloured)
+    expect(mesh.instanceColor, "colour attribute at creation").not.toBeNull();
+  army.dispose();
+  models.dispose();
+});

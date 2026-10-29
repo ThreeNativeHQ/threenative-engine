@@ -183,7 +183,8 @@ export class Play extends Scene<GameState, undefined> {
     // reproducible from the `seed` in src/game.ts.
     const sim = new Game({ seed: Math.floor(ctx.random.range(1, 1_000_000)) });
     this.#sim = sim;
-    const view = createRtsView(-70, 58);
+    // AstraCraft opens on (-66, 57): the same frame beside it (PRD-765 judge round 2).
+    const view = createRtsView(-66, 57);
     this.#view = view;
 
     setupSky(ctx.scene, this.#sky);

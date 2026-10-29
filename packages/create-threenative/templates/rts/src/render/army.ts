@@ -26,7 +26,7 @@ import type { Game } from "../sim/game.js";
 import { HALF, STARTS, terrainHeight } from "../sim/terrain.js";
 import { type IEntity, TYPES } from "../sim/types.js";
 import type { IUnitModels } from "./models.js";
-import { palette } from "./palette.js";
+import { legacyColor, palette } from "./palette.js";
 
 /** Copies one (type, team) can be on screen at once. The supply cap is 120 for the whole map. */
 const CAPACITY = 128;
@@ -110,15 +110,16 @@ export function createArmy(
   for (let index = 0; index < MARKERS; index += 1) markers.push({ life: 0, x: 0, z: 0 });
 
   // One ring per faction, because the ring's colour *is* the faction: a single mesh would need a
-  // per-instance colour, and three draws are cheaper than the bookkeeping.
+  // per-instance colour, and three draws are cheaper than the bookkeeping. AstraCraft's thin ring:
+  // its legacy-linear faction colour at 0.75 opacity, no dark underlay (PRD-765 judge round 2).
   const rings = STARTS.map(
     (start) =>
       new InstancedMesh(
-        new RingGeometry(1, 1.075, 40).rotateX(-Math.PI / 2),
+        new RingGeometry(1, 1.095, 40).rotateX(-Math.PI / 2),
         new MeshBasicMaterial({
-          color: start.color,
+          color: legacyColor(start.color),
           depthWrite: false,
-          opacity: 0.85,
+          opacity: 0.75,
           transparent: true,
         }),
         CAPACITY,
@@ -134,25 +135,17 @@ export function createArmy(
   // array for every ring, every frame.
   const ringTeams = STARTS.map((start, index) => start.team ?? index);
 
-  // Dark borders keep the authored faction colours readable on bright ground. Both underlays
-  // share one owned material and follow the foreground transforms without another per-frame walk.
+  // A dark border keeps the order marker readable on bright ground.
   const backingMaterial = new MeshBasicMaterial({ color: palette.unseen, depthWrite: false });
-  const ringBackings = new InstancedMesh(
-    new RingGeometry(0.97, 1.105, 40).rotateX(-Math.PI / 2),
-    backingMaterial,
-    CAPACITY * STARTS.length,
-  );
   const markerBackings = new InstancedMesh(
     new RingGeometry(0.47, 0.69, 24).rotateX(-Math.PI / 2),
     backingMaterial,
     MARKERS,
   );
-  for (const backing of [ringBackings, markerBackings]) {
-    backing.instanceMatrix.setUsage(DynamicDrawUsage);
-    backing.frustumCulled = false;
-    backing.renderOrder = 1;
-    root.add(backing);
-  }
+  markerBackings.instanceMatrix.setUsage(DynamicDrawUsage);
+  markerBackings.frustumCulled = false;
+  markerBackings.renderOrder = 1;
+  root.add(markerBackings);
 
   // Two quads per readout — a coloured fill over the dark backdrop ring that frames it — so a bar
   // reads against any ground. `toneMapped: false` keeps them at the colour they were authored.
@@ -164,6 +157,9 @@ export function createArmy(
   bars.instanceMatrix.setUsage(DynamicDrawUsage);
   bars.frustumCulled = false;
   bars.renderOrder = 3;
+  // The colour attribute exists before the first draw: three.js compiles the material once, and a
+  // batch first drawn without `instanceColor` stays white on that engine (PRD-765 A/B).
+  bars.setColorAt(0, _backing);
   root.add(bars);
 
   const markerRings = new InstancedMesh(
@@ -179,6 +175,7 @@ export function createArmy(
   markerRings.instanceMatrix.setUsage(DynamicDrawUsage);
   markerRings.frustumCulled = false;
   markerRings.renderOrder = 2;
+  markerRings.setColorAt(0, _backing);
   root.add(markerRings);
 
   const batch = (type: string, team: number): IBatch => {
@@ -357,7 +354,6 @@ export function createArmy(
         }
       }
 
-      let backingCount = 0;
       for (let teamIndex = 0; teamIndex < rings.length; teamIndex++) {
         const ring = rings[teamIndex];
         const team = ringTeams[teamIndex] ?? 0;
@@ -368,21 +364,18 @@ export function createArmy(
           if (team !== 0 && !game.visibleAt(entity.x, entity.z)) continue;
           // Only the selection is ringed: the painted apron already frames every building.
           if (!selected.has(entity.id)) continue;
-          const radius = entity.r + 0.4;
+          const radius = entity.r + 0.3;
           const at = pose(entity);
           _dummy.position.set(at.x, terrainHeight(at.x, at.z) + 0.13, at.z);
           _dummy.rotation.set(0, 0, 0);
           _dummy.scale.set(radius, 1, radius);
           _dummy.updateMatrix();
           ring.setMatrixAt(count, _dummy.matrix);
-          ringBackings.setMatrixAt(backingCount++, _dummy.matrix);
           count += 1;
         }
         ring.count = count;
         upload(ring.instanceMatrix, count);
       }
-      ringBackings.count = backingCount;
-      upload(ringBackings.instanceMatrix, backingCount);
 
       barCount = 0;
       for (const entity of game.entities) {
@@ -444,10 +437,9 @@ export function createArmy(
       (bars.material as MeshBasicMaterial).dispose();
       markerRings.geometry.dispose();
       (markerRings.material as MeshBasicMaterial).dispose();
-      ringBackings.geometry.dispose();
       markerBackings.geometry.dispose();
       backingMaterial.dispose();
-      root.remove(ringBackings, markerBackings);
+      root.remove(markerBackings);
     },
   };
 }

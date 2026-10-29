@@ -48,7 +48,9 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
   key.castShadow = true;
   const size = mobile ? 2048 : 4096;
   key.shadow.mapSize.set(size, size);
-  key.shadow.radius = 2;
+  // AstraCraft ran three r140, whose PCFSoft kernel ignored the radius: about one texel. Radius 2
+  // left contact shadows lighter and blurrier than the reference (PRD-765 judge round 2).
+  key.shadow.radius = 1;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = SUN_DISTANCE * 2.5;
   key.shadow.camera.left = -EXTENT;
