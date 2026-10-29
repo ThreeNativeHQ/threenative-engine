@@ -3623,3 +3623,8 @@ export declare function textureStore(...args: unknown[]): unknown;
 
 /** Catalog supported: three/tsl/modelWorldMatrix. */
 export declare function modelWorldMatrix(): void;
+
+/** Catalog supported: three/DataArrayTexture. */
+export declare class DataArrayTexture extends Texture {
+constructor();
+}

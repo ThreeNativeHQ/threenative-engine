@@ -631,7 +631,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: expected an engine Texture");
         const auto next = std::static_pointer_cast<const engine::Texture>(args[0].object);
         const auto previous = std::static_pointer_cast<const engine::Texture>(receiver->node->textureObject());
-        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume)
+        if (next->depthTexture != previous->depthTexture || next->volume != previous->volume || next->array != previous->array)
             throw std::runtime_error("TN_NATIVE_TEXTURE_VALUE_TYPE: replacement must preserve texture dimension and sample type");
         receiver->node->textureBinding->object = args[0].object;
         return receiver->node;
@@ -705,6 +705,18 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         auto node = std::make_shared<g::NodeData>(*source);
         node->sampleBias = true;
         node->args.push_back(bias);
+        return node;
+    }
+    // TextureNode.depth(layer): the layer of a DataArrayTexture the uv reads; the coordinate becomes (uv, layer).
+    if (method && name == "depth") {
+        arity(1);
+        const auto source = lhs();
+        const auto object = source->kind == g::Kind::Texture && source->textureBinding ? source->textureObject() : nullptr;
+        if (!object || !static_cast<const engine::Texture*>(object.get())->array)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_DEPTH_TYPE: depth(layer) needs a texture node over a DataArrayTexture");
+        auto node = std::make_shared<g::NodeData>(*source);
+        const auto uv = source->args[0];
+        node->args[0] = g::vec3({g::swizzle(uv, "x"), g::swizzle(uv, "y"), g::float_(arg(0))});
         return node;
     }
     // TextureNode.level(n): the same texture read at an explicit mip level.

@@ -1830,6 +1830,18 @@ void data_texture_bytes() {
     const auto* cubeData = engineObject<tn::engine::DataTexture>(cube);
     CHECK(cubeData && cubeData->type == 1016 && same(cubeData->data, halves, sizeof(halves)));
 
+    // DataArrayTexture(data, width, height, depth): the typed array's bytes, `depth` layers, an array flag.
+    const uint8_t layerBytes[2 * 2 * 3 * 4] = {1, 2, 3, 4};
+    const tn_value_t layerArgs[4] = {bytes("Uint8Array", layerBytes, sizeof(layerBytes)), num(2), num(2), num(3)};
+    tn_handle_t layers{};
+    CHECK(tn_construct(ctx, "DataArrayTexture", layerArgs, 4, &layers, &d.value) == TN_OK);
+    const auto* layerData = engineObject<tn::engine::DataTexture>(layers);
+    CHECK(layerData && layerData->array && !layerData->volume && layerData->depth == 3 && layerData->hasImage());
+    CHECK(layerData && same(layerData->data, layerBytes, sizeof(layerBytes)));
+    const tn_value_t shortLayers[4] = {bytes("Uint8Array", layerBytes, 2 * 2 * 2 * 4), num(2), num(2), num(3)};
+    tn_handle_t refusedLayers{};
+    CHECK(tn_construct(ctx, "DataArrayTexture", shortLayers, 4, &refusedLayers, &d.value) != TN_OK);
+
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -2785,6 +2797,41 @@ void starter_post_bindings() {
     bool hasVolume = false;
     for (const auto& binding : grade.bindings) hasVolume |= binding.volume;
     CHECK(hasVolume);
+    // A DataArrayTexture samples as texture_2d_array: texture(array, uv).depth(layer) reads (uv, layer), and a
+    // texture(array, uv) alone reads layer 0. A texture that is not an array refuses depth(layer).
+    {
+        const auto layers = std::make_shared<tn::engine::DataTexture>();
+        layers->array = true;
+        layers->setImage(std::vector<double>(48, 128), "Uint8Array", 2, 2, 1023, 1009);
+        layers->depth = 3;
+        const auto sampled = call("texture", {TslArg::objectOf("DataArrayTexture", layers)});
+        const auto sampledReceiver = sampled ? TslArg::of(sampled) : TslArg::other();
+        const auto layered = sampled ? tn::abi::tslCall("depth", &sampledReceiver, {TslArg::of(g::int_(2))}, serial) : nullptr;
+        CHECK(layered != nullptr);
+        if (layered) {
+            const auto stage = compile(g::vec4({g::swizzle(layered, "xyz"), g::float_(1)}));
+            bool hasArray = false;
+            for (const auto& binding : stage.bindings) hasArray |= binding.array && !binding.volume;
+            CHECK(hasArray);
+            CHECK(stage.wgsl.code.find("texture_2d_array<f32>") != std::string::npos);
+            CHECK(stage.wgsl.code.find("textureSample(t_" + layered->name + ", smp_" + layered->name) != std::string::npos);
+            CHECK(stage.wgsl.code.find("i32(floor(") != std::string::npos);
+            const auto flat = compile(g::vec4({g::swizzle(sampled, "xyz"), g::float_(1)}));
+            CHECK(flat.wgsl.code.find("texture_2d_array<f32>") != std::string::npos);
+            const auto leveledLayer = tn::abi::tslCall("level", &sampledReceiver, {TslArg::of(g::float_(1))}, serial);
+            CHECK(leveledLayer != nullptr);
+            if (leveledLayer)
+                CHECK(compile(g::vec4({g::swizzle(leveledLayer, "xyz"), g::float_(1)})).wgsl.code.find("textureSampleLevel(t_") != std::string::npos);
+        }
+        const auto plain = std::make_shared<tn::engine::DataTexture>();
+        plain->setImage(std::vector<double>(4, 128), "Uint8Array", 1, 1, 1023, 1009);
+        const auto flatTexture = call("texture", {TslArg::objectOf("DataTexture", plain)});
+        const auto flatReceiver = flatTexture ? TslArg::of(flatTexture) : TslArg::other();
+        bool refused = false;
+        try { tn::abi::tslCall("depth", &flatReceiver, {TslArg::of(g::int_(0))}, serial); }
+        catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_TEXTURE_DEPTH_TYPE") != std::string::npos; }
+        CHECK(refused);
+    }
     const double size = 4;
     CHECK(tn::abi::tslEffectParameter(graded, "size", &size) == 4);
     CHECK(tn::abi::tslEffectParameter(graded, "size", nullptr) == 4);

@@ -1073,7 +1073,7 @@ void Renderer::setOutput(const OutputState& output) {
             e.buffer.minBindingSize = outputFragment_.uniformBlockSize;
         } else if (b.kind == shader::BindingKind::Texture) {
             e.texture.sampleType = b.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
-            e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
+            e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D : b.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
         } else {
             e.sampler.type = WGPUSamplerBindingType_Filtering;
         }
@@ -1588,7 +1588,11 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
         uint32_t levels = 1;
         for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++levels;
-        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.bytesPerTexel();
+        // A DataArrayTexture is `layers` 2D images stored one after another, each with its own mip chain.
+        const uint32_t layers = texture.array ? texture.depth : 1;
+        if (texture.array && texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a DataArrayTexture");
+        if (texture.array && texture.external) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image in a DataArrayTexture");
+        const uint64_t expected = uint64_t(texture.width) * texture.height * layers * texture.bytesPerTexel();
         if (!texture.external && texture.data.size() != expected)
             throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
         if (texture.external && (!textures_->copyExternal || texture.bytesPerTexel() != 4))
@@ -1604,7 +1608,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         }
         WGPUTextureDescriptor desc = {};
         desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {texture.width, texture.height, 1};
+        desc.size = {texture.width, texture.height, layers};
         desc.format = format;
         // copyExternalImageToTexture writes through a render pass, as the mip chain does.
         desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst |
@@ -1618,7 +1622,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         WGPUTextureDataLayout_Compat layout = {};
         layout.bytesPerRow = texture.width * texture.bytesPerTexel();
         layout.rowsPerImage = texture.height;
-        const WGPUExtent3D extent = {texture.width, texture.height, 1};
+        const WGPUExtent3D extent = {texture.width, texture.height, layers};
         gpu_.sync();  // both uploads are queue work: ordered after any submit still on the GPU thread
         if (texture.external) {
             if (!textures_->copyExternal(texture.external->id, record.texture, texture.flipY))
@@ -1627,11 +1631,11 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
             wgpuQueueWriteTexture(queue_, &destination, pixels, texture.data.size(), &layout, &extent);
             textures_->uploadBytes += texture.data.size();
         }
-        if (levels > 1) generateMipmaps(record.texture, format, levels);
+        if (levels > 1) generateMipmaps(record.texture, format, levels, layers);
         WGPUTextureViewDescriptor view = {};
-        view.dimension = WGPUTextureViewDimension_2D;
+        view.dimension = texture.array ? WGPUTextureViewDimension_2DArray : WGPUTextureViewDimension_2D;
         view.mipLevelCount = levels;
-        view.arrayLayerCount = 1;
+        view.arrayLayerCount = layers;
         view.format = format;
         record.view = wgpuTextureCreateView(record.texture, &view);
     }
@@ -2239,6 +2243,7 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
             } else if (b.kind == shader::BindingKind::Texture) {
                 e.texture.sampleType = b.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
                 e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D
+                                          : b.array ? WGPUTextureViewDimension_2DArray
                                           : b.cube ? WGPUTextureViewDimension_Cube : WGPUTextureViewDimension_2D;
             } else if (b.kind == shader::BindingKind::Sampler) {
                 e.sampler.type = b.values ? WGPUSamplerBindingType_NonFiltering
@@ -5380,7 +5385,7 @@ WGPURenderPipeline Renderer::copyPipeline(WGPUTextureFormat format, uint8_t blen
 // WebGPUTextureUtils.generateMipmaps: each level is drawn from a one-level view of the level above,
 // sampled bilinearly at its texel centres, so only level 0 crosses from the CPU. An sRGB view decodes
 // on the read and encodes on the write, so the chain filters in linear light.
-void Renderer::generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels) {
+void Renderer::generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels, uint32_t layers) {
     WGPURenderPipeline pipeline = copyPipeline(format, 0);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_TEXTURE_MIPMAPS_FAILED: no copy pipeline");
     WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
@@ -5389,22 +5394,25 @@ void Renderer::generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, ui
         mipEncoder_ = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
     }
     WGPUCommandEncoder encoder = mipEncoder_;
-    std::vector<WGPUTextureView> views;
-    for (uint32_t level = 0; level < levels; ++level) {
-        WGPUTextureViewDescriptor desc = {};
-        desc.dimension = WGPUTextureViewDimension_2D;
-        desc.format = format;
-        desc.baseMipLevel = level;
-        desc.mipLevelCount = 1;
-        desc.arrayLayerCount = 1;
-        views.push_back(wgpuTextureCreateView(texture, &desc));
-    }
-    for (uint32_t level = 1; level < levels; ++level) {
-        WGPUBindGroup group = bindGroup(layout, blitFragment_, outputUniforms_, views[level - 1], linearClampSampler());
+    std::vector<WGPUTextureView> views;  // layer-major: each layer's chain is levels long
+    for (uint32_t layer = 0; layer < layers; ++layer)
+        for (uint32_t level = 0; level < levels; ++level) {
+            WGPUTextureViewDescriptor desc = {};
+            desc.dimension = WGPUTextureViewDimension_2D;
+            desc.format = format;
+            desc.baseMipLevel = level;
+            desc.mipLevelCount = 1;
+            desc.baseArrayLayer = layer;
+            desc.arrayLayerCount = 1;
+            views.push_back(wgpuTextureCreateView(texture, &desc));
+        }
+    for (uint32_t step = 0; step < layers * (levels - 1); ++step) {
+        const uint32_t level = step % (levels - 1) + 1, base = step / (levels - 1) * levels;
+        WGPUBindGroup group = bindGroup(layout, blitFragment_, outputUniforms_, views[base + level - 1], linearClampSampler());
         if (!group) throw std::runtime_error("TN_NATIVE_TEXTURE_MIPMAPS_FAILED: no bind group");
         mipGroups_.push_back(group);
         WGPURenderPassColorAttachment color = {};
-        color.view = views[level];
+        color.view = views[base + level];
         color.loadOp = WGPULoadOp_Clear;
         color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)

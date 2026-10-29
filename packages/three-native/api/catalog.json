@@ -29597,6 +29597,18 @@
       "status": {
         "kind": "supported"
       }
+    },
+    {
+      "name": "DataArrayTexture",
+      "kind": "class",
+      "source": "three",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Texture",
+      "constructor": [],
+      "fields": [],
+      "methods": []
     }
   ]
 }

@@ -104,11 +104,12 @@ StageModule buildStage(const Program& program, uint32_t group) {
         const bool depth = program.textureKinds_[i] == Program::TextureKind::Depth2d ||
                            program.textureKinds_[i] == Program::TextureKind::DepthCube || values;
         const bool volume = program.textureKinds_[i] == Program::TextureKind::Float3d;
+        const bool array = program.textureKinds_[i] == Program::TextureKind::Float2dArray;
         const bool cube = program.textureKinds_[i] == Program::TextureKind::DepthCube || values ||
                           program.textureKinds_[i] == Program::TextureKind::FloatCube;
-        module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth, cube, volume});
+        module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth, cube, volume, false, array});
         if (program.textureNeedsSampler(i))
-            module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values});
+            module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values, array});
     }
     return module;
 }

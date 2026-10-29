@@ -65,6 +65,7 @@ struct Binding {
     bool cube = false;     // a depth texture's view is a cube
     bool volume = false;   // a float texture's view is 3D
     bool values = false;   // a depth texture read for its values: a plain nearest (non-filtering) sampler
+    bool array = false;    // a float texture's view is a 2D array
 };
 
 struct VertexAttribute {

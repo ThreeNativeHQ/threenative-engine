@@ -131,6 +131,8 @@ public:
     void textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where = Where::current());
     uint32_t texture2d(std::string_view name);
     uint32_t texture3d(std::string_view name);
+    /** A `texture_2d_array<f32>`, read at a vec3: xy is the uv, z the layer (rounded down to an i32 in WGSL). */
+    uint32_t texture2dArray(std::string_view name);
     uint32_t textureCube(std::string_view name);
     /** vec4<f32>; implicit derivatives in a fragment stage, level 0 elsewhere. */
     ExprId sample(uint32_t texture, ExprId uv, Where where = Where::current());
@@ -248,9 +250,12 @@ private:
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
     // DepthCubeValues: a depth cube read for its stored values through a plain nearest sampler.
-    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube, DepthCubeValues };
+    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube, DepthCubeValues, Float2dArray };
     std::vector<TextureKind> textureKinds_; // per texture
     bool textureNeedsSampler(uint32_t texture) const;
+    /** A filtered float read takes this texture, at a vec3 for a volume, a cube and an array (z is its layer), else a vec2. */
+    bool filteredTexture(uint32_t texture) const;
+    Type coordinateType(uint32_t texture) const;
     struct OutputSlot {
         uint64_t name;
         Type type;

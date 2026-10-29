@@ -143,6 +143,23 @@ describe("browser texture sources", () => {
     ]);
   });
 
+  it("builds a DataArrayTexture over the engine's class and re-sends its layers on needsUpdate", () => {
+    const { bound, constructed, writes } = recording();
+    const layers = new Uint8Array(2 * 2 * 3 * 4).fill(7);
+    const map = new (bound.DataArrayTexture as Ctor)(layers, 2, 2, 3);
+    expect(constructed.at(-1)).toEqual(["DataArrayTexture", [Array(48).fill(7), 2, 2, 3]]);
+    expect(map.isDataArrayTexture).toBe(true);
+    expect(map.isArrayTexture).toBe(true);
+    expect(map instanceof (bound.DataArrayTexture as Ctor)).toBe(true);
+    expect((map.image as { data: unknown }).data).toBe(layers);
+    layers[0] = 9;
+    map.needsUpdate = true;
+    expect(writes.slice(-2).map(([, field, value]) => [field, value])).toEqual([
+      ["image.data", [9, ...Array(47).fill(7)]],
+      ["needsUpdate", true],
+    ]);
+  });
+
   it("reads a canvas through its 2D context when built and again on needsUpdate", () => {
     const { bound, constructed, writes } = recording();
     let reads = 0;

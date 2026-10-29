@@ -448,8 +448,13 @@ ExprId Lowerer::emit(Node node) {
             return d.type == Type::f32() ? program_.swizzle(sample,"x") : sample;
         }
         case Kind::Texture: {
-            const ExprId coordinate = expression(d.args[0]);
+            ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
+            // A DataArrayTexture reads at (uv, layer); a texture(array, uv) with no `.depth(layer)` reads layer 0.
+            const auto object = d.textureObject();
+            const bool array = object && static_cast<const tn::engine::Texture*>(object.get())->array;
+            if (array && program_.expr(coordinate).type == Type::vec(2))
+                coordinate = program_.construct(Type::vec(3), {coordinate, program_.constant(0.0f)});
             // A depth texture, or the scene pass's own depth (a texture named "depth" with no object
             // behind it), has no filtered sample: read the texel under the uv.
             if (d.bits == 1 || (d.name == "depth" && !d.textureBinding)) {
@@ -466,12 +471,13 @@ ExprId Lowerer::emit(Node node) {
             if (d.args.size() == 2) {
                 const ExprId level = expression(d.args[1]);
                 if (level == kInvalid) return kInvalid;
-                const auto texture = program_.expr(coordinate).type == Type::vec(3)
-                    ? program_.texture3d(d.name) : program_.texture2d(d.name);
+                const auto texture = array ? program_.texture2dArray(d.name)
+                    : program_.expr(coordinate).type == Type::vec(3) ? program_.texture3d(d.name) : program_.texture2d(d.name);
                 return d.sampleBias ? program_.sampleBias(texture, coordinate, level)
                                     : program_.sampleLevel(texture, coordinate, level);
             }
-            return program_.sample(program_.expr(coordinate).type == Type::vec(3)
+            return program_.sample(array ? program_.texture2dArray(d.name)
+                                   : program_.expr(coordinate).type == Type::vec(3)
                                        ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
         }
         case Kind::StorageElement:

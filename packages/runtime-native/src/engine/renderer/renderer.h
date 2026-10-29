@@ -822,7 +822,7 @@ private:
     WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend,
         std::vector<std::shared_ptr<PipelineCompilation>>* compilation = nullptr);
     /** Records a texture's mip chain into the pending mip encoder; `submit` flushes it first. */
-    void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels);
+    void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels, uint32_t layers = 1);
     /** Submits the mip passes of every texture uploaded since the last submit, as one command buffer. */
     void flushMipmaps();
     /** Every frame, readback and pass submit goes through here so a sampled texture's mips exist first. */

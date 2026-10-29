@@ -169,6 +169,7 @@ public:
     bool depthTexture = false;
     bool storageTexture = false, mipmapsAutoUpdate = true;
     bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
+    bool array = false;   // three's isDataArrayTexture: `depth` layers of one 2D size, each with its own mip chain
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,
      * scene/render_target.h): the renderer samples that target's last render instead of uploading

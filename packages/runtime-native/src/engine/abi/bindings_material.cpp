@@ -1075,6 +1075,46 @@ void registerTextureBindings(Registry& classes) {
         texture->setImage(v.numbers, v.text, texture->width, texture->height, texture->format, texture->type, false);
         texture->depth = depth;
     };
+    // three's DataArrayTexture(data, width, height, depth): `depth` layers of width * height RGBA texels, with
+    // DataTexture's defaults (nearest filters, no flip, no mipmaps). The typed array crosses as bytes, as a
+    // DataTexture's does: a splat array is megabytes, and a double per byte would be eight times that.
+    ClassBinding& layers = classes["DataArrayTexture"];
+    registerTextureClass(layers, true, "DataArrayTexture");
+    layers.ctorTakesBytes = true;
+    layers.settersTakeBytes = {"image.data"};
+    layers.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        auto texture = std::make_shared<DataTexture>();
+        texture->array = true;
+        if (a.empty() || a[0].kind != Value::Kind::Numbers) return std::static_pointer_cast<void>(texture);
+        const auto size = [&](std::size_t i) { return a.size() > i ? static_cast<uint32_t>(number(a[i])) : 1u; };
+        const uint32_t width = size(1), height = size(2), depth = size(3);
+        const std::size_t count = a[0].bytes.empty() ? a[0].numbers.size() : a[0].bytes.size() / typedArrayElementBytes(a[0].text);
+        if (width == 0 || height == 0 || depth == 0 || count != std::size_t(width) * height * depth * 4)
+            throw Unsupported{"DataArrayTexture data must be width * height * depth * 4 RGBA values"};
+        if (a[0].text == "Uint16Array") throw Unsupported{"DataArrayTexture data must be bytes or floats"};
+        const uint16_t type = a[0].text == "Float32Array" ? kTextureFloatType : kTextureUnsignedByteType;
+        if (a[0].bytes.empty() || !texture->setImageBytes(a[0].bytes, a[0].text, width, height, kTextureRGBAFormat, type))
+            texture->setImage(a[0].bytes.empty() ? a[0].numbers : typedArrayNumbers(a[0].text, a[0].bytes), a[0].text,
+                              width, height, kTextureRGBAFormat, type);
+        texture->depth = depth;
+        return std::static_pointer_cast<void>(texture);
+    };
+    // three's `texture.image.data = array` for an array texture: width * height * depth texels, uploaded on needsUpdate.
+    layers.setters["image.data"] = [](void* self, const Value& v) {
+        auto* texture = as<DataTexture>(self);
+        const std::size_t texels = std::size_t(texture->width) * texture->height * texture->depth;
+        const std::size_t count = v.bytes.empty() ? v.numbers.size() : v.bytes.size() / typedArrayElementBytes(v.text);
+        if (v.kind != Value::Kind::Numbers || texels == 0 || count != texels * 4)
+            throw Unsupported{"image.data must be a typed array of width * height * depth * 4 values"};
+        const uint32_t depth = texture->depth;
+        if (v.bytes.empty() || !texture->setImageBytes(v.bytes, v.text, texture->width, texture->height, texture->format,
+                                                       texture->type, false)) {
+            const std::vector<double> values = v.bytes.empty() ? v.numbers : typedArrayNumbers(v.text, v.bytes);
+            if (texture->isHalfFloat()) checkHalfFloatBits(values);
+            texture->setImage(values, v.text, texture->width, texture->height, texture->format, texture->type, false);
+        }
+        texture->depth = depth;
+    };
 }
 
 }  // namespace tn::binding
