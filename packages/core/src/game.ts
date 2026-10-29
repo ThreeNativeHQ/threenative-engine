@@ -1753,20 +1753,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               // same frames and a reader can subtract one from the other without a second clock.
               const spanWindow = spans?.window();
               if (spanWindow !== undefined) reportInfo(formatSpansWindow(spanWindow));
-              // The scene-shape verdict, on by default, from the census the frame already took.
-              // An agent building a scene of the wrong shape reads it in the log before a human
-              // ever plays the game and calls it slow.
+              // The scene-shape verdict, on by default in a debug launch, from the census the
+              // frame already took. An agent building a scene of the wrong shape reads it in the
+              // log before a human ever plays the game and calls it slow.
               const staticCensus = staticTransformCensus();
               if (staticCensus.roots > 0)
                 reportInfo(`${STATIC_TRANSFORM_MARKER}:${JSON.stringify(staticCensus)}`);
               const validation = renderListValidator?.report();
               if (validation !== undefined) reportInfo(formatValidationReport(validation));
-              const warning = sceneWarning(
-                reported,
-                describeSceneShape(reported, this.#cameraCull?.report),
-                target.targetFps,
-                renderer.gpuClass?.class,
-              );
+              const warning = devMetricsEnabled
+                ? sceneWarning(
+                    reported,
+                    describeSceneShape(reported, this.#cameraCull?.report),
+                    target.targetFps,
+                    renderer.gpuClass?.class,
+                  )
+                : undefined;
               if (warning !== undefined) reportWarning(formatSceneWarning(warning));
               // The same sentence goes to the UI on a dev launch, so a human watching the window
               // and an agent reading the log are told the same thing at the same time. No frame
