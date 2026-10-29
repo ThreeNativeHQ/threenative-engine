@@ -368,7 +368,7 @@ describe("one engine debug switch", () => {
     vi.stubGlobal("fetch", async () => new Response("gone", { status: 404 }));
     vi.stubGlobal("createImageBitmap", undefined);
     vi.spyOn(TextureLoader.prototype, "load").mockImplementation((_url, onLoad) => {
-      const texture = new Texture();
+      const texture = new Texture() as Texture<HTMLImageElement>;
       onLoad?.(texture);
       return texture;
     });
@@ -495,7 +495,8 @@ describe("one engine debug switch", () => {
       );
     read(); // the run's baseline, not a frame
     for (let index = 0; index < 500; index += 1)
-      totals[`textureDecode.url-${index}.pngDispatchMs`] += index;
+      totals[`textureDecode.url-${index}.pngDispatchMs`] =
+        (totals[`textureDecode.url-${index}.pngDispatchMs`] ?? 0) + index;
     const frame = read() ?? {};
     // One ring per name would grow with the content, so the per-frame series keep none of them.
     expect(
