@@ -6,6 +6,7 @@
 // and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
 // equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
+  CanvasTexture,
   EquirectangularReflectionMapping,
   FogExp2,
   SRGBColorSpace,
@@ -42,6 +43,33 @@ function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
   return Math.sqrt(Math.max(0, old - height)) / distance;
 }
 
+/**
+ * The environment light needs no more than 1024x512 of the 4096x2048 sky: three bakes an
+ * equirectangular source into a cube a quarter of its width, so the full image makes a 1024 cube and
+ * a bake of about 50 s on a software adapter, longer than the startup hold. Frames then draw with no
+ * fill light, and the shade reads black until the bake ends. The 256 cube of this copy lights the
+ * matte town the same and bakes in seconds. The background keeps the full image.
+ */
+const ENVIRONMENT_SIZE = { width: 1024, height: 512 } as const;
+
+function environmentOf(sky: Texture): Texture {
+  const cached = sky.userData.environment as Texture | undefined;
+  if (cached !== undefined) return cached;
+  // A host with no OffscreenCanvas (a unit-test stub) or no drawable 2d context keeps the full image:
+  // the bake is only slower.
+  if (typeof OffscreenCanvas === "undefined") return sky;
+  const canvas = new OffscreenCanvas(ENVIRONMENT_SIZE.width, ENVIRONMENT_SIZE.height);
+  const context = canvas.getContext("2d");
+  // The native host's OffscreenCanvas answers "2d" with a bare object that cannot draw an image.
+  if (context === null || typeof context.drawImage !== "function") return sky;
+  context.drawImage(sky.image as CanvasImageSource, 0, 0, canvas.width, canvas.height);
+  const environment = new CanvasTexture(canvas);
+  environment.mapping = EquirectangularReflectionMapping;
+  environment.colorSpace = SRGBColorSpace;
+  sky.userData.environment = environment;
+  return environment;
+}
+
 export function setupSky(scene: Scene, sky: Texture): void {
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
@@ -51,7 +79,7 @@ export function setupSky(scene: Scene, sky: Texture): void {
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
   // It is what makes a standard material read as a material: sky-blue fill on faces the sun
   // misses, and a sky to reflect, sharper as roughness drops.
-  scene.environment = sky;
+  scene.environment = environmentOf(sky);
   scene.environmentIntensity = SKY_RANGE;
   // Almost nothing inside the arena (1.4% at 30 m), and the ground plane gone into the horizon by
   // a kilometre — so the floor meets the sky instead of ending at a line.
