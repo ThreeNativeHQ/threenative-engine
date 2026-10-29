@@ -424,6 +424,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 9,
+      "at": "2026-10-29T22:12:43.203Z",
+      "commit": "core@0.3.7",
+      "label": "F2: VSM page caster selection on the job pool (leanpi DeepSeek, sol brief)",
+      "decision": "keep",
+      "notes": "128419fb5; same-session develop 12.62 fps -> 16.33, presented p95 150 -> 100 ms; main.html?stress, old core tarball both arms; judge NEUTRAL",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 60.25,
+      "windows": 11,
+      "metrics": {
+        "presentedP50Ms": 50.01,
+        "presentedP95Ms": 100,
+        "fps": 16.33,
+        "gpuP50Ms": 6.09,
+        "gpuP95Ms": 62.13,
+        "renderP50Ms": 34.56,
+        "updateP50Ms": 11.27,
+        "frameP50Ms": 49.54,
+        "frameP95Ms": 98.37,
+        "mainDraws": 1797,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 3975,
+        "loadMs": 2837,
+        "bridgeCrossingsP50": 2512,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
