@@ -1,3 +1,12 @@
 {
-  "enabledMcpjsonServers": ["threenative-assets", "threenative-sculpt", "threenative-engine"]
+  "enabledMcpjsonServers": [
+    "threenative-assets",
+    "threenative-sculpt",
+    "threenative-engine"
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(cd *)"
+    ]
+  }
 }
