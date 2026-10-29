@@ -4,6 +4,7 @@ import { STARTS } from "../sim/terrain.js";
 import { type EntityType, TYPES } from "../sim/types.js";
 import type { GameState } from "../state.js";
 import { Icon, TrooperPortrait } from "./icons.js";
+import { selectionDamage, selectionDamageIsHealing, selectionStatus } from "./labels.js";
 
 /** Read a `"<type>:<progress 0..1>"` pair back apart. */
 function readQueueItem(entry: string): { progress: number; type: EntityType } | undefined {
@@ -410,19 +411,6 @@ function QuickBar() {
   );
 }
 
-/** Highest-priority order across the selection first: what a commander would want named. */
-const STATUS: ReadonlyArray<readonly [string, string]> = [
-  ["attack", "ENGAGING HOSTILE"],
-  ["construct", "FABRICATING"],
-  ["repair", "REPAIRING"],
-  ["heal", "RESTORING ALLY"],
-  ["garrison", "ENTERING BUNKER"],
-  ["gather", "HARVESTING"],
-  ["attackMove", "ADVANCING"],
-  ["move", "RELOCATING"],
-  ["hold", "HOLDING POSITION"],
-];
-
 /** The selection card: what is selected, how healthy it is, what it does, and its roster. */
 export function Selection() {
   const state = useUiStateShown((s) => [
@@ -432,6 +420,7 @@ export function Selection() {
     s.primaryTeam,
     s.primaryBuilt,
     Math.round(s.primaryProgress * 100),
+    s.primaryGarrison,
     s.groupHp,
     s.groupMaxHp,
     s.airborne,
@@ -441,22 +430,23 @@ export function Selection() {
   ]);
   const send = useUiIntent();
   if (state === undefined) return null;
-  const card = state.primaryType === "" ? undefined : TYPES[state.primaryType as EntityType];
+  const cardType = state.primaryType === "" ? undefined : (state.primaryType as EntityType);
+  const card = cardType === undefined ? undefined : TYPES[cardType];
   const count = state.selection;
   const queue = state.queue
     .map(readQueueItem)
     .filter((item): item is { progress: number; type: EntityType } => item !== undefined);
-  const orders = state.selectionOrder.split(",");
-  const status =
-    card === undefined
-      ? "SYSTEM ONLINE"
-      : !state.primaryBuilt
-        ? state.primaryProgress > 0
-          ? `WELDING ${Math.floor(state.primaryProgress * 100)}%`
-          : "SURVEYOR EN ROUTE"
-        : queue.length > 0
-          ? "PRODUCTION ACTIVE"
-          : (STATUS.find(([kind]) => orders.includes(kind))?.[1] ?? "COMBAT READY");
+  const status = selectionStatus(state.primaryType === "" ? undefined : cardType, {
+    built: state.primaryBuilt,
+    garrison: state.primaryGarrison,
+    orders: state.selectionOrder.split(","),
+    progress: state.primaryProgress,
+    queue: queue.map((item) => item.progress),
+  });
+  const damage = selectionDamage(
+    state.primaryType === "" ? undefined : cardType,
+    state.primaryGarrison,
+  );
   const caption =
     card !== undefined && state.primaryTeam > 0
       ? "HOSTILE INTELLIGENCE"
@@ -522,7 +512,8 @@ export function Selection() {
               <>
                 <span>
                   <Icon name={card.heal ? "medic" : "attack"} />
-                  <b>{card.heal ?? card.damage ?? "—"}</b> {card.heal ? "HP / SEC" : "DAMAGE"}
+                  <b>{damage ?? "—"}</b>{" "}
+                  {selectionDamageIsHealing(cardType) ? "HP / SEC" : "DAMAGE"}
                 </span>
                 <span>
                   <Icon name="supply" />

@@ -725,6 +725,7 @@ export class Play extends Scene<GameState, undefined> {
     patch.primaryHp = Math.ceil(primary?.hp ?? 0);
     patch.primaryMaxHp = primary?.maxHp ?? 0;
     patch.primaryProgress = primary?.progress ?? 0;
+    patch.primaryGarrison = primary?.garrison.length ?? 0;
     patch.primaryTeam = primary?.team ?? 0;
     patch.primaryType = primary?.type ?? "";
     patch.result = sim.result ?? "";

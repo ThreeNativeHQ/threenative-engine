@@ -33,6 +33,8 @@ export type GameState = {
   primaryMaxHp: number;
   primaryBuilt: boolean;
   primaryProgress: number;
+  /** Infantry inside the selected bunker; its gun is only as strong as the garrison. */
+  primaryGarrison: number;
   /** How many are selected, and how many distinct factions they belong to. */
   selection: number;
   selectionTeams: number;
@@ -118,6 +120,7 @@ export const INITIAL_STATE: GameState = {
   ore: 0,
   paused: false,
   primaryBuilt: true,
+  primaryGarrison: 0,
   primaryHp: 0,
   primaryMaxHp: 0,
   primaryProgress: 0,
