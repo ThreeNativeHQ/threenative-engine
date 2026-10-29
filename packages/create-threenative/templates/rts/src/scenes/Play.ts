@@ -734,14 +734,23 @@ export class Play extends Scene<GameState, undefined> {
   #drain(sim: Game): void {
     for (const event of sim.drainEvents()) {
       const team = Number(event.team ?? -1);
-      if (event.type === "trained" && team === 0) this.#notice = `${String(event.name)} ready.`;
-      else if (event.type === "complete" && team === 0)
+      if (event.type === "trained" && team === 0) {
+        this.#notice = `${String(event.name)} ready.`;
+        this.#noticeError = false;
+      } else if (event.type === "complete" && team === 0) {
         this.#notice = `${String(event.name)} online.`;
-      else if (event.type === "eliminated" && team > 0)
+        this.#noticeError = false;
+      } else if (event.type === "eliminated" && team > 0) {
         this.#notice = `${String(event.name)} command network destroyed.`;
-      else if (event.type === "constructionLost" && team === 0)
+        this.#noticeError = false;
+      } else if (event.type === "constructionLost" && team === 0) {
+        // A lost site is bad news; a refunded one is a bill, not a failure, as in the reference.
         this.#notice = `${String(event.name)}: ${String(event.reason)}`;
-      else if (event.type === "end") this.#notice = "";
+        this.#noticeError = Number(event.refund ?? 0) === 0;
+      } else if (event.type === "end") {
+        this.#notice = "";
+        this.#noticeError = false;
+      }
     }
   }
 
