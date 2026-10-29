@@ -2,10 +2,18 @@
  * PRD-762: the Wasm host asks for the adapter's own device limits, as the desktop host does. A default device
  * caps a 2D texture at 8192 texels, and an adapter such as the RTX 2080 allows 32768; so does it for a
  * fragment stage's sampled textures (16 by default, 48 on that adapter). A 9000 x 1 render target is drawn with
- * a uv ramp and read at its last texel: red 255 where the device allows it, nothing where it does not.
+ * a uv ramp and read at its last texel: red 255 where the device allows it, nothing where it does not. Then one
+ * fragment reads 17 textures of one sampler state: more than 16 samplers, so the program shares them.
  */
-import { RenderTarget, UnsignedByteType } from "three";
-import { uv, vec4 } from "three/tsl";
+import {
+  DataTexture,
+  NearestFilter,
+  NoColorSpace,
+  RGBAFormat,
+  RenderTarget,
+  UnsignedByteType,
+} from "three";
+import { texture, uv, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
@@ -16,6 +24,7 @@ const probe = {
   ticks: 0,
   done: false,
   last: "",
+  sum: "",
 };
 const started = performance.now();
 
@@ -81,6 +90,36 @@ try {
   probe.last = Array.from(
     await renderer.readRenderTargetPixelsAsync(target, width - 1, 0, 1, 1),
   ).join(",");
+
+  // 17 textures with one sampler state in one fragment: past 16 samplers, equal ones share a binding. Texture i
+  // holds red i + 1, so the sum is (1 + ... + 17) / 255 = 153 / 255.
+  const reads = [];
+  for (let i = 0; i < 17; i += 1) {
+    const data = new DataTexture(
+      new Uint8Array([i + 1, 0, 0, 255]),
+      1,
+      1,
+      RGBAFormat,
+      UnsignedByteType,
+    );
+    data.colorSpace = NoColorSpace;
+    data.magFilter = NearestFilter;
+    data.minFilter = NearestFilter;
+    data.needsUpdate = true;
+    reads.push(texture(data, uv()).r);
+  }
+  const summed = new MeshBasicNodeMaterial();
+  summed.colorNode = vec4(
+    reads.reduce((a, b) => a.add(b)),
+    0,
+    0,
+    1,
+  );
+  const one = new RenderTarget(1, 1, { type: UnsignedByteType });
+  renderer.setRenderTarget(one);
+  new QuadMesh(summed).render(renderer);
+  renderer.setRenderTarget(null);
+  probe.sum = Array.from(await renderer.readRenderTargetPixelsAsync(one, 0, 0, 1, 1)).join(",");
   probe.done = true;
 } catch (error) {
   probe.error = error instanceof Error ? error.message : String(error);

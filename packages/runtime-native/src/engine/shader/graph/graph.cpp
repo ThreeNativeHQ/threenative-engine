@@ -467,18 +467,28 @@ ExprId Lowerer::emit(Node node) {
                 const auto loaded = program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
                 return d.bits == 1 ? loaded : convert(loaded, d.type == Type{} ? Type::vec(4) : d.type);
             }
+            // The sampler the renderer will bind for this texture, so a stage over the sampler limit shares equal ones.
+            const auto declared = [&](uint32_t texture) {
+                const auto* source = static_cast<const tn::engine::Texture*>(object.get());
+                if (source && source->renderTarget.expired() && !source->depthTexture && !source->storageTexture)
+                    program_.setSamplerState(texture, std::to_string(source->wrapS) + "," + std::to_string(source->wrapT) + "," +
+                        std::to_string(source->wrapR) + "," + std::to_string(source->magFilter) + "," +
+                        std::to_string(source->minFilter) + "," + std::to_string(std::min(source->anisotropy, 16.0)));
+                return texture;
+            };
+            const auto textureOf = [&] {
+                return declared(array ? program_.texture2dArray(d.name)
+                                : program_.expr(coordinate).type == Type::vec(3) ? program_.texture3d(d.name) : program_.texture2d(d.name));
+            };
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
             if (d.args.size() == 2) {
                 const ExprId level = expression(d.args[1]);
                 if (level == kInvalid) return kInvalid;
-                const auto texture = array ? program_.texture2dArray(d.name)
-                    : program_.expr(coordinate).type == Type::vec(3) ? program_.texture3d(d.name) : program_.texture2d(d.name);
+                const auto texture = textureOf();
                 return d.sampleBias ? program_.sampleBias(texture, coordinate, level)
                                     : program_.sampleLevel(texture, coordinate, level);
             }
-            return program_.sample(array ? program_.texture2dArray(d.name)
-                                   : program_.expr(coordinate).type == Type::vec(3)
-                                       ? program_.texture3d(d.name) : program_.texture2d(d.name), coordinate);
+            return program_.sample(textureOf(), coordinate);
         }
         case Kind::StorageElement:
             return program_.loadStorage(ensureStorage(d), index(node));

@@ -689,6 +689,35 @@ uint32_t Program::textureDepthCubeValues(std::string_view name) {
     return static_cast<uint32_t>(textures_.size() - 1);
 }
 
+void Program::setSamplerState(uint32_t texture, std::string state) {
+    if (texture >= textures_.size()) return;
+    samplerStates_.resize(textures_.size());
+    samplerStates_[texture] = std::move(state);
+}
+
+uint32_t Program::samplerOwner(uint32_t texture) const {
+    if (samplerStates_.empty()) return texture;
+    // Valid while no texture or expression was added since: a build adds both before it emits.
+    const std::size_t key = textures_.size() * 1000003u + exprs_.size();
+    if (samplerOwnersKey_ != key) {
+        samplerOwnersKey_ = key;
+        std::vector<bool> needs(textures_.size());
+        uint32_t needed = 0;
+        for (uint32_t i = 0; i < textures_.size(); ++i) needed += needs[i] = textureNeedsSampler(i);
+        samplerOwners_.resize(textures_.size());
+        for (uint32_t i = 0; i < textures_.size(); ++i) {
+            samplerOwners_[i] = i;
+            if (needed <= kMaxSamplers || i >= samplerStates_.size() || samplerStates_[i].empty()) continue;
+            for (uint32_t j = 0; j < i; ++j)
+                if (needs[j] && j < samplerStates_.size() && samplerStates_[j] == samplerStates_[i]) {
+                    samplerOwners_[i] = j;
+                    break;
+                }
+        }
+    }
+    return samplerOwners_[texture];
+}
+
 bool Program::textureNeedsSampler(uint32_t texture) const {
     if (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube) return true;
     for (const auto& e : exprs_) {

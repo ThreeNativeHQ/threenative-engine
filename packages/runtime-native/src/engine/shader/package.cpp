@@ -108,7 +108,7 @@ StageModule buildStage(const Program& program, uint32_t group) {
         const bool cube = program.textureKinds_[i] == Program::TextureKind::DepthCube || values ||
                           program.textureKinds_[i] == Program::TextureKind::FloatCube;
         module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth, cube, volume, false, array});
-        if (program.textureNeedsSampler(i))
+        if (program.textureNeedsSampler(i) && program.samplerOwner(i) == i)
             module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values, array});
     }
     return module;

@@ -213,11 +213,11 @@ std::string WgslEmitter::inlined(ExprId id) const {
             return "textureLoad(t_" + p_.textures_[e.immediate] + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
         case Op::SampleBias: {
             const std::string& name = p_.textures_[e.immediate];
-            return "textureSampleBias(t_" + name + ", smp_" + name + ", " + coordinate(e) + ", " + expr(e.args[1]) + ")";
+            return "textureSampleBias(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ", " + expr(e.args[1]) + ")";
         }
         case Op::SampleLevel: {
             const std::string& name = p_.textures_[e.immediate];
-            return "textureSampleLevel(t_" + name + ", smp_" + name + ", " + coordinate(e) + ", " + expr(e.args[1]) + ")";
+            return "textureSampleLevel(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ", " + expr(e.args[1]) + ")";
         }
         case Op::Sample: {
             if (e.argc == 2 && e.type == Type::vec(4)) {  // three's gather().compare(), a whole-texel offset
@@ -233,8 +233,8 @@ std::string WgslEmitter::inlined(ExprId id) const {
                 return "textureSampleCompareLevel(t_" + name +
                        ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
             return p_.stage_ == Stage::Fragment
-                       ? "textureSample(t_" + name + ", smp_" + name + ", " + coordinate(e) + ")"
-                       : "textureSampleLevel(t_" + name + ", smp_" + name + ", " + coordinate(e) + ", 0.0)";
+                       ? "textureSample(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ")"
+                       : "textureSampleLevel(t_" + name + ", smp_" + p_.textures_[p_.samplerOwner(e.immediate)] + ", " + coordinate(e) + ", 0.0)";
         }
         case Op::Neg: return "(-" + expr(e.args[0]) + ")";
         case Op::Select:
@@ -421,7 +421,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
                 : kind == Program::TextureKind::FloatCube ? ": texture_cube<f32>;\n"
                 : depth                                 ? ": texture_depth_2d;\n"
                                                         : ": texture_2d<f32>;\n");
-        if (program.textureNeedsSampler(i))
+        if (program.textureNeedsSampler(i) && program.samplerOwner(i) == i)
             out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
                    (depth ? ": sampler_comparison;\n" : ": sampler;\n");
     }

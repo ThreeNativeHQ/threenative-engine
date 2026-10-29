@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/shader/ir.h"
+#include "engine/shader/package.h"
 #include "engine/shader/wgsl.h"
 
 #include <cstdio>
@@ -28,6 +29,38 @@ void textureBias() {
             ? invalid.construct(Type::vec(2), {invalid.constant(0.5f)}) : invalid.constant(-0.5f);
         CHECK(invalid.sampleBias(bad == 6 ? tex + 1 : tex, at, bias) == kInvalid);
         CHECK(!invalid.ok() && invalid.diagnostics().size() == 1);
+    }
+}
+
+// A stage allows 16 samplers: past that, textures whose samplers have the same state read one binding. Under it every
+// texture keeps its own, as before.
+void sharedSamplers() {
+    for (const int count : {16, 20}) {
+        Program p(Stage::Fragment);
+        ExprId sum = p.constant(0.f);
+        const auto uv = p.construct(Type::vec(2), {p.constant(0.5f)});
+        for (int i = 0; i < count; ++i) {
+            const auto texture = p.texture2d("map" + std::to_string(i));
+            p.setSamplerState(texture, i < count - 2 ? "repeat" : "clamp");  // the last two differ
+            sum = p.add(sum, p.swizzle(p.sample(texture, uv), "x"));
+        }
+        p.output("color", p.construct(Type::vec(4), {sum, sum, sum, sum}));
+        CHECK(p.ok());
+        const auto module = buildStage(p, 1);
+        CHECK(module.wgsl.ok());
+        int textures = 0, samplers = 0;
+        for (const auto& b : module.bindings) {
+            textures += b.kind == BindingKind::Texture;
+            samplers += b.kind == BindingKind::Sampler;
+        }
+        CHECK(textures == count);
+        CHECK(samplers == (count == 16 ? 16 : 2));
+        if (count == 20) {
+            const auto& code = module.wgsl.code;
+            CHECK(code.find("textureSample(t_map5, smp_map0,") != std::string::npos);
+            CHECK(code.find("textureSample(t_map19, smp_map18,") != std::string::npos);
+            CHECK(code.find("var smp_map5") == std::string::npos && code.find("var smp_map19") == std::string::npos);
+        }
     }
 }
 
@@ -90,6 +123,7 @@ void order() {
 // Each case must raise TN_TSL_TYPE at the line that authored it.
 void types() {
     textureBias();
+    sharedSamplers();
     struct Case {
         const char* name;
         Stage stage;

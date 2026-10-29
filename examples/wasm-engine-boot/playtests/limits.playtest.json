@@ -38,6 +38,12 @@
         "component": "probe",
         "path": "last",
         "equals": "255,0,0,255"
+      },
+      {
+        "entity": "wasm-limits",
+        "component": "probe",
+        "path": "sum",
+        "equals": "153,0,0,255"
       }
     ]
   }

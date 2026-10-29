@@ -2491,6 +2491,22 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     auto built = std::make_unique<Program>();
     built->vertex = std::move(vertex);
     built->fragment = std::move(fragment);
+    {
+        // WebGPU refuses a bind group layout with more than 16 samplers in a stage, which loses the whole device:
+        // name the program's samplers once, before its pipeline does.
+        std::string names;
+        uint32_t samplers = 0;
+        for (const auto& b : built->fragment.bindings)
+            if (b.kind == shader::BindingKind::Sampler) { ++samplers; names += " " + b.name; }
+        if (samplers > shader::Program::kMaxSamplers) {
+            const std::string note = "TN_PROGRAM_SAMPLERS: a fragment program binds " + std::to_string(samplers) +
+                                     " samplers, over " + std::to_string(shader::Program::kMaxSamplers) + ":" + names;
+            if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) {
+                diagnostics_.push_back(note);
+                std::fprintf(stderr, "%s\n", note.c_str());
+            }
+        }
+    }
     buildLayouts(*built, key);
     if (uniformCapacity_ != 0) {
         for (int g = 0; g < 2; ++g) {
