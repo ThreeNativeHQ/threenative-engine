@@ -217,6 +217,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
 // Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
 // trees gain the `threenative-animation` server; no other scaffold byte changed.
+// Recomputed 2026-10-28 (0.3.7): the cohort's own pins now hash as a placeholder, so a release bump
+// leaves every tree as it is; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
   // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
@@ -305,7 +307,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
   // to its clip; platformer binds R to restart.
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
-  "action-rpg": "23220b0bcf1c1600263b9c736bec03414b6c3c1bf82291aa39917c99749201f2",
+  "action-rpg": "2b8695b82a99bab0364ad5ee7f10cd3cebc6303a815bae2cbe44f0461467c8f1",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -319,7 +321,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "21cebcb49aa0ce5548faa5bfe62e0ed78cbd6712eb0b19d7d2155a88500faa31",
+  collectathon: "379cb8767e9bc4ef9bba02bc7decbaeaf6b18c03a964ced7e64f2628f46ce2ec",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -328,28 +330,28 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "11bd41fb0efcb8e1612a62a32a9cc50ca3e0898425f2951a477545b53cd8843a",
+  adventure: "4ea0e955379eec3f2bc66b436f1c91126a9ff3c5f71611887710d9a3c4546069",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "3e989773e757697ab0be6f05274aa04a714b6dcf3f946c8bf6b548ea3f708a51",
-  minimal: "bd6ef2a31362cdcc0c9c650281eccb620a344c9ea4dcd7e3b95154cc624a2eb9",
-  platformer: "18537fd846c820ba16db1004e0e185f23f201eb581529d64dce86e250c7341b0",
-  puzzle: "e611a8ecaa139fcaaea7eece78abd456ecfb11965c594f0e3557f8f486f401fd",
-  racing: "1e527e5e5afa86cdaadc995b9a177625c693c5970da9ed086d28535cd41f3b99",
-  rain: "217f2ed3e3d81701525891d1aa70b396479c7c3641e0727b4d7e14bec23b4d05",
-  rts: "516a41cafca798c4a5e87a0f04b18b102376fcc3e2dd374446758c460d56668a",
-  runner: "2c7e9d4d30ce061c1f2f3d8324577c1b46e2302fbfce087ef39a375c3f4729d0",
+  kart: "7b3613bccaa6324ae5514968af432481c55d70c19e8732f4d2ceb5d0235b1d2e",
+  minimal: "f01eb7fa62ff8886baf2484b4576051caed1592939e8760b7410b8176793f30d",
+  platformer: "3f79f7e9627106f50f7e63ebb34469083f90738ea014550f225c8d18c7fef18c",
+  puzzle: "70e9e60a2400e8dcec79f69a882370c2169d07eb6deed3828816c4d94c397465",
+  racing: "388bbe65ed8214dac991be61b1462c07486327280b7718c9fc77c9ee16ab2c0c",
+  rain: "6640d55336c2e52899b7b8fee270be13de8693e360a292f1b8377c736a16cad3",
+  rts: "c35988b00be7fa23f3f46d7cddcfe7ab7414fa53489ec457d326d868d8e9ec87",
+  runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "80a1c2a736e7d681a76b15a5c8cc03ea386a1558f52ec6b25afb2d94b3093775",
+  sailing: "f1d59f24bf3e0d8e5565a4854753cd09c21cdc63cb30ca9cf795e6bd6fd09021",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "bc87f0178936e00965398086c466dc7d68e20f3dcecedbbe3ff79dd0e70c7cd9",
-  snow: "d7abb7a41d2ef6a6413ac9238da8220425b62c961e90437a6d289b5cf0ffcd41",
+  shooter: "8e8b11d0639305ebd3ba2a9775a7d59e180adb7b09c30d82f872d18942b3ade7",
+  snow: "c6859d4d9f2256efcffeaeabba1933e1803484d0aa4db34adadf549ede3fb780",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "a01b8b60378d89cdcb6ad9fa51dfeef6dbab28b58183c94b1d9a81de531d31f9",
-  "tower-defense": "194b5f8729a368a13988dc73108c44451915dd487136d7a60fdb82916bae1caa",
+  starter: "670240cedf496b8e8741c85b4a5df95e377fea9a3c16ce1cdf1b0b2fc3b8aa57",
+  "tower-defense": "37e7e94389b116c34ce408722999efaa473bcceb31d0bdcc7a29fcebd9317183",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -390,6 +392,9 @@ async function withBrokenTemplateFile<T>(
   }
 }
 
+const COHORT_PIN =
+  /("(?:@threenative\/[\w-]+|create-threenative|threenative-[\w-]+)":\s*)"\d+\.\d+\.\d+(?:-[\w.]+)?"/gu;
+
 async function scaffoldTreeHash(directory: string): Promise<string> {
   const files: Array<[string, Buffer]> = [];
   async function walk(current: string): Promise<void> {
@@ -404,7 +409,15 @@ async function scaffoldTreeHash(directory: string): Promise<string> {
       } else {
         const relative = path.relative(directory, file);
         if (!GENERATED_SCAFFOLD_METADATA.test(relative)) {
-          files.push([relative, await readFile(file)]);
+          const bytes = await readFile(file);
+          // `pnpm release:prepare` moves the cohort's own pins on every release, so they hash as
+          // one placeholder: a version bump alone must not move a tree this test guards.
+          files.push([
+            relative,
+            entry.name === "package.json"
+              ? Buffer.from(bytes.toString("utf8").replace(COHORT_PIN, '$1"<cohort>"'))
+              : bytes,
+          ]);
         }
       }
     }
