@@ -759,17 +759,30 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
                     markSeen(*r);
             } else {
-                const bool compact = batching && !(virtualShadows_ && mesh.castShadow()) && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
+                const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                      !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                      !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                      !mesh.geometry->instanced &&
                                      (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                      mesh.matrixWorld.determinant() > 0;
-                Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
+                // A virtual shadow culls and detects movers per caster, so a caster keeps its own
+                // shadow-only item (own key, own bounds); its main-pass draw still joins the batch.
+                const bool pageCaster = compact && virtualShadows_ && shadowCaster;
+                Record& r = cached ? record(mesh, *cached, !compact || pageCaster) : record(mesh, !compact || pageCaster);
                 markSeen(r);
                 if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
-                    if (compact) {
+                    if (compact && !pageCaster) {
                         addBatchMesh(mesh, r, mainPass, shadowCaster);
+                    } else if (pageCaster) {
+                        if (mainPass) addBatchMesh(mesh, r, true, false);
+                        DrawItem& d = refresh(mesh, r);
+                        d.batchable = false;
+                        d.mainPass = false;
+                        d.castShadow = true;
+                        d.layers = Layers::bits(mesh.layers().mask);
+                        d.morphGeometry = nullptr;
+                        d.morphInfluences = nullptr;
+                        items.push_back(d);
                     } else {
                         DrawItem& d = refresh(mesh, r);
                         d.batchable = false;
@@ -841,6 +854,14 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             d.spriteRotation = mesh.material->rotation;
                             d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
                             if (!mainPass) items.pop_back();
+                        }
+                        if (virtualShadows_ && mainPass && shadowCaster && !items.empty() && items.back().skinnedRig) {
+                            // Same split as a page caster above: the rig's main-pass copy joins the palette
+                            // batch, its shadow copy stays individual for the per-page cull.
+                            DrawItem shadow = items.back();
+                            shadow.mainPass = false;
+                            items.back().castShadow = false;
+                            items.push_back(shadow);
                         }
                         if (mesh.onBeforeRender && mainPass)
                             callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
