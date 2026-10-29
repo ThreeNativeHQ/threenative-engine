@@ -348,7 +348,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // a blurred slate fog of war, sRGB-decoded environment colours and no vignette.
   // Then the HUD state on a 50 ms clock and no per-frame instance bound (perf/rts-kit-frame 76baed0bc, 5ab6c8dce).
   // Then judge rounds 2-3: AstraCraft crystals, thin selection rings, a one-texel shadow kernel, its (-66, 57) start and bar colours made before the first draw.
-  rts: "61e16ddf3cc0a51d169492171c5a962a047c75b73f219acef52f36e13a49e377",
+  // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
+  // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
+  rts: "be6b026570b73059ef69647c56dd60558267af415e510a1895f0b0d094f29b56",
   runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "254c4b4b535d5d89b9640c27fa829c2392e7a68ecda5fb58596835452ec7d265",
