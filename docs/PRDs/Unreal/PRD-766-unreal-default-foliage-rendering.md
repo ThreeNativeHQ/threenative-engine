@@ -55,11 +55,11 @@ override is reported (`/AGENTS.md` conventions rule).
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: an asset whose `maxDistance` ends inside the near ring builds no `tn-far:` mesh. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: desktop draws alpha-tested meshes through a depth prepass, and the named override turns it off and is reported. proof: unit test in `packages/core/__tests__/` named in phase 2 — Evidence: pending.
-- [ ] AC-3 [local]: far trees past the first ring draw from their ring representation, with no whole-map impostor draw for trees. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: Wildwood walking pose presented p95 at or under 33 ms on the RTX 2080, 2 runs, with no console errors in a 10 s walk. proof: Chrome DevTools MCP walk on `http://127.0.0.1:5174/?world=forest&stage=wildwood` — Evidence: pending.
-- [ ] AC-5 [local]: visual judge NEUTRAL or IMPROVEMENT at the walking pose and the floor view (V), 2 runs per arm. proof: fresh judge subagent on before/after captures — Evidence: pending.
+- AC-1 [local]: an asset whose `maxDistance` ends inside the near ring builds no `tn-far:` mesh. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: pending.
+- AC-2 [local]: desktop draws alpha-tested meshes through a depth prepass, and the named override turns it off and is reported. proof: unit test in `packages/core/__tests__/` named in phase 2 — Evidence: pending.
+- AC-3 [local]: far trees past the first ring draw from their ring representation, with no whole-map impostor draw for trees. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: pending.
+- AC-4 [local]: Wildwood walking pose presented p95 at or under 33 ms on the RTX 2080, 2 runs, with no console errors in a 10 s walk. proof: Chrome DevTools MCP walk on `http://127.0.0.1:5174/?world=forest&stage=wildwood` — Evidence: pending.
+- AC-5 [local]: visual judge NEUTRAL or IMPROVEMENT at the walking pose and the floor view (V), 2 runs per arm. proof: fresh judge subagent on before/after captures — Evidence: pending.
 
 ## Integration Ledger
 
@@ -77,6 +77,8 @@ override is reported (`/AGENTS.md` conventions rule).
 **Implementation:** in `#buildFar`, skip an asset whose `cullDistance(maxDistance)` is inside the near
 ring's guaranteed radius. Red test first.
 **Verification:** AC-1; Wildwood walking pose GPU before and after (2 runs each); AC-5 judge for this phase.
+- [ ] AC-1: an asset whose `maxDistance` ends inside the near ring builds no `tn-far:` mesh. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: pending.
+- [ ] Phase 1 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: pending.
 
 #### Phase 2: Masked depth prepass on desktop
 **Status:** NOT STARTED
@@ -84,6 +86,8 @@ ring's guaranteed radius. Red test first.
 **Implementation:** depth-only pass for opaque and alpha-tested meshes, then the main pass reads depth.
 Default on for desktop, off for mobile, named override reported.
 **Verification:** AC-2; Wildwood walking pose GPU (2 runs per arm); AC-5 judge.
+- [ ] AC-2: desktop draws alpha-tested meshes through a depth prepass, and the named override turns it off and is reported. proof: unit test in `packages/core/__tests__/` named in phase 2 — Evidence: pending.
+- [ ] Phase 2 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: pending.
 
 #### Phase 3: Far trees as HLOD rings
 **Status:** NOT STARTED
@@ -91,3 +95,6 @@ Default on for desktop, off for mobile, named override reported.
 **Implementation:** first profile the far impostor fragment with a Chrome DevTools trace. Then draw the
 cooked far mesh LOD out to the first ring and impostors only past it.
 **Verification:** AC-3, AC-4, AC-5.
+- [ ] AC-3: far trees past the first ring draw from their ring representation, with no whole-map impostor draw for trees. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: pending.
+- [ ] AC-4: Wildwood walking pose presented p95 at or under 33 ms on the RTX 2080, 2 runs, with no console errors in a 10 s walk. proof: Chrome DevTools MCP walk on `http://127.0.0.1:5174/?world=forest&stage=wildwood` — Evidence: pending.
+- [ ] AC-5: visual judge NEUTRAL or IMPROVEMENT at the walking pose and the floor view (V), 2 runs per arm. proof: fresh judge subagent on before/after captures — Evidence: pending.
