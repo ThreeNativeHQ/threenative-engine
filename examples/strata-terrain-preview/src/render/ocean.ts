@@ -1,4 +1,4 @@
-import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
+import { type ISpectralOceanOptions, SpectralOcean, bakeShoreWaves } from "@threenative/core";
 import {
   Color,
   DataTexture,
@@ -64,6 +64,12 @@ export const OCEAN_LOOK = {
 /** Thin breaking surf on exposed shores. */
 const FOAM = 0xe9f4f6;
 
+/**
+ * The swell that breaks on this shore, and the water the surf rides on. `incidentHeight` is the crest
+ * height the bake shoals and caps: the one number the bathymetry cannot measure for itself.
+ */
+export const SHORE = { incidentHeight: 1.15 } as const;
+
 export function createOcean(): SpectralOcean {
   return new SpectralOcean(SEA);
 }
@@ -108,65 +114,15 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
   const level = data.waterLevel;
   if (level === null || !Number.isFinite(level))
     throw new Error("Coastal bake has no finite sea level");
-  // Distance to dry land and connection to deep open water, measured once from the bake.
-  // Flooding only through >2 m water leaves sheltered lagoons out of the breaking-surf mask.
+  // Where the swell arrives, how fast and how tall, measured from the bathymetry the bake already
+  // has. The front fields replace the hand-rolled distance-to-land and exposure flood fill this
+  // game used to carry: a cell no front reaches (a lagoon behind a bar) has a fade of zero.
+  const waves = bakeShoreWaves(data.heights, data.resolution, data.size, level, SHORE);
   const n = data.resolution;
-  const cell = data.size / (n - 1);
-  const distance = Float32Array.from(data.heights, (height) => (height >= level ? 0 : 1e4));
-  const exposed = new Uint8Array(n * n);
-  const queue: number[] = [];
-  for (let i = 0; i < n * n; i++) {
-    const row = Math.floor(i / n);
-    const col = i % n;
-    if (
-      (row === 0 || col === 0 || row === n - 1 || col === n - 1) &&
-      (data.heights[i] as number) < level - 2
-    ) {
-      exposed[i] = 1;
-      queue.push(i);
-    }
-    if (col > 0) distance[i] = Math.min(distance[i] as number, (distance[i - 1] as number) + cell);
-    if (row > 0) distance[i] = Math.min(distance[i] as number, (distance[i - n] as number) + cell);
-  }
-  for (let i = n * n - 1; i >= 0; i--) {
-    if (i % n < n - 1)
-      distance[i] = Math.min(distance[i] as number, (distance[i + 1] as number) + cell);
-    if (i < n * (n - 1))
-      distance[i] = Math.min(distance[i] as number, (distance[i + n] as number) + cell);
-  }
-  for (let head = 0; head < queue.length; head++) {
-    const i = queue[head] as number;
-    for (const next of [i % n > 0 ? i - 1 : -1, i % n < n - 1 ? i + 1 : -1, i - n, i + n]) {
-      if (
-        next < 0 ||
-        next >= exposed.length ||
-        exposed[next] ||
-        (data.heights[next] as number) >= level - 2
-      )
-        continue;
-      exposed[next] = 1;
-      queue.push(next);
-    }
-  }
-  // Carry exposure through the last eighteen metres of shallow water, never across a dry sand bar.
-  for (let pass = 0; pass < Math.ceil(18 / cell); pass++) {
-    const previous = exposed.slice();
-    for (let i = 0; i < exposed.length; i++) {
-      if ((data.heights[i] as number) >= level) continue;
-      if (
-        (i % n > 0 && previous[i - 1]) ||
-        (i % n < n - 1 && previous[i + 1]) ||
-        previous[i - n] ||
-        previous[i + n]
-      )
-        exposed[i] = 1;
-    }
-  }
   const pixels = new Uint16Array(n * n * 4);
   for (let i = 0; i < n * n; i++) {
     pixels[i * 4] = DataUtils.toHalfFloat(data.heights[i] as number);
-    pixels[i * 4 + 1] = DataUtils.toHalfFloat(distance[i] as number);
-    pixels[i * 4 + 2] = DataUtils.toHalfFloat(exposed[i] as number);
+    pixels[i * 4 + 1] = DataUtils.toHalfFloat(waves.fade[i] as number);
   }
   const heightTexture = new DataTexture(pixels, n, n, RGBAFormat, HalfFloatType);
   heightTexture.minFilter = LinearFilter;
@@ -266,9 +222,9 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
   const shoreFoam = float(1)
     .sub(smoothstep(0.25, 1.8, depth))
     .mul(smoothstep(0.015, 0.08, depth))
-    .mul(float(1).sub(smoothstep(1, 5.5, shore.g)))
+    .mul(float(1).sub(smoothstep(0.05, 0.28, depth)))
     .mul(smoothstep(0.25, 0.65, surf).mul(0.7).add(0.3))
-    .mul(shore.b)
+    .mul(shore.g)
     .mul(local)
     .mul(0.8);
   material.colorNode = mix(water, color(FOAM), shoreFoam);

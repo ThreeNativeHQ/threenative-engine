@@ -1104,6 +1104,15 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           if (sample && age !== undefined) firstViewGpuFrame = sample.frame + age + 1;
         }
         const view = ctx.state.getState().view;
+        // A capture lane pins its own eye and target, the way the realistic-ocean capture does:
+        // `addInitScript` sets the global, so a served build can be photographed from a pose no
+        // benchmark framing names, and two builds are photographed from the same one.
+        const pinned = (globalThis as { __TN_STRATA_CAM?: readonly number[] }).__TN_STRATA_CAM;
+        if (pinned?.length === 6) {
+          ctx.camera.position.set(pinned[0] as number, pinned[1] as number, pinned[2] as number);
+          ctx.camera.lookAt(pinned[3] as number, pinned[4] as number, pinned[5] as number);
+          return;
+        }
         actor.material.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
