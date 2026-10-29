@@ -1,5 +1,5 @@
 diff --git a/src/materials/nodes/manager/NodeMaterialObserver.js b/src/materials/nodes/manager/NodeMaterialObserver.js
-index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e3427711be7210 100644
+index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..f115d25e17cb94c2e1f74420c38feeb7eca9a80e 100644
 --- a/src/materials/nodes/manager/NodeMaterialObserver.js
 +++ b/src/materials/nodes/manager/NodeMaterialObserver.js
 @@ -133,6 +133,15 @@ class NodeMaterialObserver {
@@ -18,7 +18,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  	}
  
  	/**
-@@ -232,6 +241,88 @@ class NodeMaterialObserver {
+@@ -232,6 +241,92 @@ class NodeMaterialObserver {
  
  	}
  
@@ -69,7 +69,8 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
 +				environmentRotation: scene.environmentRotation.clone(),
 +				environmentIntensity: scene.environmentIntensity,
 +				materialVersion: material.version,
-+				geometryVersion: geometry.version
++				geometryVersion: geometry.version,
++				pmremSwaps: renderObject.renderer._tnPmremSwaps
 +			};
 +
 +			data.settledState = false;
@@ -82,7 +83,9 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
 +			settled.environmentRotation.equals( scene.environmentRotation ) !== true ||
 +			settled.environmentIntensity !== scene.environmentIntensity ||
 +			settled.materialVersion !== material.version ||
-+			settled.geometryVersion !== geometry.version ) {
++			settled.geometryVersion !== geometry.version ||
++			// a PMREM finished and swapped the texture its node samples: a settled object would keep the old one
++			settled.pmremSwaps !== renderObject.renderer._tnPmremSwaps ) {
 +
 +			// re-arm with the current state, so the object settles again once it stops changing
 +
@@ -91,6 +94,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
 +			settled.environmentIntensity = scene.environmentIntensity;
 +			settled.materialVersion = material.version;
 +			settled.geometryVersion = geometry.version;
++			settled.pmremSwaps = renderObject.renderer._tnPmremSwaps;
 +
 +			data.settledState = false;
 +
@@ -107,7 +111,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  	/**
  	 * Returns an attribute data structure holding the attributes versions for
  	 * monitoring.
-@@ -298,7 +389,6 @@ class NodeMaterialObserver {
+@@ -298,7 +393,6 @@ class NodeMaterialObserver {
  
  			data = {
  				_renderId: - 1,
@@ -115,7 +119,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  
  				attributes: this.getAttributesData( geometry.attributes ),
  				indexId: geometry.index ? geometry.index.id : null,
-@@ -327,7 +417,7 @@ class NodeMaterialObserver {
+@@ -327,7 +421,7 @@ class NodeMaterialObserver {
  
  		if ( data === undefined ) {
  
@@ -124,7 +128,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  
  			for ( const property of this.refreshUniforms ) {
  
-@@ -411,7 +501,6 @@ class NodeMaterialObserver {
+@@ -411,7 +505,6 @@ class NodeMaterialObserver {
  
  						value.copy( mtlValue );
  
@@ -132,7 +136,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  						return false;
  
  					}
-@@ -423,7 +512,6 @@ class NodeMaterialObserver {
+@@ -423,7 +516,6 @@ class NodeMaterialObserver {
  						value.id = mtlValue.id;
  						value.version = mtlValue.version;
  
@@ -140,7 +144,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  						return false;
  
  					}
-@@ -432,7 +520,6 @@ class NodeMaterialObserver {
+@@ -432,7 +524,6 @@ class NodeMaterialObserver {
  
  					materialData[ property ] = mtlValue;
  
@@ -148,7 +152,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  					return false;
  
  				}
-@@ -448,18 +535,12 @@ class NodeMaterialObserver {
+@@ -448,18 +539,12 @@ class NodeMaterialObserver {
  					renderObjectData.bufferWidth = width;
  					renderObjectData.bufferHeight = height;
  
@@ -167,7 +171,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  
  		}
  
-@@ -502,7 +583,6 @@ class NodeMaterialObserver {
+@@ -502,7 +587,6 @@ class NodeMaterialObserver {
  					// attribute was removed
  					delete storedAttributes[ name ];
  
@@ -175,7 +179,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  					return false;
  
  				}
-@@ -515,7 +595,6 @@ class NodeMaterialObserver {
+@@ -515,7 +599,6 @@ class NodeMaterialObserver {
  					storedAttributeData.id = id;
  					storedAttributeData.version = version;
  
@@ -183,7 +187,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  					return false;
  
  				}
-@@ -526,7 +605,6 @@ class NodeMaterialObserver {
+@@ -526,7 +609,6 @@ class NodeMaterialObserver {
  
  				geometryData.attributes = this.getAttributesData( attributes );
  
@@ -191,7 +195,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  				return false;
  
  			}
-@@ -544,7 +622,6 @@ class NodeMaterialObserver {
+@@ -544,7 +626,6 @@ class NodeMaterialObserver {
  				geometryData.indexId = currentIndexId;
  				geometryData.indexVersion = currentIndexVersion;
  
@@ -199,7 +203,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  				return false;
  
  			}
-@@ -556,16 +633,10 @@ class NodeMaterialObserver {
+@@ -556,16 +637,10 @@ class NodeMaterialObserver {
  				geometryData.drawRange.start = geometry.drawRange.start;
  				geometryData.drawRange.count = geometry.drawRange.count;
  
@@ -216,7 +220,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  
  		}
  
-@@ -716,7 +787,14 @@ class NodeMaterialObserver {
+@@ -716,7 +791,14 @@ class NodeMaterialObserver {
  	 */
  	needsRefresh( renderObject, nodeFrame ) {
  
@@ -232,7 +236,7 @@ index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e34277
  			return true;
  
  		const { renderId } = nodeFrame;
-@@ -729,10 +807,14 @@ class NodeMaterialObserver {
+@@ -729,10 +811,14 @@ class NodeMaterialObserver {
  
  		}
  
@@ -2539,7 +2543,7 @@ index ff8ee2dbace2816105aa7152891c04f2333f33e8..036202ae74ee01f73ca25113e8d4e2ef
  
  	}
 diff --git a/src/nodes/pmrem/PMREMNode.js b/src/nodes/pmrem/PMREMNode.js
-index fc65e547aab918c28a4fa1c615e3cc4f7e8e169f..c4c33cf3060d8c75398000589ed4e3f9a52ec285 100644
+index fc65e547aab918c28a4fa1c615e3cc4f7e8e169f..600385e10268f7a34cb96ce6605909c2197afd3d 100644
 --- a/src/nodes/pmrem/PMREMNode.js
 +++ b/src/nodes/pmrem/PMREMNode.js
 @@ -11,6 +11,31 @@ import PMREMGenerator from '../../renderers/common/extras/PMREMGenerator.js';
@@ -2742,7 +2746,17 @@ index fc65e547aab918c28a4fa1c615e3cc4f7e8e169f..c4c33cf3060d8c75398000589ed4e3f9
  	/**
  	 * Constructs a new function overloading node.
  	 *
-@@ -343,7 +464,7 @@ class PMREMNode extends TempNode {
+@@ -310,6 +431,9 @@ class PMREMNode extends TempNode {
+ 
+ 				this._pmrem = pmrem;
+ 
++				// count the swap, so every settled object that samples this node refreshes once (NodeMaterialObserver)
++				if ( this._texture.value !== pmrem && frame.renderer ) frame.renderer._tnPmremSwaps = ( frame.renderer._tnPmremSwaps || 0 ) + 1;
++
+ 				this.updateFromTexture( pmrem );
+ 
+ 			}
+@@ -343,7 +467,7 @@ class PMREMNode extends TempNode {
  		// PMREMGenerator renders into a render target with inverted Y, so its output needs the Y
  		// flip on sampling. Externally authored PMREMs follow the standard convention and don't.
  

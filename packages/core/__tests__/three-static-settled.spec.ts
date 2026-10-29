@@ -81,6 +81,7 @@ function worldFor(mesh: InstancedMesh) {
     bundle: null as null,
     lightsNode: { getLights: () => [] },
     scene: { environmentIntensity: 1, environmentRotation: new Quaternion() },
+    renderer: {} as { _tnPmremSwaps?: number },
   };
 }
 
@@ -688,6 +689,26 @@ describe("a settled static object skips the per-object draw work", () => {
     scene.environmentRotation.set(0, 0.5, 0);
     prime(mesh, observer);
     expect(observer.isSettled(world)).toBe(false);
+  });
+
+  it("refreshes a settled static object once a PMREM swapped the texture it samples", () => {
+    // A PMREM finishes after its samplers settled and swaps the texture object behind their binding. A
+    // settled object skips its object-group bindings, so the forest kit's firs kept the black placeholder
+    // sky and drew with no sky light until anything else un-settled them.
+    const mesh = litMesh();
+    mesh.static = true;
+    const observer = observerFor(mesh);
+    draw(mesh, observer);
+    draw(mesh, observer);
+    const world = cachedWorld(mesh);
+    expect(observer.isSettled(world)).toBe(true);
+
+    const renderer = world.renderer as unknown as { _tnPmremSwaps?: number };
+    renderer._tnPmremSwaps = (renderer._tnPmremSwaps ?? 0) + 1;
+    prime(mesh, observer);
+    expect(observer.isSettled(world)).toBe(false);
+    prime(mesh, observer);
+    expect(observer.isSettled(world)).toBe(true);
   });
 
   it("never settles a moving object, and never settles while motion vectors render", () => {
