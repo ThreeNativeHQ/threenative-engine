@@ -1240,6 +1240,39 @@ export function defineBrowserClasses(
     if (fresh.length === entry.array.length) entry.array.set(fresh);
     else entry.array = fresh;
   };
+  // three's `InstancedMesh.setMatrixAt`/`setColorAt` write the mesh's own `instanceMatrix`/
+  // `instanceColor` array item (`index * 16`, `index * 3`); the engine's mesh-level call writes only
+  // its own store, so the shadow a game already holds (core's velocity capture reads one per mesh a
+  // frame) would send its frozen snapshot back at `needsUpdate` and leave the mesh where it stood.
+  // Take the item the call writes into that same array, as three does. No shadow, no work: this is
+  // a pair of map lookups and an array copy, never an engine call.
+  const instanceItem = (
+    mesh: object,
+    attribute: string,
+    index: unknown,
+    argument: unknown,
+  ): { array: TypedArray; at: number; values: ArrayLike<number> } | undefined => {
+    const held = shapes.get(mesh)?.get(attribute);
+    if (held === null || held === undefined) return undefined;
+    const entry = arrays.get(held as object);
+    if (entry === undefined) return undefined;
+    const source = argument as {
+      elements?: ArrayLike<number>;
+      r?: number;
+      g?: number;
+      b?: number;
+    } | null;
+    const values =
+      attribute === "instanceMatrix"
+        ? source?.elements
+        : [Number(source?.r), Number(source?.g), Number(source?.b)];
+    if (values === undefined) return undefined;
+    const at = Number(index) * values.length;
+    // three's `toArray` writes one lane at a time, so a lane outside the array is ignored, not an error.
+    if (!Number.isSafeInteger(at) || at < 0 || at + values.length > entry.array.length)
+      return undefined;
+    return { array: entry.array, at, values };
+  };
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
       debug?.add("bridgeWrappersReleased");
@@ -1500,6 +1533,15 @@ export function defineBrowserClasses(
       const rangeMethod = attributeClass && rangeMethods.has(method);
       const transformMethod = attributeClass && transformMethods.has(method);
       const geometryWrite = geometryClass && geometryWrites.has(method);
+      // A mesh-level write into an attribute a game can hold a shadow of (see `instanceItem`).
+      const instanceWrite =
+        name !== "InstancedMesh"
+          ? undefined
+          : method === "setMatrixAt"
+            ? "instanceMatrix"
+            : method === "setColorAt"
+              ? "instanceColor"
+              : undefined;
       // A mixer or action call may write the tracks' targets (update, stop restoring originals).
       const drives =
         /^Animation(Mixer|Action|ObjectGroup)$/u.test(name) && !keeps && !/^is[A-Z]/u.test(method);
@@ -1570,6 +1612,12 @@ export function defineBrowserClasses(
             labels.delete(this);
             animated.delete(this);
           }
+          // The item a mesh-level attribute write makes: read before the arguments cross, since a
+          // Matrix4 is promoted in place, and written into the game's array once the call lands.
+          const item =
+            instanceWrite === undefined
+              ? undefined
+              : instanceItem(this, instanceWrite, args[0], args[1]);
           const mark = loans.length;
           let result: unknown;
           try {
@@ -1587,9 +1635,12 @@ export function defineBrowserClasses(
           if (method === "copy") {
             shapes.delete(this);
             itemSizes.delete(this);
-          } else if (name === "InstancedMesh" && method === "setColorAt") {
+          } else if (instanceWrite !== undefined) {
             const known = shapes.get(this);
-            if (known?.get("instanceColor") === null) known.delete("instanceColor");
+            // The engine creates `instanceColor` on the first setColorAt: a cached null is stale.
+            if (instanceWrite === "instanceColor" && known?.get("instanceColor") === null)
+              known.delete("instanceColor");
+            if (item !== undefined) item.array.set(item.values, item.at);
           }
           // The engine wrote only this range: copy it back, so a later game edit to the shadow wins.
           if (rangeMethod) {

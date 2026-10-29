@@ -72,7 +72,7 @@
       {
         "id": "state",
         "path": "cameraX",
-        "atSteps": [{ "label": "box-release", "equals": -70 }, { "label": "armed", "equals": -70 }]
+        "atSteps": [{ "label": "box-release", "equals": -66 }, { "label": "armed", "equals": -66 }]
       }
     ],
     "renderChain": {

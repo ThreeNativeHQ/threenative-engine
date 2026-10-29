@@ -16,7 +16,7 @@
     {
       "kind": "click",
       "label": "train",
-      "at": { "x": 1232, "y": 460 },
+      "at": { "element": { "selector": "[data-testid=train-worker]" } },
       "waitTicks": 8
     },
     { "kind": "wait", "label": "queued", "waitTicks": 20, "release": true },
