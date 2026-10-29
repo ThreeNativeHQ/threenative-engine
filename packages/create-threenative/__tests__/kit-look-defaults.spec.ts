@@ -163,7 +163,14 @@ describe("PRD-723 phase 1 kit look defaults", () => {
     const { exposureSettings } = await import("../templates/rts/src/render/exposure.js");
     const previous = LEGACY_PRESETS.rts?.[tier];
     if (previous === undefined) throw new Error(`Missing legacy preset rts/${tier}`);
-    const expected = { ...LEGACY_DEFAULTS, ...previous, samples: previous.samples ?? 4 };
+    // Owner, 2026-10-28: sharp in motion beats Unreal's temporal AA and camera motion blur, on every tier.
+    const expected = {
+      ...LEGACY_DEFAULTS,
+      ...previous,
+      motionBlurEnabled: false,
+      samples: previous.samples ?? 4,
+      temporalAA: false,
+    };
     const { tonemapMode: _curve, autoExposureEnabled: _meter, ...costs } = expected;
     const preset = qualityPreset(tier);
     expect(
