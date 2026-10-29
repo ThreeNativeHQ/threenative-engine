@@ -154,7 +154,7 @@ function dressProp(
 }
 
 /** How strongly the sky lights foliage, which the sun alone leaves near-black from most sides. */
-export const FOLIAGE_SKY_LIGHT = 2.2;
+export const FOLIAGE_SKY_LIGHT = 1;
 /** 0 keeps each card's own normal, 1 points every normal straight out from the crown's axis. */
 export const CROWN_NORMAL_BEND = 0.7;
 
