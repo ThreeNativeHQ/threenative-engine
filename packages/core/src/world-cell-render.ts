@@ -541,6 +541,7 @@ export class CellRender {
    */
   cullMainPass(camera: Camera | undefined): void {
     if (camera === undefined || (camera as ICamera).isOrthographicCamera === true) return;
+    this.#bundleSafety.beginFrame();
     this.#mainCullFrustums += 1;
     const frustum = _cullFrustum.setFromProjectionMatrix(
       _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
@@ -1560,12 +1561,14 @@ export class CellRender {
     if (existing !== undefined && this.#lodHysteresis === 0) return existing;
     const shape = this.shapeFor(entry, role, level);
     if (existing !== undefined) {
-      if (
+      const rebind =
         shape.material.userData.tnPublishedLodRange === true &&
         existing.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&
-        existing.mesh.count === 0
-      )
-        existing.rebind(shape.geometry, shape.material);
+        existing.mesh.count === 0;
+      // The same surface on the same buffer is no change: re-recording it on every call re-walked
+      // its whole node graph each time a cell asked for the key (3 s of a 25 s Strata trace).
+      if (!rebind && existing.mesh.material === shape.material) return existing;
+      if (rebind) existing.rebind(shape.geometry, shape.material);
       else existing.mesh.material = shape.material;
       this.bundleOut(existing);
       this.bundleIn(existing);

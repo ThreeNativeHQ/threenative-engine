@@ -844,9 +844,11 @@ export interface IWorldCellsStats {
    * invalidations since load: membership, material or geometry changes and CPU window repacks
    * invalidate; GPU indirect count updates do not.
    *
-   * `eligibility` counts CPU material checks, snapshot validations, fresh structural walks and
-   * oversized or unsupported child output. Snapshots check own links and Three's child readers on
-   * every check, detecting deep edits without requiring `needsUpdate`; child discovery still allocates.
+   * `eligibility` counts CPU material checks, snapshot validations, fresh structural walks,
+   * oversized or unsupported child output, and `deferred` deep proofs. Snapshots check own links and
+   * Three's child readers, detecting deep edits without requiring `needsUpdate`, once per
+   * `staleFrames` period: 1 for a small world, the tested rows over a per-frame budget for a forest.
+   * Child discovery still allocates.
    *
    * `reason` is who asked: `default` is a run that set nothing, `option` is a load that named
    * `bundles`, and `launch` is `?tnBundles` / `TN_BUNDLES` / `__tnBundles`. It is on the marker line
@@ -863,6 +865,8 @@ export interface IWorldCellsStats {
       readonly refreshes: number;
       readonly validations: number;
       readonly uncached: number;
+      readonly deferred: number;
+      readonly staleFrames: number;
     };
     readonly reason: string;
     readonly records: number;

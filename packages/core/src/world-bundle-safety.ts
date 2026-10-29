@@ -48,18 +48,51 @@ interface IBundleMaterialCheck {
   readonly visible: boolean;
   readonly transmission: unknown;
   readonly rows: readonly IBundleGraphSnapshot[];
+  /** The frame whose deep validation (or fresh walk) last proved this verdict. */
+  provedFrame: number;
+  /** The last frame that tested this material, so a frame counts its rows once. */
+  testedFrame: number;
 }
 
+/**
+ * Deep snapshot rows proved per frame, across every material. A small world proves every graph on
+ * every frame; a forest of ~50 foliage surfaces at ~1,000 rows each spreads its proof instead of
+ * walking ~50,000 rows each frame, which measured 10.9 s of a 25 s trace on the Strata preview. A
+ * row costs about a microsecond, so the budget is about a millisecond a frame.
+ */
+const BUNDLE_PROOF_ROWS_PER_FRAME = 1024;
+
 /** Own-link and installed-Node child snapshots avoid inherited TSL method scans. Deep unversioned
- * edits still invalidate: version/root identity alone cannot certify a mutable node graph. A large
- * graph uses the uncached safety walk, and conservatively rerecords rather than reusing a verdict. */
+ * edits still invalidate: version/root identity alone cannot certify a mutable node graph. The
+ * shallow witness (version, transparency, visibility, transmission) is read on every check. The deep
+ * rows are proved once per `staleFrames` period: the rows the last frame tested over a per-frame
+ * budget, so a small world proves every frame and a forest spreads its proofs evenly, each material
+ * in its own slot of the period. Three itself rebuilds a draw only when `material.version` moves
+ * (`RenderObjects.get`), so a deep edit without `needsUpdate` changes no compiled draw inside that
+ * window. A graph past the witness caps uses the uncached safety walk. */
 export class BundleSurfaceSafety {
   #checks = new WeakMap<Material, IBundleMaterialCheck>();
   #revision = 0;
-  readonly stats = { checks: 0, refreshes: 0, validations: 0, uncached: 0 };
+  #frame = 0;
+  #frameRows = 0;
+  readonly stats = {
+    checks: 0,
+    refreshes: 0,
+    validations: 0,
+    uncached: 0,
+    deferred: 0,
+    staleFrames: 1,
+  };
 
   clear(): void {
     this.#checks = new WeakMap();
+  }
+
+  /** Opens a frame: the period every deep proof is spread over follows the last frame's rows. */
+  beginFrame(): void {
+    this.#frame++;
+    this.stats.staleFrames = Math.max(1, Math.ceil(this.#frameRows / BUNDLE_PROOF_ROWS_PER_FRAME));
+    this.#frameRows = 0;
   }
 
   test(material: Material): IBundleMaterialCheck {
@@ -70,11 +103,26 @@ export class BundleSurfaceSafety {
       previous.version === material.version &&
       previous.transparent === material.transparent &&
       previous.visible === material.visible &&
-      previous.transmission === Reflect.get(material, "transmission") &&
-      previous.rows.every(graphSnapshotCurrent)
+      previous.transmission === Reflect.get(material, "transmission")
     ) {
-      this.stats.validations++;
-      return previous;
+      if (previous.testedFrame !== this.#frame) {
+        previous.testedFrame = this.#frame;
+        this.#frameRows += previous.rows.length;
+      }
+      if (previous.provedFrame === this.#frame) return previous;
+      const period = this.stats.staleFrames;
+      const stale = this.#frame - previous.provedFrame;
+      // Each verdict proves in its own slot of the period; a slot missed while the period grew is
+      // made up at twice the period, so no verdict waits longer than that.
+      if ((this.#frame + previous.revision) % period !== 0 && stale < 2 * period) {
+        this.stats.deferred++;
+        return previous;
+      }
+      if (previous.rows.every(graphSnapshotCurrent)) {
+        this.stats.validations++;
+        previous.provedFrame = this.#frame;
+        return previous;
+      }
     }
     this.stats.refreshes++;
     const capture: IBundleGraphCapture = { rows: [], links: 0, overflow: false };
@@ -86,6 +134,8 @@ export class BundleSurfaceSafety {
       visible: material.visible,
       transmission: Reflect.get(material, "transmission"),
       rows: capture.rows,
+      provedFrame: this.#frame,
+      testedFrame: this.#frame,
     };
     if (capture.overflow) {
       this.stats.uncached++;
@@ -124,14 +174,28 @@ function graphSnapshotCurrent(row: IBundleGraphSnapshot): boolean {
   return readBundleGraphChildren(node, reader, expected) === expected;
 }
 
-/** Three reads non-enumerable own Node/Material slots, but never inherited TSL chain methods. */
+/**
+ * Three reads non-enumerable own Node/Material slots, but never inherited TSL chain methods, and
+ * never a `_`-prefixed slot: `Node._getChildren` skips those, because they are private caches
+ * (`ScreenNode._output` is rewritten every frame) rather than graph structure.
+ */
 function bundleGraphKeys(node: object): string[] {
-  return Reflect.get(node, "isNode") === true || Reflect.get(node, "isMaterial") === true
-    ? Object.getOwnPropertyNames(node)
-    : Object.keys(node);
+  return (
+    Reflect.get(node, "isNode") === true || Reflect.get(node, "isMaterial") === true
+      ? Object.getOwnPropertyNames(node)
+      : Object.keys(node)
+  ).filter((key) => !key.startsWith("_"));
 }
 function bundleGraphChildReader(node: object): unknown {
   return Reflect.get(node, "isNode") === true ? Reflect.get(node, "getChildren") : undefined;
+}
+/** A child three's `getChildren` yields: an object node, or a callable TSL `Fn` (`typeof` "function"). */
+function isGraphNode(child: unknown): child is object {
+  return (
+    child !== null &&
+    (typeof child === "object" || typeof child === "function") &&
+    Reflect.get(child, "isNode") === true
+  );
 }
 function readBundleGraphChildren(
   node: object,
@@ -155,13 +219,7 @@ function readBundleGraphChildren(
       let index = 0;
       let match = true;
       for (const child of result as Iterable<unknown>) {
-        if (
-          index >= 8192 ||
-          child === null ||
-          typeof child !== "object" ||
-          Reflect.get(child, "isNode") !== true
-        )
-          return undefined;
+        if (index >= 8192 || !isGraphNode(child)) return undefined;
         if (match && child !== expected[index]) match = false;
         index++;
       }
@@ -169,13 +227,7 @@ function readBundleGraphChildren(
     }
     const children: object[] = [];
     for (const child of result as Iterable<unknown>) {
-      if (
-        children.length >= 8192 ||
-        child === null ||
-        typeof child !== "object" ||
-        Reflect.get(child, "isNode") !== true
-      )
-        return undefined;
+      if (children.length >= 8192 || !isGraphNode(child)) return undefined;
       children.push(child);
     }
     return children;
@@ -194,7 +246,9 @@ function captureBundleGraph(
   const count = keys.length;
   capture.links += count + (children?.length ?? 0);
   if (children === undefined) capture.overflow = true;
-  if (capture.rows.length >= 1024 || capture.links > 8192) capture.overflow = true;
+  // A shipped foliage surface reaches ~1,000 nodes and ~21,000 links; a cap below that re-walked and
+  // re-recorded every such material on every frame. The witness holds references only.
+  if (capture.rows.length >= 4096 || capture.links > 65_536) capture.overflow = true;
   const values: unknown[] = new Array(count);
   if (capture.overflow) {
     for (let index = 0; index < count; index++)
@@ -231,6 +285,11 @@ function samplesFramebuffer(
   if (node === null || typeof node !== "object" || ArrayBuffer.isView(node) || seen.has(node))
     return false;
   seen.add(node);
+  // A uniform group is a binding group, never a framebuffer reader, and three's shared frame and
+  // render groups bump their `version` on every frame (`UniformGroupNode.update`). Walking into one
+  // made every graph that holds a uniform look edited on every frame, which re-walked the whole
+  // graph and re-recorded its bundle each frame.
+  if (Reflect.get(node, "isUniformGroup") === true) return false;
   const candidate = node as {
     readonly isNode?: boolean;
     readonly updateBefore?: unknown;
