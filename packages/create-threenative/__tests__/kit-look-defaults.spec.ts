@@ -58,6 +58,7 @@ const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
     "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
   shooter:
     "owner 2026-10-26 prefers the 7b546d6 neutral look (ACES, fixed exposure 0.62, no gather)",
+  rts: "owner 2026-10-28 wants the AstraCraft reference look (ACES, fixed exposure 1.02), PRD-765",
 };
 
 /** Runtime names imported from `@threenative/core` in one file. */

@@ -3,7 +3,15 @@
 //
 // One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
 // sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
-import { Color, DirectionalLight, Object3D, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import {
+  Color,
+  DirectionalLight,
+  HemisphereLight,
+  Object3D,
+  PCFSoftShadowMap,
+  type Scene,
+  Vector3,
+} from "three";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
@@ -24,7 +32,13 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
   renderer.shadowMap.type = PCFSoftShadowMap;
 
   // Warm white, matched by eye to the photographed midday sun against its own sky.
-  const key = new DirectionalLight(0xfff1e0, 4.5);
+  // A warm key, a cool sky over warm ground, and a cool rim from behind the camera. Intensities are
+  // three's physical units: the legacy 1.55 / 0.8 / 0.35 times pi.
+  scene.add(new HemisphereLight(0xc8e6ef, 0x625343, 0.8 * Math.PI));
+  const fill = new DirectionalLight(0x83c8dc, 0.35 * Math.PI);
+  fill.position.set(30, 25, 40);
+  scene.add(fill);
+  const key = new DirectionalLight(0xffe7c4, 1.55 * Math.PI);
   key.position.copy(SUN_DIRECTION).multiplyScalar(SUN_DISTANCE);
   key.castShadow = true;
   const size = mobile ? 2048 : 4096;

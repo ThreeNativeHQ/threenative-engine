@@ -306,7 +306,8 @@ export function createArmy(
         for (const entity of game.entities) {
           if (entity.garrisonId !== null || entity.team !== team) continue;
           if (team !== 0 && !game.visibleAt(entity.x, entity.z)) continue;
-          if (!entity.building && !selected.has(entity.id)) continue;
+          // Only the selection is ringed: the painted apron already frames every building.
+          if (!selected.has(entity.id)) continue;
           const radius = entity.r + 0.4;
           _dummy.position.set(entity.x, terrainHeight(entity.x, entity.z) + 0.13, entity.z);
           _dummy.rotation.set(0, 0, 0);

@@ -15,12 +15,7 @@ import {
 } from "three";
 import type { Game } from "../sim/game.js";
 import { MAP_CELL, POOLS, WORLD, terrainHeight } from "../sim/terrain.js";
-import {
-  createTerrainMaterial,
-  createWaterMaterial,
-  waterDisc,
-  worldMetreUVs,
-} from "./materials.js";
+import { createTerrainMaterial, createWaterMaterial, waterDisc } from "./materials.js";
 import { palette } from "./palette.js";
 
 /**
@@ -55,11 +50,10 @@ export function createTerrain(): ITerrain {
   const geometry = new PlaneGeometry(WORLD, WORLD, SEGMENTS, SEGMENTS).rotateX(-Math.PI / 2);
   const position = geometry.getAttribute("position");
   for (let index = 0; index < position.count; index += 1)
-    position.setY(index, terrainHeight(position.getX(index), position.getZ(index)));
+    position.setY(index, terrainHeight(position.getX(index), position.getZ(index), false));
   geometry.computeVertexNormals();
-  worldMetreUVs(geometry);
 
-  // 102 = never seen, 191 = remembered, 255 = in sight right now.
+  // How much ground shows through: 105 = never seen, 194 = remembered, 255 = in sight right now.
   const cells = WORLD / MAP_CELL;
   const fogBytes = new Uint8Array(cells * cells * 4);
   const fog = new DataTexture(fogBytes, cells, cells);
@@ -104,7 +98,7 @@ export function createTerrain(): ITerrain {
     updateFog: (game) => {
       const size = game.gridSize;
       for (let cell = 0; cell < size * size; cell += 1) {
-        const value = game.visible[cell] === 1 ? 255 : game.explored[cell] === 1 ? 191 : 102;
+        const value = game.visible[cell] === 1 ? 255 : game.explored[cell] === 1 ? 194 : 105;
         fogBytes[cell * 4] = value;
         fogBytes[cell * 4 + 1] = value;
         fogBytes[cell * 4 + 2] = value;

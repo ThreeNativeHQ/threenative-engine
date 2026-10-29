@@ -73,7 +73,12 @@ const legacyDefaults: IWorldEnvironmentOptions = {
 const shared: IWorldEnvironmentOptions = {
   // Bloom cost: unmeasured here; PRD-636 records it in ms.
   bloomEnabled: true,
-  exposure: 0.62,
+  // Override: the AstraCraft reference look (owner, 2026-10-28, PRD-765) is ACES at a fixed
+  // 1.02 exposure under a hemisphere, a warm key and a cool fill; a metered exposure brightened
+  // the concrete aprons to white.
+  tonemapMode: "aces",
+  autoExposureEnabled: false,
+  exposure: 1.02,
   // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
   unrealBloomEnabled: true,
   vignetteAmount: 0.4,

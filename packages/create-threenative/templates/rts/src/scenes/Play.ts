@@ -13,6 +13,7 @@ import {
   panSpeed,
   zoomRts,
 } from "../render/camera.js";
+import { createEnvironment } from "../render/environment.js";
 import { type IEnvironmentSample, sampleEnvironment } from "../render/environmentSampling.js";
 import { type ISun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -200,7 +201,13 @@ export class Play extends Scene<GameState, undefined> {
     });
     this.#resources = createResources();
     const world = new Object3D();
-    world.add(this.#terrain.root, this.#resources.root, this.#army.root, this.#anchor.object);
+    world.add(
+      this.#terrain.root,
+      createEnvironment(sim).root,
+      this.#resources.root,
+      this.#army.root,
+      this.#anchor.object,
+    );
     ctx.add(world);
     ctx.entities.add("selection", this.#anchor);
     applyRtsCamera(camera, view, ctx.viewport.size, STEP);

@@ -23,11 +23,14 @@ import { palette } from "./palette.js";
  */
 const SKY_RANGE = 2.5;
 
-/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
-export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
+/** Unit vector toward the sun: high and from the north-west, so mesas throw their shadow toward the camera's right. */
+export const SUN_DIRECTION = new Vector3(-35, 70, -20).normalize();
+
+/** The sky photograph is a soft fill here, not the key: the hemisphere and the sun in `lighting.ts` carry the look. */
+const ENVIRONMENT_FILL = 0.35;
 
 /** The look this fog replaced: FogExp2 at 0.0035, measured at 150 m from 20 m up. */
-const EYE_LEVEL = { density: 0.0035, distance: 150, cameraHeight: 20 };
+const EYE_LEVEL = { density: 0.0021, distance: 150, cameraHeight: 20 };
 
 /**
  * The distance term's density that, with the height term, keeps the old eye-level haze: at
@@ -51,7 +54,7 @@ export function setupSky(scene: Scene, sky: Texture): void {
   // It is what makes a standard material read as a material: sky-blue fill on faces the sun
   // misses, and a sky to reflect, sharper as roughness drops.
   scene.environment = sky;
-  scene.environmentIntensity = SKY_RANGE;
+  scene.environmentIntensity = SKY_RANGE * ENVIRONMENT_FILL;
   // Tuned for a 224 m battlefield rather than a 36 m arena, and then tuned again: the first
   // value meant to hide the map's far edge (0.0075) hazed the fog of war away with it, because a
   // cell the player has never seen is 60 m away and a distant cell is 150. At 0.0035 the far corner

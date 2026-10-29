@@ -589,7 +589,7 @@ describe("rts kit ordinary-frame runtime cost", () => {
     const sync = (): void => {
       terrain.updateFog(game);
       resources.sync(game);
-      army.sync(game, selected, time, DT, camera);
+      army.sync(game, selected, time, DT, camera, 720);
     };
     const frame = (): void => {
       time += DT;
