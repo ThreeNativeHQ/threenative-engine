@@ -373,6 +373,13 @@ interface IGeometry {
   translate(x: number, y: number, z: number): unknown;
 }
 
+interface IInstancedMesh {
+  instanceMatrix: IAttribute;
+  instanceColor: IAttribute | null;
+  setMatrixAt(index: number, matrix: unknown): unknown;
+  setColorAt(index: number, color: unknown): unknown;
+}
+
 // The typed array a value crossed as, by the marker `toEngine` puts on it: the mock keeps the same
 // scalar type the Wasm ABI would, so a normalized integer attribute stays a Uint8Array end to end.
 function typedName(value: unknown): string | undefined {
@@ -426,8 +433,18 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     const itemSizes = new Map<string, number>();
     const geometries = new Map<string, Map<string, IEngineRef>>();
     const matrices = new Map<string, readonly number[]>();
+    const instances = new Map<string, { matrices: IEngineRef; color: IEngineRef | null }>();
+    // Every whole-array write the engine received, as the bytes three's own array would hold.
+    const writes: { key: string; values: number[] }[] = [];
     const counts = { reads: 0, writes: 0 };
     let next = 0;
+    /** An engine-side attribute: its store, its item size, and the ref the game's `array` reads. */
+    const attribute = (name: string, values: Typed, itemSize: number): IEngineRef => {
+      const ref: IEngineRef = { key: `${name}:0:${++next}:1`, type: typeId(name) };
+      stores.set(ref.key, values);
+      itemSizes.set(ref.key, itemSize);
+      return ref;
+    };
     const store = (self: IEngineRef): Typed => stores.get(self.key) ?? new Float32Array(0);
     const size = (self: IEngineRef): number => itemSizes.get(self.key) ?? 1;
     const at = (self: IEngineRef, index: number, component: number): number =>
@@ -438,10 +455,10 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
       store(self)[at(self, index, component)] = value;
     };
     const shift = (geometry: IEngineRef, translation: readonly number[]): void => {
-      const attribute = geometries.get(geometry.key)?.get("position");
-      if (attribute === undefined) return;
-      const data = store(attribute);
-      const stride = size(attribute);
+      const positions = geometries.get(geometry.key)?.get("position");
+      if (positions === undefined) return;
+      const data = store(positions);
+      const stride = size(positions);
       for (let item = 0; item * stride + stride <= data.length; item++)
         for (let c = 0; c < 3 && c < stride; c++)
           data[item * stride + c] = (data[item * stride + c] as number) + (translation[c] ?? 0);
@@ -463,7 +480,7 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           shift(self, [Number(args[0]), Number(args[1]), Number(args[2])]);
           return null;
         case "applyMatrix4":
-          shift(self, matrices.get((args[0] as IEngineRef).key) ?? [0, 0, 0]);
+          shift(self, (matrices.get((args[0] as IEngineRef).key) ?? []).slice(12, 15));
           return null;
         default:
           return null;
@@ -518,6 +535,47 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           return null;
       }
     };
+    /** An InstancedMesh's engine members; undefined for any other node. */
+    const instanceProperty = (self: IEngineRef, property: string): EngineValue | undefined => {
+      const instance = instances.get(self.key);
+      if (instance === undefined) return undefined;
+      if (property === "instanceColor") return instance.color;
+      if (property === "count") return store(instance.matrices).length / 16;
+      return property === "instanceMatrix" ? instance.matrices : undefined;
+    };
+    /** three's per-item write: the source's lanes into the store at `at`. */
+    const copyItem = (
+      target: Typed,
+      at: number,
+      source: ArrayLike<number>,
+      lanes: number,
+    ): void => {
+      for (let c = 0; c < lanes; c++) target[at + c] = source[c] as number;
+    };
+    const instanceInvoke = (self: IEngineRef, method: string, args: EngineValue[]): EngineValue => {
+      const instance = instances.get(self.key) as {
+        matrices: IEngineRef;
+        color: IEngineRef | null;
+      };
+      const index = Number(args[0]);
+      const argument = args[1] as IEngineRef;
+      if (method === "setColorAt") {
+        // three makes the colour attribute on the first call, every colour white.
+        if (instance.color === null) {
+          const count = store(instance.matrices).length / 16;
+          instance.color = attribute(
+            "InstancedBufferAttribute",
+            new Float32Array(count * 3).fill(1),
+            3,
+          );
+        }
+        copyItem(store(instance.color), index * 3, store(argument), 3);
+        return null;
+      }
+      // three's setMatrixAt: the matrix's sixteen elements, column-major, into the item.
+      copyItem(store(instance.matrices), index * 16, matrices.get(argument.key) ?? [], 16);
+      return null;
+    };
     const runtime: IBrowserRuntime = {
       typeId,
       construct(name, args) {
@@ -527,10 +585,29 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           geometries.set(key, new Map());
           return ref;
         }
+        if (name === "InstancedMesh") {
+          const count = Number(args[2] ?? 0);
+          instances.set(key, {
+            matrices: attribute("InstancedBufferAttribute", new Float32Array(count * 16), 16),
+            color: null,
+          });
+          stores.set(key, new Float32Array(0));
+          itemSizes.set(key, 1);
+          return ref;
+        }
         if (name === "Matrix4") {
-          // A JS Matrix4 that a call takes is promoted with its sixteen row-major numbers (PRD-742):
-          // the translation is the fourth column, so n14/n24/n34 are indices 3, 7 and 11.
-          matrices.set(key, [Number(args[3] ?? 0), Number(args[7] ?? 0), Number(args[11] ?? 0)]);
+          // A JS Matrix4 that a call takes is promoted with its sixteen row-major numbers (PRD-742),
+          // in the engine's column-major store: the translation is elements 12, 13 and 14.
+          const order = [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15];
+          matrices.set(
+            key,
+            order.map((i) => Number(args[i] ?? 0)),
+          );
+          return ref;
+        }
+        if (name === "Color") {
+          stores.set(key, Float32Array.from(args.map(Number)));
+          itemSizes.set(key, 3);
           return ref;
         }
         const handed = args[0];
@@ -542,11 +619,14 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
         return ref;
       },
       invoke(self, method, args): EngineValue {
+        if (instances.has(self.key)) return instanceInvoke(self, method, args as EngineValue[]);
         return geometries.has(self.key)
           ? geometryInvoke(self, method, args as EngineValue[])
           : attributeInvoke(self, method, args as EngineValue[]);
       },
       get(self, property): EngineValue {
+        const instance = instanceProperty(self, property);
+        if (instance !== undefined) return instance;
         if (property === "__attributeNames") {
           const attributes = geometries.get(self.key);
           return attributes === undefined ? "" : [...attributes.keys()].join("\n");
@@ -573,15 +653,16 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
       attributeWrite: (self, array, offset = 0) => {
         store(self).set(array as never, offset);
         counts.writes += array.length;
+        writes.push({ key: self.key, values: Array.from(array as ArrayLike<number>) });
       },
     };
-    return { runtime, matrices, counts };
+    return { runtime, matrices, instances, counts, writes };
   }
 
   function facade() {
-    const { runtime, matrices, counts } = engine();
+    const { runtime, matrices, instances, counts, writes } = engine();
     const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
-    return { classes, matrices, counts };
+    return { classes, matrices, instances, counts, writes };
   }
 
   function attributeClass(classes: Record<string, new (...args: never[]) => object>) {
@@ -808,5 +889,62 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
     const p = new (attributeClass(classes))(new Float32Array(6), 3);
     expect(() => p.setY(0, 1)).toThrow(/TN_NATIVE_ATTRIBUTE_SYNC/);
+  });
+
+  // An InstancedMesh's `setMatrixAt`/`setColorAt` write the same data from a mesh-level engine call,
+  // which reaches the engine's store but not a JS shadow the game already holds (core's velocity
+  // capture reads `instanceMatrix.array` once per mesh a frame). three writes the shadow itself, so
+  // a later `needsUpdate` must send what the call wrote, never the snapshot the read froze.
+  function instanced(classes: Record<string, new (...args: never[]) => object>) {
+    const InstancedMesh = classes.InstancedMesh as unknown as new (
+      geometry: unknown,
+      material: unknown,
+      count: number,
+    ) => IInstancedMesh;
+    const Geometry = classes.BufferGeometry as unknown as new () => object;
+    const Material = classes.MeshBasicMaterial as unknown as new () => object;
+    const Matrix = classes.Matrix4 as unknown as {
+      new (): { makeTranslation(x: number, y: number, z: number): object };
+    };
+    const Color = classes.Color as unknown as { new (r: number, g: number, b: number): object };
+    return {
+      mesh: new InstancedMesh(new Geometry(), new Material(), 2),
+      translation: (x: number, y: number, z: number) => new Matrix().makeTranslation(x, y, z),
+      color: (r: number, g: number, b: number) => new Color(r, g, b),
+    };
+  }
+
+  it("keeps a setMatrixAt the instanceMatrix.array a game reads would clobber", () => {
+    const { classes, writes } = facade();
+    const { mesh, translation } = instanced(classes);
+    mesh.setMatrixAt(0, translation(1, 2, 3));
+    const array = mesh.instanceMatrix.array;
+    expect(Array.from(array.subarray(12, 15))).toEqual([1, 2, 3]);
+    mesh.setMatrixAt(0, translation(999, 9, 999));
+    mesh.instanceMatrix.needsUpdate = true;
+    expect(Array.from(array.subarray(12, 15))).toEqual([999, 9, 999]);
+    expect(writes.at(-1)?.values.slice(12, 15)).toEqual([999, 9, 999]);
+  });
+
+  it("keeps a setColorAt the instanceColor.array a game reads would clobber", () => {
+    const { classes, writes } = facade();
+    const { mesh, color } = instanced(classes);
+    mesh.setColorAt(0, color(1, 0, 0));
+    const colors = mesh.instanceColor as IAttribute;
+    const array = colors.array;
+    expect(Array.from(array.subarray(0, 3))).toEqual([1, 0, 0]);
+    mesh.setColorAt(0, color(0, 0.5, 0.25));
+    colors.needsUpdate = true;
+    expect(Array.from(array.subarray(0, 3))).toEqual([0, 0.5, 0.25]);
+    expect(writes.at(-1)?.values.slice(0, 3)).toEqual([0, 0.5, 0.25]);
+  });
+
+  it("creates no shadow for a setMatrixAt the game holds no array for", () => {
+    const { classes, counts } = facade();
+    const { mesh, translation } = instanced(classes);
+    mesh.setMatrixAt(0, translation(4, 5, 6));
+    // No shadow: the mesh-level write costs no array read, and the first read is the engine's own.
+    expect(counts.reads).toBe(0);
+    expect(Array.from(mesh.instanceMatrix.array.subarray(12, 15))).toEqual([4, 5, 6]);
   });
 });
