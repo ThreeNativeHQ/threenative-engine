@@ -381,7 +381,7 @@ describe("per-crossing glue on the Wasm bridge", () => {
 });
 
 describe("debug bridge ABI observations", () => {
-  it("preserves actual off malloc/free/crossing census and reports Uint8 fog widening on", () => {
+  it("preserves actual off malloc/free/crossing census and reports Uint8 fog bytes on", () => {
     function run(enabled: boolean) {
       vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
       vi.stubGlobal("__THREENATIVE_DEBUG__", false);
@@ -410,16 +410,15 @@ describe("debug bridge ABI observations", () => {
     expect(on.mallocs).toEqual(off.mallocs);
     expect(on.frees).toEqual(off.frees);
     expect(on.crossings).toBe(off.crossings);
+    // Typed arrays cross as their own bytes (KIND.bytes), so the fog frame neither widens nor overflows.
     expect(on.debug?.totals).toMatchObject({
       bridgeTypedSourceBytes: 50176,
-      bridgeTypedEncodedBytes: 401408,
-      bridgeOverflowAllocations: 1,
-      bridgeOverflowBytes: 401408,
+      bridgeTypedEncodedBytes: 50176,
       wasmGrowthEvents: 1,
       wasmGrowthBytes: 1048576,
     });
-    expect(on.debug?.totals.bridgeScratchBytes).toBeGreaterThan(401408);
-    expect(on.debug?.totals["bridge:widen image.data"]).toBe(401408);
+    expect(on.debug?.totals).not.toHaveProperty("bridgeOverflowAllocations");
+    expect(on.debug?.totals).not.toHaveProperty("bridgeWidenings");
   });
 
   it("routes bridge totals through the existing browser engine counter reader", () => {
@@ -488,4 +487,178 @@ describe("shared transform write telemetry", () => {
       unchangedSharedTransformWrites: 7,
     });
   });
+});
+
+describe("typed-array ABI bytes", () => {
+  it("keeps a fog-sized Uint8Array in the scratch arena without widening", () => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    const source = new Uint8Array(50180);
+    source.fill(173);
+    const fog = source.subarray(2, 50178);
+    let seen: unknown;
+    Reflect.set(module, "_tn_set", (_self: number, _name: number, at: number) => {
+      const view = new DataView(module.HEAPU8.buffer);
+      const pointer = view.getUint32(at + 48, true);
+      seen = {
+        kind: view.getUint32(at, true),
+        count: Number(view.getBigUint64(at + 40, true)),
+        bytes: [...module.HEAPU8.subarray(pointer, pointer + fog.byteLength)],
+      };
+      return 0;
+    });
+    runtime.set({ key: "5:2:7:9", type: 5 }, "image.data", new Uint8Array());
+    const before = module.mallocs.length;
+    runtime.set({ key: "5:2:7:9", type: 5 }, "image.data", fog);
+    expect(seen).toEqual({ kind: 9, count: 50176, bytes: [...fog] });
+    expect(module.mallocs.slice(before)).toEqual([]);
+  });
+
+  it.each([
+    Int8Array,
+    Uint8Array,
+    Int16Array,
+    Uint16Array,
+    Int32Array,
+    Uint32Array,
+    Float32Array,
+    Float64Array,
+  ])("preserves %s element type and sliced bytes", (Scalar) => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    const array = new Scalar([0, 1, 7, 0]).subarray(1, 3);
+    let seen: unknown;
+    const strings = new Map<number, string>();
+    Reflect.set(module, "stringToUTF8", (value: string, pointer: number) =>
+      strings.set(pointer, value),
+    );
+    Reflect.set(module, "_tn_set", (_self: number, _name: number, at: number) => {
+      const view = new DataView(module.HEAPU8.buffer);
+      const pointer = view.getUint32(at + 48, true);
+      seen = [
+        view.getUint32(at, true),
+        strings.get(view.getUint32(at + 32, true)),
+        Number(view.getBigUint64(at + 40, true)),
+        [...module.HEAPU8.subarray(pointer, pointer + array.byteLength)],
+      ];
+      return 0;
+    });
+    runtime.set({ key: "5:2:7:9", type: 5 }, "array", array);
+    expect(seen).toEqual([
+      9,
+      Scalar.name,
+      2,
+      [...new Uint8Array(array.buffer, array.byteOffset, array.byteLength)],
+    ]);
+  });
+});
+
+describe("RTS immutable shape mirrors", () => {
+  function setup() {
+    const { runtime, calls } = memoryRuntime();
+    const read = runtime.get;
+    const values = new Map<string, unknown>();
+    let capacity = 32;
+    const matrix = runtime.construct("BufferAttribute", []);
+    const color = runtime.construct("BufferAttribute", []);
+    runtime.get = (ref, key) => {
+      if (key === "__address") return read(ref, key);
+      calls.push(`get ${key}`);
+      if (key === "itemSize") return 16;
+      if (key === "instanceMatrix") return matrix;
+      if (key === "instanceColor") return (values.get(key) as never) ?? null;
+      if (key === "count") return capacity;
+      return null;
+    };
+    runtime.set = (_ref, key, value) => {
+      calls.push(`set ${key}`);
+      if (key === "count") {
+        if (!Number.isInteger(value) || Number(value) < 0) throw new Error("invalid count");
+        capacity = Number(value);
+      }
+      values.set(key, value);
+    };
+    runtime.invoke = (_ref, method) => {
+      calls.push(`invoke ${method}`);
+      if (method === "setColorAt") values.set("instanceColor", color);
+      if (method === "copy") {
+        capacity = 12;
+        values.set("instanceColor", null);
+      }
+      return null;
+    };
+    const { classes } = defineBrowserClasses(registry, runtime);
+    return { classes, calls };
+  }
+
+  it("keeps itemSize through range and usage changes", () => {
+    const { classes, calls } = setup();
+    const attr = new (
+      classes.BufferAttribute as new () => {
+        itemSize: number;
+        setUsage(n: number): void;
+        clearUpdateRanges(): void;
+        addUpdateRange(s: number, c: number): void;
+      }
+    )();
+    expect(attr.itemSize).toBe(16);
+    attr.setUsage(35048);
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(0, 16);
+    calls.length = 0;
+    expect(attr.itemSize).toBe(16);
+    expect(calls).toEqual([]);
+  });
+
+  it("keeps instance members and validated count through hot calls, invalidating copy and replacement", () => {
+    const { classes, calls } = setup();
+    const Mesh = classes.InstancedMesh as new () => {
+      count: number;
+      instanceMatrix: object;
+      instanceColor: object | null;
+      setMatrixAt(i: number, m: object): void;
+      setColorAt(i: number, c: object): void;
+      computeBoundingSphere(): void;
+      copy(o: object): void;
+    };
+    const mesh = new Mesh();
+    const matrix = mesh.instanceMatrix;
+    expect(mesh.count).toBe(32);
+    expect(mesh.instanceColor).toBeNull();
+    mesh.setColorAt(0, {});
+    const color = mesh.instanceColor;
+    expect(color).not.toBeNull();
+    mesh.count = 7;
+    mesh.setMatrixAt(0, {});
+    mesh.computeBoundingSphere();
+    calls.length = 0;
+    expect(mesh.count).toBe(7);
+    expect(mesh.instanceMatrix).toBe(matrix);
+    expect(mesh.instanceColor).toBe(color);
+    expect(calls).toEqual([]);
+    expect(() => {
+      mesh.count = -1;
+    }).toThrow();
+    expect(mesh.count).toBe(7);
+    const replacement = new (classes.BufferAttribute as new () => object)();
+    mesh.instanceMatrix = replacement;
+    expect(mesh.instanceMatrix).toBe(replacement);
+    mesh.copy(new Mesh());
+    expect(mesh.count).toBe(12);
+    expect(mesh.instanceColor).toBeNull();
+  });
+});
+
+it("keeps plain numeric arrays as ABI doubles", () => {
+  const { module } = growableModule();
+  const runtime = createWasmRuntime(module);
+  let seen: unknown;
+  Reflect.set(module, "_tn_set", (_self: number, _name: number, at: number) => {
+    const view = new DataView(module.HEAPU8.buffer);
+    const pointer = view.getUint32(at + 48, true);
+    seen = [view.getUint32(at, true), [...module.HEAPF64.subarray(pointer / 8, pointer / 8 + 2)]];
+    return 0;
+  });
+  runtime.set({ key: "5:2:7:9", type: 5 }, "array", [1.25, -3.5]);
+  expect(seen).toEqual([5, [1.25, -3.5]]);
 });

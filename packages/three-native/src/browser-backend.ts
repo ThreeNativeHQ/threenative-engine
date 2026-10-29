@@ -1177,6 +1177,8 @@ export function defineBrowserClasses(
   const { attributeArray, attributeWrite } = runtime;
   const arrays = new WeakMap<object, { array: TypedArray }>();
   const itemSizes = new WeakMap<object, number>();
+  // Shape survives data uploads and transform calls; only copy/replacement changes it.
+  const shapes = new WeakMap<object, Map<string, unknown>>();
   const pending = new Set<object>();
   const writeBack = (): void => {
     for (const attribute of pending) {
@@ -1582,6 +1584,13 @@ export function defineBrowserClasses(
             if (loans.length > mark) result = repay(mark, result);
             if (drives) animated = new WeakMap();
           }
+          if (method === "copy") {
+            shapes.delete(this);
+            itemSizes.delete(this);
+          } else if (name === "InstancedMesh" && method === "setColorAt") {
+            const known = shapes.get(this);
+            if (known?.get("instanceColor") === null) known.delete("instanceColor");
+          }
           // The engine wrote only this range: copy it back, so a later game edit to the shadow wins.
           if (rangeMethod) {
             const entry = arrays.get(this);
@@ -1786,9 +1795,26 @@ export function defineBrowserClasses(
       // A geometry's bounds, once present, are one engine object the engine recomputes in place
       // (BufferGeometry::computeBoundingSphere); only its setter, copy() or another method replaces it.
       const bounds = geometryClass && (property === "boundingSphere" || property === "boundingBox");
+      const shape =
+        (attributeClass && ["itemSize", "count", "normalized", "gpuType"].includes(property)) ||
+        (name === "InstancedMesh" &&
+          ["count", "instanceMatrix", "instanceColor"].includes(property));
       const accessor: PropertyDescriptor = {
         configurable: true,
         get:
+          (shape
+            ? function (this: object) {
+                if (property === "itemSize") return itemSizeOf(this);
+                let known = shapes.get(this);
+                if (known === undefined) {
+                  known = new Map();
+                  shapes.set(this, known);
+                }
+                if (!known.has(property))
+                  known.set(property, fromEngine(runtime.get(refOf(this), property)));
+                return known.get(property);
+              }
+            : undefined) ??
           fastGetter(binding, property) ??
           (name === "AnimationMixer" && property === "stats"
             ? function (this: object) {
@@ -1896,6 +1922,14 @@ export function defineBrowserClasses(
                     animated.delete(this);
                   }
                   runtime.set(refOf(this), property, toEngine(value));
+                  if (shape) {
+                    let known = shapes.get(this);
+                    if (known === undefined) {
+                      known = new Map();
+                      shapes.set(this, known);
+                    }
+                    known.set(property, value);
+                  }
                 },
               }
             : {}),
@@ -2331,6 +2365,7 @@ const KIND = {
   array: 6,
   record: 7,
   undefined: 8,
+  bytes: 9,
 } as const;
 
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
@@ -2788,12 +2823,12 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
       // A forwarded typed array (see `toEngine`): one heap copy, its view bounds kept, no boxed list.
       const typed = value as TypedArray;
-      debug?.widen(typed, encoding);
-      const numbers = alloc(Math.max(8, typed.length * 8));
-      abi.HEAPF64.set(typed, numbers / 8);
+      debug?.widen(typed, encoding, typed.byteLength);
+      const numbers = alloc(Math.max(8, typed.byteLength));
+      abi.HEAPU8.set(new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength), numbers);
       const name = string(typed.constructor.name).pointer;
       const w = view();
-      w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer, KIND.bytes, true);
       w.setUint32(pointer + 32, name, true);
       w.setUint32(pointer + 48, numbers, true);
       return w.setBigUint64(pointer + 40, BigInt(typed.length), true);

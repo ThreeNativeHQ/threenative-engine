@@ -82,8 +82,7 @@ export class DebugTelemetry {
     this.#readCount = 0;
   }
 
-  widen(value: { readonly byteLength: number; readonly length: number }, property: string): void {
-    const encodedBytes = value.length * 8;
+  widen(value: { readonly byteLength: number }, property: string, encodedBytes: number): void {
     this.add("bridgeTypedSourceBytes", value.byteLength);
     this.add("bridgeTypedEncodedBytes", encodedBytes);
     if (encodedBytes <= value.byteLength) return;

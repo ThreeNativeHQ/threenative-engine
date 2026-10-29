@@ -32,7 +32,7 @@ function stepClock(): number {
 
 /** True while a playtest has asked for engine work counters (core's `ENGINE_COST_KNOB`). */
 function engineCostAsked(): boolean {
-  return (globalThis as unknown as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
+  return Reflect.get(globalThis, ENGINE_COST_KNOB) === true;
 }
 
 export const PHYSICS_TRANSFORM_STRIDE = 8;
