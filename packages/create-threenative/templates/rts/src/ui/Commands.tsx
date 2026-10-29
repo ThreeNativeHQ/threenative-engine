@@ -76,6 +76,13 @@ export function Commands() {
     if (!state.primaryBuilt)
       commands = [
         { icon: "stop", intent: "cancelBuild", label: "Cancel · 75%", testid: "cancel-build" },
+        { icon: "worker", intent: "builder", label: "Select builder", testid: "select-builder" },
+        ...base,
+      ];
+    else if (card.capacity !== undefined)
+      // A bunker's "production" is its garrison, so its one command is the way out.
+      commands = [
+        { icon: "garrison", intent: "unload", label: "Unload all", testid: "unload" },
         ...base,
       ];
     else
@@ -120,7 +127,7 @@ export function Commands() {
         testid: "order-move",
       },
       { icon: "hold", intent: "hold", key: "H", label: "Hold", testid: "order-hold" },
-      { icon: "stop", intent: "stop", key: "X", label: "Stop", testid: "order-stop" },
+      { icon: "stop", intent: "stop", key: "S", label: "Stop", testid: "order-stop" },
       ...base,
     ];
     if (state.selectionTypes.includes("ranger"))
@@ -138,6 +145,14 @@ export function Commands() {
         label: "Repair",
         payload: "repair",
         testid: "order-repair",
+      });
+    if (state.selectionTypes.includes("medic"))
+      commands.push({
+        icon: "medic",
+        intent: "order",
+        label: "Support ally",
+        payload: "follow",
+        testid: "order-follow",
       });
     if (commands.length > 6 && commands.length < 9)
       commands.push({ icon: "rally", intent: "retreat", label: "Retreat", testid: "cmd-retreat" });

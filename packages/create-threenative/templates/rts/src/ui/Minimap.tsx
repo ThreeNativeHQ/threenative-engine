@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
+import { useUiIntent } from "@threenative/ui";
 import { HALF, STARTS, WORLD } from "../sim/terrain.js";
 import { useUiStateShown } from "./Hud.js";
+import { minimapWorld } from "./minimapPoint.js";
 
 const SIZE = 28;
 /** Side of the minimap canvas in device pixels; the coarse raster is upscaled into it. */
@@ -19,10 +21,24 @@ const GAS = "#b7dd77";
  * layer that is allowed to be a document, and it is rebuilt only when the game replaces the
  * payload, so the HUD and the map never disagree about a frame. The rival start sectors are
  * public map knowledge, framed until that commander falls.
+ *
+ * It is also the overview, not a picture of one: a click recentres the camera, dragging it pans
+ * while the button is held, and a right-click issues the selection's order at that ground point,
+ * exactly as AstraCraft's map does. The click is turned into world metres here and handed to the
+ * scene as an intent, so the map never touches the rules.
  */
 export function Minimap() {
   const state = useUiStateShown((s) => [s.minimapFog, s.minimapDots, s.minimapView, s.rivals]);
+  const send = useUiIntent();
   const canvas = useRef<HTMLCanvasElement>(null);
+  const dragging = useRef(false);
+
+  /** The click as a ground point, from the rect the browser reports for the canvas. */
+  const point = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const host = event.currentTarget;
+    const rect = host.getBoundingClientRect();
+    return minimapWorld(event.clientX, event.clientY, rect);
+  };
   // The payloads change on the simulation's clock (the view only when the camera moves), and the
   // snapshot is renewed only then: this map repaints twenty times a second, not once per frame.
   const fog = state?.minimapFog;
@@ -92,12 +108,31 @@ export function Minimap() {
       </div>
       <div className="map-frame">
         <canvas
-          aria-label="Tactical overview"
+          aria-label="Tactical overview. Click to move the camera, right-click to issue orders."
           height={256}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            send("orderAt", point(event));
+          }}
+          onPointerCancel={() => {
+            dragging.current = false;
+          }}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            if (event.button === 2) return;
+            dragging.current = true;
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            send("focus", point(event));
+          }}
+          onPointerMove={(event) => {
+            if (dragging.current) send("focus", point(event));
+          }}
+          onPointerUp={(event) => {
+            dragging.current = false;
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+          }}
           ref={canvas}
           role="img"
-          // Square, centred in the frame: the map is square and a stretched one misplaces contacts.
-          style={{ aspectRatio: "1", left: "50%", transform: "translateX(-50%)", width: "auto" }}
           width={256}
         />
         <span className="map-n">N</span>

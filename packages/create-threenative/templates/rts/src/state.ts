@@ -23,6 +23,8 @@ export type GameState = {
   result: string;
   /** The last thing the simulation reported, for the toast. */
   notice: string;
+  /** True when `notice` is a refusal, which the toast draws in the warning style. */
+  noticeError: boolean;
   /**
    * The selection. `primaryType` is a key of the rules table and "" for an empty selection; the
    * panel reads the rest of the unit's card out of that table rather than being told twice.
@@ -33,6 +35,8 @@ export type GameState = {
   primaryMaxHp: number;
   primaryBuilt: boolean;
   primaryProgress: number;
+  /** Infantry inside the selected bunker; its gun is only as strong as the garrison. */
+  primaryGarrison: number;
   /** How many are selected, and how many distinct factions they belong to. */
   selection: number;
   selectionTeams: number;
@@ -62,8 +66,12 @@ export type GameState = {
   minimapView: number[];
   /** The rubber band, in client pixels, or null. Drawn by the UI, not the scene. */
   dragBox: number[] | null;
+  /** Units a release would take under the band right now, for the badge above it. */
+  dragCount: number;
   /** Set from the UI's pause and resume intents, and read back by the menu. */
   paused: boolean;
+  /** Whether a cursor at the frame's edge pans the camera; the top bar's `↔` toggles it. */
+  edgeScroll: boolean;
   /** True once the UI layer has rendered and published its interactive rectangles. */
   uiReady: boolean;
   /** The selection card: summed health, how many fly, distinct types, and the roster tiles. */
@@ -104,6 +112,8 @@ export const INITIAL_STATE: GameState = {
   cameraZoom: 30,
   cameraZ: 0,
   dragBox: null,
+  dragCount: 0,
+  edgeScroll: true,
   gathered: 0,
   gas: 0,
   kills: 0,
@@ -112,9 +122,11 @@ export const INITIAL_STATE: GameState = {
   minimapView: [],
   mode: "",
   notice: "",
+  noticeError: false,
   ore: 0,
   paused: false,
   primaryBuilt: true,
+  primaryGarrison: 0,
   primaryHp: 0,
   primaryMaxHp: 0,
   primaryProgress: 0,

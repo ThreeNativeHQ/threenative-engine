@@ -4,6 +4,7 @@ import { STARTS } from "../sim/terrain.js";
 import { type EntityType, TYPES } from "../sim/types.js";
 import type { GameState } from "../state.js";
 import { Icon, TrooperPortrait } from "./icons.js";
+import { selectionDamage, selectionDamageIsHealing, selectionStatus } from "./labels.js";
 
 /** Read a `"<type>:<progress 0..1>"` pair back apart. */
 function readQueueItem(entry: string): { progress: number; type: EntityType } | undefined {
@@ -74,6 +75,7 @@ function TopBar() {
     s.supplyCap,
     Math.floor(s.simTime / 20),
     s.paused,
+    s.edgeScroll,
   ]);
   const send = useUiIntent();
   const [help, setHelp] = useState(false);
@@ -128,6 +130,18 @@ function TopBar() {
         </div>
         <div className="top-actions">
           <button
+            aria-label={state.edgeScroll ? "Disable edge scrolling" : "Enable edge scrolling"}
+            aria-pressed={state.edgeScroll}
+            className={`tiny-button text-button ${state.edgeScroll ? "active" : ""}`}
+            data-tn-interactive
+            data-testid="edge-scroll"
+            onClick={() => send("edge")}
+            title="Toggle edge scrolling"
+            type="button"
+          >
+            ↔
+          </button>
+          <button
             aria-label="Open the field manual"
             className="tiny-button"
             data-tn-interactive
@@ -176,7 +190,7 @@ function TopBar() {
                   <br />
                   <kbd>A</kbd> Attack-move · <kbd>M</kbd> Move
                   <br />
-                  <kbd>H</kbd> Hold · <kbd>X</kbd> Stop
+                  <kbd>H</kbd> Hold · <kbd>S</kbd> Stop
                   <br />
                   <kbd>F2</kbd> Select all combat units
                 </p>
@@ -295,12 +309,18 @@ function Rivals() {
   );
 }
 
-/** The last report, faded out by CSS after four seconds; `key` restarts the fade for a new one. */
+/**
+ * The last report, faded out by CSS after four seconds; `key` restarts the fade for a new one.
+ *
+ * A refusal is a different sentence from a confirmation and reads in the warning style, as it does
+ * in AstraCraft: "Those units cannot attack that target" in the same calm colour as "Barracks
+ * online." is a toast the player learns to ignore.
+ */
 function Toast() {
-  const state = useUiStateShown((s) => s.notice);
+  const state = useUiStateShown((s) => (s.notice === "" ? "" : [s.notice, s.noticeError]));
   if (state === undefined || state.notice === "") return null;
   return (
-    <output className="toast show" key={state.notice}>
+    <output className={`toast show ${state.noticeError ? "error" : ""}`} key={state.notice}>
       {state.notice}
     </output>
   );
@@ -312,6 +332,7 @@ const MODE_LABELS: Record<string, string> = {
   move: "MOVE ORDER · CLICK TO CONFIRM",
   rally: "SET RALLY POINT · CLICK TO CONFIRM",
   repair: "REPAIR · CLICK A DAMAGED FRIENDLY STRUCTURE",
+  follow: "SUPPORT · CLICK A FRIENDLY GROUND UNIT",
 };
 
 function ModeBanner() {
@@ -369,7 +390,7 @@ function QuickBar() {
         data-tn-interactive
         data-testid="idle"
         onClick={() => send("idle")}
-        title="Select idle Surveyors"
+        title="Select idle Surveyors [F4]"
         type="button"
       >
         IDLE <span id="idle-count">{state.idleWorkers}</span>
@@ -379,10 +400,10 @@ function QuickBar() {
         data-tn-interactive
         data-testid="order-retreat"
         onClick={() => send("retreat")}
-        title="Retreat the selection to base"
+        title="Retreat the selection to base [V]"
         type="button"
       >
-        RETREAT
+        RETREAT <kbd>V</kbd>
       </button>
       <div className="groups">
         {state.groups.map((count, index) => {
@@ -410,19 +431,6 @@ function QuickBar() {
   );
 }
 
-/** Highest-priority order across the selection first: what a commander would want named. */
-const STATUS: ReadonlyArray<readonly [string, string]> = [
-  ["attack", "ENGAGING HOSTILE"],
-  ["construct", "FABRICATING"],
-  ["repair", "REPAIRING"],
-  ["heal", "RESTORING ALLY"],
-  ["garrison", "ENTERING BUNKER"],
-  ["gather", "HARVESTING"],
-  ["attackMove", "ADVANCING"],
-  ["move", "RELOCATING"],
-  ["hold", "HOLDING POSITION"],
-];
-
 /** The selection card: what is selected, how healthy it is, what it does, and its roster. */
 export function Selection() {
   const state = useUiStateShown((s) => [
@@ -432,6 +440,7 @@ export function Selection() {
     s.primaryTeam,
     s.primaryBuilt,
     Math.round(s.primaryProgress * 100),
+    s.primaryGarrison,
     s.groupHp,
     s.groupMaxHp,
     s.airborne,
@@ -441,22 +450,23 @@ export function Selection() {
   ]);
   const send = useUiIntent();
   if (state === undefined) return null;
-  const card = state.primaryType === "" ? undefined : TYPES[state.primaryType as EntityType];
+  const cardType = state.primaryType === "" ? undefined : (state.primaryType as EntityType);
+  const card = cardType === undefined ? undefined : TYPES[cardType];
   const count = state.selection;
   const queue = state.queue
     .map(readQueueItem)
     .filter((item): item is { progress: number; type: EntityType } => item !== undefined);
-  const orders = state.selectionOrder.split(",");
-  const status =
-    card === undefined
-      ? "SYSTEM ONLINE"
-      : !state.primaryBuilt
-        ? state.primaryProgress > 0
-          ? `WELDING ${Math.floor(state.primaryProgress * 100)}%`
-          : "SURVEYOR EN ROUTE"
-        : queue.length > 0
-          ? "PRODUCTION ACTIVE"
-          : (STATUS.find(([kind]) => orders.includes(kind))?.[1] ?? "COMBAT READY");
+  const status = selectionStatus(state.primaryType === "" ? undefined : cardType, {
+    built: state.primaryBuilt,
+    garrison: state.primaryGarrison,
+    orders: state.selectionOrder.split(","),
+    progress: state.primaryProgress,
+    queue: queue.map((item) => item.progress),
+  });
+  const damage = selectionDamage(
+    state.primaryType === "" ? undefined : cardType,
+    state.primaryGarrison,
+  );
   const caption =
     card !== undefined && state.primaryTeam > 0
       ? "HOSTILE INTELLIGENCE"
@@ -522,7 +532,8 @@ export function Selection() {
               <>
                 <span>
                   <Icon name={card.heal ? "medic" : "attack"} />
-                  <b>{card.heal ?? card.damage ?? "—"}</b> {card.heal ? "HP / SEC" : "DAMAGE"}
+                  <b>{damage ?? "—"}</b>{" "}
+                  {selectionDamageIsHealing(cardType) ? "HP / SEC" : "DAMAGE"}
                 </span>
                 <span>
                   <Icon name="supply" />
@@ -581,12 +592,21 @@ export function Selection() {
   );
 }
 
+/**
+ * The rubber band and the count it stands for.
+ *
+ * AstraCraft paints the band's badge with `#drag-box:after { content: attr(data-count) }` and the
+ * `data-count` attribute is what puts text in it: set nothing and the padded, bordered `:after`
+ * still renders as an empty little square hanging over the corner of the band. So the badge is
+ * part of the element's contract, never an ornament bolted on with CSS.
+ */
 function DragBox() {
-  const state = useUiStateShown((s) => s.dragBox);
+  const state = useUiStateShown((s) => (s.dragBox === null ? null : [s.dragBox, s.dragCount]));
   if (state?.dragBox == null) return null;
   const [left, top, width, height] = state.dragBox;
   return (
     <div
+      data-count={`${state.dragCount} UNITS`}
       id="drag-box"
       style={{ height: `${height}px`, left: `${left}px`, top: `${top}px`, width: `${width}px` }}
     />

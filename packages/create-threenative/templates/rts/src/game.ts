@@ -31,8 +31,12 @@ const game = defineGame<GameState, undefined>({
     base: { keys: ["Space"] },
     cancel: { keys: ["Escape"] },
     hold: { keys: ["KeyH"] },
+    // The two buttons the quick bar shows with a key in AstraCraft and this bar used to show bare:
+    // the key is the label's source of truth, so `V` and `F4` are bound or they are not printed.
+    idle: { keys: ["F4"] },
     moveOrder: { keys: ["KeyM"] },
-    stopOrder: { keys: ["KeyX"] },
+    retreat: { keys: ["KeyV"] },
+    stopOrder: { keys: ["KeyS"] },
   },
   // `playtest()` installs the bridge a scenario needs to observe entities and state. Without it,
   // semantic assertions fail closed with TN_PLAYTEST_BRIDGE_MISSING rather than passing.
