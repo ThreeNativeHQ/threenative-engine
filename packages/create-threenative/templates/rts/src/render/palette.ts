@@ -11,6 +11,8 @@ export const palette = {
   horizon: 0x31464a,
   /** The order marker ring: the one saturated colour, what the player just touched. */
   accent: 0xffffff,
+  /** The fog-of-war sheet `materials.ts` blends over that unseen ground, read as linear light. */
+  fogOfWar: 0x020a16,
 } as const;
 
 /**
@@ -21,4 +23,12 @@ export const palette = {
  */
 export function legacyColor(hex: number): Color {
   return new Color().setHex(hex, LinearSRGBColorSpace);
+}
+
+/**
+ * A hex colour's three channels as 0–1 numbers, undecoded: a shader node takes numbers rather than a
+ * `Color`, and the fog-of-war sheet is linear light the way AstraCraft's canvas wrote it.
+ */
+export function channels(hex: number): [number, number, number] {
+  return [((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255];
 }

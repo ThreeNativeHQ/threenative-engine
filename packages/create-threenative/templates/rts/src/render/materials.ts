@@ -23,6 +23,7 @@ import {
 import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { HALF, WORLD } from "../sim/terrain.js";
 import { paintGround } from "./ground.js";
+import { channels, palette } from "./palette.js";
 
 /**
  * AstraCraft's fog of war is rgba(5, 14, 22) over the ground, read as linear light like its canvas.
@@ -30,7 +31,7 @@ import { paintGround } from "./ground.js";
  * set where the frames meet: 2, 10, 22 read the reference's slate blue in unseen ground, headed in
  * Brave beside it (PRD-765); 5, 14, 22 read olive grey once the vignette that darkened it was gone.
  */
-const FOG_OF_WAR = vec3(2 / 255, 10 / 255, 22 / 255);
+const FOG_OF_WAR = vec3(...channels(palette.fogOfWar));
 /** WebGL blends after the sRGB encode, so AstraCraft's sheet mixes in display space: about gamma 2.2. */
 const GAMMA = 2.2;
 /** What open ground's albedo is multiplied by under the sun, sky and fill of `lighting.ts`. */
