@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   InstancedMesh,
   Matrix4,
@@ -6,7 +7,7 @@ import {
   Quaternion,
   Vector3,
 } from "three";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createArmy } from "../templates/rts/src/render/army.js";
 import { applyRtsCamera, createRtsView } from "../templates/rts/src/render/camera.js";
 import { createUnitModels } from "../templates/rts/src/render/models.js";
@@ -42,6 +43,7 @@ it("moves a walking unit on every drawn frame, at an even pace", () => {
   const selected = new Set([tank.id]);
   let accumulator = 0;
   const tracks: Vector3[] = [];
+  const bound = vi.spyOn(InstancedMesh.prototype, "computeBoundingSphere");
   for (let frame = 0; frame < 120; frame += 1) {
     accumulator += FRAME;
     while (accumulator >= SIM_STEP) {
@@ -73,6 +75,10 @@ it("moves a walking unit on every drawn frame, at an even pace", () => {
     .slice(61)
     .map((point, index) => point.distanceTo(tracks[index + 60] as Vector3));
   const mean = steps.reduce((a, b) => a + b, 0) / steps.length;
+  // Every part mesh is `frustumCulled = false`: a per-frame bound is read by nobody, and on the
+  // native engine each call crosses the bridge and walks every instance in the batch.
+  expect(bound, "computeBoundingSphere calls over 120 drawn frames").not.toHaveBeenCalled();
+  bound.mockRestore();
   expect(mean, "the tank must be walking").toBeGreaterThan(0.05);
   // Even motion: every frame moves, and no frame moves twice as far as an ordinary one.
   expect(Math.min(...steps) / mean).toBeGreaterThan(0.7);
@@ -119,4 +125,11 @@ it("puts every bar edge on a whole pixel, at AstraCraft's 30 x 3 px with a 1 px 
   expect([...sizes].sort()).toEqual(["30x3", "32x5", "60x3", "62x5"]);
   army.dispose();
   models.dispose();
+});
+
+it("publishes the HUD state on a 50 ms clock, not once per rendered frame", () => {
+  // The scene republishes the camera and the selection every frame, so on the per-frame default
+  // each frame paid a JSON serialization and a React render for a HUD read off a 20 Hz clock.
+  const source = readFileSync(new URL("../templates/rts/src/game.ts", import.meta.url), "utf8");
+  expect(source, "the kit names a UI publication interval").toMatch(/stateFlushMs:\s*50\b/);
 });

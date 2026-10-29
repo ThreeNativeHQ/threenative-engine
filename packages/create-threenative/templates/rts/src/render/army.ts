@@ -350,10 +350,10 @@ export function createArmy(
         for (const part of entry.parts) {
           part.count = list.length;
           if (part.count === 0) continue;
+          // No bound is recomputed here: every part mesh is `frustumCulled = false`, so nothing
+          // reads one — and on the native engine the call crosses the bridge and walks every
+          // instance in the batch.
           upload(part.instanceMatrix, part.count);
-          // The instance-aware bound, or the batch is culled by its own geometry's origin-sized
-          // sphere and half the battlefield silently disappears.
-          part.computeBoundingSphere();
         }
       }
 

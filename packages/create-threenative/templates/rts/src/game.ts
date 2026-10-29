@@ -43,6 +43,12 @@ const game = defineGame<GameState, undefined>({
   // Seeded worldgen: one number makes the whole match — the map, the rocks, the AI — reproducible.
   seed: 471,
   start: "play",
+  // The HUD reads whole numbers off a 20 Hz clock, and the scene republishes the camera and the
+  // selection's centroid every frame, so the publisher's byte-compare never skips one: left on the
+  // rendered-frame default, every frame paid a JSON serialization and a React render inside the
+  // frame task for a HUD that had nothing new to show. Named, the store publishes 20 times a second
+  // and an idle frame publishes nothing. The playtests read the same fields, on the same clock.
+  stateFlushMs: 50,
 });
 
 export default game;
