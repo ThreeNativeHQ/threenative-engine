@@ -150,6 +150,10 @@ export function measureReport(report) {
       hitchesPerMin: metric(metrics, "hitchesPerMin"),
       longTasks: metric(metrics, "longTasks", true),
       loadMs: metric(metrics, "loadMs", true),
+      bridgeCrossingsP50: metric(metrics, "bridgeCrossingsP50", true),
+      hostCallsP50: metric(metrics, "hostCallsP50", true),
+      gpuUploadKbP50: metric(metrics, "gpuUploadKbP50", true),
+      jsAllocKbP50: metric(metrics, "jsAllocKbP50", true),
     },
     counts,
   };
@@ -181,6 +185,14 @@ export function appendRow(ledger, row, { label, notes = "", decision, at = new D
   return { ...ledger, iterations: [...ledger.iterations, next] };
 }
 
+/** Engine-boundary costs, tracked per row without a goal until a measured floor sets one. */
+export const TRACKED = [
+  { key: "bridgeCrossingsP50", short: "JS↔Wasm crossings", unit: "/frame" },
+  { key: "hostCallsP50", short: "Host (ABI) calls", unit: "/frame" },
+  { key: "gpuUploadKbP50", short: "GPU upload", unit: "KB/frame" },
+  { key: "jsAllocKbP50", short: "JS alloc", unit: "KB/frame" },
+];
+
 const fmt = (value, unit = "") =>
   value === null || value === undefined
     ? "n/a"
@@ -195,18 +207,24 @@ export function renderHtml(ledger, now = new Date()) {
   const rows = ledger.iterations;
   const baseline = rows[0];
   const latest = rows.at(-1);
-  const cards = GOALS.map((goal) => {
-    const base = baseline?.metrics[goal.key];
-    const current = latest?.metrics[goal.key];
-    const met = meetsGoal(goal, current);
-    const progress = progressToward(goal, base, current);
-    return `<div class="card"><h3>${esc(goal.short)}</h3><p><b>${esc(fmt(current, goal.unit))}</b> <span class="dim">goal ${goal.better === "lower" ? "≤" : "≥"} ${esc(fmt(goal.goal, goal.unit))}</span></p><p class="dim">baseline ${esc(fmt(base, goal.unit))} · delta ${esc(delta(base, current, goal.unit))} · ${progress === null ? "n/a" : `${Math.round(progress * 100)}%`} to goal</p><span class="pill${met ? " ok" : ""}">${met ? "met" : "open"}</span></div>`;
-  }).join("");
+  const cards =
+    GOALS.map((goal) => {
+      const base = baseline?.metrics[goal.key];
+      const current = latest?.metrics[goal.key];
+      const met = meetsGoal(goal, current);
+      const progress = progressToward(goal, base, current);
+      return `<div class="card"><h3>${esc(goal.short)}</h3><p><b>${esc(fmt(current, goal.unit))}</b> <span class="dim">goal ${goal.better === "lower" ? "≤" : "≥"} ${esc(fmt(goal.goal, goal.unit))}</span></p><p class="dim">baseline ${esc(fmt(base, goal.unit))} · delta ${esc(delta(base, current, goal.unit))} · ${progress === null ? "n/a" : `${Math.round(progress * 100)}%`} to goal</p><span class="pill${met ? " ok" : ""}">${met ? "met" : "open"}</span></div>`;
+    }).join("") +
+    TRACKED.map((item) => {
+      const base = baseline?.metrics[item.key];
+      const current = latest?.metrics[item.key];
+      return `<div class="card"><h3>${esc(item.short)}</h3><p><b>${esc(fmt(current, item.unit))}</b> <span class="dim">p50, lower is better</span></p><p class="dim">baseline ${esc(fmt(base, item.unit))} · delta ${esc(delta(base, current, item.unit))}</p><span class="pill">tracked</span></div>`;
+    }).join("");
   const charts = GOALS.map((goal) => lineChart(goal, rows)).join("");
   const history = rows
     .map(
       (row) =>
-        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${GOALS.map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}<td class="n">${esc(fmt(row.metrics.gpuP50Ms, "ms"))}</td></tr>`,
+        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${GOALS.map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}<td class="n">${esc(fmt(row.metrics.gpuP50Ms, "ms"))}</td>${TRACKED.map((item) => `<td class="n">${esc(fmt(row.metrics[item.key], item.unit))}</td>`).join("")}</tr>`,
     )
     .join("");
   const header =
@@ -245,7 +263,7 @@ svg{width:100%;height:auto}
 <h2>Trend per iteration</h2>
 <div class="grid3">${charts}</div>
 <h2>Iterations</h2>
-<div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Preset</th><th>Adapter</th>${GOALS.map((goal) => `<th class="n">${esc(goal.short)}</th>`).join("")}<th class="n">GPU p50</th></tr></thead><tbody>${history || `<tr><td colspan="${7 + GOALS.length + 1}" class="dim">pending</td></tr>`}</tbody></table></div>
+<div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Preset</th><th>Adapter</th>${GOALS.map((goal) => `<th class="n">${esc(goal.short)}</th>`).join("")}<th class="n">GPU p50</th>${TRACKED.map((item) => `<th class="n">${esc(item.short)}</th>`).join("")}</tr></thead><tbody>${history || `<tr><td colspan="${7 + GOALS.length + 1 + TRACKED.length}" class="dim">pending</td></tr>`}</tbody></table></div>
 </main></body></html>
 `;
 }

@@ -32,6 +32,10 @@ const report = (overrides: Record<string, unknown> = {}) => ({
     hitchesPerMin: 0.5,
     longTasks: 2,
     loadMs: 850,
+    bridgeCrossingsP50: 1390,
+    hostCallsP50: 2100,
+    gpuUploadKbP50: 96,
+    jsAllocKbP50: null,
   },
   counts: { rain: 12_000 },
   ...overrides,
@@ -61,6 +65,11 @@ describe("stress-loop", () => {
     const { presentedP95Ms: _, ...rest } = report().metrics;
     expect(() => measureReport(report({ metrics: rest }))).toThrow(/presentedP95Ms/u);
     expect(() => measureReport(report({ seconds: 0 }))).toThrow(/seconds/u);
+    const { bridgeCrossingsP50: _crossings, ...noCrossings } = report().metrics as Record<
+      string,
+      unknown
+    >;
+    expect(() => measureReport(report({ metrics: noCrossings }))).toThrow(/bridgeCrossingsP50/u);
     expect(() =>
       measureReport(report({ metrics: { ...report().metrics, gpuP95Ms: undefined } })),
     ).toThrow(/gpuP95Ms/u);
@@ -79,6 +88,8 @@ describe("stress-loop", () => {
     const html = renderHtml(readLedger(file), new Date(0));
     expect(html).toContain("Stress lab");
     for (const goal of GOALS as { label: string }[]) expect(html).toContain(goal.label);
+    expect(html).toContain("JS↔Wasm crossings");
+    expect(html).toContain("1390 /frame");
     expect(html).toContain("stress &quot;max&quot; &amp; &lt;real&gt;");
     expect(html).toContain("<svg");
     expect(html).toContain("#2");
