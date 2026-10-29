@@ -139,6 +139,14 @@ export function Commands() {
         payload: "repair",
         testid: "order-repair",
       });
+    if (state.selectionTypes.includes("medic"))
+      commands.push({
+        icon: "medic",
+        intent: "order",
+        label: "Support ally",
+        payload: "follow",
+        testid: "order-follow",
+      });
     if (commands.length > 6 && commands.length < 9)
       commands.push({ icon: "rally", intent: "retreat", label: "Retreat", testid: "cmd-retreat" });
   }

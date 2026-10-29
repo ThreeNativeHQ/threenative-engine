@@ -326,6 +326,7 @@ const MODE_LABELS: Record<string, string> = {
   move: "MOVE ORDER · CLICK TO CONFIRM",
   rally: "SET RALLY POINT · CLICK TO CONFIRM",
   repair: "REPAIR · CLICK A DAMAGED FRIENDLY STRUCTURE",
+  follow: "SUPPORT · CLICK A FRIENDLY GROUND UNIT",
 };
 
 function ModeBanner() {

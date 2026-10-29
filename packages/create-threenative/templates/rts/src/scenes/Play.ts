@@ -82,6 +82,7 @@ const REFUSALS: Readonly<Record<string, string>> = {
   attackMove: "Those units cannot advance under fire.",
   garrison: "Select Vanguards and a friendly bunker with free slots.",
   repair: "Select a Surveyor and a completed friendly structure.",
+  follow: "Select a Mender and a friendly ground unit.",
 };
 
 /** One drag, one canvas pointer. Reused, because a drag is a press, a move and a release. */
@@ -523,7 +524,8 @@ export class Play extends Scene<GameState, undefined> {
         ? { kind: "attack", target: { id: hit.id } }
         : { kind: "attackMove", target: ground };
     if (mode === "rally" || mode === "move") return move;
-    if (mode === "garrison" || mode === "repair") return { kind: mode, target: { id: hit?.id } };
+    if (mode === "garrison" || mode === "repair" || mode === "follow")
+      return { kind: mode, target: { id: hit?.id } };
     if (hit !== undefined && hit.team > 0) return { kind: "attack", target: { id: hit.id } };
     const has = (type: EntityType) => this.#selection.some((id) => sim.get(id)?.type === type);
     if (hit !== undefined && hit.team === 0 && hit.type === "bunker" && has("ranger"))

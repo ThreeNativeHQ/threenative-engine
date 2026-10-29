@@ -24,6 +24,7 @@ const STATUS: ReadonlyArray<readonly [string, string]> = [
   ["attack", "ENGAGING HOSTILE"],
   ["construct", "FABRICATING"],
   ["repair", "REPAIRING"],
+  ["follow", "RESTORING ALLY"],
   ["heal", "RESTORING ALLY"],
   ["garrison", "ENTERING BUNKER"],
   ["gather", "HARVESTING"],
