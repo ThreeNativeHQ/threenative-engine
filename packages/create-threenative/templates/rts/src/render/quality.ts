@@ -95,8 +95,9 @@ const high: IWorldEnvironmentOptions = {
   gtaoRadius: 0.35,
   // Measures against `exposure` while auto exposure is off. Cost: unmeasured.
   localExposureEnabled: true,
-  // Unreal enables motion blur on high-end PCs only. It needs the chain's velocity. Cost: unmeasured.
-  motionBlurEnabled: true,
+  // Off, overriding core's Unreal high tier: an RTS camera pans the whole battlefield, and blur smeared every unit,
+  // bar and ring for the length of the pan (owner, 2026-10-28). `true` brings Unreal's camera motion blur back.
+  motionBlurEnabled: false,
 };
 
 /** The rung in between: the same occlusion at half the directions. Saving unmeasured. */

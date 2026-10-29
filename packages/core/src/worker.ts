@@ -9,6 +9,7 @@
 
 import type { IGamePlatformSource } from "./game.js";
 import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
+import { markerLogRequested } from "./quiet-markers.js";
 import { GAME_STATE_MESSAGE } from "./ui-bridge.js";
 import { createRemoteAudioContext, serveRemoteAudio } from "./worker-audio.js";
 
@@ -627,6 +628,8 @@ export function startWorkerGame(
         globals[key] = value;
       }
     }
+    // The worker's own URL carries no `?tnLog`, so the page's answer travels as the global.
+    if (markerLogRequested()) globals.__THREENATIVE_LOG__ = true;
     return globals;
   };
 

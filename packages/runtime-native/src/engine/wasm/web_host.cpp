@@ -6,6 +6,7 @@
 #include "engine/abi/abi_internal.h"
 #include "engine/foundation/job_pool.h"
 #include "engine/renderer/render_database.h"
+#include "engine/renderer/frame_gate.h"
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/renderer/post/traa.h"
@@ -71,12 +72,11 @@ bool shadowMap = false;
 int shadowMapType = 1;  // PCFShadowMap
 float renderScale = 1;
 uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
-// The submit serial each drawn frame ended at, oldest first, while its GPU work is unfinished. Chromium
-// queues submitted frames without bound, so a page whose rAF outruns the GPU blocks until the GPU drains
-// and the GPU process is killed (the device is lost: "A valid external Instance reference no longer
-// exists"). Two frames on the GPU keep it busy; the caller draws no third (tnw_web_frame field 11).
-std::deque<uint64_t> framesOnGpu;
-constexpr size_t kMaxFramesOnGpu = 2;
+// The drawn frames whose GPU work is unfinished. Chromium queues submitted frames without bound, so a page
+// whose rAF outruns the GPU blocks until the GPU drains and the GPU process is killed (the device is lost:
+// "A valid external Instance reference no longer exists"); the gate declines a frame once the GPU is
+// really behind (tnw_web_frame field 11, rule in frame_gate.h).
+tn::engine::FrameGate frameGate;
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -313,7 +313,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     }
     if (view) wgpuTextureViewRelease(view);
     if (frame.texture) wgpuTextureRelease(frame.texture);
-    framesOnGpu.push_back(renderer->gpu().submittedSerial());
+    frameGate.submitted(renderer->gpu().submittedSerial(), emscripten_get_now());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
     // post pass reads a depth-derived normal there), and so is TN_TRAA_VELOCITY_SKIPPED (the draw moves with
@@ -718,8 +718,7 @@ extern "C" double tnw_web_frame(int field) {
         case 10: return renderer->gpuTimerEnabled() ? 1 : 0;
         case 11:
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
-            while (!framesOnGpu.empty() && framesOnGpu.front() <= renderer->gpu().completedSerial()) framesOnGpu.pop_front();
-            return framesOnGpu.size() >= kMaxFramesOnGpu ? 1 : 0;
+            return frameGate.decline(renderer->gpu().completedSerial(), emscripten_get_now()) ? 1 : 0;
         case 12: return renderer->environmentPending() ? 1 : 0;
         case 13: return renderer->temporalStatus().active ? 1 : 0;
         case 14: return double(renderer->temporalStatus().frame);
