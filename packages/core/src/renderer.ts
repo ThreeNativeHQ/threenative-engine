@@ -39,6 +39,7 @@ import {
 } from "./render/chain.js";
 import { type IResolutionSubrect, ResolutionSubrect } from "./render/resolution-subrect.js";
 
+import type { IStartupImageState } from "./startup-readiness.js";
 import {
   type IStorageBufferLease,
   type IStorageBufferSource,
@@ -183,6 +184,19 @@ export interface IRendererLike {
   warmUpSettled?(): void;
   /** Marks a repeatable streamed warm-up boundary for the next first draw. */
   warmUpScopeSettled?(label: string, target?: Object3D): void;
+  /**
+   * Holds the native canvas at its last picture while the startup's first world frame is still cold: every frame
+   * still draws, but takes no surface texture, so a world whose shadow and exposure inputs are not ready never
+   * reaches the display. Present only on the Wasm engine; a renderer without it draws and presents as before.
+   */
+  setPresentationHeld?(held: boolean): void;
+  /**
+   * A held startup's first world frame: `ready` once an ordinary submission drew since the hold engaged, that
+   * frame's shadow inputs are initialized, and this install's auto exposure measured within 3% of its target; the
+   * two inputs say which one is still cold, so a launch that revealed at its deadline names what never arrived.
+   * Absent wherever the hold is.
+   */
+  firstWorldFrame?(): IStartupImageState;
   /**
    * Performs one covered output-pipeline render without marking first present. `afterDraw` runs in
    * the same task as every draw it makes, the frame gate's retries included, to repaint a cover.
@@ -676,6 +690,8 @@ function wrapRenderer(
   let pendingSize: Parameters<IRendererLike["setSize"]> | undefined;
   let timestampFrame = -1;
   let timestampFramesManaged = false;
+  // The world submission count a held startup started at: only a frame drawn after it is this one.
+  let presentationSince = 0;
   const pyramidQueries: string[][] = [];
   let gpuObservation: GpuFrameObservation | undefined;
   let gpuObservationGeneration = 0;
@@ -975,6 +991,19 @@ function wrapRenderer(
         drawPastFrameGate(raw, () => drawOnce(scene, camera, targetScene), undefined, afterDraw);
     },
     gpuFrameMs: () => gpuFrameSample()?.ms,
+    // Present only on the Wasm engine: its host can hold the canvas while core keeps drawing. Every other
+    // renderer presents every frame it draws, exactly as before, and `game.ts` checks for the seam.
+    ...(typeof (raw as { setPresentationHeld?: unknown }).setPresentationHeld === "function"
+      ? {
+          setPresentationHeld: (held: boolean): void => {
+            // Captured where the hold engages, so a frame drawn before this startup began can never release it.
+            if (held) presentationSince = rendererStartupFrames(raw)?.submissions ?? 0;
+            (raw as { setPresentationHeld?: (held: boolean) => void }).setPresentationHeld?.(held);
+          },
+          firstWorldFrame: (): IStartupImageState =>
+            rendererFirstWorldFrame(raw, presentationSince),
+        }
+      : {}),
     gpuFrameAge: () => {
       const sample = gpuFrameSample();
       const frame = currentFrame();
@@ -1401,6 +1430,8 @@ function wrapRenderer(
       try {
         storageBuffers.dispose();
       } finally {
+        // A renderer disposed mid-startup takes no hold with it: the next one presents its own first frame.
+        (raw as { setPresentationHeld?: (held: boolean) => void }).setPresentationHeld?.(false);
         raw.dispose?.();
       }
     },
@@ -1560,6 +1591,63 @@ export function rendererFrameGateSkips(raw: unknown): number | undefined {
 export function rendererEnvironmentBake(raw: unknown): boolean {
   const info = (raw as { info?: { engine?: { environmentBake?: unknown } } } | null)?.info;
   return info?.engine?.environmentBake === true;
+}
+
+/**
+ * Where the `WorldEnvironment` that owns the exposure meter publishes its startup readiness. One
+ * symbol in the global registry, so the look layer's install and this read agree without an import
+ * either way.
+ */
+export const STARTUP_EXPOSURE = Symbol.for("threenative.startupExposure");
+
+/**
+ * The owning exposure install's answer, or true when nothing installed one: a scene with no auto
+ * exposure, or a renderer that runs none, has no meter to wait for.
+ */
+export function rendererStartupExposureReady(raw: unknown): boolean {
+  const probe = (raw as Record<symbol, unknown> | null | undefined)?.[STARTUP_EXPOSURE];
+  return typeof probe !== "function" ? true : (probe as () => boolean)() === true;
+}
+
+/**
+ * The Wasm engine's startup frame report (`tnw_web_frame` fields 71 and 72): the ordinary world
+ * submissions that encoded since the page started drawing, and whether the shadow inputs such a
+ * frame samples exist. A frame the environment bake gated, an overlay, a declined draw and a failed
+ * one are all absent from the count. A renderer without the report answers undefined.
+ */
+export function rendererStartupFrames(
+  raw: unknown,
+): { readonly shadowInputsReady: boolean; readonly submissions: number } | undefined {
+  const startup = (
+    raw as {
+      info?: {
+        engine?: { startup?: { shadowInputsReady?: unknown; worldSubmissions?: unknown } };
+      };
+    } | null
+  )?.info?.engine?.startup;
+  const submissions = startup?.worldSubmissions;
+  if (typeof submissions !== "number" || !Number.isFinite(submissions)) return undefined;
+  return { shadowInputsReady: startup?.shadowInputsReady === true, submissions };
+}
+
+/**
+ * A held startup's first world frame, for the generation `since` starts at: `ready` once an ordinary
+ * submission drew after it, that frame's shadow inputs are initialized, and this install's auto exposure
+ * measured within 3% of its target; `shadowInputsReady` and `exposureSettled` say which one is still cold, so
+ * the deadline line names what never arrived. The settled flag alone permits a 0.25-stop error, about 19%, so
+ * the stops themselves are compared. A renderer with no startup report answers ready, which keeps every other
+ * renderer's path unchanged.
+ */
+export function rendererFirstWorldFrame(raw: unknown, since: number): IStartupImageState {
+  const frames = rendererStartupFrames(raw);
+  if (frames === undefined) return { exposureSettled: true, ready: true, shadowInputsReady: true };
+  const exposureSettled = rendererStartupExposureReady(raw);
+  const shadowInputsReady = frames.submissions > since && frames.shadowInputsReady;
+  return {
+    exposureSettled,
+    ready: exposureSettled && shadowInputsReady,
+    shadowInputsReady,
+  };
 }
 
 /**

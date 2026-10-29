@@ -41,7 +41,9 @@ namespace {
 // 2 = tnw_web_render's overlay argument (39295d1f3).
 // 3 = startup compilation. 4 = compilation plus temporal input scale in renderer state.
 // 5 = tnw_web_threads (PRD-752). 6 = timestamp sampling in renderer state.
-constexpr uint32_t kWebHostAbi = 6;
+// 7 = tnw_web_prepare_environment: the startup bake presents no surface frame.
+// 8 = tnw_web_set_presentation_hold, and the startup's world submission and shadow inputs as frame fields 71, 72.
+constexpr uint32_t kWebHostAbi = 8;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -59,6 +61,9 @@ EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
 RenderDatabase overlayDatabase;  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
+// The startup environment bake's own records: preparation runs beside the frame loop and must not overwrite the
+// draws the frame database keeps for the frame it plans next.
+RenderDatabase environmentDatabase;
 Renderer* lastDrawn = nullptr;  // the renderer of the last tnw_web_render: its draws are that call's renderer.info
 tn::engine::shader::graph::Node customToneMapping;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
@@ -78,6 +83,13 @@ uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
 // "A valid external Instance reference no longer exists"); the gate declines a frame once the GPU is
 // really behind (tnw_web_frame field 11, rule in frame_gate.h).
 tn::engine::FrameGate frameGate;
+// Startup's first real frame (ABI 8). While the facade holds presentation every ordinary render still draws its
+// scene, shadow, post and temporal passes but takes no canvas texture, so a startup frame whose inputs are not
+// ready yet never reaches the display. `worldSubmissions` is field 71, `shadowInputsReady` field 72, and 72 is
+// recomputed only while the hold is up: it walks every active atlas, and nothing reads it once the cover is gone.
+bool presentationHeld = false;
+uint64_t worldSubmissions = 0;
+bool shadowInputsReady = false;
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -215,6 +227,10 @@ extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h, uint32
                     ": install create-threenative and @threenative/runtime-native from one build");
     if (started) return fail("TN_WASM_INIT: already initialized");
     started = true;
+    // A fresh page presents from its first ready frame; only a startup's own hold may defer that.
+    presentationHeld = false;
+    worldSubmissions = 0;
+    shadowInputsReady = false;
     if (selector == nullptr || !validSize(w, h)) return fail("TN_WASM_INIT: canvas selector or size invalid");
     width = w;
     height = h;
@@ -257,6 +273,14 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
     if (renderer) configureWebSurface();
     return 0;
 }
+
+/**
+ * Holds the canvas at its current picture while a startup's first world frame is still cold (ABI 8): every ordinary
+ * render keeps drawing, but takes no surface texture, so the frame lands in the renderer's own output target and the
+ * player keeps seeing the cover. An overlay still presents over what is already on the canvas. Core releases the hold
+ * on the first frame whose inputs are ready (frame fields 71 and 72) and the next world frame is presented.
+ */
+extern "C" void tnw_web_set_presentation_hold(int held) { presentationHeld = held != 0; }
 
 /**
  * Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. A nonzero `overlay`
@@ -306,8 +330,22 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
             renderer->setSampleCount(sampleCount);
             renderer->setRenderScale(renderScale);
             renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
-            Renderer::PresentScope present(*renderer, acquire, surfaceFormat);
-            database.render(*renderer, *scene, *camera, {r, g, b, a});
+            // Held, a startup frame draws its scene, shadow, post and temporal passes into the renderer's own output
+            // target and takes no canvas texture, so nothing whose inputs are still cold is presented. It is the same
+            // frame either way: the acquire is only left unasked, and the submission and the frame gate are unchanged.
+            // The view is asked for by the encode, never here: a frame that draws nothing (an environment still
+            // baking) or throws after the hold released took no canvas texture, and presented nothing over the last
+            // real picture. `renderPrepared` draws into the renderer's own output for a null view.
+            Renderer::PresentScope present(
+                *renderer, [&]() -> WGPUTextureView { return presentationHeld ? nullptr : acquire(); },
+                surfaceFormat);
+            const uint64_t submission = database.render(*renderer, *scene, *camera, {r, g, b, a});
+            // A frame the environment bake gated (0) drew nothing, so it is not one of the startup's world submissions.
+            if (submission != 0) {
+                ++worldSubmissions;
+                // Every active atlas walked, so only a held frame asks: nothing reads this field once the cover is gone.
+                if (presentationHeld) shadowInputsReady = renderer->virtualShadowsInitialized();
+            }
         }
     } catch (const std::exception& error) {
         refused = error.what();
@@ -335,6 +373,40 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     const RenderDatabase& drawn = overlay ? overlayDatabase : database;
     if (!drawn.diagnostics().empty()) return fail(drawn.diagnostics().front());
     return 0;
+}
+
+/**
+ * Startup warm-up's environment bake, three's PMREM preparer (core's prepareSceneEnvironment): prepares the scene's
+ * environment inputs and advances the retained bake, with no surface frame, no shadow pass, no post and no temporal
+ * step. 1 once every environment the scene samples is baked, 0 while it still bakes, -1 when refused (tnw_web_error
+ * names it). The bake used to draw through tnw_web_render, so its last draw presented an unfinished world (bright,
+ * without cast shadows) as the page's first picture until the next frame replaced it.
+ */
+extern "C" int tnw_web_prepare_environment(const tn_handle_t* sceneHandle, const tn_handle_t* cameraHandle) {
+    tnw_web_poll();
+    if (state != Ready) {
+        fail(state == Pending ? "TN_WASM_PREPARE: device not ready" : failure);
+        return -1;
+    }
+    auto* scene = rootOf(sceneHandle);
+    auto* camera = cameraOf(cameraHandle);
+    if (scene == nullptr || camera == nullptr) {
+        fail("TN_WASM_PREPARE: scene or camera handle invalid");
+        return -1;
+    }
+    flushCompute();  // an environment source a queued kernel writes must exist before it is baked
+    try {
+        environmentDatabase.shadowMapEnabled = shadowMap;
+        environmentDatabase.shadowMapType = shadowMapType;
+        const bool ready = environmentDatabase.prepareEnvironments(*renderer, *scene, *camera);
+        // A batched target draw would leave the bake's submission waiting: its work-done never arrives and no later
+        // step can observe the packet completing.
+        GpuResources::flushSubmits();
+        return ready ? 1 : 0;
+    } catch (const std::exception& error) {
+        fail(std::string("TN_WASM_PREPARE: ") + error.what());
+        return -1;  // fail() answers 1, which is this call's "baked"
+    }
 }
 
 namespace {
@@ -771,6 +843,14 @@ extern "C" double tnw_web_frame(int field) {
         // 66 to 70: running CPU ms of the renderer's costly stages, every render summed (Renderer::CpuStage): the virtual
         // shadow pages and caster bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, the encode half.
         case 66: case 67: case 68: case 69: case 70: return renderer->cpuStageMs(Renderer::CpuStage(field - 66));
+        // 71 and 72: the startup's first real frame (ABI 8). 71 counts the ordinary world submissions that encoded since
+        // the page started drawing: a bake step, a compile, an overlay, a declined frame or a failed one never advances it,
+        // and core compares it with the generation it saw when it engaged the hold. 72 is 1 once the shadow inputs those
+        // frames sample exist: every active virtual shadow has mapped its clip levels, and a scene with none, or with only
+        // the ordinary maps a successful encode already drew, is ready. A shadow draw count is not this answer, and only a
+        // held frame recomputes it.
+        case 71: return double(worldSubmissions);
+        case 72: return shadowInputsReady ? 1 : 0;
         // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
         // 41: the bytes of per-draw uniforms it uploaded.
         case 40: return double(renderer->lastFrame().keptShadowMaps);

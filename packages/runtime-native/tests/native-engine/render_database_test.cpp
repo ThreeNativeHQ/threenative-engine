@@ -951,6 +951,17 @@ void canvasLayerOverlay() {
         if (asked == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     CHECK(asked == 1);  // the first drawn frame asked once
+    // The web host's held frame arms the same lazy acquire with the hold decided inside it (web_host.cpp
+    // tnw_web_render): a drawn frame is handed a null view and draws into the renderer's own output, which is what
+    // any held frame did through presentNext(nullptr). The encode must accept that answer, not the arm site refuse it.
+    int heldAsked = 0;
+    {
+        Renderer::PresentScope present(
+            renderer, [&]() -> WGPUTextureView { ++heldAsked; return nullptr; }, format);
+        CHECK(database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1}) != 0);
+    }
+    CHECK(heldAsked == 1);
+    CHECK(database.diagnostics().empty());
     wgpuTextureViewRelease(view);
     renderer.gpu().destroy(surface);
 }

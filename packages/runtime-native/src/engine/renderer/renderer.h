@@ -425,6 +425,12 @@ public:
     /** `tanHalfFov` is the main view's (0 for a pass that is not it): auto-sized atlases measure on it. */
     void syncVirtualShadows(const LightState& lights, double tanHalfFov = 0);
     bool hasVirtualShadows() const { return !virtualShadows_.empty(); }
+    /** True when every active virtual shadow has mapped its clip levels: the depth inputs a frame samples exist. */
+    bool virtualShadowsInitialized() const {
+        for (const auto& [light, shadow] : virtualShadows_)
+            if (!shadow.atlas.initialized()) return false;
+        return true;
+    }
     /** The page plan of light `light`'s virtual shadow, or null. */
     const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
         const auto it = virtualShadows_.find(light);

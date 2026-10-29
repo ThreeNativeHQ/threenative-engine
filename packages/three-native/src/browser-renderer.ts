@@ -26,6 +26,8 @@ type HostCall =
   | "_tnw_web_adapter"
   | "_tnw_web_resize"
   | "_tnw_web_render"
+  | "_tnw_web_prepare_environment"
+  | "_tnw_web_set_presentation_hold"
   | "_tnw_web_compile_async"
   | "_tnw_web_compile_status"
   | "_tnw_web_renderer_state"
@@ -50,7 +52,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 6;
+export const WEB_HOST_ABI = 8;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -191,6 +193,14 @@ export function defineWebRenderer(
         graphKeys: 0,
         programs: 0,
         frameGateSkips: 0,
+        // The startup's first real frame (web_host.cpp fields 71 and 72): the ordinary world submissions that encoded,
+        // and whether the shadow inputs such a frame samples exist. Core holds presentation until both, and the
+        // eye adaptation, say the world is ready; a bake step, an overlay, a declined draw or a failed one adds to
+        // neither. A shadow draw count is not the same answer.
+        startup: {
+          worldSubmissions: 0,
+          shadowInputsReady: false,
+        },
         // True while prepareEnvironmentAsync draws the held scene under the loading cover. The world
         // is still unlit, so these pixels are not the view's first frame: core's eye adaptation holds
         // its history rather than adopting this bake's black target.
@@ -317,6 +327,8 @@ export function defineWebRenderer(
     #gpuSamples = 0;
     #holdsSlot = true;
     #timestampFrames: number[] = [];
+    /** The host's presentation hold is engaged, so this renderer has one of its own to release. */
+    #presentationHeld = false;
 
     constructor(parameters: Record<string, unknown> = {}) {
       if (claimed)
@@ -635,6 +647,12 @@ export function defineWebRenderer(
       passes.recordMs = module._tnw_web_frame(63);
       passes.shadowEncodeMs = module._tnw_web_frame(64);
       passes.shadowRecorded = module._tnw_web_frame(65);
+      // The startup's own report, read only while the cover is up so a held frame sees the one it just made. After
+      // the release nothing reads it, so a steady frame pays no host call for it and the last values stand.
+      if (this.#presentationHeld) {
+        engine.startup.worldSubmissions = module._tnw_web_frame(71);
+        engine.startup.shadowInputsReady = module._tnw_web_frame(72) === 1;
+      }
       // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
       (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
     }
@@ -759,16 +777,28 @@ export function defineWebRenderer(
     }
 
     /**
+     * Holds the canvas while a startup's first world frame is still cold (web_host.cpp
+     * `tnw_web_set_presentation_hold`). A held render still draws its scene, shadow, post and temporal
+     * passes, but takes no canvas texture, so nothing the engine's inputs are not ready for is presented.
+     * Overlays still present. Core releases it on the first frame its own readiness accepts.
+     */
+    setPresentationHeld(held: boolean): void {
+      const next = held === true;
+      if (next === this.#presentationHeld) return;
+      this.#presentationHeld = next;
+      module._tnw_web_set_presentation_hold(next ? 1 : 0);
+    }
+
+    /**
      * Startup warm-up's native counterpart of three's PMREM preparer: the engine bakes an environment
-     * a retained packet per render and skips every frame until it is done, so draw the held scene
-     * (behind the loading cover) until a render is no longer skipped for it. True when it drew;
-     * false at `deadlineMs` (a `performance.now()` time), so a bake that never finishes cannot
-     * hold the caller or keep drawing after it gave up.
+     * a retained packet per call and skips every frame until it is done, so advance the bake one step
+     * per task until it reports baked. True when it baked; false at `deadlineMs` (a `performance.now()`
+     * time), so a bake that never finishes cannot hold the caller or keep preparing after it gave up.
      *
-     * Each draw runs in a timer task, not in the animation frame, so the browser presents it by
-     * itself: an environment still baking presents black. `afterDraw` runs straight after every
-     * draw, in the same task, so the caller can paint its loading cover over that frame; without
-     * it the cover flickers against black for as long as the bake lasts.
+     * A step presents nothing. The bake used to reach the canvas through render(), so its last draw
+     * was the page's first picture: bright, without the cast shadows the next frame had, on screen for
+     * as long as the bake ran. `afterDraw` still runs after every step, in the same task, so the caller
+     * keeps its loading cover over the frame last presented while the world is unfinished.
      */
     async prepareEnvironmentAsync(
       scene: unknown,
@@ -777,8 +807,7 @@ export function defineWebRenderer(
       afterDraw?: () => void,
     ): Promise<boolean> {
       // The engine keeps a bake per texture and version, so a restart into the same sky has nothing
-      // to wait for. It must not draw to learn that: on a GPU that retires no frame the gate declines
-      // every draw and the loop below would hold the restart for its whole budget.
+      // to wait for: answer before a step, which would otherwise cost the caller a task per packet.
       const environment = (scene as { environment?: IBakedEnvironment | null }).environment;
       if (environment != null && bakedEnvironments.get(environment) === environment.version)
         return true;
@@ -790,10 +819,10 @@ export function defineWebRenderer(
       // Lantern Vale's bake drew the main pass at 4x MSAA before its TRAA graph was installed: 39
       // pipelines the game never drew, compiled synchronously behind the cover.
       this[PIPELINE_POST]?.();
-      // The bake's last draw is the scene's first, so build its pipelines off the queue first: on
+      // The scene's first drawn frame follows this bake, so build its pipelines off the queue first: on
       // Lantern Vale that draw compiled 84 synchronously and held the GPU queue for over a second
       // (ready 6.3 s -> 4.5 s). A refusal is the draw's to report, where it compiles that pipeline again.
-      // It waits at most half the time left, so a slow compile still leaves the bake its draws.
+      // It waits at most half the time left, so a slow compile still leaves the bake its steps.
       const compiling = this.compileAsync(scene, camera).catch(() => undefined);
       const left = (deadlineMs - performance.now()) / 2;
       if (Number.isFinite(left)) {
@@ -809,14 +838,15 @@ export function defineWebRenderer(
       this.info.engine.environmentBake = true;
       try {
         while (performance.now() < deadlineMs) {
-          const gated = this.info.engine.frameGateSkips;
-          this.render(scene, camera);
-          // Read before `afterDraw`: the cover is a draw too, and the engine's "skipped for an unbaked
-          // environment" flag describes the last draw it made.
-          const baked =
-            this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
+          // Every step: `afterDraw` may paint the cover through render(), which rewrites these slots.
+          writeHandle(0, scene, "scene");
+          writeHandle(12, camera, "camera");
+          // The host's own preparer, not a draw: no surface frame is taken, no shadow or post pass encoded,
+          // no temporal step advanced, and nothing is counted as a frame.
+          const status = module._tnw_web_prepare_environment(handles, handles + 12);
           afterDraw?.();
-          if (baked) {
+          if (status < 0) this.#drawStatus(status);
+          if (status > 0) {
             if (environment != null) {
               markBaked(environment);
               if (this.#bakingEnvironment === environment) this.#bakingEnvironment = undefined;
@@ -913,6 +943,8 @@ export function defineWebRenderer(
       if (!this.#holdsSlot) return;
       this.#holdsSlot = false;
       claimed = false;
+      // A renderer disposed mid-startup must not leave its hold behind for the next one.
+      this.setPresentationHeld(false);
     }
   };
   const read = async (target: unknown, x: number, y: number, width: number, height: number) => {

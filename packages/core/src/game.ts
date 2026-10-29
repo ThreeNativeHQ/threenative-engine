@@ -114,6 +114,7 @@ import {
   measureStartupOffscreenBytes,
 } from "./startup-offscreen-bytes.js";
 import {
+  type IStartupImageState,
   STARTUP_COMPILE_BUDGET_MS,
   STARTUP_STABLE_WINDOW_MS,
   STARTUP_STALL_MS,
@@ -1169,6 +1170,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       return;
     }
     this.#renderer = renderer;
+    // Before anything draws for this startup, including the warm-up and every covered world frame: the owned
+    // engine keeps drawing, but presents nothing until a frame's shadow and exposure inputs are ready, so the
+    // player never sees the two unsettled pictures a cold post chain produced (measured 185 -> 124 -> 108 mean
+    // brightness). A renderer without the seam presents every frame exactly as before.
+    renderer.setPresentationHeld?.(true);
+    this.#cleanup.push(() => renderer.setPresentationHeld?.(false));
     const canvas = renderer.domElement;
     const platform = this.#platform;
     const page = hostDocument();
@@ -1339,6 +1346,24 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       afterHolds: async () => {
         await warmUp("TN_STARTUP_WARMUP_HELD", Math.round(STARTUP_COMPILE_BUDGET_MS / 3), false);
       },
+      /**
+       * The renderer's own answer, which no timer may stand in for: a world frame whose shadow inputs are
+       * initialized and whose meter has measured within 3% of its target. On the owned engine the hidden world
+       * keeps drawing behind the cover, so this becomes true on its own; a renderer without the seam answers
+       * true, and its launch is exactly what it was. The answer names the input it is short of, so a launch that
+       * reached its deadline (`STARTUP_IMAGE_TIMEOUT_MS`) reports which one never arrived.
+       */
+      imageReady: (): boolean | IStartupImageState => {
+        // A cover the game asked not to draw the world behind has no frame to wait for, and waiting would
+        // hold it open forever; every other game keeps drawing and reaches this on its own.
+        if (
+          canvasLayer.opaque &&
+          !canvasLayer.renderWorldDuringStartup &&
+          !canvasLayer.keepWorldRendering
+        )
+          return true;
+        return renderer.firstWorldFrame?.() ?? true;
+      },
     });
     // Startup readiness does not wait on `ui-ready`, and cannot. The intent proves the page's
     // script ran, not that a pixel reached the screen, so waiting on it never closed the race it
@@ -1373,7 +1398,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
      * device, with the only account of either on a terminal the player does not have.
      */
     const stopStallWatch = watchStartupStall({
-      pending: () => [...assets.progress.pending, ...startupReadiness.pendingHolds],
+      pending: () => [
+        ...assets.progress.pending,
+        ...startupReadiness.pendingHolds,
+        ...startupReadiness.pendingImage,
+      ],
       progress: () => this.#ctx?.startup.progress ?? 0,
       workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
@@ -1403,6 +1432,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.frameworkReadyMs ??= now();
       timeline.readyMs ??= now();
       projectionSettled = true;
+      // The first world frame the player sees is the next one this renderer draws, so the hold comes off
+      // here and only here: every exit before it (abort, dispose, a failed launch) leaves the cover up.
+      renderer.setPresentationHeld?.(false);
       // What a game does on `whenReady()` (lift its cover, show its HUD) reaches the page with the
       // world frame, not before it: see `STARTUP_HANDOFF_FRAMES`.
       stateHandOffFrames = STARTUP_HANDOFF_FRAMES;

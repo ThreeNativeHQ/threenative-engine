@@ -98,6 +98,13 @@ public:
     static Vector3 viewFocus(const Vector3& eye, const Vector3& forward, double far,
                             double extent, const std::vector<Box3>& receivers);
     void invalidateAll();
+    /** True once every level's window is mapped: the depth pages a shadow resolve samples exist. A cut, a
+     *  direction change or a failed allocation leaves a level unmapped, so this is false until it is granted. */
+    bool initialized() const {
+        for (const Level& level : levels_)
+            if (!level.mapped) return false;
+        return true;
+    }
     const AtlasOptions& options() const { return options_; }
     const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }

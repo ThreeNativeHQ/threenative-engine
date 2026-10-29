@@ -636,4 +636,32 @@ void panKeepsPages() {
     CHECK(dirty > 0 && dirty < 16);
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"pan_keeps_pages", panKeepsPages}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+// The readiness evidence a startup frame waits on: a level's window is granted one per update (the clipmap cuts
+// finest first), so `initialized()` is the mapped levels themselves, never a draw count. A sun that moved is a new
+// shadow provider: every level is unmapped and the atlas is initialized again only once each one is granted.
+void initialized() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24, 48}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    CHECK(!atlas->initialized());
+    const Vector3 sun(0, 1, 0);
+    for (int grant = 1; grant <= 3; ++grant) {
+        CHECK(!atlas->update(Vector3(0, 0, 0), sun).empty());
+        // Two of three levels mapped is still cold; only the grant that maps the last one is initialized.
+        CHECK(atlas->initialized() == (grant == 3));
+    }
+    // A steady frame grants nothing and keeps the answer.
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    CHECK(atlas->initialized());
+    const Vector3 moved(0.2, 1, 0.1);
+    CHECK(!atlas->update(Vector3(0, 0, 0), moved).empty());
+    CHECK(!atlas->initialized());
+    atlas->update(Vector3(0, 0, 0), moved);
+    CHECK(!atlas->initialized());
+    atlas->update(Vector3(0, 0, 0), moved);
+    CHECK(atlas->initialized());
+}
+
+TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
