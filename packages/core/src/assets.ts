@@ -1413,8 +1413,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           // The cluster DAG the asset pipeline baked in. Registered only when the file declares it,
           // so a game whose models are ordinary meshes never pays for the plugin — and a game whose
           // models are not gets a plain `Mesh`, with no runtime switch either way.
+          // The Wasm engine's loader hosts no cluster plugin and refuses any it does not host. The
+          // pipeline never marks the bake required, so there the file's source triangles draw.
           if (extensions.has(TN_VIRTUAL_GEOMETRY)) {
-            loader.register((parser) => new VirtualGeometryPlugin(parser as never) as never);
+            if ((loader as { failClosed?: boolean }).failClosed === true)
+              console.info(
+                `TN_VIRTUAL_GEOMETRY_SKIPPED ${path}: this engine's glTF loader hosts no cluster plugin; the source mesh draws`,
+              );
+            else loader.register((parser) => new VirtualGeometryPlugin(parser as never) as never);
           }
           // The discrete chain the asset pipeline baked in. Registered only when the file declares it,
           // so a game with no auto LOD never pays for the plugin. Levels are built after the quantized
