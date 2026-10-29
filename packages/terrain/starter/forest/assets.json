@@ -3,8 +3,16 @@
     "near": "fir_tree_01/fir-b-lod1.glb",
     "maxDistance": 600,
     "bounds": {
-      "min": [-2.869, 0, -3.619],
-      "max": [2.763, 14.078, 2.465]
+      "min": [
+        -2.869,
+        0,
+        -3.619
+      ],
+      "max": [
+        2.763,
+        14.078,
+        2.465
+      ]
     },
     "mid": "fir_tree_01/fir-b-lod2.glb",
     "midDistance": 45
@@ -15,18 +23,98 @@
     "midDistance": 35,
     "maxDistance": 300,
     "bounds": {
-      "min": [-0.716, 0, -0.991],
-      "max": [0.557, 1.004, 0.841]
+      "min": [
+        -0.716,
+        0,
+        -0.991
+      ],
+      "max": [
+        0.557,
+        1.004,
+        0.841
+      ]
     }
   },
   "fir-c": {
     "near": "fir_tree_01/fir-c-lod1.glb",
     "maxDistance": 600,
     "bounds": {
-      "min": [-2.727, 0, -3.498],
-      "max": [3.623, 14.552, 2.508]
+      "min": [
+        -2.727,
+        0,
+        -3.498
+      ],
+      "max": [
+        3.623,
+        14.552,
+        2.508
+      ]
     },
     "mid": "fir_tree_01/fir-c-lod2.glb",
     "midDistance": 45
+  },
+  "fern-a": {
+    "near": "fern_02/fern-a.glb",
+    "maxDistance": 50,
+    "bounds": {
+      "min": [
+        -0.699,
+        0,
+        -0.744
+      ],
+      "max": [
+        0.764,
+        0.62,
+        0.802
+      ]
+    }
+  },
+  "fern-b": {
+    "near": "fern_02/fern-b.glb",
+    "maxDistance": 50,
+    "bounds": {
+      "min": [
+        -0.758,
+        0,
+        -0.879
+      ],
+      "max": [
+        0.655,
+        0.687,
+        0.643
+      ]
+    }
+  },
+  "stone-a": {
+    "near": "rocks/rock01-mid.glb",
+    "maxDistance": 80,
+    "bounds": {
+      "min": [
+        -1.029,
+        0,
+        -1.712
+      ],
+      "max": [
+        1.137,
+        1.462,
+        1.683
+      ]
+    }
+  },
+  "stone-b": {
+    "near": "rocks/rock04-mid.glb",
+    "maxDistance": 80,
+    "bounds": {
+      "min": [
+        -0.955,
+        0,
+        -0.784
+      ],
+      "max": [
+        1.128,
+        1.736,
+        1.09
+      ]
+    }
   }
 }

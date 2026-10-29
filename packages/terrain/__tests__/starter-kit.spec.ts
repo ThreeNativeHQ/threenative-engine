@@ -14,11 +14,11 @@ const starterAssets = join(packageRoot, "starter-assets");
 // Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
 const GOLDEN_HASHES: Record<string, Record<string, string>> = {
   forest: {
-    "world.glb": "6dcea272a52043890bccac27cab875a8aeaaffbdb5e3750429258451216d2222",
+    "world.glb": "f5989ec1c806b04c24d06d6324d8be5c7b27d0bf63c569013e21b5b9188793a4",
     "heightmap.u16": "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
-    "placements.bin": "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
-    "splat.rgba": "5d1442087debc8ef17fdbd3e6ee1bbc5a2ff9255509a6b32b9d860752fd2f591",
-    "world.json": "33430aa497ecaed19e27c9bae39dd3cbc6a9e3e0e88d2f3d6d7e7595078f11b5",
+    "placements.bin": "043726102f486d212b8441293ccbc0f862278c9f457abcc7b99341141f58433f",
+    "splat.rgba": "0ba7d09157e6f4d4cb894a35152be0c05098417b88d68175cfbe6b4ff7c41364",
+    "world.json": "538ad4e2469e140b86b52b48f435c5e81e5d7d3c8f4bd581e6e3dc9e515e00a6",
   },
   alpine: {
     "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
@@ -137,7 +137,15 @@ describe("forest starter kit", () => {
       for (const run of cell.runs) perAsset[run.asset] = (perAsset[run.asset] ?? 0) + run.count;
     expect(perAsset.fir).toBeGreaterThanOrEqual(2000);
     expect(perAsset.boulder).toBe(320);
-    expect(Object.keys(perAsset).sort()).toEqual(["boulder", "fir", "fir-c"]);
+    expect(Object.keys(perAsset).sort()).toEqual([
+      "boulder",
+      "fern-a",
+      "fern-b",
+      "fir",
+      "fir-c",
+      "stone-a",
+      "stone-b",
+    ]);
     // The combined and streamed representations are alternatives, not additive.
     const combinedBytes = statSync(join(out, "world.glb")).size;
     expect(combinedBytes).toBeLessThanOrEqual(25 * 1024 * 1024);
@@ -148,13 +156,13 @@ describe("forest starter kit", () => {
       "33b3fc66f63ca4df76531a44a2bd84e1aff6f642eb9ab0c6622ebe87d1057c2f",
     );
     expect(files.get("placements.bin")).toBe(
-      "36ab2fd57e76b4b0bd998c5398f983e5f030968b83d5326c0cb98df1b67e4019",
+      "043726102f486d212b8441293ccbc0f862278c9f457abcc7b99341141f58433f",
     );
     expect(files.get("splat.rgba")).toBe(
-      "5d1442087debc8ef17fdbd3e6ee1bbc5a2ff9255509a6b32b9d860752fd2f591",
+      "0ba7d09157e6f4d4cb894a35152be0c05098417b88d68175cfbe6b4ff7c41364",
     );
     expect(files.get("world.json")).toBe(
-      "33430aa497ecaed19e27c9bae39dd3cbc6a9e3e0e88d2f3d6d7e7595078f11b5",
+      "538ad4e2469e140b86b52b48f435c5e81e5d7d3c8f4bd581e6e3dc9e515e00a6",
     );
 
     // One recipe and seed, one package: a second bake is byte-identical.
