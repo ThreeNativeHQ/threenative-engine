@@ -705,8 +705,10 @@ public:
     uint32_t gpuTimestampPasses() const { return timing_->passes; }
     /** The caller's frame id of the most recent resolved GPU time: the frame it was submitted with, not the one that read it back. */
     uint64_t gpuSourceFrame() const { return timing_->source; }
+    /** Whether the device negotiated timestamp-query, independent of this frame's sampling flag. */
+    bool gpuTimerAvailable() const { return passTimer_->queries != nullptr; }
     /** Whether frames are actually timed: the device negotiated timestamp-query and the timer is on. */
-    bool gpuTimerEnabled() const { return passTimer_->queries != nullptr && passTimer_->enabled; }
+    bool gpuTimerEnabled() const { return gpuTimerAvailable() && passTimer_->enabled; }
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
     bool gpuTimerBeganAtShadow() const { return timerBeganAtShadow_; }
 

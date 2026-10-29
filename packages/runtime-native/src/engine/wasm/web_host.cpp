@@ -40,8 +40,8 @@ namespace {
 // signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
 // 2 = tnw_web_render's overlay argument (39295d1f3).
 // 3 = startup compilation. 4 = compilation plus temporal input scale in renderer state.
-// 5 = tnw_web_threads (PRD-752).
-constexpr uint32_t kWebHostAbi = 5;
+// 5 = tnw_web_threads (PRD-752). 6 = timestamp sampling in renderer state.
+constexpr uint32_t kWebHostAbi = 6;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -69,6 +69,7 @@ OutputState output{std::nullopt, 1, true};
 bool outputChanged = true;
 bool postChanged = false;
 bool shadowMap = false;
+bool timestampTracking = true;
 int shadowMapType = 1;  // PCFShadowMap
 float renderScale = 1;
 uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
@@ -127,7 +128,7 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     queue = wgpuDeviceGetQueue(device);
     setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
-    renderer->setGpuTimer(true);
+    renderer->setGpuTimer(timestampTracking);
     configureWebSurface();
     renderer->setOutput(output);
     outputChanged = false;
@@ -582,7 +583,7 @@ extern "C" int tnw_web_delete_storage(const tn_handle_t* attributeHandle) {
  * leaves the renderer running.
  */
 extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const char* colorSpace, int shadowEnabled,
-                                      double shadowType, double samples, double scale) {
+                                      double shadowType, double samples, double scale, int trackTimestamp) {
     std::string refusal;
     const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal, customToneMapping);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
@@ -602,6 +603,8 @@ extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const
     shadowMapType = static_cast<int>(shadowType);
     sampleCount = static_cast<uint32_t>(samples);
     renderScale = static_cast<float>(scale);
+    timestampTracking = trackTimestamp != 0;
+    if (renderer) renderer->setGpuTimer(timestampTracking);
     return 0;
 }
 
@@ -715,7 +718,7 @@ extern "C" double tnw_web_frame(int field) {
         case 7: return renderer->lastGpuMs();
         case 8: return double(renderer->gpuSamples());
         case 9: return double(renderer->gpuSourceFrame());
-        case 10: return renderer->gpuTimerEnabled() ? 1 : 0;
+        case 10: return renderer->gpuTimerAvailable() ? 1 : 0;
         case 11:
             tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
             return frameGate.decline(renderer->gpu().completedSerial(), emscripten_get_now()) ? 1 : 0;

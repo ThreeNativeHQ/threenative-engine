@@ -1281,3 +1281,35 @@ describe("the Wasm engine's compileAsync", () => {
     expect(performance.now() - started).toBeLessThan(320);
   });
 });
+
+describe("Wasm timestamp sampling", () => {
+  it("forwards the current sampling flag before secondary and main draws", async () => {
+    const flags: number[] = [];
+    const { Renderer, canvas, scene, camera, state, classes } = host(
+      (field) => (field === 10 ? 1 : 0),
+      () => {
+        flags.push(state.mock.calls.at(-1)?.[7] as number);
+        return 0;
+      },
+      (_size, draw) => draw(target as never, scene as never, camera as never),
+      () => {
+        flags.push(state.mock.calls.at(-1)?.[7] as number);
+        return 0;
+      },
+    );
+    const target = new (classes.RenderTarget as new () => object)();
+    const renderer = new Renderer({ canvas }) as {
+      backend: { trackTimestamp: boolean };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    for (let frame = 0; frame < 16; frame += 1) {
+      renderer.backend.trackTimestamp = frame % 8 === 0;
+      renderer.render(scene, camera);
+    }
+    expect(flags).toEqual(
+      Array.from({ length: 16 }, (_, i) => [i % 8 === 0 ? 1 : 0, i % 8 === 0 ? 1 : 0]).flat(),
+    );
+  });
+});

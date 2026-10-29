@@ -49,7 +49,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 5;
+export const WEB_HOST_ABI = 6;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -624,7 +624,7 @@ export function defineWebRenderer(
         renderScale,
       } = this;
       this.library.apply(toneMapping);
-      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}|${renderScale}`;
+      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}|${renderScale}|${this.backend.trackTimestamp}`;
       if (key === this.#state) return;
       const space = string(String(outputColorSpace));
       try {
@@ -637,6 +637,7 @@ export function defineWebRenderer(
             shadowMap.type,
             samples,
             renderScale,
+            this.backend.trackTimestamp ? 1 : 0,
           ),
         );
       } finally {
