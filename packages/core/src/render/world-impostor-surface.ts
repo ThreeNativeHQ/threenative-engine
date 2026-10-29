@@ -603,6 +603,18 @@ function buildFragmentNodes(
     // surface. A march step every four baked texels at most, ten refinements: one step per texel
     // was ~770 atlas reads a fragment over three frames, 26 ms of a 42 ms walking frame with 383 fir
     // impostors on screen, and two more bisection steps keep each crossing as precise as before.
+    // March on the mip the fragment's own footprint resolves: mip 0 under a far tree a few pixels
+    // wide reads scattered texels on every step and thrashes the texture cache (24 ms of a 48 ms
+    // walking frame on 53k far trees). Depth is coverage-premultiplied, so a mip keeps its meaning.
+    // Taken here, in uniform control flow, because derivatives inside the loop are undefined.
+    const footUv = vec2(dot(relVarying, basis.right), dot(relVarying, basis.up).negate())
+      .div(radiusUniform)
+      .mul(0.5)
+      .add(0.5);
+    const marchLevel = max(
+      log2(max(length(dFdx(footUv).mul(atlas.pixels)), length(dFdy(footUv).mul(atlas.pixels)))),
+      float(0),
+    ).toVar();
     const hit = Fn(() => {
       const found = float(0).toVar();
       const hitUv = vec2(2).toVar();
@@ -616,8 +628,8 @@ function buildFragmentNodes(
           .div(radiusUniform)
           .mul(0.5)
           .add(0.5);
-        const c = colorMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
-        const n = normalMap.depth(layer).sample(sampleUv).level(float(0)).toVar();
+        const c = colorMap.depth(layer).sample(sampleUv).level(marchLevel).toVar();
+        const n = normalMap.depth(layer).sample(sampleUv).level(marchLevel).toVar();
         const depth = float(1)
           .sub(
             float(1)
@@ -645,8 +657,8 @@ function buildFragmentNodes(
                 .div(radiusUniform)
                 .mul(0.5)
                 .add(0.5);
-              const mc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
-              const mn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+              const mc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
+              const mn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
               const md = float(1)
                 .sub(
                   float(1)
@@ -670,8 +682,8 @@ function buildFragmentNodes(
               .div(radiusUniform)
               .mul(0.5)
               .add(0.5);
-            const hc = colorMap.depth(layer).sample(u).level(float(0)).toVar();
-            const hn = normalMap.depth(layer).sample(u).level(float(0)).toVar();
+            const hc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
+            const hn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
             const hd = float(1)
               .sub(
                 float(1)
