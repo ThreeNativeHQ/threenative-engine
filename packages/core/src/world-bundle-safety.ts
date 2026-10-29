@@ -58,11 +58,16 @@ interface IBundleMaterialCheck {
  * Deep snapshot rows proved per frame, across every material. A small world proves every graph on
  * every frame; a forest of ~50 foliage surfaces at ~1,000 rows each spreads its proof instead of
  * walking ~50,000 rows each frame, which measured 10.9 s of a 25 s trace on the Strata preview. A
- * row costs about a microsecond, so the budget is about a millisecond a frame.
+ * row measured ~2.7 µs on a real display (NVIDIA Turing), so the budget is under a millisecond.
  */
-const BUNDLE_PROOF_ROWS_PER_FRAME = 1024;
-/** The longest proof period, whatever the load: one second at 60 Hz, so a deep edit is caught. */
-const BUNDLE_PROOF_MAX_PERIOD = 60;
+const BUNDLE_PROOF_ROWS_PER_FRAME = 256;
+/**
+ * The longest proof period, whatever the load: ten seconds at 60 Hz. Three recompiles a draw only
+ * when `material.version` moves, so a deep edit without `needsUpdate` changes no drawn pipeline in
+ * that window; the proof only withdraws a bundle the edit made unsafe. A 60-frame cap measured
+ * ~3 ms a frame on the Strata forest's ~70,000 rows.
+ */
+const BUNDLE_PROOF_MAX_PERIOD = 600;
 
 /** Own-link and installed-Node child snapshots avoid inherited TSL method scans. Deep unversioned
  * edits still invalidate: version/root identity alone cannot certify a mutable node graph. The

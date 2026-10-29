@@ -77,15 +77,15 @@ describe("BundleSurfaceSafety on a settled frame", () => {
     expect(safety.stats.refreshes).toBe(1);
   });
 
-  it("spreads deep proofs over a load-sized period, capped at 60 frames, and proves every material", () => {
-    const forest = Array.from({ length: 30 }, () => material(chain(1000)));
+  it("spreads deep proofs over a load-sized period, capped at 600 frames, and proves every material", () => {
+    // 70 graphs of ~2,600 rows over a 256-row budget would be a ~710-frame period; the cap holds 600.
+    const forest = Array.from({ length: 70 }, () => material(chain(1000)));
     const safety = new BundleSurfaceSafety();
     safety.beginFrame();
     for (const painted of forest) safety.test(painted);
     const proved = new Set<MeshStandardNodeMaterial>();
     let validations = safety.stats.validations;
-    // 30 graphs of ~2,600 rows over a 1,024-row budget would be a 76-frame period; the cap holds 60.
-    for (let frame = 0; frame < 130; frame++) {
+    for (let frame = 0; frame < 1210; frame++) {
       safety.beginFrame();
       for (const painted of forest) {
         safety.test(painted);
@@ -93,7 +93,7 @@ describe("BundleSurfaceSafety on a settled frame", () => {
         validations = safety.stats.validations;
       }
     }
-    expect(safety.stats.staleFrames).toBe(60);
+    expect(safety.stats.staleFrames).toBe(600);
     expect(safety.stats.deferred).toBeGreaterThan(0);
     expect(proved.size).toBe(forest.length);
     expect(safety.stats.refreshes).toBe(forest.length);
