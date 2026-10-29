@@ -2638,6 +2638,14 @@ export class CellRender {
     };
   }
 
+  #rerecordOnPmremSwap(raw: unknown): void {
+    const swaps = typeof raw === "object" && raw !== null ? Reflect.get(raw, "_tnPmremSwaps") : 0;
+    if (typeof swaps !== "number" || swaps === this.#pmremSwaps) return;
+    this.#pmremSwaps = swaps;
+    for (const group of this.#bundles.values()) this.bumpBundle(group);
+    for (const { group } of this.#chunkBundles.values()) this.bumpBundle(group);
+  }
+
   flushCompiles(renderer: IRendererLike | undefined): void {
     // A bundle recorded while a compile was in flight left out every draw whose pipeline was not
     // ready, and the replay never re-checks; re-record those shards now that it has settled. Set
@@ -2646,13 +2654,7 @@ export class CellRender {
     const busy = renderer?.compiling === true || compiles !== this.#compileSeen;
     this.#compileSeen = compiles;
     this.#compileBusy = busy;
-    const raw = renderer?.raw;
-    const swaps = typeof raw === "object" && raw !== null ? Reflect.get(raw, "_tnPmremSwaps") : 0;
-    if (typeof swaps === "number" && swaps !== this.#pmremSwaps) {
-      this.#pmremSwaps = swaps;
-      for (const group of this.#bundles.values()) this.bumpBundle(group);
-      for (const { group } of this.#chunkBundles.values()) this.bumpBundle(group);
-    }
+    this.#rerecordOnPmremSwap(renderer?.raw);
     if (!busy && this.#recordedWhileBusy.size > 0) {
       const recorded = [...this.#recordedWhileBusy];
       this.#recordedWhileBusy.clear();
