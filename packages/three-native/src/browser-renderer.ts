@@ -6,6 +6,7 @@
  */
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
+import { debugTelemetry } from "./debug-telemetry.js";
 import { GPU_STAGES, SHADOW_SEGMENT_FIELD, SHADOW_STAGE } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
@@ -126,6 +127,7 @@ export function defineWebRenderer(
 ): new (
   parameters?: Record<string, unknown>,
 ) => object {
+  const debug = debugTelemetry(module);
   let claimed = false;
   // The engine starts once per page: one device, and one surface bound to the first renderer's canvas.
   // A renderer built after that one was disposed (a hot update re-runs the game) adopts both.
@@ -531,6 +533,16 @@ export function defineWebRenderer(
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       const renderFrame = this.info.frame;
+      if (debug !== undefined) {
+        // Observation only: native captures this request with each submitted sample.
+        module._tnw_web_frame(this.backend.trackTimestamp ? -1 : -2);
+        debug?.add(
+          "gpuTimestampRequests",
+          this.backend.trackTimestamp ? 1 : 0,
+          "gpu",
+          "WebGPURenderer.render",
+        );
+      }
       this.#drawStatus(
         module._tnw_web_render(
           handles,
@@ -561,6 +573,12 @@ export function defineWebRenderer(
       this.info.engine.uniformBytes = module._tnw_web_frame(41);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
+        debug?.add(
+          "gpuTimestampSamples",
+          gpuSamples - this.#gpuSamples,
+          "gpu",
+          "native timestamp readback",
+        );
         this.#gpuSamples = gpuSamples;
         const gpuMs = module._tnw_web_frame(7);
         // The engine reports which submitted frame this sample belongs to; the readback can land
@@ -601,6 +619,14 @@ export function defineWebRenderer(
       temporal.jitterLength = module._tnw_web_frame(37);
       temporal.outputWidth = module._tnw_web_frame(38);
       temporal.outputHeight = module._tnw_web_frame(39);
+      if (debug !== undefined && temporal.active) {
+        // The native renderer counts the active/history/rejected/clamped pixel totals under these
+        // exact names (foundation/waste_counters.h, renderer.cpp); a JS series beside them would be
+        // overwritten by `counters()` where the names collide and silently stale where they do not.
+        // Only the input and output sizes have no native producer.
+        debug.add("temporalInputPixels", temporal.inputWidth * temporal.inputHeight, "temporal");
+        debug.add("temporalOutputPixels", temporal.outputWidth * temporal.outputHeight, "temporal");
+      }
       engine.samples = module._tnw_web_frame(18);
       const passes = engine.passes;
       passes.mainRecorded = module._tnw_web_frame(60);

@@ -81,6 +81,7 @@ endif()
 get_directory_property(tn_tests_before_gpu TESTS)
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     tn_native_engine_test(tn-native-engine-gpu-resources-test tests/native-engine/gpu_resources_test.cpp
+        native_engine_gpu_debug_counters=debug_counters
         native_engine_gpu_upload_readback=upload_readback
         native_engine_gpu_deferred_destroy=deferred_destroy
         native_engine_gpu_async_only=async_only
@@ -409,6 +410,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_pipeline_cache=pipelines
         native_engine_renderer_sibling_pipelines=sibling_pipelines
         native_engine_renderer_sibling_texture_change=sibling_texture_change
+        native_engine_renderer_texture_update_in_place=texture_update_in_place
+        native_engine_renderer_texture_update_reallocates=texture_update_reallocates
         native_engine_renderer_pipeline_compile_async=compile_before_render
         native_engine_renderer_init_texture=init_texture
         native_engine_renderer_recent_bind_groups=recent_bind_groups

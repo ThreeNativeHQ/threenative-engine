@@ -1,3 +1,4 @@
+#include "engine/foundation/waste_counters.h"
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
@@ -554,6 +555,7 @@ struct Renderer::FrameJob {
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
     bool timed = false;
+    bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
@@ -1174,6 +1176,9 @@ void Renderer::readTraaCounts() {
         if (status != GpuStatus::Ok || bytes.size() != 8) return;
         uint32_t values[2];
         std::memcpy(values, bytes.data(), sizeof values);
+        waste::debugAdd(waste::counters().temporalRejectedPixels, values[0]);
+        waste::debugAdd(waste::counters().temporalClampedPixels, values[1]);
+        waste::debugAdd(waste::counters().temporalMeasuredPixels, measure.pixels);
         counts->rejected = values[0];
         counts->clamped = values[1];
         counts->pixels = measure.pixels;
@@ -1506,6 +1511,115 @@ void Renderer::initTexture(const Texture& texture) {
     flushMipmaps();
 }
 
+// What a material map's GPU texture is built from: its descriptor's shape and usage, and the parameters its
+// sampler is made from. Two equal keys mean the same texture and the same sampler, so new pixels can be
+// written where the old ones were.
+Renderer::MaterialTexture::Key Renderer::materialTextureKey(const Texture& texture) {
+    MaterialTexture::Key key;
+    key.width = texture.width;
+    key.height = texture.height;
+    key.depth = texture.volume ? texture.depth : 1;
+    key.texelBytes = texture.bytesPerTexel();
+    key.wrapS = texture.wrapS;
+    key.wrapT = texture.wrapT;
+    key.wrapR = texture.wrapR;
+    key.magFilter = texture.magFilter;
+    key.minFilter = texture.minFilter;
+    key.anisotropy = texture.anisotropy;
+    if (texture.depthTexture) {
+        key.kind = MaterialTexture::kDepth;
+        key.format = WGPUTextureFormat_Depth32Float;
+        key.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc |
+                    WGPUTextureUsage_CopyDst;
+        key.texelBytes = 4;
+    } else if (texture.storageTexture) {
+        key.kind = MaterialTexture::kStorage;
+        key.format = !texture.isFloat() && !texture.isHalfFloat() ? WGPUTextureFormat_RGBA8Unorm : textureFormat(texture);
+        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_StorageBinding | WGPUTextureUsage_CopySrc;
+    } else if (texture.hasImage() && texture.volume) {
+        // A Data3DTexture: one 3D texture of `depth` slices, one level (ponytail: a volume's
+        // generateMipmaps is ignored; no corpus game turns it on).
+        key.kind = MaterialTexture::kVolume;
+        key.format = textureFormat(texture);
+        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+    } else if (texture.hasImage()) {
+        // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
+        const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
+        for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++key.levels;
+        key.kind = texture.external ? MaterialTexture::kExternal : MaterialTexture::kImage;
+        key.format = textureFormat(texture);
+        // copyExternalImageToTexture writes through a render pass, as the mip chain does.
+        key.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst |
+                    (key.levels > 1 || texture.external ? WGPUTextureUsage_RenderAttachment : WGPUTextureUsage_None);
+    } else {
+        key.texelBytes = 0;  // nothing is created until the texture has an image
+    }
+    return key;
+}
+
+WGPUTexture Renderer::createMaterialTexture(const MaterialTexture::Key& key) {
+    WGPUTextureDescriptor desc = {};
+    desc.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureDimension_3D : WGPUTextureDimension_2D;
+    desc.size = {key.width, key.height, key.depth};
+    desc.format = key.format;
+    desc.usage = key.usage;
+    desc.mipLevelCount = key.levels;
+    desc.sampleCount = 1;
+    const WGPUTexture texture = wgpuDeviceCreateTexture(device_, &desc);
+    // GpuResources::createTexture counts the handles it owns; a material map never passes through it, so
+    // `?tnDebug=1` would report every one of these as zero bytes allocated and zero uploaded.
+    waste::debugAdd(waste::counters().textureCreatedBytes, key.bytes());
+    return texture;
+}
+
+// The one upload both the create path and an in-place update run, so a re-upload of the same extent writes
+// exactly what the first upload wrote.
+void Renderer::uploadMaterialTexture(WGPUTexture destination, const Texture& texture, const MaterialTexture::Key& key) {
+    WGPUImageCopyTexture_Compat image = {};
+    image.texture = destination;
+    image.aspect = WGPUTextureAspect_All;
+    WGPUTextureDataLayout_Compat layout = {};
+    layout.bytesPerRow = texture.width * texture.bytesPerTexel();
+    layout.rowsPerImage = texture.height;
+    const WGPUExtent3D extent = {key.width, key.height, key.depth};
+    const auto counted = [&] {
+        textures_->uploadBytes += texture.data.size();
+        waste::debugAdd(waste::counters().textureUploadBytes, texture.data.size());
+    };
+    if (key.kind == MaterialTexture::kVolume) {
+        if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
+        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.depth * texture.bytesPerTexel();
+        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA volume byte count");
+        gpu_.sync();  // ordered after any submit still on the GPU thread
+        wgpuQueueWriteTexture(queue_, &image, texture.data.data(), texture.data.size(), &layout, &extent);
+        counted();
+        return;
+    }
+    if (key.kind == MaterialTexture::kExternal) {
+        if (!textures_->copyExternal || texture.bytesPerTexel() != 4)
+            throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image needs the host's copy and RGBA8");
+        gpu_.sync();  // both uploads are queue work: ordered after any submit still on the GPU thread
+        if (!textures_->copyExternal(texture.external->id, destination, texture.flipY))
+            throw std::runtime_error("TN_NATIVE_TEXTURE_UPLOAD_FAILED: the host could not copy its image");
+    } else {
+        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.bytesPerTexel();
+        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
+        std::vector<uint8_t> flipped;
+        const uint8_t* pixels = texture.data.data();
+        if (texture.flipY) {
+            const size_t row = size_t(texture.width) * texture.bytesPerTexel();
+            flipped.resize(texture.data.size());
+            for (uint32_t y = 0; y < texture.height; ++y)
+                std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);
+            pixels = flipped.data();
+        }
+        gpu_.sync();  // the upload is queue work: ordered after any submit still on the GPU thread
+        wgpuQueueWriteTexture(queue_, &image, pixels, texture.data.size(), &layout, &extent);
+        counted();
+    }
+    if (key.levels > 1) generateMipmaps(destination, key.format, key.levels);
+}
+
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
     // A render target's texture is that target's last render, borrowed from its own renderer.
     if (const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock())) {
@@ -1519,138 +1633,56 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         return &sampled;
     }
     if (texture.storageTexture) (void)texture.storageFormat();
+    // Match WebGPUTextureUtils: FloatType stays RGBA32Float, HalfFloatType RGBA16Float; sRGB byte
+    // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
+    if (!texture.depthTexture && texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
+        throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
     MaterialTexture& record = textures_->records[texture.ident.value()];
     if (record.view != nullptr && record.version == texture.version()) return &record;
-    if (record.view) texturesChanged();  // its old view's address may be reused by the new one
-    record.release();
-    if (texture.depthTexture) {
-        WGPUTextureDescriptor desc{};
-        desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {texture.width, texture.height, 1};
-        desc.format = WGPUTextureFormat_Depth32Float;
-        desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc | WGPUTextureUsage_CopyDst;
-        desc.sampleCount = desc.mipLevelCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        record.view = wgpuTextureCreateView(record.texture, nullptr);
-        WGPUSamplerDescriptor sampler{};
-        sampler.compare = WGPUCompareFunction_LessEqual; sampler.maxAnisotropy = 1;
-        record.sampler = samplerFor(sampler);
+    const MaterialTexture::Key key = materialTextureKey(texture);
+    // three's `needsUpdate` on the same extent writes into the texture that is already here: its view, its
+    // sampler, every bind group that bound them and every recorded bundle stay valid. Releasing the record
+    // instead builds a new texture whose view can reuse the old one's address, so every group and bundle made
+    // for that address is stale — a fog-of-war texture updated 20 times a second rebuilt all of them.
+    if (record.view != nullptr && record.key == key && key.updatesInPlace()) {
+        uploadMaterialTexture(record.texture, texture, key);
         record.version = texture.version();
         return &record;
     }
-    // Match WebGPUTextureUtils: FloatType stays RGBA32Float, HalfFloatType RGBA16Float; sRGB byte
-    // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
-    if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
-        throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
-    const WGPUTextureFormat format = texture.storageTexture && !texture.isFloat() && !texture.isHalfFloat()
-                                         ? WGPUTextureFormat_RGBA8Unorm : textureFormat(texture);
-    if (texture.storageTexture) {
-        WGPUTextureDescriptor desc{};
-        desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {texture.width, texture.height, 1};
-        desc.format = format;
-        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_StorageBinding | WGPUTextureUsage_CopySrc;
-        desc.sampleCount = desc.mipLevelCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        record.view = wgpuTextureCreateView(record.texture, nullptr);
-    } else if (texture.hasImage() && texture.volume) {
-        // A Data3DTexture: one 3D texture of `depth` slices, one level (ponytail: a volume's
-        // generateMipmaps is ignored; no corpus game turns it on).
-        if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
-        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.depth * texture.bytesPerTexel();
-        if (texture.data.size() != expected) throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA volume byte count");
-        WGPUTextureDescriptor desc = {};
-        desc.dimension = WGPUTextureDimension_3D;
-        desc.size = {texture.width, texture.height, texture.depth};
-        desc.format = format;
-        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
-        desc.mipLevelCount = 1;
-        desc.sampleCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        WGPUImageCopyTexture_Compat destination = {};
-        destination.texture = record.texture;
-        destination.aspect = WGPUTextureAspect_All;
-        WGPUTextureDataLayout_Compat layout = {};
-        layout.bytesPerRow = texture.width * texture.bytesPerTexel();
-        layout.rowsPerImage = texture.height;
-        const WGPUExtent3D extent = {texture.width, texture.height, texture.depth};
-        gpu_.sync();  // ordered after any submit still on the GPU thread
-        wgpuQueueWriteTexture(queue_, &destination, texture.data.data(), texture.data.size(), &layout, &extent);
-        textures_->uploadBytes += texture.data.size();
+    if (record.view) texturesChanged();  // its old view's address may be reused by the new one
+    record.release();
+    if (key.kind != MaterialTexture::kNone) {
+        record.texture = createMaterialTexture(key);
+        if (key.kind != MaterialTexture::kStorage) uploadMaterialTexture(record.texture, texture, key);
         WGPUTextureViewDescriptor view = {};
-        view.dimension = WGPUTextureViewDimension_3D;
-        view.mipLevelCount = 1;
+        view.dimension = key.kind == MaterialTexture::kVolume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
+        view.mipLevelCount = key.levels;
         view.arrayLayerCount = 1;
-        view.format = format;
-        record.view = wgpuTextureCreateView(record.texture, &view);
-    } else if (texture.hasImage()) {
-        // three generates mipmaps for every Texture that is not a DataTexture; float images stay at one level.
-        const bool mipmaps = texture.generateMipmaps && texture.bytesPerTexel() == 4;
-        uint32_t levels = 1;
-        for (uint32_t extent = std::max(texture.width, texture.height); mipmaps && extent > 1; extent >>= 1) ++levels;
-        const uint64_t expected = uint64_t(texture.width) * texture.height * texture.bytesPerTexel();
-        if (!texture.external && texture.data.size() != expected)
-            throw std::runtime_error("TN_NATIVE_TEXTURE_INVALID: RGBA image byte count");
-        if (texture.external && (!textures_->copyExternal || texture.bytesPerTexel() != 4))
-            throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: a host image needs the host's copy and RGBA8");
-        std::vector<uint8_t> flipped;
-        const uint8_t* pixels = texture.data.data();
-        if (texture.flipY && !texture.external) {
-            const size_t row = size_t(texture.width) * texture.bytesPerTexel();
-            flipped.resize(texture.data.size());
-            for (uint32_t y = 0; y < texture.height; ++y)
-                std::memcpy(flipped.data() + size_t(y) * row, texture.data.data() + size_t(texture.height - 1 - y) * row, row);
-            pixels = flipped.data();
-        }
-        WGPUTextureDescriptor desc = {};
-        desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {texture.width, texture.height, 1};
-        desc.format = format;
-        // copyExternalImageToTexture writes through a render pass, as the mip chain does.
-        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst |
-                     (levels > 1 || texture.external ? WGPUTextureUsage_RenderAttachment : WGPUTextureUsage_None);
-        desc.mipLevelCount = levels;
-        desc.sampleCount = 1;
-        record.texture = wgpuDeviceCreateTexture(device_, &desc);
-        WGPUImageCopyTexture_Compat destination = {};
-        destination.texture = record.texture;
-        destination.aspect = WGPUTextureAspect_All;
-        WGPUTextureDataLayout_Compat layout = {};
-        layout.bytesPerRow = texture.width * texture.bytesPerTexel();
-        layout.rowsPerImage = texture.height;
-        const WGPUExtent3D extent = {texture.width, texture.height, 1};
-        gpu_.sync();  // both uploads are queue work: ordered after any submit still on the GPU thread
-        if (texture.external) {
-            if (!textures_->copyExternal(texture.external->id, record.texture, texture.flipY))
-                throw std::runtime_error("TN_NATIVE_TEXTURE_UPLOAD_FAILED: the host could not copy its image");
-        } else {
-            wgpuQueueWriteTexture(queue_, &destination, pixels, texture.data.size(), &layout, &extent);
-            textures_->uploadBytes += texture.data.size();
-        }
-        if (levels > 1) generateMipmaps(record.texture, format, levels);
-        WGPUTextureViewDescriptor view = {};
-        view.dimension = WGPUTextureViewDimension_2D;
-        view.mipLevelCount = levels;
-        view.arrayLayerCount = 1;
-        view.format = format;
+        view.format = key.format;
         record.view = wgpuTextureCreateView(record.texture, &view);
     }
+    record.key = key;
     WGPUSamplerDescriptor sampler = {};
-    sampler.addressModeU = addressMode(texture.wrapS);
-    sampler.addressModeV = addressMode(texture.wrapT);
-    sampler.addressModeW = addressMode(texture.wrapR);
-    sampler.magFilter = filterMode(texture.magFilter);
-    sampler.minFilter = filterMode(texture.minFilter);
-    // NearestMipmapLinear and LinearMipmapLinear blend between two levels, the other filters take one.
-    sampler.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
-                                   texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
-                               ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
-    sampler.lodMaxClamp = 32;  // a zeroed C descriptor clamps the level of detail to 0, which hides the chain
-    // WebGPUTextureUtils: anisotropy only when every filter is linear; WebGPU clamps it to 16.
-    sampler.maxAnisotropy = sampler.magFilter == WGPUFilterMode_Linear && sampler.minFilter == WGPUFilterMode_Linear &&
-                                    sampler.mipmapFilter == WGPUMipmapFilterMode_Linear
-                                ? static_cast<uint16_t>(std::min(texture.anisotropy, 16.0))
-                                : 1;
+    if (key.kind == MaterialTexture::kDepth) {
+        sampler.compare = WGPUCompareFunction_LessEqual;
+        sampler.maxAnisotropy = 1;
+    } else {
+        sampler.addressModeU = addressMode(texture.wrapS);
+        sampler.addressModeV = addressMode(texture.wrapT);
+        sampler.addressModeW = addressMode(texture.wrapR);
+        sampler.magFilter = filterMode(texture.magFilter);
+        sampler.minFilter = filterMode(texture.minFilter);
+        // NearestMipmapLinear and LinearMipmapLinear blend between two levels, the other filters take one.
+        sampler.mipmapFilter = texture.minFilter == static_cast<uint16_t>(TextureFilter::NearestMipmapLinear) ||
+                                       texture.minFilter == static_cast<uint16_t>(TextureFilter::LinearMipmapLinear)
+                                   ? WGPUMipmapFilterMode_Linear : WGPUMipmapFilterMode_Nearest;
+        sampler.lodMaxClamp = 32;  // a zeroed C descriptor clamps the level of detail to 0, which hides the chain
+        // WebGPUTextureUtils: anisotropy only when every filter is linear; WebGPU clamps it to 16.
+        sampler.maxAnisotropy = sampler.magFilter == WGPUFilterMode_Linear && sampler.minFilter == WGPUFilterMode_Linear &&
+                                        sampler.mipmapFilter == WGPUMipmapFilterMode_Linear
+                                    ? static_cast<uint16_t>(std::min(texture.anisotropy, 16.0))
+                                    : 1;
+    }
     record.sampler = samplerFor(sampler);
     record.version = texture.version();
     return &record;
@@ -2661,6 +2693,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) {
         readTraaCounts();
         const auto status = traa_ ? traa_->status() : TraaPass::Status{};
+        if (traa_) {
+            waste::debugAdd(waste::counters().temporalActiveFrames);
+            if (!status.historyValid) waste::debugAdd(waste::counters().temporalInvalidFrames);
+        }
         temporalStatus_ = {traa_ != nullptr, status.historyValid, status.frame, status.jitterX, status.jitterY,
                            traaCounts_->rejected, traaCounts_->clamped, traaCounts_->pixels, traaCounts_->frame};
     }
@@ -3648,6 +3684,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::vector<std::pair<size_t, WGPURenderPipeline>> responsiveDraws;
     if (traa_) {
         for (const Planned& draw : plan) {
+            if (!compilation) waste::debugAdd(waste::counters().velocityCandidates);
             const DrawItem& item = *draw.item;
             const auto& variant = draw.program->variant;
             // Alpha-tested and alpha-hashed draws need no coverage test here: the equal depth test keeps only the
@@ -3655,6 +3692,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const bool unsupported = item.morphGeometry || item.sprite || item.background ||
                 item.positionNode || item.nodes.vertexNode || item.transparent;
             const auto skip = [&](const char* reason) {
+                if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
                     "; camera motion only";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -3671,6 +3709,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
                 if (!pipeline) throw std::runtime_error("TN_TRAA_RESPONSIVE_PIPELINE_REFUSED");
                 responsiveDraws.emplace_back(size_t(&draw - plan.data()), pipeline);
+                if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
                 continue;
             }
             if (unsupported) { skip("unsupported vertex/coverage"); continue; }
@@ -4580,6 +4619,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.color = color;
     job.depth = depth;
     job.timed = timed;
+    job.debugTimestampRequested = debugTimestampRequested_;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
     job.auxMask = auxMask;
@@ -5174,6 +5214,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (!timestampResolve_.type)
             timestampResolve_ = gpu_.createBuffer(FrameGpuTimer::maxPasses * 16, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc);
         wgpuCommandEncoderResolveQuerySet(encoder, passTimer_->queries, 0, uint32_t(segments.size()) * 2, gpu_.buffer(timestampResolve_), 0);
+        waste::debugAdd(waste::counters().timestampResolves);
+        if (!job.debugTimestampRequested) waste::debugAdd(waste::counters().gpuTimestampUnrequestedSamples);
     }
     WGPUCommandBufferDescriptor commandDesc = {};
     submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
@@ -5231,6 +5273,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             t->passes = uint32_t(segments.size());
             t->source = source;
             ++t->samples;
+            waste::debugAdd(waste::counters().timestampSamplesDelivered);
         });
     }
     if (ownsPassTimer_) {
@@ -5242,6 +5285,11 @@ void Renderer::encodeFrame(FrameJob& job) {
         std::lock_guard lock(frameMailMutex_);
         lastFrame_.keptShadowMaps = job.keptShadowMaps;
         lastFrame_.uniformBytes = job.uniformBytes;
+        waste::debugAdd(waste::counters().renderFrames);
+        waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
+        waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);
+        waste::debugAdd(waste::counters().auxPasses, lastFrame_.auxPasses);
+        waste::debugAdd(waste::counters().uniformUploadBytes, job.uniformBytes);
         frameMail_ = lastFrame_;
     }
 }

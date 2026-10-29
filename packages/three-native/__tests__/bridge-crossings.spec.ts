@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type IBrowserRuntime,
@@ -19,6 +19,11 @@ import {
   createWasmRuntime,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 const registry = JSON.parse(
   readFileSync(
@@ -55,12 +60,26 @@ function memoryRuntime() {
     get(self, property) {
       if (property === "__address") return addresses.get(self.key) as number;
       calls.push(`get ${property}`);
-      if (property === "position" || property === "scale") {
-        const ref = construct("Vector3");
+      if (
+        property === "position" ||
+        property === "scale" ||
+        property === "quaternion" ||
+        property === "rotation"
+      ) {
+        const ref = construct(
+          property === "quaternion" ? "Quaternion" : property === "rotation" ? "Euler" : "Vector3",
+        );
         // The member's lanes follow its owner's, as the transform page lays them out.
         addresses.set(
           ref.key,
-          (addresses.get(self.key) as number) + (property === "scale" ? 64 : 0),
+          (addresses.get(self.key) as number) +
+            (property === "scale"
+              ? 64
+              : property === "quaternion"
+                ? 128
+                : property === "rotation"
+                  ? 160
+                  : 0),
         );
         return ref;
       }
@@ -78,6 +97,7 @@ function memoryRuntime() {
     writeDouble(address, value) {
       heap[address / 8] = value;
     },
+    readByte: () => 0,
   };
   return { runtime, calls, heap, addresses };
 }
@@ -357,6 +377,115 @@ describe("per-crossing glue on the Wasm bridge", () => {
       runtime.invoke(self, "updateMatrixWorld", []);
     expect((bufferReads - readsBefore) / 50).toBeLessThanOrEqual(1);
     expect(fills - fillsBefore).toBe(0);
+  });
+});
+
+describe("debug bridge ABI observations", () => {
+  it("preserves actual off malloc/free/crossing census and reports Uint8 fog bytes on", () => {
+    function run(enabled: boolean) {
+      vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
+      vi.stubGlobal("__THREENATIVE_DEBUG__", false);
+      vi.stubGlobal("location", { search: "" });
+      const { module, grow } = growableModule();
+      const sets = vi.fn(() => 0);
+      module._tn_set = sets;
+      const runtime = createWasmRuntime(module);
+      const ref = { key: "1:0:1:1", type: 1 };
+      runtime.set(ref, "image.data", new Uint8Array(112 * 112 * 4));
+      const before = module.mallocs.length;
+      for (let i = 0; i < 995; i++) runtime.get(ref, "count");
+      expect(module.mallocs.length).toBe(before + 1); // one interned property name
+      grow();
+      runtime.get(ref, "count");
+      return {
+        mallocs: module.mallocs,
+        frees: module.frees,
+        crossings: sets.mock.calls.length,
+        debug: runtime.debugTelemetry,
+      };
+    }
+    const off = run(false);
+    expect(off.debug).toBeUndefined();
+    const on = run(true);
+    expect(on.mallocs).toEqual(off.mallocs);
+    expect(on.frees).toEqual(off.frees);
+    expect(on.crossings).toBe(off.crossings);
+    // Typed arrays cross as their own bytes (KIND.bytes), so the fog frame neither widens nor overflows.
+    expect(on.debug?.totals).toMatchObject({
+      bridgeTypedSourceBytes: 50176,
+      bridgeTypedEncodedBytes: 50176,
+      wasmGrowthEvents: 1,
+      wasmGrowthBytes: 1048576,
+    });
+    expect(on.debug?.totals).not.toHaveProperty("bridgeOverflowAllocations");
+    expect(on.debug?.totals).not.toHaveProperty("bridgeWidenings");
+  });
+
+  it("routes bridge totals through the existing browser engine counter reader", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnDebugSources", {});
+    const { runtime } = memoryRuntime();
+    const get = runtime.get;
+    runtime.get = (self, path) => (path === "name" ? "" : get(self, path));
+    const engine = defineBrowserClasses(registry, runtime);
+    const Object3D = engine.classes.Object3D as new () => { count: number };
+    new Object3D();
+    const counters = engine.counters();
+    expect(counters.bridgeConstructCrossings).toBe(1);
+    expect(counters.bridgeWrappersCreated).toBe(1);
+    expect(counters.bridgeLiveWrappers).toBe(1);
+    expect(
+      (globalThis as { __tnDebugSources?: Record<string, { unit: string }> }).__tnDebugSources
+        ?.bridgeLiveWrappers?.unit,
+    ).toBe("gauge");
+    expect(counters.bridgeCrossingMs).toBeGreaterThanOrEqual(0);
+    expect(
+      (globalThis as { __tnDebugSources?: Record<string, { unit: string }> }).__tnDebugSources
+        ?.bridgeCrossingMs?.unit,
+    ).toContain("estimated");
+  });
+});
+
+describe("shared transform write telemetry", () => {
+  it("observes repeated same-value position and quaternion writes without changing their values or crossings", () => {
+    function run(enabled: boolean) {
+      vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
+      const { runtime, calls, heap, addresses } = memoryRuntime();
+      const get = runtime.get;
+      runtime.get = (self, property) => (property === "name" ? "" : get(self, property));
+      const browser = defineBrowserClasses(registry, runtime);
+      const Object3D = browser.classes.Object3D as new () => {
+        position: { set(x: number, y: number, z: number): void };
+        quaternion: { set(x: number, y: number, z: number, w: number): void };
+      };
+      const object = new Object3D();
+      const { position, quaternion } = object;
+      const start = calls.length;
+      const now = vi.spyOn(performance, "now");
+      position.set(5, 6, 7);
+      position.set(5, 6, 7);
+      quaternion.set(1, 2, 3, 4);
+      quaternion.set(1, 2, 3, 4);
+      expect(now).not.toHaveBeenCalled();
+      now.mockRestore();
+      const writes = calls.slice(start);
+      const base = addresses.get(engineKey(object)) ?? 0;
+      const values = [
+        ...heap.subarray(base / 8, base / 8 + 3),
+        ...heap.subarray((base + 128) / 8, (base + 128) / 8 + 4),
+      ];
+      return { values, writes, counters: browser.counters() };
+    }
+    const off = run(false);
+    const on = run(true);
+    expect(off.values).toEqual([5, 6, 7, 1, 2, 3, 4]);
+    expect(on.values).toEqual(off.values);
+    expect(on.writes).toEqual(off.writes);
+    expect(off.counters).not.toHaveProperty("sharedTransformWrites");
+    expect(on.counters).toMatchObject({
+      sharedTransformWrites: 14,
+      unchangedSharedTransformWrites: 7,
+    });
   });
 });
 

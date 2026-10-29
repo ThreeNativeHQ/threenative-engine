@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 
 /**
  * Running counts of engine work that a scene can make the renderer repeat without needing it
@@ -20,7 +21,23 @@
  */
 namespace tn::engine::waste {
 
+#define TN_DEBUG_COUNTERS(X) \
+    X(gateAttempts) X(gateDeclinedCapacity) X(gateDeclinedAge) \
+    X(bufferCreatedBytes) X(textureCreatedBytes) X(bufferFreedBytes) X(textureFreedBytes) \
+    X(bufferUploadBytes) X(textureUploadBytes) X(bindGroups) X(pipelineCompiles) \
+    X(sceneDirtyMarks) X(sceneVisits) X(sceneAdds) X(sceneRemoves) X(queueSubmits) \
+    X(readbackMaps) X(readbackBytes) X(timestampResolves) X(timestampSamplesDelivered) X(gpuTimestampUnrequestedSamples) \
+    X(velocityCandidates) X(velocitySkipped) X(temporalActiveFrames) X(temporalInvalidFrames) X(temporalRejectedPixels) \
+    X(temporalClampedPixels) X(temporalMeasuredPixels) X(pipelineCreateMicros) \
+    X(queueCallbackMicros) X(queueDeliveryMicros) X(queueCallbacks) \
+    X(handleCreates) X(handleReleases) X(attributeUploadBytes) X(uniformUploadBytes) \
+    X(renderFrames) X(renderDraws) X(shadowDraws) X(auxPasses) X(cullCandidates) X(culledObjects)
+
 struct Counters {
+    std::atomic<uint64_t> gcPauses{0}, gcPauseMicros{0};  // V8-only: Wasm does not expose unobserved GC.
+#define TN_DECLARE_COUNTER(name) std::atomic<uint64_t> name{0};
+    TN_DEBUG_COUNTERS(TN_DECLARE_COUNTER)
+#undef TN_DECLARE_COUNTER
     /** Every `projection::contentClassOf` call: one per mesh per prepare, before its cache check. */
     std::atomic<uint64_t> contentClassCalls{0};
     /** Calls that had to recompute `contentVersionKey` for their geometry (an epoch or version miss). */
@@ -51,6 +68,14 @@ static_assert(std::atomic<uint64_t>::is_always_lock_free, "the web back end read
 inline Counters& counters() {
     static Counters value;
     return value;
+}
+
+inline bool debugFlagEnabled(const char* value) { return value && std::strcmp(value, "1") == 0; }
+
+inline std::atomic<bool>& debugEnabled() { static std::atomic<bool> enabled{false}; return enabled; }
+inline void setDebugEnabled(bool enabled) { debugEnabled().store(enabled, std::memory_order_relaxed); }
+inline void debugAdd(std::atomic<uint64_t>& counter, uint64_t value = 1) {
+    if (debugEnabled().load(std::memory_order_relaxed)) counter.fetch_add(value, std::memory_order_relaxed);
 }
 
 inline void count(std::atomic<uint64_t>& counter) { counter.fetch_add(1, std::memory_order_relaxed); }
