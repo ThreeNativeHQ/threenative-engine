@@ -194,7 +194,10 @@ export function defineTextureSources(
   if (BaseLayers !== undefined) {
     DataArrayTexture.prototype = BaseLayers.prototype;
     // three's flags: r185 names the array class both ways.
-    Object.assign(BaseLayers.prototype as object, { isArrayTexture: true, isDataArrayTexture: true });
+    Object.assign(BaseLayers.prototype as object, {
+      isArrayTexture: true,
+      isDataArrayTexture: true,
+    });
   }
 
   /** three's CanvasTexture: the engine's own class over the canvas's pixels, with a full mip chain. */

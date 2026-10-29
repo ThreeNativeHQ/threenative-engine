@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "name": "wasm-engine-array",
+  "target": "web",
+  "subject": "wasm-array",
+  "viewport": {
+    "width": 320,
+    "height": 180
+  },
+  "warmupFrames": 1,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "sampled",
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "error",
+        "equals": "",
+        "allowTrivial": "The page reports its own failure here."
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "done",
+        "equals": true
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "flags",
+        "equals": "true,true",
+        "allowTrivial": "The flags are set when the texture is built, before any step runs."
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "constant",
+        "equals": "0,255,0,255"
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "perPixel",
+        "equals": "255,0,0,255,0,255,0,255,0,0,255,255"
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "defaultLayer",
+        "equals": "255,0,0,255"
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "coarseMip",
+        "equals": "0,0,255,255"
+      }
+    ]
+  }
+}

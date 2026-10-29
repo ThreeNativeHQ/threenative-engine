@@ -319,6 +319,7 @@ const METHODS = [
   "flipW",
   "level",
   "bias",
+  "depth",
   "transformDirection",
   "radians",
   "degrees",
