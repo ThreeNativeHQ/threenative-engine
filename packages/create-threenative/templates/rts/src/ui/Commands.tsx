@@ -76,6 +76,13 @@ export function Commands() {
     if (!state.primaryBuilt)
       commands = [
         { icon: "stop", intent: "cancelBuild", label: "Cancel · 75%", testid: "cancel-build" },
+        { icon: "worker", intent: "builder", label: "Select builder", testid: "select-builder" },
+        ...base,
+      ];
+    else if (card.capacity !== undefined)
+      // A bunker's "production" is its garrison, so its one command is the way out.
+      commands = [
+        { icon: "garrison", intent: "unload", label: "Unload all", testid: "unload" },
         ...base,
       ];
     else

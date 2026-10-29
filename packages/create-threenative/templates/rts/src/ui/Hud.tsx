@@ -309,12 +309,18 @@ function Rivals() {
   );
 }
 
-/** The last report, faded out by CSS after four seconds; `key` restarts the fade for a new one. */
+/**
+ * The last report, faded out by CSS after four seconds; `key` restarts the fade for a new one.
+ *
+ * A refusal is a different sentence from a confirmation and reads in the warning style, as it does
+ * in AstraCraft: "Those units cannot attack that target" in the same calm colour as "Barracks
+ * online." is a toast the player learns to ignore.
+ */
 function Toast() {
-  const state = useUiStateShown((s) => s.notice);
+  const state = useUiStateShown((s) => (s.notice === "" ? "" : [s.notice, s.noticeError]));
   if (state === undefined || state.notice === "") return null;
   return (
-    <output className="toast show" key={state.notice}>
+    <output className={`toast show ${state.noticeError ? "error" : ""}`} key={state.notice}>
       {state.notice}
     </output>
   );

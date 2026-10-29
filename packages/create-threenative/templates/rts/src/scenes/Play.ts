@@ -26,6 +26,7 @@ import { type IEnvironmentSample, sampleEnvironment } from "../render/environmen
 import { type ISun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
+import { unloadGarrison } from "../sim/combat.js";
 import { createUnitModels } from "../render/models.js";
 import {
   DRAG_SLOP,
@@ -149,6 +150,8 @@ export class Play extends Scene<GameState, undefined> {
   #kinds = new Uint8Array(ORDER_KINDS.length);
   #mode = "";
   #edgeScroll = true;
+  /** Whether the current notice is a refusal; the toast draws one in the warning style. */
+  #noticeError = false;
   #pointerSeen = false;
   #accumulator = 0;
   /** The engine tick the rules clock is fed in, and the camera position before the latest one. */
@@ -469,9 +472,11 @@ export class Play extends Scene<GameState, undefined> {
       const result = sim.build(type, ground.x, ground.z, 0);
       if (!result.ok) {
         this.#notice = result.message ?? "That site cannot be built there.";
+        this.#noticeError = true;
         return;
       }
       this.#notice = `${TYPES[type].name} ordered. Its Surveyor must stay on site.`;
+      this.#noticeError = false;
       this.#army?.marker(ground.x, ground.z, false);
       this.#mode = "";
       return;
@@ -496,9 +501,11 @@ export class Play extends Scene<GameState, undefined> {
     const result = sim.command(this.#selection, choice.kind, choice.target, 0, append);
     if (!result.ok) {
       this.#notice = REFUSALS[choice.kind] ?? "No selected unit can do that.";
+      this.#noticeError = true;
       return;
     }
     this.#notice = "";
+    this.#noticeError = false;
     this.#army?.marker(
       ground.x,
       ground.z,
@@ -561,6 +568,7 @@ export class Play extends Scene<GameState, undefined> {
       case "edge":
         this.#edgeScroll = !this.#edgeScroll;
         this.#notice = this.#edgeScroll ? "Edge scrolling enabled." : "Edge scrolling disabled.";
+        this.#noticeError = false;
         break;
       case "order":
         this.#mode = value;
@@ -591,6 +599,7 @@ export class Play extends Scene<GameState, undefined> {
         this.#notice = result.ok
           ? `${TYPES[value as EntityType].name} queued.`
           : (result.message ?? "That cannot be trained here.");
+        this.#noticeError = !result.ok;
         break;
       }
       case "cancelTrain": {
@@ -625,6 +634,32 @@ export class Play extends Scene<GameState, undefined> {
           idle.length > 0
             ? `${idle.length} idle Surveyors selected.`
             : "All Surveyors are working.";
+        this.#noticeError = false;
+        break;
+      }
+      case "unload": {
+        const bunker = this.#primary();
+        if (bunker === undefined || bunker.type !== "bunker") break;
+        const result = unloadGarrison(sim, bunker.id, 0);
+        this.#notice = result.ok
+          ? `${result.count ?? 0} Vanguards deployed.`
+          : (result.message ?? "No infantry inside.");
+        this.#noticeError = !result.ok;
+        break;
+      }
+      case "builder": {
+        // The site's own Surveyor, selected and framed, so a stalled build has a clickable cause.
+        const site = this.#primary();
+        const builder = site?.builderId == null ? undefined : sim.get(site.builderId);
+        if (builder === undefined) {
+          this.#notice = "No Surveyor is assigned to this site.";
+          this.#noticeError = true;
+          break;
+        }
+        this.#selectIds([builder.id]);
+        if (this.#view !== undefined) focusRts(this.#view, builder.x, builder.z);
+        this.#notice = "";
+        this.#noticeError = false;
         break;
       }
       case "select":
@@ -651,6 +686,7 @@ export class Play extends Scene<GameState, undefined> {
         this.#notice = result.ok
           ? "Construction cancelled. 75% refunded."
           : (result.message ?? "That site cannot be cancelled.");
+        this.#noticeError = !result.ok;
         break;
       }
       default:
@@ -831,6 +867,7 @@ export class Play extends Scene<GameState, undefined> {
       patch.minimapDots = this.#dots;
       patch.minimapFog = this.#fogText;
       patch.notice = this.#notice;
+      patch.noticeError = this.#noticeError;
       patch.queue = (primary?.queue ?? []).map(
         (item) => `${item.type}:${item.progress.toFixed(2)}`,
       );

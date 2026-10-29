@@ -23,6 +23,8 @@ export type GameState = {
   result: string;
   /** The last thing the simulation reported, for the toast. */
   notice: string;
+  /** True when `notice` is a refusal, which the toast draws in the warning style. */
+  noticeError: boolean;
   /**
    * The selection. `primaryType` is a key of the rules table and "" for an empty selection; the
    * panel reads the rest of the unit's card out of that table rather than being told twice.
@@ -120,6 +122,7 @@ export const INITIAL_STATE: GameState = {
   minimapView: [],
   mode: "",
   notice: "",
+  noticeError: false,
   ore: 0,
   paused: false,
   primaryBuilt: true,
