@@ -1,1 +1,55 @@
-{"schemaVersion": 1, "iterations": []}
+{
+  "schemaVersion": 1,
+  "iterations": [
+    {
+      "id": 1,
+      "at": "2026-10-29T17:49:00.094Z",
+      "commit": "e72f28584",
+      "label": "baseline: real preset, kit look (high tier), VirtualShadowNode per kit AGENTS.md",
+      "decision": "baseline",
+      "notes": "Bisection (frame p50/p95 ms, main draws): full+VSM 720/808, 2795 draws, 1.36 fps. Static world+VSM 19.8/94.9, 621 draws. Static world+plain shadow 5.8/7.8, 61 draws (meets 120 fps CPU). Full+plain shadow 22.9/30.9, 80 draws, 41.6 fps (dynamic layers +17 ms: render +10, update +5). Kit recipe findings: shadow.radius 2 > 2-texel page guard and 4096 mapSize > device texture limit both lose the Wasm renderer (worked around: radius 1.5, mapSize 2048). gpu p95 from timestamp queries in Brave/DevTools MCP.",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 44.25,
+      "windows": 1,
+      "metrics": {
+        "presentedP50Ms": 716.68,
+        "presentedP95Ms": 816.66,
+        "fps": 1.36,
+        "gpuP50Ms": 13.3,
+        "gpuP95Ms": 53.67,
+        "renderP50Ms": 695,
+        "updateP50Ms": 20.52,
+        "frameP50Ms": 719.96,
+        "frameP95Ms": 807.9,
+        "mainDraws": 2795,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 172,
+        "loadMs": 2304
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
+    }
+  ]
+}
