@@ -694,6 +694,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 14,
+      "at": "2026-10-29T23:35:06.971Z",
+      "commit": "core@0.3.7",
+      "label": "F1+F5+F5b startup presentation hold",
+      "decision": "keep",
+      "notes": "60de162f0; paired with develop 17.02 fps (same host state, hunters running): 17.24 fps, no steady cost. First revealed frame mean 106-110 vs 140-143, shadows from frame 1, judge IMPROVEMENT 4/4",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 68.68,
+      "windows": 12,
+      "metrics": {
+        "presentedP50Ms": 49.99,
+        "presentedP95Ms": 149.94,
+        "fps": 17.24,
+        "gpuP50Ms": 8.52,
+        "gpuP95Ms": 68.68,
+        "renderP50Ms": 28.06,
+        "updateP50Ms": 9.09,
+        "frameP50Ms": 39.31,
+        "frameP95Ms": 84.23,
+        "mainDraws": 1791,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 3252,
+        "loadMs": 1788,
+        "bridgeCrossingsP50": 1837,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
