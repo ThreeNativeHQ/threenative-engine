@@ -168,3 +168,14 @@ Measured in Chrome DevTools on `?world=forest&stage=after`, dev server, RTX 2080
 | Walking | ❌ open | 15 s holding W: p50 33.3 ms, p95 50 ms, max 433 ms. CPU render stays about 4 ms; GPU goes from 11 ms to 33-45 ms. |
 | GPU time grows after a walk | ❌ open, root cause unknown | Teleported back to the spawn after the walk: same 13 draws and 46k counted triangles, GPU 44.6 ms against 11 ms fresh. The frame counter misses the instanced bundles: the scene census at a fresh spawn shows about 35 M visible instanced triangles (fir bundles 18 M). Next: find what keeps GPU work after the player leaves (bundle instance counts, LOD selection, indirect draws). |
 | `scripts/check-temperate.mts` | ⚠️ red before this pass | Fails at `scatter.placements.map((one) => one.id)` on HEAD without these edits. |
+
+### Walk video findings (2026-10-29, burn guard active)
+
+Method: Chrome DevTools screencast of a walk on `?world=forest&stage=after` at 1880x880 (RTX 2080). Shake is the mean frame-to-frame luma change on a still camera.
+
+| Issue | Status | Evidence |
+| --- | --- | --- |
+| Trees and ground shake on a still camera | ✅ fixed in 0a88d0fce | TRAA never converged: far region 1.05 with TRAA, 0.05 with 4x MSAA (equal to no AA). Same with `tnBundles=0`. Forest now uses 4x MSAA. `?on=traa` is the opt-in. GPU p50 at spawn 19.3 -> 12.3 ms. |
+| Forest starts dark, lightens after the first move | ❌ open | Fresh-load luma 104.5. Setting `needsUpdate` on only the near fir twig material (`fir_tree_01_twig`, alphaTest 0.5, the `fir:*` cell meshes) gives 124.6 with no camera move. So that pipeline is built from stale state. Ruled out: missing envMap (set before the world exists, version bump in `starter.ts` did not help), frozen object-group uniforms (a matrix nudge did not help), `twoSidedFoliage` (not set), `shadowSide` swap (material is DoubleSide). Next suspect: `AlphaAntialiasing.convertMaterial` (`packages/core/src/render/alpha-antialiasing.ts:118`) sets `alphaToCoverage` per draw with no rebuild, on a material that prewarm may already have compiled. |
+| Tree shadows on the ground after a move | ⚠️ unverified | The dark start state shows dark crowns, so "shadows vanish" may be the same bug. Recheck after the fix above. |
+| Far trees and LOD art quality is poor | ❌ open | Owner report. Not investigated. |
