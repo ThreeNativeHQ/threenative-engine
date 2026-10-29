@@ -211,7 +211,9 @@ input {
   white-space: nowrap;
 }
 .top-location i {
-  color: #495e66;
+  /* A step below the location's own grey, and still 3.7:1 on the ink behind the top bar:
+     the separator is text, so it clears the contrast floor the HUD audit holds every glyph to. */
+  color: #77929b;
   font-style: normal;
 }
 .clock {
