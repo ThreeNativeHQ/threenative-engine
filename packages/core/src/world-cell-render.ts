@@ -1565,9 +1565,13 @@ export class CellRender {
         shape.material.userData.tnPublishedLodRange === true &&
         existing.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&
         existing.mesh.count === 0;
-      // The same surface on the same buffer is no change: re-recording it on every call re-walked
-      // its whole node graph each time a cell asked for the key (3 s of a 25 s Strata trace).
-      if (!rebind && existing.mesh.material === shape.material) return existing;
+      // The same surface on the same buffer: re-recording it on every call re-walked its whole node
+      // graph each time a cell asked for the key (3 s of a 25 s Strata trace). The cached check still
+      // re-reads the material's shallow state and hooks, and re-records only when its verdict moved.
+      if (!rebind && existing.mesh.material === shape.material) {
+        this.bundleIn(existing, true);
+        return existing;
+      }
       if (rebind) existing.rebind(shape.geometry, shape.material);
       else existing.mesh.material = shape.material;
       this.bundleOut(existing);

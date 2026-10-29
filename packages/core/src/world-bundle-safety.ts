@@ -61,6 +61,8 @@ interface IBundleMaterialCheck {
  * row costs about a microsecond, so the budget is about a millisecond a frame.
  */
 const BUNDLE_PROOF_ROWS_PER_FRAME = 1024;
+/** The longest proof period, whatever the load: one second at 60 Hz, so a deep edit is caught. */
+const BUNDLE_PROOF_MAX_PERIOD = 60;
 
 /** Own-link and installed-Node child snapshots avoid inherited TSL method scans. Deep unversioned
  * edits still invalidate: version/root identity alone cannot certify a mutable node graph. The
@@ -91,7 +93,10 @@ export class BundleSurfaceSafety {
   /** Opens a frame: the period every deep proof is spread over follows the last frame's rows. */
   beginFrame(): void {
     this.#frame++;
-    this.stats.staleFrames = Math.max(1, Math.ceil(this.#frameRows / BUNDLE_PROOF_ROWS_PER_FRAME));
+    this.stats.staleFrames = Math.min(
+      BUNDLE_PROOF_MAX_PERIOD,
+      Math.max(1, Math.ceil(this.#frameRows / BUNDLE_PROOF_ROWS_PER_FRAME)),
+    );
     this.#frameRows = 0;
   }
 
