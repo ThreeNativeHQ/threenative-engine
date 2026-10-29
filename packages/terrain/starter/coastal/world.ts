@@ -71,6 +71,9 @@ interface ICoastalWaterFile {
   readonly rivers: readonly unknown[];
 }
 
+/** Terrain tiles streamed around the follow object, in tiles from the one it stands on. */
+const STREAM_RADIUS = 6;
+
 /**
  * Stream the coastal world around `follow` (usually the player or the camera) and give it collision.
  * `whileCurrent` stops a departed scene's async load from attaching anything. Its resources are
@@ -136,7 +139,7 @@ export async function addCoastal(
       gpuScene: false,
       shadows: { cast: true, receive: true },
       budgets: { residentCells: 64, instances: 40_000, bytes: 64_000_000 },
-      terrain: { streamRadius: 6 },
+      terrain: { streamRadius: STREAM_RADIUS },
     };
     world = await WorldCells.load(options);
     assertCurrent();
@@ -153,6 +156,15 @@ export async function addCoastal(
     const props = new Float32Array(records);
     colliders = new PropColliders(ctx, follow, manifest, props);
     ctx.add(world);
+    // The loading cover stays up until the ground around the camera is built: behind it the stream
+    // gets the covered admission budget, and without it the first frames show holes in the land.
+    const streamed = world;
+    const reach = (STREAM_RADIUS - 0.5) * manifest.cellSize;
+    if (ctx.startup.phase !== "ready")
+      ctx.startup.hold("coastal-terrain", () => {
+        const region = streamed.readinessAt(follow.position, reach);
+        return region.loadedTerrainTiles === region.requiredTerrainTiles;
+      });
     if (ground.object !== undefined) ctx.add(ground.object);
     ctx.add(colliders);
     ctx.entities.add(`coastal-world.${world.uuid}`, { dispose });
