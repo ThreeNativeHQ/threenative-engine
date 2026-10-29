@@ -316,6 +316,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 7,
+      "at": "2026-10-29T20:50:41.571Z",
+      "commit": "core@0.3.7",
+      "label": "clean re-measure at head (GPU less shared)",
+      "decision": "baseline",
+      "notes": "rows 5-6 (4.6/4.2 fps) ran beside another agent's Playwright Chromium and the Codex browser on the same GPU; plainShadow at head 28 fps",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 56.4,
+      "windows": 6,
+      "metrics": {
+        "presentedP50Ms": 99.99,
+        "presentedP95Ms": 233.34,
+        "fps": 8.01,
+        "gpuP50Ms": 8.32,
+        "gpuP95Ms": 82.18,
+        "renderP50Ms": 58.2,
+        "updateP50Ms": 20.84,
+        "frameP50Ms": 79.39,
+        "frameP95Ms": 228.25,
+        "mainDraws": 1836,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 1876,
+        "loadMs": 3324,
+        "bridgeCrossingsP50": 3740,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
