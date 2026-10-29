@@ -552,6 +552,16 @@ public:
     uint64_t textureUploadBytes() const { return textures_->uploadBytes; }
     /** Upload through the draw path now, including submission of generated mipmaps. */
     void initTexture(const Texture& texture);
+    /** three's copyTextureToTexture arguments: the source region (width 0 is the source's image size) and the destination origin. */
+    struct TextureCopy {
+        uint32_t srcX = 0, srcY = 0, srcZ = 0, width = 0, height = 0, depth = 1;
+        uint32_t dstX = 0, dstY = 0, dstZ = 0, srcLevel = 0, dstLevel = 0;
+    };
+    /**
+     * Copies a region of one uploaded texture into another on the GPU, as three's renderer does (both are uploaded
+     * first); the destination's mip chain is rebuilt when it asks for one and level 0 was written.
+     */
+    void copyTextureToTexture(const Texture& source, const Texture& destination, const TextureCopy& copy);
     /**
      * How the host copies its decoded image (Texture::external) into level 0 of `texture`, flipped
      * when `flipY`: the web host's copyExternalImageToTexture. Returns false when it cannot.

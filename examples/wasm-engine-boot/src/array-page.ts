@@ -2,9 +2,12 @@
  * PRD-762: three's `DataArrayTexture` on the Wasm engine. Three solid layers (red, green, blue) with a
  * full mip chain per layer, read through TSL `texture(array, uv).depth(layer)` into a render target:
  * a constant layer, a layer picked per pixel, the default layer 0 and a coarse mip of the last layer.
+ * Then core's `stackLayers` writes two 2D textures into the layers of an array on the GPU: initTexture
+ * with `source.dataReady = false`, and one copyTextureToTexture per source into layer z.
  */
 import {
   DataArrayTexture,
+  DataTexture,
   LinearFilter,
   LinearMipmapLinearFilter,
   NoColorSpace,
@@ -14,6 +17,7 @@ import {
 } from "three";
 import { float, int, texture, uv } from "three/tsl";
 import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
+import { stackLayers } from "../../../packages/core/src/world-terrain-splat.js";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
 const probe = {
@@ -27,6 +31,8 @@ const probe = {
   perPixel: "",
   defaultLayer: "",
   coarseMip: "",
+  copied0: "",
+  copied1: "",
 };
 const started = performance.now();
 
@@ -79,6 +85,9 @@ try {
   };
   requestAnimationFrame(tick);
 
+  // Draw after the scenario's first sample, so every probe is a change the scenario sees.
+  while (probe.ticks < 20)
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   // 4x4 layers, one solid colour each: layer 0 red, 1 green, 2 blue.
   const colours = [
     [255, 0, 0, 255],
@@ -114,6 +123,25 @@ try {
   probe.defaultLayer = await draw(texture(array, uv()), 1);
   // Mip 2 of a 4x4 layer is one texel: it is only blue when layer 2 has its own mip chain.
   probe.coarseMip = await draw(texture(array, uv()).depth(int(2)).level(float(2)), 1);
+
+  // Two 2D textures, red and green, copied into the layers of an array that holds no CPU texels.
+  const solid = (rgba: readonly number[]) => {
+    const data = new Uint8Array(4 * 4 * 4);
+    for (let texel = 0; texel < 16; texel += 1) data.set(rgba, texel * 4);
+    const map = new DataTexture(data, 4, 4, RGBAFormat, UnsignedByteType);
+    map.colorSpace = NoColorSpace;
+    map.needsUpdate = true;
+    return map;
+  };
+  const maps = [solid(colours[0]), solid(colours[1])];
+  // Core's own stacking (world-terrain-splat.ts), through the renderer's initTexture and copyTextureToTexture.
+  const stacked = stackLayers(maps, { raw: renderer } as unknown as Parameters<
+    typeof stackLayers
+  >[1]);
+  if (stacked === undefined)
+    throw new Error("stackLayers returned undefined: no GPU stacking on this engine.");
+  probe.copied0 = await draw(texture(stacked, uv()).depth(int(0)), 1);
+  probe.copied1 = await draw(texture(stacked, uv()).depth(int(1)), 1);
   probe.done = true;
 } catch (error) {
   probe.error = error instanceof Error ? error.message : String(error);

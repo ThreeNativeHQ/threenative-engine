@@ -88,6 +88,19 @@ export function defineTextureSources(
       return result;
     };
   }
+  // three's `texture.source`: `dataReady = false` tells renderer.initTexture that copyTextureToTexture writes the texels.
+  const dataSources = new WeakMap<object, { dataReady: boolean }>();
+  for (const Native of [BaseTexture, BaseData, BaseCanvas, BaseVolume, BaseLayers]) {
+    if (Native === undefined) continue;
+    Object.defineProperty(Native.prototype, "source", {
+      configurable: true,
+      get(this: object) {
+        const source = dataSources.get(this) ?? { dataReady: true };
+        dataSources.set(this, source);
+        return source;
+      },
+    });
+  }
   /** `image` is the JS source; `needsUpdate` re-sends its pixels, as three re-reads `texture.image`. */
   const followSource = (target: object, name: string): void => {
     const needsUpdate = Object.getOwnPropertyDescriptor(target, "needsUpdate")?.set;

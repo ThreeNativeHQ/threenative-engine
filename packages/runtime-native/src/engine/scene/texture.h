@@ -170,6 +170,8 @@ public:
     bool storageTexture = false, mipmapsAutoUpdate = true;
     bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
     bool array = false;   // three's isDataArrayTexture: `depth` layers of one 2D size, each with its own mip chain
+    /** three's `source.dataReady`: false when the texels are written on the GPU (copyTextureToTexture), so none are uploaded or held. */
+    bool dataReady = true;
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,
      * scene/render_target.h): the renderer samples that target's last render instead of uploading
@@ -199,7 +201,7 @@ public:
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
     [[nodiscard]] uint32_t bytesPerTexel() const { return isFloat() ? 16u : isHalfFloat() ? 8u : 4u; }
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
-    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external); }
+    [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external || !dataReady); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
     [[nodiscard]] bool sampleable() const { return ((depthTexture || storageTexture) && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
 

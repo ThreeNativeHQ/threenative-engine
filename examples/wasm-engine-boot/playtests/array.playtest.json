@@ -63,6 +63,18 @@
         "component": "probe",
         "path": "coarseMip",
         "equals": "0,0,255,255"
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "copied0",
+        "equals": "255,0,0,255"
+      },
+      {
+        "entity": "wasm-array",
+        "component": "probe",
+        "path": "copied1",
+        "equals": "0,255,0,255"
       }
     ]
   }

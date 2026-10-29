@@ -33,6 +33,8 @@ type HostCall =
   | "_tnw_web_read_target"
   | "_tnw_web_read_target_take"
   | "_tnw_web_capture_face"
+  | "_tnw_web_init_texture"
+  | "_tnw_web_copy_texture"
   | "_tnw_web_threads";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
@@ -49,7 +51,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 5;
+export const WEB_HOST_ABI = 6;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -71,6 +73,20 @@ interface IAdapterInfo {
   readonly architecture: string;
   readonly description: string;
   readonly device: string;
+}
+
+/** three's Box2 and Box3 as a texture copy reads them: a region by its corners. */
+interface IRegionLike {
+  readonly isBox3?: boolean;
+  readonly min: { readonly x: number; readonly y: number; readonly z?: number };
+  readonly max: { readonly x: number; readonly y: number; readonly z?: number };
+}
+
+/** A Vector2 or Vector3: the destination origin of a texture copy, z the array layer. */
+interface IPositionLike {
+  readonly x: number;
+  readonly y: number;
+  readonly z?: number;
 }
 
 interface IColorLike {
@@ -867,6 +883,57 @@ export function defineWebRenderer(
         throw new TypeError("TN_NATIVE_DELETE_ATTRIBUTE: expected a BufferAttribute");
       tsl.deleteStorage(ref);
       return this;
+    }
+
+    /**
+     * three's initTexture: the engine builds the texture's GPU copy now. `source.dataReady = false` (set by a caller
+     * that fills the texture with copyTextureToTexture) uploads nothing and drops the CPU texels.
+     */
+    initTexture(texture: unknown): void {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: initTexture() before init() finished.");
+      writeHandle(0, texture, "texture");
+      const dataReady = (texture as { source?: { dataReady?: boolean } }).source?.dataReady;
+      check(module._tnw_web_init_texture(handles, dataReady === false ? 1 : 0));
+    }
+
+    /**
+     * three's copyTextureToTexture: `srcRegion` is a Box2 or Box3 (the source's image size when null), `dstPosition`
+     * a Vector2 or Vector3 whose z is the destination's array layer. Both textures are initialised first.
+     */
+    copyTextureToTexture(
+      source: unknown,
+      destination: unknown,
+      srcRegion: IRegionLike | null = null,
+      dstPosition: IPositionLike | null = null,
+      srcLevel = 0,
+      dstLevel = 0,
+    ): void {
+      if (this.#adapter === undefined)
+        throw new Error("TN_WASM_RENDERER: copyTextureToTexture() before init() finished.");
+      writeHandle(0, source, "source texture");
+      writeHandle(12, destination, "destination texture");
+      const { min, max } = srcRegion ?? {};
+      // A Box2 has no z: its depth is one layer, a Box3's its own.
+      const size =
+        min && max ? [max.x - min.x, max.y - min.y, (max.z ?? 1) - (min.z ?? 0)] : [-1, -1, 1];
+      check(
+        module._tnw_web_copy_texture(
+          handles,
+          handles + 12,
+          min?.x ?? 0,
+          min?.y ?? 0,
+          min?.z ?? 0,
+          size[0] as number,
+          size[1] as number,
+          srcRegion?.isBox3 ? (size[2] as number) : 1,
+          dstPosition?.x ?? 0,
+          dstPosition?.y ?? 0,
+          dstPosition?.z ?? 0,
+          srcLevel,
+          dstLevel,
+        ),
+      );
     }
 
     getRenderTarget(): null {

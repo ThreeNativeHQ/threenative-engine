@@ -40,7 +40,8 @@ namespace {
 // 2 = tnw_web_render's overlay argument (39295d1f3).
 // 3 = startup compilation. 4 = compilation plus temporal input scale in renderer state.
 // 5 = tnw_web_threads (PRD-752).
-constexpr uint32_t kWebHostAbi = 5;
+// 6 = tnw_web_init_texture and tnw_web_copy_texture (PRD-762).
+constexpr uint32_t kWebHostAbi = 6;
 
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
@@ -463,6 +464,65 @@ extern "C" uint32_t tnw_web_read_target(const tn_handle_t* targetHandle, uint32_
                                                         : "TN_WASM_READ_TARGET: region outside the target"), 0;
     }
     return id;
+}
+
+namespace {
+/** Any texture class, as the renderer reads it: the cast every material map takes (abi/bindings_material.cpp). */
+Texture* textureOf(const tn_handle_t* handle) {
+    auto* object = handle == nullptr ? nullptr : tn::abi::objectOf(*handle);
+    // The array and volume classes are no material map (isTextureClass), but a texture copy writes into them.
+    if (object == nullptr || !(tn::binding::isTextureClass(object->cls) || object->cls == "DataArrayTexture" ||
+                               object->cls == "Data3DTexture"))
+        return nullptr;
+    return static_cast<Texture*>(object->ptr.get());
+}
+}  // namespace
+
+/**
+ * three's renderer.initTexture: builds the texture's GPU copy now. A nonzero `texelsOnGpu` is three's
+ * `source.dataReady = false`: nothing is uploaded and the CPU texels are dropped, because copyTextureToTexture writes them.
+ */
+extern "C" int tnw_web_init_texture(const tn_handle_t* textureHandle, int texelsOnGpu) {
+    tnw_web_poll();
+    if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
+    auto* texture = textureOf(textureHandle);
+    if (texture == nullptr) return refuse("TN_WASM_INIT_TEXTURE: not a texture");
+    try {
+        texture->dataReady = texelsOnGpu == 0;
+        renderer->initTexture(*texture);
+        if (texelsOnGpu != 0) std::vector<uint8_t>().swap(texture->data);
+        return 0;
+    } catch (const std::exception& error) {
+        return refuse(error.what());
+    }
+}
+
+/**
+ * three's renderer.copyTextureToTexture(source, destination, region, position, srcLevel, dstLevel): a region of
+ * `source` (a negative `w` takes its image size) into `destination` at (dx, dy, dz), where z is the array layer.
+ */
+extern "C" int tnw_web_copy_texture(const tn_handle_t* sourceHandle, const tn_handle_t* destinationHandle, int32_t sx,
+                                    int32_t sy, int32_t sz, int32_t w, int32_t h, int32_t d, int32_t dx, int32_t dy,
+                                    int32_t dz, int32_t srcLevel, int32_t dstLevel) {
+    tnw_web_poll();
+    if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
+    auto* source = textureOf(sourceHandle);
+    auto* destination = textureOf(destinationHandle);
+    if (source == nullptr || destination == nullptr) return refuse("TN_WASM_COPY_TEXTURE: not a texture");
+    if (std::min({sx, sy, sz, dx, dy, dz, srcLevel, dstLevel, d}) < 0 || (w >= 0 && h < 0))
+        return refuse("TN_WASM_COPY_TEXTURE: negative origin, level or extent");
+    flushCompute();
+    try {
+        Renderer::TextureCopy copy;
+        copy.srcX = uint32_t(sx); copy.srcY = uint32_t(sy); copy.srcZ = uint32_t(sz);
+        copy.width = w < 0 ? 0 : uint32_t(w); copy.height = w < 0 ? 0 : uint32_t(h); copy.depth = uint32_t(d);
+        copy.dstX = uint32_t(dx); copy.dstY = uint32_t(dy); copy.dstZ = uint32_t(dz);
+        copy.srcLevel = uint32_t(srcLevel); copy.dstLevel = uint32_t(dstLevel);
+        renderer->copyTextureToTexture(*source, *destination, copy);
+        return 0;
+    } catch (const std::exception& error) {
+        return refuse(error.what());
+    }
 }
 
 /** Starts one HDR cube face. -2 means environment pending, -1 refusal, otherwise a read id. */
