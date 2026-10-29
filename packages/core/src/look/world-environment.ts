@@ -69,7 +69,11 @@ import {
   NodeUpdateType,
   type TextureNode,
 } from "three/webgpu";
-import { RENDER_CHAIN_TIERS } from "../render/chain.js";
+import {
+  type IRenderChainDroppedStage,
+  RENDER_CHAIN_TIERS,
+  publishDirectRenderChainReport,
+} from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
 import { UNREAL_AO_REACH_PX } from "./ao-reach.js";
@@ -938,7 +942,12 @@ export class WorldEnvironment {
       raw.toneMappingExposure = options.exposure;
       const report = reportWith([], []);
       this.#reportApplied(report.stages, report.dropped);
-      return report;
+      const forget = publishDirectRenderChainReport(
+        renderer,
+        options.renderChainTier,
+        report.dropped as IRenderChainDroppedStage[],
+      );
+      return { ...report, dispose: forget };
     }
     if (requested.length === 0 && renderer.kind !== "webgpu") {
       const report = reportWith([], [{ name: "baseColour", reason: `renderer:${renderer.kind}` }]);
@@ -1828,12 +1837,18 @@ export class WorldEnvironment {
       }
       const direct = reportWith([], []);
       this.#reportApplied(direct.stages, direct.dropped);
+      const forget = publishDirectRenderChainReport(
+        renderer,
+        options.renderChainTier,
+        direct.dropped as IRenderChainDroppedStage[],
+      );
       return {
         exposure,
         ...direct,
         temporalReport,
         dispose: () => {
           if (released) return;
+          forget();
           if (installation) installation.dispose();
           // Legacy adapters returning void retain node-only, not installation-level safety.
           else renderer.clearOutputNode?.(exposed);
