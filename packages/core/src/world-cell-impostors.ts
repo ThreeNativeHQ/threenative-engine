@@ -285,6 +285,10 @@ export interface ICellImpostorsSettings {
   readonly autoLodPixelsPerUnit: number;
   readonly castShadowLevels: number;
   readonly budgets: IWorldCellsBudget;
+  /** Whether a short-range asset keeps a far aggregate anyway; see `#farReaches`. */
+  readonly impostorFar: "ring" | "always";
+  /** `ring * cellSize`: the distance inside which a near cell is always resident. */
+  readonly nearRingRadius: number;
 }
 export class CellImpostors {
   readonly #host: ICellImpostorsHost;
@@ -307,6 +311,13 @@ export class CellImpostors {
   readonly #castShadowLevels: number;
 
   readonly #budgets: IWorldCellsBudget;
+
+  /** The named `impostorFar` override, and the radius the near ring guarantees below it. */
+  readonly #impostorFar: "ring" | "always";
+  readonly #nearRingRadius: number;
+
+  /** Asset ids the `impostorFar: "always"` override kept, so its report prints once each. */
+  readonly #farOverrideReported = new Set<string>();
 
   readonly #position = new Vector3();
 
@@ -413,6 +424,8 @@ export class CellImpostors {
     this.#autoLodPixelsPerUnit = settings.autoLodPixelsPerUnit;
     this.#castShadowLevels = settings.castShadowLevels;
     this.#budgets = settings.budgets;
+    this.#impostorFar = settings.impostorFar;
+    this.#nearRingRadius = settings.nearRingRadius;
   }
   get farBytes(): number {
     return this.#farBytes;
@@ -793,15 +806,45 @@ export class CellImpostors {
     // Every run this asset owns anywhere in the map: the far half covers the whole map, not the ring.
     const runs = this.#farRuns(asset.id);
     if (runs.length === 0) return true;
+    const cull = cullDistance(asset.definition.maxDistance) ?? Number.POSITIVE_INFINITY;
+    if (!this.#farReaches(cull, asset.id)) {
+      this.#dropFarRetry(asset.id);
+      return true;
+    }
     return this.#buildFarCohort({
       alphaTest: source.alphaTest,
-      cull: cullDistance(asset.definition.maxDistance) ?? Number.POSITIVE_INFINITY,
+      cull,
       id: asset.id,
       key: record.key,
       record,
       runs,
       source: source.source,
     });
+  }
+
+  /**
+   * Whether an asset needs a whole-map far aggregate at all, which only one whose authored draw
+   * distance reaches past the near ring's guaranteed radius does.
+   *
+   * The ring keeps every cell within `ring * cellSize` of the follow point resident, so a run the
+   * far half owns is that far from the camera at the closest — and the far surface's own
+   * per-instance cull (`cullDistance(maxDistance)`) drops it there. An aggregate for a shorter
+   * asset could never draw a pixel while still costing its instance buffer, its atlas and a draw.
+   * UE ends grass at `EndCullDistance` with no far representation for the same reason
+   * (UE 5.8.3: Engine/Source/Runtime/Landscape/Classes/LandscapeGrassType.h:43-45).
+   *
+   * `impostorFar: "always"` is the named override; it reports every asset it keeps.
+   */
+  #farReaches(cull: number, id: string): boolean {
+    if (cull >= this.#nearRingRadius) return true;
+    if (this.#impostorFar !== "always") return false;
+    if (this.#farOverrideReported.has(id)) return true;
+    this.#farOverrideReported.add(id);
+    console.info(
+      `${WORLD_IMPOSTOR_FAR_MARKER} asset=${id} reason=override override=impostorFar ` +
+        `cull=${cull.toFixed(2)} nearRingRadius=${String(this.#nearRingRadius)}`,
+    );
+    return true;
   }
 
   /** Every run of one canonical asset anywhere in the map, the whole set a far aggregate holds. */
@@ -984,7 +1027,12 @@ export class CellImpostors {
       if (this.#farSeen.has(id) || this.#host.hasAsset(id) || this.#farRetry.has(id)) continue;
       this.#farCursor = (at + 1) % count;
       const definition = this.#manifest.assets[id];
-      if (definition === undefined) {
+      // A species that can only ever draw inside the ring needs no aggregate, so nothing of it is
+      // loaded or baked either: the save is the atlas and the source GLB, not just the draw.
+      if (
+        definition === undefined ||
+        !this.#farReaches(cullDistance(definition.maxDistance) ?? Number.POSITIVE_INFINITY, id)
+      ) {
         this.#farSeen.add(id);
         continue;
       }

@@ -92,6 +92,15 @@ export interface IWorldCellsLoadOptions {
    * cells only, with strict measured triangle/draw savings and projected-error hysteresis.
    * Source collision and shadow representations stay resident; unsupported sources retain detail. */
   readonly hlod?: boolean;
+  /**
+   * Whether an asset whose authored `maxDistance` ends inside the near ring keeps a whole-map far
+   * aggregate. `"ring"` (the default) skips it: the ring always draws those cells itself, and a
+   * far record it does not own is further away than the asset's own cull, so the aggregate could
+   * never draw a pixel while still costing an instance buffer, an atlas and a draw. `"always"` is
+   * the named override, reported once per kept asset as `TN_WORLD_IMPOSTOR_FAR ...
+   * override=impostorFar`.
+   */
+  readonly impostorFar?: "ring" | "always";
   /** Optional immutable per-record 3D draw reach in metres, indexed like placements.
    * Nonnegative finite values or Infinity (no extra limit); combined with asset maxDistance.
    * Filtered by the existing admission/refilter budget, never by a separate culler.
