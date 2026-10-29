@@ -33,9 +33,10 @@ revisit later is the engine's job, not yours.
 - **Web threads.** The dev and preview servers send `Cross-Origin-Opener-Policy: same-origin` and
   `Cross-Origin-Embedder-Policy: require-corp`, and the build writes both into `dist/_headers`, so the
   page is cross-origin isolated and loads the threaded engine: the world-matrix walk splits over up
-  to 3 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"` or `"off (<reason>)"`. A host that
-  cannot send the two headers serves the single-thread engine, unchanged; do not add a service-worker
-  shim for it. A cross-origin asset without a `Cross-Origin-Resource-Policy` header needs
+  to 3 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"`. The page always loads the threaded
+  engine and fails closed with `TN_WEB_THREADS_OFF` when it is not cross-origin isolated or the pool
+  starts no worker, so a host must send the two headers; `TN_WASM_THREADS_MISSING` names a missing
+  threaded build. A cross-origin asset without a `Cross-Origin-Resource-Policy` header needs
   `credentialless` in place of `require-corp`. `?tnIsolation=0` serves a page without the headers.
 - **Per-pass culling.** The main camera, each shadow and each reflection pass cull their own way,
   and the engine owns that. Do not set `frustumCulled = false` on a batch, and do not give one

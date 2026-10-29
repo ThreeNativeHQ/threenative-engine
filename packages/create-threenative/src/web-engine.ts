@@ -48,11 +48,14 @@ const SKELETON_UTILS_ID = "\0threenative:web-engine-skeleton-utils";
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
 export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 /**
- * The threaded engine beside it (PRD-752 phase 4): a cross-origin-isolated page loads this one, so the
- * engine's job pool has workers; any other page loads the single-thread entry. Optional: an install
- * without it runs single-threaded and reports `threads: off`.
+ * The threaded engine beside it (PRD-752 phase 4), the one every page loads: the engine's job pool has
+ * workers on every page. A missing module, a page without cross-origin isolation, or a pool with no
+ * worker refuses to start (owner, 2026-10-29: "just force all to use worker threads"). The
+ * single-thread entry stays for Node hosts (tests, the ABI check), which have no isolation.
  */
 export const WASM_THREADS_ENTRY = "build/web/tn-native-engine-web-threads.mjs";
+/** The refusal a page without engine worker threads raises (TN_FRAME_BUDGET.threads names the cause). */
+const THREADS_OFF = "TN_WEB_THREADS_OFF";
 
 /**
  * three's math modules the engine's own JS value classes borrow (PRD-742). They carry no renderer,
@@ -226,14 +229,20 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       ];
       const single = wasmModule(projectRoot(), options.wasm);
       const threads = path.join(path.dirname(single), path.basename(WASM_THREADS_ENTRY));
-      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP, createWebBrandPlugin).
-      const createModule = existsSync(threads)
-        ? `(globalThis.crossOriginIsolated === true ? await import(${JSON.stringify(threads)}) : await import(${JSON.stringify(single)})).default`
-        : `(await import(${JSON.stringify(single)})).default`;
+      if (!existsSync(threads))
+        throw new Error(
+          `TN_WASM_THREADS_MISSING: engine "threenative" needs the threaded Wasm engine at ${threads}; reinstall @threenative/runtime-native, or in a ThreeNative checkout run \`pnpm wasm:build\` (presets wasm and wasm-threads). ${OPT_OUT}`,
+        );
+      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP, createWebBrandPlugin
+      // sends them from the dev and preview servers; a static host must send them too).
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        `const createModule = ${createModule};`,
+        "if (globalThis.crossOriginIsolated !== true)",
+        `  throw new Error("${THREADS_OFF}: this page is not cross-origin isolated, so the engine cannot start its worker threads; serve it with the headers Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.");`,
+        `const createModule = (await import(${JSON.stringify(threads)})).default;`,
         `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
+        'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
+        `  throw new Error(\`${THREADS_OFF}: the engine's job pool started no worker thread (\${globalThis.__tnWebThreads}).\`);`,
         `export const { ${names.join(", ")} } = engine;`,
         "",
       ].join("\n");
