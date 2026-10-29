@@ -24,26 +24,44 @@ GpuStatus captureFace(Renderer& renderer, Object3D& scene, const ProbeVolume& vo
     } catch (const std::invalid_argument&) {
         return GpuStatus::OutOfRange;
     }
-    auto& capture = renderer.probeCaptureRenderer();
     const auto& p = volume.placement();
     double position[3];
     probePosition(p, probe % p.resolution[0], (probe / p.resolution[0]) % p.resolution[1],
                   probe / (p.resolution[0] * p.resolution[1]), position);
+    renderer.probeCaptureRenderer().setProbeVolume(name, volume, true);
+    return captureFace(renderer, scene, Vector3{position[0], position[1], position[2]}, volume.cubemapSize(),
+                       face, near, far, std::move(done), false);
+}
+bool validCaptureFace(const Vector3& position, uint32_t size, uint32_t face, double near, double far) {
+    return face < 6 && size >= 1 && size <= 1024 && std::isfinite(position.x) && std::isfinite(position.y) &&
+           std::isfinite(position.z) && std::isfinite(near) && std::isfinite(far) && near > 0 && far > near;
+}
+GpuStatus captureFace(Renderer& renderer, Object3D& scene, const Vector3& position, uint32_t size, uint32_t face,
+                      double near, double far, ProbeCaptureCallback done, bool shadows) {
+    if (!done || !validCaptureFace(position, size, face, near, far))
+        return GpuStatus::OutOfRange;
+    auto& capture = renderer.probeCaptureRenderer();
     // These rays are CubeCamera(-90, WebGPU) followed by CubeTextureNode's X flip and
     // cubeFaceCoordinate's texel lookup, expressed in projection-face order. Horizontal reversal
     // below maps raster camera right to the reference's cube sampler U axis.
     static const Vector3 directions[] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     static const Vector3 ups[] = {{0, 1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {0, 1, 0}, {0, 1, 0}};
-    PerspectiveCamera camera(90, 1, near, far);
-    camera.position.set(position[0], position[1], position[2]);
+    // The capture renderer owns the face camera and poses it again for each face: a JS onBeforeRender
+    // gets the same shared object three would hand it, and its handle stays valid after the capture.
+    auto& owned = capture.probeCaptureCamera();
+    if (!owned) owned = std::make_shared<PerspectiveCamera>(90, 1, near, far);
+    PerspectiveCamera& camera = *owned;
+    camera.near = near;
+    camera.far = far;
+    camera.updateProjectionMatrix();
+    camera.position.copy(position);
     camera.up = ups[face];
     auto target = camera.position.clone().add(directions[face]);
     camera.lookAt(target);
     camera.updateMatrixWorld(true);
-    const auto size = volume.cubemapSize();
     capture.setSize(size, size);
-    capture.setProbeVolume(name, volume, true);
     RenderDatabase database;
+    database.shadowMapEnabled = shadows;
     // Frame-pumped PMREM: render() returns 0 and draws nothing while the capture renderer's
     // environment is still baking, so reading now would publish the previous target as this face.
     // Never wait here: on the web the bake's GPU completions arrive only after this call returns.

@@ -101,7 +101,7 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 | A JSON/structured-source ECS | Measured at **14x vanilla Three.js** on greenfield work, and scored lower on playability and visuals. |
 | An editor | Not in v1. The paid editor is a separate product in a separate repository. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces. |
-| A recipe/preset/genre system | 0 of 7 presets ever reproduced their genre. |
+| A runtime recipe/preset system that generates a genre | 0 of 7 presets ever reproduced their genre. **One exception (owner, 2026-10-23):** a request that names a game or genre ("like Mario", "Zelda") routes to a starter kit through `--genre`, `kit.json` aliases and capability search. A kit is plain source the game owns, not a runtime preset. |
 | A code-first ECS (miniplex, bitECS) | Entities are plain classes (§9b). Gameplay architecture is the model's job. A game that wants one runs `pnpm add miniplex`; the framework neither ships nor fights it. |
 
 > An LLM's greatest strength is writing code in languages already in its weights. Its greatest
@@ -616,7 +616,7 @@ with only cost caps is a brake with no steering wheel.
 ### 10a. Performance — the target, because "close to native" needs a number
 
 **Reference workload:** the `platformer` template, unmodified, as scaffolded. It is the reference
-template with the broadest scenario suite: 16 playtest files, and it is what a user actually
+template with the broadest scenario suite: 19 playtest files, and it is what a user actually
 receives. A performance claim measured on a spinning cube is not a performance claim.
 
 | Lane | Reference hardware | Budget |
@@ -664,6 +664,7 @@ it; it is a signal to run the kill switch over what was added.
    every repetition in one game (§3).
 3. **Never own the look.** §5b. The framework may own mechanism; every appearance parameter comes
    from the game. Visual defaults ship as generated source, never as package config.
+   **One exception (owner, 2026-10-22):** "actually ANY default new scene should inherit these defaults, so it looks like unreal." and "fuck the charter, we should have the most beautiful look possible by default ... Unreal-defaults should be our default look". A scene with no look options gets the stock Unreal 5.8.3 look (filmic tone curve, metered auto exposure). Each default has a named override on the same object and the override is reported.
 4. **Vocabulary is borrowed, never invented.** Godot for nodes, Three.js for rendering, Rapier for
    physics, Tailwind for UI. Where none has a name, borrowing is exhausted before inventing, and
    the invention is recorded as the discovery cost it is.
@@ -694,7 +695,7 @@ fifteen lines.
 **Four things this does not loosen:**
 
 1. **§2's closed list outranks both questions.** An authored IR, a scene format, an editor, a
-   preset/genre/recipe system, a code-first ECS and a bespoke CLI vocabulary stay closed however
+   runtime recipe system, a code-first ECS and a bespoke CLI vocabulary stay closed however
    cleanly they pass.
 2. **§11.2 applies retroactively to everything admitted here.** Generous on the way in is only safe
    because the way out is automatic.

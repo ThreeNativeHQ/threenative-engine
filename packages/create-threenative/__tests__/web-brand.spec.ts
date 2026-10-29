@@ -6,6 +6,13 @@ import { createWebBrandPlugin } from "../src/web-brand.js";
 
 const roots: string[] = [];
 
+interface IFakeResponse {
+  body: string;
+  headers: Record<string, string>;
+  setHeader(key: string, value: string): void;
+  end(body: string): void;
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -44,18 +51,143 @@ describe("web branding adapter", () => {
     expect(html).toContain('rel="manifest" href="/manifest.webmanifest"');
     expect(html).toContain("data-threenative-launch-name>Branded Quest");
 
-    let emitted = "";
+    const emitted: Record<string, string> = {};
     plugin.generateBundle.call({
-      emitFile: ({ source }: { source: string }) => {
-        emitted = source;
+      emitFile: ({ fileName, source }: { fileName: string; source: string }) => {
+        emitted[fileName] = source;
       },
     });
-    expect(JSON.parse(emitted)).toMatchObject({
+    expect(JSON.parse(emitted["manifest.webmanifest"] ?? "")).toMatchObject({
       background_color: "#123456",
       icons: [{ purpose: "any", src: "/icon.svg", type: "image/svg+xml" }],
       name: "Branded Quest",
       theme_color: "#123456",
     });
+  });
+  it("serves the linked manifest from the dev server, where no bundle is emitted", async () => {
+    const root = await makeTempDir("threenative-web-brand-dev-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "dev-game", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { app: { name: "Dev Quest" } };\n',
+    );
+    const plugin = createWebBrandPlugin();
+    await plugin.configResolved({ root });
+    let handler:
+      | ((req: { url?: string }, res: IFakeResponse, next: () => void) => void)
+      | undefined;
+    plugin.configureServer({
+      middlewares: {
+        use: (use) => {
+          handler = use;
+        },
+      },
+    });
+    const res: IFakeResponse = {
+      body: "",
+      headers: {},
+      setHeader: (k, v) => {
+        res.headers[k] = v;
+      },
+      end: (b) => {
+        res.body = b;
+      },
+    };
+    let passed = false;
+    handler?.({ url: "/manifest.webmanifest" }, res, () => {
+      passed = true;
+    });
+    // Without this route Vite answers the link with index.html and Chrome logs
+    // "Manifest: Line: 1, column: 1, Syntax error." on every dev page load.
+    expect(passed).toBe(false);
+    expect(res.headers["Content-Type"]).toBe("application/manifest+json");
+    expect(JSON.parse(res.body)).toMatchObject({ name: "Dev Quest" });
+    handler?.({ url: "/index.html" }, res, () => {
+      passed = true;
+    });
+    expect(passed).toBe(true);
+  });
+  it("serves the Wasm engine's pages cross-origin isolated, and a ?tnIsolation=0 page without (PRD-752)", async () => {
+    const root = await makeTempDir("threenative-web-brand-isolation-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "isolated-game", type: "module" }),
+    );
+    const served = async (
+      engine: string,
+      hook: "configureServer" | "configurePreviewServer",
+      url: string,
+    ): Promise<Record<string, string>> => {
+      await writeFile(
+        path.join(root, "threenative.config.ts"),
+        `export default { app: { name: "Isolated" }, engine: "${engine}" };\n`,
+      );
+      const plugin = createWebBrandPlugin();
+      await plugin.configResolved({ root });
+      const handlers: ((req: { url?: string }, res: IFakeResponse, next: () => void) => void)[] =
+        [];
+      plugin[hook]({ middlewares: { use: (use) => void handlers.push(use) } });
+      const res: IFakeResponse = {
+        body: "",
+        headers: {},
+        setHeader: (k, v) => {
+          res.headers[k] = v;
+        },
+        end: (b) => {
+          res.body = b;
+        },
+      };
+      let next = true;
+      for (const handler of handlers) {
+        if (!next) break;
+        next = false;
+        handler({ url }, res, () => {
+          next = true;
+        });
+      }
+      return res.headers;
+    };
+    for (const hook of ["configureServer", "configurePreviewServer"] as const) {
+      expect(await served("threenative", hook, "/")).toEqual({
+        "Cross-Origin-Embedder-Policy": "require-corp",
+        "Cross-Origin-Opener-Policy": "same-origin",
+      });
+      expect(
+        await served("threenative", hook, "/src/worker.ts?worker_file&type=module"),
+      ).toMatchObject({
+        "Cross-Origin-Opener-Policy": "same-origin",
+      });
+      expect(await served("threenative", hook, "/?tnIsolation=0")).toEqual({});
+      expect(await served("threenative", hook, "/main.html?a=1&tnIsolation=0")).toEqual({});
+      expect(await served("threejs", hook, "/")).toEqual({});
+    }
+    const plugin = createWebBrandPlugin();
+    await plugin.configResolved({ root });
+    const emitted: Record<string, string> = {};
+    plugin.generateBundle.call({
+      emitFile: ({ fileName, source }: { fileName: string; source: string }) => {
+        emitted[fileName] = source;
+      },
+    });
+    expect(emitted._headers).toBeUndefined();
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { app: { name: "Isolated" } };\n',
+    );
+    await plugin.configResolved({ root });
+    plugin.generateBundle.call({
+      emitFile: ({ fileName, source }: { fileName: string; source: string }) => {
+        emitted[fileName] = source;
+      },
+    });
+    expect(emitted._headers).toBe(
+      "/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Opener-Policy: same-origin\n",
+    );
   });
   it("leaves upstream three alone in a native bundle, whose host is not a browser (PRD-637)", async () => {
     const root = await makeTempDir("threenative-web-brand-native-");
@@ -84,6 +216,33 @@ describe("web branding adapter", () => {
       // biome-ignore lint/performance/noDelete: an unset variable is absent, not the string "undefined".
       delete process.env.THREENATIVE_NATIVE_BUNDLE;
     }
+  });
+  it("routes three to the Wasm engine inside a worker bundle too (PRD-752)", async () => {
+    // Vite runs only `worker.plugins` on a worker bundle. Without the resolver there, a game booted
+    // in a worker ran upstream three, which rejected the engine's skin weights as `unorm32x4`.
+    const root = await makeTempDir("threenative-web-brand-worker-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "worker-game", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { app: { name: "Worker Game" }, engine: "threenative" };\n',
+    );
+    const plugin = createWebBrandPlugin();
+    const config = (await plugin.config({ root })) as {
+      worker?: {
+        format?: string;
+        plugins?: () => { resolveId(source: string, importer?: string): unknown }[];
+      };
+    };
+    await plugin.configResolved({ root });
+    // ES output: the engine module awaits its Wasm at the top level.
+    expect(config.worker?.format).toBe("es");
+    const workerPlugins = config.worker?.plugins?.() ?? [];
+    const routed = await Promise.all(workerPlugins.map((each) => each.resolveId("three")));
+    expect(routed).toContain("\0threenative:web-engine");
   });
   it("keeps an authored favicon when config has no replacement", async () => {
     const root = await makeTempDir("threenative-web-brand-");

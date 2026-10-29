@@ -21,6 +21,8 @@
 
 #include "rt_common.h"
 #include <iostream>
+#include <string>
+#include <utility>
 
 #ifdef MYSTRAL_HAS_DXR
 #include "dxr_rt.h"
@@ -47,7 +49,7 @@ namespace rt {
  */
 class StubRTBackend : public IRTBackend {
 public:
-    StubRTBackend() {
+    explicit StubRTBackend(std::string reason) : reason_(std::move(reason)) {
         // Silent construction - logging happens in isSupported() check
     }
 
@@ -67,6 +69,12 @@ public:
 
     const char* getBackend() override {
         return "none";
+    }
+
+    RTCapabilities capabilities() override {
+        RTCapabilities found;
+        found.reason = reason_;
+        return found;
     }
 
     // ========================================================================
@@ -115,6 +123,9 @@ public:
     void traceRays(const TraceRaysOptions& options) override {
         std::cerr << "[MystralRT] traceRays: Hardware ray tracing not available" << std::endl;
     }
+
+private:
+    std::string reason_;
 };
 
 // ============================================================================
@@ -122,6 +133,9 @@ public:
 // ============================================================================
 
 std::unique_ptr<IRTBackend> createRTBackend() {
+    // Why each backend that was tried gave up, so the stub can say so instead of staying silent
+    std::string reasons;
+
     // Try platform-specific backends in order of preference
 
 #ifdef MYSTRAL_HAS_DXR
@@ -145,6 +159,7 @@ std::unique_ptr<IRTBackend> createRTBackend() {
             return vulkan;
         }
         std::cout << "[MystralRT] Vulkan RT initialization failed, trying fallback..." << std::endl;
+        reasons += std::string(reasons.empty() ? "" : "; ") + "vulkan: " + vulkan->initError();
     }
 #endif
 
@@ -162,7 +177,10 @@ std::unique_ptr<IRTBackend> createRTBackend() {
 
     // Fallback to stub backend
     std::cout << "[MystralRT] No hardware RT available, using stub backend" << std::endl;
-    return std::make_unique<StubRTBackend>();
+    if (reasons.empty()) {
+        reasons = "no ray tracing backend is compiled into this build (TN_ENABLE_RAYTRACING is OFF)";
+    }
+    return std::make_unique<StubRTBackend>(reasons);
 }
 
 }  // namespace rt

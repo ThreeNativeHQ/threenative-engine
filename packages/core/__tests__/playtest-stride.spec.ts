@@ -111,7 +111,7 @@ describe("the stride convention reports itself across the playtest bridge", () =
       expect(stride?.clipGroundSpeed).toBeCloseTo(2, 5);
       expect(stride?.groundSpeed).toBeCloseTo(2, 5);
       expect(stride?.rate).toBeCloseTo(1, 5);
-      expect(stride).toMatchObject({ overridden: false, synced: true });
+      expect(stride).toMatchObject({ inPlace: false, overridden: false, synced: true });
     } finally {
       await game?.stop?.();
     }

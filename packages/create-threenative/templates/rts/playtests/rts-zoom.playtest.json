@@ -1,0 +1,81 @@
+{
+  "name": "rts-zoom",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "selection",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "wheel-up",
+      "wheel": {
+        "deltaY": -100,
+        "x": 0.5,
+        "y": 0.5
+      },
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "closer",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "wheel-down",
+      "wheel": {
+        "deltaY": 100,
+        "x": 0.5,
+        "y": 0.5
+      },
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "farther",
+      "waitTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "cameraZoom",
+        "atSteps": [
+          {
+            "label": "settle",
+            "equals": 30
+          },
+          {
+            "label": "closer",
+            "equals": 27.6
+          },
+          {
+            "label": "farther",
+            "equals": 30
+          }
+        ]
+      }
+    ]
+  }
+}

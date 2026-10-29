@@ -1,0 +1,116 @@
+{
+  "name": "kart-survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "throttle",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot-on",
+      "press": "KeyP",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "drive",
+      "waitTicks": 480,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "startup": {
+      "steadyCover": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "groundGap",
+        "gte": -0.05,
+        "lte": 0.6,
+        "allowTrivial": "The kart's height less the road's under it: zero on the road, up to a hop's height in the air. Ten seconds of driving keep the kart on the course, never under it."
+      },
+      {
+        "entity": "player",
+        "component": "lateral",
+        "gte": -10.2,
+        "lte": 10.2,
+        "allowTrivial": "The kart stays between the walls (11 m less half its width) after ten seconds on autopilot."
+      },
+      {
+        "entity": "player",
+        "component": "speed",
+        "gte": 12,
+        "allowTrivial": "Ten seconds after GO the kart is still at racing speed, not stuck on a wall."
+      },
+      {
+        "entity": "course",
+        "component": "reliefMetres",
+        "gte": 8,
+        "allowTrivial": "Measured once at load: the road climbs and falls at least 8 m round the lap (the bridge, the dip, the rolling relief), so the course is not flat."
+      },
+      {
+        "entity": "course",
+        "component": "pillars",
+        "gte": 4,
+        "allowTrivial": "Measured once at load: the bridge stands on pillars."
+      },
+      {
+        "entity": "course",
+        "component": "trees",
+        "gte": 150,
+        "allowTrivial": "Measured once at load: trees and bushes stand round the course."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 50
+    },
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": false,
+        "allowTrivial": "Desktop keyboard lanes omit touch controls; movement proves the scene is live."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

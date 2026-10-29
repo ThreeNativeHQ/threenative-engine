@@ -1,3 +1,8 @@
+import {
+  type IWorldEnvironmentOptions,
+  qualityPreset as coreQualityPreset,
+  qualityTiers,
+} from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -5,9 +10,9 @@
 //
 // - `low` / `medium` / `high` are the engine render chain's tiers, which `postprocessing.ts` reads
 //   through `qualityPreset(resolveQualityTier(...))`. This study turns **every built-in stage off at
-//   every tier**: its bloom, ACES grade, vignette, lens beads and dither are the source study's own
-//   single post pass, installed as one authored stage, so a built-in bloom or tone map would do the
-//   same job a second time. What differs is the rung the chain reports and runs at
+//   every tier**: its bloom, grade, vignette, lens beads and dither are the source study's own
+//   single post pass, installed as one authored stage, so a built-in bloom would do the
+//   same job a second time; the tone map and the exposure are the core's. What differs is the rung the chain reports and runs at
 //   (`renderChainTier`), so a stage you add later with a `minimumTier` drops out on the cheap tiers.
 // - `STUDY_TIERS` is the player's "Render quality" select — the reference study's own four tiers,
 //   `performance` / `balanced` / `high` / `ultra`, number for number: the cloud pass's resolution
@@ -15,110 +20,51 @@
 //   march. The drawing buffer itself is the engine's adaptive resolution (`resolutionScale: "auto"`
 //   in `threenative.config.ts`), which measures the frame instead of trusting a fixed table.
 import type { QualityName } from "../state.js";
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import { exposureSettings } from "./exposure.js";
+export type { QualityTier } from "@threenative/core";
 
 /**
  * The engine chain's three tier names. `low` is what a phone gets and `high` what a desktop gets;
  * for this study all three are the same empty chain — see the note at the top of this file.
  */
-export type QualityTier = "low" | "medium" | "high";
-
-const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
+export const resolveQualityTier = qualityTiers.resolve;
 
 /**
- * Narrows an arbitrary string — a URL parameter, a saved setting — to a tier name. Not exported:
- * `resolveQualityTier` is the one door in, so an unknown name cannot be waved past the throw.
+ * The stages and strengths a tier turns on: the core preset, this game's exposure policy and one
+ * named override, reported on the `TN_RENDER_CHAIN_COST_OVERRIDE` console line. Every built-in
+ * stage is off: the storm's own post pass draws the bloom, the grade, the vignette, the lens beads
+ * and the dither, so a built-in stage would do the same job twice. What the core keeps is the Unreal
+ * filmic curve and the metered exposure, which the post pass no longer implements itself.
  */
-function isQualityTier(value: string): value is QualityTier {
-  return (QUALITY_TIERS as readonly string[]).includes(value);
-}
-
-/**
- * Where each GPU family starts, from `ctx.renderer.gpuClass`.
- *
- * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
- * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
- * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
- * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
- */
-const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
-  software: "low",
-  "mobile-low": "low",
-  "mobile-mid": "low",
-  "mobile-high": "medium",
-  integrated: "medium",
-  discrete: "high",
-};
-
-/**
- * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
- *
- * Fails closed. An unrecognised tier name throws with the value it was handed rather than
- * quietly rendering the default, because a silent fallback here looks exactly like a tier that
- * turned out to have no effect.
- */
-export function resolveQualityTier(
-  request: {
-    readonly gpuClass?: string;
-    readonly mobile?: boolean;
-    readonly software?: boolean;
-    readonly tier?: string;
-  } = {},
-): QualityTier {
-  const requested = request.tier;
-  if (requested !== undefined) {
-    if (!isQualityTier(requested)) {
-      throw new Error(
-        `Unknown quality tier ${JSON.stringify(requested)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-      );
-    }
-    return requested;
-  }
-  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
-  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
-  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
-  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
-  // `tier` above still wins over it.
-  if (request.software === true) return "low";
-  const family =
-    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
-  if (family !== undefined) return family;
-  return request.mobile === true ? "low" : "high";
-}
-
-/**
- * What a desktop gets from the engine chain: no built-in stage, so there is no cost to record beside
- * one; the storm's own post pass is costed in `STUDY_TIERS` below.
- */
-const high: IWorldEnvironmentOptions = {
-  bloomEnabled: false,
-  denoiseEnabled: false,
-  // The post pass applies the weather's exposure itself, after its own bloom add.
-  autoExposureEnabled: false,
-  exposure: 1,
-  renderChainTier: "high",
-  ssgiEnabled: false,
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
-/** The rung in between: the same empty chain, run and reported at `medium`. */
-const medium: IWorldEnvironmentOptions = { ...high, renderChainTier: "medium" };
-
-/** What a phone gets: the same empty chain at `low`; the `performance` study tier is the cheap look. */
-const low: IWorldEnvironmentOptions = { ...high, renderChainTier: "low" };
-
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
-
-/** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  const preset = QUALITY_PRESETS[tier as QualityTier];
-  if (preset === undefined) {
-    throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-    );
-  }
-  return preset;
+  const stagesOff = {
+    bloomEnabled: false,
+    denoiseEnabled: false,
+    finalGatherMethod: "none",
+    gtaoEnabled: false,
+    localExposureEnabled: false,
+    motionBlurEnabled: false,
+    sharpenEnabled: false,
+    ssgiEnabled: false,
+    ssrEnabled: false,
+    // This study keeps 4x multisampling: a temporal pass would add a second chain around its post pass.
+    temporalAA: false,
+    unrealBloomEnabled: false,
+    vignetteAmount: 0,
+  } as const satisfies IWorldEnvironmentOptions;
+  console.info(
+    `TN_RENDER_CHAIN_COST_OVERRIDE ${JSON.stringify({
+      reason:
+        "Rain: the storm's own post pass draws bloom, grade, vignette, lens beads and dither; a built-in stage would do the same job twice",
+      ...stagesOff,
+    })}`,
+  );
+  return {
+    ...coreQualityPreset(tier),
+    ...stagesOff,
+    exposurePolicy: exposureSettings,
+    samples: 4,
+  };
 }
 
 /** One rung of the player's quality select. Every number is the reference study's own. */

@@ -154,6 +154,7 @@ export interface IPlaytestPathAssertion {
   atSteps?: Array<{
     equals?: unknown;
     label: string;
+    lte?: number;
     textIncludes?: string;
   }>;
   changed?: boolean;
@@ -267,6 +268,73 @@ export interface IPlaytestSceneAssertion {
 }
 
 /**
+ * Bounds how far a planted foot slides, measured from the feet's world positions every tick of one
+ * step. A clip reports its own stride; a procedural rig reports nothing, so this measures what the
+ * screen shows instead of what the game says. Browser target only; elsewhere it fails unobserved.
+ */
+export interface IPlaytestFootSlipAssertion {
+  atStep: string;
+  entity?: string;
+  feet: string[];
+  /** Ceiling on planted-foot travel over body travel. At least one of this and `maxSlideSpeed` is required. */
+  maxSlip?: number;
+  /** Ceiling on a planted foot's world speed in m/s, whatever the body's speed is. */
+  maxSlideSpeed?: number;
+  /** Seconds per fixed tick, for `maxSlideSpeed`; the engine's own default step is 1/60. */
+  stepSeconds?: number;
+}
+
+/**
+ * Bounds the share of the run in which geometry stood between the camera and the subject.
+ *
+ * The camera is the thing a player looks through, so a cast that clips a pillar or a wall that
+ * eats the framing is a frame-destroying failure that leaves every count healthy. Browser target
+ * only; elsewhere it fails unobserved.
+ */
+export interface IPlaytestSightLineAssertion {
+  /** The entity whose world bounds centre the camera should see; defaults to the subject. */
+  entity?: string;
+  /** Ceiling on the share of samples, 0..1, with any solid between the lens and the subject. */
+  maxBlockedRatio: number;
+}
+
+/**
+ * Audits the text the page draws: developer left-overs and unreadable colours reach the player.
+ *
+ * A placeholder or a `NaN` in the HUD is a shipped defect no screenshot gate catches, and text
+ * the same colour as its backing plate is unreadable while every node count stays healthy.
+ * Browser target only; elsewhere it fails unobserved.
+ */
+/**
+ * Bounds on the engine's own work counters (PRD-748): per-frame means and single-frame maxima over each
+ * `TN_FRAME_BUDGET` window (`counters.engine`, plus `counters.bridgeCrossings`), read off the console.
+ * Fails closed when no window arrives or a bounded counter is missing from one.
+ */
+export interface IPlaytestEngineCostAssertion {
+  /** Counter name to its bound on the window's per-frame mean. */
+  maxPerFrame?: Readonly<Record<string, number>>;
+  /** Counter name to its bound on any single frame in the window. */
+  maxInFrame?: Readonly<Record<string, number>>;
+  /** Windows the run must report (default 1). */
+  minWindows?: number;
+  /** Windows left unbounded before every other bound applies: the boot (loading, first builds). Default 0. */
+  skipWindows?: number;
+  /** Bounds on the first `windows` windows only, which the scenario keeps still (no input). */
+  still?: { readonly windows: number; readonly maxPerFrame: Readonly<Record<string, number>> };
+  /** Bounds on the windows after the still ones, which the scenario fills with play. Needs `still`. */
+  moving?: { readonly maxPerFrame?: Readonly<Record<string, number>>; readonly maxInFrame?: Readonly<Record<string, number>> };
+  /** Where the bounds came from: the measured after-values and their headroom. */
+  source: string;
+}
+
+export interface IPlaytestHudAuditAssertion {
+  /** WCAG 2.x contrast ratio, 1..21, every judged text item must reach. */
+  minContrast?: number;
+  /** Require that no text reads like developer copy. Only `true` is accepted. */
+  noDebugText?: true;
+}
+
+/**
  * Bounds on named nodes of the scene graph — the questions a screenshot gets taken for.
  *
  * `scene` bounds the room as a whole: is anything lit, does the fog clear the world. This bounds
@@ -357,6 +425,8 @@ export interface IPlaytestEffectSpec {
 export interface IPlaytestAnimationAssertion {
   advancedFrames?: number;
   allowTrivial?: string;
+  /** Judge the animation report sampled after this labeled step, not the last one: one scenario then checks several clips. */
+  atStep?: string;
   clip?: string;
   entered?: boolean;
   entity?: string;
@@ -406,6 +476,8 @@ export interface IPlaytestDiagnosticsAssertion {
 export interface IPlaytestPerformanceAssertion {
   maxDrawCalls?: number;
   maxFrameMsP95?: number;
+  /** Required when `maxFrameMsP95` is above 16.7 ms: why this scenario cannot hold 60 fps. The report prints it. */
+  maxFrameMsReason?: string;
   maxTriangles?: number;
   /** Frame-budget floor: the median presented frame must sustain at least this many frames a second. */
   minFps?: number;
@@ -473,6 +545,16 @@ export interface IPlaytestStartupAssertion {
   maxCompileSettledMs?: number;
   /** `whenReady()` resolved: the world is safe to show. */
   maxReadyMs?: number;
+  /**
+   * Ceiling on the bytes the reveal waited for that the spawn camera does not show, from the
+   * runtime's own measurement. `0` asserts that everything awaited is in view.
+   */
+  maxOffscreenBytes?: number;
+  /**
+   * Every frame the page presented between navigation and readiness looks like the last one
+   * before readiness (the loading cover): no black, blank or page-background frame in between.
+   */
+  steadyCover?: true;
 }
 
 /** Ceilings on work observed after the runtime's explicit shader warm-up settled. */
@@ -516,7 +598,10 @@ export interface IPlaytestVisualRegionThresholds {
   minNonblankPixelRatio?: number;
 }
 
-export interface IPlaytestVisualStaticRegion extends IPlaytestVisualRegionBounds, IPlaytestVisualRegionThresholds {}
+export interface IPlaytestVisualStaticRegion extends IPlaytestVisualRegionBounds, IPlaytestVisualRegionThresholds {
+  /** Floor on `regionSharpness` (Laplacian variance at full over half resolution); a smeared frame drops it. */
+  minSharpness?: number;
+}
 
 export interface IPlaytestVisualElementRegion extends IPlaytestVisualRegionThresholds {
   element: IPlaytestVisualRegionTarget;
@@ -646,6 +731,10 @@ export interface IPlaytestScenarioAssertions {
   scene?: IPlaytestSceneAssertion;
   causedBy?: IPlaytestCausedByAssertion[];
   sceneNodes?: IPlaytestSceneNodesAssertion[];
+  footSlip?: IPlaytestFootSlipAssertion[];
+  sightLine?: IPlaytestSightLineAssertion;
+  hudAudit?: IPlaytestHudAuditAssertion;
+  engineCost?: IPlaytestEngineCostAssertion;
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];
@@ -755,6 +844,15 @@ export interface IPlaytestScenarioSetup {
   spawn?: IPlaytestSpawnRequest;
 }
 
+/**
+ * A browser-only network profile applied before the page loads, so a scenario can prove what a
+ * real link costs. Throughput is in kilobits per second, one direction, as a user reads a plan.
+ */
+export interface IPlaytestNetworkProfile {
+  readonly downloadKbps: number;
+  readonly latencyMs: number;
+}
+
 export interface IPlaytestScenario {
   acceptanceId?: string;
   artifacts?: IPlaytestArtifactRequest;
@@ -770,7 +868,15 @@ export interface IPlaytestScenario {
   awaitStartup?: boolean;
   inputDelivery?: PlaytestInputDelivery;
   name: string;
+  /** Browser-only: throttle the page before navigation. See {@link IPlaytestNetworkProfile}. */
+  network?: IPlaytestNetworkProfile;
   parity?: IPlaytestParityConfig;
+  /**
+   * Browser-only: run this scenario on the wall clock, as `--live-clock` does for a whole run. A
+   * performance scenario needs it, because counted ticks advance faster than frames draw and a window
+   * then holds a few GPU samples. Tick counts keep their meaning; the other scenarios of one glob run stay counted.
+   */
+  clock?: "wall-clock";
   /**
    * Browser-only: open the page with `prefers-reduced-motion: reduce` emulated, so a game that
    * honours the preference can prove it. Applied before navigation, so the first read sees it.

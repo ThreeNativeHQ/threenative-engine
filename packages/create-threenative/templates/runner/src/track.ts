@@ -25,8 +25,8 @@ export const MAX_OBSTACLES = 4;
 export const LANE_X = [-LANE_WIDTH, 0, LANE_WIDTH] as const;
 /** No obstacles this close to the start, so the first seconds teach the controls. */
 const GRACE_METRES = 34;
-/** Where an unused slot goes: far under the floor, scaled to nothing. */
-const PARKED = new Matrix4().makeScale(0, 0, 0).setPosition(0, -1000, 0);
+/** Where an unused slot goes: scaled to nothing at the chunk's centre, so it keeps the bounds tight. */
+const PARKED = new Matrix4().makeScale(0, 0, 0);
 
 export interface IChunkContext {
   readonly physics: RunnerPhysics;
@@ -55,6 +55,8 @@ export class Chunk {
   readonly #bodies: RigidBody3D[] = [];
   readonly #obstacles: ReturnType<InstancedBatch["build"]>;
   readonly #matrix = new Matrix4();
+  /** This stretch's obstacles: lane x and the run distance at their centre. */
+  readonly obstacles: { x: number; distance: number }[] = [];
   #start = 0;
 
   constructor(
@@ -81,6 +83,7 @@ export class Chunk {
     this.group.position.z = -(start + CHUNK_LENGTH / 2);
     for (const body of this.#bodies) body.dispose();
     this.#bodies.length = 0;
+    this.obstacles.length = 0;
 
     let placed = 0;
     if (start >= GRACE_METRES) {
@@ -95,6 +98,7 @@ export class Chunk {
           this.#matrix.identity().setPosition(laneX, OBSTACLE_SIZE.height / 2, localZ),
         );
         placed += 1;
+        this.obstacles.push({ x: laneX, distance: -(this.group.position.z + localZ) });
         this.#bodies.push(
           new RigidBody3D({
             collisionLayer: OBSTACLE_LAYER,
@@ -119,7 +123,12 @@ export class Chunk {
     for (let slot = placed; slot < MAX_OBSTACLES; slot += 1) {
       this.#obstacles?.setMatrixAt(slot, PARKED);
     }
-    if (this.#obstacles !== undefined) this.#obstacles.instanceMatrix.needsUpdate = true;
+    if (this.#obstacles !== undefined) {
+      this.#obstacles.instanceMatrix.needsUpdate = true;
+      // Three.js culls an InstancedMesh by the bounds it last computed. Those were taken around the
+      // parked slots, so without this every rewritten obstacle was culled: unseen, still solid.
+      this.#obstacles.computeBoundingSphere();
+    }
   }
 
   dispose(): void {

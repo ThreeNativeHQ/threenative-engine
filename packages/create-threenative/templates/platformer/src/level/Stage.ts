@@ -48,12 +48,15 @@ export interface IStage {
  * `userData.faceted` on a uv-less polyhedron. Both are the reason a mesh stays its own draw
  * instead of joining a material bucket.
  */
+/** Where the fox starts the route, at its waist. */
+export const STAGE_SPAWN: Readonly<Vector3> = new Vector3(-5, 1.2, 0);
+
 export function buildStage(rng: () => number): IStage {
   const group = new Group();
   const checkpoints: Vector3[] = [];
   const updaters: ((dt: number, time: number) => void)[] = [];
   const goalX = 92;
-  const spawn = new Vector3(-5, 1.2, 0);
+  const spawn = STAGE_SPAWN.clone();
 
   const solid = (mesh: Mesh): Mesh => {
     mesh.userData.solid = true;

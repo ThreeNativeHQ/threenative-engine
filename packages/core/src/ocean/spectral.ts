@@ -60,6 +60,19 @@ export interface ISpectralOceanOptions {
   readonly readbackResolution: number;
   /** Frames between height copies. Ignored when `readbackResolution` is zero. */
   readonly readbackEveryFrames: number;
+  /**
+   * The spectrum's shape, as energy per wavenumber cell at `(kx, kz)` in rad/m, replacing Phillips.
+   *
+   * Each cascade still keeps only its own band, so a custom curve is never counted twice. The game
+   * owns the curve — a fetch-limited wind sea, an independent swell — and this runs on the CPU at
+   * construction, so it must return a finite, non-negative number or construction throws.
+   */
+  readonly energy?: (kx: number, kz: number) => number;
+  /**
+   * The wavenumber, in rad/m, above which surface tension speeds waves up: `ω² = g·k·(1 + (k/km)²)`.
+   * Omitted, the dispersion is plain deep water.
+   */
+  readonly capillaryWavenumber?: number;
 }
 
 /** A height read from the CPU copy, with the age of the frame that produced it. */
@@ -89,6 +102,8 @@ interface ICascadeState {
 }
 
 const TWO_PI = Math.PI * 2;
+
+type SpectralEnergy = (kx: number, kz: number) => number;
 
 function positiveInteger(name: string, value: number): number {
   if (!Number.isInteger(value) || value <= 0)
@@ -190,6 +205,7 @@ export function initialSpectrumData(
     readonly directionality: number;
     readonly smallWaveCutoff: number;
     readonly seed: number;
+    readonly energy?: SpectralEnergy;
   },
 ): Float32Array {
   const random = createRandom(options.seed);
@@ -211,6 +227,15 @@ export function initialSpectrumData(
   const spacing = step;
   const half = resolution / 2;
   const energyOptions = { ...options, kMin: band.kMin, kMax: band.kMax };
+  const energyAt = (kx: number, kz: number): number => {
+    if (options.energy === undefined) return phillipsEnergy(kx, kz, energyOptions);
+    const kLength = Math.hypot(kx, kz);
+    if (kLength < 1e-6 || kLength < band.kMin || kLength >= band.kMax) return 0;
+    const energy = options.energy(kx, kz);
+    if (!Number.isFinite(energy) || energy < 0)
+      throw new Error("SpectralOcean.energy must return a finite, non-negative number.");
+    return energy;
+  };
   for (let y = 0; y < resolution; y += 1) {
     for (let x = 0; x < resolution; x += 1) {
       const index = y * resolution + x;
@@ -221,9 +246,7 @@ export function initialSpectrumData(
       // of texels and leaks an imaginary part into the height. One texel row of the shortest
       // resolvable wave is the whole cost of dropping it.
       const selfMirrored = x === 0 || y === 0;
-      const amplitude = selfMirrored
-        ? 0
-        : Math.sqrt(phillipsEnergy(kx, kz, energyOptions) / 2) * spacing;
+      const amplitude = selfMirrored ? 0 : Math.sqrt(energyAt(kx, kz) / 2) * spacing;
       data[index * 4] = (gaussian[index * 2] as number) * amplitude;
       data[index * 4 + 1] = (gaussian[index * 2 + 1] as number) * amplitude;
 
@@ -233,9 +256,7 @@ export function initialSpectrumData(
       const mirrorX = (resolution - x) % resolution;
       const mirrorY = (resolution - y) % resolution;
       const mirror = mirrorY * resolution + mirrorX;
-      const mirrorAmplitude = selfMirrored
-        ? 0
-        : Math.sqrt(phillipsEnergy(-kx, -kz, energyOptions) / 2) * spacing;
+      const mirrorAmplitude = selfMirrored ? 0 : Math.sqrt(energyAt(-kx, -kz) / 2) * spacing;
       data[index * 4 + 2] = (gaussian[mirror * 2] as number) * mirrorAmplitude;
       data[index * 4 + 3] = -(gaussian[mirror * 2 + 1] as number) * mirrorAmplitude;
     }
@@ -338,6 +359,10 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
     finiteNumber("choppiness", options.choppiness);
     positiveNumber("smallWaveCutoff", options.smallWaveCutoff);
     finiteNumber("seed", options.seed);
+    if (options.energy !== undefined && typeof options.energy !== "function")
+      throw new Error("SpectralOcean.energy must be a function.");
+    if (options.capillaryWavenumber !== undefined)
+      positiveNumber("capillaryWavenumber", options.capillaryWavenumber);
     if (!Number.isInteger(options.readbackResolution) || options.readbackResolution < 0)
       throw new Error("SpectralOcean.readbackResolution must be a non-negative integer.");
     if (options.readbackResolution > 0) {
@@ -365,7 +390,9 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
       const state = this.#buildCascade(cascade.patchSize, band, {
         amplitude: options.amplitude,
         choppiness: options.choppiness,
+        capillaryWavenumber: options.capillaryWavenumber,
         directionality: options.directionality,
+        energy: options.energy,
         gravity: options.gravity,
         // Each cascade draws from its own stream so two cascades never share a wave.
         seed: options.seed + index * 7919,
@@ -497,8 +524,10 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
     band: { readonly kMin: number; readonly kMax: number },
     tuning: {
       readonly amplitude: number;
+      readonly capillaryWavenumber: number | undefined;
       readonly choppiness: number;
       readonly directionality: number;
+      readonly energy: SpectralEnergy | undefined;
       readonly gravity: number;
       readonly seed: number;
       readonly smallWaveCutoff: number;
@@ -536,7 +565,12 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
         const kx = x.sub(gridSize.mul(0.5)).mul(step);
         const kz = y.sub(gridSize.mul(0.5)).mul(step);
         const kLength = kx.mul(kx).add(kz.mul(kz)).sqrt().max(1e-6);
-        const omega = kLength.mul(tuning.gravity).sqrt().mul(time);
+        const deepWater = kLength.mul(tuning.gravity);
+        const dispersion =
+          tuning.capillaryWavenumber === undefined
+            ? deepWater
+            : deepWater.mul(kLength.div(tuning.capillaryWavenumber).pow(2).add(1));
+        const omega = dispersion.sqrt().mul(time);
         const cos = omega.cos();
         const sin = omega.sin();
         const amplitudes = initial.element(instanceIndex);

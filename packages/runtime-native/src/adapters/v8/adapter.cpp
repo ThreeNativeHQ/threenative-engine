@@ -247,7 +247,7 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                 : array->IsInt32Array() ? "Int32Array" : array->IsFloat64Array() ? "Float64Array" : nullptr;
         } else if (arg->IsObject() && !arg->IsFunction() && arg.As<v8::Object>()->InternalFieldCount() == 0) {
             // A plain options object (`{ depth, bevelEnabled }`): own enumerable keys whose values are
-            // numbers, booleans, strings or native objects. An undefined value is left out, as three
+            // numbers, booleans, strings, numeric arrays or native objects. An undefined value is left out, as three
             // reads `options.x !== undefined`; anything else is refused.
             v8::Local<v8::Object> object = arg.As<v8::Object>();
             v8::Local<v8::Array> keys;
@@ -266,6 +266,17 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                     v8::String::Utf8Value utf8(isolate, e);
                     texts.emplace_back(*utf8 ? *utf8 : "");
                     field.kind = TN_VALUE_STRING; field.text = texts.back().c_str(); field.count = texts.back().size();
+                } else if (e->IsArray()) {
+                    const auto array = e.As<v8::Array>();
+                    arrays.emplace_back();
+                    auto& numbers = arrays.back();
+                    numbers.reserve(array->Length());
+                    for (uint32_t i = 0; i < array->Length(); ++i) {
+                        v8::Local<v8::Value> element;
+                        if (!array->Get(ctx, i).ToLocal(&element) || !element->IsNumber()) return false;
+                        numbers.push_back(element.As<v8::Number>()->Value());
+                    }
+                    field.kind = TN_VALUE_NUMBERS; field.numbers = numbers.data(); field.count = numbers.size();
                 } else if (a.unwrap(e, h)) { field.kind = TN_VALUE_HANDLE; field.handle = h; a.holdIfCallback(h); }
                 else if (stand != nullptr && a.math() != nullptr && a.math()->standIn(e, *stand, field)) {}
                 else return false;
@@ -350,6 +361,7 @@ struct MethodData {
     uint16_t type = 0;           // the catalog type whose wrappers own that slot: a getter borrowed by another class must not read it
     std::string cls;             // the registry class, for a method that reads its binding
     bool readable = false;       // a holder tail the binding also reads (`morphAttributes.position`)
+    bool writable = false;       // a holder tail with a registered setter
 };
 
 // three defines position, rotation, quaternion and scale as read-only own data properties. Once a
@@ -1040,7 +1052,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         if (name.ends_with("Material")) slotTemplates.push_back(ctor->InstanceTemplate());
         for (const auto& [path, settable, fixed] : properties) {
             if ((name.ends_with("NodeMaterial") && path.ends_with("Node")) ||
-                (name == "Scene" && path == "fogNode")) {
+                (name == "Scene" && (path == "fogNode" || path == "backgroundNode"))) {
                 auto* data = keep(new MethodData{this, path, {}});
                 proto->SetAccessorProperty(str(isolate_, path),
                     v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -1203,18 +1215,23 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                v8::External::New(isolate_, data))
                          : v8::Local<v8::FunctionTemplate>());
         }
-        // A dotted setter whose head is no member object, as three's plain `morphAttributes` holder:
-        // `geometry.morphAttributes.position = [...]` writes through a holder object made per read,
-        // which keeps its owner privately and forwards each tail to tn_set with the full path.
+        // Dotted fields without a member object use a holder, including read-only texture.image
+        // extents. Each accessor forwards its full path and preserves the binding's read/write access.
         std::map<std::string, std::vector<MethodData*>> holders;
+        std::map<std::string, bool> holderPaths;
+        for (const auto& [path, getter] : binding.getters) holderPaths[path] = false;
         for (const auto& [path, setter] : binding.setters) {
             (void)setter;
+            holderPaths[path] = true;
+        }
+        for (const auto& [path, writable] : holderPaths) {
             const std::size_t dot = path.find('.');
             if (dot == std::string::npos) continue;
             const std::string head = path.substr(0, dot);
             if (binding.members.count(head) > 0 || binding.getters.count(head) > 0) continue;
             holders[head].push_back(keep(new MethodData{this, path, {}}));
             holders[head].back()->readable = binding.getters.count(path) > 0 || binding.members.count(path) > 0;
+            holders[head].back()->writable = writable;
         }
         for (const auto& [head, paths] : holders) {
             auto* tails = keep(new std::vector<MethodData*>(paths));
@@ -1227,7 +1244,8 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     holder->SetPrivate(ctx, v8::Private::ForApi(isolate, str(isolate, "tn:holder-owner")), info.This()).Check();
                     for (MethodData* tail : *tails) {
                         const std::string name = tail->name.substr(tail->name.find('.') + 1);
-                        v8::Local<v8::Function> set = v8::Function::New(ctx,
+                        v8::Local<v8::Function> set;
+                        if (tail->writable) set = v8::Function::New(ctx,
                             [](const v8::FunctionCallbackInfo<v8::Value>& info) {
                                 auto* d = static_cast<MethodData*>(info.Data().As<v8::External>()->Value());
                                 v8::Isolate* isolate = info.GetIsolate();

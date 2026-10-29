@@ -2,7 +2,7 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,7 @@ import {
   desktopLaunchTarget,
   inspectStarterScreenshot,
   verifyStarterContainer,
+  verifyStarterDesktop,
 } from '../scripts/verify-starter-desktop.mjs';
 
 const PROOF_ASSET = new URL('../../create-threenative/templates/starter/assets/native-proof.png', import.meta.url);
@@ -34,7 +35,20 @@ test('accepts the real CI capture in which the proof pennant is visible', () => 
   // and the whole frame read as a wash.
   const result = inspectStarterScreenshot(REAL_CAPTURE);
   assert.equal(result.magentaAssetPixels, 521);
-  assert.equal(result.cyanAssetPixels, 321);
+  // 321 at the old cyan margin of 70; the margin is 40 since the Unreal look, which also admits the
+  // ocean that lies inside the pennant's bounds in this frame. Magenta stays the discriminator.
+  assert.equal(result.cyanAssetPixels, 1649);
+});
+
+// The scaffolded starter's lavapipe capture on the Unreal default look (Actions run 40214259234,
+// linux-arm64), cropped to the pennant's 320x180 surroundings: the pennant's cyan renders pale, rgb(195,240,243), a channel margin of 45. The
+// margin of 70 counted 40 of its pixels, under the floor of 50.
+test('accepts the real capture in which the Unreal look renders the pennant pale', () => {
+  const result = inspectStarterScreenshot(
+    fileURLToPath(new URL('./fixtures/starter-desktop-unreal-look-capture.png', import.meta.url)),
+  );
+  assert.equal(result.magentaAssetPixels, 474);
+  assert.equal(result.cyanAssetPixels, 463);
 });
 
 test('rejects the same ocean with the proof pennant cropped away', () => {
@@ -641,3 +655,79 @@ test('launches the launcher inside a desktop container, not the container direct
   writeFileSync(flat, '#!/bin/sh\n');
   assert.equal(desktopLaunchTarget(flat, 'flat'), flat);
 });
+
+function ownedSmokeFixture({ count = 300, blank = false, status = 0, source = 'present-return', gap = false } = {}) {
+  const project = makeTempDirSync('owned-kit-smoke-');
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'shooter' }));
+  const artifact = join(project, 'dist-native', 'shooter');
+  mkdirSync(artifact, { recursive: true });
+  writeFileSync(join(artifact, 'shooter'), 'launcher');
+  writeFileSync(join(artifact, 'tn-native-engine-player-v8'), 'player');
+  const cli = join(project, 'node_modules', '@threenative', 'playtest', 'dist', 'runner');
+  mkdirSync(cli, { recursive: true });
+  writeFileSync(join(cli, 'cli.js'), 'fixture runner');
+  const calls = [];
+  const run = (command, args, options) => {
+    calls.push({ command, args, options });
+    const scenario = JSON.parse(readFileSync(args[1], 'utf8'));
+    assert.equal(scenario.steps.at(-1).label, 'native-smoke');
+    assert.equal(options.env.TN_PLAYTEST_COMPLETION_WINDOW_MIN_FRAMES, '300');
+    const output = args[args.indexOf('--artifacts') + 1];
+    mkdirSync(output, { recursive: true });
+    const png = new PNG({ width: 2, height: 2 });
+    png.data.fill(255);
+    if (!blank) png.data[0] = 0;
+    writeFileSync(join(output, 'after.png'), PNG.sync.write(png));
+    return { status, stdout: JSON.stringify({ pass: true, assertionResults: [{ pass: true }], acquisition: { completionWindow: {
+      source, timebase: 'steady-clock-ms',
+      samples: Array.from({ length: count }, (_, i) => ({ sequence: i + 101 + (gap && i > 5 ? 1 : 0), completedAtMs: 2000 + i * 20 })),
+    } } }), stderr: '' };
+  };
+  return { project, run, calls };
+}
+
+test('ordinary owned-player verification uses a generic smoke and observes 300 presents', () => {
+  const f = ownedSmokeFixture();
+  const result = verifyStarterDesktop({ project: f.project, frames: 300, run: f.run });
+  assert.equal(result.frames, 300);
+  assert.equal(result.pass, true);
+  assert.equal(result.gate, 'native-smoke');
+  assert.equal(existsSync(f.calls[0].args[1]), false, 'temporary scenario cleaned');
+});
+
+test('the owned-player CLI prints its completed smoke report and exits successfully', () => {
+  const f = ownedSmokeFixture();
+  const png = new PNG({ width: 2, height: 2 });
+  png.data.fill(255);
+  png.data[0] = 0;
+  const cli = join(f.project, 'node_modules', '@threenative', 'playtest', 'dist', 'runner', 'cli.js');
+  writeFileSync(cli, `
+    const fs = require('node:fs');
+    const args = process.argv.slice(2);
+    const output = args[args.indexOf('--artifacts') + 1];
+    fs.mkdirSync(output, { recursive: true });
+    fs.writeFileSync(output + '/after.png', Buffer.from('${PNG.sync.write(png).toString('base64')}', 'base64'));
+    console.log(JSON.stringify({ pass: true, assertionResults: [{ pass: true }], acquisition: { completionWindow: {
+      source: 'present-return', timebase: 'steady-clock-ms',
+      samples: Array.from({ length: 300 }, (_, i) => ({ sequence: i + 1, completedAtMs: i * 20 }))
+    } } }));
+  `);
+  const result = spawnSync(process.execPath, [BASE_CLI, '--project', f.project], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /300 native presents.*1 playtest assertions/u);
+});
+
+for (const [name, options, pattern] of [
+  ['299 presents', { count: 299 }, /completion/u],
+  ['callback counts instead of native presents', { source: 'render-callback-return' }, /completion/u],
+  ['a completion gap', { gap: true }, /completion/u],
+  ['blank capture', { blank: true }, /blank/u],
+  ['failed runner', { status: 1 }, /runner/u],
+]) {
+  test(`owned-player verification rejects ${name} and cleans its scenario`, () => {
+    const f = ownedSmokeFixture(options);
+    assert.throws(() => verifyStarterDesktop({ project: f.project, frames: 300, run: f.run }), pattern);
+    assert.equal(f.calls.length, 1);
+    assert.equal(existsSync(f.calls[0].args[1]), false);
+  });
+}

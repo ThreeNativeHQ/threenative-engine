@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "engine/shader/ir.h"
+#include "engine/shader/graph/graph.h"
 #include "engine/shader/position_node.h"
 #include "engine/shader/tonemap.h"
 
@@ -12,7 +13,7 @@ namespace tn::engine::shader {
 ExprId srgbTransferOetf(Program& p, ExprId linear);
 
 /** The output transform at an authored graph position. */
-ExprId renderOutput(Program& p, ExprId scene, std::optional<ToneMapping> toneMapping, bool srgb);
+ExprId renderOutput(Program& p, ExprId scene, std::optional<ToneMapping> toneMapping, bool srgb, graph::Node custom = {});
 
 struct OutputPrograms {
     Program vertex{Stage::Vertex};
@@ -26,6 +27,6 @@ struct OutputPrograms {
  * "toneMappingExposure" (only when tone mapping).
  */
 OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post = nullptr);
-OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post, bool outputTransform);
+OutputPrograms buildOutput(std::optional<ToneMapping> toneMapping, bool srgb, const PostNode* post, bool outputTransform, graph::Node custom = {});
 
 }  // namespace tn::engine::shader

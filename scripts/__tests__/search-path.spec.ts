@@ -166,7 +166,7 @@ describe("the tracked .ignore (PRD-357 F2/F5)", () => {
       .map((line) => line.split(":").slice(0, 2).join(":"));
     expect(sites).toEqual([
       // Takes a log file path, not a directory.
-      "packages/playtest/__tests__/orphan-cleanup.sh:163",
+      "packages/playtest/__tests__/orphan-cleanup.sh:166",
       // Inert: an expected-substring literal inside a spec, never executed.
       "scripts/__tests__/sweep-delta.spec.ts:193",
     ]);

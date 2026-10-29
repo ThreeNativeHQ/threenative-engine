@@ -1,22 +1,127 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  Frustum,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  Ray,
   Scene,
+  Sphere,
   SphereGeometry,
+  Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { formatProjectionWindow } from "../src/projection-marker.js";
 import {
   DEFAULT_MINIMUM_PROJECTED_PIXELS,
+  type IAnimationRateState,
   RenderCameraCull,
   alwaysRender,
+  inFrustum,
+  rayMeetsSphere,
+  setFrustumPlanes,
+  trackAnimationRate,
 } from "../src/render-camera-cull.js";
+
+// The camera pass tests its frustum and forward ray in plain numbers: on the web engine three's Frustum,
+// Ray and Sphere are engine objects, one boundary call per test, 70 a frame on the shooter.
+describe("the cull's plain frustum and ray math", () => {
+  // The win is the class, not the answer: the equivalence test below passes just as well if the math is
+  // right while an engine Ray, Frustum or Sphere comes back to hold it, which is the cost the lever
+  // removed (66e637840: cull 0.78 -> 0.66 ms on the laptop, about 70 boundary calls a shooter frame).
+  // So count what a real cull frame constructs, not what the source spells: on the web engine each of
+  // these is an object across the boundary, whichever helper or alias reaches it.
+  it("constructs no three Frustum, Ray or Sphere in a real cull frame", () => {
+    // One frame of a small scene, one object per plain-math path: a rig part on the camera's forward
+    // ray (near band), a rig part off it (the band test), an off-camera shadow caster (the frustum
+    // test) and a sub-pixel prop to cull.
+    const onRay = new Group();
+    onRay.add(ball(1, -60));
+    const lateral = ball(1, -60);
+    lateral.position.x = 8;
+    const offRay = new Group();
+    offRay.add(lateral);
+    const onRayState = rateState();
+    const offRayState = rateState();
+    trackAnimationRate(onRay, onRayState);
+    trackAnimationRate(offRay, offRayState);
+    const caster = ball(0.01, -1_000);
+    caster.position.set(100_000, 0, -1_000);
+    caster.castShadow = true;
+    const scene = sceneWith(onRay, offRay, caster, ball(0.1, -1_000));
+    const view = camera();
+
+    // The scene above is scaffolding. Everything from here is the cull: its own fields and its frame,
+    // since the engine objects the lever removed were built once per cull and reused every frame.
+    engineObjects.Frustum = 0;
+    engineObjects.Ray = 0;
+    engineObjects.Sphere = 0;
+    const cull = new RenderCameraCull();
+    cull.prepareAnimation(scene, view, 720);
+    cull.apply(scene, view, 720);
+
+    // The frame reached every path, so the zero below is not vacuous: the on-ray rig took the near
+    // band, the lateral one the band test (4, not the unseen 8), and the caster the frustum test.
+    expect([onRayState.rate, offRayState.rate]).toEqual([1, 4]);
+    expect(cull.report.exemptShadowCasters).toBe(1);
+    expect(cull.report.culled).toBe(1);
+    expect({
+      Frustum: engineObjects.Frustum,
+      Ray: engineObjects.Ray,
+      Sphere: engineObjects.Sphere,
+    }).toEqual({ Frustum: 0, Ray: 0, Sphere: 0 });
+  });
+
+  it("answers as three's Frustum and Ray for cameras and spheres all around", () => {
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const planes = new Float64Array(24);
+    const screen = new Matrix4();
+    const frustum = new Frustum();
+    const ray = new Ray();
+    const sphere = new Sphere();
+    let inside = 0;
+    let hit = 0;
+    for (let view = 0; view < 40; view += 1) {
+      const camera = new PerspectiveCamera(30 + random() * 80, 0.5 + random() * 2, 0.1, 200);
+      camera.position.set(random() * 40 - 20, random() * 10, random() * 40 - 20);
+      camera.lookAt(random() * 40 - 20, random() * 4, random() * 40 - 20);
+      camera.updateMatrixWorld();
+      screen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(screen);
+      setFrustumPlanes(planes, screen.elements);
+      ray.origin.setFromMatrixPosition(camera.matrixWorld);
+      ray.direction.set(0, 0, -1).transformDirection(camera.matrixWorld);
+      const line = [...ray.origin.toArray(), ...ray.direction.toArray()];
+      for (let probe = 0; probe < 200; probe += 1) {
+        const center = new Vector3(random() * 120 - 60, random() * 30 - 5, random() * 120 - 60);
+        const radius = random() < 0.1 ? 0 : random() * 6;
+        sphere.set(center, radius);
+        const expected = frustum.intersectsSphere(sphere);
+        expect(inFrustum(planes, center.x, center.y, center.z, radius)).toBe(expected);
+        expect(inFrustum(planes, center.x, center.y, center.z, 0)).toBe(
+          frustum.containsPoint(center),
+        );
+        const meets = ray.intersectsSphere(sphere);
+        expect(rayMeetsSphere(line, center.x, center.y, center.z, radius)).toBe(meets);
+        inside += expected ? 1 : 0;
+        hit += meets ? 1 : 0;
+      }
+    }
+    // Both answers occur, so the sweep proves more than one branch.
+    expect(inside).toBeGreaterThan(400);
+    expect(inside).toBeLessThan(7600);
+    expect(hit).toBeGreaterThan(20);
+  });
+});
 
 /**
  * The projected-size gate.
@@ -28,6 +133,8 @@ import {
  */
 
 const vector3Allocations = vi.hoisted(() => ({ count: 0 }));
+/** Constructions of the three classes that are engine objects on the web engine, counted, not spied. */
+const engineObjects = vi.hoisted(() => ({ Frustum: 0, Ray: 0, Sphere: 0 }));
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three")>();
@@ -39,8 +146,31 @@ vi.mock("three", async (importOriginal) => {
         vector3Allocations.count += 1;
       }
     },
+    Frustum: class CountingFrustum extends actual.Frustum {
+      constructor(...planes: ConstructorParameters<typeof actual.Frustum>) {
+        super(...planes);
+        engineObjects.Frustum += 1;
+      }
+    },
+    Ray: class CountingRay extends actual.Ray {
+      constructor(...args: ConstructorParameters<typeof actual.Ray>) {
+        super(...args);
+        engineObjects.Ray += 1;
+      }
+    },
+    Sphere: class CountingSphere extends actual.Sphere {
+      constructor(...args: ConstructorParameters<typeof actual.Sphere>) {
+        super(...args);
+        engineObjects.Sphere += 1;
+      }
+    },
   };
 });
+
+/** A rig's rate state, as `AnimationPlayer` registers one (the cull only writes `rate` and `frame`). */
+function rateState(): IAnimationRateState {
+  return { rate: 1, frame: 0, source: undefined, evaluated: false, evaluation: 0 };
+}
 
 /** A perspective camera at the origin looking down -Z, matching the default Three camera. */
 function camera(fov = 60): PerspectiveCamera {
@@ -252,27 +382,61 @@ describe("render camera cull", () => {
     expect(cull.report.culled).toBe(0);
   });
 
-  it("does not rescan a buffer that is rewritten every frame", () => {
-    // A per-frame rewrite used to scan every vertex every frame. The gate cannot know the new
-    // extents without that scan, so once it sees two changes in a row it treats the bound like
-    // `frustumCulled = false` and keeps drawing, rather than paying the scan forever.
-    const dynamic = dynamicMesh([0, 0, 0, 0.001, 0, 0, 0, 0.001, 0], -1_000);
-    const scene = sceneWith(dynamic.mesh);
+  it.each([false, true])(
+    "does not rescan a buffer rewritten every frame (prepare=%s)",
+    (prepare) => {
+      // A per-frame rewrite used to scan every vertex every frame. The gate cannot know the new
+      // extents without that scan, so once it sees two changes in a row it treats the bound like
+      // `frustumCulled = false` and keeps drawing, rather than paying the scan forever.
+      const dynamic = dynamicMesh([0, 0, 0, 0.001, 0, 0, 0, 0.001, 0], -1_000);
+      const scene = sceneWith(dynamic.mesh);
+      const cull = new RenderCameraCull();
+      const compute = vi.spyOn(dynamic.mesh.geometry, "computeBoundingSphere");
+
+      for (let frame = 0; frame < 40; frame += 1) {
+        dynamic.position[3] = frame + 1;
+        dynamic.attribute.needsUpdate = true;
+        if (prepare) cull.prepareAnimation(scene, camera(), 720);
+        cull.apply(scene, camera(), 720);
+      }
+
+      // One recompute for the first change, then the per-frame rewrite is recognised.
+      expect(compute.mock.calls.length).toBe(1);
+      expect(dynamic.mesh.visible).toBe(true);
+      expect(cull.report.culled).toBe(0);
+      expect(cull.report.exemptDynamicBounds).toBe(1);
+      compute.mockRestore();
+    },
+  );
+
+  // On the Wasm engine each `attribute.version` read crosses the bridge. Adventure's rig parts share
+  // geometry, and every part read the version again in the same frame: 102 of 136 reads a frame were
+  // repeats, and the flicker scenario failed on TN_BRIDGE_WARNING.
+  it("reads a shared geometry's buffer version once per frame", () => {
+    const dynamic = dynamicMesh([0, 0, 0, 1, 0, 0, 0, 1, 0], -10);
+    const twins = [1, 2].map(() => {
+      const twin = new Mesh(dynamic.mesh.geometry, new MeshBasicMaterial());
+      twin.position.set(0, 0, -10);
+      return twin;
+    });
+    const scene = sceneWith(dynamic.mesh, ...twins);
     const cull = new RenderCameraCull();
-    const compute = vi.spyOn(dynamic.mesh.geometry, "computeBoundingSphere");
-
-    for (let frame = 0; frame < 40; frame += 1) {
-      dynamic.position[3] = frame + 1;
-      dynamic.attribute.needsUpdate = true;
-      cull.apply(scene, camera(), 720);
-    }
-
-    // One recompute for the first change, then the per-frame rewrite is recognised.
-    expect(compute.mock.calls.length).toBe(1);
-    expect(dynamic.mesh.visible).toBe(true);
-    expect(cull.report.culled).toBe(0);
-    expect(cull.report.exemptDynamicBounds).toBe(1);
-    compute.mockRestore();
+    cull.apply(scene, camera(), 720);
+    let reads = 0;
+    let version = dynamic.attribute.version;
+    Object.defineProperty(dynamic.attribute, "version", {
+      configurable: true,
+      get: () => {
+        reads += 1;
+        return version;
+      },
+      set: (value: number) => {
+        version = value;
+      },
+    });
+    cull.prepareAnimation(scene, camera(), 720);
+    cull.apply(scene, camera(), 720);
+    expect(reads).toBe(1);
   });
 
   it("culls a rewritten buffer again once it stops changing", () => {
@@ -380,7 +544,6 @@ describe("render camera cull", () => {
         projecting: false,
         reasonCode: "belowMeshFloor",
         sourceRenderables: 2,
-        resultDrawCandidates: 2,
         projectedObjects: 0,
         batches: 0,
         instancedBatches: 0,
@@ -432,8 +595,11 @@ describe("render camera cull", () => {
     const matrix = view.projectionMatrix;
     const projection = vi.fn(() => matrix);
     Object.defineProperty(view, "projectionMatrix", { get: projection });
+    const traverse = vi.spyOn(view, "traverse");
     const cull = new RenderCameraCull();
     cull.apply(root, view, 720);
+    // The engine knows what hangs from the camera: collecting it here is a crossing per child, per frame.
+    expect(traverse).not.toHaveBeenCalled();
     // The JS frustum and camera position serve only the JS walk (asserted before the argument
     // match below, whose deep compare reads every camera property).
     expect(projection).not.toHaveBeenCalled();

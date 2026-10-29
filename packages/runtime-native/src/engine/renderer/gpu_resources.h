@@ -1,11 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>  // TN_WORKER_ONLY: GpuThread parks its worker and joins one frame
 #include <cstdint>
 #include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -113,6 +115,10 @@ public:
 
     /** The handle dies now; the GPU object lives until every submission so far has completed. */
     GpuStatus destroy(Handle resource);
+    /** Every destroy any table was asked for of a resource a draw can bind (a vertex, index, uniform, storage or indirect
+     *  buffer, or a sampled texture). A cache that holds handles past their frame (PRD-754's retained rows) drops what it
+     *  holds when this moves, since a recorded bundle must not bind a destroyed resource. */
+    static inline std::atomic<uint64_t> destroyRequests{0};
     /** One serial with `other`, a table on the same queue: a destroy here waits for its submissions too. */
     void shareSubmissions(const GpuResources& other) { shared_ = other.shared_; }
 
@@ -121,6 +127,7 @@ public:
     GpuThread* thread() const { return shared_->thread.get(); }
     /** Waits for the posted queue work; a no-op without a GPU thread. */
     void sync() const {
+        flushSubmits();
         if (shared_->thread) shared_->thread->wait();
     }
     /** Runs `job` on the GPU thread after the work posted before it, or now without one. */
@@ -131,6 +138,19 @@ public:
 
     /** The only path to the queue, so every submission has a serial a destroy can wait for. */
     uint64_t submit(WGPUCommandBuffer commands);
+    /**
+     * Without a GPU thread, this table's submits wait and reach the queue in one wgpuQueueSubmit with the next
+     * submit of a table that does not batch: a render target draw then costs no queue submit and no work-done
+     * callback of its own (29 per Lantern Vale frame). Order holds: any other queue write or read sends the
+     * waiting work first, and so does this table's own write once its work waits.
+     */
+    void batchSubmits() { batching_ = true; }
+    /** A submit that reads no queue-written buffer but `reads` (a compute dispatch): it waits too, from any table. */
+    uint64_t submit(WGPUCommandBuffer commands, std::vector<WGPUBuffer> reads);
+    /** Sends the waiting batched submits to the queue now; a no-op when none wait. */
+    static void flushSubmits();
+    /** wgpuQueueSubmit calls so far, by every table; a test reads it. */
+    static uint64_t queueSubmits();
     /** Non-blocking: lets the backend deliver finished callbacks into the event queue. */
     void poll();
 
@@ -159,15 +179,28 @@ private:
     // The render thread submits and destroys while the game thread drains completions (PRD-613):
     // `mutex` guards the serials and the pending list; collect() runs with it held.
     struct Shared {
+        struct IdleStaging {
+            WGPUBuffer buffer;
+            uint64_t size;
+        };
         std::shared_ptr<GpuThread> thread;
         mutable std::mutex mutex;
         uint64_t submitted = 0;
         uint64_t completed = 0;
         std::vector<PendingDestroy> pending;
+        // Completed readback leases wait here, by exact size, until the next read of that size.
+        std::mutex stagingMutex;
+        std::vector<IdleStaging> idleStaging;
+        ~Shared();
         void collect();
     };
 
     static void release(Record& record);
+    static void recycleStaging(const std::shared_ptr<Shared>& shared, WGPUBuffer staging, uint64_t size);
+    WGPUBuffer leaseStaging(uint64_t size);
+    static void complete(const std::shared_ptr<void>& owner, uint64_t serial);
+    bool waitingMayRead(WGPUBuffer buffer) const;
+    uint64_t submit(WGPUCommandBuffer commands, bool batch, std::vector<WGPUBuffer>* reads);
     Record* record(Handle handle, uint16_t type, GpuStatus& status);
     void readInto(WGPUCommandEncoder encoder, WGPUBuffer staging, uint64_t size,
                   std::function<void(const uint8_t*)> unpack, ReadbackCallback done);
@@ -180,6 +213,7 @@ private:
     std::vector<Record> records_;
     std::shared_ptr<Shared> shared_ = std::make_shared<Shared>();
     uint64_t queueWriteBytes_ = 0;
+    bool batching_ = false;
 };
 
 }  // namespace tn::engine

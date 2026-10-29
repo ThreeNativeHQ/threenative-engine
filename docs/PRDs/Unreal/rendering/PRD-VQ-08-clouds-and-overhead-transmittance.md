@@ -87,6 +87,7 @@ All proof paths below are **planned implementation targets**, not existing passi
 ## Acceptance criteria
 
 - [ ] Visible cloud motion and ground attenuation agree on the authored field, while no-cloud mode preserves the preexisting scene. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.
+- [ ] A cloud layer at Unreal's default placement (bottom 5 km, thickness 10 km; `Engine/Source/Runtime/Engine/Private/Components/VolumetricCloudComponent.cpp:40`) matches the Unreal L4 cells within the PRD-631 thresholds and ships on by default in the atmosphere-sky templates. proof: `pnpm unreal-look:compare --layer L4`.
 - [ ] The feature preserves its documented inactive/fallback path and releases owned resources after repeated lifecycle transitions. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-clouds-and-overhead-transmittance.spec.ts` plus the Phase 3 lifecycle scenario.
 
 ## Performance and promotion
@@ -101,6 +102,7 @@ The optional shared overhead-field extraction is gated by PRD-381 reuse/admissio
 
 - 2026-10-09 (João, via the Unreal source review): the attenuation field uses Unreal's three-channel cloud-shadow encoding instead of a single transmittance value per texel, because the rain slab has receivers both below and inside it. Phase 1 box 2 and Phase 2 box 2 now name the encoding, the texel snap and the 10° history cut. No box was added or removed.
 - 2026-10-12 (Unreal source review): All cvar defaults in the reference section match Unreal 5.8.3. The shadow-map strength lerp belongs to the caller, so the first box keeps a game-owned strength. The PRD-381 link now points at the local file. The rain slab density comes from a generated shader, so the shadow-map pass shares the `.frag` source and does not copy the density by hand.
+- 2026-10-19 (PRD-631 reference plan): This PRD owns layer L4 (volumetric clouds) of the Unreal reference ladder in [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Unreal's default level carries a Volumetric Cloud actor. Its shape lives in a binary material asset (`m_SimpleVolumetricCloud_Inst`), so the L4 frames are the shape target, not source values. Unreal does not cast cloud shadows on the ground by default (`bCastCloudShadows=false`, `DirectionalLightComponent.cpp:1073`). So the three-channel shadow map stays for the rain slab and is not needed for default parity. Added one acceptance box. It waits on [PRD-633](../look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md).
 
 ## Completion record
 

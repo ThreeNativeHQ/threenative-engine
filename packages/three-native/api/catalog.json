@@ -7036,7 +7036,7 @@
         {
           "name": "instanceMatrix",
           "type": "InstancedBufferAttribute",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -8268,6 +8268,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -8741,7 +8750,10 @@
           "name": "shadowSide",
           "type": "Side | null",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "colorWrite",
@@ -10990,8 +11002,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11218,8 +11229,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11916,6 +11926,33 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -12078,8 +12115,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12306,8 +12342,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12746,6 +12781,33 @@
           "name": "type",
           "type": "string",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughDiffuse",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -13256,6 +13318,60 @@
         },
         {
           "name": "colorWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughDiffuse",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -13832,6 +13948,33 @@
         },
         {
           "name": "colorWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -17214,6 +17357,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "sourceRadius",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -19081,6 +19233,15 @@
             "kind": "unsupported",
             "diagnostic": "TN_NATIVE_UNSUPPORTED_RENDERER_PRIVATE"
           }
+        },
+        {
+          "name": "backgroundNode",
+          "type": "Node | null | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -20346,6 +20507,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -21188,6 +21358,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "center",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -21198,6 +21377,19 @@
             {
               "parameters": [],
               "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
             }
           ],
           "status": {
@@ -26686,9 +26878,36 @@
       "kind": "function",
       "source": "three/addons/tsl/display/SSRNode.js",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SSR"
-      }
+        "kind": "partial",
+        "gaps": [
+          "stochastic-ggx-not-implemented",
+          "environment-mis-not-implemented",
+          "history-feedback-not-implemented"
+        ]
+      },
+      "parameters": [
+        {
+          "name": "colorNode",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "name": "depthNode",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "name": "normalNode",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "name": "options",
+          "type": "{ camera?: Camera; metalnessNode?: unknown; roughnessNode?: unknown; reflectNonMetals?: boolean; binaryRefine?: boolean }",
+          "optional": true
+        }
+      ],
+      "returns": "Node & { maxDistance: { value: number }; thickness: { value: number }; opacity: { value: number }; quality: { value: number }; maxSteps: { value: number }; intensity: { value: number }; maxLuminance: { value: number }; blurQuality: { value: number }; resolutionScale: number; reflectNonMetals: boolean; binaryRefine: boolean; getTextureNode(): Node }"
     },
     {
       "name": "step",
@@ -26733,6 +26952,15 @@
       "status": {
         "kind": "unsupported",
         "diagnostic": "TN_NATIVE_UNSUPPORTED_TEXTURELOAD"
+      }
+    },
+    {
+      "name": "textureSize",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "unsupported",
+        "diagnostic": "TN_NATIVE_UNSUPPORTED_TEXTURESIZE"
       }
     },
     {
@@ -27081,6 +27309,33 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -27386,6 +27641,33 @@
         },
         {
           "name": "colorWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "alphaHash",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -28222,7 +28504,7 @@
         {
           "name": "target",
           "type": "Object3D",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -28232,6 +28514,15 @@
           "name": "shadow",
           "type": "SpotLightShadow",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "sourceRadius",
+          "type": "number",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -29178,6 +29469,134 @@
         }
       ],
       "returns": "Node"
+    },
+    {
+      "name": "StorageTexture",
+      "kind": "class",
+      "source": "three/webgpu",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Texture",
+      "constructor": [
+        {
+          "name": "width",
+          "type": "number",
+          "optional": true,
+          "default": "1"
+        },
+        {
+          "name": "height",
+          "type": "number",
+          "optional": true,
+          "default": "1"
+        }
+      ],
+      "fields": [
+        {
+          "name": "isStorageTexture",
+          "type": "true",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "mipmapsAutoUpdate",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "name": "setSize",
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "width",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "height",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "async": false,
+          "status": {
+            "kind": "supported"
+          }
+        }
+      ]
+    },
+    {
+      "name": "uvec2",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "args",
+          "type": "unknown[]",
+          "optional": false,
+          "rest": true
+        }
+      ],
+      "returns": "unknown"
+    },
+    {
+      "name": "storageTexture",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "args",
+          "type": "unknown[]",
+          "optional": false,
+          "rest": true
+        }
+      ],
+      "returns": "unknown"
+    },
+    {
+      "name": "textureStore",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "args",
+          "type": "unknown[]",
+          "optional": false,
+          "rest": true
+        }
+      ],
+      "returns": "unknown"
+    },
+    {
+      "name": "modelWorldMatrix",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      }
     }
   ]
 }

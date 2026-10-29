@@ -165,7 +165,7 @@ Proves screenshot change, populated coordinate or DOM element-bound regions, dar
 | Field | Type | Required |
 | --- | --- | --- |
 | `frameDiff` | { baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number } | no |
-| `region` | static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
+| `region` | static bounds { x: number, y: number, width: number, height: number, minSharpness?: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
 | `entityVisible` | { entity: string, minProjectedPixels: number, throughoutFrames?: boolean } | no |
 
 
@@ -303,7 +303,7 @@ Proves resource state after the scenario through equals, gte, lte, textIncludes,
 | `textIncludes` | string | no |
 | `changed` | boolean | no |
 | `throughoutSteps` | boolean | no |
-| `atSteps` | Array<{ label: string, equals?: json, textIncludes?: string }> | no |
+| `atSteps` | Array<{ label: string, equals?: json, lte?: number, textIncludes?: string }> | no |
 | `allowTrivial` | triviality reason | no |
 | `anyOf` | Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }> | no |
 
@@ -495,6 +495,7 @@ Proves a live render sample exists and optionally bounds frame time, an fps floo
 | Field | Type | Required |
 | --- | --- | --- |
 | `maxFrameMsP95` | number | no |
+| `maxFrameMsReason` | non-empty string | no |
 | `minFps` | number | no |
 | `maxPhaseMsP95` | { [phase]: number } | no |
 | `maxDrawCalls` | number | no |
@@ -706,6 +707,7 @@ Proves animation evidence appeared in the effect log or runtime observation. **U
 | --- | --- | --- |
 | `entity` | string | no |
 | `clip` | string | no |
+| `atStep` | string | no |
 | `entered` | boolean | no |
 | `advancedFrames` | number | no |
 | `finished` | boolean | no |
@@ -785,6 +787,108 @@ Bounds on named nodes of the scene graph — where an object is, whether it is o
 }
 ```
 
+### `footSlip`
+
+Bounds how far a planted foot slides while the subject moves, measured every tick from named foot nodes' world positions, so it holds a procedural rig to the feet-meet-the-floor convention as well as a clip. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** entity.observe, scene.nodes
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `atStep` | string | no |
+| `feet` | Array<string> | no |
+| `maxSlip` | positive number | no |
+| `maxSlideSpeed` | positive number | no |
+| `stepSeconds` | positive number | no |
+| `entity` | string | no |
+
+
+```json
+{
+  "footSlip": [
+    {
+      "atStep": "run",
+      "feet": [
+        "footL",
+        "footR"
+      ],
+      "maxSlip": 0.35
+    }
+  ]
+}
+```
+
+### `sightLine`
+
+Bounds the share of the run in which solid geometry stood between the camera and the subject's world bounds centre, so a camera that clips through a pillar or a wall that eats the framing fails. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** camera.observe, entity.observe
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `entity` | string | no |
+| `maxBlockedRatio` | number | yes |
+
+
+```json
+{
+  "sightLine": {
+    "maxBlockedRatio": 0.02
+  }
+}
+```
+
+### `engineCost`
+
+Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's counters.engine (and counters.bridgeCrossings): JS-to-Wasm crossings, children reads, scene-walk visits, hierarchy moves, matrix composes, handle shares, content classification, GPU allocations, physics crossings and any counter an engine module adds to globalThis.__tnEngineCost. Each window must hold every bound; a run with fewer windows than minWindows, or a window missing a bounded counter, fails closed. A failure names the counter, the window and the top caller of the TN_BRIDGE_CENSUS before it. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** browser.console
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `maxPerFrame` | { [counter: string]: number } | no |
+| `maxInFrame` | { [counter: string]: number } | no |
+| `minWindows` | positive integer | no |
+| `skipWindows` | non-negative integer | no |
+| `still` | { windows: positive integer, maxPerFrame: { [counter: string]: number } } | no |
+| `moving` | { maxPerFrame?: { [counter: string]: number }, maxInFrame?: { [counter: string]: number } } | no |
+| `source` | string | yes |
+
+
+```json
+{
+  "engineCost": {
+    "maxPerFrame": {
+      "bridgeCrossings": 2000,
+      "childrenReads": 60
+    },
+    "skipWindows": 1,
+    "source": "shooter after-value 1,024 per frame on 2026-10-27, about 2x headroom"
+  }
+}
+```
+
+### `hudAudit`
+
+Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** browser.dom
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `minContrast` | number | no |
+| `noDebugText` | true | no |
+
+
+```json
+{
+  "hudAudit": {
+    "minContrast": 3,
+    "noDebugText": true
+  }
+}
+```
+
 ### `causedBy`
 
 Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs. **Use when** that is the thing the scenario must prove.
@@ -832,6 +936,8 @@ Bounds when the application's startup milestones happened: the world entered, fi
 | `maxEnteredMs` | number | no |
 | `maxCompileSettledMs` | number | no |
 | `maxReadyMs` | number | no |
+| `maxOffscreenBytes` | number | no |
+| `steadyCover` | boolean | no |
 
 
 ```json
@@ -845,7 +951,7 @@ Bounds when the application's startup milestones happened: the world entered, fi
 
 ### `pipelineCensus`
 
-Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
+Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; a named streamed scope must also prove its target-bound first visible world frame, and missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.pipelineCensus
 

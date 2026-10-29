@@ -1,7 +1,7 @@
 #pragma once
 
 // MaterialX noise as three@0.185.1 compiles it: the WGSL functions three's WGSLNodeBuilder emits for
-// mx_noise_float and mx_worley_noise_vec2 (src/nodes/materialx/lib/mx_noise.js), copied as emitted
+// mx_noise_float and mx_worley_noise_float/vec2 (src/nodes/materialx/lib/mx_noise.js), copied as emitted
 // so a pixel matches three's (three's mx_hash_int_3 drops its mx_bjmix call, and this keeps that).
 // `_0` takes a vec2 coordinate and `_1` a vec3, the overload numbers three gives them. A program
 // that calls one gets the whole library once, ahead of its entry point. One literal per function
@@ -665,6 +665,121 @@ fn mx_worley_noise_vec2_1 ( p : vec3<f32>, jitter : f32, metric : i32 ) -> vec2<
 
 				}
 
+
+			}
+
+
+		}
+
+
+	}
+
+
+	if ( ( nodeVar0 == 0 ) ) {
+
+		nodeVar10 = sqrt( nodeVar10 );
+		
+
+	}
+
+
+	return nodeVar10;
+
+}
+)WGSL"
+R"WGSL(
+fn mx_worley_noise_float_0( p : vec2<f32>, jitter : f32, metric : i32 ) -> f32 {
+
+	var nodeVar0 : i32;
+	var nodeVar1 : f32;
+	var nodeVar2 : vec2<f32>;
+	var nodeVar3 : i32;
+	var nodeVar4 : i32;
+	var nodeVar5 : f32;
+	var nodeVar6 : f32;
+	var nodeVar7 : vec2<f32>;
+	var nodeVar8 : f32;
+	var nodeVar9 : f32;
+
+	nodeVar0 = metric;
+	nodeVar1 = jitter;
+	nodeVar2 = p;
+	nodeVar3 = 0;
+	nodeVar4 = 0;
+	nodeVar5 = nodeVar2.x;
+	nodeVar3 = mx_floor( nodeVar5 );
+	nodeVar6 = nodeVar2.y;
+	nodeVar4 = mx_floor( nodeVar6 );
+	nodeVar7 = vec2<f32>( ( nodeVar5 - f32( nodeVar3 ) ), ( nodeVar6 - f32( nodeVar4 ) ) );
+	nodeVar8 = 1000000.0;
+
+	for ( var x : i32 = -1; x <= 1; x ++ ) {
+
+
+		for ( var y : i32 = -1; y <= 1; y ++ ) {
+
+			nodeVar9 = mx_worley_distance_0( nodeVar7, x, y, nodeVar3, nodeVar4, nodeVar1, nodeVar0 );
+			nodeVar8 = min( nodeVar8, nodeVar9 );
+
+		}
+
+
+	}
+
+
+	if ( ( nodeVar0 == 0 ) ) {
+
+		nodeVar8 = sqrt( nodeVar8 );
+		
+
+	}
+
+
+	return nodeVar8;
+
+}
+)WGSL"
+R"WGSL(
+fn mx_worley_noise_float_1( p : vec3<f32>, jitter : f32, metric : i32 ) -> f32 {
+
+	var nodeVar0 : i32;
+	var nodeVar1 : f32;
+	var nodeVar2 : vec3<f32>;
+	var nodeVar3 : i32;
+	var nodeVar4 : i32;
+	var nodeVar5 : i32;
+	var nodeVar6 : f32;
+	var nodeVar7 : f32;
+	var nodeVar8 : f32;
+	var nodeVar9 : vec3<f32>;
+	var nodeVar10 : f32;
+	var nodeVar11 : f32;
+
+	nodeVar0 = metric;
+	nodeVar1 = jitter;
+	nodeVar2 = p;
+	nodeVar3 = 0;
+	nodeVar4 = 0;
+	nodeVar5 = 0;
+	nodeVar6 = nodeVar2.x;
+	nodeVar3 = mx_floor( nodeVar6 );
+	nodeVar7 = nodeVar2.y;
+	nodeVar4 = mx_floor( nodeVar7 );
+	nodeVar8 = nodeVar2.z;
+	nodeVar5 = mx_floor( nodeVar8 );
+	nodeVar9 = vec3<f32>( ( nodeVar6 - f32( nodeVar3 ) ), ( nodeVar7 - f32( nodeVar4 ) ), ( nodeVar8 - f32( nodeVar5 ) ) );
+	nodeVar10 = 1000000.0;
+
+	for ( var x : i32 = -1; x <= 1; x ++ ) {
+
+
+		for ( var y : i32 = -1; y <= 1; y ++ ) {
+
+
+			for ( var z : i32 = -1; z <= 1; z ++ ) {
+
+				nodeVar11 = mx_worley_distance_1( nodeVar9, x, y, z, nodeVar3, nodeVar4, nodeVar5, nodeVar1, nodeVar0 );
+				nodeVar10 = min( nodeVar10, nodeVar11 );
 
 			}
 

@@ -7,11 +7,8 @@ export const WEBGPU_BROWSER_ARGS = [
   "--ignore-gpu-blocklist",
   // Keep Vulkan available on both hardware and software adapters.
   "--enable-features=Vulkan",
-  // Forced ANGLE/Vulkan selects NVIDIA locally but breaks hosted software adapters, especially headed.
-  // Apply that workaround only when the caller explicitly requests the host display.
-  ...(typeof process !== "undefined" && process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
-    ? ["--use-angle=vulkan", "--use-vulkan", "--disable-vulkan-surface"]
-    : []),
+  // No forced ANGLE/Vulkan (--use-angle=vulkan --use-vulkan --disable-vulkan-surface): on a KDE
+  // Xwayland host display it blacked out the sky while the same NVIDIA adapter drew it without them.
 ] as const;
 
 /** Allow performance probes to sample render work instead of Xvfb's compositor cadence. */
@@ -19,6 +16,27 @@ export const PERFORMANCE_BROWSER_ARGS = [
   "--disable-frame-rate-limit",
   "--disable-gpu-vsync",
 ] as const;
+
+/**
+ * What a run adds for its measurements. A frame-time assertion unthrottles only the private Xvfb,
+ * whose compositor timer would pace the frames. On a real display the gated rAF interval must stay
+ * the display's cadence: unthrottled, a game faster than 60 fps read the swapchain's back-pressure
+ * (one ~17 ms wait every few callbacks) as a 17.5 ms interval p95. The completion window measures
+ * unthrottled completion on the session display by design.
+ *
+ * A game drawing from a worker (PRD-752) keeps the frame-rate limit: Xvfb's compositor does not
+ * pace a worker's OffscreenCanvas frames, and `--disable-frame-rate-limit` throttled them (the
+ * shooter presented 36 ms frames with it, 16.7 ms without), the opposite of its effect on a page.
+ */
+export function measurementBrowserArgs(
+  performance: boolean,
+  completion: boolean,
+  display: "real" | "virtual",
+  gameThread: "page" | "worker" = "page",
+): readonly string[] {
+  const args = completion || (performance && display === "virtual") ? PERFORMANCE_BROWSER_ARGS : [];
+  return gameThread === "worker" ? args.filter((argument) => argument !== "--disable-frame-rate-limit") : args;
+}
 
 export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] {
   return [...(browserArgs ?? [])];

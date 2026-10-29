@@ -3,18 +3,20 @@ import type { IToneRegion } from "../tone.js";
 import type { IPlaytestToneAssertion } from "./schema-base.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
-import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
+import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateFootSlipAssertion, validateSightLineAssertion, validateHudAuditAssertion, validateEngineCostAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
-import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
+import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestNetworkProfile, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
   "assert",
   "awaitStartup",
   "bootFailure",
+  "clock",
   "inputDelivery",
   "name",
+  "network",
   "parity",
   "reducedMotion",
   "schemaVersion",
@@ -58,11 +60,26 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.bootFailure !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure is browser-only and requires target 'web'.");
   }
+  if (value.clock !== undefined && value.clock !== "wall-clock") {
+    throw invalidScenario(scenarioPath, "Scenario clock must be 'wall-clock' when present.");
+  }
+  if (value.clock !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario clock is browser-only and requires target 'web'.");
+  }
   if (value.reducedMotion !== undefined && value.reducedMotion !== "reduce") {
     throw invalidScenario(scenarioPath, "Scenario reducedMotion must be 'reduce' when present.");
   }
   if (value.reducedMotion !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario reducedMotion is browser-only and requires target 'web'.");
+  }
+  if (value.network !== undefined && !isRecord(value.network)) {
+    throw invalidScenario(scenarioPath, "Scenario network must be an object with downloadKbps and latencyMs.");
+  }
+  const network = value.network === undefined
+    ? undefined
+    : validateNetworkProfile(value.network, scenarioPath);
+  if (network !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario network is browser-only and requires target 'web'.");
   }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
@@ -81,7 +98,9 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     throw invalidScenario(scenarioPath, "Scenario subject must be a non-empty entity id when present.");
   }
   const subject = typeof value.subject === "string" ? value.subject : undefined;
-  const steps = value.steps.map((step, index) => validateStep(step, scenarioPath, index));
+  const steps = value.steps
+    .flatMap((step, index) => isRecord(step) && step.kind === "explore" ? expandExploreStep(step, scenarioPath, index) : [step])
+    .map((step, index) => validateStep(step, scenarioPath, index));
   if (steps.some(({ kind }) => kind === "aimAt") && subject === undefined) {
     throw invalidScenario(scenarioPath, "A step with kind 'aimAt' aims the subject player start; declare scenario.subject or replace the step.");
   }
@@ -95,8 +114,10 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     ...(assertions === undefined ? {} : { assert: assertions }),
     ...(typeof value.awaitStartup === "boolean" ? { awaitStartup: value.awaitStartup } : {}),
     ...(value.bootFailure === "renderer-no-adapter" ? { bootFailure: value.bootFailure } : {}),
+    ...(value.clock === "wall-clock" ? { clock: value.clock } : {}),
     inputDelivery,
     name,
+    ...(network === undefined ? {} : { network }),
     ...(value.parity === undefined
       ? {}
       : { parity: validateParityConfig(requireRecord(value.parity, scenarioPath, "parity"), scenarioPath) }),
@@ -113,6 +134,70 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     viewport: validateViewport(value.viewport, scenarioPath),
     warmupFrames: optionalNonNegativeInteger(value, "warmupFrames", scenarioPath, "scenario") ?? 0,
   };
+}
+
+/**
+ * Expand one `explore` step into the seeded run of ordinary `input` steps a player would make.
+ *
+ * Scripted steps only visit the places their author thought of; this drives the game's own bindings
+ * from wherever the scenario stands, so a crash, a NaN or a fall out of the world that only a
+ * player finds surfaces in the scenario's assertions. It expands at load, so every runner and every
+ * target that takes an `input` step takes it, and the same seed is the same run.
+ */
+export function expandExploreStep(value: Record<string, unknown>, scenarioPath: string, index: number): Record<string, unknown>[] {
+  rejectUnknownKeys(value, ["actions", "kind", "label", "move", "pointer", "seed", "ticks"], scenarioPath, `steps[${index}]`);
+  const keys = (field: "actions" | "move"): string[] => {
+    const list = value[field];
+    if (list === undefined && field === "actions") return [];
+    if (!Array.isArray(list) || list.length === 0 || list.some((key) => typeof key !== "string" || key.trim() === "") || new Set(list).size !== list.length) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' must define ${field} as a non-empty array of unique key names.`);
+    }
+    return list as string[];
+  };
+  if (!Number.isSafeInteger(value.seed)) throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' must define seed as an integer.`);
+  const ticks = positiveInteger(value.ticks);
+  if (ticks === undefined) throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' must define ticks as a positive integer.`);
+  if (value.pointer !== undefined && typeof value.pointer !== "boolean") throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' pointer must be a boolean.`);
+  if (value.label !== undefined && (typeof value.label !== "string" || value.label.trim() === "")) throw invalidStep(scenarioPath, `Scenario step ${index} label must be a non-empty string.`);
+  const move = keys("move");
+  const actions = keys("actions");
+  // mulberry32: the playtest package may not depend on core's createRandom, and the run must replay.
+  let state = (value.seed as number) >>> 0;
+  const random = (): number => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const pick = (list: readonly string[]): string => list[Math.floor(random() * list.length)]!;
+  const steps: Record<string, unknown>[] = [];
+  let heading = pick(move);
+  for (let left = ticks; left > 0;) {
+    // Held for 10-59 ticks: long enough to build speed and leave the ground, short enough to turn often.
+    const holdTicks = Math.min(left, 10 + Math.floor(random() * 50));
+    // A player keeps a heading for a while: a fresh key every step is a random walk that never
+    // leaves the spawn, and the walls, ledges and enemies a crash needs are further out.
+    if (random() < 0.2) heading = pick(move);
+    const press = new Set([heading]);
+    if (move.length > 1 && random() < 0.35) press.add(pick(move));
+    // Half the steps press an action, and a quarter of those a second one in the same tick: the
+    // combinations (crouch + jump, attack in the air) are where move sets interact and break.
+    if (actions.length > 0 && random() < 0.5) {
+      press.add(pick(actions));
+      if (random() < 0.25) press.add(pick(actions));
+    }
+    steps.push({
+      holdTicks,
+      kind: "input",
+      press: [...press],
+      ...(value.pointer === true ? { pointerPosition: { x: random(), y: random() } } : {}),
+      release: true,
+    });
+    left -= holdTicks;
+  }
+  if (typeof value.label === "string") steps[steps.length - 1]!.label = value.label;
+  return steps;
 }
 
 export function validateArtifacts(value: Record<string, unknown>, scenarioPath: string): IPlaytestArtifactRequest {
@@ -227,6 +312,30 @@ function validateParityTargets(value: unknown, scenarioPath: string, objectPath:
     }
     return target;
   });
+}
+
+/** A browser-only throttle; every key is required, so a typo fails the scenario rather than running unthrottled. */
+function validateNetworkProfile(
+  value: Record<string, unknown>,
+  scenarioPath: string,
+): IPlaytestNetworkProfile {
+  rejectUnknownKeys(value, ["downloadKbps", "latencyMs"], scenarioPath, "network");
+  const downloadKbps = value.downloadKbps;
+  if (
+    typeof downloadKbps !== "number" ||
+    !Number.isFinite(downloadKbps) ||
+    downloadKbps <= 0
+  ) {
+    throw invalidScenario(
+      scenarioPath,
+      "Scenario network.downloadKbps must be a positive number of kilobits per second.",
+    );
+  }
+  const latencyMs = value.latencyMs;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) {
+    throw invalidScenario(scenarioPath, "Scenario network.latencyMs must be a non-negative number.");
+  }
+  return { downloadKbps, latencyMs };
 }
 
 export function validateSetup(value: Record<string, unknown>, scenarioPath: string, subject?: string): IPlaytestScenarioSetup {
@@ -410,7 +519,9 @@ export const PLAYTEST_STEP_KEYS = [
   "window",
 ] as const;
 
-const MAX_RESOURCE_WAIT_TIMEOUT_MS = 120_000;
+// A multi-gigabyte web release on a 20 Mbit/s link can legitimately take minutes to reach its
+// final tier. The bound exists to fail a predicate that will never be true, not to cap a slow link.
+const MAX_RESOURCE_WAIT_TIMEOUT_MS = 300_000;
 
 export function validateStep(value: unknown, scenarioPath: string, index: number): IPlaytestStep {
   if (!isRecord(value)) {
@@ -542,7 +653,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
             ? "input"
             : undefined;
   if (value.kind !== undefined && kind === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} kind must be 'aimAt', 'click', 'input', 'lifecycle', or 'wait'.`);
+    throw invalidStep(scenarioPath, `Scenario step ${index} kind must be 'aimAt', 'click', 'explore', 'input', 'lifecycle', or 'wait'.`);
   }
   const at = validateClickTarget(value.at, scenarioPath, index);
   const target = validateAimTarget(value.target, scenarioPath, index);
@@ -921,6 +1032,15 @@ export function validateStepLabels(
   for (const [index, assertion] of (assertions.tone ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.tone[${index}].atStep`);
   }
+  for (const [index, assertion] of (assertions.animation ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.animation[${index}].atStep`);
+  }
+  for (const [index, assertion] of (assertions.footSlip ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.footSlip[${index}].atStep`);
+    // The runner samples one set of feet per step; a second assertion there would never be measured.
+    if (assertions.footSlip!.findIndex(({ atStep }) => atStep === assertion.atStep) !== index)
+      throw invalidScenario(scenarioPath, `Assertion 'assert.footSlip[${index}]' repeats atStep '${assertion.atStep}'; list every foot in one assertion.`);
+  }
   for (const [index, assertion] of (assertions.signals ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.signals[${index}].atStep`);
   }
@@ -968,6 +1088,9 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   validateAssertionKeys(value, scenarioPath);
   if (Array.isArray(value.signals) && value.signals.length === 0) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.signals' must contain at least one signal assertion.");
+  }
+  if (Array.isArray(value.footSlip) && value.footSlip.length === 0) {
+    throw invalidScenario(scenarioPath, "Assertion 'assert.footSlip' must contain at least one foot-slip assertion.");
   }
   if (Array.isArray(value.tone) && value.tone.length === 0) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.tone' must contain at least one tone assertion.");
@@ -1092,6 +1215,21 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
           causedBy: requireArray(value, "causedBy", scenarioPath, "assert.causedBy").map((entry, index) =>
             validateCausedByAssertion(entry, scenarioPath, `assert.causedBy[${index}]`)),
         }
+      : {}),
+    ...(hasKey(value, "footSlip")
+      ? {
+          footSlip: requireArray(value, "footSlip", scenarioPath, "assert.footSlip").map((entry, index) =>
+            validateFootSlipAssertion(entry, scenarioPath, `assert.footSlip[${index}]`)),
+        }
+      : {}),
+    ...(hasKey(value, "sightLine")
+      ? { sightLine: validateSightLineAssertion(value.sightLine, scenarioPath, "assert.sightLine") }
+      : {}),
+    ...(hasKey(value, "hudAudit")
+      ? { hudAudit: validateHudAuditAssertion(value.hudAudit, scenarioPath, "assert.hudAudit") }
+      : {}),
+    ...(hasKey(value, "engineCost")
+      ? { engineCost: validateEngineCostAssertion(value.engineCost, scenarioPath, "assert.engineCost") }
       : {}),
     ...(hasKey(value, "sceneNodes")
       ? {

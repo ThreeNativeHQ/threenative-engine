@@ -12,6 +12,10 @@ using ProbeCaptureCallback = std::function<void(GpuStatus, std::vector<float>)>;
  */
 GpuStatus captureFace(Renderer& renderer, Object3D& scene, const ProbeVolume& volume, const std::string& name,
                       uint32_t probe, uint32_t face, double near, double far, ProbeCaptureCallback done);
+bool validCaptureFace(const Vector3& position, uint32_t size, uint32_t face, double near, double far);
+/** A scene reflection face from a point; preserves the scene material GI, with the same HDR renderer. */
+GpuStatus captureFace(Renderer&, Object3D& scene, const Vector3& position, uint32_t size, uint32_t face,
+                      double near, double far, ProbeCaptureCallback done, bool shadows = true);
 /** Incremental render-phase updater. A face in flight consumes no further scheduler work. */
 class ProbeBaker {
   public:

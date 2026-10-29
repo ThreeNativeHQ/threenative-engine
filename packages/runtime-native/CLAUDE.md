@@ -105,6 +105,7 @@ remain open.
 - `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked; a tracked file under
   `third_party/` fails `pnpm budgets`.
 - `scripts/download-deps.mjs` is the only supported dependency reconstruction path.
+- `pnpm wasm:build` (from the repository root) builds the browser Wasm engine the default `engine: "threenative"` needs: it fetches `stb`, `cgltf` and `webp-source` through `download-deps.mjs`, then runs the `wasm` preset with the Emscripten SDK in `$EMSDK` (default `~/emsdk`). The `tn-native-engine-web` target refuses to build without `cgltf`, and `pnpm test:templates` stops at once when the pair is missing. Copying another worktree's pair is not the fix.
 - Native compilation is opt-in via `pnpm native:build`. The default repository gate must not
   require CMake, an NDK, or Xcode.
 - A native runtime tree anywhere but this package is a hard budget failure.
@@ -119,7 +120,15 @@ does not exist.
 pnpm native:build                             # download deps + compile
 pnpm native:verify:desktop                    # 300 frames, markers, non-blank screenshot
 node conformance/run-conformance.mjs          # same scene, browser reference vs native
+node conformance/run-conformance.mjs --target desktop --engine threenative --only-tests <row> --reference <web capture dir>
 ```
+
+**Which engine a parity lane runs.** The default lanes run upstream three: Chromium on web, the legacy
+`mystral` host on desktop. A pass there is not owned-engine proof, and the owned engine has been the
+default since 2026-10-15. `--engine threenative` runs the same row on the owned engine: the V8 engine
+player on desktop (`THREENATIVE_ENGINE_PLAYER`, else `build/tn-engine-ui`), the Wasm engine in Chromium on
+web. The row is bundled with the engine's own `three`, so a scene that imports a name the engine does not
+bind fails at the bundle with `TN_NATIVE_ENGINE_UNBOUND`. Cite the engine in any parity result.
 
 `conformance/registry.json` is the versioned public test registry: a row that was not
 selected by `--only-tests` is reported **blocked**, never passed and never omitted. Keep it

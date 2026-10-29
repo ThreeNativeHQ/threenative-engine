@@ -1,8 +1,9 @@
+import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
-// owns which stages run at which tier and records what each one measured. `WorldEnvironment`,
-// also in this folder, builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
+// owns which stages run at which tier and records what each one measured. `WorldEnvironment` from
+// the core package builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
 // applied or refused **with a reason**, so a stage that silently no-op'd is never mistaken for
 // one you turned off.
 //
@@ -21,8 +22,8 @@ import {
 import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
+import { temporalDetailRequested, temporalDetailStages } from "./temporalDetailStage.js";
 import type { FogMedium } from "./volumetricFog.js";
-import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
 interface IPostController {
   readonly tier: QualityTier;
@@ -83,6 +84,8 @@ export function setupPost(
   // The opt-in `traa` stage publishes its provider here once the chain has built it, so `debug()`
   // reports the live reconstruction state and a scene can reset history on a teleport.
   let temporal: TemporalAAProvider | undefined;
+  // The chain's own temporal AA (`temporalAA` in `quality.ts`) reads the engine's live frame, history and jitter.
+  let engineTemporal: (() => Record<string, unknown>) | undefined;
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -94,14 +97,20 @@ export function setupPost(
     medium = environment.fog?.();
     const composed = medium;
     const settings = qualityPreset(policy.tier);
+    const detail = temporalDetailRequested(renderer, settings) ? temporalDetailStages() : [];
     const world = new WorldEnvironment({
       ...settings,
-      // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
-      // orders and reports them, and `quality.ts` decides whether each tier runs them. The opt-in
-      // `traa` stage is offered beside them and runs only when a tier names it.
-      authoredStageNames: ["grade", "grain"],
+      // Game-owned grade/grain and authored TRAA follow quality.ts; WorldEnvironment orders them.
+      // Listing traa replaces the chain's temporalAA provider.
+      authoredStageNames: [
+        "grade",
+        "grain",
+        ...(settings.authoredStageNames ?? []),
+        ...detail.map(({ name }) => name),
+      ],
       authoredStages: (stage) => [
         ...gradeStages(gradePreset(policy.tier), table),
+        ...detail,
         ...temporalAAStages(stage, {
           onProvider: (provider) => {
             temporal = provider;
@@ -115,6 +124,7 @@ export function setupPost(
       baseColour: composed === undefined ? undefined : (scenePass) => composed.compose(scenePass),
     });
     disposeGraph = applied.dispose;
+    engineTemporal = applied.temporalReport;
     observation = { ...observation, stages: applied.stages, dropped: applied.dropped };
     environment.onTierChanged?.(policy.tier);
   }
@@ -153,7 +163,10 @@ export function setupPost(
     get tier(): QualityTier {
       return policy.tier;
     },
-    debug: () => (temporal ? { ...observation, temporal: temporal.report() } : { ...observation }),
+    debug: () => {
+      const report = temporal ? temporal.report() : engineTemporal?.();
+      return report === undefined ? { ...observation } : { ...observation, temporal: report };
+    },
     observe(window: IQualityWindow): void {
       if (disposed) return;
       const decision = policy.observe(window);

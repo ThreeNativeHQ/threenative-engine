@@ -143,8 +143,24 @@ function packagesUnderTest(): readonly IPackageUnderTest[] {
  */
 const INLINED_BY_DESIGN: Readonly<Record<string, readonly string[]>> = {
   "@threenative/assets": ["threenative-blender-mcp"],
-  "create-threenative": ["threenative-blender-mcp"],
+  // The ESLint parser and plugin are bundled into `dist/quality.js` so they load the TypeScript 6
+  // API beside the game's `tsc` 7; see PRD-626 Decisions.
+  "create-threenative": [
+    "@typescript-eslint/eslint-plugin",
+    "@typescript-eslint/parser",
+    "threenative-blender-mcp",
+  ],
 };
+
+/**
+ * Stdio tool processes whose built output is self-contained on purpose. A game never imports
+ * them, so no second copy of three.js or React can meet the game's own instance. The bundle
+ * must carry its runtimes: core commits a copy of the server under `packages/core/mcp/`, where a
+ * bare `import "three"` cannot resolve, and the calibrator page loads `dist/client/app.js` in a
+ * browser with no module graph. Each row must keep a `bin`, which is what makes it a process
+ * rather than a library.
+ */
+const SELF_CONTAINED_TOOLS: ReadonlySet<string> = new Set(["threenative-animation-mcp"]);
 
 // A package that ships TypeScript source (three-native) has no built output to inspect.
 function shipsBuiltOutput(directory: string): boolean {
@@ -232,6 +248,13 @@ describe("published packages keep their runtime dependencies external", () => {
     for (const { directory, imports, name } of packagesUnderTest().filter((entry) =>
       shipsBuiltOutput(entry.directory),
     )) {
+      if (SELF_CONTAINED_TOOLS.has(name)) {
+        const manifest = JSON.parse(
+          fs.readFileSync(path.join(directory, "package.json"), "utf8"),
+        ) as { bin?: unknown };
+        if (manifest.bin === undefined) offenders.push(`${name} is excused but has no bin`);
+        continue;
+      }
       const needed = [...new Set(imports.map(packageRootOf))].filter((root) =>
         SHARED_RUNTIMES.includes(root),
       );

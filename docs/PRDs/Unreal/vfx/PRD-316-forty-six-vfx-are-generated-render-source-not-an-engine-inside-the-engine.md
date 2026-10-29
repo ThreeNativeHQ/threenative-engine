@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-316 — forty-six VFX are generated render source, not an engine inside the engine
 
-**Status: PROPOSED, 2026-09-01.** Source artifact:
+**Status:** PROPOSED, 2026-09-01. Source artifact:
 `/home/joao/Downloads/threenative-vfx-niagara-46-effects.zip`, SHA-256
 `6554c40f862f0ab1b977417d1a01716f76dc3937a3ecb507bedfa230ab6cac0a`, 2.7 MiB.
 The archive was inspected read-only at engine baseline `d6428f2e`; archive code has not been copied

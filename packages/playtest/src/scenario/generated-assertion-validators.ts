@@ -144,6 +144,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
   }),
   "performance": Object.freeze({
     "maxFrameMsP95": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "maxFrameMsReason": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minFps": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxPhaseMsP95": (value: unknown) => isRecord(value),
     "maxDrawCalls": (value: unknown) => typeof value === "number" && Number.isFinite(value),
@@ -201,6 +202,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
   "animation": Object.freeze({
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "clip": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "entered": (value: unknown) => typeof value === "boolean",
     "advancedFrames": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "finished": (value: unknown) => typeof value === "boolean",
@@ -225,6 +227,31 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxCount": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "minTriangles": (value: unknown) => typeof value === "number" && Number.isFinite(value),
   }),
+  "footSlip": Object.freeze({
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "feet": (value: unknown) => Array.isArray(value),
+    "maxSlip": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "maxSlideSpeed": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "stepSeconds": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
+  }),
+  "sightLine": Object.freeze({
+    "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "maxBlockedRatio": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+  }),
+  "engineCost": Object.freeze({
+    "maxPerFrame": (value: unknown) => isRecord(value),
+    "maxInFrame": (value: unknown) => isRecord(value),
+    "minWindows": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value > 0,
+    "skipWindows": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,
+    "still": (value: unknown) => isRecord(value),
+    "moving": (value: unknown) => isRecord(value),
+    "source": (value: unknown) => typeof value === "string" && value.trim() !== "",
+  }),
+  "hudAudit": Object.freeze({
+    "minContrast": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "noDebugText": (value: unknown) => value === true,
+  }),
   "causedBy": Object.freeze({
     "cause": (value: unknown) => isRecord(value),
     "effect": (value: unknown) => isRecord(value),
@@ -235,6 +262,8 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxEnteredMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxCompileSettledMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxReadyMs": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "maxOffscreenBytes": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "steadyCover": (value: unknown) => typeof value === "boolean",
   }),
   "pipelineCensus": Object.freeze({
     "maxNodeBuildsAfterWarmUpSettled": (value: unknown) => typeof value === "number" && Number.isInteger(value) && value >= 0,

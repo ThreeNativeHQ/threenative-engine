@@ -1,0 +1,305 @@
+{
+  "name": "math-array-offset",
+  "adaptedFrom": "original \u2014 fromArray(array, offset) reads from the offset, as the four columns of a camera matrix do when each fills a vec4 uniform with fromArray(elements, 4 * column)",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "world",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "world",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1],
+          "type": "Float32Array"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "world",
+      "method": "toArray",
+      "args": [],
+      "result": "worldLanes"
+    },
+    {
+      "op": "new",
+      "id": "column0",
+      "class": "Vector4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "column0",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "worldLanes"
+        },
+        0
+      ]
+    },
+    {
+      "op": "new",
+      "id": "column1",
+      "class": "Vector4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "column1",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "worldLanes"
+        },
+        4
+      ]
+    },
+    {
+      "op": "new",
+      "id": "column2",
+      "class": "Vector4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "column2",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "worldLanes"
+        },
+        8
+      ]
+    },
+    {
+      "op": "new",
+      "id": "column3",
+      "class": "Vector4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "column3",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "worldLanes"
+        },
+        12
+      ]
+    },
+    {
+      "op": "new",
+      "id": "vector2",
+      "class": "Vector2",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "vector2",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0
+          ],
+          "type": "Float32Array"
+        },
+        7
+      ]
+    },
+    {
+      "op": "new",
+      "id": "vector3",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "vector3",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0
+          ],
+          "type": "Float32Array"
+        },
+        5
+      ]
+    },
+    {
+      "op": "new",
+      "id": "vector4",
+      "class": "Vector4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "vector4",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0
+          ],
+          "type": "Float32Array"
+        },
+        11
+      ]
+    },
+    {
+      "op": "new",
+      "id": "quaternion",
+      "class": "Quaternion",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "quaternion",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0
+          ],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "new",
+      "id": "color",
+      "class": "Color",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "color",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0
+          ],
+          "type": "Float32Array"
+        },
+        5
+      ]
+    },
+    {
+      "op": "new",
+      "id": "matrix3",
+      "class": "Matrix3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "matrix3",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0
+          ],
+          "type": "Float32Array"
+        },
+        2
+      ]
+    },
+    {
+      "op": "new",
+      "id": "matrix4",
+      "class": "Matrix4",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "matrix4",
+      "method": "fromArray",
+      "args": [
+        {
+          "array": [
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+            17.0, 18.0, 19.0, 20.0
+          ],
+          "type": "Float32Array"
+        },
+        2
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "column0",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "column1",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "column2",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "column3",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "vector2",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "vector3",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "vector4",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "quaternion",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "color",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "matrix3",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "matrix4",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

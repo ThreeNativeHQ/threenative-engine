@@ -3,6 +3,7 @@
 #include "engine/shader/wgsl.h"
 #include "engine/shader/package.h"
 #include "engine/shader/graph/post_effects.h"
+#include "engine/shader/tsl/tsl.h"
 
 #include <bit>
 #include <cmath>
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <set>
 #include <string>
+#include <stdexcept>
 
 using namespace tn::engine::shader;
 
@@ -43,6 +45,31 @@ void stagesAgree(const Program& fragment, const std::string& vertex, const std::
         if (!linked) std::fprintf(stderr, "varying %s: fragment %s, vertex elsewhere\n", name.c_str(), code.substr(location, end - location + 1).c_str());
         CHECK(linked);
     }
+}
+
+void alphaHash() {
+    VertexVariant variant;
+    variant.alphaHash = true;
+    variant.map = true;
+    for (int material = 0; material < 5; ++material) {
+        const auto p = material == 0 ? buildBasic(variant) : material == 1 ? buildLambert(variant) :
+            material == 2 ? buildPhong(variant) : material == 3 ? buildStandard({}, variant) : buildPhysical({}, variant);
+        const auto vs = buildStage(p.vertex, 0), fs = buildStage(p.fragment, 1);
+        for (const auto& e : fs.wgsl.errors) std::fprintf(stderr, "%s\n", e.c_str());
+        CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+        if (!vs.wgsl.ok() || !fs.wgsl.ok()) continue;
+        CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
+        CHECK(fs.wgsl.code.find("i_positionLocal") != std::string::npos);
+        stagesAgree(p.fragment, vs.wgsl.code, fs.wgsl.code);
+    }
+    const auto depth = buildDepth(variant);
+    const auto vs = buildStage(depth.vertex, 0), fs = buildStage(depth.fragment, 1);
+    CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+    CHECK(fs.wgsl.code.find("@builtin(frag_depth)") != std::string::npos);
+    CHECK(fs.wgsl.code.find("textureSample(") != std::string::npos);
+    CHECK(fs.wgsl.code.find("dpdx(") != std::string::npos);
+    stagesAgree(depth.fragment, vs.wgsl.code, fs.wgsl.code);
+    CHECK(variant.key() != VertexVariant{}.key());
 }
 
 void fog() {
@@ -192,7 +219,185 @@ void unsupported() {
     CHECK(coatedPrograms.fragment.exprCount() > buildPhysical(coated).fragment.exprCount());
 }
 
+// The post surface pass reads metalness and roughness at offsets 0 and 4 of every standard fragment block,
+// for any lighting layout and for physical materials; a node that replaces either removes the pair.
+void surfacePrefix() {
+    namespace g = tn::engine::shader::graph;
+    for (const bool physical : {false, true}) {
+        VertexVariant plain;
+        const auto programs = physical ? buildPhysical({}, plain) : buildStandard({}, plain);
+        const auto fragment = buildStage(programs.fragment, 1);
+        CHECK(fragment.wgsl.ok() && fragment.uniforms.size() > 2);
+        CHECK(fragment.uniforms[0].name == "metalness" && fragment.uniforms[0].offset == 0);
+        CHECK(fragment.uniforms[1].name == "roughness" && fragment.uniforms[1].offset == 4);
+    }
+    VertexVariant replaced;
+    replaced.nodes.roughnessNode = g::swizzle(g::uv(), "x");
+    const auto fragment = buildStage(buildStandard({}, replaced).fragment, 1);
+    CHECK(fragment.wgsl.ok());
+    CHECK(fragment.uniforms.empty() || fragment.uniforms[0].name != "metalness");
+}
+
+// NodeMaterial.aoNode darkens indirect light: the node's uniform enters the standard fragment, the slot is part of the
+// program key, and a material without it compiles to a program that never mentions it.
+void aoNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    VertexVariant occluded;
+    occluded.nodes.aoNode = g::uniform("nodeAo", Type::f32(), {0.25f});
+    CHECK(plain.key() != occluded.key());
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, occluded).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("f_nodeAo") == std::string::npos);
+    CHECK(with.code.find("f_nodeAo") != std::string::npos);
+}
+
+// PRD-653: material.roughDiffuse shades direct light with the EON model. The variant key changes, a lamp's Source
+// Radius enters the fragment only for the marked material (a sun has none), and the EON constants appear only there.
+void roughDiffuse() {
+    VertexVariant plain;
+    VertexVariant rough;
+    rough.roughDiffuse = true;
+    CHECK(plain.key() != rough.key());
+    const LightLayout layout{"dp"};  // a sun, then a point lamp
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain, layout).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, rough, layout).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("light1SourceRadius") == std::string::npos);
+    CHECK(with.code.find("f_light1SourceRadius") != std::string::npos);
+    CHECK(with.code.find("light0SourceRadius") == std::string::npos);
+    CHECK(with.code.find("0.189468") != std::string::npos);
+    CHECK(without.code.find("0.189468") == std::string::npos);
+}
+
+// NodeMaterial.irradianceNode replaces the environment's diffuse irradiance: its uniform enters the fragment of a
+// material that is lit by an environment, or is the whole indirect diffuse without one, and the slot is part of
+// the program key.
+void irradianceNode() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant plain;
+    plain.environment = true;
+    VertexVariant lit = plain;
+    lit.nodes.irradianceNode = g::uniform("nodeIrradiance", Type::vec(3), {0.5f, 0.25f, 0.125f});
+    CHECK(plain.key() != lit.key());
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, lit).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("f_nodeIrradiance") == std::string::npos);
+    CHECK(with.code.find("f_nodeIrradiance") != std::string::npos);
+    // With no environment (a closed room, no sky) the node is still the material's indirect diffuse: a baked GI
+    // cache must not vanish because scene.environment is null.
+    VertexVariant dark = lit;
+    dark.environment = false;
+    const auto unlitByEnvironment = WgslEmitter::emit(buildStandard(StandardMaterial{}, dark).fragment, 1);
+    CHECK(unlitByEnvironment.ok());
+    CHECK(unlitByEnvironment.code.find("f_nodeIrradiance") != std::string::npos);
+}
+
+// The merged post-target pass (Renderer::auxFragment) draws a lit draw's diffuse colour and emitted radiance through
+// the draw's own bind groups, as further colour outputs (MRT) of the lit fragment: adding them must keep the lit
+// fragment's layout exactly (every uniform at the same offset, every texture at the same binding), put them at
+// @location(1) and (2) after `color`, and leave both unfogged.
+void albedoOutput() {
+    for (int kind = 1; kind < 5; ++kind) {
+        for (int shape = 0; shape < 5; ++shape) {
+            VertexVariant lit;
+            lit.map = shape >= 1;
+            lit.fog = shape == 2 ? 1 : 0;
+            lit.instanceColor = shape == 2;
+            lit.environment = kind >= 3;
+            if (shape == 3 && kind >= 3) lit.pbrMaps |= 1u << kEmissiveMap;
+            if (shape == 4) lit.nodes.emissiveNode = graph::vec3({graph::float_(4), graph::float_(2), graph::float_(0)});
+            const auto build = [&](const VertexVariant& v) {
+                return kind == 1 ? buildLambert(v) : kind == 2 ? buildPhong(v) : kind == 3 ? buildStandard({}, v) : buildPhysical({}, v);
+            };
+            auto targets = build(lit);
+            CHECK(targets.albedo != kInvalid && targets.emissive != kInvalid);
+            auto& f = targets.fragment;
+            f.output("aux1", f.construct(Type::vec(4), {targets.albedo, f.constant(1.f)}));
+            f.output("aux2", f.construct(Type::vec(4), {targets.emissive, f.constant(1.f)}));
+            const auto litFragment = buildStage(build(lit).fragment, 1), auxFragment = buildStage(f, 1);
+            CHECK(litFragment.wgsl.ok() && auxFragment.wgsl.ok());
+            CHECK(auxFragment.uniforms.size() == litFragment.uniforms.size());
+            CHECK(auxFragment.uniformBlockSize == litFragment.uniformBlockSize);
+            CHECK(auxFragment.bindings.size() == litFragment.bindings.size());
+            for (std::size_t i = 0; i < litFragment.uniforms.size(); ++i) {
+                CHECK(auxFragment.uniforms[i].name == litFragment.uniforms[i].name);
+                CHECK(auxFragment.uniforms[i].offset == litFragment.uniforms[i].offset);
+            }
+            CHECK(auxFragment.wgsl.code.find("@location(1) o_aux1") != std::string::npos);
+            CHECK(auxFragment.wgsl.code.find("@location(2) o_aux2") != std::string::npos);
+            // Unfogged: neither target mixes toward the fog colour (the fogged colour is written before them).
+            if (shape == 2) {
+                CHECK(litFragment.wgsl.code.find("f_fogColor") != std::string::npos);
+                const auto output = auxFragment.wgsl.code.rfind("out.o_aux1");
+                CHECK(output != std::string::npos);
+                CHECK(auxFragment.wgsl.code.find("mix(", output) == std::string::npos);
+            }
+        }
+    }
+}
+
+void emissiveOutput() { albedoOutput(); }
+
+void velocityDeformation() {
+    namespace g = tn::engine::shader::graph;
+    VertexVariant variant;
+    variant.instanced = true;
+    const auto time = g::uniform("time", Type::f32());
+    const auto delta = g::uniform("deltaTime", Type::f32());
+    const auto strength = g::uniform("windStrength", Type::f32(), {0.4});
+    const auto scale = g::materialInput("windScale", Type::f32());
+    variant.nodes.positionNode = g::add(g::positionLocal(), g::mul(g::attribute("normal", Type::vec(3)),
+        g::mul(g::sin(g::add(time, delta)), g::mul(strength, scale))));
+    const auto key = g::key(variant.nodes.positionNode);
+    const auto values = g::uniforms(variant.nodes.positionNode);
+    const auto originalStrength = strength->values;
+    const auto velocity = velocityPrograms(variant);
+    const auto colour = buildBasic(variant);
+    const auto vs = buildStage(velocity.vertex, 0), fs = buildStage(velocity.fragment, 1);
+    CHECK(vs.wgsl.ok() && fs.wgsl.ok());
+    stagesAgree(velocity.fragment, vs.wgsl.code, fs.wgsl.code);
+    const auto output = [](const Program& p, const std::string& name) {
+        const auto text = p.dump();
+        const auto start = text.find("output " + name + " = ");
+        return start == std::string::npos ? std::string{} : text.substr(start, text.find('\n', start) - start);
+    };
+    CHECK(output(velocity.vertex, "position") == output(colour.vertex, "position"));
+    const auto current = output(velocity.vertex, "currentClip");
+    const auto previous = output(velocity.vertex, "previousClip");
+    CHECK(current.find("uniform:unjitteredProjection") != std::string::npos);
+    CHECK(previous.find("uniform:previousProjection") != std::string::npos);
+    for (const auto* name : {"time", "deltaTime", "windStrength", "windScale"}) {
+        CHECK(current.find(std::string("uniform:") + name) != std::string::npos);
+        CHECK(current.find(std::string(previousDeformationUniformPrefix) + name) == std::string::npos);
+        CHECK(previous.find(std::string("uniform:") + previousDeformationUniformPrefix + name) != std::string::npos);
+        CHECK(previous.find(std::string("uniform:") + name) == std::string::npos);
+    }
+    for (int column = 0; column < 4; ++column)
+        CHECK(vs.wgsl.code.find("a_instanceMatrix" + std::to_string(column)) != std::string::npos);
+    CHECK(vs.wgsl.code.find("a_normal") != std::string::npos);
+    CHECK(fs.wgsl.code.find("currentClip") != std::string::npos &&
+          fs.wgsl.code.find("previousClip") != std::string::npos);
+    CHECK(g::key(variant.nodes.positionNode) == key && g::uniforms(variant.nodes.positionNode) == values);
+    CHECK(strength->values == originalStrength);
+    const auto rigid = velocityPrograms(VertexVariant{});
+    CHECK(rigid.vertex.ok());
+    const auto rigidStage = buildStage(rigid.vertex, 0);
+    CHECK(rigidStage.attributes.size() == 1 && rigidStage.attributes[0].name == "position");
+    // Only the explicit namespace replaces a graph uniform; material overrides keep their existing fallback.
+    Program controls(Stage::Vertex);
+    tn::engine::shader::tsl::Build scope(controls);
+    const auto one = controls.constant(1.f), two = controls.constant(2.f);
+    CHECK(g::lower(time, controls, {{"time", two}}) != two);
+    CHECK(g::lower(time, controls, {{"uniform:time", two}}) == two);
+    CHECK(g::lower(scale, controls, {{"material:windScale", one}}) == one);
+    CHECK(g::lower(scale, controls, {{"material:windScale", one}, {"uniform:windScale", two}}) == two);
+}
+
 void nodes() {
+    velocityDeformation();
     namespace g = tn::engine::shader::graph;
     VertexVariant variant;
     variant.map = true;
@@ -249,11 +454,38 @@ void nodes() {
     CHECK(!buildBasic(invalid).vertex.ok());
     variant.nodes.positionNode = g::vec4({g::positionLocal(), g::float_(1)});
     CHECK(buildBasic(variant).vertex.ok()); // setupPosition subBuild requests vec3
-
+    // attribute("color") read in a fragment rides a varying, which must not take the colour output's name.
+    VertexVariant painted;
+    painted.nodes.colorNode = g::vec4({g::attribute("color", Type::vec(3)), g::float_(1)});
+    for (const auto& built : {buildBasic(painted), buildStandard(StandardMaterial{}, painted)}) {
+        CHECK(built.vertex.ok() && built.fragment.ok());
+        const auto pv = WgslEmitter::emit(built.vertex, 0), pf = WgslEmitter::emit(built.fragment, 1);
+        CHECK(pv.ok() && pf.ok());
+        CHECK(pv.code.find("a_color") != std::string::npos);
+        stagesAgree(built.fragment, pv.code, pf.code);
+    }
 }
 
 void builds() {
+    // A procedural background reads a world direction and a live sun uniform, without a cube map.
+    VertexVariant background; background.background = true;
+    background.nodes.colorNode = graph::mul(graph::normalize(graph::varying("positionWorldDirection", Type::vec(3))),
+        graph::uniform("sun", Type::f32(), {0.5}));
+    const auto sky = buildBasic(background);
+    CHECK(sky.vertex.ok() && sky.fragment.ok());
+    const auto skyVs = buildStage(sky.vertex, 0), skyFs = buildStage(sky.fragment, 1);
+    CHECK(skyVs.wgsl.ok() && skyFs.wgsl.ok());
+    CHECK(skyFs.wgsl.code.find("texture_cube") == std::string::npos);
+    CHECK(skyFs.wgsl.code.find("f_sun") != std::string::npos);
+    CHECK(skyFs.wgsl.code.find("f_diffuse") != std::string::npos); // backgroundIntensity
+    for (const auto& attribute : skyVs.attributes)
+        CHECK(attribute.name == "position" || attribute.name == "normal");
+
     nodes();
+    surfacePrefix();
+    aoNode();
+    irradianceNode();
+    albedoOutput();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {
@@ -265,6 +497,16 @@ void builds() {
         CHECK(vertex.wgsl.code.find("instanceBase") != std::string::npos);
         CHECK(vertex.attributes.size() == (kind == 0 ? 1 : 2));
         CHECK(fragment.wgsl.code.find("i_instanceColor") != std::string::npos);
+    }
+    // r185 Normal.js leaves derivative face normals unflipped, including DoubleSide back faces.
+    for (bool physical : {false, true}) for (bool flat : {false, true}) {
+        VertexVariant variant;
+        variant.doubleSide = true;
+        variant.flatShading = flat;
+        const auto p = physical ? buildPhysical({}, variant) : buildStandard({}, variant);
+        const auto fragment = buildStage(p.fragment, 1);
+        CHECK(fragment.wgsl.ok());
+        CHECK((fragment.wgsl.code.find("@builtin(front_facing)") == std::string::npos) == flat);
     }
     // Midway's instanced, mapped, fogged meshes: no builder may leave the stages' varyings in
     // declaration order when the fragment reads them in another.
@@ -409,6 +651,137 @@ void bloomPasses() {
     CHECK(outputs.size() == passes.size());
 }
 
+
+// The denoise filters 17 taps a pixel. sampleNormal's depth-derived fallback (nine depth loads) inlined there cost
+// the filter about 1 ms of 2.4 at 2560x1440 by register pressure, taken or not; the pass reads raw normals instead.
+void denoiseReadsRawNormals() {
+    namespace g = graph;
+    const auto effect = g::denoiseEffect(g::texture("scene", g::uv()), g::texture("depth", g::uv()), g::texture("normal", g::uv()), 1);
+    const auto passes = g::postPasses(g::effectNode(effect));
+    CHECK(passes.size() == 1);
+    if (passes.size() != 1) return;
+    CHECK(passes[0].package.ok() && !passes[0].package.variants.empty());
+    if (passes[0].package.variants.empty()) return;
+    std::string code;
+    for (const auto& stage : passes[0].package.variants[0].stages) code += stage.wgsl.code;
+    const auto calls = [&](const std::string& name) {
+        std::size_t n = 0;
+        for (auto at = code.find(name); at != std::string::npos; at = code.find(name, at + 1)) ++n;
+        return n;
+    };
+    std::fprintf(stderr, "denoise: sampleNormal( %zu, sampleNormalRaw( %zu\n", calls("sampleNormal("), calls("sampleNormalRaw("));
+    CHECK(calls("sampleNormal(") == 1);  // its definition, called by no line of the filter
+    CHECK(calls("sampleNormalRaw(") >= 3);
+}
+
+void ssrPasses() {
+    namespace g = graph;
+    const auto color = g::texture("scene", g::uv());
+    const auto depth = g::texture("depth", g::uv());
+    const auto normal = g::texture("normal", g::uv());
+    const auto metal = g::swizzle(g::texture("metalness", g::uv()), "x");
+    const auto rough = g::swizzle(g::texture("roughness", g::uv()), "y");
+    const auto effect = g::ssrEffect(color, depth, normal, metal, rough);
+    effect->resolutionScale = 0.5f;
+    CHECK(effect->kind == "SSRNode" && effect->normal && effect->roughness);
+    CHECK(effect->inputs == std::vector<g::Node>({color, depth, normal, metal, rough}));
+    CHECK(effect->parameters.at("quality")[0] == 0.5);
+    CHECK(effect->parameters.count("maxSteps") && effect->parameters.at("maxSteps")[0] == 1e6);
+    const auto passes = g::postPasses(g::effectNode(effect));
+    CHECK(passes.size() == 6);
+    if (passes.size() != 6) return;
+    CHECK((passes[0].reads == std::map<std::string, std::string>{{"input", "scene"}, {"depth", "depth"},
+        {"normal", "normal"}, {"metalness", "metalness"}}));
+    CHECK(passes[0].output == effect->output + "_ray");
+    CHECK(passes[0].effect == effect && passes[0].resolutionScale == 0.5f);
+    for (uint32_t level = 1; level < 5; ++level) {
+        CHECK(passes[level].mipLevel == level);
+        CHECK(passes[level].reads.at("input") == passes[0].output);
+        CHECK(passes.back().reads.at("mip" + std::to_string(level)) == passes[level].output);
+    }
+    CHECK(passes.back().reads.at("mip0") == passes[0].output);
+    CHECK(passes.back().reads.at("roughness") == "roughness");
+    CHECK(passes.back().output == effect->output && passes.back().resolutionScale == 1);
+    for (const auto& pass : passes) {
+        std::string error;
+        CHECK(acceptPackage(pass.package, error));
+        for (const auto& stage : pass.package.variants.at(0).stages) CHECK(stage.wgsl.ok());
+    }
+    CHECK(passes[0].package.variants[0].stages.back().wgsl.code.find("t_metalness,smp_metalness,coord,0.0).x") != std::string::npos);
+    const auto& ray = passes[0].package.variants[0].stages.back().wgsl.code;
+    CHECK(ray.find("maxSteps: f32") != std::string::npos && ray.find(",u.maxSteps)") != std::string::npos);
+    CHECK(passes.back().package.variants[0].stages.back().wgsl.code.find("t_roughness,smp_roughness,coord,0.0).y") != std::string::npos);
+
+    // Scalar expressions get their own render pass rather than losing their uniforms or UVs.
+    const auto scalar = g::uniform("authoredMetalness", Type::f32(), {0.25});
+    const auto fallback = g::ssrEffect(color, depth, normal, scalar, g::float_(0.7));
+    const auto materialized = g::postPasses(g::effectNode(fallback));
+    CHECK(materialized.size() == 8);
+    if (materialized.size() != 8) return;
+    CHECK(materialized[0].output == fallback->output + "_metalness");
+    CHECK(materialized[0].uniforms.at("authoredMetalness")[0] == 0.25);
+    CHECK(materialized[1].reads.at("metalness") == materialized[0].output);
+    CHECK(materialized[6].output == fallback->output + "_roughness");
+    CHECK(materialized[7].reads.at("roughness") == materialized[6].output);
+    for (const auto& pass : materialized) CHECK(pass.package.ok());
+
+    const auto defaults = g::ssrEffect(color, depth, normal, nullptr, nullptr);
+    CHECK(!defaults->roughness && defaults->inputs.size() == 5);
+    const auto simple = g::postPasses(g::effectNode(defaults));
+    CHECK(simple.size() == 2);
+    CHECK(simple.back().output == defaults->output);
+    CHECK(simple.back().reads.count("roughness") == 0);
+}
+
+void ssrRejectsInputs() {
+    namespace g = graph;
+    const auto texture = g::texture("scene", g::uv());
+    const char* names[]{"SSR color", "SSR depth", "SSR normal"};
+    for (size_t i = 0; i < 3; ++i) for (const auto& bad : {g::Node{}, g::float_(1), g::mul(texture, g::float_(0.5))}) {
+        std::vector<g::Node> inputs{texture, texture, texture};
+        inputs[i] = bad;
+        bool refused = false;
+        try { g::ssrEffect(inputs[0], inputs[1], inputs[2], nullptr, nullptr); }
+        catch (const std::runtime_error& e) {
+            refused = std::string(e.what()) == std::string("TN_TSL_POST_INPUT: ") + names[i] + " must be a texture node";
+        }
+        CHECK(refused);
+    }
+}
+
+void depthTextureLowering() {
+    namespace g = graph;
+    for (bool namedDepth : {false, true}) for (bool load : {false, true}) {
+        const std::string name = namedDepth ? "depth" : "authoredDepth";
+        auto node = std::make_shared<g::NodeData>(*g::texture(name, g::vec2({g::float_(-0.5), g::float_(1.5)})));
+        node->bits = namedDepth ? 0 : 1;
+        if (load) {
+            node->kind = g::Kind::TextureLoad;
+            auto coord = std::make_shared<g::NodeData>();
+            coord->kind = g::Kind::Join; coord->type = Type::vec(2, Type::Scalar::I32);
+            coord->args = {g::int_(0)};
+            node->args = {coord};
+        }
+        Program p(Stage::Fragment);
+        const auto value = g::lower(node, p);
+        CHECK(p.ok());
+        CHECK(p.expr(value).type == (namedDepth ? Type::vec(4) : Type::f32()));
+        p.output("color", p.construct(Type::vec(4), {value}));
+        const auto stage = buildStage(p);
+        CHECK(stage.wgsl.ok());
+        CHECK(stage.wgsl.code.find("t_" + name + ": texture_depth_2d") != std::string::npos);
+        CHECK(stage.wgsl.code.find("textureLoad(t_" + name) != std::string::npos);
+        CHECK(stage.wgsl.code.find("textureSample(") == std::string::npos);
+        if (!load) {
+            CHECK(stage.wgsl.code.find("clamp(") != std::string::npos);
+            CHECK(stage.wgsl.code.find("textureDimensions(t_" + name) != std::string::npos);
+        }
+        bool bound = false;
+        for (const auto& binding : stage.bindings) if (binding.name == "t_" + name) bound = binding.depth;
+        CHECK(bound);
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

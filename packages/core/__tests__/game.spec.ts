@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   DataTexture,
   EquirectangularReflectionMapping,
   Group,
@@ -20,6 +21,8 @@ import {
   resetLaunchFailures,
 } from "../src/launch-diagnostics.js";
 import type { IRenderPerformanceSample } from "../src/loop.js";
+import { RenderCameraCull } from "../src/render-camera-cull.js";
+import { VelocityTracker } from "../src/render/velocity.js";
 import { type ICtx, Scene } from "../src/scene.js";
 import { SoftBody3D } from "../src/softbody.js";
 import { UI_INTENT_MESSAGE, UI_READY_INTENT, connectUiBridge } from "../src/ui-bridge.js";
@@ -68,6 +71,40 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it("disposes the asset loader's KTX2 decoder pool on stop", async () => {
+    const { KTX2Loader } = await import("three/addons/loaders/KTX2Loader.js");
+    const loaderDispose = vi.spyOn(KTX2Loader.prototype, "dispose");
+    const canvas = testCanvas();
+    const extensions = {
+      get: () => ({ getSupportedProfiles: () => ["ldr"] }),
+      has: () => true,
+    };
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          extensions,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: EmptyScene },
+      start: "test",
+    });
+    try {
+      await game.start();
+      game.stop();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(loaderDispose).toHaveBeenCalledTimes(1);
+    } finally {
+      loaderDispose.mockRestore();
+      game.stop();
+    }
+  });
+
   it("reports render traps once per scene entry, including re-entry", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -203,26 +240,47 @@ describe("IGame", () => {
       const ui = connectUiBridge({ end: "ui" });
       const mirror = subscribeUiState<{ score: number }>(ui);
       const observed: number[] = [];
-      mirror.subscribe(() => observed.push(mirror.get()?.score ?? -1));
+      let wasCovered = mirror.covered();
+      mirror.subscribe(() => {
+        // A cover change is not a state publication; this test counts publications.
+        if (mirror.covered() !== wasCovered) {
+          wasCovered = mirror.covered();
+          return;
+        }
+        observed.push(mirror.get()?.score ?? -1);
+      });
       ui.post({ type: UI_INTENT_MESSAGE, intent: UI_READY_INTENT });
       try {
         await game.start();
         await Promise.resolve();
         observed.length = 0;
         if (frame === undefined) throw new Error("Game did not start its loop.");
+        // The page UI reads nothing behind the loading cover; the mirror learns it over the bridge.
+        expect(mirror.covered()).toBe(true);
+        let lagging = 0;
         for (let count = 1; count <= 64; count++) {
           frame(count * 16);
-          if (stateFlushMs === undefined) expect(mirror.get()?.score).toBe(renderedFrames);
+          if (stateFlushMs === undefined && mirror.get()?.score !== renderedFrames) lagging += 1;
           await Promise.resolve();
         }
         // Startup may hold the world while still presenting loader frames. Count actual renders.
         expect(renderedFrames).toBeGreaterThanOrEqual(8);
+        expect(mirror.covered()).toBe(false);
         if (stateFlushMs === undefined) {
-          expect(observed).toEqual(Array.from({ length: renderedFrames }, (_, index) => index + 1));
+          // Every frame publishes, except the startup hand-off's three held frames, once.
+          expect(lagging).toBeGreaterThan(0);
+          expect(lagging).toBeLessThanOrEqual(3);
+          expect(observed).toEqual(
+            Array.from({ length: renderedFrames }, (_, index) => index + 1).filter((score) =>
+              observed.includes(score),
+            ),
+          );
+          expect(observed.length).toBe(renderedFrames - lagging);
+          expect(observed.at(-1)).toBe(renderedFrames);
           animateUi = false;
           frame(1_040);
           await Promise.resolve();
-          expect(observed).toHaveLength(renderedFrames);
+          expect(observed).toHaveLength(renderedFrames - lagging);
         } else {
           expect(observed).toEqual([]);
           await vi.advanceTimersByTimeAsync(stateFlushMs);
@@ -614,6 +672,197 @@ describe("IGame", () => {
       nowSpy.mockRestore();
       if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
       else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("applies camera animation policy before beforeRender projection work", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let preparationCalls = 0;
+    let preparationsBeforeBeforeRender = 0;
+    const cull = vi.spyOn(RenderCameraCull.prototype, "prepareAnimation").mockImplementation(() => {
+      preparationCalls += 1;
+    });
+    class PolicyOrderScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.beforeRender(() => {
+          preparationsBeforeBeforeRender = preparationCalls;
+        });
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: PolicyOrderScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      frame(16);
+      expect(preparationCalls).toBeGreaterThan(0);
+      expect(preparationsBeforeBeforeRender).toBeGreaterThan(0);
+    } finally {
+      game.stop();
+      cull.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("culls after beforeRender moves geometry into camera space", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let mesh: Mesh | undefined;
+    const drawnVisibilities: boolean[] = [];
+    const cull = vi.spyOn(RenderCameraCull.prototype, "apply");
+    class CullOrderScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        mesh = ctx.add(new Mesh(new SphereGeometry(0.1, 8, 6), new MeshBasicMaterial()));
+        mesh.position.z = -1_000;
+        mesh.updateMatrixWorld(true);
+        ctx.beforeRender(() => {
+          mesh?.position.set(0, 0, -10);
+          mesh?.updateMatrixWorld(true);
+        });
+      }
+    }
+    const game = defineGame({
+      camera: { projection: "perspective", fov: 60, near: 0.1, far: 2_000 },
+      render: { projection: false, minimumProjectedPixels: 2 },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: () => {
+            drawnVisibilities.push(mesh?.visible === true);
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: CullOrderScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined || mesh === undefined)
+        throw new Error("Game did not start its loop.");
+      frame(16);
+      expect(mesh.position.z).toBe(-10);
+      expect(cull).toHaveBeenCalledOnce();
+      expect(drawnVisibilities.at(-1)).toBe(true);
+    } finally {
+      game.stop();
+      cull.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
+  it("refreshes exact projection proxies before the final camera cull", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    let moveIntoView = false;
+    const exactDraws: { visible: boolean; z: number }[] = [];
+    const geometry = new SphereGeometry(0.1, 8, 6);
+    const material = new MeshBasicMaterial();
+    let exactSource: Mesh | undefined;
+    class ProjectedCullScene extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        exactSource = new Mesh(geometry, material);
+        exactSource.renderOrder = 1;
+        exactSource.position.z = -1_000;
+        ctx.add(exactSource);
+        for (let index = 0; index < 200; index += 1) {
+          const mesh = new Mesh(geometry, material);
+          mesh.position.z = -1_000;
+          ctx.add(mesh);
+        }
+        ctx.beforeRender(() => {
+          if (moveIntoView) exactSource?.position.set(0, 0, -10);
+        });
+      }
+    }
+    const game = defineGame({
+      camera: { projection: "perspective", fov: 60, near: 0.1, far: 2_000 },
+      render: { minimumProjectedPixels: 2 },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          render: (scene: { traverse(callback: (object: Mesh) => void): void }) => {
+            scene.traverse((object) => {
+              if (object.isMesh === true && object.renderOrder === 1) {
+                exactDraws.push({
+                  visible: object.visible,
+                  z: object.matrixWorld.elements[14] ?? 0,
+                });
+              }
+            });
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: ProjectedCullScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+
+    try {
+      await game.start();
+      if (frame === undefined || exactSource === undefined)
+        throw new Error("Game did not start its loop.");
+      frame(16);
+      moveIntoView = true;
+      frame(32);
+      const latest = exactDraws.at(-1);
+      expect(latest).toEqual({ visible: true, z: -10 });
+    } finally {
+      game.stop();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      geometry.dispose();
+      material.dispose();
     }
   });
 
@@ -1024,6 +1273,8 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -1228,6 +1479,8 @@ describe("IGame", () => {
       }
     }
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -2094,6 +2347,125 @@ describe("IGame", () => {
     await expect(invalid.start()).rejects.toThrow("frame function");
   });
 
+  it("does not enter a scene whose load finished after a newer goto", async () => {
+    const entered: string[] = [];
+    let resolveSlow: () => void = () => undefined;
+    class Fast extends Scene {
+      static override readonly initialState = {};
+      override enter(): void {
+        entered.push("fast");
+      }
+    }
+    class Slow extends Scene {
+      static override readonly initialState = {};
+      override load(): Promise<void> {
+        return new Promise<void>((resolve) => {
+          resolveSlow = resolve;
+        });
+      }
+      override enter(): void {
+        entered.push("slow");
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { fast: Fast, slow: Slow },
+      start: "fast",
+    });
+    await game.start();
+    try {
+      const slow = game.goto("slow");
+      await game.goto("fast");
+      resolveSlow();
+      await slow;
+      expect(entered).toEqual(["fast", "fast"]);
+      expect(game.sceneName).toBe("fast");
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("does not enter a scene whose load finishes after the game stopped", async () => {
+    const entered: string[] = [];
+    let resolveSlow: () => void = () => undefined;
+    class Fast extends Scene {
+      static override readonly initialState = {};
+      override enter(): void {
+        entered.push("fast");
+      }
+    }
+    class Slow extends Scene {
+      static override readonly initialState = {};
+      override load(): Promise<void> {
+        return new Promise<void>((resolve) => {
+          resolveSlow = resolve;
+        });
+      }
+      override enter(): void {
+        entered.push("slow");
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { fast: Fast, slow: Slow },
+      start: "fast",
+    });
+    await game.start();
+    const slow = game.goto("slow");
+    game.stop();
+    resolveSlow();
+    await slow;
+    expect(entered).toEqual(["fast"]);
+  });
+
+  it("cancels the startup stall watch when stopped before readiness", async () => {
+    const realSetInterval = globalThis.setInterval;
+    const realClearInterval = globalThis.clearInterval;
+    const handles = new Set<number>();
+    let next = 1;
+    Object.defineProperty(globalThis, "setInterval", {
+      configurable: true,
+      value: () => {
+        const handle = next++;
+        handles.add(handle);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "clearInterval", {
+      configurable: true,
+      value: (handle: unknown) => {
+        handles.delete(handle as number);
+      },
+    });
+    class Loading extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        ctx.startup.hold("never settles", new Promise<void>(() => undefined));
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { test: Loading },
+      start: "test",
+    });
+    try {
+      await game.start();
+      expect(handles.size).toBeGreaterThan(0);
+      game.stop();
+      expect(handles.size).toBe(0);
+    } finally {
+      Object.defineProperty(globalThis, "setInterval", {
+        configurable: true,
+        value: realSetInterval,
+      });
+      Object.defineProperty(globalThis, "clearInterval", {
+        configurable: true,
+        value: realClearInterval,
+      });
+      game.stop();
+    }
+  });
+
   it("reports a scene whose load() rejects by name instead of stalling the launch", async () => {
     resetLaunchFailures();
     const failures: ILaunchFailure[] = [];
@@ -2251,6 +2623,120 @@ describe("IGame", () => {
     game.stop();
   });
 
+  // The runner kit on SwiftShader: a full scene warm-up on restart compiled for its 45 s budget
+  // before the first world frame, and readiness came 45 s later than on develop.
+  it("bakes a restarted scene's environment without compiling the scene again", async () => {
+    const canvas = testCanvas();
+    const compileAsync = vi.fn(() => Promise.resolve());
+    const prepareEnvironmentAsync = vi.fn(() => Promise.resolve(true));
+    class Restartable extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.scene.environment = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
+        ctx.add(new Mesh(new SphereGeometry(), new MeshBasicMaterial()));
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync,
+          dispose: () => undefined,
+          domElement: canvas,
+          prepareEnvironmentAsync,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Restartable },
+      start: "play",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    try {
+      await game.start();
+      const compiles = compileAsync.mock.calls.length;
+      const bakes = prepareEnvironmentAsync.mock.calls.length;
+      await game.goto("play");
+      expect(prepareEnvironmentAsync.mock.calls.length).toBe(bakes + 1);
+      expect(compileAsync.mock.calls.length).toBe(compiles);
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("holds restarted scene updates until its environment is prepared", async () => {
+    const canvas = testCanvas();
+    let advance: ((ticks: number) => number) | undefined;
+    let enters = 0;
+    let updates = 0;
+    let release: ((ready: boolean) => void) | undefined;
+    const prepareEnvironmentAsync = vi.fn(() =>
+      enters === 1
+        ? Promise.resolve(true)
+        : new Promise<boolean>((resolve) => {
+            release = resolve;
+          }),
+    );
+    class Restartable extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): () => void {
+        enters += 1;
+        ctx.scene.environment = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
+        ctx.add(new Mesh(new SphereGeometry(), new MeshBasicMaterial()));
+        return () => updates++;
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: () => Promise.resolve(),
+          dispose: () => undefined,
+          domElement: canvas,
+          prepareEnvironmentAsync,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Restartable },
+      start: "play",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    try {
+      await game.start();
+      expect(prepareEnvironmentAsync).toHaveBeenCalled();
+      if (advance === undefined) throw new Error("Missing fixed-step runtime");
+      advance(1);
+      const before = updates;
+      let settled = false;
+      const transition = game.goto("play").then(() => {
+        settled = true;
+      });
+      await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+      expect(settled).toBe(false);
+      advance(1);
+      expect(updates).toBe(before);
+      release?.(true);
+      await transition;
+      advance(1);
+      expect(updates).toBe(before + 1);
+    } finally {
+      release?.(true);
+      game.stop();
+    }
+  });
+
   it("resets goto to the destination scene and merges a serializable carry patch", async () => {
     type ScreenState = { characterName: string; screen: "menu" | "play" };
 
@@ -2331,6 +2817,87 @@ describe("IGame", () => {
    * it. These drive the real frame loop and assert on the scene the renderer was handed, because a
    * projection that works in isolation and is not wired in is a module, not an optimization.
    */
+  it.each([
+    { backend: "owned", info: { engine: {} }, tracks: false },
+    { backend: "upstream", info: {}, tracks: true },
+    { backend: "missing marker", info: undefined, tracks: true },
+  ])("keeps world matrices live with $backend velocity ownership", async ({ info, tracks }) => {
+    const update = vi.spyOn(VelocityTracker.prototype, "update");
+    const commit = vi.spyOn(VelocityTracker.prototype, "commit");
+    const canvas = testCanvas();
+    const firstParent = new Group();
+    const secondParent = new Group();
+    firstParent.position.x = 10;
+    secondParent.position.x = 20;
+    const moving = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    moving.position.x = 2;
+    firstParent.add(moving);
+    const spawned = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+    spawned.position.x = 8;
+    const drawn: number[][] = [];
+    let renderFrame: ((time: number) => void) | undefined;
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        renderFrame = callback;
+        return 1;
+      },
+    });
+    class Level extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.add(firstParent);
+        ctx.add(secondParent);
+        ctx.renderer.setRenderChainVelocityEnabled?.(true);
+      }
+    }
+    const game = defineGame({
+      render: { projection: false },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          ...(info === undefined ? {} : { info }),
+          dispose: () => undefined,
+          domElement: canvas,
+          render: () => {
+            drawn.push([
+              moving.matrixWorld.elements[12] ?? 0,
+              ...(spawned.parent === null ? [] : [spawned.matrixWorld.elements[12] ?? 0]),
+            ]);
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Level },
+      start: "play",
+    });
+    try {
+      await game.start();
+      update.mockClear();
+      commit.mockClear();
+      drawn.length = 0;
+      if (renderFrame === undefined) throw new Error("Game did not schedule a frame.");
+      renderFrame(17);
+      expect(drawn.at(-1)).toEqual([12]);
+      secondParent.add(moving, spawned);
+      moving.position.x = 5;
+      renderFrame(34);
+      expect(drawn.at(-1)).toEqual([25, 28]);
+      expect(game.ctx?.renderer.renderChainUsesPerObjectVelocity?.()).toBe(true);
+      expect(update).toHaveBeenCalledTimes(tracks ? 2 : 0);
+      expect(commit).toHaveBeenCalledTimes(tracks ? 2 : 0);
+    } finally {
+      game.stop();
+      update.mockRestore();
+      commit.mockRestore();
+      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+    }
+  });
+
   it("hands the renderer the projection, not the authored scene, and draws far fewer objects", async () => {
     let renderFrame: ((time: number) => void) | undefined;
     const drawn: { candidates: number; scene: unknown }[] = [];
@@ -2361,6 +2928,8 @@ describe("IGame", () => {
       },
     });
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -2438,6 +3007,8 @@ describe("IGame", () => {
       },
     });
     const game = defineGame({
+      // These cases are about the projection, which only sees what the auto batch leaves.
+      autoBatch: false,
       renderer: {
         canvas,
         preferWebGPU: false,
@@ -2967,70 +3538,138 @@ describe("IGame", () => {
     }
   });
 
-  it("draws the overlay while the start scene is still loading, without stepping the simulation", async () => {
-    // A phone has no DOM, so the render loop is the only thing that can put a loading screen on
-    // the screen. Booting with the loop stopped until `scene.load` resolves means every native
-    // game shows a black screen for its whole asset load, and the HUD's own !ready branch is
-    // unreachable. The loop must run during load; the simulation must not.
-    let releaseLoad: () => void = () => undefined;
-    const loadGate = new Promise<void>((resolve) => {
-      releaseLoad = resolve;
-    });
-    let updates = 0;
-    let renders = 0;
-    class SlowScene extends Scene {
-      static override readonly initialState = {};
-      override load(): Promise<void> {
-        return loadGate;
-      }
-      override update(): void {
-        updates += 1;
-      }
-    }
-    const canvas = testCanvas();
+  it("takes the platform source a worker host installs when the game names none (PRD-752)", async () => {
+    // Worker mode: game.ts is the unchanged portable entry, so the worker host cannot pass
+    // `platform` to defineGame. It installs the source on the global scope before start().
+    const canvas = new EventTarget() as HTMLCanvasElement;
+    let mounted = 0;
+    let unmounted = 0;
+    const platform: IGamePlatformSource = {
+      input: () => [],
+      inputTarget: new EventTarget(),
+      mountCanvas: () => {
+        mounted += 1;
+      },
+      renderer: {
+        createCanvas: () => canvas,
+        hasWebGPU: () => false,
+        observeResize: () => () => undefined,
+        readSize: () => [320, 180],
+      },
+      unmountCanvas: () => {
+        unmounted += 1;
+      },
+      viewport: {
+        observeResize: () => () => undefined,
+        readSize: () => ({ aspect: 16 / 9, height: 180, width: 320 }),
+      },
+    };
+    vi.stubGlobal("__tnGamePlatform", platform);
     const game = defineGame({
       renderer: {
-        canvas,
         preferWebGPU: false,
         webgl2Factory: () => ({
           dispose: () => undefined,
           domElement: canvas,
-          render: () => {
-            renders += 1;
-          },
+          render: () => undefined,
           setSize: () => undefined,
         }),
       },
-      scenes: { test: SlowScene },
+      scenes: { test: EmptyScene },
       start: "test",
     });
-    const pending: FrameRequestCallback[] = [];
-    const requestFrame = globalThis.requestAnimationFrame;
-    Object.defineProperty(globalThis, "requestAnimationFrame", {
-      configurable: true,
-      value: (callback: FrameRequestCallback) => {
-        pending.push(callback);
-        return pending.length;
-      },
-    });
     try {
-      const started = game.start();
-      for (let flush = 0; flush < 20; flush += 1) await Promise.resolve();
-      // Drive real frames while `load` is still outstanding.
-      for (let frame = 1; frame <= 6; frame += 1) {
-        const callback = pending.shift();
-        if (callback === undefined) break;
-        callback(frame * 32);
-        for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
-      }
-      expect(renders).toBeGreaterThan(0);
-      expect(updates).toBe(0);
-      releaseLoad();
-      await started;
+      await game.start();
+      expect(mounted).toBe(1);
+      expect(game.ctx?.viewport.size).toEqual({ aspect: 16 / 9, height: 180, width: 320 });
       game.stop();
+      expect(unmounted).toBe(1);
     } finally {
-      if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
-      else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      game.stop();
+      vi.unstubAllGlobals();
     }
   });
+
+  it.each([
+    { opaque: false, worldDrawn: false },
+    { opaque: true, worldDrawn: true },
+  ])(
+    "draws the overlay while the start scene is still loading, without stepping the simulation (opaque cover: $opaque)",
+    async ({ opaque, worldDrawn }) => {
+      // A phone has no DOM, so the render loop is the only thing that can put a loading screen on
+      // the screen. Booting with the loop stopped until `scene.load` resolves means every native
+      // game shows a black screen for its whole asset load, and the HUD's own !ready branch is
+      // unreachable. The loop must run during load; the simulation must not.
+      let releaseLoad: () => void = () => undefined;
+      const loadGate = new Promise<void>((resolve) => {
+        releaseLoad = resolve;
+      });
+      let updates = 0;
+      let renders = 0;
+      const worldRenders: unknown[] = [];
+      let overlayScene: unknown;
+      class SlowScene extends Scene {
+        static override readonly initialState = {};
+        override load(ctx: ICtx): Promise<void> {
+          ctx.canvasLayer.scene.add(new Mesh());
+          ctx.canvasLayer.opaque = opaque;
+          overlayScene = ctx.canvasLayer.scene;
+          return loadGate;
+        }
+        override update(): void {
+          updates += 1;
+        }
+      }
+      const canvas = testCanvas();
+      const game = defineGame({
+        renderer: {
+          canvas,
+          preferWebGPU: false,
+          webgl2Factory: () => ({
+            dispose: () => undefined,
+            domElement: canvas,
+            render: (scene: unknown) => {
+              renders += 1;
+              if (scene !== overlayScene) worldRenders.push(scene);
+            },
+            setSize: () => undefined,
+          }),
+        },
+        scenes: { test: SlowScene },
+        start: "test",
+      });
+      const pending: FrameRequestCallback[] = [];
+      const requestFrame = globalThis.requestAnimationFrame;
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: FrameRequestCallback) => {
+          pending.push(callback);
+          return pending.length;
+        },
+      });
+      try {
+        const started = game.start();
+        for (let flush = 0; flush < 20; flush += 1) await Promise.resolve();
+        // Drive real frames while `load` is still outstanding.
+        for (let frame = 1; frame <= 6; frame += 1) {
+          const callback = pending.shift();
+          if (callback === undefined) break;
+          callback(frame * 32);
+          for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
+        }
+        expect(renders).toBeGreaterThan(0);
+        // A world that has not entered is only the clear colour; drawn with nothing over it, it
+        // flashes before the cover. Under an opaque cover it is drawn, so its first-use compile
+        // lands inside the load instead of after a playtest's setup has released enter().
+        expect(worldRenders.length > 0).toBe(worldDrawn);
+        expect(updates).toBe(0);
+        releaseLoad();
+        await started;
+        game.stop();
+      } finally {
+        if (requestFrame === undefined) Reflect.deleteProperty(globalThis, "requestAnimationFrame");
+        else Object.defineProperty(globalThis, "requestAnimationFrame", { value: requestFrame });
+      }
+    },
+  );
 });

@@ -4,16 +4,21 @@
 // desktop; this file owns only device bring-up and the canvas surface. The test host
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
+#include "engine/foundation/job_pool.h"
 #include "engine/renderer/render_database.h"
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/post/traa.h"
+#include "engine/renderer/probes/capture.h"
 #include "engine/renderer/compute.h"
 #include "engine/scene/geometry.h"
 #include "engine/shader/graph/graph.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <vector>
 #include <map>
 #include <set>
 #if TN_WEB_GLTF
@@ -22,6 +27,7 @@
 
 #include <emscripten/emscripten.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -29,6 +35,13 @@
 using namespace tn::engine;
 
 namespace {
+// The tnw_* contract with the facade (browser-renderer.ts `WEB_HOST_ABI`). Bump both on every tnw_*
+// signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
+// 2 = tnw_web_render's overlay argument (39295d1f3).
+// 3 = startup compilation. 4 = compilation plus temporal input scale in renderer state.
+// 5 = tnw_web_threads (PRD-752).
+constexpr uint32_t kWebHostAbi = 5;
+
 enum WebState : int { Pending = 0, Ready = 1, Failed = 2 };
 
 WebState state = Pending;
@@ -44,14 +57,19 @@ WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
+RenderDatabase overlayDatabase;  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
+Renderer* lastDrawn = nullptr;  // the renderer of the last tnw_web_render: its draws are that call's renderer.info
+tn::engine::shader::graph::Node customToneMapping;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
 ComputeQueue computeQueue;  // PRD-620: renderer.compute kernels and storage reads, run in call order
 // three's renderer settings the game last set (WebGPURenderer's defaults until it does), applied
 // before the next frame, as the V8 player's setRendererState does.
 OutputState output{std::nullopt, 1, true};
 bool outputChanged = true;
+bool postChanged = false;
 bool shadowMap = false;
 int shadowMapType = 1;  // PCFShadowMap
+float renderScale = 1;
 uint32_t sampleCount = 1;  // three's samples: 1 or 4x MSAA
 // The submit serial each drawn frame ended at, oldest first, while its GPU work is unfinished. Chromium
 // queues submitted frames without bound, so a page whose rAF outruns the GPU blocks until the GPU drains
@@ -68,6 +86,19 @@ std::string text(WGPUStringView value) {
 int fail(const std::string& message) {
     if (state != Failed) failure = message;
     state = Failed;
+    return 1;
+}
+
+/**
+ * A refusal that fails one call and leaves the host running (a render target's draw): tnw_web_error names it, once,
+ * and tnw_web_poll still answers Ready, so the renderer keeps drawing. A Failed host keeps its first message.
+ */
+int refuse(const std::string& message) {
+    if (state != Failed) failure = message;
+    // Once per distinct refusal, on the console as a frame's refused program is: the throw each call raises
+    // reaches the page's caller, which may catch it.
+    static std::set<std::string> reported;
+    if (reported.insert(message).second) std::fprintf(stderr, "TN_RENDERER: %s\n", message.c_str());
     return 1;
 }
 
@@ -94,9 +125,12 @@ void onDevice(WGPURequestDeviceStatus status, WGPUDevice result, WGPUStringView 
     if (status != WGPURequestDeviceStatus_Success) return static_cast<void>(fail("TN_WASM_DEVICE: " + text(message)));
     device = result;
     queue = wgpuDeviceGetQueue(device);
+    setenv("TN_GPU_PASSES", EM_ASM_INT({ return globalThis.TN_GPU_PASSES === true; }) ? "1" : "0", 1);
     renderer = std::make_unique<Renderer>(instance, device, queue, events);
     renderer->setGpuTimer(true);
     configureWebSurface();
+    renderer->setOutput(output);
+    outputChanged = false;
     if (pendingPost) renderer->setPostGraph(pendingPost);
     state = Ready;
 }
@@ -119,10 +153,16 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     WGPURequestDeviceCallbackInfo callback = {};
     callback.mode = WGPUCallbackMode_AllowProcessEvents;
     callback.callback = onDevice;
-    const WGPUFeatureName timestamp = WGPUFeatureName_TimestampQuery;
+    // The features the desktop host asks for (webgpu/context.cpp buildRequiredFeatures), each when
+    // the adapter has it: without float32-filterable a linear-filtered FloatType texture is refused.
+    std::vector<WGPUFeatureName> features;
+    for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable, WGPUFeatureName_Float32Blendable,
+                                    WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_TextureCompressionBC,
+                                    WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC})
+        if (wgpuAdapterHasFeature(adapter, feature)) features.push_back(feature);
     WGPUDeviceDescriptor desc = {};
-    desc.requiredFeatureCount = wgpuAdapterHasFeature(adapter, timestamp) ? 1 : 0;
-    desc.requiredFeatures = &timestamp;
+    desc.requiredFeatureCount = features.size();
+    desc.requiredFeatures = features.data();
     desc.uncapturedErrorCallbackInfo.callback = [](WGPUDevice const*, WGPUErrorType, WGPUStringView message, void*, void*) {
         events.post([message = text(message)] { fail("TN_WASM_DEVICE_ERROR: " + message); });
     };
@@ -156,8 +196,22 @@ Camera* cameraOf(const tn_handle_t* handle) {
 }
 } // namespace
 
-/** Starts adapter and device requests on the canvas `selector` names; poll until Ready or Failed. */
-extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h) {
+/** The web host ABI this module speaks; the facade refuses a module whose number differs. */
+extern "C" uint32_t tnw_web_host_abi() { return kWebHostAbi; }
+
+/** The job pool's workers (PRD-752 phase 4), started on the first job: 0 in the single-thread build. */
+extern "C" uint32_t tnw_web_threads() { return tn::engine::JobPool::defaultWorkers(); }
+
+/**
+ * Starts adapter and device requests on the canvas `selector` names; poll until Ready or Failed.
+ * `facadeAbi` is the facade's WEB_HOST_ABI: a facade older than the number passes none (0), and
+ * would otherwise call every later export with the arguments of another ABI.
+ */
+extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h, uint32_t facadeAbi) {
+    if (facadeAbi != kWebHostAbi)
+        return fail("TN_WASM_ABI_MISMATCH: the facade speaks web host ABI " + std::to_string(facadeAbi) +
+                    ", this engine " + std::to_string(kWebHostAbi) +
+                    ": install create-threenative and @threenative/runtime-native from one build");
     if (started) return fail("TN_WASM_INIT: already initialized");
     started = true;
     if (selector == nullptr || !validSize(w, h)) return fail("TN_WASM_INIT: canvas selector or size invalid");
@@ -203,49 +257,148 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
     return 0;
 }
 
-/** Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. */
+/**
+ * Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. A nonzero `overlay`
+ * is three's overlay render (core's canvas layer): drawn over the frame already on the canvas, with no post and no
+ * temporal step (Renderer::overlayRenderer). The canvas texture is taken only by a frame that draws: a frame the
+ * renderer skips while an environment bakes leaves the last presented frame on screen.
+ */
 extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t* cameraHandle, double r, double g,
-                              double b, double a, uint32_t sourceFrame) {
+                              double b, double a, int overlay, uint32_t sourceFrame) {
     tnw_web_poll();
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
     auto* scene = rootOf(sceneHandle);
     auto* camera = cameraOf(cameraHandle);
     if (scene == nullptr || camera == nullptr) return fail("TN_WASM_RENDER: scene or camera handle invalid");
     WGPUSurfaceTexture frame = {};
-    wgpuSurfaceGetCurrentTexture(surface, &frame);
-    if (frame.texture == nullptr) return fail("TN_WASM_SURFACE: no canvas texture");
-    WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
+    WGPUTextureView view = nullptr;
+    const auto acquire = [&]() -> WGPUTextureView {
+        wgpuSurfaceGetCurrentTexture(surface, &frame);
+        if (frame.texture == nullptr) throw std::runtime_error("TN_WASM_SURFACE: no canvas texture");
+        return view = wgpuTextureCreateView(frame.texture, nullptr);
+    };
     flushCompute();
     if (outputChanged) renderer->setOutput(output);
     outputChanged = false;
-    database.shadowMapEnabled = shadowMap;
-    database.shadowMapType = shadowMapType;
-    // A refusal the renderer throws (an unported feature, a refused binding) is this frame's named
-    // failure, never a bare WebAssembly.Exception in the page.
+    // RenderPipeline installs its graph before the facade submits renderer settings. Compile only
+    // now, when an explicit renderOutput(..., 5) can see the registered curve on its first frame.
+    // A refusal the renderer throws (an unported feature, a refused binding, a post graph it cannot build) is this
+    // frame's named failure, never a bare WebAssembly.Exception in the page.
     std::string refused;
     try {
-        renderer->setSampleCount(sampleCount);
-        renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
-        Renderer::PresentScope present(*renderer, view, surfaceFormat);
-        database.render(*renderer, *scene, *camera, {r, g, b, a});
+        if (postChanged) renderer->setPostGraph(pendingPost);
     } catch (const std::exception& error) {
         refused = error.what();
     }
-    wgpuTextureViewRelease(view);
-    wgpuTextureRelease(frame.texture);
+    postChanged = false;
+    database.shadowMapEnabled = shadowMap;
+    database.shadowMapType = shadowMapType;
+    try {
+        if (!refused.empty()) throw std::runtime_error(refused);
+        if (overlay) {
+            Renderer& target = renderer->overlayRenderer();
+            lastDrawn = &target;
+            Renderer::PresentScope present(target, acquire, surfaceFormat);
+            overlayDatabase.render(target, *scene, *camera, {0, 0, 0, 0});
+        } else {
+            lastDrawn = renderer.get();
+            renderer->setSampleCount(sampleCount);
+            renderer->setRenderScale(renderScale);
+            renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
+            Renderer::PresentScope present(*renderer, acquire, surfaceFormat);
+            database.render(*renderer, *scene, *camera, {r, g, b, a});
+        }
+    } catch (const std::exception& error) {
+        refused = error.what();
+    }
+    if (view) wgpuTextureViewRelease(view);
+    if (frame.texture) wgpuTextureRelease(frame.texture);
     framesOnGpu.push_back(renderer->gpu().submittedSerial());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
-    // post pass reads a depth-derived normal there), so it goes to the console log, which a playtest's
-    // no-console-errors policy does not fail on.
+    // post pass reads a depth-derived normal there), and so is TN_TRAA_VELOCITY_SKIPPED (the draw moves with
+    // the camera) and TN_TRAA_MSAA_OFF (the temporal pass replaces the multisampling), so they go to the console log, which a
+    // playtest's no-console-errors policy does not fail on.
     static std::set<std::string> reported;
-    for (const std::string& diagnostic : renderer->diagnostics())
-        if (reported.insert(diagnostic).second)
-            std::fprintf(diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 ? stdout : stderr, "TN_RENDERER: %s\n",
-                         diagnostic.c_str());
+    for (const std::string& diagnostic : (lastDrawn ? *lastDrawn : *renderer).diagnostics())
+        if (reported.insert(diagnostic).second) {
+            const bool note = diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 || diagnostic.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0 ||
+                              diagnostic.rfind("TN_TRAA_MSAA_OFF", 0) == 0;
+            std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
+        }
     if (!refused.empty()) return fail(refused);
-    if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
+    const RenderDatabase& drawn = overlay ? overlayDatabase : database;
+    if (!drawn.diagnostics().empty()) return fail(drawn.diagnostics().front());
     return 0;
+}
+
+namespace {
+// three's compileAsync, by the id tnw_web_compile_async returned: the pipelines still compiling.
+std::map<uint32_t, std::vector<std::shared_ptr<PipelineCompilation>>> compilations;
+uint32_t nextCompilation = 1;
+} // namespace
+
+/**
+ * three's compileAsync(root, camera, targetScene), as the V8 player's: builds every pipeline the first draw of `root`
+ * will take, with the renderer settings that draw will use, through createRenderPipelineAsync, so the browser compiles
+ * them off the queue instead of stalling the first frames behind each one. Returns the id tnw_web_compile_status
+ * polls, or 0 when it refused (tnw_web_error names it; the host keeps drawing, and the first draw compiles instead).
+ */
+extern "C" uint32_t tnw_web_compile_async(const tn_handle_t* rootHandle, const tn_handle_t* cameraHandle,
+                                          const tn_handle_t* sceneHandle) {
+    tnw_web_poll();
+    if (state != Ready) {
+        if (state == Pending) refuse("TN_WASM_COMPILE: device not ready");  // a Failed host keeps its message
+        return 0;
+    }
+    auto* root = rootOf(rootHandle);
+    auto* camera = cameraOf(cameraHandle);
+    auto* scene = sceneHandle ? rootOf(sceneHandle) : nullptr;
+    if (!root || !camera || (sceneHandle && !scene)) {
+        refuse("TN_WASM_COMPILE: root, camera or target scene invalid");
+        return 0;
+    }
+    try {
+        if (outputChanged) renderer->setOutput(output);
+        outputChanged = false;
+        if (postChanged) renderer->setPostGraph(pendingPost);
+        postChanged = false;
+        renderer->setSampleCount(sampleCount);
+        RenderDatabase compiling;  // the frame's own database keeps its records for the draws
+        compiling.shadowMapEnabled = shadowMap;
+        compiling.shadowMapType = shadowMapType;
+        compilations[nextCompilation] = compiling.compileAsync(*renderer, *root, *camera, scene, surfaceFormat);
+    } catch (const std::exception& error) {
+        refuse(std::string("TN_WASM_COMPILE: ") + error.what());
+        return 0;
+    }
+    return nextCompilation++;
+}
+
+/** 0 while a pipeline of compilation `id` still compiles, 1 once every one is built, -1 when one was refused (named by tnw_web_error). */
+extern "C" int tnw_web_compile_status(uint32_t id) {
+    tnw_web_poll();
+    const auto found = compilations.find(id);
+    if (state == Failed && found != compilations.end()) {
+        compilations.erase(found);  // a lost device may never complete the pipelines; its failure names why
+        return -1;
+    }
+    if (found == compilations.end()) {
+        refuse("TN_WASM_COMPILE: no compilation " + std::to_string(id));
+        return -1;
+    }
+    for (const auto& pipeline : found->second)
+        if (!pipeline->ready()) return 0;
+    std::string refused;
+    for (const auto& pipeline : found->second) {
+        try { pipeline->get(); } catch (const std::exception& error) { refused = error.what(); break; }
+    }
+    compilations.erase(found);
+    if (!refused.empty()) {
+        refuse("TN_WASM_PIPELINE_REFUSED: " + refused);
+        return -1;
+    }
+    return 1;
 }
 
 /**
@@ -265,9 +418,13 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
     if (target == nullptr || root == nullptr || camera == nullptr)
         return fail("TN_WASM_RENDER_TARGET: target, root or camera handle invalid");
     flushCompute();  // a material in the target may read what a queued kernel writes
-    const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
-    if (!refused.empty()) return fail(refused.front());
-    return 0;
+    try {
+        const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
+        if (!refused.empty()) return refuse(refused.front());
+        return 0;
+    } catch (const std::exception& error) {
+        return refuse(error.what());  // preserve backgroundNode's named compile refusal across the Wasm boundary
+    }
 }
 
 namespace {
@@ -299,6 +456,33 @@ extern "C" uint32_t tnw_web_read_target(const tn_handle_t* targetHandle, uint32_
                                                         : "TN_WASM_READ_TARGET: region outside the target"), 0;
     }
     return id;
+}
+
+/** Starts one HDR cube face. -2 means environment pending, -1 refusal, otherwise a read id. */
+extern "C" int32_t tnw_web_capture_face(const tn_handle_t* rootHandle, double x, double y, double z,
+                                        uint32_t size, uint32_t face) {
+    tnw_web_poll();
+    auto* root = rootOf(rootHandle);
+    if (state != Ready || !root) return refuse("TN_REFLECTION_CAPTURE_SCENE"), -1;
+    flushCompute();
+    const uint32_t id = ++nextTargetRead;
+    targetReads[id] = {};
+    try {
+        const auto started = probes::captureFace(*renderer, *root, Vector3{x, y, z}, size, face, 0.01, 2000,
+            [id](GpuStatus status, std::vector<float> rgb) {
+                auto& read = targetReads.at(id);
+                read.status = status == GpuStatus::Ok ? 1 : -1;
+                read.bytes.resize(rgb.size() * sizeof(float));
+                std::memcpy(read.bytes.data(), rgb.data(), read.bytes.size());
+            });
+        if (started == GpuStatus::Ok) return int32_t(id);
+        targetReads.erase(id);
+        if (started == GpuStatus::Pending) return -2;
+        return refuse("TN_REFLECTION_CAPTURE_FACE"), -1;
+    } catch (const std::exception& error) {
+        targetReads.erase(id);
+        return refuse(error.what()), -1;
+    }
 }
 
 /** The read's state (0 pending, 1 delivered, -1 failed); delivered bytes are copied to `out` and the read ends. */
@@ -398,24 +582,26 @@ extern "C" int tnw_web_delete_storage(const tn_handle_t* attributeHandle) {
  * leaves the renderer running.
  */
 extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const char* colorSpace, int shadowEnabled,
-                                      double shadowType, double samples) {
+                                      double shadowType, double samples, double scale) {
     std::string refusal;
-    const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal);
+    const auto next = outputStateOf(toneMapping, exposure, colorSpace, refusal, customToneMapping);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (next && shadowType != 1 && shadowType != 2) refusal = "shadowMap.type must be PCFShadowMap or PCFSoftShadowMap";
     if (samples != 1 && samples != 4) refusal = "samples must be 1 or 4";
+    if (!std::isfinite(scale) || scale < 0.25 || scale > 1) refusal = "renderScale must be between 0.25 and 1";
     if (!refusal.empty()) {
         if (state != Failed) failure = "TN_NATIVE_RENDERER_STATE: " + refusal;
         return 1;
     }
     if (next->toneMapping != output.toneMapping || next->toneMappingExposure != output.toneMappingExposure ||
-        next->srgb != output.srgb) {
+        next->srgb != output.srgb || next->customToneMapping != output.customToneMapping) {
         output = *next;
         outputChanged = true;
     }
     shadowMap = shadowEnabled != 0;
     shadowMapType = static_cast<int>(shadowType);
     sampleCount = static_cast<uint32_t>(samples);
+    renderScale = static_cast<float>(scale);
     return 0;
 }
 
@@ -424,17 +610,18 @@ extern "C" int tnw_web_renderer_state(double toneMapping, double exposure, const
  * `context`, or none (null). The same graph again is a no-op, as RenderPipeline.render() hands it
  * every frame (PRD-540; the V8 player's setPostGraph).
  */
-extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node) {
+extern "C" int tnw_web_set_post(tn_context_t* context, const uint64_t* node, int toneMapping) {
     static shader::graph::Node current;
     shader::graph::Node graph;
     if (node != nullptr) {
         graph = tn::abi::tslNode(context, *node);
         if (!graph) return fail("TN_WASM_POST: not a TSL node of this context");
     }
+    if (toneMapping) { customToneMapping = graph; return 0; }
     if (graph == current) return 0;
     current = graph;
-    if (state == Ready && renderer) renderer->setPostGraph(graph);
-    else pendingPost = graph;
+    pendingPost = graph;
+    postChanged = true;
     return 0;
 }
 
@@ -506,15 +693,20 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * the last resolved GPU frame time in ms (7), how many GPU times have resolved (8), the caller
  * frame id that sample was submitted under (9), whether frames are timed at all (10), and 1 while
  * two drawn frames are still on the GPU, so the caller draws none (11), and 1 while the last render skipped
- * its frame for an environment that is not baked yet (12).
+ * its frame for an environment that is not baked yet (12). The temporal pass follows: 1 while a traa() effect is in
+ * the post graph (13), the frames it has begun (14), 1 when the next resolve has history (15), and the last
+ * sub-pixel jitter in pixels, x (16) and y (17). Then the samples the scene draws with (18): 1 while the temporal pass
+ * replaces the multisampling the renderer asked for.
+ * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
+    if (!lastDrawn) lastDrawn = renderer.get();
     switch (field) {
         // three's renderer.info.render counts every pass of a render(), the shadow pass's included, as the
         // V8 player's frameDrawn does: one scene is counted the same on every backend.
-        case 0: return double(renderer->lastFrame().draws + renderer->lastFrame().shadowDraws);
-        case 1: return double(renderer->lastFrame().triangles + renderer->lastFrame().shadowTriangles);
+        case 0: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);
+        case 1: return double(lastDrawn->lastFrame().triangles + lastDrawn->lastFrame().shadowTriangles);
         case 2: return double(renderer->pipelines().compiles());
         case 3: return double(renderer->pipelines().textLookups());
         case 4: return double(bindGroupsCreated());
@@ -529,6 +721,49 @@ extern "C" double tnw_web_frame(int field) {
             while (!framesOnGpu.empty() && framesOnGpu.front() <= renderer->gpu().completedSerial()) framesOnGpu.pop_front();
             return framesOnGpu.size() >= kMaxFramesOnGpu ? 1 : 0;
         case 12: return renderer->environmentPending() ? 1 : 0;
+        case 13: return renderer->temporalStatus().active ? 1 : 0;
+        case 14: return double(renderer->temporalStatus().frame);
+        case 15: return renderer->temporalStatus().historyValid ? 1 : 0;
+        case 16: return renderer->temporalStatus().jitterX;
+        case 17: return renderer->temporalStatus().jitterY;
+        case 18: return double(renderer->sampleCount());
+        // The sample field 7 reports, by what drew it: 19 shadow passes, 20 the scene pass, 21 other passes, 22 the
+        // output pass, 23 the screen-space gather (frame_gpu_timer.h). They sum to field 7.
+        case 19: case 20: case 21: case 22: case 23: return renderer->lastGpuSegments()[size_t(field - 19)];
+        // PRD-650: the lamp maps apart from the sun's. 24 their GPU time (a part of field 7, beside 19), 25 the
+        // lamp maps the last frame redrew, 26 their draws, and 27 every shadow draw, so 27 - 26 is the sun's.
+        case 24: return renderer->lastGpuSegments()[kGpuLampShadowSegment];
+        case 25: return double(renderer->lastFrame().lampRedraws);
+        case 26: return double(renderer->lastFrame().lampShadowDraws);
+        case 27: return double(renderer->lastFrame().shadowDraws);
+        // 28 and 29: the smallest and largest edge of the lamp maps the footprint sized (0 without one).
+        case 28: return double(renderer->lampShadowExtent()[0]);
+        case 29: return double(renderer->lampShadowExtent()[1]);
+        // 30 to 33: the temporal resolve's newest counted frame (one in 16): the pixels whose history it discarded, the
+        // pixels whose history it pulled into the colour neighbourhood, the pixel count of that frame and its frame number.
+        case 30: return double(renderer->temporalStatus().rejected);
+        case 31: return double(renderer->temporalStatus().clamped);
+        case 32: return double(renderer->temporalStatus().pixels);
+        case 33: return double(renderer->temporalStatus().countedFrame);
+        case 34: return renderer->temporalUpscale() ? 1 : 0;
+        case 35: return renderer->inputWidth();
+        case 36: return renderer->inputHeight();
+        case 37: return renderer->traaDebugPass() ? renderer->traaDebugPass()->status().jitterLength : 0;
+        case 38: return renderer->width();
+        case 39: return renderer->height();
+        // PRD-754, 60 to 65: the draws the main pass recorded into its bundle,
+        // why its key moved (Renderer::RecordCause), the draws the aux and velocity passes recorded, the ms spent
+        // recording bundles, and the ms spent encoding the shadow passes directly. Zero while every bundle holds.
+        case 60: return double(renderer->lastFrame().mainRecorded);
+        case 61: return double(renderer->lastFrame().recordCause);
+        case 62: return double(renderer->lastFrame().auxRecorded);
+        case 63: return renderer->lastFrame().recordMs;
+        case 64: return renderer->lastFrame().shadowEncodeMs;
+        case 65: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
+        // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
+        // 41: the bytes of per-draw uniforms it uploaded.
+        case 40: return double(renderer->lastFrame().keptShadowMaps);
+        case 41: return double(renderer->lastFrame().uniformBytes);
         default: return 0;
     }
 }

@@ -10,7 +10,19 @@ import type {
   SkinnedMesh,
 } from "three";
 
+import { isAutoBatchSource } from "./auto-batch.js";
 import { isEngineRenderHook } from "./engine-render-hook.js";
+import {
+  type IGeometryContentClass,
+  type IGeometryContentEntry,
+  contentHash,
+  contentLayout,
+  contentMergeable,
+  contentPartsUnchanged,
+  ownContentClass,
+  recordContentParts,
+  sameContent,
+} from "./projection-content.js";
 import { skinnedMaterialBlocked } from "./projection-skinned.js";
 import { uniformSignatureOf } from "./projection-uniform.js";
 import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjection.js";
@@ -298,10 +310,15 @@ class ProjectionSeen implements IProjectionSeenWorkspace {
 }
 
 /**
- * A reusable identity group for one (geometry, material, flags) combination.
+ * A reusable identity group for one (geometry content, material, flags) combination.
+ *
+ * `content` is the key: a rig's own geometry, or the content class of a rigid mesh's geometry, so
+ * copies that each built the same shape share a group. `geometry` is what the batch draws for every
+ * member, the class's canonical one, set again on each scan that activates the group.
  */
 export interface IProjectionBatchGroup {
-  readonly geometry: BufferGeometry;
+  geometry: BufferGeometry;
+  readonly content: object;
   readonly material: Material;
   readonly castShadow: boolean;
   readonly receiveShadow: boolean;
@@ -398,19 +415,24 @@ export interface IProjectionScanWorkspace {
   activeGroupCount: number;
   readonly walkStack: Array<Object3D | undefined>;
   walkStackCount: number;
-  readonly groupsByGeometry: WeakMap<
-    BufferGeometry,
-    WeakMap<Material, Map<number, IProjectionBatchGroup>>
-  >;
+  /** Rigid groups by geometry content class, then material, then flags. */
+  readonly groupsByContent: WeakMap<object, WeakMap<Material, Map<number, IProjectionBatchGroup>>>;
   /**
-   * Uniform groups, by geometry, then by the material signature, then by the batching flags — a
-   * signature is a value, so the geometry key has to be the weak one for the index not to outlive
-   * the geometry it describes.
+   * Uniform groups, by geometry content class, then by the material signature, then by the batching
+   * flags — a signature is a value, so the class key has to be the weak one for the index not to
+   * outlive the geometries it describes.
    */
-  readonly uniformGroups: WeakMap<
-    BufferGeometry,
-    Map<string, Map<number, IProjectionUniformGroup>>
-  >;
+  readonly uniformGroups: WeakMap<object, Map<string, Map<number, IProjectionUniformGroup>>>;
+  /** Each geometry's content class and the attribute versions it holds for (projection-content.ts). */
+  readonly geometryContent: WeakMap<BufferGeometry, IGeometryContentEntry>;
+  /** The content entry of each eligible mesh, by its index in `eligible`. */
+  readonly eligibleContent: Array<IGeometryContentEntry | undefined>;
+  /** Geometries first seen this scan, classified together once the walk has seen every class. */
+  readonly pendingContent: Array<BufferGeometry | undefined>;
+  pendingContentCount: number;
+  /** Content classes with a member this scan, so each re-chooses its canonical geometry once. */
+  readonly touchedClasses: Array<IGeometryContentClass | undefined>;
+  touchedClassCount: number;
   readonly activeUniformGroups: Array<IProjectionUniformGroup | undefined>;
   activeUniformGroupCount: number;
   /** The uniform group each mesh was filed under, so nothing files it a second time this scan. */
@@ -433,11 +455,25 @@ export interface IProjectionScanWorkspace {
   scanNumber: number;
 }
 
+/**
+ * Why a `notWorthwhile` frame had too many meshes drawing alone. `uniqueGeometry`: copies whose
+ * geometry data differs (or that are one of a kind); `uniqueMaterial`: copies that share a shape but
+ * not a material beyond its colour, or not their shadow and layer flags.
+ */
+export type ProjectionDeclineCauseCode = "uniqueGeometry" | "uniqueMaterial";
+
+export interface IProjectionDeclineCount {
+  readonly code: ProjectionDeclineCauseCode;
+  /** Meshes left drawing alone for that cause. */
+  readonly meshes: number;
+}
+
 /** Gives the frame back to the authored scene, naming why. */
 export interface IProjectionDeclinePlan {
   readonly action: "decline";
   readonly reasonCode: ProjectionReasonCode;
   readonly reason: string;
+  readonly cause?: IProjectionDeclineCount;
 }
 
 /** Everything the apply seam needs to build and maintain this frame's mirror. */
@@ -507,8 +543,14 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     activeGroupCount: 0,
     walkStack: [],
     walkStackCount: 0,
-    groupsByGeometry: new WeakMap(),
+    groupsByContent: new WeakMap(),
     uniformGroups: new WeakMap(),
+    geometryContent: new WeakMap(),
+    eligibleContent: [],
+    pendingContent: [],
+    pendingContentCount: 0,
+    touchedClasses: [],
+    touchedClassCount: 0,
     activeUniformGroups: [],
     activeUniformGroupCount: 0,
     uniformOf: new WeakMap(),
@@ -570,6 +612,15 @@ function releaseSkinnedScan(workspace: IProjectionScanWorkspace): void {
   workspace.skinnedGroupCount = 0;
 }
 
+/** The content lane's share: a class keeps no first member of a scan that ended. */
+function releaseContentScan(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.touchedClassCount; index += 1) {
+    (workspace.touchedClasses[index] as IGeometryContentClass).first = undefined;
+    workspace.touchedClasses[index] = undefined;
+  }
+  workspace.touchedClassCount = 0;
+}
+
 export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspace): void {
   for (let index = 0; index < workspace.exactEntryPool.length; index += 1) {
     const entry = workspace.exactEntryPool[index] as IProjectionExactEntry;
@@ -600,7 +651,9 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
   }
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
     workspace.eligible[index] = undefined;
+    workspace.eligibleContent[index] = undefined;
   }
+  releaseContentScan(workspace);
   releaseSkinnedScan(workspace);
   for (let index = 0; index < workspace.exactLaneCount; index += 1) {
     const entry = workspace.exactLane[index] as IProjectionExactEntry;
@@ -663,11 +716,12 @@ function batchFlagsOf(mesh: Mesh): number {
 function addToBatchGroup(
   workspace: IProjectionScanWorkspace,
   mesh: Mesh,
+  content: IGeometryContentClass,
   scanNumber: number,
 ): void {
-  const byFlags = flagGroupsOf(workspace.groupsByGeometry, mesh);
+  const byFlags = flagGroupsOf(workspace.groupsByContent, content, mesh);
   const flags = batchFlagsOf(mesh);
-  const group = activeGroupOf(byFlags, flags, mesh, scanNumber);
+  const group = activeGroupOf(byFlags, flags, mesh, content, content.canonical, scanNumber);
   if (group.memberCount === 0) {
     workspace.activeGroups[workspace.activeGroupCount] = group;
     workspace.activeGroupCount += 1;
@@ -685,10 +739,10 @@ function addToSkinnedGroup(
   mesh: SkinnedMesh,
   scanNumber: number,
 ): void {
-  const byFlags = flagGroupsOf(workspace.skinnedGroupsByGeometry, mesh);
+  const byFlags = flagGroupsOf(workspace.skinnedGroupsByGeometry, mesh.geometry, mesh);
   // Bone counts stay far below 2^16, so the composite key stays an exact integer.
   const key = batchFlagsOf(mesh) * 65536 + mesh.skeleton.bones.length;
-  const group = activeGroupOf(byFlags, key, mesh, scanNumber);
+  const group = activeGroupOf(byFlags, key, mesh, mesh.geometry, mesh.geometry, scanNumber);
   if (group.memberCount === 0) {
     workspace.activeSkinnedGroups[workspace.activeSkinnedGroupCount] = group;
     workspace.activeSkinnedGroupCount += 1;
@@ -698,15 +752,15 @@ function addToSkinnedGroup(
 }
 
 function flagGroupsOf(
-  index: WeakMap<BufferGeometry, WeakMap<Material, Map<number, IProjectionBatchGroup>>>,
+  index: WeakMap<object, WeakMap<Material, Map<number, IProjectionBatchGroup>>>,
+  content: object,
   mesh: Mesh,
 ): Map<number, IProjectionBatchGroup> {
-  const geometry = mesh.geometry;
   const material = mesh.material as Material;
-  let byMaterial = index.get(geometry);
+  let byMaterial = index.get(content);
   if (byMaterial === undefined) {
     byMaterial = new WeakMap();
-    index.set(geometry, byMaterial);
+    index.set(content, byMaterial);
   }
   let byFlags = byMaterial.get(material);
   if (byFlags === undefined) {
@@ -721,14 +775,16 @@ function activeGroupOf(
   byFlags: Map<number, IProjectionBatchGroup>,
   key: number,
   mesh: Mesh,
+  content: object,
+  geometry: BufferGeometry,
   scanNumber: number,
 ): IProjectionBatchGroup {
-  const geometry = mesh.geometry;
   const material = mesh.material as Material;
   let group = byFlags.get(key);
   if (group === undefined) {
     group = {
       geometry,
+      content,
       material,
       castShadow: mesh.castShadow,
       receiveShadow: mesh.receiveShadow,
@@ -743,6 +799,7 @@ function activeGroupOf(
   if (group.activeScan !== scanNumber) {
     group.activeScan = scanNumber;
     group.memberCount = 0;
+    group.geometry = geometry;
   }
   return group;
 }
@@ -810,17 +867,19 @@ export function geometryVersionSum(geometry: BufferGeometry): number {
 function addToUniformGroup(
   workspace: IProjectionScanWorkspace,
   mesh: Mesh,
+  owner: IProjectionBatchGroup,
   scanNumber: number,
 ): void {
-  const geometry = mesh.geometry;
+  const content = owner.content;
+  const geometry = owner.geometry;
   const material = mesh.material as Material;
   const signature = uniformSignatureOf(material);
   if (signature === undefined) return;
   const flags = batchFlagsOf(mesh);
-  let bySignature = workspace.uniformGroups.get(geometry);
+  let bySignature = workspace.uniformGroups.get(content);
   if (bySignature === undefined) {
     bySignature = new Map();
-    workspace.uniformGroups.set(geometry, bySignature);
+    workspace.uniformGroups.set(content, bySignature);
   }
   let byFlags = bySignature.get(signature);
   if (byFlags === undefined) {
@@ -831,6 +890,7 @@ function addToUniformGroup(
   if (group === undefined) {
     group = {
       geometry,
+      content,
       material,
       castShadow: mesh.castShadow,
       receiveShadow: mesh.receiveShadow,
@@ -846,6 +906,7 @@ function addToUniformGroup(
   if (group.activeScan !== scanNumber) {
     group.activeScan = scanNumber;
     group.memberCount = 0;
+    group.geometry = geometry;
     workspace.activeUniformGroups[workspace.activeUniformGroupCount] = group;
     workspace.activeUniformGroupCount += 1;
   }
@@ -1002,6 +1063,9 @@ function visitProjectionObject(
     addExactEntry(workspace, object, "lod");
     return;
   }
+  // Drawn through its merged mesh, which is walked in its place: a slot here would be a draw of
+  // nothing.
+  if (isAutoBatchSource(object)) return;
   if (!isRenderable(object)) return;
   state.renderables += 1;
   workspace.seen.add(object);
@@ -1042,9 +1106,194 @@ function walkProjection(source: Scene, workspace: IProjectionScanWorkspace): IPr
   return state;
 }
 
-function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: number): void {
+/** Counts a class as seen this scan, keeping its first member in case the canonical one is gone. */
+function touchContentClass(
+  workspace: IProjectionScanWorkspace,
+  content: IGeometryContentClass,
+  geometry: BufferGeometry,
+  scanNumber: number,
+): void {
+  if (content.scan !== scanNumber) {
+    content.scan = scanNumber;
+    content.first = geometry;
+    content.canonicalSeen = false;
+    workspace.touchedClasses[workspace.touchedClassCount] = content;
+    workspace.touchedClassCount += 1;
+  }
+  if (content.canonical === geometry) content.canonicalSeen = true;
+}
+
+/**
+ * The geometry's content entry for this scan. A known geometry whose attributes and versions hold
+ * keeps its class; one whose data moved leaves for a class of its own and is never hashed again. A
+ * geometry seen for the first time waits for `classifyPendingContent`.
+ */
+function contentEntryOf(
+  workspace: IProjectionScanWorkspace,
+  geometry: BufferGeometry,
+  scanNumber: number,
+): IGeometryContentEntry {
+  let entry = workspace.geometryContent.get(geometry);
+  if (entry !== undefined && entry.scan === scanNumber) return entry;
+  if (entry === undefined) {
+    entry = { cls: undefined, parts: [], sum: 0, scan: scanNumber, streamed: false };
+    workspace.geometryContent.set(geometry, entry);
+    recordContentParts(entry, geometry);
+    if (contentMergeable(geometry)) {
+      workspace.pendingContent[workspace.pendingContentCount] = geometry;
+      workspace.pendingContentCount += 1;
+      return entry;
+    }
+    entry.streamed = true;
+    entry.cls = ownContentClass(geometry);
+  } else {
+    entry.scan = scanNumber;
+    if (!contentPartsUnchanged(entry, geometry)) {
+      recordContentParts(entry, geometry);
+      if (!entry.streamed) {
+        entry.streamed = true;
+        entry.cls = ownContentClass(geometry);
+      }
+    }
+  }
+  touchContentClass(workspace, entry.cls as IGeometryContentClass, geometry, scanNumber);
+  return entry;
+}
+
+/**
+ * Files each first-seen geometry under the class whose bytes it equals, or a new one. Candidates are
+ * the classes seen this scan with the same layout; a hash is computed only when a layout repeats,
+ * and an equal hash still needs the full byte compare.
+ */
+function matchingContentClass(
+  bucket: readonly IGeometryContentClass[],
+  geometry: BufferGeometry,
+  hash: number,
+): IGeometryContentClass | undefined {
+  for (let at = 0; at < bucket.length; at += 1) {
+    const candidate = bucket[at] as IGeometryContentClass;
+    // A member seen this scan, so its bytes are still the class's.
+    const member = candidate.canonicalSeen
+      ? candidate.canonical
+      : (candidate.first as BufferGeometry);
+    candidate.hash ??= contentHash(member);
+    if (candidate.hash === hash && sameContent(member, geometry)) return candidate;
+  }
+  return undefined;
+}
+
+/** This scan's comparable classes by layout. Allocated only on a scan that meets a new geometry. */
+function classesByLayout(
+  workspace: IProjectionScanWorkspace,
+): Map<string, IGeometryContentClass[]> {
+  const byLayout = new Map<string, IGeometryContentClass[]>();
+  for (let index = 0; index < workspace.touchedClassCount; index += 1) {
+    const content = workspace.touchedClasses[index] as IGeometryContentClass;
+    if (content.layout === "") continue;
+    const bucket = byLayout.get(content.layout);
+    if (bucket === undefined) byLayout.set(content.layout, [content]);
+    else bucket.push(content);
+  }
+  return byLayout;
+}
+
+function classifyPendingContent(workspace: IProjectionScanWorkspace, scanNumber: number): void {
+  const byLayout = classesByLayout(workspace);
+  for (let index = 0; index < workspace.pendingContentCount; index += 1) {
+    const geometry = workspace.pendingContent[index] as BufferGeometry;
+    workspace.pendingContent[index] = undefined;
+    const layout = contentLayout(geometry);
+    const bucket = byLayout.get(layout);
+    const hash = bucket === undefined ? undefined : contentHash(geometry);
+    let found =
+      bucket === undefined ? undefined : matchingContentClass(bucket, geometry, hash as number);
+    if (found === undefined) {
+      found = {
+        canonical: geometry,
+        layout,
+        hash,
+        scan: 0,
+        first: undefined,
+        canonicalSeen: false,
+      };
+      if (bucket === undefined) byLayout.set(layout, [found]);
+      else bucket.push(found);
+    }
+    (workspace.geometryContent.get(geometry) as IGeometryContentEntry).cls = found;
+    touchContentClass(workspace, found, geometry, scanNumber);
+  }
+  workspace.pendingContentCount = 0;
+}
+
+/**
+ * Resolves every eligible mesh's geometry to its content class, then gives each class a canonical
+ * geometry that is in this scan: the one it had while that one is still a member, else its first.
+ * A run of meshes sharing one geometry resolves it once.
+ */
+function resolveGeometryContent(workspace: IProjectionScanWorkspace, scanNumber: number): void {
+  let previous: BufferGeometry | undefined;
+  let entry: IGeometryContentEntry | undefined;
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
-    addToBatchGroup(workspace, workspace.eligible[index] as Mesh, scanNumber);
+    const geometry = (workspace.eligible[index] as Mesh).geometry;
+    if (geometry !== previous) {
+      previous = geometry;
+      entry = contentEntryOf(workspace, geometry, scanNumber);
+    }
+    workspace.eligibleContent[index] = entry;
+  }
+  if (workspace.pendingContentCount > 0) classifyPendingContent(workspace, scanNumber);
+  for (let index = 0; index < workspace.touchedClassCount; index += 1) {
+    const content = workspace.touchedClasses[index] as IGeometryContentClass;
+    if (!content.canonicalSeen) content.canonical = content.first as BufferGeometry;
+  }
+}
+
+/** A below-floor group's members no uniform group claimed. A packed material batch still pays a sub-draw each. */
+function aloneMembers(workspace: IProjectionScanWorkspace, group: IProjectionBatchGroup): number {
+  let alone = 0;
+  for (let member = 0; member < group.memberCount; member += 1)
+    if (!uniformClaimed(workspace, group.members[member] as Mesh)) alone += 1;
+  return alone;
+}
+
+/**
+ * Why a declined frame has meshes drawing alone: a mesh whose content class has too few meshes in
+ * the whole scene is held back by its geometry, one whose class has enough by its material or flags.
+ * The larger count names the cause. Only a decline pays for this.
+ */
+function declineCause(workspace: IProjectionScanWorkspace): IProjectionDeclineCount | undefined {
+  const sizes = new Map<IGeometryContentClass, number>();
+  for (let index = 0; index < workspace.eligibleCount; index += 1) {
+    const content = (workspace.eligibleContent[index] as IGeometryContentEntry)
+      .cls as IGeometryContentClass;
+    sizes.set(content, (sizes.get(content) ?? 0) + 1);
+  }
+  let geometry = 0;
+  let material = 0;
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    const alone = aloneMembers(workspace, group);
+    if ((sizes.get(group.content as IGeometryContentClass) ?? 0) >= MIN_BATCH_MEMBERS)
+      material += alone;
+    else geometry += alone;
+  }
+  if (geometry + material === 0) return undefined;
+  return geometry >= material
+    ? { code: "uniqueGeometry", meshes: geometry }
+    : { code: "uniqueMaterial", meshes: material };
+}
+
+function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: number): void {
+  resolveGeometryContent(workspace, scanNumber);
+  for (let index = 0; index < workspace.eligibleCount; index += 1) {
+    const content = (workspace.eligibleContent[index] as IGeometryContentEntry).cls;
+    addToBatchGroup(
+      workspace,
+      workspace.eligible[index] as Mesh,
+      content as IGeometryContentClass,
+      scanNumber,
+    );
   }
   for (let index = 0; index < workspace.skinnedCount; index += 1) {
     addToSkinnedGroup(workspace, workspace.skinned[index] as SkinnedMesh, scanNumber);
@@ -1062,7 +1311,7 @@ function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: nu
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
     for (let member = 0; member < group.memberCount; member += 1) {
-      addToUniformGroup(workspace, group.members[member] as Mesh, scanNumber);
+      addToUniformGroup(workspace, group.members[member] as Mesh, group, scanNumber);
     }
   }
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
@@ -1219,6 +1468,7 @@ export function scanProjection(
   groupEligibleMeshes(workspace, workspace.scanNumber);
   const predictedDraws = predictDraws(workspace);
   if (predictedDraws > state.renderables * WORTHWHILE_DRAW_RATIO) {
+    const cause = declineCause(workspace);
     return {
       exactLane: workspace.exactLane,
       exactLaneCount: workspace.exactLaneCount,
@@ -1226,6 +1476,7 @@ export function scanProjection(
         action: "decline",
         reasonCode: "notWorthwhile",
         reason: `projecting would draw ${predictedDraws} of ${state.renderables} candidates, which is not worth its own cost`,
+        ...(cause === undefined ? {} : { cause }),
       },
       renderables: state.renderables,
       seen: workspace.seen,

@@ -79,6 +79,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+          # Integration scope reads commits, a name-only diff and two workflow files (`git show`,
+          # fetched on demand from the public repository), so it fetches no history blobs: every
+          # blob of the 3.9 GB history outlasted 5- and 10-minute jobs on PR #574.
+          filter: blob:none
           ref: ${{ inputs.candidate_sha }}
       - id: filter
         env:
@@ -1075,7 +1079,13 @@ jobs:
     needs: [paths, csg, ik, vegetation, decals, decals-native, tone, animation, animation-native, fog, fog-native, capture, fluid-collision, fluid-collision-native, packaged-quickjs, exposure, cold-boot, temporal, velocity]
     if: ${{ always() }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
-    timeout-minutes: 5
+    # 5 was read off a quiet runner: 40534772948 (develop) collected in 3m35s. It has no headroom —
+    # the job fetches full history and downloads one receipt per integration leg — and on 2026-10-27
+    # two boards in a row (40564599524, 40575057086) were killed at 5m03s and 5m04s, which surfaces as
+    # `integration (cancelled)` and CI_REQUIRED_JOB_NOT_SUCCESS in ci-required. A cancelled collect is
+    # not a verdict either way, so it fails the merge; the 15 below leaves the collect and a slower
+    # artifact download room, and a genuinely stuck collect still dies here.
+    timeout-minutes: 15
     outputs:
       coverage_receipt: ${{ steps.collect.outputs.coverage_receipt }}
     steps:
@@ -1084,10 +1094,12 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.candidate_sha }}
           fetch-depth: 0
+          # The receipt collector reads artifacts and the Actions API, never git history blobs.
+          filter: blob:none
       - uses: actions/download-artifact@v7
         if: needs.paths.outputs.required_jobs != '[]'
         with:
-          pattern: ci-integration-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.candidate_sha }}-*
+          pattern: ci-integration-receipt-${{ github.run_id }}-*-${{ inputs.candidate_sha }}-*
           path: artifacts/integration-receipts
       - id: collect
         env:

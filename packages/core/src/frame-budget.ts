@@ -266,6 +266,8 @@ export interface IFrameBudgetWindow {
       };
   /** 1 for the first reported window, incrementing thereafter. */
   readonly window: number;
+  /** The web engine's job pool: `on (N)` workers, or `off (<reason>)`; absent off the Wasm engine. */
+  readonly threads?: string;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
   /** Fixed simulation ticks in this window multiplied by the loop's step, when supplied. */
@@ -294,6 +296,16 @@ export interface IFrameBudgetWindow {
   readonly presentedFps?: number;
   /** Interval between loop frames — the honest frame period where the loop presents every frame. */
   readonly presented: IFrameBudgetSummary;
+  /**
+   * Interval between frames the renderer drew. A declined frame (`renderSkips`) adds its time to the
+   * next drawn frame's interval, because the display showed the previous image for both. Reported
+   * beside `presented`, which gates keep reading; on the web this is what the player saw.
+   */
+  readonly drawn: IFrameBudgetSummary;
+  /** Loop frames the renderer drew: `frames - renderSkips`. */
+  readonly drawnFrames: number;
+  /** Derived from the mean `drawn` interval: drawn frames per second. */
+  readonly drawnFps: number;
   /** Duration of the frame callback itself, entry to exit. */
   readonly frame: IFrameBudgetSummary;
   /** Fixed simulation steps executed in the callback. */
@@ -389,6 +401,8 @@ export interface IFrameBudgetWindow {
    * `gpuMain + gpuShadow + gpuOther` reconciles with `gpuMs` only when all three are present.
    */
   readonly gpuMain?: number;
+  /** Fresh frames in the same main-bucket ring as gpuMain; absent when unmeasured. */
+  readonly gpuMainSamples?: number;
   readonly gpuShadow?: number;
   readonly gpuOther?: number;
   readonly gpuCompute?: number;
@@ -427,6 +441,10 @@ export interface IFrameBudgetWindow {
     readonly hostCalls?: IFrameBudgetSummary;
     readonly gpuBytes?: IFrameBudgetSummary;
     readonly jsAllocBytes?: IFrameBudgetSummary;
+    /** JS->Wasm crossings per frame, when the back end counts them (`createCrossingReader`). */
+    readonly bridgeCrossings?: IFrameBudgetSummary;
+    /** Engine work counts per frame by name, when a playtest asked for them (`createEngineCounterReader`). */
+    readonly engine?: Readonly<Record<string, IFrameBudgetSummary>>;
     readonly simulationTick?: number;
   };
 }
@@ -627,6 +645,8 @@ export class FrameBudget {
     | undefined;
   #scratch: Float64Array;
   #presented: Ring;
+  #drawn: Ring;
+  #drawnInWindow = 0;
   #frame: Ring;
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
@@ -646,6 +666,9 @@ export class FrameBudget {
   #hostCalls: Ring;
   #gpuBytes: Ring;
   #jsAllocBytes: Ring;
+  #bridgeCrossings: Ring;
+  #engine = new Map<string, Ring>();
+  readonly #capacity: number;
   #countersThisFrame: IFrameCounters | undefined;
   // The latest tick fed this window. It is not a boundary count and does not sum across frames: it
   // is the loop's fixed-step count at the last frame that fed one, so consecutive window closes read
@@ -675,6 +698,9 @@ export class FrameBudget {
   #hostGap = 0;
   #presentedDelta = 0;
   #lastTimestamp: number | undefined;
+  #frameTimestamp = 0;
+  /** The last drawn frame's timestamp; a declined frame leaves it, so the next drawn interval spans it. */
+  #lastDrawnTimestamp: number | undefined;
   #lastFrameEnd: number | undefined;
   #framesInWindow = 0;
   #hitchesInWindow = 0;
@@ -699,6 +725,7 @@ export class FrameBudget {
     this.minFrames = requirePositiveInteger(options.minFrames, 1, "minFrames");
     this.hitchMs = requirePositiveNumber(options.hitchMs, DEFAULT_HITCH_MS, "hitchMs");
     const capacity = requirePositiveInteger(options.capacity, DEFAULT_CAPACITY, "capacity");
+    this.#capacity = capacity;
     this.#report = options.report ?? ((line) => console.log(line));
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
@@ -723,6 +750,7 @@ export class FrameBudget {
     }
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
+    this.#drawn = new Ring(capacity);
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
     this.#gpu = new Ring(capacity);
@@ -737,6 +765,7 @@ export class FrameBudget {
     this.#hostCalls = new Ring(capacity);
     this.#gpuBytes = new Ring(capacity);
     this.#jsAllocBytes = new Ring(capacity);
+    this.#bridgeCrossings = new Ring(capacity);
     this.#phaseRings = {
       hostGap: new Ring(capacity),
       overlay: new Ring(capacity),
@@ -802,6 +831,7 @@ export class FrameBudget {
     this.#presentedDelta =
       this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
     this.#lastTimestamp = timestampMs;
+    this.#frameTimestamp = timestampMs;
   }
 
   /** The boundary between the fixed-step simulation and everything the render phase does. */
@@ -959,6 +989,7 @@ export class FrameBudget {
       ["hostCalls", counters.hostCalls],
       ["gpuBytes", counters.gpuBytes],
       ["jsAllocBytes", counters.jsAllocBytes],
+      ["bridgeCrossings", counters.bridgeCrossings],
     ] as const) {
       if (value === undefined) continue;
       if (!Number.isFinite(value) || value < 0)
@@ -1014,8 +1045,17 @@ export class FrameBudget {
 
     this.#countPresents();
 
+    const drawn = !this.#renderSkippedThisFrame;
+    const drawnDelta =
+      drawn && this.#lastDrawnTimestamp !== undefined
+        ? Math.max(0, this.#frameTimestamp - this.#lastDrawnTimestamp)
+        : 0;
+    if (drawn) this.#lastDrawnTimestamp = this.#frameTimestamp;
+
     const isHitch = this.#presentedDelta >= this.hitchMs;
     if (isHitch) {
+      // The gap is excluded, so the next drawn interval must not start before it.
+      if (!drawn) this.#lastDrawnTimestamp = undefined;
       this.#passesThisFrame.length = 0;
       this.#hitchesInWindow += 1;
       this.#report(
@@ -1047,6 +1087,8 @@ export class FrameBudget {
     // The first frame has no predecessor, so it has neither an interval nor a host gap; pushing a
     // zero there would drag every percentile toward a frame that never happened.
     if (this.#presentedDelta > 0) this.#presented.push(this.#presentedDelta);
+    if (drawnDelta > 0) this.#drawn.push(drawnDelta);
+    if (drawn) this.#drawnInWindow += 1;
     if (this.#hostGap > 0) this.#phaseRings.hostGap.push(this.#hostGap);
     this.#phaseRings.update.push(update);
     this.#phaseRings.render.push(this.#renderMs);
@@ -1103,6 +1145,16 @@ export class FrameBudget {
     if (counters?.hostCalls !== undefined) this.#hostCalls.push(counters.hostCalls);
     if (counters?.gpuBytes !== undefined) this.#gpuBytes.push(counters.gpuBytes);
     if (counters?.jsAllocBytes !== undefined) this.#jsAllocBytes.push(counters.jsAllocBytes);
+    if (counters?.bridgeCrossings !== undefined)
+      this.#bridgeCrossings.push(counters.bridgeCrossings);
+    for (const [name, value] of Object.entries(counters?.engine ?? {})) {
+      let ring = this.#engine.get(name);
+      if (ring === undefined) {
+        ring = new Ring(this.#capacity);
+        this.#engine.set(name, ring);
+      }
+      ring.push(value);
+    }
     this.#framesInWindow += 1;
     this.#maybeReport();
     return sample;
@@ -1111,6 +1163,7 @@ export class FrameBudget {
   /** Reads the window in progress without disturbing it. */
   window(): IFrameBudgetWindow {
     const presented = this.#presented.summarize(this.#scratch);
+    const drawn = this.#drawn.summarize(this.#scratch);
     const phases = {
       hostGap: this.#phaseRings.hostGap.summarize(this.#scratch),
       overlay: this.#phaseRings.overlay.summarize(this.#scratch),
@@ -1164,14 +1217,28 @@ export class FrameBudget {
       this.#gpuBytes.count === 0 ? undefined : this.#gpuBytes.summarize(this.#scratch);
     const jsAllocBytes =
       this.#jsAllocBytes.count === 0 ? undefined : this.#jsAllocBytes.summarize(this.#scratch);
+    const bridgeCrossings =
+      this.#bridgeCrossings.count === 0
+        ? undefined
+        : this.#bridgeCrossings.summarize(this.#scratch);
     const simulationTick = this.#simulationTick;
     const counters =
       hostCalls === undefined &&
       gpuBytes === undefined &&
       jsAllocBytes === undefined &&
+      bridgeCrossings === undefined &&
+      this.#engine.size === 0 &&
       simulationTick === undefined
         ? undefined
         : {
+            ...(bridgeCrossings === undefined ? {} : { bridgeCrossings }),
+            ...(this.#engine.size === 0
+              ? {}
+              : {
+                  engine: Object.fromEntries(
+                    [...this.#engine].map(([name, ring]) => [name, ring.summarize(this.#scratch)]),
+                  ),
+                }),
             ...(gpuBytes === undefined ? {} : { gpuBytes }),
             ...(hostCalls === undefined ? {} : { hostCalls }),
             ...(jsAllocBytes === undefined ? {} : { jsAllocBytes }),
@@ -1183,7 +1250,8 @@ export class FrameBudget {
       const summary = this.#gpuBucketRings[bucket].summarize(this.#scratch);
       return summary.samples === 0 ? undefined : round1(summary.p50);
     };
-    const gpuMain = gpuBucket("main");
+    const mainBucket = this.#gpuBucketRings.main.summarize(this.#scratch);
+    const gpuMain = mainBucket.samples === 0 ? undefined : round1(mainBucket.p50);
     const gpuShadow = gpuBucket("shadow");
     const gpuOther = gpuBucket("other");
     const gpuCompute = gpuBucket("compute");
@@ -1218,6 +1286,10 @@ export class FrameBudget {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
+      // The Wasm engine's job pool (PRD-752 phase 4), as its facade reports it: `on (N)` or `off (<reason>)`.
+      ...(typeof (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads === "string"
+        ? { threads: (globalThis as { __tnWebThreads?: string }).__tnWebThreads }
+        : {}),
       ...(this.#simulation === undefined
         ? {}
         : {
@@ -1228,6 +1300,9 @@ export class FrameBudget {
       hitches: this.#hitchesInWindow,
       phases,
       presented,
+      drawn,
+      drawnFrames: this.#drawnInWindow,
+      drawnFps: drawn.mean === 0 ? 0 : round(1_000 / drawn.mean),
       ...(presentCounted ? { presents: this.#presentsInWindow } : {}),
       ...(presentCounted && this.#presentsInWindow > 0 && windowSpanMs > 0
         ? { presentedFps: round((this.#presentsInWindow * 1_000) / windowSpanMs) }
@@ -1275,6 +1350,7 @@ export class FrameBudget {
         : { gpuShadowP95: round1(shadowBucket.p95), gpuShadowSamples: shadowBucket.samples }),
       ...(shadowRendered.samples === 0 ? {} : { gpuShadowRendered: shadowRendered }),
       ...(gpuPyramid.samples === 0 ? {} : { gpuPyramid }),
+      ...(mainBucket.samples === 0 ? {} : { gpuMainSamples: mainBucket.samples }),
     };
   }
 
@@ -1332,6 +1408,8 @@ export class FrameBudget {
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
     this.#windowIndex += 1;
     this.#presented.reset();
+    this.#drawn.reset();
+    this.#drawnInWindow = 0;
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
@@ -1344,6 +1422,8 @@ export class FrameBudget {
     this.#hostCalls.reset();
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();
+    this.#bridgeCrossings.reset();
+    this.#engine.clear();
     this.#simulationTick = undefined;
     this.#gpuStaleInWindow = 0;
     this.#renderSkipsInWindow = 0;

@@ -124,7 +124,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     example: { visual: [{ frameDiff: { baselineImage: "artifacts/baseline.png", minChangedPixelRatio: 0.01 }, entityVisible: { entity: "board.e4", minProjectedPixels: 20, throughoutFrames: true }, region: { element: { id: "error" }, minNonblankPixelRatio: 0.002 } }] },
     fields: [
       { description: "Before/after or baseline-image changed-pixel ratio bounds.", name: "frameDiff", type: "{ baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number }" },
-      { description: "Static pixel bounds, or a DOM element whose bounds are captured beside the screenshot; the latter accepts exactly one id or selector. Both forms accept nonblank, dark-pixel, and luminance thresholds.", name: "region", type: "static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number }" },
+      { description: "Static pixel bounds, or a DOM element whose bounds are captured beside the screenshot; the latter accepts exactly one id or selector. Both forms accept nonblank, dark-pixel, and luminance thresholds. A static region also takes `minSharpness` (a ratio, start at 0.3): the share of luminance detail that survives at full resolution against half resolution in the final frame. In-focus frames read 0.39-0.61, a frame a post stage smears reads 0.21-0.24.", name: "region", type: "static bounds { x: number, y: number, width: number, height: number, minSharpness?: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number }" },
       { description: "Entity projected-pixel floor, optionally across all captured samples.", name: "entityVisible", type: "{ entity: string, minProjectedPixels: number, throughoutFrames?: boolean }" },
     ],
     cardinality: "array",
@@ -218,7 +218,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Substring expected in the observed value.", name: "textIncludes", type: "string" },
       { description: "Require before and after values to differ or remain equal.", name: "changed", type: "boolean" },
       { description: "Require the value assertion after every labeled scenario step.", name: "throughoutSteps", type: "boolean" },
-      { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, textIncludes?: string }>" },
+      { description: "Expected values at named scenario-step samples.", name: "atSteps", type: "Array<{ label: string, equals?: json, lte?: number, textIncludes?: string }>" },
       { description: "Written reason for a held invariant whose initial value intentionally satisfies the assertion.", name: "allowTrivial", type: "triviality reason" },
       { description: "Require at least one alternative path assertion on this resource id.", name: "anyOf", type: "Array<{ path: string, equals?: json, gte?: number, lte?: number, textIncludes?: string, changed?: boolean }>" },
     ],
@@ -354,7 +354,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     description: "Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, whole-frame or per-pass draw calls and triangles.",
     example: { performance: { maxPassDrawCalls: { shadow: 400 }, maxPhaseMsP95: { render: 12 }, minFps: 30 } },
     fields: [
-      { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds.", name: "maxFrameMsP95", type: "number" },
+      { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds. Unset, the budget is 16.7 ms (one 60 Hz frame, 60 fps) on every tier; a software adapter is unmeasurable and fails closed. On the runner's virtual display the bound judges the engine's own cost (update plus render, or GPU time when larger) and reports the rAF interval as `gated: false`; on a real display (`TN_PLAYTEST_HOST_DISPLAY=1`) the interval and the cost must both hold. A missing CPU split or GPU reading fails closed. `frameBudget` in the `performance.samples` details reports which applied. A value above 16.7 is an override and needs `maxFrameMsReason`.", name: "maxFrameMsP95", type: "number" },
+      { description: "Why this scenario cannot hold 60 fps. Required when `maxFrameMsP95` is above 16.7; printed in the report.", name: "maxFrameMsReason", type: "non-empty string" },
       { description: "Minimum sustained frames per second, from the median sampled frame.", name: "minFps", type: "number" },
       { description: "Per-phase millisecond ceilings at nearest-rank p95. Phases: hostGap, update, render, overlay, residual.", name: "maxPhaseMsP95", type: "{ [phase]: number }" },
       { description: "Maximum observed renderer draw-call count across every pass combined.", name: "maxDrawCalls", type: "number" },
@@ -508,6 +509,7 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     fields: [
       { description: "Entity id. Defaults to scenario subject.", name: "entity", type: "string" },
       { description: "Animation clip id or name.", name: "clip", type: "string" },
+      { description: "Labeled step whose animation report is judged; default is the last sample.", name: "atStep", type: "string" },
       { description: "Require entering the animation state.", name: "entered", type: "boolean" },
       { description: "Require animation advancement evidence.", name: "advancedFrames", type: "number" },
       { description: "Require the observed clip to report its completion state.", name: "finished", type: "boolean" },
@@ -569,6 +571,83 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
   {
     cardinality: "array",
     description:
+      "Bounds how far a planted foot slides while the subject moves, measured every tick from named foot nodes' world positions, so it holds a procedural rig to the feet-meet-the-floor convention as well as a clip. Browser target only; another target fails it as unobserved.",
+    example: { footSlip: [{ atStep: "run", feet: ["footL", "footR"], maxSlip: 0.35 }] },
+    fields: [
+      { description: "Label of the input step to measure; it is advanced one tick at a time and must move the subject at least 0.5 m.", name: "atStep", type: "string" },
+      { description: "Exact Object3D names of the nodes at the soles, one per foot.", name: "feet", type: "Array<string>" },
+      { description: "Ceiling on planted-foot travel over body travel while a foot is in the lowest quarter of its lift below the body: 0 is planted, 1 skates with the body, above 1 the legs cycle faster than the ground moves. Set this, `maxSlideSpeed`, or both.", name: "maxSlip", type: "positive number" },
+      { description: "Ceiling on a planted foot's world speed in metres per second (planted-foot travel over planted time), independent of the body's speed and of the game's own stride report. A starter-kit character holds 1.", name: "maxSlideSpeed", type: "positive number" },
+      { description: "Seconds per fixed tick, which turns planted ticks into planted time for `maxSlideSpeed`. Default 1/60, the engine's default `step`; name it when the game sets another.", name: "stepSeconds", type: "positive number" },
+      { description: "The moving entity; defaults to the scenario subject.", name: "entity", type: "string" },
+    ],
+    kind: "footSlip",
+    observationPath: "footSlip",
+    requiredCapabilities: ["entity.observe", "scene.nodes"],
+    resultIdPrefix: "footSlip",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The measurement needs the subject to cover ground during the step, so a standing subject fails as unmeasured instead of passing.",
+  },
+  {
+    cardinality: "object",
+    description:
+      "Bounds the share of the run in which solid geometry stood between the camera and the subject's world bounds centre, so a camera that clips through a pillar or a wall that eats the framing fails. Browser target only; another target fails it as unobserved.",
+    example: { sightLine: { maxBlockedRatio: 0.02 } },
+    fields: [
+      { description: "The entity whose world bounds centre the camera should see; defaults to the scenario subject.", name: "entity", type: "string" },
+      { description: "Share of samples, 0..1, that may have any solid between the lens and the subject before the run fails; 0 requires a clear line on every sample.", name: "maxBlockedRatio", required: true, type: "number" },
+    ],
+    kind: "sightLine",
+    observationPath: "sightLine",
+    requiredCapabilities: ["camera.observe", "entity.observe"],
+    resultIdPrefix: "sightLine",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The measurement needs the runtime camera and subject to stay framed over time; an initial pose cannot satisfy a temporal share of clear lines.",
+  },
+  {
+    cardinality: "object",
+    description:
+      "Bounds the engine's own work counters, read off each TN_FRAME_BUDGET window's counters.engine (and counters.bridgeCrossings): JS-to-Wasm crossings, children reads, scene-walk visits, hierarchy moves, matrix composes, handle shares, content classification, GPU allocations, physics crossings and any counter an engine module adds to globalThis.__tnEngineCost. Each window must hold every bound; a run with fewer windows than minWindows, or a window missing a bounded counter, fails closed. A failure names the counter, the window and the top caller of the TN_BRIDGE_CENSUS before it.",
+    example: { engineCost: { maxPerFrame: { bridgeCrossings: 2000, childrenReads: 60 }, skipWindows: 1, source: "shooter after-value 1,024 per frame on 2026-10-27, about 2x headroom" } },
+    fields: [
+      { description: "Counter name to its bound on a window's per-frame mean.", name: "maxPerFrame", type: "{ [counter: string]: number }" },
+      { description: "Counter name to its bound on any single frame of a window.", name: "maxInFrame", type: "{ [counter: string]: number }" },
+      { description: "Windows the run must report; default 1.", name: "minWindows", type: "positive integer" },
+      { description: "Windows left unbounded first, the boot (loading, first builds); still and moving count after them. Default 0.", name: "skipWindows", type: "non-negative integer" },
+      { description: "Per-frame bounds on the first `windows` windows only, which the scenario keeps still.", name: "still", type: "{ windows: positive integer, maxPerFrame: { [counter: string]: number } }" },
+      { description: "Bounds on the windows after the still ones, which the scenario fills with play; needs still.", name: "moving", type: "{ maxPerFrame?: { [counter: string]: number }, maxInFrame?: { [counter: string]: number } }" },
+      { description: "Where the bounds came from: the measured after-values and the headroom on them.", name: "source", required: true, type: "string" },
+    ],
+    kind: "engineCost",
+    observationPath: "console",
+    requiredCapabilities: ["browser.console"],
+    resultIdPrefix: "engineCost.",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The counters are measured across the run's frames; an initial value has no frames to count.",
+  },
+  {
+    cardinality: "object",
+    description:
+      "Audits the text the page draws for the player: developer left-overs such as debug, TODO, placeholder or an unresolved undefined, and text whose colour is too close to its backing colour. Browser target only; another target fails it as unobserved.",
+    example: { hudAudit: { minContrast: 3, noDebugText: true } },
+    fields: [
+      { description: "WCAG 2.x contrast ratio, 1..21, that every text item over a real backing colour must reach; text drawn straight on the canvas is counted as unjudged.", name: "minContrast", type: "number" },
+      { description: "Require that no text reads like developer copy. Only true is accepted.", name: "noDebugText", type: "true" },
+    ],
+    kind: "hudAudit",
+    observationPath: "hudAudit",
+    requiredCapabilities: ["browser.dom"],
+    resultIdPrefix: "hudAudit.",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The audit reads the live document the player sees, so an initial value cannot prove that developer text never appeared or that a colour stays readable.",
+  },
+  {
+    cardinality: "array",
+    description:
       "Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs.",
     example: {
       causedBy: [
@@ -601,6 +680,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
       { description: "Ceiling on when the start scene's enter() returned, in ms since navigation.", name: "maxEnteredMs", type: "number" },
       { description: "Ceiling on when first-use compilation settled or its budget expired, in ms since navigation.", name: "maxCompileSettledMs", type: "number" },
       { description: "Ceiling on when startup readiness resolved, in ms since navigation.", name: "maxReadyMs", type: "number" },
+      { description: "Ceiling on the bytes the reveal waited for through ctx.assets that the spawn camera does not show, from the runtime's own measurement; 0 asserts everything awaited is in view.", name: "maxOffscreenBytes", type: "number" },
+      { description: "true: every frame the browser presented between navigation and readiness matches the last one before readiness (the loading cover), so a black, blank or page-background frame fails, and no frame between readiness and the first world frame shows page UI (a HUD) over the cover. Browser target only; elsewhere it fails as unobserved.", name: "steadyCover", type: "boolean" },
     ],
     cardinality: "object",
     kind: "startup",

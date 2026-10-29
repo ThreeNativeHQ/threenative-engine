@@ -1,0 +1,112 @@
+{
+  "name": "action-rpg-roll-plays-whole-and-travels",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 8,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "side-roll",
+      "press": ["KeyA", "ShiftLeft"],
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "side-late",
+      "waitTicks": 33,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "side-done",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "roll",
+      "press": ["ShiftLeft"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "roll-late",
+      "waitTicks": 36,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "roll-settled",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "signals": [
+      {
+        "name": "dodged",
+        "entity": "player",
+        "minCount": 2
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 1.5
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "action",
+        "atSteps": [
+          {
+            "label": "side-late",
+            "equals": "dodge"
+          },
+          {
+            "label": "side-done",
+            "equals": "idle"
+          },
+          {
+            "label": "roll-late",
+            "equals": "dodge"
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "facingDegrees",
+        "atSteps": [
+          {
+            "label": "side-roll",
+            "equals": 270
+          }
+        ]
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The action RPG scene begins with the player visible and in frame; this held visibility row accompanies the roll assertions.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      }
+    ]
+  }
+}

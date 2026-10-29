@@ -46,6 +46,7 @@ export function setupSky(scene: Scene, sky: Texture): void {
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
   scene.background = sky;
+  // The full range: owner 2026-10-26 prefers the 7b546d6 neutral look to the dimmed 0.8 / 0.45 sky.
   scene.backgroundIntensity = SKY_RANGE;
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
   // It is what makes a standard material read as a material: sky-blue fill on faces the sun

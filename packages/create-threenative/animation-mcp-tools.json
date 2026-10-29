@@ -1,0 +1,333 @@
+{
+  "comment": "The animation MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.4, packed from this workspace and installed from that tarball into a clean directory — never read from src/. `recommended` is the ordered loop the shipped agent docs describe. Regenerate with `pnpm tsx scripts/capture-blender-mcp-tools.ts animation`.",
+  "version": "0.1.4",
+  "serverInfo": {
+    "name": "threenative-animation",
+    "version": "0.1.3"
+  },
+  "recommended": ["animation_inspect", "animation_attach", "animation_open_view"],
+  "tools": [
+    "animation_attach",
+    "animation_inspect",
+    "animation_modify",
+    "animation_open_view",
+    "animation_verify"
+  ],
+  "inputSchemas": {
+    "animation_inspect": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["file"]
+    },
+    "animation_attach": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "anchor": {
+          "default": "right-hand",
+          "type": "string",
+          "enum": ["right-hand", "left-hand", "head", "hips", "right-foot", "left-foot"]
+        },
+        "attached": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keys": {
+          "maxItems": 2000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "attachment": {
+                "type": "string",
+                "enum": ["attached", "detached"]
+              },
+              "clip": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "time": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 600
+              },
+              "transform": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": ["position", "rotation", "scale"]
+              }
+            },
+            "required": ["clip", "time", "transform"]
+          }
+        },
+        "log": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recipe": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "animation_verify": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "clip": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filmstrip": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fps": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240
+        },
+        "scale": {
+          "default": 1,
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": ["clip", "file"]
+    },
+    "animation_modify": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "clip": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "edits": {
+          "minItems": 1,
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "end": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "trim"
+                  },
+                  "start": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "required": ["end", "kind", "start"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "retime"
+                  },
+                  "speed": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": ["kind", "speed"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "loop-point"
+                  },
+                  "time": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                },
+                "required": ["kind", "time"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "fps": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "resample"
+                  }
+                },
+                "required": ["fps", "kind"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "mirror"
+                  }
+                },
+                "required": ["kind"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "contact": {
+                    "default": 0.03,
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "feet": {
+                    "default": [],
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "foot-lock"
+                  }
+                },
+                "required": ["kind"]
+              }
+            ]
+          }
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "log": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["clip", "edits", "file"]
+    },
+    "animation_open_view": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "anchor": {
+          "default": "right-hand",
+          "type": "string",
+          "enum": ["right-hand", "left-hand", "head", "hips", "right-foot", "left-foot"]
+        },
+        "attach": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "descriptions": {
+    "animation_inspect": "Inspect a local rigged GLB: bones, skeleton landmarks, clips with durations, root-motion travel and in-place detection, meshes, skins and extensions. Reads one local file and writes nothing.",
+    "animation_attach": "Attach a prop GLB to a bone, with per-clip keyed offsets, and bake it into an ordinary GLB beside the source. Writes the v4 op log (<model>.anim.json) next to the source GLB and the baked GLB; a version 3 pose recipe loads as the same ops and still bakes.",
+    "animation_verify": "Measure one clip for the defects a still frame cannot show: a planted foot that slides (2 cm), ground penetration (1 cm), a loop seam (5°), a one-frame jitter spike, and bones whose length changes. Every defect names the bone and the frame range it spans. Thresholds are in metres; pass `scale` for a model that is not (Mixamo and Quaternius are centimetres: 0.01).",
+    "animation_modify": "Edit one clip — trim, retime, move the loop point, resample, mirror, lock planted feet — writing each edit into the op log and rendering the result from the source GLB. Rendering twice from one log gives the same bytes, so the log is the change and the GLB is derived.",
+    "animation_open_view": "Start the animation calibrator page on 127.0.0.1 and return its URL. A human drags the prop into place there; the same operations an agent calls are what the page records."
+  }
+}

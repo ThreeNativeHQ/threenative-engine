@@ -29,6 +29,7 @@ function recording() {
     types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0;
   const constructed: [string, EngineValue[]][] = [];
   const writes: [string, string, EngineValue][] = [];
+  const invocations: [string, string][] = [];
   let next = 0;
   const runtime: IBrowserRuntime = {
     typeId,
@@ -36,8 +37,11 @@ function recording() {
       constructed.push([name, [...args]]);
       return { key: `${name}#${String(next++)}`, type: typeId(name) };
     },
-    invoke: () => {
-      throw new Error("not under test");
+    invoke: (self, method) => {
+      invocations.push([self.key, method]);
+      if (method !== "clone") throw new Error("not under test");
+      const name = self.key.split("#")[0] as string;
+      return { key: `${name}#${String(next++)}`, type: typeId(name) };
     },
     get: () => undefined,
     set: (self, property, value) => {
@@ -47,7 +51,7 @@ function recording() {
     setCallback: () => undefined,
   };
   const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
-  return { bound: withTextureSources(classes, runtime), constructed, writes };
+  return { bound: withTextureSources(classes, runtime), constructed, writes, invocations };
 }
 
 type Ctor = new (...args: unknown[]) => Record<string, unknown>;
@@ -55,6 +59,24 @@ type Ctor = new (...args: unknown[]) => Record<string, unknown>;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser texture sources", () => {
+  it("clones through the engine while retaining the shared JS image for later uploads", () => {
+    const { bound, writes, invocations } = recording();
+    const DataTexture = bound.DataTexture as Ctor;
+    const pixels = new Uint8Array([1, 2, 3, 255]);
+    const texture = new DataTexture(pixels, 1, 1);
+    const clone = (texture.clone as () => Record<string, unknown>)();
+    expect(clone).not.toBe(texture);
+    expect(clone).toBeInstanceOf(DataTexture);
+    expect(clone.image).toBe(texture.image);
+    pixels[0] = 9;
+    clone.needsUpdate = true;
+    expect(invocations.at(-1)?.[1]).toBe("clone");
+    expect(writes.slice(-2).map(([, field, value]) => [field, value])).toEqual([
+      ["image.data", [9, 2, 3, 255]],
+      ["needsUpdate", true],
+    ]);
+  });
+
   it("re-sends a DataTexture's edited typed array on needsUpdate (Midway's ripples)", () => {
     const { bound, constructed, writes } = recording();
     const DataTexture = bound.DataTexture as Ctor;
@@ -88,6 +110,22 @@ describe("browser texture sources", () => {
     expect(writes.slice(-3).map(([, field, value]) => [field, value])).toEqual([
       ["type", 1016],
       ["image.data", Array(32).fill(0x3800)],
+      ["needsUpdate", true],
+    ]);
+  });
+
+  it("builds a volume from half-float bits and sends them once the type says so", () => {
+    const { bound, constructed, writes } = recording();
+    const bits = Uint16Array.from([0x3c00, 0x3800, 0, 0x3c00], (v) => v);
+    const texture = new (bound.Data3DTexture as Ctor)(bits, 1, 1, 1);
+    // The engine's constructor takes bytes or floats: it gets same-sized zero floats, never the bits.
+    expect(constructed.at(-1)).toEqual(["Data3DTexture", [[0, 0, 0, 0], 1, 1, 1]]);
+    expect((texture.image as { data: unknown }).data).toBe(bits);
+    texture.type = 1016;
+    texture.needsUpdate = true;
+    expect(writes.slice(-3).map(([, field, value]) => [field, value])).toEqual([
+      ["type", 1016],
+      ["image.data", [0x3c00, 0x3800, 0, 0x3c00]],
       ["needsUpdate", true],
     ]);
   });
@@ -199,6 +237,21 @@ describe("browser texture sources", () => {
 
   it("binds DataUtils to the shared, three-exact implementation", () => {
     expect(recording().bound.DataUtils).toBe(SharedDataUtils);
+  });
+
+  it("binds three's ColorManagement object, so working-space conversion runs unchanged", async () => {
+    const { ColorManagement } = (await import("three/src/math/ColorManagement.js")) as {
+      ColorManagement: {
+        enabled: boolean;
+        workingToColorSpace(color: { r: number; g: number; b: number }, space: string): void;
+      };
+    };
+    const bound = recording().bound.ColorManagement as typeof ColorManagement;
+    expect(bound).toBe(ColorManagement);
+    expect(bound.enabled).toBe(true);
+    const color = { r: 0.21404114, g: 0.21404114, b: 0.21404114 };
+    bound.workingToColorSpace(color, "srgb");
+    expect(color.r).toBeCloseTo(0.5, 4);
   });
 });
 

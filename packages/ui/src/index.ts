@@ -43,11 +43,19 @@ export { UiLayer } from "./UiLayer.js";
  * Read the game's published state from a UI that may be in another process.
  * @situation bind a HUD to game state on web and native alike
  * @situation show score or health in a UI rendered over the game surface
- * @constraint returns undefined until the game publishes its first state
+ * @constraint returns undefined until the game publishes its first state and while the loading cover is up
  * @example const score = useUiState<GameState, number>((state) => state.score);
  * @requires npm i @threenative/ui
  */
 export { useUiState } from "./UiLayer.js";
+/**
+ * Read the game's published state while the loading cover is still up, for a UI that draws its own loading screen.
+ * @situation draw a staged loading overlay from the startup progress the game publishes
+ * @constraint needs a non-empty reason, reported once as TN_UI_STARTUP_OVERRIDE; every other HUD uses useUiState
+ * @example const loading = useUiStateDuringStartup<GameState, number>({ reason: "staged loading overlay" }, (state) => state.loading.progress);
+ * @requires npm i @threenative/ui
+ */
+export { useUiStateDuringStartup } from "./UiLayer.js";
 /**
  * Send a player action from the UI back to the game.
  * @situation wire a Restart button in a HUD to the running game

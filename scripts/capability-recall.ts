@@ -96,7 +96,7 @@ export interface IHarvestCandidate {
 }
 
 export interface ICapabilitySearchResponse {
-  readonly verdict: "matched" | "none";
+  readonly verdict: "matched" | "none" | "starterKit";
   readonly results: readonly ICapabilitySearchResult[];
   readonly guidance: string;
 }
@@ -118,6 +118,9 @@ const CORPUS_RELATIVE_PATH = path.join("scripts", "fixtures", "capability-recall
 const BUDGET_RELATIVE_PATH = path.join("scripts", "fixtures", "capability-recall", "budget.json");
 const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
 const TEMPLATE_NAMES = [
+  "collectathon",
+  "adventure",
+  "kart",
   "action-rpg",
   "minimal",
   "platformer",

@@ -1,0 +1,655 @@
+{
+  "system": "nanite",
+  "notes": "LOC is wc -l of UE 5.8.3 Renderer/Private/Nanite and Shaders/Private/Nanite files, split by measured line ranges. Internals named [builder] or [runtime] sit in Engine/Source/Developer or Runtime/Engine and are outside the row sum. The cluster builder (Developer/NaniteBuilder) is present in the clone. Shadow-caster internals cite VirtualShadowMaps lines or lines already counted in Cull + raster.",
+  "rows": [
+    {
+      "parent": "Cull + raster (hierarchy, clusters, HZB, HW/SW raster)",
+      "internals": [
+        [
+          "Instance culling and instance hierarchy",
+          1698,
+          "Culls each placement against the view and the depth pyramid, through a hierarchy of instance cells, before any cluster is visited.",
+          "partial",
+          "The GPU scene already culls placements in one compute dispatch (world-gpu-scene.ts cameraPlanes). ClusteredBatch copies skip every cull (frustumCulled false): PRD-600 Phase 2. Grid cells: PRD-673.",
+          ["600", "673"]
+        ],
+        [
+          "Node and cluster hierarchy traversal",
+          1866,
+          "Walks the 4-ary BVH of cluster groups one level per dispatch, rejects a node and its subtree by distance, clip plane, LOD and frustum, then tests each cluster.",
+          "open",
+          "ClusteredMesh scans the whole cluster table (selectClusterCut). PRD-600 Phase 3 walks the group hierarchy and prunes by view.",
+          ["600"]
+        ],
+        [
+          "LOD error metric and per-view LOD scale",
+          144,
+          "Projects each group's error through its bounding sphere and draws a cluster when its own error is small enough and its parent's is not, at 1 pixel per edge.",
+          "partial",
+          "Shipped for perspective cameras (PRD-282: two spheres per cluster, 1-pixel budget). The orthographic case throws and zoom is ignored: PRD-695 Phase 1.",
+          ["282", "695"]
+        ],
+        [
+          "Persistent-thread culling",
+          119,
+          "Runs node and cluster culling in one kernel with a work queue and persistent threads.",
+          "deferred",
+          "Off by default in Unreal (NaniteCullRaster.cpp:322-328) and WebGPU gives no forward-progress guarantee between workgroups. Revisit if WebGPU adds one and a pruned CPU walk (PRD-600) is the measured cost.",
+          []
+        ],
+        [
+          "Frustum, clip-plane, draw-distance and WPO-distance tests",
+          745,
+          "Box tests with near and far flags, global clip plane, instance draw distance, and the distance past which world position offset stops and the fixed raster bin is used.",
+          "partial",
+          "Frustum: PRD-600. WPO disable distance in shadow levels: PRD-651 (epic branch). Main-view WPO disable distance and pixel-programmable distance are per-primitive and default to 0 (off) in Unreal: deferred until a template ships a dense swaying mesh.",
+          ["600", "651"]
+        ],
+        [
+          "Two-pass occlusion with HZB",
+          1092,
+          "Draws what was visible last frame, builds a depth pyramid, then tests the rest against it in a second pass.",
+          "deferred",
+          "Declined on measurement: PRD-284 (1.28 ms is the whole prize) and PRD-489 (would-cull share 0.013). Revisit with a dense interior or city scene.",
+          ["284", "489"]
+        ],
+        [
+          "Software rasterizer for small triangles",
+          2298,
+          "Rasterizes clusters whose edges project under 32 px in compute, with fixed-point setup and atomic max into the visibility buffer or a depth-only target.",
+          "open",
+          "Main view deferred: needs a visibility buffer (PRD-279 decision 1) and 64-bit image atomics. Depth-only shadow levels need only 32-bit atomics: PRD-696, gated.",
+          ["696"]
+        ],
+        [
+          "Hardware raster path",
+          1553,
+          "Draws clusters with large triangles, or that cross the near or far plane, through vertex, mesh or primitive shaders.",
+          "shipped",
+          "By construction: three's hardware draw rasterizes every cluster of the cut with the game's material.",
+          []
+        ],
+        [
+          "Raster binning and programmable raster",
+          2637,
+          "Bins visible clusters by raster material (fixed function, masked, WPO, displaced) so each bin runs one indirect raster dispatch or draw.",
+          "notfiled",
+          "Masked and WPO materials work by construction: the game's material draws the cluster. One draw per material for many meshes is PRD-490 (multi-draw on native). Gap: a positionNode can move a cluster outside its bounds; proposed as a PRD-600 box rather than a PRD.",
+          []
+        ],
+        [
+          "Raster pipeline permutations and PSO precache",
+          569,
+          "Collects and precaches the raster pipelines for every bin and material permutation.",
+          "shipped",
+          "Pipeline warm-up and the native pipeline disk cache ship (Unreal README, already shipped).",
+          []
+        ],
+        [
+          "Tessellation patches in the rasterizer",
+          575,
+          "Splits and rasterizes displaced patches after the dice pass.",
+          "open",
+          "PRD-668 (dice in compute, hardware draw), gated.",
+          ["668"]
+        ],
+        [
+          "Voxel brick trace in the rasterizer",
+          716,
+          "Traces view rays through 4x4x4 brick masks for voxel clusters.",
+          "open",
+          "PRD-669, gated. Off in a fresh Unreal project.",
+          ["669"]
+        ],
+        [
+          "Curve segment raster in the rasterizer",
+          613,
+          "Rasterizes hair curve segments with a DDA walk in compute.",
+          "open",
+          "PRD-671 draws strands as camera-facing ribbons with a 0.5 px floor instead.",
+          ["671"]
+        ],
+        [
+          "Shadow view emit and VSM feedback",
+          192,
+          "Emits Nanite depth into cube and virtual shadow maps and reports VSM page use back.",
+          "open",
+          "Directional levels: PRD-602. Local-light and cube faces: PRD-695.",
+          ["602", "695"]
+        ],
+        [
+          "Raster and cluster stats",
+          297,
+          "Counts clusters, triangles and raster bins per pass for the stats overlay.",
+          "open",
+          "PRD-676 cluster rows (drawnClusters, triangles per projected pixel).",
+          ["676"]
+        ],
+        [
+          "Visibility buffer clear and raster context",
+          405,
+          "Clears and allocates the 64-bit visibility buffer and decodes its depth.",
+          "deferred",
+          "No visibility buffer (PRD-279 decision 1). Revisit if the owner reopens decision 1 for the owned engine and every shipped target has 64-bit atomics.",
+          []
+        ],
+        [
+          "Async raster, shader bundles and work graphs",
+          133,
+          "Runs raster on async compute and dispatches bins as shader bundles or work graphs on platforms that support them.",
+          "deferred",
+          "WebGPU exposes no async compute queue, shader bundles or work graphs (Unreal README, deferred until WebGPU exposes the API).",
+          []
+        ],
+        [
+          "Imposters",
+          0,
+          "Unreal 4-era Nanite imposters for tiny instances.",
+          "notfiled",
+          "Not in the 5.8.3 Nanite source (no match in Renderer, Shaders or NaniteBuilder). Far representations ship as octahedral impostors (world-impostor.ts).",
+          []
+        ],
+        [
+          "Shared and glue",
+          2159,
+          "Console variables, the renderer class, pass setup and the rasterize pass driver.",
+          "notfiled",
+          "Glue for the internals above.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Shading and materials (shade binning, GBuffer export)",
+      "internals": [
+        [
+          "Shade binning",
+          1483,
+          "Classifies every visibility-buffer pixel by shading material into bins, with counts, offsets and tile masks.",
+          "deferred",
+          "Needs a visibility buffer that owns shading (PRD-279 decision 1). Revisit with that decision.",
+          []
+        ],
+        [
+          "Compute material shading and GBuffer export",
+          2418,
+          "Shades each bin once in compute (with optional software VRS) and exports the GBuffer.",
+          "deferred",
+          "Same reason. Coarse shading rate is PRD-682 (hardware VRS). Far-cluster shading fidelity is a bake matter: PRD-601, listed under the builder internals.",
+          []
+        ],
+        [
+          "Raster and shading bin registries",
+          1071,
+          "Registers raster and shading pipelines per material and allocates their bins.",
+          "shipped",
+          "By construction: each three material is its own pipeline.",
+          []
+        ],
+        [
+          "Material tables per primitive",
+          1221,
+          "Uploads per-primitive material slot tables that the shading and raster passes read.",
+          "shipped",
+          "By construction: the mesh carries its material.",
+          []
+        ],
+        [
+          "Depth export, material depth and composition",
+          1142,
+          "Writes scene depth, stencil and velocity from the visibility buffer for the rest of the frame.",
+          "deferred",
+          "No visibility buffer (PRD-279 decision 1). Hardware draws write depth and velocity already.",
+          []
+        ],
+        [
+          "Mesh pass draw lists",
+          478,
+          "Registers Nanite primitives into the mesh passes that shade them.",
+          "shipped",
+          "By construction: three's render list.",
+          []
+        ],
+        ["Shared and glue", 331, "Console variables and helpers.", "notfiled", "Glue.", []]
+      ]
+    },
+    {
+      "parent": "Ray tracing (cluster RT, AS cache, stream-out)",
+      "internals": [
+        [
+          "Cluster acceleration structures and BLAS build",
+          5157,
+          "Builds cluster-level acceleration structures and BLASes from the streamed cut for hardware ray tracing.",
+          "deferred",
+          "Hardware RT declined at its gate (PRD-645, done): the trace is 12-15x faster but no transport reaches 2x end to end. Revisit with PRD-645's revisit condition.",
+          []
+        ],
+        [
+          "BLAS cache",
+          259,
+          "Reuses built BLASes while the cut stays within a relative error tolerance.",
+          "deferred",
+          "Same as above.",
+          []
+        ],
+        [
+          "Stream-out of the cut for ray tracing",
+          1317,
+          "Writes the view-dependent cut as plain triangles for BLAS builds.",
+          "deferred",
+          "Same as above. ThreeNative's software trace reads a fixed fallback cut instead (PRD-694).",
+          []
+        ],
+        [
+          "Ray-triangle decode for ray tracing",
+          777,
+          "Decodes cluster triangles and edges for ray hit shading.",
+          "deferred",
+          "Same as above.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Data format, decode, streaming",
+      "internals": [
+        [
+          "Cluster data decode and position quantization",
+          1398,
+          "Decodes per-cluster bit-packed positions and triangle indices from GPU pages.",
+          "deferred",
+          "The pipeline quantizes the whole mesh (KHR_mesh_quantization) and resident vertices are not per-cluster packed. Deferred with page streaming (PRD-285): revisit when cluster pages exceed a memory budget.",
+          ["285"]
+        ],
+        [
+          "Attribute decode",
+          990,
+          "Decodes octahedral normals, tangents, UVs and colours per cluster.",
+          "deferred",
+          "Same as above.",
+          ["285"]
+        ],
+        [
+          "Page transcode",
+          722,
+          "Transcodes streamed disk pages into the GPU page format.",
+          "deferred",
+          "PRD-285.",
+          ["285"]
+        ],
+        [
+          "GPU streaming requests",
+          77,
+          "Writes page requests and priorities from the cull pass.",
+          "deferred",
+          "PRD-285.",
+          ["285"]
+        ],
+        [
+          "Vertex factory",
+          1444,
+          "Gives materials the Nanite vertex interface (positions, attributes, derivatives) in raster and shading.",
+          "shipped",
+          "By construction: the game's material reads ordinary three attributes.",
+          []
+        ],
+        [
+          "Packed views and multi-view passes",
+          316,
+          "Builds one packed view per camera, shadow face or capture with its own LOD scale, and draws many views per pass.",
+          "open",
+          "PRD-695: every view takes its own cut, orthographic included. Stereo multi-view: no target ships.",
+          ["695"]
+        ],
+        [
+          "Cube shadow emit",
+          265,
+          "Copies Nanite depth into cube shadow maps for non-virtual local-light shadows.",
+          "open",
+          "PRD-695 (local-light shadow faces).",
+          ["695"]
+        ],
+        [
+          "Stats filter and print",
+          391,
+          "Selects and prints Nanite stats per pass.",
+          "open",
+          "PRD-676.",
+          ["676"]
+        ],
+        [
+          "Overflow feedback",
+          229,
+          "Non-shipping warnings when node, candidate or visible cluster buffers overflow.",
+          "notfiled",
+          "Debug only. The CPU cut has no fixed GPU queues to overflow.",
+          []
+        ],
+        [
+          "Shared and glue",
+          1574,
+          "Shared types, global buffer sizes and scene data access.",
+          "notfiled",
+          "Glue.",
+          []
+        ],
+        [
+          "[builder] Cluster build",
+          2756,
+          "Clusters triangles into 128-triangle meshlets by spatial and connectivity partition (Developer/NaniteBuilder, outside the row sum).",
+          "shipped",
+          "PRD-281 (meshoptimizer clusterizer).",
+          ["281"]
+        ],
+        [
+          "[builder] Attribute-weighted simplification",
+          108,
+          "Weights normals, tangents, colours and UV density into every collapse (Cluster.cpp:938-1045, outside the row sum).",
+          "open",
+          "PRD-601.",
+          ["601"]
+        ],
+        [
+          "[builder] Graph partitioner",
+          725,
+          "Partitions clusters into groups of 8 to 32 by shared edges (outside the row sum).",
+          "shipped",
+          "PRD-281 ported the partitioner to TypeScript. Group size sweep: PRD-601.",
+          ["281", "601"]
+        ],
+        [
+          "[builder] DAG build and error propagation",
+          1911,
+          "Simplifies each group with locked borders, re-clusters it and keeps parent error at least the child error (ClusterDAG.cpp and .h, outside the row sum).",
+          "shipped",
+          "PRD-281 and PRD-282. Voxel and curve branches: PRD-669 and PRD-671.",
+          ["281", "282"]
+        ],
+        [
+          "[builder] Hierarchy encode",
+          919,
+          "Builds the 4-ary BVH of groups that the runtime walks (outside the row sum).",
+          "open",
+          "PRD-600 builds group child lists at load from clusterGroups instead.",
+          ["600"]
+        ],
+        [
+          "[builder] Page assignment and compression encode",
+          5117,
+          "Assigns clusters to pages, constrains them for strip encoding, and bit-packs positions and attributes (outside the row sum).",
+          "deferred",
+          "PRD-285.",
+          ["285"]
+        ],
+        [
+          "[builder] Fallback mesh",
+          230,
+          "Builds a fixed DAG cut at relative error 1.0 (2.0 for the ray tracing proxy) for consumers that do not run the cull (outside the row sum).",
+          "open",
+          "PRD-694: the GI trace and trimesh colliders read a fixed cut, not the camera cut.",
+          ["694"]
+        ],
+        [
+          "[builder] Displacement, skinning and ray tracing encode",
+          1469,
+          "Bakes displacement bounds, bone influences per cluster and ray tracing data (outside the row sum).",
+          "partial",
+          "Displacement: PRD-668. Skinning: PRD-678. Ray tracing: deferred with PRD-645.",
+          ["668", "678"]
+        ],
+        [
+          "[builder] Assemblies",
+          364,
+          "Builds meshes from instanced parts (outside the row sum).",
+          "deferred",
+          "r.Nanite.AllowAssemblies is 0 and read-only (NaniteResources.cpp:124-128). Revisit when Unreal turns it on by default.",
+          []
+        ],
+        [
+          "[builder] Mesh cards for Lumen",
+          1172,
+          "Places axis-aligned capture cards around a mesh for the Lumen surface cache (MeshUtilities, outside the row sum).",
+          "notfiled",
+          "PRD-639 (epic branch) uses a UV-space cache, so no cards are needed. Lumen breakdown owns the decision.",
+          []
+        ],
+        [
+          "[runtime] Streaming manager",
+          3989,
+          "Streams cluster pages and coarse fallback meshes under a 512 MB pool (Runtime/Engine, outside the row sum).",
+          "deferred",
+          "PRD-285: vertex data is about 74% of resident bytes and no asset exceeds memory.",
+          ["285"]
+        ]
+      ]
+    },
+    {
+      "parent": "Debug, visualize, editor",
+      "internals": [
+        [
+          "Visualize modes",
+          2290,
+          "41 debug views: triangles, clusters, groups, pages, overdraw, raster and shading bins.",
+          "open",
+          "PRD-676 ports overdraw and cluster views an agent reads from a capture. Bin views have no counterpart.",
+          ["676"]
+        ],
+        [
+          "Stats print",
+          726,
+          "Prints node, cluster and pixel counts on screen.",
+          "open",
+          "PRD-676.",
+          ["676"]
+        ],
+        [
+          "Debug view modes",
+          336,
+          "Editor debug view modes (shader complexity, LOD colouring) for Nanite pixels.",
+          "notfiled",
+          "Debug only; PRD-676 covers the views an agent reads.",
+          []
+        ],
+        [
+          "Editor hit proxies and selection",
+          926,
+          "Hit proxies, selection outline and editor picking for Nanite meshes.",
+          "rule",
+          "Editor only: out of scope by rule (no editor).",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Curves (hair) raster",
+      "internals": [
+        [
+          "Curve cluster raster",
+          1336,
+          "Rasterizes curve clusters in compute with a minimum width.",
+          "open",
+          "PRD-671 ribbons with a 0.5 px floor and coverage.",
+          ["671"]
+        ],
+        [
+          "Curve data and decode",
+          1476,
+          "Decodes and transforms curve control points per cluster.",
+          "deferred",
+          "r.Nanite.AllowCurves is 0 and read-only. PRD-671 reads glTF LINES directly. Revisit when curves are on by default.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Voxels and bricks (far foliage)",
+      "internals": [
+        [
+          "Brick raster and trace",
+          1466,
+          "Traces view rays through 64-bit brick masks.",
+          "open",
+          "PRD-669.",
+          ["669"]
+        ],
+        [
+          "Brick tiling and scatter",
+          484,
+          "Bins bricks into 8x8 screen tiles for the compute trace.",
+          "deferred",
+          "PRD-669 draws one instanced box per brick in hardware, so no tile binning. Revisit if its Phase 3 cost fails.",
+          []
+        ],
+        [
+          "Auto voxel from depth",
+          200,
+          "Experimental voxelization of the depth buffer.",
+          "deferred",
+          "Experimental in Unreal and off by default with voxels.",
+          []
+        ],
+        ["Voxel renderer setup", 584, "Sets up the brick passes.", "open", "PRD-669.", ["669"]]
+      ]
+    },
+    {
+      "parent": "Tessellation and displacement",
+      "internals": [
+        [
+          "Tessellation pattern table",
+          867,
+          "Precomputed barycentric patterns for edge factors up to 14.",
+          "open",
+          "PRD-668.",
+          ["668"]
+        ],
+        [
+          "Edge factors and displacement fade",
+          356,
+          "Edge factors from view depth and dice rate, with fade by projected displacement.",
+          "open",
+          "PRD-668.",
+          ["668"]
+        ],
+        [
+          "Patch split and dice queues",
+          792,
+          "Splits large patches and dices them into micro-triangles under a patch budget.",
+          "open",
+          "PRD-668.",
+          ["668"]
+        ],
+        [
+          "Vertex deformation",
+          644,
+          "Displacement, spline and skinning deformation of cluster vertices and bounds.",
+          "open",
+          "Displacement: PRD-668. Skinned bounds: PRD-678.",
+          ["668", "678"]
+        ]
+      ]
+    },
+    {
+      "parent": "Translucency",
+      "internals": [
+        [
+          "Translucent bins and indirect draws",
+          622,
+          "One indirect hardware draw per translucent material bin in the translucent base pass.",
+          "open",
+          "PRD-677.",
+          ["677"]
+        ],
+        [
+          "Translucent vertex factory",
+          567,
+          "Vertex interface for translucent cluster draws.",
+          "open",
+          "By construction three's forward path; PRD-677 proves blend state survives the swap.",
+          ["677"]
+        ]
+      ]
+    },
+    {
+      "parent": "Visibility, skinning, ownership",
+      "internals": [
+        [
+          "Material visibility pre-pass",
+          629,
+          "Skips raster and shading bins no visible primitive uses (off by default).",
+          "shipped",
+          "By construction: three culls each mesh and draws its own material.",
+          []
+        ],
+        [
+          "Ownership visibility",
+          210,
+          "Owner-no-see and only-owner-see bits per primitive per view.",
+          "open",
+          "Object3D.layers ships it; PRD-678 proves it after a re-cut.",
+          ["678"]
+        ],
+        [
+          "Skinning view data",
+          177,
+          "Per-view deform decision by minimum screen size.",
+          "open",
+          "PRD-678.",
+          ["678"]
+        ],
+        [
+          "Primitive filter and scatter updates",
+          113,
+          "Hides filtered primitives per view and scatters small GPU buffer updates.",
+          "shipped",
+          "By construction: Object3D.visible and layers.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Shadow casters at shadow-texel detail",
+      "internals": [
+        [
+          "Directional clipmap shadow views and LOD bias",
+          88,
+          "One Nanite view per clipmap level with a shadow pixel budget (VirtualShadowMapArray.cpp:4948-5035; not in Nanite LOC).",
+          "open",
+          "PRD-602.",
+          ["602"]
+        ],
+        [
+          "Local-light shadow views",
+          65,
+          "One view per cube face or spot map, culled to the light radius (VirtualShadowMapArray.cpp:5039-5103; not in Nanite LOC).",
+          "open",
+          "PRD-695.",
+          ["695"]
+        ],
+        [
+          "Small-triangle depth raster into shadow pages",
+          20,
+          "32-bit atomic max of depth into VSM pages (NaniteWritePixel.ush:20-31, 79-94; counted in Cull + raster).",
+          "open",
+          "PRD-696, gated.",
+          ["696"]
+        ],
+        [
+          "Shadow raster time budget",
+          24,
+          "Scales the shadow pixel budget when over a time budget (NaniteCullRaster.cpp:331-354; counted in Cull + raster).",
+          "deferred",
+          "Off by default in Unreal. PRD-602 keeps gateScale as the lever and adds no second budget.",
+          ["602"]
+        ],
+        [
+          "VSM invalidation on LOD delta",
+          7,
+          "Experimental: re-renders shadow pages when streamed LOD catches up (NaniteCullRaster.cpp:111-117; counted in Cull + raster).",
+          "deferred",
+          "Off by default. PRD-602 makes the shadow cut camera-independent, so a camera re-cut never stales a page.",
+          ["602"]
+        ]
+      ]
+    }
+  ]
+}

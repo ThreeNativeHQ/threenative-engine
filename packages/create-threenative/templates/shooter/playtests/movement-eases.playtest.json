@@ -1,0 +1,53 @@
+{
+  "name": "movement-eases",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "stand",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "slide",
+      "waitTicks": 3,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "speed",
+        "gte": 1,
+        "allowTrivial": "speed is the body's horizontal m/s. Three ticks after W comes up it reads about 4 under ground friction. The defect: the body went from 5.6 m/s to 0 on the tick the key came up (and from 0 to 5.6 on the tick it went down), so walking read as a robot on rails; it measured 0 here before the fix."
+      },
+      {
+        "entity": "player",
+        "component": "speed",
+        "lte": 5.5,
+        "allowTrivial": "The upper bound proves the body is slowing down rather than still walking: a release the scene never saw would read the full 5.6."
+      }
+    ]
+  }
+}

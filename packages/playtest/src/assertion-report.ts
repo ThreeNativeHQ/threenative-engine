@@ -13,6 +13,9 @@ import type {
   IPlaytestRenderChainObservation,
   IPlaytestSceneNodesObservation,
   IPlaytestSceneObservation,
+  IPlaytestSightLineObservation,
+  IPlaytestStartupOffscreenBytes,
+  IPlaytestStartupCoverObservation,
   IPlaytestStartupTimeline,
   JsonValue,
 } from "./protocol.js";
@@ -48,6 +51,23 @@ export interface IPlaytestVisualElementRegionObservation {
   element: IPlaytestVisualRegionTarget;
   nonblankPixelRatio?: number;
   rendered: boolean;
+}
+
+export interface IPlaytestFootSlipObservation {
+  entity: string;
+  feet: string[];
+  label: string;
+  samples: Array<{ body: [number, number, number] | null; feet: Array<[number, number, number] | null> }>;
+}
+
+/** One visible text node the page draws, with its colour and the colour composited behind it. */
+export interface IPlaytestHudAuditItem {
+  /** Effective backing colour, alpha-composited from the nearest ancestor up; alpha 0 sits on the canvas. */
+  background: [number, number, number, number];
+  color: [number, number, number, number];
+  fontSizePx: number;
+  selector: string;
+  text: string;
 }
 
 export interface IPlaytestObservations {
@@ -86,13 +106,22 @@ export interface IPlaytestObservations {
   /** Lights, materials, fog, background, camera framing and world extent, as the bridge found them. */
   scene?: IPlaytestSceneObservation;
   sceneNodes?: IPlaytestSceneNodesObservation[];
+  /** Per-tick world positions of the subject and its named feet over each footSlip step; a foot the walk did not find is null. */
+  footSlip?: IPlaytestFootSlipObservation[];
+  /** The camera-to-subject sight line as sampled during the run, when the scenario asserts it. */
+  sightLine?: { entity: string; samples: IPlaytestSightLineObservation[] };
+  /** Visible page text and its colours, sampled after the last step when the scenario audits the HUD. */
+  hudAudit?: { items: IPlaytestHudAuditItem[] };
   /** The startup observation the runner waited on, with the rule it resolved under. */
   startup?: {
     compileSettled?: boolean;
+    offscreenBytes?: IPlaytestStartupOffscreenBytes;
     phase: string;
     progress: number;
     rule?: string;
     timeline?: IPlaytestStartupTimeline;
+    /** The presented frames before readiness, when the scenario asserts `startup.steadyCover`. */
+    cover?: IPlaytestStartupCoverObservation;
   };
   resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
   runtimeObservations?: unknown;
@@ -106,7 +135,7 @@ export interface IPlaytestObservations {
     changedPixelRatio?: number;
     comparisonSource?: string;
     elementRegions?: IPlaytestVisualElementRegionObservation[];
-    nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; width: number; x: number; y: number }>;
+    nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; sharpness?: number; width: number; x: number; y: number }>;
     /** Visual frame observations only; performance samples live in performanceSeries. */
     runtimeDiagnosticsSeries?: unknown[];
   };

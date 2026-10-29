@@ -8,7 +8,7 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
-import { type Group, type PerspectiveCamera, type Texture, Vector3 } from "three";
+import { type Group, type PerspectiveCamera, Vector3 } from "three";
 import { Ship } from "../entities/Ship.js";
 import { followShip, setupCamera } from "../render/camera.js";
 import { loadedEnvironmentSample } from "../render/environmentSetup.js";
@@ -207,6 +207,10 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
         sample,
       );
     let elapsed = 0;
+    // What the HUD reads: the passage's clock and wind, held where they stood when it ended. The
+    // sea keeps `elapsed`, so the swell and a finished ship's slowing go on under the banner.
+    let runElapsed = 0;
+    let runWind = 1;
     let buoysRounded = 0;
     let markBearing = 0;
     let markDistance = 0;
@@ -278,7 +282,11 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
         ship.capsized ? 0 : wind,
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
-      if (status === "sailing") scoreCourse(wind);
+      if (status === "sailing") {
+        scoreCourse(wind);
+        runElapsed = elapsed;
+        runWind = wind;
+      }
 
       // The marks float. They are moored to the sea bed, not nailed to y = 0: left at a fixed
       // height they stood in a hole when the swell rose past them and hung in the air over every
@@ -293,7 +301,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       const state = frameCtx.state.getState();
       frameCtx.state.set({
         buoysRounded,
-        elapsed,
+        elapsed: runElapsed,
         markBearing,
         markDistance,
         paused: state.paused,
@@ -302,7 +310,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
         status,
         submergedFraction: ship.immersion,
         uiReady: state.uiReady,
-        wind,
+        wind: runWind,
       });
       // The **visual**, not the body. `Ship` draws the hull from `ship.visual`, whose y is the sea
       // surface; `ship.mesh` is the physics body, whose y wanders on a throttled height copy and

@@ -35,6 +35,8 @@ explicitly **not** test failures (external decoder absent; capture lock queue ti
 - A scaffolded project runs the same CLI as `npx @threenative/playtest`. The framework template
   installs the bridge with `playtest()` in `defineGame`; a plain Three.js project uses
   `installThreePlaytestBridge` from `@threenative/playtest/three`.
+- A scenario's `network: { downloadKbps, latencyMs }` throttles the browser link through CDP, so a
+  load-time claim runs at a stated link speed (for example 20000 kbps and 40 ms).
 - `diagnostics`, console, network, screenshot and trace assertions work against any URL. Semantic
   assertions (`movement`, `camera`, `visibility`) against a project with neither bridge fail
   `TN_PLAYTEST_BRIDGE_MISSING` — that is the harness being right. Install the bridge or narrow the
@@ -99,6 +101,10 @@ vocabulary behind them is in [docs/reference.md](docs/reference.md).
 - **Advertise only what you registered.** An unknown capability is
   `TN_PLAYTEST_BRIDGE_CAPABILITY_UNKNOWN`, so a new observation channel is registered in
   `src/capabilities.ts` in the same change that starts advertising it.
+- **Off-screen startup bytes are a warning, not a failure, until a scenario sets `assert.startup.maxOffscreenBytes`.**
+  `TN_PLAYTEST_STARTUP_OFFSCREEN_BYTES` means the reveal awaited files the spawn camera does not show;
+  the fix is to stream or prefetch those, never to defer what the camera sees
+  ([docs/reference.md](docs/reference.md)).
 
 ## Determinism
 
@@ -109,7 +115,9 @@ bridge advertising `runtime.startup` to report `phase: "ready"`; bounded by
 `PLAYTEST_STARTUP_READY_TIMEOUT_MS`, and a game that never gets there fails
 `TN_PLAYTEST_STARTUP_NOT_READY` rather than being observed mid-load. A host that has *exited* is
 `TN_PLAYTEST_STARTUP_HOST_EXITED`, not a slow launch. **Never fix a boot race by lengthening a
-wait** — padding changes which runs get lucky. One measurement opt-in sits outside all of it:
+wait** — padding changes which runs get lucky. Browser frame-time and FPS assertions select the live host clock by default; an explicit
+`liveClock: false` run config retains counted ticks. Other scenarios keep counted ticks.
+One measurement opt-in sits outside all of it:
 `--live-clock` (browser and desktop targets) makes the host's own frame pump move the simulation,
 so a standing scene is measurable at all. The browser injects `__THREENATIVE_PLAYTEST_CLOCK__ =
 "wall-clock"` ahead of every page script. The desktop runner sets `TN_PLAYTEST_CLOCK=wall-clock` for

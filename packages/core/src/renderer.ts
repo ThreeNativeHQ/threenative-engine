@@ -22,11 +22,14 @@ import {
   type IGpuFrameObservation,
   type IGpuFrameObservationOptions,
 } from "./gpu-frame-observation.js";
+import { type RendererToneMapping, applyRendererToneMapping } from "./look/default-tone-mapping.js";
+import { qualityTiers } from "./look/quality.js";
 import {
   type IPipelineCensus,
   type PipelineCensus,
   createPipelineCensus,
 } from "./pipeline-census.js";
+import { hostDocument, hostResizeObserver } from "./platform.js";
 import type { ITimestampQueryPool } from "./render-pass-budget.js";
 import { AlphaAntialiasing, type IAlphaAntialiasingReport } from "./render/alpha-antialiasing.js";
 import {
@@ -180,8 +183,16 @@ export interface IRendererLike {
   warmUpSettled?(): void;
   /** Marks a repeatable streamed warm-up boundary for the next first draw. */
   warmUpScopeSettled?(label: string, target?: Object3D): void;
-  /** Performs one covered output-pipeline render without marking first present. */
-  warmUpWorldPass?(scene: Object3D, camera: Camera, targetScene?: Object3D): void;
+  /**
+   * Performs one covered output-pipeline render without marking first present. `afterDraw` runs in
+   * the same task as every draw it makes, the frame gate's retries included, to repaint a cover.
+   */
+  warmUpWorldPass?(
+    scene: Object3D,
+    camera: Camera,
+    targetScene?: Object3D,
+    afterDraw?: () => void,
+  ): void | Promise<void>;
   /**
    * What alpha antialiasing did with the multisampled surface, and why, when it did nothing.
    *
@@ -390,6 +401,9 @@ export interface IRendererLike {
    * caller; a pinned game never reaches this, which is what makes "pinned" mean pinned.
    */
   setResolutionScale(scale: number, scaleSource: "auto" | "auto-pinned"): void;
+  /** True only while the owned temporal resolve reconstructs display pixels. */
+  temporalUpscale?(): boolean;
+  temporalUpscaleStartScale?(): number | undefined;
   /**
    * What this renderer is actually drawing at. Read once per frame-budget window so every fps
    * number is self-describing; a record and a tree once disagreed about the scale for a whole
@@ -421,6 +435,13 @@ export interface IRendererOptions {
   alphaAntialiasing?: boolean;
   /** Requests multisample antialiasing from the renderer. Defaults to true. */
   antialias?: boolean;
+  /**
+   * The tone curve a WebGPU renderer starts with. Defaults to `filmic`, a fresh Unreal 5.8.3
+   * project's curve; `aces`, `agx`, `neutral` and `none` (three's linear output) are the named
+   * overrides. A renderer that cannot run the curve keeps ACES and reports `TN_TONEMAP`. Setting
+   * `renderer.raw.toneMapping` afterwards still wins.
+   */
+  toneMapping?: RendererToneMapping;
   canvas?: HTMLCanvasElement;
   gpuTimestampFrameInterval?: number;
   preferWebGPU?: boolean;
@@ -452,6 +473,8 @@ export interface IRendererOptions {
 }
 
 type RendererInstance = IStorageBufferSource & {
+  readonly temporalUpscale?: boolean;
+  setRenderScale?(scale: number): void;
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
   info?: {
@@ -544,8 +567,9 @@ export function readCanvasSize(canvas: HTMLCanvasElement): readonly [number, num
 }
 
 export function observeCanvasResize(canvas: HTMLCanvasElement, resize: () => void): () => void {
-  if (typeof ResizeObserver !== "undefined") {
-    const observer = new ResizeObserver(resize);
+  const Observer = hostResizeObserver();
+  if (Observer !== undefined) {
+    const observer = new Observer(resize);
     observer.observe(canvas);
     return () => observer.disconnect();
   }
@@ -715,7 +739,13 @@ function wrapRenderer(
   };
 
   let renderingFrame = 0;
+  let temporalUpscaleActive = false;
   const renderFrame = (scene: Object3D, camera: Camera): void => {
+    const temporal = wrapped.temporalUpscale?.() === true;
+    if (temporal !== temporalUpscaleActive) {
+      temporalUpscaleActive = temporal;
+      reapply.resize?.();
+    }
     pipelineCensus?.beginWorldFrame(scene);
     const refreshPass = pendingWorldPassRefresh ? outputPass : undefined;
     const restoreWorldPass = refreshWorldPassOnce(refreshPass);
@@ -738,8 +768,32 @@ function wrapRenderer(
       pipelineCensus?.endWorldFrame(scene, completed);
     }
   };
+  let overlayReported = false;
   const renderOverlayFrame = (scene: Object3D, camera: Camera): void => {
     bindSurface();
+    // The owned engine draws an overlay over the presented frame with no post, no temporal step and
+    // no tone curve; through its render() the loading screen moved the world's temporal history and
+    // exposure (a ghosted hand-off).
+    const overlay = (raw as { renderOverlay?: (scene: Object3D, camera: Camera) => void })
+      .renderOverlay;
+    // The canvas layer is UI, and UI composites after the tone curve, as Unreal draws Slate onto the
+    // already tone-mapped back buffer (UE 5.8.3: Engine/Source/Runtime/SlateRHIRenderer/Private/
+    // SlateRHIRenderer.cpp:986 and :1032). Reported, because three's WebGPURenderer cannot: it tone
+    // maps the canvas layer and the world below it in one output pass over a shared frame buffer.
+    if (!overlayReported) {
+      overlayReported = true;
+      console.log(
+        `TN_CANVAS_LAYER:${JSON.stringify(
+          overlay !== undefined
+            ? { toneMapping: "none", composite: "after the tone curve" }
+            : { toneMapping: "renderer", composite: "with the world in three's output pass" },
+        )}`,
+      );
+    }
+    if (overlay !== undefined) {
+      overlay.call(raw, scene, camera);
+      return;
+    }
     const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
     const autoClear = raw.autoClear;
     raw.autoClear = false;
@@ -797,7 +851,11 @@ function wrapRenderer(
         }),
     get warmUpWorldPass() {
       if (outputPipeline === undefined) return undefined;
-      return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> => {
+      const drawOnce = (
+        scene: Object3D,
+        camera: Camera,
+        targetScene?: Object3D,
+      ): void | Promise<void> => {
         const outputRoot = targetScene ?? scene;
         const scoped = targetScene !== undefined && targetScene !== scene;
         const previousPassScene = outputPass?.scene;
@@ -908,6 +966,13 @@ function wrapRenderer(
         // no async cache still returns synchronously, exactly as before.
         return asyncPipelines?.settled();
       };
+      return (
+        scene: Object3D,
+        camera: Camera,
+        targetScene?: Object3D,
+        afterDraw?: () => void,
+      ): void | Promise<void> =>
+        drawPastFrameGate(raw, () => drawOnce(scene, camera, targetScene), undefined, afterDraw);
     },
     gpuFrameMs: () => gpuFrameSample()?.ms,
     gpuFrameAge: () => {
@@ -924,7 +989,11 @@ function wrapRenderer(
         disposed ||
         kind !== "webgpu" ||
         !timestampCapable ||
-        typeof raw.resolveTimestampsAsync !== "function"
+        typeof raw.resolveTimestampsAsync !== "function" ||
+        // Three's backend creates the pool record at construction; a backend without it (the owned web
+        // engine's facade) never allocates one, so an observer would wait on it forever.
+        raw.backend === undefined ||
+        !("timestampQueryPool" in raw.backend)
       )
         throw new Error("TN_GPU_FRAME_OBSERVATION_UNSUPPORTED");
       if (gpuObservation !== undefined && gpuObservation.status().state !== "disposed")
@@ -1405,6 +1474,24 @@ function wrapRenderer(
       state.resolutionSubrect = undefined;
       reapply.resize?.();
     },
+    temporalUpscale: () =>
+      typeof raw.setRenderScale === "function" &&
+      (renderChains.size === 0
+        ? raw.temporalUpscale === true
+        : outputPipeline !== undefined &&
+          [...renderChains].some(
+            (chain) => !chain.disposed && chain.applied.stages.includes("traa"),
+          )),
+    temporalUpscaleStartScale: () => {
+      if (!wrapped.temporalUpscale?.()) return undefined;
+      const chain = [...renderChains].find(
+        (candidate) => !candidate.disposed && candidate.applied.stages.includes("traa"),
+      );
+      const tier = chain?.applied.tier;
+      return tier === "high" || tier === "medium" || tier === "low"
+        ? qualityTiers.resolutionScale[tier]
+        : qualityTiers.resolutionScale[qualityTiers.resolve({ gpuClass: gpuClass?.class })];
+    },
     renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,
     setRenderChainVelocityEnabled: (enabled) => {
       renderChainUsesPerObjectVelocity = enabled;
@@ -1416,6 +1503,7 @@ function wrapRenderer(
       renderChains.clear();
       const chain = new RenderChain(wrapped, options);
       renderChains.add(chain);
+      reapply.resize?.();
       return chain;
     },
     observeRenderChainBudget: (window) => {
@@ -1452,6 +1540,64 @@ function wrapRenderer(
 
 function isOutputPassNode(node: unknown): node is PassNode {
   return isObject(node) && node.isPassNode === true;
+}
+
+/** How long a covered warm-up draw waits for the GPU to take a frame before it fails. */
+const FRAME_GATE_WAIT_MS = 5000;
+
+/** Cumulative render() calls the renderer declined to draw (the Wasm web engine's frame gate), when it counts them. */
+export function rendererFrameGateSkips(raw: unknown): number | undefined {
+  const info = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | null)?.info;
+  const skips = info?.engine?.frameGateSkips;
+  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
+}
+
+/**
+ * Whether the renderer is drawing under the loading cover to finish its environment bake. A bake
+ * draw presents nothing and its world is still unlit, so its pixels are not the view's first frame:
+ * the eye adaptation must not adopt them. A renderer without an engine report answers false.
+ */
+export function rendererEnvironmentBake(raw: unknown): boolean {
+  const info = (raw as { info?: { engine?: { environmentBake?: unknown } } } | null)?.info;
+  return info?.engine?.environmentBake === true;
+}
+
+/**
+ * Runs a covered warm-up draw until the renderer takes it. The Wasm web engine's frame gate declines
+ * a draw while two frames are still on the GPU, and a declined draw compiles nothing: on Lantern Vale
+ * the startup pass was declined, so the TRAA, aux and post pipelines (92) compiled synchronously
+ * 1.1 s after the reveal and stalled the queue for 2.3 s. A renderer with no gate, or one that took
+ * the first draw, returns that draw's result unchanged. `afterDraw` runs straight after every draw,
+ * in its task: a retry presents on its own, and a cover painted only after the declined first call
+ * left Hop Garden's world showing through it for one frame.
+ */
+export function drawPastFrameGate(
+  raw: unknown,
+  draw: () => void | Promise<void>,
+  waitMs = FRAME_GATE_WAIT_MS,
+  afterDraw?: () => void,
+): void | Promise<void> {
+  const before = rendererFrameGateSkips(raw);
+  const first = draw();
+  afterDraw?.();
+  if (before === undefined || rendererFrameGateSkips(raw) === before) return first;
+  const now = (): number => globalThis.performance?.now() ?? Date.now();
+  return (async () => {
+    await first;
+    // The wait starts once the declined draw settled, so a slow settle does not use up the retries.
+    const deadline = now() + waitMs;
+    while (now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 16));
+      const skips = rendererFrameGateSkips(raw);
+      const drawn = draw();
+      afterDraw?.();
+      if (rendererFrameGateSkips(raw) === skips) return drawn;
+      await drawn;
+    }
+    throw new Error(
+      `TN_WARMUP_FRAME_GATE: the covered warm-up draw waited ${waitMs} ms for the GPU to take a frame and never drew.`,
+    );
+  })();
 }
 
 function selectOutputPass(node: unknown, worldPass: unknown): PassNode | undefined {
@@ -1543,7 +1689,13 @@ function addResizeHandling(
     // the host's to define and on native they have been the physical surface, which is exactly
     // the number this scale exists to stop a game from paying by hand.
     const subrect = state.resolutionSubrect;
-    const scale = subrect?.active ? 1 : state.resolutionScale;
+    const temporal =
+      renderer.temporalUpscale?.() === true &&
+      state.resolutionScale >= 0.25 &&
+      state.resolutionScale <= 1;
+    const owned = renderer.raw as RendererInstance;
+    owned.setRenderScale?.(temporal ? state.resolutionScale : 1);
+    const scale = subrect?.active || temporal ? 1 : state.resolutionScale;
     const physicalWidth = Math.max(1, Math.round(width * pixelRatio * scale));
     const physicalHeight = Math.max(1, Math.round(height * pixelRatio * scale));
     applied = [physicalWidth, physicalHeight];
@@ -1687,6 +1839,9 @@ const TEXTURE_LIMITS = {
   // three stores every morph target of a mesh as one layer of a texture array: a MetaHuman head
   // carries 821, and past the default 256 the mesh never draws.
   maxTextureArrayLayers: 256,
+  // Seven RGBA16Float render targets carry 56 bytes per sample; the device default of 32 invalidates
+  // the pipeline even when the adapter reports 128.
+  maxColorAttachmentBytesPerSample: 32,
 } as const;
 
 /**
@@ -1719,6 +1874,15 @@ export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<
   }
 }
 
+function newPageCanvas(): HTMLCanvasElement {
+  const page = hostDocument();
+  if (page === undefined)
+    throw new Error(
+      "TN_RENDERER_NO_CANVAS: no canvas was given and this host has no document; pass options.canvas",
+    );
+  return page.createElement("canvas");
+}
+
 export async function createRenderer(options: IRendererOptions = {}): Promise<IRendererLike> {
   const source = options.source;
   const gpuTimestampFrameInterval =
@@ -1738,7 +1902,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   if (!Number.isFinite(resolutionScale) || resolutionScale <= 0)
     throw new Error("renderer.resolutionScale must be finite and positive.");
   const applied = { height: 1, width: 1 };
-  const canvas = options.canvas ?? source?.createCanvas() ?? document.createElement("canvas");
+  const canvas = options.canvas ?? source?.createCanvas() ?? newPageCanvas();
   // An intrinsic canvas follows its width/height attributes. Scaling that buffer then changes
   // clientWidth, so ResizeObserver scales it again until it is one pixel. Own the layout only
   // for the browser canvas we created; supplied canvases and platform surfaces own theirs.
@@ -1764,18 +1928,27 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       sampleCount: () => resolveSampleCount(raw),
     });
   let renderer: IRendererLike | undefined;
+  // Why WebGPU did not start, when it was tried: the boot failure must name it, or a fault in the
+  // WebGPU path (PRD-752: a DOM-only canvas call in a worker) reads as a device without WebGPU.
+  let webgpuFailure: string | undefined;
 
   if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
     try {
       const raw = options.webgpuFactory
         ? await options.webgpuFactory(canvas, rendererParameters)
-        : new (await import("three/webgpu")).WebGPURenderer({
-            canvas,
-            ...rendererParameters,
-            ...(await adapterTextureLimits()),
+        : await import("three/webgpu").then(async (webgpu) => {
+            // Two Sided Foliage lets the sun through on three's lit node materials too (PRD-643).
+            (await import("./render/two-sided-foliage.js")).installFoliageTransmission(webgpu);
+            return new webgpu.WebGPURenderer({
+              canvas,
+              ...rendererParameters,
+              ...(await adapterTextureLimits()),
+            });
           });
       const instance = raw as RendererInstance;
       await instance.init?.();
+      // A game that sets `toneMapping` on the renderer later (WorldEnvironment, Daylight) replaces this.
+      applyRendererToneMapping(instance, options.toneMapping ?? "filmic", report);
       const alphaAntialiasing = arm(instance);
       const timestampCapable = instance.backend?.trackTimestamp === true;
       const adapter = await readWebGpuAdapterFacts(instance);
@@ -1796,7 +1969,11 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       );
       if (adapter.gpuClass !== undefined)
         report(`${GPU_CLASS_MARKER}:${JSON.stringify(adapter.gpuClass)}`);
-    } catch {
+    } catch (error) {
+      // A facade and Wasm engine from two builds is an install fault, not a device without
+      // WebGPU: falling back would report TN_NO_RENDERER and hide the fix.
+      if (error instanceof Error && error.message.startsWith("TN_WASM_ABI_MISMATCH")) throw error;
+      webgpuFailure = error instanceof Error ? error.message : String(error);
       renderer = undefined;
     }
   }
@@ -1815,7 +1992,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // verbatim would show an internal "uncatalogued" code; a browser with no context throws
       // three's own message. Neither belongs in front of a player, so both become one named failure.
       throw new Error(
-        "TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.",
+        `TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.${webgpuFailure === undefined ? "" : ` WebGPU failed: ${webgpuFailure}`}`,
         { cause: error },
       );
     }

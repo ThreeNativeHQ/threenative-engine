@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+@source "../index.html";
+@source "./";
+
+@theme {
+  --color-ink: #1d3a5c;
+  /* The loading cover's colour (`palette.skyLow`), so the page and the cover paint as one. */
+  --color-cover: #6aaaea;
+  --color-panel: #2a1a0e;
+  --color-line: #ffffff40;
+  --color-lume: #ffb35c;
+  --color-warn: #f2b01e;
+  --color-heart: #e5484d;
+  --color-text: #fff4dc;
+  --color-dim: #e9c98a;
+  --font-mono: ui-rounded, "Nunito", "Trebuchet MS", system-ui, sans-serif;
+  /* The controls hint reads once, then gets out of the view. */
+  --animate-hint-fade: hint-fade 1s ease-in 10s forwards;
+
+  @keyframes hint-fade {
+    to {
+      opacity: 0;
+    }
+  }
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * The page's backdrop belongs to the web document's own mount point, never to `body`.
+ * `src/ui/main.tsx` imports this same stylesheet, and on native that file is what the platform's
+ * transparent web view loads over the game: a `body` background there paints an opaque sheet over
+ * the frame the game just rendered, and the HUD appears to float on nothing. `#root` exists only
+ * in the web page, so the backdrop stays where it belongs and the UI layer stays see-through.
+ */
+
+#root {
+  background: var(--color-cover);
+}
+
+/* Boot failures are a page state, so the generated game owns their presentation. */
+[data-threenative-canvas-error="true"] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: clamp(1.5rem, 8vw, 6rem);
+  overflow: auto;
+  background: #fff7ed;
+  color: var(--color-ink);
+  font-family: inherit;
+  font-size: clamp(1rem, 2vw, 1.5rem);
+  line-height: 1.5;
+  text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The debug surface is framework plumbing; its default presentation is yours to change. */
+[data-threenative-debug-overlay="true"] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  max-width: 24rem;
+  padding: 0.75rem;
+  pointer-events: none;
+  background: rgb(2 6 23 / 90%);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 30%);
+  color: #cffafe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+[data-threenative-debug-overlay="true"] table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+[data-threenative-debug-overlay="true"] th,
+[data-threenative-debug-overlay="true"] td {
+  padding-right: 1rem;
+  text-align: left;
+}
+
+[data-threenative-debug-overlay="true"] td:last-child {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}

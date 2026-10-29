@@ -174,7 +174,11 @@ function browserPlatform(source: unknown): Readonly<IPlatformInfo> {
 
 function globalPlatformSource(): IPlatformDetectionSource {
   const globals = globalThis as Record<string, unknown>;
-  return { native: globals.__THREENATIVE_NATIVE__, navigator: globals.navigator };
+  // In a worker the host copied the page's navigator: a WorkerNavigator has no maxTouchPoints.
+  return {
+    native: globals.__THREENATIVE_NATIVE__,
+    navigator: globals.__tnPageNavigator ?? globals.navigator,
+  };
 }
 
 /** Internal source seam for unit tests; it is intentionally not a root package export. */
@@ -207,4 +211,28 @@ export function isMobile(): boolean {
 
 export function isTouchscreenAvailable(): boolean {
   return getPlatform().maxTouchPoints > 0;
+}
+
+/** The page's `window`, or undefined in a worker or on a host without one. Core reads it only here (PRD-752). */
+export function hostWindow(): (Window & typeof globalThis) | undefined {
+  return typeof window === "undefined" ? undefined : window;
+}
+
+/** Where a user gesture lands: the page's window, or in a worker the input target its host installed. */
+export function hostGestureTarget(): EventTarget | undefined {
+  return (
+    hostWindow() ??
+    (globalThis as { __tnGamePlatform?: { inputTarget?: EventTarget } }).__tnGamePlatform
+      ?.inputTarget
+  );
+}
+
+/** The page's `document`, or undefined in a worker or on a host without one. */
+export function hostDocument(): Document | undefined {
+  return typeof document === "undefined" ? undefined : document;
+}
+
+/** `ResizeObserver`, or undefined where the host has none. */
+export function hostResizeObserver(): typeof ResizeObserver | undefined {
+  return typeof ResizeObserver === "undefined" ? undefined : ResizeObserver;
 }

@@ -8,6 +8,7 @@ import {
 import {
   AnimationClip,
   BoxGeometry,
+  Group,
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
@@ -38,6 +39,33 @@ function bridge(): IPlaytestBridgeV1 {
 }
 
 describe("playtest plugin", () => {
+  it("observes the group root of a registered entity", async () => {
+    const group = new Group();
+    group.position.set(1, 2, 3);
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: {
+        test: class extends Scene {
+          override enter(ctx: ICtx) {
+            ctx.entities.add("enemy", { group });
+          }
+        },
+      },
+      start: "test",
+    });
+    await game.start();
+    try {
+      const snapshot = await bridge().sample({ entities: ["enemy"] });
+      expect(snapshot.entities?.find(({ id }) => id === "enemy")?.transform?.position).toEqual([
+        1, 2, 3,
+      ]);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should not advertise runtime.physics without a contributing plugin", async () => {
     const game = defineGame({
       initialState: {},
@@ -333,10 +361,12 @@ describe("playtest plugin", () => {
             finished: true,
             // The stride convention is measured whether or not it applies, so it crosses the
             // bridge on every clip. This one carries no root translation, so its feet carry no
-            // ground — reported as the zero it measured, not as an absent field.
+            // ground — reported as the zero it measured, not as an absent field, with `inPlace`
+            // saying that no foot plant was found.
             stride: {
               clipGroundSpeed: 0,
               groundSpeed: 0,
+              inPlace: true,
               overridden: false,
               rate: 1,
               synced: false,
@@ -361,6 +391,17 @@ describe("playtest plugin", () => {
       expect(snapshot.resources).toEqual({
         __threenativeFrameCounts: { updates: 0, renders: 0 },
         GameState: { score: 0 },
+        assetCache: {
+          backgroundFill: false,
+          bytesOnDisk: 0,
+          bytesTotal: 0,
+          enabled: false,
+          filling: false,
+          hits: 0,
+          misses: 0,
+          persisted: false,
+          reason: "cache API unavailable",
+        },
         assets: {},
         state: { score: 0 },
       });
@@ -411,6 +452,7 @@ describe("playtest plugin", () => {
   it("publishes registry tags and drained contacts through gameplay channels", async () => {
     const canvas = testCanvas();
     const body = {};
+    const storage = new Uint8Array(65_536);
     const area = {
       drainContacts: () => [{ body, entity: "coin.3", started: true }],
     };
@@ -420,7 +462,7 @@ describe("playtest plugin", () => {
         const coin = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(fox);
         ctx.add(coin);
-        ctx.entities.add("fox", { mesh: fox, physics: { rigidBody: body } });
+        ctx.entities.add("fox", { mesh: fox, physics: { rigidBody: body, storage } });
         ctx.entities.add("coin.3", { mesh: coin, physics: { area }, tags: ["coin"] });
       }
     }
@@ -443,11 +485,15 @@ describe("playtest plugin", () => {
     });
 
     await game.start();
+    const values = vi.spyOn(Object, "values");
     try {
       const gameplay = (await bridge().sample({})).gameplay;
+      const enumeratedStorage = values.mock.calls.some(([value]) => value === storage);
+      expect(enumeratedStorage).toBe(false);
       expect(gameplay?.contacts).toEqual([{ entity: "fox", kind: "trigger", with: "coin.3" }]);
       expect(gameplay?.tags).toEqual({ coin: { count: 1 } });
     } finally {
+      values.mockRestore();
       game.stop();
     }
   });
@@ -893,6 +939,51 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("waits for an async load to register entities before it applies setup", async () => {
+    let finishLoad: () => void = () => undefined;
+    const loading = new Promise<void>((resolve) => {
+      finishLoad = resolve;
+    });
+    let entered: number[] | undefined;
+    class AsyncScene extends Scene {
+      override async load(ctx: ICtx): Promise<void> {
+        // A texture or model fetch: the runner's setup arrives while this await is pending.
+        await loading;
+        const placeholder = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        ctx.add(placeholder);
+        ctx.entities.add("player", placeholder);
+      }
+
+      override enter(ctx: ICtx): void {
+        entered = ctx.entities.get<Mesh>("player")?.position.toArray();
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { main: AsyncScene },
+      start: "main",
+    });
+    const started = game.start();
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const installed = bridge();
+      if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
+      const applied = installed.applySetup({
+        entities: [{ entity: "player", transform: { position: [4, 1, -2] } }],
+      });
+      finishLoad();
+      expect(await applied).toEqual({ entities: ["player"], resources: [] });
+      await installed.describe();
+      await started;
+      expect(entered).toEqual([4, 1, -2]);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("holds a native endpoint run until its no-setup describe handshake", async () => {
     const host = globalThis as Record<string, unknown>;
     const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
@@ -991,6 +1082,85 @@ describe("playtest holdUntilAttached", () => {
       expect(events).toEqual(["boot enter", "race load", "race enter", "describe returned"]);
       expect(description.capabilities).toContain("runtime.components");
     } finally {
+      game.stop();
+    }
+  });
+
+  it("describes the entered world while transition environment warm-up is pending", async () => {
+    let releaseEnvironment: ((ready: boolean) => void) | undefined;
+    const environment = new Promise<boolean>((resolve) => {
+      releaseEnvironment = resolve;
+    });
+    const prepareEnvironmentAsync = vi.fn(() => environment);
+    let transition: Promise<void> | undefined;
+    let transitionSettled = false;
+    let described: Awaited<ReturnType<IPlaytestBridgeV1["describe"]>> | undefined;
+    let advance: ((ticks: number) => number) | undefined;
+    let updates = 0;
+    class Boot extends Scene {
+      override enter(ctx: ICtx): void {
+        transition = ctx.goto("race").then(() => {
+          transitionSettled = true;
+        });
+      }
+    }
+    class Race extends Scene {
+      override async load(): Promise<void> {
+        await Promise.resolve();
+      }
+
+      override enter(ctx: ICtx): () => void {
+        ctx.scene.environment = new Texture();
+        ctx.entities.add("player", {
+          health: 100,
+          mesh: new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()),
+        });
+        return () => updates++;
+      }
+    }
+    const renderer = stubRenderer(testCanvas());
+    const game = defineGame({
+      initialState: {},
+      plugins: [
+        playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 }),
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+          },
+        },
+      ],
+      renderer: {
+        ...renderer,
+        webgl2Factory: () => ({ ...renderer.webgl2Factory(), prepareEnvironmentAsync }),
+      },
+      scenes: { boot: Boot, race: Race },
+      start: "boot",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    const started = game.start();
+    try {
+      await vi.waitFor(() => expect(bridge()).toBeDefined());
+      const description = Promise.resolve(bridge().describe()).then((value) => {
+        described = value;
+      });
+      await vi.waitFor(() => expect(prepareEnvironmentAsync).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(described).toMatchObject({
+        capabilities: expect.arrayContaining(["runtime.components"]),
+      });
+      expect(await bridge().ready?.()).toMatchObject({ startup: { phase: "collapsing" } });
+      expect(transitionSettled).toBe(false);
+      expect(advance).toBeTypeOf("function");
+      advance?.(1);
+      expect(updates).toBe(0);
+      releaseEnvironment?.(true);
+      await transition;
+      await description;
+      expect(transitionSettled).toBe(true);
+    } finally {
+      releaseEnvironment?.(true);
+      await transition;
+      await started;
       game.stop();
     }
   });

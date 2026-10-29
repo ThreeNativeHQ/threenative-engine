@@ -13,12 +13,14 @@ const game = defineGame<GameState, undefined>({
   input: {
     // The four directions of `input.vector("move")`, which pan the camera. Declared rather than
     // inherited from the default binding, so the axis the scene reads is visible where the game is
-    // defined — and so nothing else can quietly claim a key this camera already owns.
+    // defined — and so nothing else can quietly claim a key this camera already owns. Arrows only,
+    // as in the genre: the letter keys are orders (A attacks), and a key that both orders and pans
+    // slides the view out from under the click it was arming.
     move: {
-      down: ["ArrowDown", "KeyS"],
-      left: ["ArrowLeft", "KeyA"],
-      right: ["ArrowRight", "KeyD"],
-      up: ["ArrowUp", "KeyW"],
+      down: ["ArrowDown"],
+      left: ["ArrowLeft"],
+      right: ["ArrowRight"],
+      up: ["ArrowUp"],
     },
     // Wheel, pinch and the right stick share one portable camera intent. Negative DOM deltaY
     // (toward the user) is positive scroll intent on browser and native.
@@ -53,12 +55,22 @@ export default game;
  * instead, which keeps one source of truth on the side that owns the simulation.
  */
 game.ui.onIntent((intent, payload) => {
+  // A new match: `game.goto` rebuilds the scene and resets the state to its initial shape.
+  if (intent === "restart") {
+    game.resume();
+    void game.goto("play");
+    return;
+  }
   if (intent === "pause") {
     game.pause();
     sendSceneIntent("cancel");
   }
   if (intent === "resume") game.resume();
-  game.state.set({ paused: intent === "pause", uiReady: game.ui.connected });
+  // Only the pause and resume intents move the flag: an order sent while paused leaves it held.
+  game.state.set({
+    uiReady: game.ui.connected,
+    ...(intent === "pause" || intent === "resume" ? { paused: intent === "pause" } : {}),
+  });
   game.state.flush();
   if (intent !== "pause" && intent !== "resume") sendSceneIntent(intent, payload);
 });

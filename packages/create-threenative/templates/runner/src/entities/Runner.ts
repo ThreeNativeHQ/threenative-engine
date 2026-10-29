@@ -10,8 +10,14 @@ import { LANE_X } from "../track.js";
 type GameCtx = ICtx<GameState, RunnerPhysics>;
 
 const LANE_BLEND = 12;
-const JUMP_SPEED = 7.2;
-const GRAVITY = -19;
+/**
+ * Take-off speed, m/s: a 1.9 m apex, so the hitbox clears a 1.5 m block for 0.44 s (4.8 m at the
+ * 11 m/s start speed). At 7.2 m/s the apex was 1.36 m and every jump over a block was a crash.
+ */
+export const JUMP_SPEED = 8.5;
+export const GRAVITY = -19;
+/** The runner's collision box, metres; its centre rides `lift` above the feet. */
+export const HITBOX = { depth: 0.7, height: 1.3, lift: 0.7, width: 0.7 } as const;
 /** Within this many metres of an obstacle's centre and still alive: a near miss. */
 const NEAR_MISS = 1.5;
 
@@ -76,8 +82,8 @@ export class Runner {
       collisionMask: OBSTACLE_LAYER,
       entity: "runner-hitbox",
       physics: ctx.physics,
-      position: { x: 0, y: 0.7, z: 0 },
-      shape: CollisionShape3D.box(0.7, 1.3, 0.7),
+      position: { x: 0, y: HITBOX.lift, z: 0 },
+      shape: CollisionShape3D.box(HITBOX.width, HITBOX.height, HITBOX.depth),
     });
     this.hitbox.on("bodyEntered", () => {
       this.#crashed = true;
@@ -139,7 +145,7 @@ export class Runner {
     this.character.update(dt);
     this.hitbox.setPosition({
       x: this.mesh.position.x,
-      y: this.#height + 0.7,
+      y: this.#height + HITBOX.lift,
       z: this.mesh.position.z,
     });
   }

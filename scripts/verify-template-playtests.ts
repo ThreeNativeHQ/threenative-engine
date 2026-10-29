@@ -1,9 +1,14 @@
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createProject, templateRoot } from "../packages/create-threenative/src/index.js";
+import {
+  assertKitContractPassed,
+  formatKitContractMatrix,
+  runKitContract,
+} from "./kit-contract.js";
 import { TEMPLATE_NAMES, inspectAllTemplates, packageLocalFramework } from "./visual-gate.js";
 
 /**
@@ -314,6 +319,24 @@ function isRecord(value: unknown): value is IJsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const WASM_ENGINE_FILES = ["tn-native-engine-web.mjs", "tn-native-engine-web.wasm"];
+
+/**
+ * Every template boots on the default web engine, which is built, not committed. Check the pair
+ * before the sweep packs anything, so a missing engine costs one line instead of eight failed builds.
+ */
+export async function assertWasmEngineBuilt(repoRoot: string = REPO_ROOT): Promise<void> {
+  const web = path.join(repoRoot, "packages/runtime-native/build/web");
+  for (const file of WASM_ENGINE_FILES) {
+    await access(path.join(web, file)).catch(() => {
+      throw new Error(
+        `TN_WASM_ENGINE_MISSING: ${path.join(web, file)} does not exist; run \`pnpm wasm:build\` from the repository root.`,
+      );
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "threenative-template-playtests-"));
   try {
@@ -323,12 +346,41 @@ async function main(): Promise<void> {
     // minute one. Unset — which is what CI is — every template runs.
     const only = process.env.TN_TEMPLATE_ONLY?.split(",").filter((name) => name !== "");
     if (only !== undefined) {
-      const unknown = only.filter((name) => !TEMPLATE_PLAYTEST_NAMES.includes(name));
+      // The contract also covers the two kits golden-path boots, so those names are valid too.
+      const known = process.env.TN_KIT_CONTRACT === "0" ? TEMPLATE_PLAYTEST_NAMES : TEMPLATE_NAMES;
+      const unknown = only.filter(
+        (name) => !known.includes(name as (typeof TEMPLATE_NAMES)[number]),
+      );
       if (unknown.length > 0)
         throw new Error(`TN_TEMPLATE_ONLY names no such template: ${unknown.join(", ")}`);
     }
+    await assertWasmEngineBuilt();
     const packageSources = await packageLocalFramework(root);
-    await verifyTemplatePlaytests(only ?? TEMPLATE_PLAYTEST_NAMES, root, packageSources);
+    // TN_KIT_CONTRACT_ONLY=1 skips each kit's own scenarios; TN_KIT_CONTRACT=0 skips the contract;
+    // TN_KIT_CONTRACT_ROWS=a,b runs those rows. The contract covers every kit, including the two
+    // that golden-path boots (PRD-749).
+    const contractOnly = process.env.TN_KIT_CONTRACT_ONLY === "1";
+    let ordinaryError: unknown;
+    if (!contractOnly) {
+      try {
+        const ordinary = only?.filter((name) => TEMPLATE_PLAYTEST_NAMES.includes(name));
+        if (ordinary === undefined || ordinary.length > 0)
+          await verifyTemplatePlaytests(ordinary ?? TEMPLATE_PLAYTEST_NAMES, root, packageSources);
+      } catch (error) {
+        ordinaryError = error;
+      }
+    }
+    if (process.env.TN_KIT_CONTRACT !== "0") {
+      const rows = process.env.TN_KIT_CONTRACT_ROWS?.split(",").filter((name) => name !== "");
+      const results = await runKitContract(only ?? TEMPLATE_NAMES, root, packageSources, {}, rows);
+      console.info(formatKitContractMatrix(results));
+      if (ordinaryError === undefined) assertKitContractPassed(results);
+      else
+        console.error(
+          `kit contract failures: ${results.filter(({ status }) => status === "fail").length}`,
+        );
+    }
+    if (ordinaryError !== undefined) throw ordinaryError;
   } finally {
     if (process.env.TN_TEMPLATE_KEEP === "1") console.info(`TN_TEMPLATE_KEEP root: ${root}`);
     else await rm(root, { force: true, recursive: true });

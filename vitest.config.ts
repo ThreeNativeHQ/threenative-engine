@@ -1,7 +1,34 @@
 import os from "node:os";
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
+const root = import.meta.dirname;
+
 export default defineConfig({
+  plugins: [
+    {
+      // Root scripts and the harness overlays under scripts/ import `three`, which only the packages install.
+      // Resolve it from core, the way scripts/unreal-look/compare.ts does.
+      name: "scripts-resolve-three-from-core",
+      enforce: "pre",
+      async resolveId(
+        this: { resolve(source: string, importer: string, options: object): Promise<unknown> },
+        source: string,
+        importer: string | undefined,
+        options: object,
+      ) {
+        // The harness overlay giCache.ts reads the Surface Cache from core (PRD-639); its spec runs on core's source.
+        if (source === "@threenative/core" && importer?.startsWith(path.join(root, "scripts/")))
+          return path.join(root, "packages/core/src/index.ts");
+        if (!/^three(\/|$)/.test(source) || !importer?.startsWith(path.join(root, "scripts/")))
+          return null;
+        return this.resolve(source, path.join(root, "packages/core/package.json"), {
+          ...options,
+          skipSelf: true,
+        });
+      },
+    },
+  ],
   test: {
     environment: "node",
     include: [

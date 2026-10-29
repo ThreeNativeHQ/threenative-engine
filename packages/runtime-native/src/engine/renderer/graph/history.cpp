@@ -1,14 +1,16 @@
 #include "history.h"
+#include <stdexcept>
 
 namespace tn::engine::graph {
 
-std::array<double, 2> traaJitter(uint64_t frame) {
+std::array<double, 2> traaJitter(uint64_t frame, uint32_t length) {
+    if (length == 0) throw std::runtime_error("TN_TRAA_JITTER_LENGTH_INVALID");
     const auto halton = [](uint32_t index, uint32_t base) {
         double fraction = 1, result = 0;
         while (index > 0) { fraction /= base; result += fraction * (index % base); index /= base; }
         return result;
     };
-    const auto index = uint32_t(frame % 31) + 1;
+    const auto index = uint32_t(frame % length) + 1;
     return {halton(index, 2) - 0.5, halton(index, 3) - 0.5};
 }
 

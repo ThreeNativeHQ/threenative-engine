@@ -136,15 +136,20 @@ export function watchStartupStall(options: IStallWatchOptions): () => void {
 /**
  * Reports a lost GPU device. Every backend that can lose one exposes the same `device.lost`
  * promise; a renderer that has no device yet (or never will) is not an error here.
+ *
+ * `destroyedByGame` says whether the game itself shut the renderer down. Only then is a
+ * `destroyed` loss quiet: headless Chromium on SwiftShader destroys the device at the first canvas
+ * present while the game runs, and that read as a shutdown and was reported nowhere.
  */
 export function watchDeviceLoss(
   device: { lost?: Promise<{ reason?: string; message?: string }> } | undefined,
+  destroyedByGame: () => boolean = () => false,
 ): void {
   const lost = device?.lost;
   if (lost === undefined) return;
   void lost.then((info) => {
-    // `reason: "destroyed"` is the shutdown path: the game asked for it, so it is not a failure.
-    if (info?.reason === "destroyed") return;
+    // `reason: "destroyed"` after the game stopped is the shutdown path: it asked for it.
+    if (info?.reason === "destroyed" && destroyedByGame()) return;
     // A real loss always says something — WebGPU requires a reason, and Dawn fills in a message.
     // A resolution carrying neither is a host stub settling its own placeholder promise, which the
     // desktop host does at loop start; reporting that would cry wolf on every launch.

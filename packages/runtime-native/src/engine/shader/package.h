@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "threenative/abi/tn_abi.h"
@@ -17,15 +18,42 @@ inline constexpr uint32_t kShaderPackageVersion = TN_SHADER_PACKAGE_VERSION;
 /** When the engine refreshes a uniform from a known source (§9.2). */
 enum class UpdateSchedule : uint8_t { Object, Material, Camera, Frame, Render };
 
+/** FNV-1a over a uniform's name: the word a per-draw lookup compares instead of the string. */
+inline uint64_t hashUniformName(std::string_view name) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (const char c : name) hash = (hash ^ uint64_t(static_cast<unsigned char>(c))) * 0x100000001b3ULL;
+    return hash;
+}
+
+/** No light owns a field: `authoredLightShadowMatrix<id>` names one, everything else does not. */
+inline constexpr uint64_t kNoShadowLight = ~uint64_t(0);
+
 struct UniformField {
+    UniformField(std::string fieldName, Type fieldType, uint32_t fieldOffset, uint32_t fieldSize,
+                 UpdateSchedule fieldSchedule = UpdateSchedule::Material)
+        : name(std::move(fieldName)), type(fieldType), offset(fieldOffset), size(fieldSize), schedule(fieldSchedule),
+          nameHash(hashUniformName(name)), shadowLightId(shadowLightOf(name)) {}
+
     std::string name;
     Type type;
     uint32_t offset = 0;
     uint32_t size = 0;
     UpdateSchedule schedule = UpdateSchedule::Material;
+    // Derived once, where the stage is laid out, never per draw: the renderer resolves a draw's material
+    // uniforms by name every frame against every field, so the hash spares that loop a string compare per
+    // field, and the id spares it a substring and a parse per shadow field (PR #574: those compares were
+    // 59% of the frame's memcmp time in the shooter).
+    uint64_t nameHash = 0;
+    uint64_t shadowLightId = kNoShadowLight;
+
+private:
+    static uint64_t shadowLightOf(const std::string& fieldName) {
+        constexpr std::string_view prefix = "authoredLightShadowMatrix";
+        return fieldName.starts_with(prefix) ? std::stoull(fieldName.substr(prefix.size())) : kNoShadowLight;
+    }
 };
 
-enum class BindingKind : uint8_t { Uniform, Storage, Texture, Sampler };
+enum class BindingKind : uint8_t { Uniform, Storage, Texture, Sampler, StorageTexture };
 
 struct Binding {
     uint32_t group = 0;
@@ -36,6 +64,7 @@ struct Binding {
     bool depth = false;    // texture: texture_depth_2d (or _cube); sampler: sampler_comparison
     bool cube = false;     // a depth texture's view is a cube
     bool volume = false;   // a float texture's view is 3D
+    bool values = false;   // a depth texture read for its values: a plain nearest (non-filtering) sampler
 };
 
 struct VertexAttribute {

@@ -1,17 +1,47 @@
 # threenative-engine-mcp
 
-An offline MCP server that lets a ThreeNative authoring agent search the committed engine
-capability manifest by situation and inspect one capability in detail.
+The ThreeNative planning gate uses this MCP server to discover engine capabilities and classic-game
+mechanics. Start with the installed `threenative-capabilities` skill, then `prd-creator`; the skill
+owns the discovery order and plan record.
 
-The server exposes exactly two read-only tools: `engine_search_capabilities` and
-`engine_capability_detail`.
+The server exposes `engine_search_capabilities`, `engine_capability_detail`,
+`engine_search_references`, `engine_reference_detail`, and `engine_save_reference`.
+Capability search works offline. Full requests use `scope: "request"` (up to 15 deduplicated
+matches); mechanic searches use `scope: "mechanic"` (up to five). Inspect `matchedSituation`
+and the detail constraints before implementing. A `none` capability result includes up to three
+reference suggestions.
 
 First infer the concrete mechanics implied by the request. Call `engine_search_capabilities` once
 with that mechanically explicit request and `scope: "request"`, then once per mechanic with
 `scope: "mechanic"`. Complete requests return up to 15 deduplicated capabilities; focused
-situations return up to five. A genre label alone returns no guessed recipe. Every result includes
+situations return up to five. A request that names a game or genre a starter kit covers (`like mario`, `zelda-style`) leads with a
+`starterKits` entry carrying `npx create-threenative <dir> --template <name>`; scaffold it first, then
+search the mechanics it does not cover. The kits and their words come from each `kit.json` through
+the manifest's `starterKits` section (verdict `"starterKit"` when no mechanic also matched). Every result includes
 `matchedSituation`, so an authoring agent can verify why it was selected instead of treating a
 lexical coincidence as engine guidance.
+
+Reference search reads a gzipped stub index; detail fetches one pinned game's map and cards lazily.
+The source is the latest release of [threenative-reverse-engineer-mcp](https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp),
+separate CC-BY 4.0 data. Downloads validate before replacing the cache in
+`$XDG_CACHE_HOME/threenative/refs` (default `~/.cache/threenative/refs`), refresh with ETags, and
+work offline from that cache. The index has a 5-second fetch budget; game files have 30 seconds,
+including their response bodies. `THREENATIVE_REFERENCES_URL` overrides the release asset base URL;
+`THREENATIVE_REFERENCES_CACHE` overrides the cache directory. Without network or cache, tools report
+`references unavailable` and capability discovery keeps working.
+
+Saved references live in the game's `.threenative/refs/<game-id>.json`. Local entries take priority;
+published entries without a local override remain searchable and loadable, with their own pinned SHA.
+Successive local saves merge by id at the same commit SHA. A conflicting SHA is rejected without changing the saved file.
+The save tool returns a `gh issue create` command for a POSIX shell; run it in that shell.
+It does not send the contribution. Reference guardrail: mechanics and feel only, with pinned
+`file:line` sources; no code, level layouts, character names or art.
+
+## One call from the command line
+
+A session started outside the game folder never loads its `.mcp.json`. It calls a tool once
+instead: `node <game>/node_modules/@threenative/core/mcp/engine.mjs engine_search_capabilities
+'{"situation":"triple jump"}'` prints the tool's answer and exits 0, or names the error and exits 1.
 
 ## Which manifest the server reads
 

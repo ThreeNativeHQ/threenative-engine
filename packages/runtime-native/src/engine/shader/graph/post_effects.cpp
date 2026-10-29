@@ -1,3 +1,4 @@
+#include "engine/shader/wgsl_strip.h"
 #include "post_effects.h"
 #include "engine/scene/material.h"
 #include "render_texture_pass.h"
@@ -28,17 +29,51 @@ const json::Value& get(const json::Value& v, const char* key) {
     const auto* x = v.find(key);
     return x ? *x : empty;
 }
+// The texture a post input reads, through swizzles and conversions; null when it reads none.
+Node textureSource(Node n) {
+    if (n && (n->kind == Kind::Texture || n->kind == Kind::PostEffect || n->kind == Kind::RenderTexture)) return n;
+    if (n && (n->kind == Kind::Swizzle || n->kind == Kind::Convert) && !n->args.empty()) return textureSource(n->args[0]);
+    return nullptr;
+}
 std::string textureName(Node n) {
-    if (n && (n->kind == Kind::Texture || n->kind == Kind::PostEffect || n->kind == Kind::RenderTexture))
-        return n->name;
-    if (n && (n->kind == Kind::Swizzle || n->kind == Kind::Convert) && !n->args.empty())
-        return textureName(n->args[0]);
+    if (const Node source = textureSource(n)) return source->name;
     throw std::runtime_error("TN_TSL_POST_INPUT: expected a depth/normal texture");
+}
+
+// Resolve scalar swizzles before binding: the scene's material outputs splat packed r/g to RGBA.
+// Other scalar graphs keep their own UVs/uniforms through the existing RTT materializer.
+std::string scalarSampler(Node input, const std::string& name, const std::string& output,
+                          std::map<std::string, std::string>& reads, std::vector<PostPass>& passes) {
+    Node source = input;
+    size_t lane = 0;
+    while (source && (source->kind == Kind::Swizzle || source->kind == Kind::Convert)) {
+        if (source->kind == Kind::Swizzle) lane = std::string_view("xyzw").find(source->lanes.at(lane));
+        source = source->args.at(0);
+    }
+    if (source && (source->kind == Kind::Texture || source->kind == Kind::PostEffect || source->kind == Kind::RenderTexture) &&
+        (source->kind != Kind::Texture || (source->args.at(0) && source->args[0]->kind == Kind::Attribute && source->args[0]->name == "uv"))) {
+        reads[name] = source->name;
+        if (source->name == "metalness") lane = 0;
+        if (source->name == "roughness") lane = 1;
+    } else {
+        auto target = std::make_shared<NodeData>();
+        target->kind = Kind::RenderTexture;
+        target->name = output + "_" + name;
+        target->args = {vec4({float_(input)}), uv()};
+        auto pass = renderTexturePass(target);
+        if (!pass.package.errors.empty()) throw std::runtime_error("TN_NATIVE_SSR_INPUT: " + name + ": " + pass.package.errors.front());
+        reads[name] = target->name;
+        passes.push_back(std::move(pass));
+        lane = 0;
+    }
+    return "fn sample" + std::string(name == "metalness" ? "Metalness" : "Roughness") +
+           "(coord: vec2<f32>) -> f32 { return textureSampleLevel(t_" + name + ",smp_" + name +
+           ",coord,0.0)." + std::string(1, "xyzw"[lane]) + "; }\n";
 }
 
 // r185 PostProcessingUtils.getViewPosition/getScreenPosition/getNormalFromDepth. The nine
 // integer depth loads and second-order discontinuity choice are preserved (no derivative proxy).
-const char* kGeometry = R"WGSL(
+TN_WGSL_STRIPPED(kGeometry, R"WGSL(
 fn viewPosition(coord: vec2<f32>, depth: f32) -> vec3<f32> {
     let clip = vec4<f32>(vec2<f32>(coord.x, 1.0-coord.y)*2.0-1.0, depth, 1.0);
     let view = u._cameraProjectionMatrixInverse * clip;
@@ -61,11 +96,128 @@ fn normalFromDepth(coord: vec2<f32>) -> vec3<f32> {
         ce-viewPosition(coord+vec2<f32>(0,1.0/size.y),b1),db<dt);
     return normalize(cross(dx,dy));
 }
+)WGSL");
+
+// SSRNode r185's non-stochastic march. RGB is already weighted reflected radiance; alpha is
+// hit distance (not coverage). The game adds this texture to beauty, without another alpha blend.
+TN_WGSL_STRIPPED(kSsr, R"WGSL(
+fn screenPosition(view: vec3<f32>) -> vec2<f32> {
+    let clip = u._cameraProjectionMatrix*vec4<f32>(view,1.0);
+    let coord = clip.xy/clip.w*0.5+0.5;
+    return vec2<f32>(coord.x,1.0-coord.y);
+}
+fn rayZ(s: f32, start: f32, end: f32, perspective: bool) -> f32 {
+    if (perspective) { return 1.0/mix(1.0/start,1.0/end,s); }
+    return mix(start,end,s);
+}
+@fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    let depth = sampleDepth(coord);
+    if (depth>=1.0) { return vec4<f32>(0.0); }
+    let metalness = sampleMetalness(coord);
+    if (u.reflectNonMetals==0.0 && metalness<=0.0) { return vec4<f32>(0.0); }
+    let position = viewPosition(coord,depth);
+    let normal = sampleNormal(coord);
+    let perspective = u._cameraProjectionMatrix[3][3]==0.0;
+    var incident = vec3<f32>(0,0,-1);
+    if (perspective) { incident=normalize(position); }
+    let direction = normalize(reflect(incident,normal));
+    let facing = dot(-incident,normal);
+    if (facing<=0.0) { return vec4<f32>(0.0); }
+    var end = position+direction*(u.maxDistance/facing);
+    if (perspective && end.z > -u.cameraNear) {
+        end=position+direction*((-u.cameraNear-position.z)/direction.z);
+    }
+    let span = (screenPosition(end)-coord)*u.resolution;
+    let steps = max(1,i32(min(trunc(max(abs(span.x),abs(span.y))*clamp(u.quality,0.0,1.0)),u.maxSteps)));
+    let ray = end-position;
+    let rayLength = length(ray);
+    if (rayLength==0.0) { return vec4<f32>(0.0); }
+    var found = false;
+    var hitUV = vec2<f32>(0.0);
+    var hitDepth = 1.0;
+    var lo = 0.0; var hi = 0.0;
+    for (var i=1; i<steps; i++) {
+        let s = f32(i)/f32(steps);
+        let uvS = coord+span/u.resolution*s;
+        if (any(uvS<vec2<f32>(0.0)) || any(uvS>vec2<f32>(1.0))) { break; }
+        let d = sampleDepth(uvS);
+        let point = viewPosition(uvS,d);
+        if (rayZ(s,position.z,end.z,perspective)<=point.z) {
+            let away = length(cross(point-position,point-end))/rayLength;
+            let neighbor = viewPosition(uvS+vec2<f32>(1.0/u.resolution.x,0),d);
+            let thickness = max((neighbor.x-point.x)*3.0,u.thickness);
+            if (away<=thickness) {
+                if (dot(direction,sampleNormal(uvS))>=0.0) { continue; }
+                if (dot(point-position,normal)>u.maxDistance) { break; }
+                found=true; hitUV=uvS; hitDepth=d;
+                lo=f32(i-1)/f32(steps); hi=s;
+                break;
+            }
+        }
+    }
+    if (!found) { return vec4<f32>(0.0); }
+    if (u.binaryRefine!=0.0) {
+        for (var i=0; i<8; i++) {
+            let s = (lo+hi)*0.5;
+            let uvS = coord+span/u.resolution*s;
+            if (rayZ(s,position.z,end.z,perspective)<=viewPosition(uvS,sampleDepth(uvS)).z) { hi=s; }
+            else { lo=s; }
+        }
+        hitUV=coord+span/u.resolution*hi; hitDepth=sampleDepth(hitUV);
+    }
+    let point = viewPosition(hitUV,hitDepth);
+    let distanceToPlane = dot(point-position,normal);
+    if (distanceToPlane>u.maxDistance) { return vec4<f32>(0.0); }
+    let ratio = 1.0-distanceToPlane/u.maxDistance;
+    let fresnel = (dot(incident,direction)+1.0)*0.5;
+    var color = textureSampleLevel(t_input,smp_input,hitUV,0.0).rgb*metalness*ratio*ratio*fresnel;
+    let lum = max(dot(color,vec3<f32>(0.2126,0.7152,0.0722)),0.0001);
+    color *= min(u.maxLuminance/lum,1.0)*u.intensity*u.opacity;
+    let worldDelta = (u._cameraWorldMatrix*vec4<f32>(point-position,0.0)).xyz;
+    return max(vec4<f32>(color,length(worldDelta)),vec4<f32>(0.0));
+}
+)WGSL");
+
+// Every blur level samples the original reflection, with spread=level; level zero is unblurred.
+const char* kSsrBlur = R"WGSL(
+@fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    if (u._blurSpread==0.0) { return textureSampleLevel(t_input,smp_input,coord,0.0); }
+    let pixel = max(u._blurSpread,1.0)/vec2<f32>(textureDimensions(t_input));
+    let size = i32(u.blurQuality);
+    var result = vec4<f32>(0.0);
+    for (var x = -size; x<=size; x++) {
+        for (var y = -size; y<=size; y++) {
+            result += textureSampleLevel(t_input,smp_input,coord+vec2<f32>(f32(x),f32(y))*pixel,0.0);
+        }
+    }
+    return result/f32((size*2+1)*(size*2+1));
+}
+)WGSL";
+const char* kSsrResolve = R"WGSL(
+fn sampleMip(coord: vec2<f32>, level: i32) -> vec4<f32> {
+    switch level {
+        case 0: { return textureSampleLevel(t_mip0,smp_mip0,coord,0.0); }
+        case 1: { return textureSampleLevel(t_mip1,smp_mip1,coord,0.0); }
+        case 2: { return textureSampleLevel(t_mip2,smp_mip2,coord,0.0); }
+        case 3: { return textureSampleLevel(t_mip3,smp_mip3,coord,0.0); }
+        default: { return textureSampleLevel(t_mip4,smp_mip4,coord,0.0); }
+    }
+}
+@fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    let roughness = sampleRoughness(coord);
+    let lod = clamp(roughness*roughness*4.0,0.0,4.0);
+    return mix(sampleMip(coord,i32(floor(lod))),sampleMip(coord,i32(ceil(lod))),fract(lod));
+}
 )WGSL";
 
 // three r185 GTAONode.setup: slice normal projection, two-sided horizon marching, Eq. 7
-// cosine-weighted integration, foreshortening, radius/thickness/falloff/exponent/scale.
-const char* kGtao = R"WGSL(
+// cosine-weighted integration, foreshortening, radius/thickness/falloff/exponent/scale. `reachPx` > 0 replaces the
+// world radius with a screen reach: the radius at a pixel is the pixel's view depth times 2 reachPx / (height * P11),
+// so a sample lands `reachPx` pixels of the occlusion target away at any depth, as Unreal's short-range AO does
+// (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:2665). The same switch takes
+// Unreal's step jitter (LumenScreenSpaceBentNormal.usf:355) and foreground reject, fraction .3 and power 1
+// (LumenScreenSpaceBentNormal.cpp:121-129, usf:271), in place of the metre `thickness` cutoff.
+TN_WGSL_STRIPPED(kGtao, R"WGSL(
 fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     let clip = u._cameraProjectionMatrix*vec4<f32>(view,1.0);
     let coord = clip.xy/clip.w*0.5+0.5;
@@ -82,6 +234,8 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     let tangent = normalize(vec3<f32>(randomVec.xy,0.0));
     let bitangent = vec3<f32>(-tangent.y,tangent.x,0.0);
     let kernel = mat3x3<f32>(tangent,bitangent,vec3<f32>(0,0,1));
+    let useReach = u.reachPx>0.0;
+    let radius = select(u.radius,u.reachPx*2.0*(-position.z)/(u.resolution.y*u._cameraProjectionMatrix[1][1]),useReach);
     let directions = select(5,3,u.samples<30.0);
     // STEPS stays floating, including the non-integral loop bound in r185.
     let steps = (u.samples+f32(directions-1))/f32(directions);
@@ -101,18 +255,22 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
         let angleN = select(-1.0,1.0,nSin>=0.0)*acos(nCos);
         let tangentN = cross(projN,sliceBitangent);
         var horizons = vec2<f32>(dot(viewDir,tangentN),dot(viewDir,-tangentN));
+        // `reachPx` > 0 takes Unreal's search: steps at the squared fraction of the reach with the jitter inside the
+        // step, and a sample's occlusion fades out over 0.3 of the pixel's depth instead of a metre cutoff.
+        let low = horizons;
         for (var j=0; f32(j)<steps; j++) {
-            let offset = sampleDir*u.radius*jitter*pow((f32(j)+1.0)/steps,u.distanceExponent);
+            let fraction = select((f32(j)+1.0)/steps,(f32(j)+noise.w)/steps,useReach);
+            let offset = sampleDir*radius*select(jitter,1.0,useReach)*pow(fraction,u.distanceExponent);
             let sx = screenPosition(position+offset);
             let dx = viewPosition(sx,sampleDepth(sx))-position;
-            if (abs(dx.z)<u.thickness) {
-                let h = dot(viewDir,normalize(dx));
+            if (useReach || abs(dx.z)<u.thickness) {
+                let h = mix(dot(viewDir,normalize(dx)),low.x,select(0.0,clamp(abs(dx.z)/(0.3*(-position.z)),0.0,1.0),useReach));
                 horizons.x += max(0.0,(h-horizons.x)*mix(1.0,2.0/(f32(j)+2.0),u.distanceFallOff));
             }
             let sy = screenPosition(position-offset);
             let dy = viewPosition(sy,sampleDepth(sy))-position;
-            if (abs(dy.z)<u.thickness) {
-                let h = dot(viewDir,normalize(dy));
+            if (useReach || abs(dy.z)<u.thickness) {
+                let h = mix(dot(viewDir,normalize(dy)),low.y,select(0.0,clamp(abs(dy.z)/(0.3*(-position.z)),0.0,1.0),useReach));
                 horizons.y += max(0.0,(h-horizons.y)*mix(1.0,2.0/(f32(j)+2.0),u.distanceFallOff));
             }
         }
@@ -125,15 +283,14 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     // GTAO's RedFormat render target samples as (r,0,0,1).
     return vec4<f32>(ao,0,0,1);
 }
-)WGSL";
+)WGSL");
 
 // r185 DenoiseNode.setup, including its exact noise channel expression and rotation matrix.
-const char* kDenoise = R"WGSL(
+TN_WGSL_STRIPPED(kDenoise, R"WGSL(
 fn luma(color: vec3<f32>) -> f32 { return dot(color,vec3<f32>(0.2126,0.7152,0.0722)); }
-fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coord: vec2<f32>) -> vec4<f32> {
+fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coord: vec2<f32>, neighborNormal: vec3<f32>) -> vec4<f32> {
     let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
     let depth = sampleDepth(coord);
-    let neighborNormal = sampleNormal(coord);
     let neighborPosition = viewPosition(coord,depth);
     let normalSimilarity = pow(max(dot(normal,neighborNormal),0.0),u.normalPhi);
     let lumaSimilarity = max(1.0-abs(luma(texel.rgb)-luma(center))/u.lumaPhi,0.0);
@@ -142,11 +299,19 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     return vec4<f32>(texel.rgb*w,w);
 }
 @fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    // sampleNormal's depth-derived fallback (nine depth loads) cost the filter about half its time by register
+    // pressure alone, taken or not. A pixel whose draw wrote no normal takes its face's from the derivatives of its
+    // position instead (no read), and a tap that read none takes the centre's: the depth term still parts surfaces.
+    // A denoise given no normal input keeps the depth-derived normal on every tap.
     let depth = sampleDepth(coord);
-    let normal = sampleNormal(coord);
-    let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
-    if (depth>=1.0 || dot(normal,normal)==0.0) { return texel; }
     let position = viewPosition(coord,depth);
+    // WGSL's dpdy grows down the framebuffer, view y up: the face faces the camera as -dpdy (three's dFdy).
+    let face = cross(dpdx(position),-dpdy(position));
+    let own = sampleNormalRaw(coord);
+    let n = select(face,own,dot(own,own)>0.0);
+    let texel = textureSampleLevel(t_input,smp_input,coord,0.0);
+    if (depth>=1.0 || dot(n,n)==0.0) { return texel; }
+    let normal = normalize(n);
     let noiseUv = vec2<f32>(coord.x,1.0-coord.y)*vec2<f32>(textureDimensions(t_input))/vec2<f32>(textureDimensions(t_noise));
     let noise = textureSampleLevel(t_noise,smp_noise,noiseUv,0.0);
     let channel = i32((u.index-floor(u.index/4.0)*4.0)*2.0*3.141592653589793);
@@ -156,15 +321,16 @@ fn denoiseSample(center: vec3<f32>, normal: vec3<f32>, position: vec3<f32>, coor
     for (var i=0; i<16; i++) {
         let dir = samples[i];
         let offset = rotation*(dir.xy*(1.0+dir.z*(u.radius-1.0)))/vec2<f32>(textureDimensions(t_input));
-        let result = denoiseSample(texel.rgb,normal,position,coord+offset);
+        let tap = sampleNormalRaw(coord+offset);
+        let result = denoiseSample(texel.rgb,normal,position,coord+offset,select(normal,normalize(tap),dot(tap,tap)>0.0));
         denoised += result.xyz; totalWeight += result.w;
     }
     if (totalWeight>0.0) { denoised /= totalWeight; }
     return vec4<f32>(denoised,texel.a);
 }
-)WGSL";
+)WGSL");
 
-const char* kSmaaEdges = R"WGSL(
+TN_WGSL_STRIPPED(kSmaaEdges, R"WGSL(
 fn colorDelta(a: vec3<f32>, b: vec3<f32>) -> f32 { let t=abs(a-b); return max(max(t.r,t.g),t.b); }
 @fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
     let inv = 1.0/vec2<f32>(textureDimensions(t_input));
@@ -183,11 +349,11 @@ fn colorDelta(a: vec3<f32>, b: vec3<f32>) -> f32 { let t=abs(a-b); return max(ma
     edges *= step(vec2<f32>(0.5*maxDelta),delta.xy);
     return vec4<f32>(edges,0,0);
 }
-)WGSL";
+)WGSL");
 
 // r185 SMAA searches preserve pseudo gather offsets, 8 two-pixel steps, search correction,
 // crossing edges, quadratic area compression and zero subsample indices (SMAA 1x).
-const char* kSmaaWeights = R"WGSL(
+TN_WGSL_STRIPPED(kSmaaWeights, R"WGSL(
 fn searchLength(e: vec2<f32>, bias: f32) -> f32 {
     return 255.0*textureSampleLevel(t_search,smp_search,vec2<f32>(bias+e.r*0.5,e.g),0.0).r;
 }
@@ -256,8 +422,8 @@ fn searchY(start: vec2<f32>, end: f32, direction: f32, inv: vec2<f32>) -> f32 {
     }
     return weights;
 }
-)WGSL";
-const char* kSmaaBlend = R"WGSL(
+)WGSL");
+TN_WGSL_STRIPPED(kSmaaBlend, R"WGSL(
 @fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
     let inv = 1.0/vec2<f32>(textureDimensions(t_weights));
     let current = textureSampleLevel(t_weights,smp_weights,coord,0.0);
@@ -271,11 +437,11 @@ const char* kSmaaBlend = R"WGSL(
     let s = select(abs(offset.y),abs(offset.x),abs(offset.x)>abs(offset.y));
     return mix(c,opposite,s);
 }
-)WGSL";
+)WGSL");
 
 StageModule vertex() { return buildStage(buildOutput(std::nullopt, false).vertex); }
 PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
-                 std::map<std::string, std::string> reads, bool geometry = false) {
+                 std::map<std::string, std::string> reads, bool geometry = false, bool parameters = false) {
     PostPass pass;
     pass.output = std::move(output);
     pass.reads = std::move(reads);
@@ -284,10 +450,11 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
     pass.uniforms = effect.parameters;
     pass.temporal = effect.temporal;
     pass.redFormat = effect.kind == "GTAONode";
+    pass.stage = effect.stage;
     StageModule fragment{Stage::Fragment};
     std::string code;
     uint32_t binding = 0, offset = 0;
-    if (geometry) {
+    if (geometry || parameters) {
         code += "struct Uniforms {\n";
         // Sorted names also determine native byte offsets: WGSL layout and metadata agree.
         auto params = effect.parameters;
@@ -330,7 +497,10 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
         code += effect.normal ? "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { let n = "
                                 "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; "
                                 "if (dot(n,n)==0.0) { return normalFromDepth(coord); } return normalize(n); }\n"
-                              : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n";
+                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return "
+                                "textureSampleLevel(t_normal,smp_normal,coord,0.0).rgb; }\n"
+                              : "fn sampleNormal(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n"
+                                "fn sampleNormalRaw(coord: vec2<f32>) -> vec3<f32> { return normalFromDepth(coord); }\n";
     }
     if (effect.kind == "DenoiseNode") {
         const auto& samples = effect.parameters.at("sampleVectors");
@@ -401,6 +571,16 @@ Node importPostEffect(const json::Value& record, const std::vector<Node>& args, 
     if (effect->kind == "GTAONode" &&
         (effect->parameters.at("samples")[0] < 1 || effect->parameters.at("samples")[0] > 256))
         return invalid("samples 1..256");
+    if (effect->kind == "GTAONode") {
+        // Exports from before the screen reach carry no `reachPx`: they keep the world radius.
+        const auto* reach = parameters.find("reachPx");
+        const double px = reach && reach->isArray() && reach->items().size() == 1 && reach->items()[0].isNumber()
+                              ? reach->items()[0].number()
+                              : 0;
+        if (!std::isfinite(static_cast<float>(px)) || px < 0)
+            return invalid("finite parameter reachPx");
+        effect->parameters["reachPx"] = {static_cast<float>(px)};
+    }
     const auto& images = get(post, "images");
     const size_t imageCount = effect->kind == "SMAANode" ? 2 : 1;
     if (!images.isArray() || images.items().size() != imageCount)
@@ -454,6 +634,11 @@ Node importPostEffect(const json::Value& record, const std::vector<Node>& args, 
     return n;
 }
 
+bool traaResolvesLate(const PostEffect& effect) {
+    const auto& beauty = effect.inputs.at(0);
+    return !(beauty && beauty->kind == Kind::Texture && beauty->name == "scene");
+}
+
 std::shared_ptr<const PostEffect> traaEffect(Node root) {
     std::shared_ptr<const PostEffect> result;
     std::unordered_set<const NodeData*> seen;
@@ -471,7 +656,7 @@ std::shared_ptr<const PostEffect> traaEffect(Node root) {
     return result;
 }
 
-std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMapping, bool srgb) {
+std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMapping, bool srgb, Node custom) {
     std::vector<PostPass> passes;
     std::unordered_set<const NodeData*> seen;
     // A target is rendered once however it is sampled: a sample at another coordinate is a copy of
@@ -487,17 +672,55 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
             for (const auto& graph : n->rtt->material->nodes.graphs())
                 visit(graph);
         if (n->kind == Kind::RenderTexture && targets.insert(n->name).second)
-            passes.push_back(renderTexturePass(n, toneMapping, srgb));
+            passes.push_back(renderTexturePass(n, toneMapping, srgb, custom));
         if (!n->post)
             return;
         const auto& effect = *n->post;
-        if (effect.kind == "TRAANode") return;
-        if (effect.kind == "SMAANode") {
+        if (effect.kind == "TRAANode") {
+            // Over the scene's own colour the renderer resolves right after the scene pass. Over a texture the graph
+            // drew, the resolve is a pass of the graph, and the renderer draws it once that texture is ready.
+            if (traaResolvesLate(effect)) {
+                PostPass resolve;
+                resolve.host = "traa";
+                resolve.output = effect.output;
+                resolve.package.name = effect.output;
+                resolve.reads = {{"beauty", textureName(effect.inputs[0])}, {"depth", "depth"}};
+                passes.push_back(std::move(resolve));
+            }
+            return;
+        }
+        if (effect.kind == "SSRNode") {
+            std::map<std::string, std::string> reads{{"input", textureName(effect.inputs[0])},
+                {"depth", textureName(effect.inputs[1])}, {"normal", textureName(effect.inputs[2])}};
+            const auto metal = scalarSampler(effect.inputs[3], "metalness", effect.output, reads, passes);
+            const auto ray = effect.roughness ? effect.output + "_ray" : effect.output;
+            auto march = rawPass(effect, ray, (metal + kSsr).c_str(), std::move(reads), true);
+            march.effect = n->post;
+            passes.push_back(std::move(march));
+            if (effect.roughness) {
+                std::map<std::string, std::string> levels{{"mip0", ray}};
+                for (uint32_t level = 1; level < 5; ++level) {
+                    const auto name = "mip" + std::to_string(level);
+                    levels[name] = effect.output + "_" + name;
+                    auto blurEffect = effect;
+                    blurEffect.parameters["_blurSpread"] = {double(level)};
+                    auto blur = rawPass(blurEffect, levels[name], kSsrBlur, {{"input", ray}}, false, true);
+                    blur.effect = n->post;
+                    blur.mipLevel = level;
+                    passes.push_back(std::move(blur));
+                }
+                const auto rough = scalarSampler(effect.inputs[4], "roughness", effect.output, levels, passes);
+                auto resolve = rawPass(effect, effect.output, (rough + kSsrResolve).c_str(), std::move(levels));
+                // r185 selects roughness LOD at the consumer pixel, after the scaled march/blur.
+                resolve.resolutionScale = 1;
+                passes.push_back(std::move(resolve));
+            }
+        } else if (effect.kind == "SMAANode") {
             const std::string input = effect.output + "_input", edges = effect.output + "_edges",
                               weights = effect.output + "_weights";
             const PostNode post{key(effect.inputs[0]), [&](Program& p, uint32_t, ExprId coordinate) {
                                     tsl::Build scope(p);
-                                    return lower(effect.inputs[0], p, {{"uv", coordinate}, {"screenUV", coordinate}}, toneMapping, srgb);
+                                    return lower(effect.inputs[0], p, {{"uv", coordinate}, {"screenUV", coordinate}}, toneMapping, srgb, custom);
                                 }};
             auto programs = buildOutput(std::nullopt, false, &post, false);
             PostPass material;
@@ -512,6 +735,10 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
                     material.reads[binding.name.substr(2)] = binding.name.substr(2);
             material.uniforms = uniforms(effect.inputs[0]);
             material.live = uniformNodes(effect.inputs[0]);
+            const auto customUniforms = uniforms(custom);
+            material.uniforms.insert(customUniforms.begin(), customUniforms.end());
+            const auto customLive = uniformNodes(custom);
+            material.live.insert(material.live.end(), customLive.begin(), customLive.end());
             material.package.variants.push_back({0, {buildStage(programs.vertex), std::move(fragment)}});
             passes.push_back(std::move(material));
             passes.push_back(rawPass(effect, edges, kSmaaEdges, {{"input", input}}));
@@ -645,8 +872,8 @@ PostImage decodedTable(const std::string& name, bool area) {
 }
 
 void requireTexture(const Node& node, const char* what) {
-    try { textureName(node); }
-    catch (const std::exception&) { throw std::runtime_error(std::string("TN_TSL_POST_INPUT: ") + what + " must be a texture node"); }
+    // A check, not a catch: the Wasm build compiles the engine without exception handling.
+    if (!textureSource(node)) throw std::runtime_error(std::string("TN_TSL_POST_INPUT: ") + what + " must be a texture node");
 }
 }  // namespace
 
@@ -666,11 +893,29 @@ std::shared_ptr<PostEffect> gtaoEffect(Node depth, Node normal) {
     effect->output = liveName();
     effect->inputs = normal ? std::vector<Node>{depth, normal} : std::vector<Node>{depth};
     effect->normal = normal != nullptr;
-    effect->parameters = {{"radius", {0.25f}}, {"thickness", {1}}, {"distanceExponent", {1}},
+    effect->parameters = {{"radius", {0.25f}}, {"reachPx", {0}}, {"thickness", {1}}, {"distanceExponent", {1}},
                           {"distanceFallOff", {1}}, {"scale", {1}}, {"samples", {16}},
                           {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
                           {"_temporalDirection", {0}}};
     effect->images = {magicSquareNoise(effect->output + "_noise")};
+    return effect;
+}
+
+std::shared_ptr<PostEffect> ssrEffect(Node color, Node depth, Node normal, Node metalness, Node roughness) {
+    requireTexture(color, "SSR color");
+    requireTexture(depth, "SSR depth");
+    requireTexture(normal, "SSR normal");
+    auto effect = std::make_shared<PostEffect>();
+    effect->kind = "SSRNode";
+    effect->output = liveName();
+    effect->normal = true;
+    effect->roughness = roughness != nullptr;
+    effect->inputs = {color, depth, normal, metalness ? metalness : float_(0), roughness ? roughness : float_(0)};
+    effect->parameters = {{"maxDistance", {1}}, {"thickness", {0.1f}}, {"opacity", {1}},
+        {"quality", {0.5f}}, {"maxSteps", {1e6f}}, {"blurQuality", {2}}, {"reflectNonMetals", {0}}, {"binaryRefine", {0}},
+        {"intensity", {1}}, {"maxLuminance", {10}}, {"cameraNear", {0.1f}},
+        {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
+        {"_cameraWorldMatrix", identity16()}};
     return effect;
 }
 

@@ -120,6 +120,8 @@ export class Enemy {
     this.#path.progressTo(0);
     this.#bar.group.visible = false;
     this.#bar.fill.scale.x = 1;
+    // A walker that died chilled comes back unchilled, so its bar must lose the chill tint too.
+    this.#bar.fillMaterial.color.setHex(palette.effects.barFull);
     this.mesh.visible = true;
     this.#place(this.#path.sample(0, this.#sample));
   }
@@ -172,8 +174,15 @@ export class Enemy {
     emitPlaytestEvent({ entity: this.id, name: "leaked" });
   }
 
+  /** The bar wears the chill tint exactly while the walker is chilled. */
+  get barTintMatches(): boolean {
+    const tinted = this.#bar.fillMaterial.color.getHex() === palette.effects.barChilled;
+    return tinted === this.chilled;
+  }
+
   debug(): Record<string, unknown> {
     return {
+      barTintMatches: this.barTintMatches,
       hp: this.hp,
       kind: this.kind,
       position: this.mesh.position.toArray(),

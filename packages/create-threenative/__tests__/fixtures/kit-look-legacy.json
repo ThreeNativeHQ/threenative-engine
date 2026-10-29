@@ -1,0 +1,505 @@
+{
+  "action-rpg": {
+    "low": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": true
+    }
+  },
+  "minimal": {
+    "low": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": true
+    }
+  },
+  "platformer": {
+    "low": {
+      "bloomEnabled": true,
+      "bloomRadius": 0.5,
+      "bloomStrength": 0.18,
+      "bloomThreshold": 1,
+      "autoExposureEnabled": false,
+      "exposure": 0.6,
+      "tonemapMode": "aces",
+      "vignetteAmount": 0.2,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "bloomRadius": 0.5,
+      "bloomStrength": 0.18,
+      "bloomThreshold": 1,
+      "autoExposureEnabled": false,
+      "exposure": 0.6,
+      "tonemapMode": "aces",
+      "vignetteAmount": 0.2,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.4,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": true,
+      "bloomRadius": 0.5,
+      "bloomStrength": 0.18,
+      "bloomThreshold": 1,
+      "autoExposureEnabled": false,
+      "exposure": 0.6,
+      "tonemapMode": "aces",
+      "vignetteAmount": 0.2,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.4
+    }
+  },
+  "puzzle": {
+    "low": {
+      "renderChainTier": "low",
+      "bloomEnabled": true,
+      "bloomRadius": 0.32,
+      "bloomStrength": 0.48,
+      "bloomThreshold": 0.86,
+      "exposure": 1.04,
+      "gtaoEnabled": false,
+      "sharpenEnabled": false,
+      "vignetteAmount": 0.28
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "bloomRadius": 0.38,
+      "bloomStrength": 0.56,
+      "bloomThreshold": 0.84,
+      "autoExposureEnabled": false,
+      "exposure": 1.05,
+      "tonemapMode": "aces",
+      "vignetteAmount": 0.3,
+      "temporalAA": true,
+      "renderChainTier": "medium",
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.45,
+      "gtaoResolutionScale": 0.4,
+      "gtaoSamples": 8,
+      "gtaoScale": 1.2,
+      "sharpenEnabled": false
+    },
+    "high": {
+      "bloomEnabled": true,
+      "bloomRadius": 0.42,
+      "bloomStrength": 0.5,
+      "bloomThreshold": 0.85,
+      "autoExposureEnabled": false,
+      "exposure": 1.06,
+      "tonemapMode": "aces",
+      "vignetteAmount": 0.34,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.5,
+      "gtaoResolutionScale": 0.5,
+      "gtaoSamples": 12,
+      "gtaoScale": 1.25,
+      "sharpenEnabled": true,
+      "sharpenStrength": 0.95
+    }
+  },
+  "racing": {
+    "low": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.66,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.66,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.66,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": true
+    }
+  },
+  "rain": {
+    "low": {
+      "bloomEnabled": false,
+      "denoiseEnabled": false,
+      "temporalAA": false,
+      "autoExposureEnabled": false,
+      "exposure": 1,
+      "renderChainTier": "low",
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces"
+    },
+    "medium": {
+      "bloomEnabled": false,
+      "denoiseEnabled": false,
+      "temporalAA": false,
+      "autoExposureEnabled": false,
+      "exposure": 1,
+      "renderChainTier": "medium",
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces"
+    },
+    "high": {
+      "bloomEnabled": false,
+      "denoiseEnabled": false,
+      "temporalAA": false,
+      "autoExposureEnabled": false,
+      "exposure": 1,
+      "renderChainTier": "high",
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces"
+    }
+  },
+  "rts": {
+    "low": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": true
+    }
+  },
+  "runner": {
+    "low": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": true
+    }
+  },
+  "sailing": {
+    "low": {
+      "renderChainTier": "low",
+      "bloomEnabled": true,
+      "bloomStrength": 0.28,
+      "exposure": 0.9,
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces"
+    },
+    "medium": {
+      "temporalAA": true,
+      "renderChainTier": "medium",
+      "bloomEnabled": true,
+      "bloomStrength": 0.33,
+      "denoiseEnabled": false,
+      "exposure": 0.9,
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces"
+    },
+    "high": {
+      "temporalAA": true,
+      "bloomEnabled": true,
+      "bloomStrength": 0.38,
+      "denoiseEnabled": false,
+      "autoExposureEnabled": false,
+      "exposure": 0.9,
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces"
+    }
+  },
+  "shooter": {
+    "low": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": true,
+      "autoExposureEnabled": false,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false
+    }
+  },
+  "snow": {
+    "low": {
+      "bloomEnabled": false,
+      "exposure": 0.95,
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "renderChainTier": "low",
+      "tonemapMode": "aces"
+    },
+    "medium": {
+      "bloomEnabled": false,
+      "denoiseEnabled": false,
+      "autoExposureEnabled": false,
+      "temporalAA": false,
+      "exposure": 0.95,
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces",
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "bloomEnabled": false,
+      "denoiseEnabled": false,
+      "autoExposureEnabled": false,
+      "temporalAA": false,
+      "exposure": 0.95,
+      "ssgiEnabled": false,
+      "ssrEnabled": false,
+      "tonemapMode": "aces"
+    }
+  },
+  "starter": {
+    "low": {
+      "autoExposureEnabled": false,
+      "bloomEnabled": true,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "autoExposureEnabled": false,
+      "bloomEnabled": true,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "renderChainTier": "medium",
+      "gtaoSamples": 8,
+      "samples": 0
+    },
+    "high": {
+      "autoExposureEnabled": false,
+      "bloomEnabled": true,
+      "exposure": 0.62,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": true,
+      "renderChainTier": "high"
+    }
+  },
+  "tower-defense": {
+    "low": {
+      "autoExposureEnabled": false,
+      "bloomEnabled": true,
+      "exposure": 1.05,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "renderChainTier": "low"
+    },
+    "medium": {
+      "autoExposureEnabled": false,
+      "bloomEnabled": true,
+      "exposure": 1.05,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": false,
+      "gtaoSamples": 8,
+      "renderChainTier": "medium"
+    },
+    "high": {
+      "autoExposureEnabled": false,
+      "bloomEnabled": true,
+      "exposure": 1.05,
+      "tonemapMode": "aces",
+      "unrealBloomEnabled": true,
+      "vignetteAmount": 0.4,
+      "temporalAA": true,
+      "gtaoEnabled": true,
+      "gtaoRadius": 0.35,
+      "localExposureEnabled": true,
+      "motionBlurEnabled": true
+    }
+  }
+}

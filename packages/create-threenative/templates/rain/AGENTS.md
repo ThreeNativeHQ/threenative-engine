@@ -2,14 +2,11 @@
 Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
 
 ## Ownership
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, audio lifetimes, and the state bridge. This repository owns the coastal storm: weather presets and easing, the fly camera, the shaders, lightning, sound design and the
-interface; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way. Physics bodies and `ctx.camera` interpolate between fixed ticks by default; `physicsInterpolation: false` disables it globally, `body.interpolate = false` disables one body, `ctx.interpolate(object)` opts in another transform, and `ctx.resetInterpolation(object)` resets game-driven teleports (`TN_PHYSICS_INTERPOLATION` reports the setting and tracked count).
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, audio lifetimes, and the state bridge. This repository owns the coastal storm: weather presets and easing, the fly camera, the shaders, lightning, sound design and the interface; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way. Physics bodies and `ctx.camera` interpolate between fixed ticks by default; `physicsInterpolation: false` disables it globally, `body.interpolate = false` disables one body, `ctx.interpolate(object)` opts in another transform, and `ctx.resetInterpolation(object)` resets game-driven teleports (`TN_PHYSICS_INTERPOLATION` reports the setting and tracked count).
 
 ## Start every change
-1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search
-   `engine_search_capabilities` for the full request and each concrete mechanic, inspect relevant
-   matches with `engine_capability_detail`, and record a capability or no-match for the plan. Apply the `ponytail` ladder before writing code; never hand-write what the capability search already installs.
-2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
+1. **Critical authoring gate:** invoke `threenative-capabilities` to choose the route. New games: steps 1-8. Existing games: steps 5-7 only, using existing context. Follow the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art. A session started outside this folder has no `mcp__threenative-*` tools: call them with `node node_modules/@threenative/core/mcp/call.mjs <server> <tool> '<json>'`.
+2. **New game only:** run discovery in `threenative-capabilities` before `prd-creator`. Draft the core-mechanics plan from the kit, both discovery passes and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. This kit needs no navmesh and imports none, so it runs
    on every target; adding `@threenative/physics/navigation` would make it web and desktop only.
@@ -26,14 +23,14 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 ## Workflow skills
 
 - `.agents/skills/prd-creator/SKILL.md` / `.claude/skills/prd-creator/SKILL.md` — game plan and approval gate.
-- `.agents/skills/threenative-capabilities/SKILL.md` / `.claude/skills/threenative-capabilities/SKILL.md` — capability search.
+- `.agents/skills/threenative-capabilities/SKILL.md` / `.claude/skills/threenative-capabilities/SKILL.md` — capability search and classic-game mechanics references.
 - `.agents/skills/threenative-playtest/SKILL.md` / `.claude/skills/threenative-playtest/SKILL.md` — diagnosis and proof.
 - `.agents/skills/threenative-assets/SKILL.md` / `.claude/skills/threenative-assets/SKILL.md` — assets and sculpting.
 - `.agents/skills/threenative-visuals/SKILL.md` / `.claude/skills/threenative-visuals/SKILL.md` — captures and look.
 - `.agents/skills/threenative-performance/SKILL.md` / `.claude/skills/threenative-performance/SKILL.md` — measured budgets.
 - `.agents/skills/threenative-ui/SKILL.md` / `.claude/skills/threenative-ui/SKILL.md` — native-safe UI.
 - `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
-- Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above. Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template pins `engine: "threejs"` in `threenative.config.ts` because the native engine does not bind some of its imports yet. The pin keeps upstream Three.js on web and the legacy host on desktop. A native build names each unbound import with `TN_NATIVE_ENGINE_UNBOUND`. Android and iOS use the legacy host.
+- Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above. Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template runs on it: `threenative.config.ts` names no `engine`. `engine: "threejs"` switches to upstream Three.js only when the user asks for it; it is never a fix for a build error. A native build names each unbound import with `TN_NATIVE_ENGINE_UNBOUND`. Android and iOS use the legacy host.
 
 ## Commands and map
 
@@ -42,7 +39,7 @@ pnpm dev
 pnpm typecheck
 pnpm build:web
 pnpm build:desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 ```
 
 `src/state.ts` owns weather validation, the four presets, easing (τ 0.67 s), the flash envelope and
@@ -72,7 +69,7 @@ is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it 
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/quality.ts` owns `low`, `medium`, `high` (the engine chain: no built-in stage at any tier); the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise `high` when the family is `unknown`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
-the source. The player's four tiers are `STUDY_TIERS` in the same file. The bridge flushes about 100 ms; a control flushes it at once.
+the source. Rain keeps 4x multisampling: `temporalAA` is off in `quality.ts`, because the study draws its own single post pass. The player's four tiers are `STUDY_TIERS` in the same file. The bridge flushes about 100 ms; a control flushes it at once.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
 retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
@@ -82,6 +79,7 @@ caught where a bone-direction check reads zero. `clipTrackBindings` names tracks
 `clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
 clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
 supposed to be touching. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches in 8 ms slices so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement. Gate the loading curtain on a measured readiness with `ctx.startup.hold(label, () => ready)`: core polls it every rendered frame, so it settles without a physics step.
+`updateRate: "auto"` is the default and follows measured camera policy; `updateRate: 1` is full evaluation, another positive safe integer names a frame interval, and `updateRateReport` shows the effective rate, override status and latest evaluation; one-shots/fades, public mixer listeners/speed overrides, root-motion `AnimationComposer`, automatic camera-ray targets and camera-parented rigs stay full-rate. Assets download on demand and stay on disk between web visits: await everything the spawn camera sees before the reveal, and `await ctx.assets.prefetch(["next-level.glb"])` before `ctx.goto` only for what is out of view (a reveal before the visible content loads shows a half-built world); the idle fill downloads the rest after the reveal. Overrides on `defineGame`'s `assets`: `cache: false`, `backgroundFill: false`, both reported on `ctx.assets.cache`; native hosts read installed files.
 ## Budget real time for the look
 
 Reference-driven authoring starts at `node_modules/create-threenative/agent-docs/references/dream-loop.md`.
@@ -92,4 +90,6 @@ For terrain generation or editing, read `node_modules/create-threenative/agent-d
 ## Optional multiplayer transport
 For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.
 Backlight exception: this storm raymarches custom shader lighting in `src/render/lighting.ts`; standard-material `rimGain`/`fillGain` conversion is unqualified. Preserve its authored flash rim and sky fill. The cloud render-target radiance is unknown until sampled; do not claim an environment contribution from `scene.environment`.
-`src/render/exposure.ts` owns optional adaptation (`enabled: false`); `autoExposure.ts` meters even when disabled. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`.
+`src/render/exposure.ts` is optional game policy; pass it as `exposurePolicy` in `quality.ts` to use it. Core owns adaptation and its readback. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`.
+
+Core supplies Unreal filmic and metered defaults through `WorldEnvironment` and `qualityPreset`. This kit keeps both: the storm's own post pass draws bloom, grade, vignette, lens beads and dither (every built-in stage is off, named in `quality.ts`), and the core filmic curve and metered exposure do the tone map. `exposure.ts` caps the meter at +0.8 stop so the storm stays dark, and `postprocessing.ts` scales the weather exposure by 0.85 and `clouds.ts` the flash light on the clouds by 0.3 so the filmic shoulder keeps the bolt visible.

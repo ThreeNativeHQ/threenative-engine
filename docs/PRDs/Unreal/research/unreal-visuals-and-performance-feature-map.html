@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Unreal Render Feature Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one column. Port order (matrix + waves) drives a system drill-down; then ladder, treemap, table. */
+:root {
+  --bg: #f5f6f4; --panel: #ffffff; --fg: #1b1f1d; --muted: #5d6662; --line: #d9ddda; --hi: #fff4d6;
+  --shipped: #2f8f5b; --partial: #d18a12; --open: #2f6fc4; --deferred: #8b8f93; --notfiled: #c9ccc7;
+  --w1: #b8323a; --w2: #d9691f; --w3: #c9a10a; --w4: #3f8f6b; --w5: #5b6f8f;
+  --tile-fg: #ffffff; --accent: #0f6f6a; --gap: #c0392b; --vis: #7a4fc4; --perf: #b5590a;
+  --display: "Instrument Sans", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
+  --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
+  --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
+  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; --vis: #a98be6; --perf: #f0a050; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
+  --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
+  --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
+  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; --vis: #a98be6; --perf: #f0a050; color-scheme: dark }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 36px; }
+h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 0 0 4px; text-wrap: balance; }
+h3 { font-size: 16px; margin: 0; }
+.sub { color: var(--muted); max-width: 72ch; margin: 6px 0 0; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: 13px; }
+.kpis { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 14px; }
+.kpi b { display: block; font-family: var(--mono); font-size: 22px; }
+.kpi span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.total { margin-top: 18px; }
+.total .bar { height: 14px; border-radius: 7px; background: var(--notfiled); overflow: hidden; }
+.total .bar b { display: block; height: 100%; background: var(--shipped); }
+.total .lbl { margin-top: 6px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px; margin-bottom: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.s-shipped { background: var(--shipped); } .s-partial { background: var(--partial); } .s-open { background: var(--open); }
+.s-deferred { background: var(--deferred); } .s-notfiled { background: var(--notfiled); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* port order */
+.port { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; }
+@media (max-width: 900px) { .port { grid-template-columns: minmax(0, 1fr); } }
+.matrix { padding: 10px; }
+.matrix svg { width: 100%; height: auto; display: block; }
+.matrix text { fill: var(--muted); font-family: var(--display); font-size: 11px; }
+.matrix .ql { fill: var(--fg); opacity: .5; font-weight: 600; font-size: 12px; }
+.matrix .pt { cursor: pointer; }
+.matrix .pt text { fill: #fff; font-family: var(--mono); font-size: 9.5px; font-weight: 600; pointer-events: none; }
+.matrix .pt.sel circle { stroke: var(--fg); stroke-width: 2.5; }
+.waves { padding: 6px 0; max-height: 620px; overflow: auto; }
+.wave { padding: 8px 14px 4px; }
+.wave h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; display: flex; gap: 8px; align-items: center; }
+.wave h4 i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.wave h4 small { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.prd { display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 6px; padding: 5px 6px; cursor: pointer; }
+.prd:hover { background: var(--bg); }
+.prd.sel { background: var(--hi); }
+.prd .id { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+.prd .t { font-size: 13.5px; line-height: 1.3; }
+.prd .t small { display: block; color: var(--muted); font-size: 12px; }
+.prd .m { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
+.prd.closed .t { opacity: .6; }
+.prd .rk { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 500; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.bdg { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 4px;
+  border: 1px solid var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--fg); white-space: nowrap; }
+.bdg.v { --c: var(--vis); } .bdg.p { --c: var(--perf); }
+.bdg.estimate { border-style: dashed; background: none; }
+.bdg i { font-style: normal; color: var(--muted); font-size: 10px; }
+.bdg .pips { display: inline-flex; gap: 1px; } .bdg .pips u { width: 4px; height: 8px; border-radius: 1px; background: var(--line); text-decoration: none; }
+.bdg .pips u.on { background: var(--c); }
+.sortbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.sortbar button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; color: var(--fg); }
+.sortbar button[aria-pressed="true"] { border-color: var(--accent); background: var(--hi); font-weight: 600; }
+.rule { margin: 8px 0 0; font-size: 13px; max-width: 80ch; }
+#ptbl { min-width: 820px; } #ptbl th { cursor: pointer; } #ptbl tbody tr { cursor: pointer; } #ptbl tbody tr:hover td { background: var(--bg); }
+#ptbl td.why { color: var(--muted); font-size: 12px; max-width: 260px; }
+.prog { display: block; width: 56px; height: 4px; border-radius: 2px; background: var(--line); margin-top: 3px; margin-left: auto; overflow: hidden; }
+.prog b { display: block; height: 100%; background: var(--shipped); }
+
+/* coverage explorer: system rail (left) drives the detail (right) */
+.explorer { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .explorer { grid-template-columns: minmax(0, 1fr); } .explorer .rail { max-height: 320px; position: static; } }
+.rail { padding: 6px; max-height: 900px; overflow: auto; position: sticky; top: 12px; }
+.rail .area { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 10px 8px 4px; }
+.sysbtn { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; width: 100%; text-align: left; background: none;
+  border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; align-items: center; }
+.sysbtn:hover { background: var(--bg); }
+.sysbtn[aria-pressed="true"] { background: var(--hi); }
+.sysbtn .nm { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sysbtn .gb { font-family: var(--mono); font-size: 11px; color: var(--gap); font-weight: 600; white-space: nowrap; }
+.sysbtn .gb.ok { color: var(--shipped); }
+.cbar { grid-column: 1 / -1; display: flex; height: 5px; border-radius: 3px; overflow: hidden; gap: 1px; background: var(--line); }
+.c-prd { background: var(--open); } .c-ships { background: var(--shipped); } .c-rule { background: var(--notfiled); }
+.c-gap { background: repeating-linear-gradient(135deg, var(--gap) 0 3px, transparent 3px 6px); background-color: color-mix(in srgb, var(--gap) 35%, transparent); }
+.railtools { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; font-size: 12.5px; color: var(--muted); }
+.detail { padding: 16px; display: grid; gap: 16px; min-width: 0; }
+.blk { min-width: 0; }
+.blk h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; background: var(--panel);
+  text-align: left; cursor: pointer; border-left: 4px solid var(--c, var(--open)); }
+.card:hover { border-color: var(--muted); border-left-color: var(--c, var(--open)); }
+.card.sel { background: var(--hi); }
+.card .top { display: flex; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12px; }
+.card .ttl { font-size: 13.5px; line-height: 1.3; font-weight: 500; }
+.card .cov { font-size: 12px; color: var(--muted); }
+.card a { font-size: 12px; color: var(--accent); }
+.card .prog { width: 100%; margin: 2px 0 0; }
+.gaps { display: grid; gap: 6px; }
+.gapi { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 12px; border-radius: 8px;
+  border: 1px dashed var(--gap); background: color-mix(in srgb, var(--gap) 7%, transparent); }
+.gapi b { font-size: 13.5px; } .gapi .num { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.gapi .note { grid-column: 1 / -1; }
+.allok { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--shipped) 12%, transparent); font-size: 13.5px; }
+.tag { display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; margin: 0 4px 3px 0; white-space: nowrap; }
+.tag.no { border-color: var(--gap); color: var(--gap); background: none; cursor: default; }
+.s-rule { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); }
+#tbl tbody tr { cursor: pointer; } #tbl tbody tr:hover td { background: var(--bg); }
+.dhead { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; }
+.dhead .big { font-family: var(--mono); font-size: 20px; }
+.stack { display: flex; height: 22px; border-radius: 5px; overflow: hidden; gap: 2px; }
+.stack span { min-width: 3px; }
+.subs { overflow-x: auto; }
+.subs table { min-width: 720px; }
+.subs tr.hit td { background: var(--hi); }
+.subs td.grouprow { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--bg); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); }
+.legend button { color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px 3px 8px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.legend button[aria-pressed="false"] { opacity: .4; }
+
+/* ladder */
+.ladder { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
+.rung { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 10px 12px; min-width: 0;
+  border-top: 5px solid var(--c); display: grid; gap: 2px; align-content: start; }
+.rung .l { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.rung .n { font-weight: 600; font-size: 13px; line-height: 1.25; }
+.rung .p { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+@media (max-width: 860px) { .ladder { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* treemap */
+.toggle { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.tm { position: relative; width: 100%; height: 760px; overflow: hidden; }
+@media (max-width: 600px) { .tm { height: 1100px; } }
+.fgrp { position: absolute; border-radius: 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); cursor: pointer; }
+.fgrp > .fl { position: absolute; left: 5px; top: 1px; right: 5px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fgrp > .fl small { font-family: var(--mono); font-weight: 400; color: var(--muted); }
+.p-done { background: var(--shipped); } .p-progress { background: var(--partial); } .p-notstarted { background: var(--open); }
+.p-deferred { background: var(--deferred); } .p-rule { background: var(--notfiled); } .p-unsplit { background: color-mix(in srgb, var(--fg) 12%, transparent); }
+.p-gap { background: repeating-linear-gradient(135deg, var(--gap) 0 4px, color-mix(in srgb, var(--gap) 55%, transparent) 4px 8px); }
+.tile.p-rule, .tile.p-unsplit { color: var(--fg); }
+.tile .pb { position: absolute; left: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.85); }
+.grp { position: absolute; border: 1px solid var(--line); border-radius: 6px; }
+.grp > .gl { position: absolute; left: 6px; top: 2px; right: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile { position: absolute; border-radius: 4px; color: var(--tile-fg); padding: 5px 6px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.tile { cursor: pointer; }
+.tile .tn { font-weight: 600; font-size: 11.5px; line-height: 1.2; }
+.tile .tl { font-family: var(--mono); font-size: 11px; opacity: .9; }
+.tile .cx { position: absolute; right: 5px; bottom: 4px; font-family: var(--mono); font-size: 11px; opacity: .85; }
+.tile:hover, .tile:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; z-index: 2; }
+.tip { position: fixed; pointer-events: none; z-index: 20; max-width: 320px; background: var(--panel); color: var(--fg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.tip b { display: block; margin-bottom: 2px; }
+.tip .row { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+
+/* tables */
+.tablebox { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+#tbl { min-width: 760px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; white-space: nowrap; }
+#tbl th { cursor: pointer; }
+td.num { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.cxbar { display: inline-flex; gap: 2px; vertical-align: middle; }
+.cxbar i { width: 6px; height: 12px; border-radius: 1px; background: var(--line); }
+.cxbar i.on { background: var(--accent); }
+.foot { color: var(--muted); font-size: 12.5px; max-width: 80ch; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Unreal 5.8.3 render features, sized and rated</h1>
+    <p class="sub">The Unreal systems that decide how a frame looks or what it costs, measured in lines of code from the 5.8.3 source, with the ThreeNative status on 2026-10-21 (including PR #541) and the order to port them.</p>
+    <div class="kpis">
+      <div class="kpi"><b>449,725</b><span>Renderer C++ lines</span></div>
+      <div class="kpi"><b>359,018</b><span>Shader lines</span></div>
+      <div class="kpi"><b>~175K</b><span>Lines behind the default look</span></div>
+      <div class="kpi"><b id="k-prds">0</b><span>Open PRDs in the port order</span></div>
+      <div class="kpi"><b id="k-gaps" style="color:var(--gap)">0</b><span>Subsystems with no PRD</span></div>
+    </div>
+    <div class="total" role="group" aria-label="Total Unreal port progress">
+      <div class="bar"><b id="total-bar" style="width:0%"></b></div>
+      <div class="lbl" id="total-lbl">Total progress: counting boxes</div>
+    </div>
+  </header>
+
+  <section>
+    <div class="section-head"><div><h2>Progress and pace</h2>
+      <div class="note">PRD boxes ticked over time, against all boxes filed. The dashed lines project the last two weeks' pace to the finish of the default look (waves 1-4, which go first) and of everything filed. <span class="mono">pnpm unreal:status</span> adds a point whenever the counts change.</div></div></div>
+    <div class="panel" style="padding:8px"><img src="unreal-port-progress.svg" alt="Burn-up chart of Unreal port PRD boxes ticked over time, with projected finish dates" style="width:100%;height:auto;display:block;border-radius:6px"></div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>What to port first</h2>
+      <div class="note">Complexity is each PRD's own rating. Visual impact and performance impact each run from 0 to 5 and carry a source: a <b>solid</b> badge is measured, a <b>dashed</b> badge with a tilde is an estimate. Select a PRD to open its Unreal system below.</div>
+      <p class="rule"><b>Rank</b> = (visual impact + performance impact) ÷ complexity, highest first. A tie goes to the lower complexity, then the earlier wave. The list keeps its waves, because a wave is a dependency order and a PRD must not rank above the one it waits on; the sort buttons show the plain rank.</p>
+      <p class="note" style="margin:6px 0 0"><b>Visual</b> is measured as the share of parity locks still broken in the PRD's layer (calibration lock board): under 5% scores 0, then 15%, 30%, 45% and 60% step it up. <b>Performance</b> is measured as GPU ms at 1080p on the RTX 2080: under 0.1 ms scores 0, then 0.5, 1, 2 and 4 ms step it up. Everything else is an estimate with its reason in the tooltip.</p></div>
+      <div class="legend" id="wave-legend"></div></div>
+    <div class="sortbar" id="sortbar" role="group" aria-label="Sort the PRD list">Sort: <button type="button" data-k="wave" aria-pressed="true">Wave order</button><button type="button" data-k="rank" aria-pressed="false">Rank</button><button type="button" data-k="vis" aria-pressed="false">Visual impact</button><button type="button" data-k="perf" aria-pressed="false">Performance impact</button><button type="button" data-k="cx" aria-pressed="false">Complexity</button></div>
+    <div class="port">
+      <div class="panel matrix"><svg id="matrix" viewBox="0 0 520 440" role="img" aria-label="Open PRDs plotted by complexity and impact"></svg></div>
+      <div class="panel waves" id="waves"></div>
+    </div>
+  </section>
+
+  <section id="detail-sec">
+    <div class="section-head"><div><h2>Unreal feature → ThreeNative PRDs</h2>
+      <div class="note">Select an Unreal feature. You see the PRDs that port it, then every subsystem that no PRD covers yet. Bar: <span class="pill"><span class="dot c-prd"></span>has a PRD</span> <span class="pill"><span class="dot c-ships"></span>ships, no PRD needed</span> <span class="pill"><span class="dot c-gap"></span>no PRD</span> <span class="pill"><span class="dot c-rule"></span>out of scope by rule</span></div></div></div>
+    <div class="explorer">
+      <nav class="panel rail" aria-label="Unreal features"><div class="railtools"><label class="toggle"><input type="checkbox" id="gaponly"> Only features with gaps</label></div><div id="rail"></div></nav>
+      <div class="panel detail" id="detail" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>All open PRDs, ranked</h2><div class="note">Select a column header to sort. Select a row to open its Unreal system. <span class="bdg v"><i>V</i> solid</span> and <span class="bdg p"><i>P</i> solid</span> are measured, <span class="bdg v estimate"><i>V</i> dashed</span> and <span class="bdg p estimate"><i>P</i> dashed</span> are estimates.</div></div></div>
+    <div class="panel tablebox"><table id="ptbl"><thead><tr>
+      <th data-k="rank" tabindex="0" style="text-align:right">Rank</th><th data-k="id" tabindex="0">PRD</th><th data-k="layer" tabindex="0">Layer</th>
+      <th data-k="vis" tabindex="0">Visual impact</th><th data-k="perf" tabindex="0">Performance impact</th><th data-k="cx" tabindex="0">Complexity</th>
+      <th data-k="wave" tabindex="0">Wave</th><th data-k="done" tabindex="0">Boxes</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>The default-look ladder (PR #541)</h2>
+      <div class="note">Each layer turns on in the templates only when it matches the Unreal reference render.</div></div></div>
+    <div class="ladder" id="ladder"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div><h2>Where the code is</h2><div class="note">Each Unreal system is split into its subsystems. Tile area = lines of code. Colour = how far ThreeNative has ported it; the white bar is the share of PRD boxes ticked. Select a tile to see its PRDs and gaps.</div></div>
+      <label class="toggle"><input type="checkbox" id="big"> Include tool-heavy modules (Niagara, Landscape, World Partition, RHI, RenderCore)</label>
+    </div>
+    <div class="legend" id="legend" style="margin-bottom:10px"></div>
+    <div class="panel tm" id="tm" role="group" aria-label="Treemap of Unreal subsystems sized by lines of code and coloured by port progress"></div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>All features, ranked</h2><div class="note">Select a column header to sort. Select a row to see its PRDs and gaps.</div></div></div>
+    <div class="panel tablebox"><table id="tbl"><thead><tr>
+      <th data-k="name" tabindex="0">Feature</th><th data-k="area" tabindex="0">Area</th>
+      <th data-k="loc" tabindex="0" style="text-align:right">LOC</th><th data-k="cx" tabindex="0">Complexity</th>
+      <th data-k="port" tabindex="0">Port cost</th><th data-k="status" tabindex="0">ThreeNative</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <p class="foot">LOC counts raw lines (code, comments, blank lines) in <span class="mono">Engine/Source/Runtime/Renderer/Private</span> and <span class="mono">Engine/Shaders/Private</span>, grouped by subfolder or file prefix. Shared files such as <span class="mono">SceneRendering.cpp</span> are not split, so each row is a lower bound. A subsystem shown as "shared" lives inside one file with its siblings. Landscape and World Partition hold editor code in their runtime modules. Niagara counts runtime only (editor: 275K more). Complexity, impact and port cost are judgements. Report: <span class="mono">docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md</span>.</p>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+// @data-start: plain data and pure rules. scripts/unreal-port-status.ts evaluates this block too.
+const STATUS = { shipped: "Shipped", partial: "Partial", open: "Open", deferred: "Deferred", notfiled: "Not filed", rule: "Out of scope by rule" };
+// PRD registry (title, path, box counts), generated from the PRD files by a script; do not hand-edit.
+// @prds-start
+const PRDS = {"244":{"t":"The scene's BVH reaches the GPU","p":"docs/PRDs/done/PRD-244-the-scenes-bvh-reaches-the-gpu.md","r":"develop","s":"","d":0,"n":15,"f":"done"},"269":{"t":"motion vectors for skinned and instanced geometry, or the temporal filters lie","p":"docs/PRDs/done/PRD-269-motion-vectors-or-the-temporal-filters-lie.md","r":"develop","s":"DONE","d":13,"n":13,"f":"done"},"281":{"t":"a dense mesh bakes to a crack-free cluster DAG","p":"docs/PRDs/done/nanite-like/PRD-281-a-dense-mesh-bakes-to-a-crack-free-cluster-dag.md","r":"develop","s":"","d":8,"n":8,"f":"done"},"282":{"t":"the cut is chosen on the CPU first","p":"docs/PRDs/done/nanite-like/PRD-282-the-cut-is-chosen-on-the-cpu-first.md","r":"develop","s":"","d":8,"n":8,"f":"done"},"284":{"t":"the frame does not draw what the frame already hid","p":"docs/PRDs/done/nanite-like/PRD-284-the-frame-does-not-draw-what-the-frame-already-hid.md","r":"develop","s":"","d":0,"n":4,"f":"done"},"285":{"t":"clusters arrive when the camera asks for them","p":"docs/PRDs/done/nanite-like/PRD-285-clusters-arrive-when-the-camera-asks-for-them.md","r":"develop","s":"","d":0,"n":5,"f":"done"},"316":{"t":"forty-six VFX are generated render source, not an engine inside the engine","p":"docs/PRDs/Unreal/vfx/PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md","r":"develop","s":"PROPOSED","d":0,"n":39,"f":"open"},"384":{"t":"Adaptive resolution must distinguish host delay from GPU cost","p":"docs/PRDs/done/PRD-384-adaptive-resolution-gpu-headroom.md","r":"develop","s":"DONE","d":8,"n":8,"f":"done"},"455":{"t":"Fewer rendered pixels reconstruct into a stable full-resolution frame","p":"docs/PRDs/done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md","r":"develop","s":"DONE","d":7,"n":7,"f":"done"},"456":{"t":"Distant world cells stay visible after their detailed cells unload","p":"docs/PRDs/open-world/PRD-456-distant-world-cell-proxies.md","r":"develop","s":"PROPOSED","d":0,"n":6,"f":"open"},"457":{"t":"Virtual shadows page only when pages are cheaper than cached clip levels","p":"docs/PRDs/Unreal/rendering/PRD-457-virtual-shadows-scale-by-measurement.md","r":"develop","s":"PROPOSED","d":0,"n":5,"f":"open"},"459":{"t":"Smooth streaming: one admission budget per frame, prefetched ahead of the camera","p":"docs/PRDs/open-world/PRD-459-smooth-streaming-one-admission-budget-per-frame.md","r":"develop","s":"PARTIAL","d":4,"n":16,"f":"open"},"460":{"t":"Invisible streaming: a dithered fade for arriving props and a crossfade across LOD levels","p":"docs/PRDs/Unreal/open-world/PRD-460-invisible-streaming-transitions.md","r":"develop","s":"NOT STARTED","d":0,"n":15,"f":"open"},"486":{"t":"Characters get a LOD chain","p":"docs/PRDs/open-world/PRD-486-characters-get-a-lod-chain.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"488":{"t":"Foliage moves in the wind","p":"docs/PRDs/open-world/PRD-488-foliage-moves-in-the-wind.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"489":{"t":"Occlusion culling re-tested on the GPU scene","p":"docs/PRDs/done/PRD-489-gpu-scene-occlusion-culling.md","r":"develop","s":"CLOSED","d":2,"n":8,"f":"done"},"492":{"t":"Colour grading and film grain","p":"docs/PRDs/done/PRD-492-colour-grading-and-film-grain.md","r":"develop","s":"DONE","d":6,"n":6,"f":"done"},"493":{"t":"Terrain layers past sixteen textures","p":"docs/PRDs/open-world/PRD-493-terrain-layers-past-sixteen-textures.md","r":"develop","s":"PARTIAL","d":6,"n":8,"f":"open"},"523":{"t":"The render graph owns passes and history (N14a)","p":"docs/PRDs/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md","r":"develop","s":"PROPOSED","d":0,"n":7,"f":"open"},"524":{"t":"Virtual shadows run native (N14b)","p":"docs/PRDs/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-524-n14b-virtual-shadows-run-native.md","r":"develop","s":"PROPOSED","d":0,"n":5,"f":"open"},"538":{"t":"Shadow maps redraw only what streamed in","p":"docs/PRDs/done/PRD-538-shadow-maps-redraw-only-what-streamed-in.md","r":"develop","s":"DONE","d":4,"n":4,"f":"done"},"539":{"t":"A lower internal raster reconstructs into a stable full-resolution frame","p":"docs/PRDs/Unreal/performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md","r":"develop","s":"NOT STARTED","d":0,"n":6,"f":"open"},"560":{"t":"Height fog follows the ground, and the sun shows through it","p":"docs/PRDs/done/PRD-560-height-fog-follows-the-ground.md","r":"develop","s":"LOCAL PHASES COMPLETE","d":11,"n":11,"f":"done"},"561":{"t":"Small things touch the ground: contact shadows from screen depth","p":"docs/PRDs/done/PRD-561-contact-shadows-from-screen-depth.md","r":"develop","s":"DECLINED","d":1,"n":7,"f":"done"},"562":{"t":"Distant land takes the colour of the sky it is seen through","p":"docs/PRDs/Unreal/rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"563":{"t":"The first frame starts at the tier the GPU family can hold","p":"docs/PRDs/done/PRD-563-the-first-frame-starts-at-the-tier-the-gpu-family-holds.md","r":"develop","s":"COMPLETE","d":15,"n":15,"f":"done"},"564":{"t":"The resolution scale changes without reallocating a render target","p":"docs/PRDs/done/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md","r":"develop","s":"DONE","d":7,"n":7,"f":"done"},"565":{"t":"Multisampled targets stay in tile memory on the Android host","p":"docs/PRDs/done/PRD-565-multisampled-targets-stay-in-tile-memory-on-android.md","r":"develop","s":"COMPLETE","d":4,"n":4,"f":"done"},"566":{"t":"Terrain LOD morphs on the GPU and picks its level by screen error","p":"docs/PRDs/done/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md","r":"develop","s":"DONE","d":9,"n":9,"f":"done"},"567":{"t":"Terrain layers blend by their own height, and the game owns the curve","p":"docs/PRDs/done/PRD-567-terrain-layers-blend-by-their-own-height.md","r":"develop","s":"DONE","d":9,"n":9,"f":"done"},"568":{"t":"Mobile builds ship GPU-ready ASTC, so no phone transcodes or uploads RGBA8","p":"docs/PRDs/done/PRD-568-mobile-builds-ship-gpu-ready-astc.md","r":"develop","s":"DONE","d":8,"n":8,"f":"done"},"569":{"t":"GPU particle emitters out of view stop costing, and effects yield to the frame budget","p":"docs/PRDs/done/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md","r":"develop","s":"DONE","d":12,"n":12,"f":"done"},"570":{"t":"A character costs what the camera sees of it","p":"docs/PRDs/done/PRD-570-a-character-costs-what-the-camera-sees-of-it.md","r":"develop","s":"DONE","d":9,"n":9,"f":"done"},"571":{"t":"Exposure meters a histogram and ignores the sun","p":"docs/PRDs/BLOCKED/requires-physical-device/PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md","r":"develop","s":"BLOCKED","d":8,"n":8,"f":"blocked"},"572":{"t":"Shadow casters sort themselves into static and moving","p":"docs/PRDs/done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md","r":"develop","s":"DONE","d":9,"n":9,"f":"done"},"600":{"t":"A clustered mesh submits only the clusters the view holds","p":"docs/PRDs/Unreal/rendering/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"601":{"t":"Far clusters keep the shading of the source mesh","p":"docs/PRDs/Unreal/rendering/PRD-601-far-clusters-keep-the-shading-of-the-source-mesh.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"602":{"t":"A clustered shadow caster draws what its shadow texel resolves","p":"docs/PRDs/Unreal/rendering/PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"603":{"t":"Probes refresh by tracing the packed scene, not by drawing it six times","p":"docs/PRDs/Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"604":{"t":"A surface is lit only by probes that can see it","p":"docs/PRDs/Unreal/rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"605":{"t":"The probe field follows the camera in nested rings","p":"docs/PRDs/Unreal/rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"606":{"t":"A fast-travel destination is ready before the cover lifts","p":"docs/PRDs/Unreal/open-world/PRD-606-a-fast-travel-destination-is-ready-before-the-cover-lifts.md","r":"develop","s":"NOT STARTED","d":0,"n":13,"f":"open"},"607":{"t":"Streaming reports when a hole is near and spends more to close it","p":"docs/PRDs/Unreal/open-world/PRD-607-streaming-reports-when-a-hole-is-near-and-spends-more-to-close-it.md","r":"develop","s":"NOT STARTED","d":0,"n":11,"f":"open"},"609":{"t":"A GPU burst starts where and when it is asked, and live particles stay put","p":"docs/PRDs/done/PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md","r":"develop","s":"DONE","d":8,"n":8,"f":"done"},"610":{"t":"The native engine wins on real games","p":"docs/PRDs/performance/PRD-610-native-engine-wins-on-real-games.md","r":"develop","s":"PARTIAL","d":3,"n":10,"f":"open"},"611":{"t":"The Linux HUD overlay keeps up with the game and stops burning a core","p":"docs/PRDs/performance/PRD-611-hud-overlay-latency-and-cpu.md","r":"develop","s":"PARTIAL","d":7,"n":9,"f":"open"},"631":{"t":"An Unreal reference scene measures the default look","p":"docs/PRDs/done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md","r":"develop","s":"IN PROGRESS","d":15,"n":15,"f":"done"},"632":{"t":"The frame is exposed and tone-mapped the way a fresh Unreal project is","p":"docs/PRDs/Unreal/look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md","r":"develop","s":"IN PROGRESS","d":17,"n":25,"f":"open"},"633":{"t":"The sky is an atmosphere, and it lights the scene","p":"docs/PRDs/Unreal/look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md","r":"develop","s":"PARTIAL","d":1,"n":11,"f":"open"},"634":{"t":"Sun shadows reach the horizon and soften with distance from the caster","p":"docs/PRDs/Unreal/look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md","r":"develop","s":"PARTIAL","d":11,"n":18,"f":"open"},"635":{"t":"Ambient occlusion darkens only the light that comes from around","p":"docs/PRDs/Unreal/look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md","r":"develop","s":"IN PROGRESS","d":8,"n":17,"f":"open"},"636":{"t":"The finishing post chain matches Unreal's defaults","p":"docs/PRDs/Unreal/look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md","r":"develop","s":"PARTIAL","d":18,"n":29,"f":"open"},"639":{"t":"A Surface Cache gives traced rays the texture, glow and lights of what they hit","p":"docs/PRDs/Unreal/gi/PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md","r":"develop","s":"IN PROGRESS","d":6,"n":9,"f":"open"},"640":{"t":"Pixels gather bounce light from screen probes, and the radiance cache answers the rest","p":"docs/PRDs/Unreal/gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md","r":"develop","s":"PARTIAL","d":2,"n":9,"f":"open"},"641":{"t":"Bounce light holds still while the camera moves and follows a light that changes","p":"docs/PRDs/Unreal/gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md","r":"develop","s":"IN PROGRESS","d":5,"n":14,"f":"open"},"642":{"t":"Glossy surfaces reflect what the camera cannot see","p":"docs/PRDs/Unreal/gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md","r":"develop","s":"PARTIAL","d":6,"n":11,"f":"open"},"643":{"t":"Glass, fog and leaves take the bounce light too","p":"docs/PRDs/Unreal/gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md","r":"develop","s":"IN PROGRESS","d":6,"n":11,"f":"open"},"644":{"t":"The GI tier follows Unreal's quality levels and the measured GPU time","p":"docs/PRDs/Unreal/gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md","r":"develop","s":"IN PROGRESS","d":9,"n":12,"f":"open"},"645":{"t":"A desktop GPU with ray tracing traces GI rays in hardware","p":"docs/PRDs/done/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md","r":"develop","s":"DONE","d":4,"n":4,"f":"done"},"646":{"t":"ThreeNative recreates each Unreal calibration scene exactly","p":"docs/PRDs/Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md","r":"develop","s":"PARTIAL","d":11,"n":15,"f":"open"},"647":{"t":"A visual judge calibrates GI against the Unreal scenes until parity","p":"docs/PRDs/done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md","r":"develop","s":"DONE","d":8,"n":8,"f":"done"},"649":{"t":"Shadow calibration scenes are built in Unreal and judged until parity","p":"docs/PRDs/Unreal/shadows/PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md","r":"develop","s":"PARTIAL","d":3,"n":12,"f":"open"},"650":{"t":"A lamp's shadow is as sharp as the pixels it covers, and softens with the lamp's size","p":"docs/PRDs/done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md","r":"develop","s":"DONE","d":12,"n":12,"f":"done"},"651":{"t":"Leaves cast leaf shadows that sway near the camera","p":"docs/PRDs/Unreal/shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md","r":"develop","s":"IN PROGRESS","d":7,"n":12,"f":"open"},"652":{"t":"The shadow tier follows Unreal's shadow quality levels","p":"docs/PRDs/Unreal/shadows/PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md","r":"develop","s":"IN PROGRESS","d":7,"n":11,"f":"open"},"660":{"t":"Many shadowed lamps cost one fixed budget, not one shadow map each","p":"docs/PRDs/Unreal/rendering/PRD-660-many-shadowed-lamps-cost-one-fixed-budget-not-one-shadow-map-each.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"661":{"t":"Bounce light stays clean at fewer rays by reusing the rays of neighbours and of the last frame","p":"docs/PRDs/Unreal/rendering/PRD-661-bounce-light-stays-clean-at-fewer-rays-by-reusing-neighbour-and-last-frame-rays.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"662":{"t":"With dynamic GI off, the sky light stops at nearby walls and roofs","p":"docs/PRDs/Unreal/rendering/PRD-662-with-dynamic-gi-off-the-sky-light-stops-at-nearby-walls-and-roofs.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"663":{"t":"A fog bank sits where the game puts it, and the sun lights it","p":"docs/PRDs/Unreal/rendering/PRD-663-a-fog-bank-sits-where-the-game-puts-it.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"664":{"t":"Smoke and explosions are lit volumes, not flat sprites","p":"docs/PRDs/Unreal/vfx/PRD-664-smoke-and-explosions-are-lit-volumes-not-flat-sprites.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"665":{"t":"Clouds shade the haze and fog below them, so light shafts show through the gaps","p":"docs/PRDs/Unreal/rendering/PRD-665-clouds-shade-the-haze-and-fog-below-them.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"667":{"t":"A bright sun can flare the lens, and bloom can take any kernel, when the game asks","p":"docs/PRDs/Unreal/rendering/PRD-667-a-bright-sun-can-flare-the-lens-when-the-game-asks.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"668":{"t":"A displaced surface changes its silhouette near the camera","p":"docs/PRDs/Unreal/rendering/PRD-668-a-displaced-surface-changes-its-silhouette-near-the-camera.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"669":{"t":"Far foliage keeps its volume when its clusters become voxels","p":"docs/PRDs/Unreal/rendering/PRD-669-far-foliage-keeps-its-volume-when-its-clusters-become-voxels.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"670":{"t":"Rough surfaces reflect light the way a fresh Unreal project shades them","p":"docs/PRDs/Unreal/rendering/PRD-670-rough-surfaces-reflect-light-the-way-a-fresh-unreal-project-shades-them.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"671":{"t":"A character wears strand hair that catches light along each strand","p":"docs/PRDs/Unreal/rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"672":{"t":"Terrain shades its layers once into cached pages, not every pixel every frame","p":"docs/PRDs/Unreal/performance/PRD-672-terrain-shades-its-layers-once-into-cached-pages.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"673":{"t":"The GPU scene tests a placement only when its grid cell is in view","p":"docs/PRDs/Unreal/performance/PRD-673-the-gpu-scene-tests-a-placement-only-when-its-grid-cell-is-in-view.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"674":{"t":"An ambient particle is a function of its age and seed, and costs no simulation","p":"docs/PRDs/Unreal/vfx/PRD-674-an-ambient-particle-is-a-function-of-its-age-and-seed-and-costs-no-simulation.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"675":{"t":"A game turns a named layer of its world on and off inside one streaming budget","p":"docs/PRDs/Unreal/open-world/PRD-675-a-game-turns-a-named-layer-of-its-world-on-and-off-inside-one-streaming-budget.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"676":{"t":"A playtest capture tells an agent whether a frame pays for pixels, clusters, shadow levels or effects","p":"docs/PRDs/Unreal/performance/PRD-676-a-playtest-capture-tells-an-agent-whether-a-frame-pays-for-pixels-clusters-shadow-levels-or-effects.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"677":{"t":"A dense glass or water mesh takes the cluster cut and blends like the source mesh","p":"docs/PRDs/Unreal/rendering/PRD-677-a-dense-glass-or-water-mesh-takes-the-cluster-cut-and-blends-like-the-source-mesh.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"678":{"t":"A dense skinned body takes the cluster cut in every view that sees it","p":"docs/PRDs/Unreal/rendering/PRD-678-a-dense-skinned-body-takes-the-cluster-cut-in-every-view-that-sees-it.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"679":{"t":"Sparks and glass in fog take the fog of their own distance and blend mode","p":"docs/PRDs/Unreal/rendering/PRD-679-sparks-and-glass-in-fog-take-the-fog-of-their-own-distance-and-blend-mode.md","r":"develop","s":"NOT STARTED","d":0,"n":11,"f":"open"},"682":{"t":"Flat parts of the frame shade at a coarser rate where the GPU allows it, and every other platform says why not","p":"docs/PRDs/Unreal/performance/PRD-682-flat-parts-of-the-frame-shade-at-a-coarser-rate-where-the-gpu-allows-it.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"683":{"t":"A frame skips the passes nothing reads and shares one target between passes that never overlap","p":"docs/PRDs/Unreal/performance/PRD-683-a-frame-skips-passes-nothing-reads-and-shares-targets-whose-lifetimes-do-not-overlap.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"684":{"t":"Screen probes fill the gaps at depth edges and aim their rays where the light comes from","p":"docs/PRDs/Unreal/rendering/PRD-684-screen-probes-fill-the-gaps-at-depth-edges-and-aim-their-rays-where-the-light-comes-from.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"685":{"t":"A ray the screen cannot answer reads the light that arrives from its own direction","p":"docs/PRDs/Unreal/rendering/PRD-685-a-ray-the-screen-cannot-answer-reads-the-light-that-arrives-from-its-own-direction.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"686":{"t":"A door that moves blocks and bounces GI rays where it now stands","p":"docs/PRDs/Unreal/rendering/PRD-686-a-door-that-moves-blocks-and-bounces-gi-rays-where-it-now-stands.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"687":{"t":"An agent sees what the GI rays see in a playtest capture","p":"docs/PRDs/Unreal/rendering/PRD-687-an-agent-sees-what-the-gi-rays-see-in-a-playtest-capture.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"694":{"t":"Traces and colliders see a clustered mesh at one fixed error, not at the camera cut","p":"docs/PRDs/Unreal/rendering/PRD-694-traces-and-colliders-see-a-clustered-mesh-at-one-fixed-error-not-at-the-camera-cut.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"695":{"t":"A clustered mesh takes its own cut in every view that draws it","p":"docs/PRDs/Unreal/rendering/PRD-695-a-clustered-mesh-takes-its-own-cut-in-every-view-that-draws-it.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"696":{"t":"Tiny triangles of a clustered shadow caster rasterize in compute","p":"docs/PRDs/Unreal/performance/PRD-696-tiny-triangles-of-a-clustered-shadow-caster-rasterize-in-compute.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"704":{"t":"A spark streaks along its own motion, and a far spark does not flicker","p":"docs/PRDs/Unreal/vfx/PRD-704-a-spark-streaks-along-its-own-motion-and-a-far-spark-does-not-flicker.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"705":{"t":"A sword swing leaves one connected trail, not a cloud of dashes","p":"docs/PRDs/Unreal/vfx/PRD-705-a-sword-swing-leaves-one-connected-trail-not-a-cloud-of-dashes.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"706":{"t":"An effect starts on the skin of a moving character","p":"docs/PRDs/Unreal/vfx/PRD-706-an-effect-starts-on-the-skin-of-a-moving-character.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"714":{"t":"The sun shadow keeps its texel size per screen pixel when the camera zooms or the window resizes","p":"docs/PRDs/Unreal/rendering/PRD-714-the-sun-shadow-keeps-one-texel-per-screen-pixel-when-the-camera-zooms-or-the-window-resizes.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"715":{"t":"A shadow lookup stops sampling where no edge is near and starts clear of its own surface","p":"docs/PRDs/Unreal/rendering/PRD-715-a-shadow-lookup-stops-sampling-where-no-edge-is-near-and-starts-clear-of-its-own-surface.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"716":{"t":"A shadow caster that no visible surface receives, or another caster hides, skips its draw","p":"docs/PRDs/Unreal/rendering/PRD-716-a-shadow-caster-that-no-visible-surface-receives-or-another-caster-hides-skips-its-draw.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"717":{"t":"A pixel a moving object just uncovered reprojects through the surface that left it","p":"docs/PRDs/Unreal/performance/PRD-717-a-pixel-a-moving-object-just-uncovered-reprojects-through-the-surface-that-left-it.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"718":{"t":"A surface that returns to view takes back the detail the history held before it left","p":"docs/PRDs/Unreal/performance/PRD-718-a-surface-that-returns-to-view-takes-back-the-detail-the-history-held-before-it-left.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"719":{"t":"History rejection judges a color change by whether the display can show it","p":"docs/PRDs/Unreal/performance/PRD-719-history-rejection-judges-a-color-change-by-whether-the-display-can-show-it.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"720":{"t":"The temporal resolve reads a wider input where history fails, and the tier sets how wide","p":"docs/PRDs/Unreal/performance/PRD-720-the-temporal-resolve-reads-a-wider-input-where-history-fails-and-the-tier-sets-how-wide.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"741":{"t":"The owned engine shades fewer pixels and its temporal resolve writes the display frame","p":"docs/PRDs/done/PRD-741-the-owned-engine-shades-fewer-pixels-and-its-temporal-resolve-writes-the-display-frame.md","r":"develop","s":"DONE","d":10,"n":10,"f":"done"},"VQ-03":{"t":"Off-screen specular reflections come from a complete local probe","p":"docs/PRDs/rendering/PRD-VQ-03-local-reflection-probes.md","r":"develop","s":"PROPOSED","d":0,"n":9,"f":"open"},"VQ-08":{"t":"Clouds and their ground attenuation share one authored field","p":"docs/PRDs/Unreal/rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md","r":"develop","s":"PROPOSED","d":0,"n":9,"f":"open"},"VQ-09":{"t":"A door that opens and a lamp that switches change the bounce light","p":"docs/PRDs/rendering/PRD-VQ-09-incremental-diffuse-relighting.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"VQ-10":{"t":"Texture residency releases real GPU memory rather than only biasing sampling","p":"docs/PRDs/Unreal/performance/PRD-VQ-10-texture-mip-residency.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"VQ-12":{"t":"Overlapping transparent effects have an explicit correct or bounded-approximate path","p":"docs/PRDs/rendering/PRD-VQ-12-transparent-effects-composition.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"VQ-13":{"t":"Depth of field and motion blur are qualified optional stages, not a second camera pipeline","p":"docs/PRDs/rendering/PRD-VQ-13-cinematic-stage-integration.md","r":"develop","s":"PROPOSED","d":0,"n":9,"f":"open"},"VQ-15":{"t":"Hair cards preserve coverage, tangent highlights and shadow behavior across quality tiers","p":"docs/PRDs/rendering/PRD-VQ-15-hair-card-material-qualification.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"}};
+// @prds-end
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---- Subsystems per Unreal system: [name, LOC or null (shared file), what it does, status, ThreeNative note, PRDs]
+const SYS = {
+ lumen: { name: "Lumen", what: "Dynamic global illumination and reflections, traced against a simplified scene.", subs: [
+  ["Surface cache (cards, capture, scene data)", 15759, "Flattens each mesh into card textures so rays can read colour, normal and emission at a hit.", "partial", "PRD-639 SurfaceCache, 6/9 boxes.", ["639"]],
+  ["Screen probe gather + Short Range AO", 14788, "Places probes on screen pixels, traces from them, filters and upsamples: the Epic GI tier.", "open", "PRD-640 (2/9). Temporal part: PRD-641.", ["640", "641"]],
+  ["Surface cache lighting (direct + radiosity)", 12519, "Lights the cards with every light and with multi-bounce radiosity, so hits glow correctly.", "partial", "PRD-639 (lights of what rays hit). Dynamic relight: PRD-VQ-09.", ["639", "VQ-09"]],
+  ["Reflections (tracing, resolve, denoise)", 8986, "Traces glossy reflections and denoises them in space and time.", "open", "PRD-642 TracedReflections (1/10).", ["642"]],
+  ["Radiance cache (world probes, clipmaps)", 8866, "World-space probe field that answers rays the screen cannot.", "open", "PRD-603 RadianceCache, PRD-605 clipmaps. #541 giCache.ts is the CPU reference.", ["603", "605"]],
+  ["Tracing core (SDF, mesh culling, HW RT common)", 6248, "Shared ray machinery: software distance-field tracing and hardware ray tracing.", "partial", "GPUSceneBVH trace ships. HW RT deferred (PRD-645) until WebGPU exposes ray tracing.", ["645"]],
+  ["Visualize and debug modes", 4040, "Lumen scene, surface cache and probe views for artists.", "open", "PRD-646 visualize modes.", ["646"]],
+  ["ReSTIR gather", 3000, "Reservoir resampling of GI rays; needs hardware ray tracing.", "deferred", "PRD-661: gate first. No Unreal quality level turns it on.", ["661"]],
+  ["Translucency volume", 2768, "Froxel volume that gives glass and fog the bounce light.", "open", "PRD-643.", ["643"]],
+  ["Irradiance field gather", 1171, "Probe-grid gather used at the Medium GI tier.", "open", "PRD-604 IrradianceFieldGather.", ["604"]],
+  ["Tier and scalability glue", null, "Picks gather method and budgets per quality level (spread over the files above).", "partial", "PRD-644 (5/10), PRD-647 calibration done.", ["644", "647"]],
+ ]},
+ nanite: { name: "Nanite", what: "Virtualized geometry: meshes split into clusters, culled and rasterized on the GPU.", subs: [
+  ["Cull + raster (hierarchy, clusters, HZB, HW/SW raster)", 17818, "Walks the cluster tree, culls by view and HZB, rasterizes small triangles in compute.", "open", "PRD-600 submit only visible clusters. Persistent culling and SW raster deferred until WebGPU adds forward-progress guarantees and 64-bit image atomics.", ["600"]],
+  ["Shading and materials (shade binning, GBuffer export)", 8144, "Bins visible pixels by material and shades them once.", "open", "PRD-601 far clusters keep source shading.", ["601"]],
+  ["Ray tracing (cluster RT, AS cache, stream-out)", 7510, "Feeds Nanite geometry to hardware ray tracing.", "deferred", "Deferred with hardware RT (PRD-645).", ["645"]],
+  ["Data format, decode, streaming", 7405, "Compressed cluster pages, decode and page streaming.", "deferred", "PRD-285 (closed): page streaming deferred, vertex data is 74% of resident bytes. Revisit when cluster pages exceed a memory budget.", ["285"]],
+  ["Debug, visualize, editor", 4278, "Overdraw, cluster and stats views.", "open", "PRD-676: overdraw and cluster views an agent reads from a playtest capture.", ["676"]],
+  ["Curves (hair) raster", 2812, "Rasterizes hair curves through Nanite.", "open", "PRD-671 strand hair (first slice). Off in a fresh project.", ["671"]],
+  ["Voxels and bricks (far foliage)", 2734, "Turns distant dense foliage into voxels.", "open", "PRD-669, gate first. Off in a fresh project.", ["669"]],
+  ["Tessellation and displacement", 2659, "Dices clusters for displacement maps.", "open", "PRD-668, gate first. Per-material opt-in in Unreal.", ["668"]],
+  ["Translucency", 1189, "Nanite path for translucent meshes.", "open", "PRD-677: prove blend state survives the bake; sort only if the judge sees an artifact.", ["677"]],
+  ["Visibility, skinning, ownership", 1129, "Per-view visibility masks and skinned Nanite.", "open", "PRD-678: skinned clustered meshes. Visibility and ownership already ship (per-object culling, Object3D.layers).", ["678"]],
+  ["Shadow casters at shadow-texel detail", null, "Draws shadow pages from clusters (inside cull + raster).", "open", "PRD-602.", ["602"]],
+ ]},
+ vsm: { name: "Virtual shadow maps", what: "One huge sparse shadow map per light, filled only where pixels need it.", subs: [
+  ["Page marking and physical page pool", 11240, "Marks which shadow pages pixels need and allocates them from a pool.", "shipped", "VirtualShadowNode clip levels ship. Page cost: PRD-457.", ["457"]],
+  ["Projection + SMRT soft shadows", 4389, "Samples pages with shadow-map ray tracing for a source-angle penumbra; spot and point projection.", "open", "PRD-634 sun penumbra, PRD-650 lamp shadows.", ["634", "650"]],
+  ["Cache and invalidation", 3764, "Keeps static pages across frames; redraws only what moved.", "shipped", "PRD-538, PRD-572 done.", ["538", "572"]],
+  ["Debug and stats", 1015, "Page usage and cache views.", "open", "PRD-676 shadow-level view.", ["676"]],
+  ["Directional clipmaps", 831, "Nested levels around the camera for the sun.", "shipped", "Shipped; reach to the horizon in PRD-634.", ["634"]],
+  ["Per-page draw commands", 714, "Builds draw lists per dirty page.", "shipped", "Partial redraw ships.", []],
+  ["Leaf and alpha-masked casters", null, "Masked materials in the shadow pass.", "partial", "PRD-651 (5/12): an engine bug on the default engine.", ["651"]],
+  ["Calibration and tiers", null, "Shadow quality levels Low / Medium / Epic.", "open", "PRD-649 calibration scenes, PRD-652 tiers.", ["649", "652"]],
+ ]},
+ tsr: { name: "TSR", what: "Temporal super resolution: renders fewer pixels and rebuilds the full frame from history.", subs: [
+  ["Orchestration (C++)", 3780, "Sets up passes, history targets and resolution.", "partial", "PRD-455 done; PRD-539 open. PRD-741 splits input and display size in the owned engine TRAA.", ["455", "539", "741"]],
+  ["History update, resolve, decimate", 2611, "Reprojects and blends the previous frame.", "partial", "Catmull-Rom history resample shipped (PRD-455). 200% history in PRD-539.", ["455", "539"]],
+  ["Shading rejection and flicker", 2222, "Detects when history is wrong and how much to trust it.", "open", "PRD-539.", ["539"]],
+  ["Velocity and depth analysis", 1370, "Dilates velocity and finds the closest occluder.", "open", "PRD-539.", ["539"]],
+  ["Convolution network", 1309, "Small learned filter used by the rejection pass.", "open", "PRD-539 lever list.", ["539"]],
+  ["Common, kernels, visualize", 1555, "Shared filters and debug views.", "open", "Shared filters ride with PRD-539. History and rejection views: PRD-676.", ["539", "676"]],
+  ["Spatial anti-aliasing", 914, "Anti-aliases pixels with no usable history.", "open", "PRD-539.", ["539"]],
+  ["Thin geometry detection", 870, "Keeps wires and leaves from flickering away.", "open", "PRD-539.", ["539"]],
+ ]},
+ post: { name: "Post chain", what: "Tone mapping, exposure, bloom, motion blur and the rest of the finishing passes.", subs: [
+  ["Depth of field (diaphragm)", 12354, "Physically based bokeh.", "open", "PRD-VQ-13 cinematic stage owns it. It lacks the Unreal lens model, near/far layers and tier costs. Off in a fresh project.", ["VQ-13"]],
+  ["Tone map + LUT combine", 4252, "Filmic curve and colour grade baked into one LUT.", "partial", "LUT grade done (PRD-492). Filmic curve: PRD-632.", ["492", "632"]],
+  ["Motion blur", 4070, "Tile-based velocity blur.", "open", "PRD-636.", ["636"]],
+  ["TAA (legacy)", 3994, "Older temporal anti-aliasing.", "shipped", "Template temporal AA ships.", []],
+  ["Eye adaptation (histogram, basic)", 3977, "Auto exposure from a luminance histogram.", "partial", "Template auto exposure. Histogram: PRD-571 (needs a device). EV100: PRD-632.", ["571", "632"]],
+  ["ACES transforms", 3064, "ACES output transforms used by the tone mapper.", "open", "PRD-632.", ["632"]],
+  ["Bloom (Gaussian + FFT)", 2110, "Glow around bright pixels.", "partial", "Bloom ships; Unreal defaults in PRD-636. FFT kernel bloom: PRD-667.", ["636", "667"]],
+  ["Local exposure", 1141, "Keeps shadows and highlights readable in one frame.", "open", "PRD-636.", ["636"]],
+  ["Lens flares", 619, "Image-based flares.", "open", "PRD-667. Off in a fresh project (r.DefaultFeature.LensFlare=0).", ["667"]],
+ ]},
+ sky: { name: "Sky atmosphere", what: "Physically based sky from planet, Rayleigh and Mie parameters, precomputed in small LUTs.", subs: [
+  ["C++ orchestration (all stages)", 2666, "Sets up LUT passes and per-view sky rendering.", "open", "PRD-633.", ["633"]],
+  ["Shader kernels (all LUTs + render)", 2318, "SkyAtmosphere.usf and its common header.", "open", "PRD-633.", ["633"]],
+  ["Real-time sky light capture", 1455, "Re-captures the sky into the sky light cubemap as the sun moves.", "open", "PRD-633 (sky lights the scene).", ["633"]],
+  ["Transmittance LUT", null, "How much light survives a path through the air.", "open", "PRD-633.", ["633"]],
+  ["Multi-scattering LUT", null, "Approximates light that bounces many times in the air.", "open", "PRD-633.", ["633"]],
+  ["Sky-view LUT", null, "The distant sky dome at low resolution.", "open", "PRD-633.", ["633"]],
+  ["Aerial perspective volume", null, "Froxel volume that tints distant land.", "open", "PRD-562.", ["562"]],
+ ]},
+ clouds: { name: "Volumetric clouds", what: "Ray-marched cloud layer lit by the sun and the atmosphere.", subs: [
+  ["C++ orchestration", 3449, "Tracing passes, reconstruction and shadow maps.", "partial", "Template clouds in rain; PRD-VQ-08.", ["VQ-08"]],
+  ["Cloud shaders", 2695, "Ray march, lighting and material sampling.", "partial", "PRD-VQ-08.", ["VQ-08"]],
+  ["Cloud shadow map + overhead transmittance", null, "Shadows the ground and objects under clouds.", "open", "PRD-VQ-08 (three-channel cloud shadow map).", ["VQ-08"]],
+  ["Temporal reconstruction", null, "Traces at low resolution and rebuilds over frames.", "open", "PRD-VQ-08.", ["VQ-08"]],
+  ["Sky AO from clouds + cloud shadow on air and fog", null, "Darkens sky light under cloud cover and shades the haze below clouds.", "open", "PRD-665.", ["665"]],
+ ]},
+ fog: { name: "Fog", what: "Height fog, volumetric fog and local fog volumes.", subs: [
+  ["Volumetric fog (froxels)", 4979, "Lit fog in a camera-aligned voxel grid, with light functions.", "open", "Froxel volume: PRD-562.", ["562"]],
+  ["Height fog", 2414, "Exponential fog that thickens toward the ground and glows toward the sun.", "shipped", "PRD-560 done.", ["560"]],
+  ["Local fog volumes", 2193, "Placed fog boxes and spheres.", "open", "PRD-663. No fresh Unreal project places one.", ["663"]],
+  ["Fog composition", 1127, "Composites fog behind translucency.", "open", "PRD-679: additive and glass surfaces take the fog of their own distance and blend mode.", ["679"]],
+ ]},
+ ao: { name: "Ambient occlusion", what: "Darkens creases and contacts.", subs: [
+  ["SSAO / GTAO", 4392, "Screen-space AO with denoise.", "partial", "GTAO ships in templates. PRD-635 applies it to indirect light only.", ["635"]],
+  ["Distance-field AO", 1127, "Wider AO from mesh distance fields.", "open", "Lumen ShortRangeAO replaces it (PRD-640). With GI off: PRD-662 SkyLightOcclusion on GPUSceneBVH.", ["640", "662"]],
+ ]},
+ refl: { name: "Reflections", what: "Reflection captures, screen-space reflections and Lumen reflections.", subs: [
+  ["Lumen reflections", 8986, "Traced glossy reflections (see Lumen).", "open", "PRD-642.", ["642"]],
+  ["Reflection captures (box, sphere, real-time)", 4799, "Baked or live cubemaps at points in the level.", "open", "PRD-VQ-03 local reflection probes.", ["VQ-03"]],
+  ["Screen-space reflections", 3956, "Ray march against the depth buffer.", "shipped", "SSR stage ships in the render chain.", []],
+  ["Reflection environment apply", 3313, "Blends captures, sky and SSR per pixel.", "open", "PRD-VQ-03, PRD-642.", ["VQ-03", "642"]],
+ ]},
+ gpuscene: { name: "GPU scene + culling", what: "Every instance lives in GPU buffers; culling and draw lists are built on the GPU.", subs: [
+  ["Mesh draw commands", 12081, "Caches draw state per mesh pass.", "shipped", "Owned C++ engine.", []],
+  ["CPU view visibility", 7799, "Frustum, distance and LOD selection per view.", "shipped", "Engine and three.js frustum culling.", []],
+  ["Hierarchical scene culling grid", 5424, "Spatial hash that culls groups of instances at once.", "open", "PRD-673, gate first: time the per-placement cull and the empty draws.", ["673"]],
+  ["Instance culling + draw compaction", 5137, "GPU culls instances and writes indirect draws.", "shipped", "world-gpu-scene.ts.", []],
+  ["GPU scene buffers", 3694, "Instance and primitive data uploaded once, updated by delta.", "shipped", "world-gpu-scene.ts.", []],
+  ["Occlusion queries + HZB", 2341, "Hides what walls hide.", "deferred", "PRD-489: our scenes would cull 1.3%. Revisit with a dense city or interior.", ["489"]],
+ ]},
+ streaming: { name: "Texture + mesh streaming", what: "Keeps only the mips and LODs the camera needs in memory.", subs: [
+  ["Texture streaming manager", 7195, "Budgets memory and picks wanted mips per texture.", "open", "PRD-VQ-10.", ["VQ-10"]],
+  ["Mip stream-in / stream-out", 5404, "Async loads, allocators and mip providers.", "open", "PRD-VQ-10 (no in-place shrink on WebGPU).", ["VQ-10"]],
+  ["Texture instance tracking", 3910, "Which textures are on which visible objects, and how big.", "open", "PRD-VQ-10.", ["VQ-10"]],
+  ["Mesh LOD streaming", 2597, "Streams static mesh LODs.", "open", "Admission budget: PRD-459.", ["459"]],
+  ["Build-time texel density", 1206, "Precomputes texel size per UV channel.", "open", "PRD-VQ-10 (wanted mips from screen size).", ["VQ-10"]],
+ ]},
+ wp: { name: "World Partition", what: "Splits a big world into cells and streams them around the player.", subs: [
+  ["Runtime hash and streaming policy", 31799, "Cell grid, streaming sources and load order.", "partial", "WorldCells + streaming.ts ship. PRD-459, 460, 606, 607 open.", ["459", "460", "606", "607"]],
+  ["Data layers", 6799, "Toggle groups of actors at runtime.", "open", "PRD-675 tests the claim that two WorldCells cover it: today each spends its own budget.", ["675"]],
+  ["HLOD", 5662, "Merged low-detail proxies for far cells.", "open", "PRD-456 distant world cell proxies.", ["456"]],
+  ["Content bundles", 2644, "Plug-in content injected into a world.", "rule", "Out of scope: editor-written containers. Adding a package to a running world is PRD-675.", []],
+  ["Cook, filters, loaders, errors", 2430, "Editor and cook tooling.", "rule", "Out of scope: the repo rules close editors.", []],
+  ["Level instances", 1563, "Reusable sub-levels.", "rule", "Out of scope: the repo has no scene format. A reusable sub-level is a function the game calls; Unreal flattens embedded instances at build time.", []],
+ ]},
+ niagara: { name: "Niagara", what: "GPU and CPU particle simulation and rendering.", subs: [
+  ["Data interfaces (grids, mesh, collision)", 49414, "What particles can read: grids, skeletal meshes, collision, landscape.", "partial", "Grid smoke ships (fluid-field.ts). Collision: PRD-610.", ["610"]],
+  ["Assets, scripts, components", 17727, "System, emitter and script assets: the authoring side.", "rule", "Out of scope: the repo rules close editors and IRs.", []],
+  ["CPU simulation (system, emitter, data sets)", 11631, "Ticks systems and emitters, stores particle data.", "partial", "GPUParticles3D; PRD-316 generated VFX source.", ["316"]],
+  ["Stateless emitters", 10436, "Cheap emitters with no per-particle state.", "open", "PRD-674. First user: the rain template (299 lines of its own draw today).", ["674"]],
+  ["First-frame pipelines (engine PSO precache)", 8895, "Builds GPU pipelines before an effect first shows.", "open", "PRD-611.", ["611"]],
+  ["Renderers (ribbons, meshes, sprites)", 6618, "Draws particles as sprites, ribbons or meshes.", "shipped", "GPUParticles3D; ribbons in the vfx-compute row.", []],
+  ["Scalability, culling, budget", 4407, "Culls off-view effects and caps cost per platform.", "shipped", "PRD-569 done.", ["569"]],
+  ["Debug HUD", 3760, "In-game effect stats.", "open", "PRD-676 effects view.", ["676"]],
+  ["GPU compute dispatch", 2788, "Schedules GPU simulation passes.", "shipped", "GPUParticles3D compute; PRD-609 done.", ["609"]],
+ ]},
+ megalights: { name: "MegaLights", what: "Stochastic direct lighting for hundreds of shadowed lights.", subs: [
+  ["Shaders (not split)", 9857, "Sampling, tracing, resolve and denoise kernels.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Core", 2794, "Light sampling setup and passes.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Ray tracing", 2242, "Shadow rays for sampled lights.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Visualize", 1638, "Light complexity views.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Resolve", 1253, "Combines samples into lighting.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Denoising", 758, "Spatial and temporal denoise.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Sampling + internals", 1451, "Importance sampling, view state.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+ ]},
+};
+
+// Internals per subsystem, from docs/PRDs/Unreal/research/internals/<system>.json (written by scripts/unreal-port-status.ts).
+// @internals-start
+const INTERNALS = {"lumen":{"system":"lumen","rows":[{"parent":"Surface cache (cards, capture, scene data)","internals":[["Card placement and mesh cards",1694,"Places a few axis-aligned cards on each mesh and tracks them per primitive group.","deferred","PRD-639 Decision 2026-10-21 replaces cards with texture-space tiles, because meshes carry UVs. Revisit when a mesh has no usable UV set or the judge sees UV-space error.",["639"]],["Card capture and physical atlas",2852,"Rasterizes albedo, normal, emissive and depth of each card into a paged physical atlas, inside a per-frame capture budget.","partial","PRD-639 Phase 2 builds a per-material atlas of base colour and emissive tiles. The GPU kernel read waits for PRD-603 Phase 2 (PRD-639 AC-2).",["639"]],["Surface cache residency, resolution and feedback",1942,"Picks each card's resolution from distance and from the pages that rays hit, maps and evicts atlas pages.","deferred","The ThreeNative atlas is keyed by material, not by instance, so its size follows the material count, not the scene size. PRD-639 auto-sizes tiles to the atlas. Revisit when TN_SURFACE_CACHE shows tiles shrunk below 16 texels or fallbacks for lack of atlas room.",[]],["Surface cache compression and copy",1549,"Compresses the atlas into block formats on the GPU (r.LumenScene.SurfaceCache.Compress=1).","deferred","A memory saving only. Revisit when the PRD-639 atlas bytes exceed a measured budget on the Android medium tier.",[]],["Surface cache sampling at a ray hit",1196,"Reads the cards around a hit point and blends them into the hit's albedo, emissive and lighting.","partial","PRD-639 Phase 2 reads the tile at the hit UV in the harness bake. The GPU read waits for PRD-603 Phase 2.",["639"]],["Scene data and primitive updates",3982,"Adds, moves and removes primitives in the Lumen scene; a move updates card transforms without recapture.","partial","Static scenes ship through GPUSceneBVH (PRD-244). A moved rigid object and the skinned-mesh guard are filed as PRD-686.",["244","686"]],["Heightfields in the scene",104,"Represents landscape as heightfields for tracing and cards.","deferred","Terrain enters GPUSceneBVH as triangles today. Revisit when a terrain template's pack build or trace exceeds its budget (PRD-686 Phase 1 measures rebuild cost).",[]],["Shared and glue",2464,"Cvars, update task orchestration, frame temporaries, the global lighting change test and the GBuffer material read shared by the gathers.","partial","The global lighting change test is PRD-603 Phase 3. The rest is scheduling glue with no outcome of its own.",["603"]]]},{"parent":"Screen probe gather + Short Range AO","internals":[["Uniform and adaptive probe placement",428,"Places one jittered probe per 16 px tile and adds adaptive probes where the uniform corners weigh under 0.01.","open","Uniform placement is PRD-640 (prototype `probes` option on the epic). Adaptive probes are filed as PRD-684.",["640","684"]],["BRDF and lighting importance sampling",1274,"Builds a BRDF PDF from the pixels that read a probe and a lighting PDF from last frame's radiance, and refines low-PDF rays.","open","PRD-640 names it only as conditional. Filed as PRD-684 Phase 3.",["684"]],["Probe tracing and radiance cache handoff",2473,"Traces each probe ray on screen (HZB), then in the world, then reads the radiance cache past its coverage distance.","open","PRD-640 Phase 2. The directional cache read is PRD-685.",["640","685"]],["Probe spatial filter and irradiance conversion",1567,"Filters probe radiance with its neighbours and converts it to SH or octahedral irradiance.","open","PRD-640 Solution (3-pass filter, SH irradiance), proven by its AC-1 and AC-2.",["640"]],["Probe and pixel temporal accumulation",1401,"Accumulates probe radiance and the per-pixel result over frames, with depth rejection, clamp and fast update.","partial","PRD-641 Phases 2 and 3.",["641"]],["Integrate, tile classification and upsample",1984,"Interpolates probes per pixel with depth weights, integrates diffuse and rough specular, by tile class.","open","PRD-640 Solution (per-pixel integrate with a depth weight, composite). Rough specular above 0.4 is PRD-642 Phase 3.",["640","642"]],["Short Range AO and bent normal",1341,"Horizon search of 2 slices at full resolution with a bent normal at Epic.","open","PRD-640 Phase 3.",["640"]],["Hardware ray tracing paths",1219,"Hardware ray traced probe and Short Range AO rays.","deferred","PRD-645 declined at its gate; deferred until WebGPU exposes ray tracing.",["645"]],["Hair strands",328,"Marks probes for hair strands and traces hair voxels.","deferred","No shipped strand hair. Revisit when PRD-671 ships strands that GI must light.",[]],["Probe debug overlay",337,"Prints probe placement and tile classes on screen.","deferred","A placement overlay is moot until adaptive probes exist. Revisit when PRD-684 Phase 2 ships; PRD-687 holds the GI views.",[]],["Shared and glue",2150,"Cvars, parameter setup and the gather orchestration.","open","Follows PRD-640 and the PRD-644 tier table.",["640","644"]]]},{"parent":"Surface cache lighting (direct + radiosity)","internals":[["Light culling into card tiles",1823,"Culls lights to card tiles, at most 8 per tile at Epic.","partial","PRD-639 Phase 3: at most 8 lights per hit, brightest first, culled by range.",["639"]],["Card shadowing",1593,"Shadows card lighting from shadow maps first, then traces offscreen shadow rays; applies light functions and cloud transmittance.","partial","PRD-639 Phase 3 casts one BVH shadow ray per light. Light functions and cloud transmittance at the hit are not filed: ThreeNative has no light functions, and cloud shadows wait for PRD-665.",["639"]],["Direct lighting accumulation, update budget and combine",2942,"Accumulates light per card texel, refreshes atlas/32 texels per frame, and writes (direct + indirect) x albedo + emissive.","partial","PRD-639 evaluates light per hit; a cached page is added only if Phase 3 measures the per-hit cost above budget (PRD-639 Solution step 3).",["639"]],["Radiosity",2420,"Traces 4x4 hemisphere probes every 4 texels on the cards and accumulates bounces over frames.","partial","PRD-603 Phase 2 adds the bounce from the field's previous generation instead. No box makes a PRD-640 world hit add indirect light; a PRD-640 box is proposed.",["603"]],["Stochastic direct lighting",2269,"Samples many lights stochastically per card texel.","rule","Unreal marks it experimental, default 0, and allows it only with hardware ray tracing (LumenSceneDirectLightingStochastic.inl:3-7, :57-60).",[]],["Hardware ray traced card lighting",1130,"Hardware ray traced shadows and radiosity rays for cards.","deferred","PRD-645 declined at its gate; deferred until WebGPU exposes ray tracing.",["645"]],["Shared and glue",307,"Cvars and helpers.","partial","Follows PRD-639.",["639"]]]},{"parent":"Reflections (tracing, resolve, denoise)","internals":[["Tile classification and ray generation",1319,"Classifies tiles, keeps pixels up to roughness 0.4 and generates GGX rays.","open","PRD-642 Solution and Phase 2 box (roughness 0.4 and less trace, rougher pixels cast no ray).",["642"]],["Reflection tracing",2450,"Traces screen, then world, samples scene colour at an on-screen hit, and runs distant screen traces.","open","PRD-642 Phase 2 (BVH continuation). Scene colour at hit and the 40 ray-intensity clamp are not named; a PRD-642 box is proposed.",["642"]],["Spatial resolve",759,"Reconstructs each pixel from 5 neighbour rays in an 8 px kernel at Epic.","open","PRD-642 Solution step 3 (spatial pass).",["642"]],["Temporal denoiser",809,"Accumulates up to 12 frames with neighbourhood clamp.","open","PRD-642 Solution step 3, reusing PRD-641 history code.",["642","641"]],["Bilateral filter",291,"A depth-aware filter of 4 samples in an 8 px kernel after the temporal pass, on by default.","notfiled","PRD-642 names a spatial and a temporal pass only. A PRD-642 box is proposed instead of a PRD.",[]],["Front layer translucency and water passes",136,"Runs Lumen reflections on the front translucent layer and on single-layer water.","deferred","Front layer is off by default (BaseScalability.ini:546, FrontLayerTranslucency.cpp:22-38). Water uses Lumen reflections whenever they run; a PRD-642 box for the sailing water surface is proposed.",[]],["Ray traced translucency",1346,"Hardware ray traced translucency with refraction.","deferred","Hardware ray tracing only; PRD-645 declined at its gate.",["645"]],["Hardware ray traced reflections and hit lighting",1410,"Hardware reflection rays and full material hit lighting.","deferred","PRD-645 declined at its gate; deferred until WebGPU exposes ray tracing.",["645"]],["Shared and glue",1272,"Cvars, composite parameters and the reflection orchestration.","open","Follows PRD-642 and the PRD-644 reflection tiers.",["642","644"]]]},{"parent":"Radiance cache (world probes, clipmaps)","internals":[["Probe marking, allocation and indirection",960,"Marks probes that pixels use, allocates atlas slots from a free list and frees probes unused for 8 frames.","partial","PRD-605 Decision: wrap-addressed rings and a frustum use window instead of an indirection pool.",["605"]],["Update priority and trace budget",257,"Buckets probes by age gap over clipmap index and traces 150 per frame at Epic.","open","PRD-603 Phase 3 stale queue; PRD-605 Phase 3 ring divisor.",["603","605"]],["Probe offset out of geometry",202,"Moves a probe out of geometry using the GBuffer or the global distance field.","partial","PRD-604 marks a probe inside geometry invalid instead of moving it.",["604"]],["Probe tracing with BRDF-driven trace tiles",1055,"Traces each probe in tiles, supersampling where screen-probe BRDF is above 0.1 and downsampling beyond 40 m.","partial","PRD-603 Phase 2 traces 64 uniform rays per probe. BRDF-driven tiles are not filed: the 64-ray budget is the cheap start; revisit if PRD-685 Phase 3 shows probe noise.",["603"]],["Radiance storage, spatial filter, mips and irradiance",641,"Stores octahedral radiance per probe, filters with neighbours, adds borders and a mip, derives irradiance.","open","Filed as PRD-685. PRD-603 stores SH irradiance only.",["685"]],["Probe occlusion depth",209,"Stores cosine-weighted hit distance per direction for probe visibility.","open","PRD-604 Phase 2.",["604"]],["Interpolation with parallax correction",610,"Reads 8 corner probes along a direction with parallax correction and a cone mip.","open","Filed as PRD-685 Phase 2; visibility weights from PRD-604.",["685","604"]],["Hardware ray tracing",1480,"Hardware ray traced probe updates and far field.","deferred","PRD-645 declined at its gate.",["645"]],["Shared and glue",2067,"Cvars, visualize marking and the update orchestration.","open","Follows PRD-603 and PRD-605.",["603","605"]]]},{"parent":"Tracing core (SDF, mesh culling, HW RT common)","internals":[["Mesh SDF and heightfield culling",1577,"Culls mesh distance fields and heightfields into a froxel grid so each ray tests few objects.","shipped","GPUSceneBVH replaces distance fields; its tree does the culling (PRD-244). The owned engine uses the PRD-642 D2 pack.",["244"]],["Software ray tracing against distance fields",1017,"Sphere-traces mesh SDFs near the ray start, then the global SDF, with voxel lighting far away.","shipped","Replaced by the GPUSceneBVH first-hit query (PRD-244); PRD-603 and PRD-662 confirm no distance field is built. Rigid motion is PRD-686.",["244","686"]],["Hardware ray tracing common, materials and far field",2762,"Shared hardware ray tracing setup, hit materials and far-field tracing (r.LumenScene.FarField=0 by default).","deferred","PRD-645 declined at its gate; far field is off by default in Unreal (LumenScene.cpp:86-87).",["645"]],["Shared and glue",660,"Tracing utilities, position and buffer encodings.","shipped","Covered by the shipped trace (PRD-244).",["244"]]]},{"parent":"Visualize and debug modes","internals":[["Lumen scene, reflection view and surface cache views",2163,"Traces from the camera to show the Lumen scene, the reflection view, surface cache coverage and dedicated reflection rays.","open","Filed as PRD-687. PRD-646 owns indirectDiffuse; PRD-641 names framesAccumulated and fastUpdateAmount in its Solution only.",["687","646"]],["Radiance cache, radiosity and card lighting views",1205,"Draws radiance cache and radiosity probes and card lighting updates.","open","Filed as PRD-687 Phase 3 (radiance cache probes). Radiosity and card-update views are moot: no card radiosity or card update budget is built.",["687"]],["Hardware ray traced visualize",1680,"Hardware ray traced versions of the scene views.","deferred","PRD-645 declined at its gate.",["645"]]]},{"parent":"ReSTIR gather","internals":[["Reservoir sampling, temporal and spatial resampling",3001,"Keeps one reservoir per half-resolution pixel and resamples it with last frame and with neighbours.","deferred","PRD-661 opens on a gate; no Unreal quality level turns it on.",["661"]]]},{"parent":"Translucency volume","internals":[["Froxel volume trace and filter",1671,"Fills a camera froxel grid from the radiance cache, cone-traces at Epic and reprojects with 0.9 history.","open","PRD-643 Phase 2 reads the radiance cache per pixel first; the froxel volume is built only if that read costs more than 0.5 ms.",["643"]],["Translucency radiance cache and glossy reflections on translucent surfaces",634,"Marks probes for translucent surfaces at quarter resolution and gives them glossy reflections from that cache.","open","Diffuse: PRD-643 Phase 2. Glossy reflections: filed as PRD-685 Phase 3.",["643","685"]],["Hardware ray tracing",338,"Hardware ray traced froxel lighting.","deferred","PRD-645 declined at its gate.",["645"]]]},{"parent":"Irradiance field gather","internals":[["Probe gather and half-resolution interpolation",805,"Medium tier: radiance cache probes around pixels, 6x6 irradiance, half-resolution interpolate; adaptive placement off by default.","open","PRD-603 (trace and budget), PRD-605 (clipmaps), PRD-644 (the medium tier). Adaptive placement is off in Unreal (LumenIrradianceFieldGather.cpp:128).",["603","605","644"]],["Visibility-weighted interpolation",368,"Weighs 8 probes by wrap, Chebyshev visibility and validity, with a normal and view offset.","open","PRD-604 Phase 2.",["604"]]]},{"parent":"Tier and scalability glue","internals":[["Final gather method and allow checks",1004,"Chooses the final gather method per quality level and checks that Lumen may run on the view.","partial","PRD-644 tier table and GIBudget; PRD-647 calibration done.",["644","647"]],["Per-view history state",387,"Holds each view's GI and reflection histories across frames.","open","PRD-641 (gather history) and PRD-642 (reflection history).",["641","642"]]]}]},"nanite":{"system":"nanite","notes":"LOC is wc -l of UE 5.8.3 Renderer/Private/Nanite and Shaders/Private/Nanite files, split by measured line ranges. Internals named [builder] or [runtime] sit in Engine/Source/Developer or Runtime/Engine and are outside the row sum. The cluster builder (Developer/NaniteBuilder) is present in the clone. Shadow-caster internals cite VirtualShadowMaps lines or lines already counted in Cull + raster.","rows":[{"parent":"Cull + raster (hierarchy, clusters, HZB, HW/SW raster)","internals":[["Instance culling and instance hierarchy",1698,"Culls each placement against the view and the depth pyramid, through a hierarchy of instance cells, before any cluster is visited.","partial","The GPU scene already culls placements in one compute dispatch (world-gpu-scene.ts cameraPlanes). ClusteredBatch copies skip every cull (frustumCulled false): PRD-600 Phase 2. Grid cells: PRD-673.",["600","673"]],["Node and cluster hierarchy traversal",1866,"Walks the 4-ary BVH of cluster groups one level per dispatch, rejects a node and its subtree by distance, clip plane, LOD and frustum, then tests each cluster.","open","ClusteredMesh scans the whole cluster table (selectClusterCut). PRD-600 Phase 3 walks the group hierarchy and prunes by view.",["600"]],["LOD error metric and per-view LOD scale",144,"Projects each group's error through its bounding sphere and draws a cluster when its own error is small enough and its parent's is not, at 1 pixel per edge.","partial","Shipped for perspective cameras (PRD-282: two spheres per cluster, 1-pixel budget). The orthographic case throws and zoom is ignored: PRD-695 Phase 1.",["282","695"]],["Persistent-thread culling",119,"Runs node and cluster culling in one kernel with a work queue and persistent threads.","deferred","Off by default in Unreal (NaniteCullRaster.cpp:322-328) and WebGPU gives no forward-progress guarantee between workgroups. Revisit if WebGPU adds one and a pruned CPU walk (PRD-600) is the measured cost.",[]],["Frustum, clip-plane, draw-distance and WPO-distance tests",745,"Box tests with near and far flags, global clip plane, instance draw distance, and the distance past which world position offset stops and the fixed raster bin is used.","partial","Frustum: PRD-600. WPO disable distance in shadow levels: PRD-651 (epic branch). Main-view WPO disable distance and pixel-programmable distance are per-primitive and default to 0 (off) in Unreal: deferred until a template ships a dense swaying mesh.",["600","651"]],["Two-pass occlusion with HZB",1092,"Draws what was visible last frame, builds a depth pyramid, then tests the rest against it in a second pass.","deferred","Declined on measurement: PRD-284 (1.28 ms is the whole prize) and PRD-489 (would-cull share 0.013). Revisit with a dense interior or city scene.",["284","489"]],["Software rasterizer for small triangles",2298,"Rasterizes clusters whose edges project under 32 px in compute, with fixed-point setup and atomic max into the visibility buffer or a depth-only target.","open","Main view deferred: needs a visibility buffer (PRD-279 decision 1) and 64-bit image atomics. Depth-only shadow levels need only 32-bit atomics: PRD-696, gated.",["696"]],["Hardware raster path",1553,"Draws clusters with large triangles, or that cross the near or far plane, through vertex, mesh or primitive shaders.","shipped","By construction: three's hardware draw rasterizes every cluster of the cut with the game's material.",[]],["Raster binning and programmable raster",2637,"Bins visible clusters by raster material (fixed function, masked, WPO, displaced) so each bin runs one indirect raster dispatch or draw.","notfiled","Masked and WPO materials work by construction: the game's material draws the cluster. One draw per material for many meshes is PRD-490 (multi-draw on native). Gap: a positionNode can move a cluster outside its bounds; proposed as a PRD-600 box rather than a PRD.",[]],["Raster pipeline permutations and PSO precache",569,"Collects and precaches the raster pipelines for every bin and material permutation.","shipped","Pipeline warm-up and the native pipeline disk cache ship (Unreal README, already shipped).",[]],["Tessellation patches in the rasterizer",575,"Splits and rasterizes displaced patches after the dice pass.","open","PRD-668 (dice in compute, hardware draw), gated.",["668"]],["Voxel brick trace in the rasterizer",716,"Traces view rays through 4x4x4 brick masks for voxel clusters.","open","PRD-669, gated. Off in a fresh Unreal project.",["669"]],["Curve segment raster in the rasterizer",613,"Rasterizes hair curve segments with a DDA walk in compute.","open","PRD-671 draws strands as camera-facing ribbons with a 0.5 px floor instead.",["671"]],["Shadow view emit and VSM feedback",192,"Emits Nanite depth into cube and virtual shadow maps and reports VSM page use back.","open","Directional levels: PRD-602. Local-light and cube faces: PRD-695.",["602","695"]],["Raster and cluster stats",297,"Counts clusters, triangles and raster bins per pass for the stats overlay.","open","PRD-676 cluster rows (drawnClusters, triangles per projected pixel).",["676"]],["Visibility buffer clear and raster context",405,"Clears and allocates the 64-bit visibility buffer and decodes its depth.","deferred","No visibility buffer (PRD-279 decision 1). Revisit if the owner reopens decision 1 for the owned engine and every shipped target has 64-bit atomics.",[]],["Async raster, shader bundles and work graphs",133,"Runs raster on async compute and dispatches bins as shader bundles or work graphs on platforms that support them.","deferred","WebGPU exposes no async compute queue, shader bundles or work graphs (Unreal README, deferred until WebGPU exposes the API).",[]],["Imposters",0,"Unreal 4-era Nanite imposters for tiny instances.","notfiled","Not in the 5.8.3 Nanite source (no match in Renderer, Shaders or NaniteBuilder). Far representations ship as octahedral impostors (world-impostor.ts).",[]],["Shared and glue",2159,"Console variables, the renderer class, pass setup and the rasterize pass driver.","notfiled","Glue for the internals above.",[]]]},{"parent":"Shading and materials (shade binning, GBuffer export)","internals":[["Shade binning",1483,"Classifies every visibility-buffer pixel by shading material into bins, with counts, offsets and tile masks.","deferred","Needs a visibility buffer that owns shading (PRD-279 decision 1). Revisit with that decision.",[]],["Compute material shading and GBuffer export",2418,"Shades each bin once in compute (with optional software VRS) and exports the GBuffer.","deferred","Same reason. Coarse shading rate is PRD-682 (hardware VRS). Far-cluster shading fidelity is a bake matter: PRD-601, listed under the builder internals.",[]],["Raster and shading bin registries",1071,"Registers raster and shading pipelines per material and allocates their bins.","shipped","By construction: each three material is its own pipeline.",[]],["Material tables per primitive",1221,"Uploads per-primitive material slot tables that the shading and raster passes read.","shipped","By construction: the mesh carries its material.",[]],["Depth export, material depth and composition",1142,"Writes scene depth, stencil and velocity from the visibility buffer for the rest of the frame.","deferred","No visibility buffer (PRD-279 decision 1). Hardware draws write depth and velocity already.",[]],["Mesh pass draw lists",478,"Registers Nanite primitives into the mesh passes that shade them.","shipped","By construction: three's render list.",[]],["Shared and glue",331,"Console variables and helpers.","notfiled","Glue.",[]]]},{"parent":"Ray tracing (cluster RT, AS cache, stream-out)","internals":[["Cluster acceleration structures and BLAS build",5157,"Builds cluster-level acceleration structures and BLASes from the streamed cut for hardware ray tracing.","deferred","Hardware RT declined at its gate (PRD-645, done): the trace is 12-15x faster but no transport reaches 2x end to end. Revisit with PRD-645's revisit condition.",[]],["BLAS cache",259,"Reuses built BLASes while the cut stays within a relative error tolerance.","deferred","Same as above.",[]],["Stream-out of the cut for ray tracing",1317,"Writes the view-dependent cut as plain triangles for BLAS builds.","deferred","Same as above. ThreeNative's software trace reads a fixed fallback cut instead (PRD-694).",[]],["Ray-triangle decode for ray tracing",777,"Decodes cluster triangles and edges for ray hit shading.","deferred","Same as above.",[]]]},{"parent":"Data format, decode, streaming","internals":[["Cluster data decode and position quantization",1398,"Decodes per-cluster bit-packed positions and triangle indices from GPU pages.","deferred","The pipeline quantizes the whole mesh (KHR_mesh_quantization) and resident vertices are not per-cluster packed. Deferred with page streaming (PRD-285): revisit when cluster pages exceed a memory budget.",["285"]],["Attribute decode",990,"Decodes octahedral normals, tangents, UVs and colours per cluster.","deferred","Same as above.",["285"]],["Page transcode",722,"Transcodes streamed disk pages into the GPU page format.","deferred","PRD-285.",["285"]],["GPU streaming requests",77,"Writes page requests and priorities from the cull pass.","deferred","PRD-285.",["285"]],["Vertex factory",1444,"Gives materials the Nanite vertex interface (positions, attributes, derivatives) in raster and shading.","shipped","By construction: the game's material reads ordinary three attributes.",[]],["Packed views and multi-view passes",316,"Builds one packed view per camera, shadow face or capture with its own LOD scale, and draws many views per pass.","open","PRD-695: every view takes its own cut, orthographic included. Stereo multi-view: no target ships.",["695"]],["Cube shadow emit",265,"Copies Nanite depth into cube shadow maps for non-virtual local-light shadows.","open","PRD-695 (local-light shadow faces).",["695"]],["Stats filter and print",391,"Selects and prints Nanite stats per pass.","open","PRD-676.",["676"]],["Overflow feedback",229,"Non-shipping warnings when node, candidate or visible cluster buffers overflow.","notfiled","Debug only. The CPU cut has no fixed GPU queues to overflow.",[]],["Shared and glue",1574,"Shared types, global buffer sizes and scene data access.","notfiled","Glue.",[]],["[builder] Cluster build",2756,"Clusters triangles into 128-triangle meshlets by spatial and connectivity partition (Developer/NaniteBuilder, outside the row sum).","shipped","PRD-281 (meshoptimizer clusterizer).",["281"]],["[builder] Attribute-weighted simplification",108,"Weights normals, tangents, colours and UV density into every collapse (Cluster.cpp:938-1045, outside the row sum).","open","PRD-601.",["601"]],["[builder] Graph partitioner",725,"Partitions clusters into groups of 8 to 32 by shared edges (outside the row sum).","shipped","PRD-281 ported the partitioner to TypeScript. Group size sweep: PRD-601.",["281","601"]],["[builder] DAG build and error propagation",1911,"Simplifies each group with locked borders, re-clusters it and keeps parent error at least the child error (ClusterDAG.cpp and .h, outside the row sum).","shipped","PRD-281 and PRD-282. Voxel and curve branches: PRD-669 and PRD-671.",["281","282"]],["[builder] Hierarchy encode",919,"Builds the 4-ary BVH of groups that the runtime walks (outside the row sum).","open","PRD-600 builds group child lists at load from clusterGroups instead.",["600"]],["[builder] Page assignment and compression encode",5117,"Assigns clusters to pages, constrains them for strip encoding, and bit-packs positions and attributes (outside the row sum).","deferred","PRD-285.",["285"]],["[builder] Fallback mesh",230,"Builds a fixed DAG cut at relative error 1.0 (2.0 for the ray tracing proxy) for consumers that do not run the cull (outside the row sum).","open","PRD-694: the GI trace and trimesh colliders read a fixed cut, not the camera cut.",["694"]],["[builder] Displacement, skinning and ray tracing encode",1469,"Bakes displacement bounds, bone influences per cluster and ray tracing data (outside the row sum).","partial","Displacement: PRD-668. Skinning: PRD-678. Ray tracing: deferred with PRD-645.",["668","678"]],["[builder] Assemblies",364,"Builds meshes from instanced parts (outside the row sum).","deferred","r.Nanite.AllowAssemblies is 0 and read-only (NaniteResources.cpp:124-128). Revisit when Unreal turns it on by default.",[]],["[builder] Mesh cards for Lumen",1172,"Places axis-aligned capture cards around a mesh for the Lumen surface cache (MeshUtilities, outside the row sum).","notfiled","PRD-639 (epic branch) uses a UV-space cache, so no cards are needed. Lumen breakdown owns the decision.",[]],["[runtime] Streaming manager",3989,"Streams cluster pages and coarse fallback meshes under a 512 MB pool (Runtime/Engine, outside the row sum).","deferred","PRD-285: vertex data is about 74% of resident bytes and no asset exceeds memory.",["285"]]]},{"parent":"Debug, visualize, editor","internals":[["Visualize modes",2290,"41 debug views: triangles, clusters, groups, pages, overdraw, raster and shading bins.","open","PRD-676 ports overdraw and cluster views an agent reads from a capture. Bin views have no counterpart.",["676"]],["Stats print",726,"Prints node, cluster and pixel counts on screen.","open","PRD-676.",["676"]],["Debug view modes",336,"Editor debug view modes (shader complexity, LOD colouring) for Nanite pixels.","notfiled","Debug only; PRD-676 covers the views an agent reads.",[]],["Editor hit proxies and selection",926,"Hit proxies, selection outline and editor picking for Nanite meshes.","rule","Editor only: out of scope by rule (no editor).",[]]]},{"parent":"Curves (hair) raster","internals":[["Curve cluster raster",1336,"Rasterizes curve clusters in compute with a minimum width.","open","PRD-671 ribbons with a 0.5 px floor and coverage.",["671"]],["Curve data and decode",1476,"Decodes and transforms curve control points per cluster.","deferred","r.Nanite.AllowCurves is 0 and read-only. PRD-671 reads glTF LINES directly. Revisit when curves are on by default.",[]]]},{"parent":"Voxels and bricks (far foliage)","internals":[["Brick raster and trace",1466,"Traces view rays through 64-bit brick masks.","open","PRD-669.",["669"]],["Brick tiling and scatter",484,"Bins bricks into 8x8 screen tiles for the compute trace.","deferred","PRD-669 draws one instanced box per brick in hardware, so no tile binning. Revisit if its Phase 3 cost fails.",[]],["Auto voxel from depth",200,"Experimental voxelization of the depth buffer.","deferred","Experimental in Unreal and off by default with voxels.",[]],["Voxel renderer setup",584,"Sets up the brick passes.","open","PRD-669.",["669"]]]},{"parent":"Tessellation and displacement","internals":[["Tessellation pattern table",867,"Precomputed barycentric patterns for edge factors up to 14.","open","PRD-668.",["668"]],["Edge factors and displacement fade",356,"Edge factors from view depth and dice rate, with fade by projected displacement.","open","PRD-668.",["668"]],["Patch split and dice queues",792,"Splits large patches and dices them into micro-triangles under a patch budget.","open","PRD-668.",["668"]],["Vertex deformation",644,"Displacement, spline and skinning deformation of cluster vertices and bounds.","open","Displacement: PRD-668. Skinned bounds: PRD-678.",["668","678"]]]},{"parent":"Translucency","internals":[["Translucent bins and indirect draws",622,"One indirect hardware draw per translucent material bin in the translucent base pass.","open","PRD-677.",["677"]],["Translucent vertex factory",567,"Vertex interface for translucent cluster draws.","open","By construction three's forward path; PRD-677 proves blend state survives the swap.",["677"]]]},{"parent":"Visibility, skinning, ownership","internals":[["Material visibility pre-pass",629,"Skips raster and shading bins no visible primitive uses (off by default).","shipped","By construction: three culls each mesh and draws its own material.",[]],["Ownership visibility",210,"Owner-no-see and only-owner-see bits per primitive per view.","open","Object3D.layers ships it; PRD-678 proves it after a re-cut.",["678"]],["Skinning view data",177,"Per-view deform decision by minimum screen size.","open","PRD-678.",["678"]],["Primitive filter and scatter updates",113,"Hides filtered primitives per view and scatters small GPU buffer updates.","shipped","By construction: Object3D.visible and layers.",[]]]},{"parent":"Shadow casters at shadow-texel detail","internals":[["Directional clipmap shadow views and LOD bias",88,"One Nanite view per clipmap level with a shadow pixel budget (VirtualShadowMapArray.cpp:4948-5035; not in Nanite LOC).","open","PRD-602.",["602"]],["Local-light shadow views",65,"One view per cube face or spot map, culled to the light radius (VirtualShadowMapArray.cpp:5039-5103; not in Nanite LOC).","open","PRD-695.",["695"]],["Small-triangle depth raster into shadow pages",20,"32-bit atomic max of depth into VSM pages (NaniteWritePixel.ush:20-31, 79-94; counted in Cull + raster).","open","PRD-696, gated.",["696"]],["Shadow raster time budget",24,"Scales the shadow pixel budget when over a time budget (NaniteCullRaster.cpp:331-354; counted in Cull + raster).","deferred","Off by default in Unreal. PRD-602 keeps gateScale as the lever and adds no second budget.",["602"]],["VSM invalidation on LOD delta",7,"Experimental: re-renders shadow pages when streamed LOD catches up (NaniteCullRaster.cpp:111-117; counted in Cull + raster).","deferred","Off by default. PRD-602 makes the shadow cut camera-independent, so a camera re-cut never stales a page.",["602"]]]}]},"niagara":{"system":"niagara","rows":[{"parent":"Data interfaces (grids, mesh, collision)","internals":[["Collision: scene depth query",765,"Tests a particle against the scene depth and returns the hit point and normal.","open","PRD-610 SceneDepthSampler: swept hit, point and normal from last frame's depth.",["610"]],["Collision: global distance field query",84,"Returns the distance to the nearest surface from the global distance field, also off screen.","deferred","PRD-610 Decisions defers off-screen collision: no global distance field; revisit when its Phase 3 shows an off-screen miss a player notices.",[]],["Collision: async GPU ray trace",1783,"Traces particle rays against the hardware ray tracing scene or the distance field, with results a frame later.","deferred","Hardware ray tracing needs an API WebGPU lacks; GPUSceneBVH could serve a trace. Revisit with a consumer that depth collision cannot serve.",[]],["Collision: rigid bodies and physics assets",4230,"Collides particles with the primitive shapes of physics bodies on the GPU.","deferred","PRD-610 Decisions: characters write depth, so sparks bounce off visible bodies. Revisit when an occluded or off-screen body must stop particles.",[]],["Landscape height and normal",2087,"Reads terrain height and normal at a world position.","deferred","PRD-610 Decisions names a heightfield (Godot GPUParticlesCollisionHeightField3D) as the off-screen analog; revisit on the same condition.",[]],["Static mesh sampling",6348,"Picks points on a static mesh surface by triangle and barycentric coordinate.","open","PRD-706 MeshEmissionPoints static path (no skin step). A game can also use three's MeshSurfaceSampler addon.",["706"]],["Skeletal mesh sampling (triangles, vertices, bones, sockets)",10206,"Picks skinned points, bones and sockets on an animated mesh with position, normal and velocity.","open","PRD-706 MeshEmissionPoints: area-weighted triangle samples skinned each frame. Bone, socket and region sampling deferred in its Decisions.",["706"]],["Socket and component transforms",1611,"Reads the transforms of sockets and attached components.","shipped","A game binds an Object3D's matrixWorld as a TSL uniform; no mechanism needed.",[]],["Grid 2D collection",3444,"Stores and updates 2D simulation grids for simulation stages.","shipped","FluidField2D (packages/core/src/fluid-field.ts) and three StorageTexture.",[]],["Grid 3D collection and volume targets",6839,"Stores and updates 3D simulation grids and writes volume textures.","partial","FluidParticles3D writes a density volume; a 3D gas simulation is not built. Revisit when PRD-664 passes its gate and a template wants simulated smoke.",[]],["Rasterization grid 3D (particle splat)",1307,"Splats particles into a 3D grid with atomics.","shipped","FluidParticles3D splats particles into its grid with TSL atomics.",[]],["Neighbor grid 3D and neighbor query",2448,"Bins particles in cells so a particle can find its neighbours.","partial","FluidParticles3D builds its own cell grid; no reusable neighbor grid. Revisit at a second consumer (flocking, crowds of particles).",[]],["Render targets 2D, array, cube, int",4152,"Lets a kernel write render targets that materials read.","shipped","three StorageTexture and textureStore from a game kernel.",[]],["Scene capture and GBuffer reads",1753,"Reads scene captures, GBuffer channels and point occlusion from a kernel.","deferred","PRD-610 rebuilds normal from depth; no consumer needs a GBuffer read or a scene capture from a particle kernel.",[]],["Curves (float, color, vector)",2563,"Bakes authored curves into lookup tables a kernel samples.","rule","Curves decide the look: they stay TSL or a DataTexture in the game's src/render (rule (b), PRD-316).",[]],["Audio spectrum, oscilloscope and player",3529,"Reads audio spectrum and waveform, and plays sounds from particles.","deferred","No template reacts to audio. Revisit when a template ships an audio-reactive effect.",[]],["Camera query",791,"Gives a kernel the camera position, view and distance.","shipped","TSL cameraPosition, view and projection nodes.",[]],["Particle read (another emitter's particles)",2667,"Lets one emitter read the particles of another.","deferred","PRD-609 Decisions defers emitter-to-emitter spawn; revisit with a real sub-emitter consumer.",[]],["Data channels (gameplay to effect)",13895,"Carries gameplay events into effects, batched across writers.","partial","PRD-609 emitParticle takes many requests per frame into one emitter. Islands, map channels and GPU writers are deferred.",["609"]],["Export particles to the CPU",642,"Sends particle data back to gameplay code.","deferred","GPUReadback ships; no gameplay reads particle state. Revisit when gameplay must react to a particle event.",[]],["Texture sampling (2D, array, cube, volume, virtual)",2868,"Samples textures from a kernel.","shipped","three texture nodes; residency is PRD-VQ-10's.",[]],["Sparse volume texture and volume cache",1681,"Plays back sparse voxel and cached volume data.","deferred","PRD-664 Decisions: no sparse voxels, no OpenVDB. Revisit when a game ships a VDB asset.",[]],["Vector field and curl noise",1226,"Samples a vector field or curl noise as a force.","shipped","TSL noise nodes and a game Data3DTexture.",[]],["Spline sampling",1852,"Reads positions and tangents along a spline.","notfiled","Game-writable: bake a three Curve into a storage buffer. Revisit at a second template with a path effect.",[]],["Dynamic mesh output",2467,"Builds mesh geometry from a kernel.","notfiled","No consumer builds a mesh from a particle kernel.",[]],["Arrays, memory buffers and counters",6606,"Gives kernels typed arrays, raw buffers and atomic counters.","shipped","instancedArray storage buffers and TSL atomics.",[]],["Engine object readers (properties, tables, console variables, materials, renderer info)",6175,"Reads engine object properties, data tables, settings and material parameters.","rule","Reflection bridges into Unreal objects; a ThreeNative game passes values as uniforms. No reflection system by rule.",[]],["Debug draw from kernels",3258,"Draws debug lines and shapes from particle kernels.","notfiled","Debug only; PRD-676 owns effect diagnostics.",[]],["Shared and glue (data interface base, read-write base, utilities)",4428,"Base classes and binding for every data interface.","rule","The data interface base is part of Niagara's script IR; closed by rule.",[]]]},{"parent":"Assets, scripts, components","internals":[["System asset",4687,"Holds a system's emitters, settings and compiled scripts.","rule","Authored asset and editor data: closed by rule.",[]],["Emitter asset",3782,"Holds one emitter's modules, renderers and scalability overrides.","rule","Authored asset and editor data: closed by rule.",[]],["Script asset and compiled data",4372,"Holds compiled simulation scripts and their parameters.","rule","Niagara script IR and VM: closed by rule; ThreeNative effects are TSL.",[]],["Component: activation, parameters, desired age",4886,"Activates, resets, parameterises and seeks an effect in the world.","partial","ctx.add, emitting and emitParticle cover activation. Desired-age seeking serves sequencer playback: deferred until a game scrubs an effect.",["609"]],["Component pool",776,"Reuses whole effect components with a size cap and a kill timer.","deferred","PRD-611 Decisions: a GPUParticles3D is already its own fixed pool. Revisit when spawning whole effects costs a measured hitch.",[]],["Spawn helpers and anim notifies",4476,"Spawns an effect at a location, from Blueprint or from an animation notify.","shipped","Spawn at a location is emitParticle({ origin }) (PRD-609); animation notifies are game events. Blueprint nodes: rule.",["609"]]]},{"parent":"CPU simulation (system, emitter, data sets)","internals":[["System instance: activation, age, warmup, reset",3228,"Runs one effect instance: activation, age, warmup pre-roll and reset.","partial","Activation and restart ship (PRD-609). Warmup pre-roll deferred by PRD-611 Decisions until a steady stateful emitter has a consumer.",["609"]],["Batched system tick and its clock (fixed step, delta clamp)",2577,"Ticks all instances of a system together and clamps or fixes the time step.","notfiled","runtime.delta is three's unclamped deltaTime; Unreal clamps at 0.125 s. Proposed as a box on PRD-610, the first stateful integrator. Fixed step is off by default in Unreal: deferred.",[]],["Emitter spawn and tick",969,"Builds spawn requests per frame and ticks one emitter.","shipped","PRD-609 spawn requests into a ring, with clamps and stats.",["609"]],["Emitter bounds",81,"Computes dynamic or fixed emitter bounds.","shipped","PRD-569 measured bounds with a declared override.",["569"]],["Event spawning between emitters",39,"Spawns particles from another emitter's events.","deferred","PRD-609 Decisions: Unreal counts event spawns on the CPU too; revisit with a real sub-emitter consumer.",[]],["Emitter instance glue",1063,"Binds parameters and tracks execution state for one emitter.","rule","Parameter binding and execution state for Niagara scripts: closed IR.",[]],["Particle data set (storage, packing, IDs)",1902,"Stores particle attributes, packs live particles and keeps optional stable IDs.","shipped","PRD-609 ring slots and storage buffers; stable IDs deferred in its Context.",["609"]],["Parameter store",1772,"Stores and binds script parameters.","rule","Script parameter storage; ThreeNative uses TSL uniforms.",[]],["Simulation cache (record and replay)",6959,"Records a simulation and replays it without simulating.","deferred","Stepped playtest clocks already repeat closed-form effects. Revisit when a game must replay a heavy stateful simulation bit for bit.",[]]]},{"parent":"Stateless emitters","internals":[["Live window, age and seed",3389,"Computes the live particle range, each age and each seed from the emitter age alone.","open","PRD-674 Phase 2: live-window arithmetic, age, lifetime and a deterministic seed.",["674"]],["Distributions (ranges and curves)",1342,"Evaluates random ranges and curves for stateless attributes.","open","PRD-674: lifetime ranges in core; value curves are the game's nodes.",["674"]],["Closed-form modules",3978,"Closed-form shape, velocity, size, colour and rotation modules.","rule","PRD-674 Solution: modules decide the look and stay the game's position and material nodes.",["674"]],["Expressions",876,"Evaluates small parameter expressions for stateless emitters.","rule","An expression graph is an IR: closed by rule.",[]],["Shared and glue (templates, debug draw, shader parameters)",851,"Emitter templates, debug draw and shader binding for stateless emitters.","rule","Editor templates and debug draw; no counterpart.",[]]]},{"parent":"First-frame pipelines (engine PSO precache)","internals":[["Component precache request and priority",1582,"Requests pipeline precache for a component with a priority.","open","PRD-611 Phase 2: GPUParticles3D warms its draw pipeline at registration.",["611"]],["Material pipeline collection",1370,"Collects the pipeline states a material needs.","open","PRD-611: the emitter compiles its own draw pipeline before the first draw.",["611"]],["Delay rendering until ready",205,"Holds drawing, or activation, until the pipelines are ready.","open","PRD-611 Solution 2: count stays 0 while compute runs (Unreal DelayRendering).",["611"]],["Precache validation and miss stats",2012,"Counts pipelines that missed the precache.","shipped","The playtest pipeline summary counts pipelines created after the first present.",[]],["Shared and glue (not located)",3726,"Lines the map counted that this read could not attribute to a file.","notfiled","The map counted 8,895 lines; the engine PSO files found sum to 5,169. The rest is not located.",[]]]},{"parent":"Renderers (ribbons, meshes, sprites)","internals":[["Sprite facing, alignment and pixel coverage",1808,"Orients each sprite to the camera, its velocity or a custom axis, and keeps sub-pixel sprites from flickering.","open","PRD-704: velocity alignment (transformAlign) and pixel coverage for sub-pixel sprites. Camera-position facing and custom facing deferred in its Solution.",["704"]],["Sprite sub-UV flipbook and cutout geometry",1312,"Picks flipbook frames and trims the quad to the texture's opaque shape.","deferred","Frame choice and blend are material (look) in the game. Cutout geometry saves fill: revisit when PRD-676's overdraw view shows particle overdraw dominating.",[]],["Ribbons: order, tessellation, UVs, shapes",5436,"Links particles into strips with curvature tessellation, UVs by length and several shapes.","open","PRD-705: the spawn ring drawn as a screen-facing strip with automatic tessellation.",["705"]],["Mesh particles: orientation, LOD, mesh index",4997,"Draws a mesh per particle with orientation modes, LOD and a mesh index.","deferred","No template draws a 3D mesh per particle; shooter chips are quads owned by PRD-316 Phase 5. Revisit when a template ships debris, casings or leaves as meshes.",[]],["Light renderer",806,"Adds a light per particle.","deferred","No consumer; r.ParticleLightQuality is 0 at Low and Medium. Revisit when PRD-660 makes many lights cheap or a template asks for lit sparks.",[]],["Decal renderer",884,"Projects a decal per particle.","deferred","No particle decal consumer. Revisit when a template ships scorch or splat decals.",[]],["Volume renderer",967,"Draws a volume per particle.","open","PRD-664 HeterogeneousVolume, gated.",["664"]],["Component renderer",1891,"Spawns engine components per particle.","notfiled","A ThreeNative effect adds Object3Ds directly; no counterpart needed.",[]],["Readback renderer",790,"Reads rendered particle data back for capture.","shipped","GPUReadback.",[]],["Particle sorting",382,"Sorts particles by view depth or a custom key on the GPU.","partial","PRD-VQ-12 compares sorting, cutout and OIT for smoke cards. Unreal's sort mode defaults to none.",["VQ-12"]],["Shared and glue (renderer base, properties, vertex factory base)",3793,"Renderer base classes, properties and vertex-factory plumbing.","rule","Renderer and vertex-factory plumbing of Unreal's renderer; three owns the draw.",[]]]},{"parent":"Scalability, culling, budget","internals":[["Effect type cull rules and reactions",1122,"Culls by distance, view and instance count after a grace time, with a per-effect reaction.","shipped","PRD-569: grace time, pause and clear reactions.",["569"]],["Significance ranking and global budget",1598,"Ranks instances by significance and scales culling by a damped global FX budget.","shipped","PRD-569: projected-size ranking against the measured compute bucket, damped at 0.1/s.",["569"]],["Platform sets and per-quality emitters",2182,"Enables emitters and scales spawn counts per platform and quality level.","rule","Per-quality emitter choice and spawn-count scale are authored in Unreal (off by default); in ThreeNative they are the template's quality.ts. PRD-563 picks the tier.",[]],["Cull proxies",151,"Draws one cheap proxy in place of many culled instances.","deferred","No scene has enough culled instances of one effect. Revisit when a crowd scene sheds many copies of the same effect.",[]],["Performance baselines",1635,"Measures effects against a per-platform baseline in the editor.","rule","Editor-driven perf baselines; playtest perf and budgets cover measurement.",[]],["Shared and glue (world manager)",3308,"World-level tick groups, culled-instance bookkeeping and pools.","rule","World-level tick groups and pools; ComputeDrivenRegistry is the counterpart.",[]]]},{"parent":"Debug HUD","internals":[["Effect list, counts and cull state",4141,"Lists every system with counts, cull state, memory and particle attributes.","open","PRD-676 effects view: one row per GPUParticles3D with cull, dispatches, stats and shed.",["676"]],["Debugger client and shared types",1735,"Connects the in-game HUD to the editor debugger.","rule","Editor debugger transport: closed by rule.",[]]]},{"parent":"GPU compute dispatch","internals":[["Tick-stage scheduling (before views, after views, after opaque)",938,"Runs each GPU simulation at the frame stage its data needs.","shipped","Compute runs at render cadence before the draw; PRD-610 pairs last frame's depth with its camera instead of an after-opaque stage.",["610"]],["Simulation stages and iteration",934,"Dispatches simulation stages over particles or grids, several times when asked.","shipped","IComputeDriven and multi-pass kernels (fluid-field.ts).",[]],["Live counts and indirect arguments",1268,"Keeps live particle counts on the GPU and writes indirect draw arguments.","deferred","PRD-569 Decisions: no live-count indirect draw. Revisit with a measured dead-slot cost; PRD-609 births plus lifetime now give the liveness signal.",[]],["GPU readback",803,"Reads GPU particle data back to the CPU.","shipped","GPUReadback (packages/core/src/gpu-readback.ts).",[]],["Debug capture and draw",734,"Captures and draws GPU simulation data for debugging.","notfiled","Debug only; PRD-676 owns effect diagnostics.",[]],["Multi-GPU transfers",114,"Copies simulation buffers between GPUs.","rule","A platform path ThreeNative does not ship.",[]],["Shared and glue (proxy registry, scratch pads)",768,"Registers compute proxies and manages scratch buffers.","shipped","ComputeDrivenRegistry.",[]]]}]},"tsr":{"system":"tsr","notes":"LOC is wc -l of UE 5.8.3 PostProcess/TemporalSuperResolution.cpp and Shaders/Private/TemporalSuperResolution files, split by measured line ranges. Resurrection, reprojection field, flickering and rejection anti-aliasing are on in the Epic scalability level (BaseScalability.ini:85-94) even where the cvar default is 0.","rows":[{"parent":"Orchestration (C++)","internals":[["CVars, tiers and defaults",428,"History sample count 16, history size, update quality, rejection anti-aliasing, flicker and resurrection switches.","partial","Temporal AA is the default at high and medium (PRD-636 Phase 4). No temporal tier table exists. PRD-720 Phase 3.",["636","720"]],["Wave size, 16-bit math and async compute",102,"Chooses wave size and half-precision math per vendor and overlaps passes on the async queue.","deferred","WebGPU has no async queue and no portable wave size control. Revisit when subgroup size control ships in WebGPU.",[]],["Shader parameter structs and permutations",1000,"Declares every pass's parameters and permutation domain.","rule","Plumbing for one shader compiler. TSL and the owned engine have their own.",[]],["Pass gating and measure passes",368,"Decides which passes run and dispatches the flicker luma and thin geometry coverage measures.","shipped","RenderChain provisions velocity only when a temporal stage asks (PRD-455).",["455"]],["History setup: sizes, jitter, validity and reset",524,"Sizes input, history and output, advances the jitter, and clears history on a cut.","partial","Lifecycle ships (PRD-455). History above output resolution is PRD-539 Phase 1 box 1.",["455","539"]],["Velocity, occluder and decimate dispatch",378,"Dispatches the clear, dilate and decimate passes.","open","PRD-717 adds the occluder scatter and its test.",["717"]],["Rejection and spatial anti-aliasing dispatch",378,"Dispatches thin geometry, weight relaxation, rejection and the spatial anti-aliaser.","partial","PRD-539 names the rejection levers. PRD-719 changes the rejection space.",["539","719"]],["Update and resolve dispatch",302,"Dispatches the history update and the resolve to output.","partial","Resolve ships at screen size. PRD-720 adds the kernel.",["455","720"]],["Output, history extraction and visualize dispatch",300,"Extracts the history and runs the 16 visualization views.","deferred","PRD-676 defers TSR visualize because PRD-539's script reports the rejected-history ratio. Revisit when an agent cannot read a ghosting cause from that ratio.",[]]]},{"parent":"History update, resolve, decimate","internals":[["Update: setup, quality levels and kernel tables",570,"Macros for the sample pattern per quality and the predictor machinery.","open","PRD-720 Phase 2 and 3.",["720"]],["Update: reprojection fetch, field and lens distortion",365,"Fetches velocity, applies the reprojection field and lens distortion to the history coordinate.","partial","Plain velocity reprojection ships. The field is PRD-539 lever 5 (named, no box). Lens distortion is not a ThreeNative post effect.",["539"]],["Update: history reprojection with Catmull-Rom fetch",135,"Fetches and corrects the previous history with a bicubic filter.","shipped","PRD-455 compared the Catmull-Rom history resample.",["455"]],["Update: input filter at predictor frequency",179,"Filters the current input with a kernel sized by the rejection and the sample count.","open","TRAANode reads one input texel. PRD-720.",["720"]],["Update: validity clamp, quantize and history write",177,"Clamps validity under motion, quantizes it, protects against NaN and writes history and mip 1.","partial","The velocity weight clamp is PRD-539 lever 2 (named, no box). Propose a box.",["539"]],["Reprojection field encoding",166,"Packs the field offset, boundary and 2 by 2 Jacobian.","partial","PRD-539 lever 5 says try after levers 1 to 4. The scalability file turns it on from High. Propose a box.",["539"]],["Resolve history to output",430,"Filters the history down to the output resolution.","partial","Needed by the 200 percent history of PRD-539 Phase 1 box 1.",["539"]],["Decimate history for rejection",543,"Reprojects the history to the input grid for the rejection, tests parallax disocclusion and reprojects the resurrected frame.","open","PRD-717 (parallax test) and PRD-718 (resurrection).",["717","718"]],["Clear previous-frame scratch textures",46,"Clears the atomic scratch textures each frame.","rule","A buffer clear. PRD-717 owns the buffer.",[]]]},{"parent":"Shading rejection and flicker","internals":[["Rejection pass: moire, measure, guide update, resurrection choice",953,"Compares input and history in a display space, decides how much history to keep and updates the guide.","partial","Variance clipping ships. PRD-539 lever 4 (moire error) is named without a box. PRD-719 changes the space. PRD-718 uses the resurrection choice.",["539","718","719"]],["Shading analysis library",644,"Moments and error measures with a display noise floor.","open","PRD-719.",["719"]],["Color spaces and back-buffer quantization error",293,"Guide and rejection color spaces, luminance weights and the display step.","open","PRD-719.",["719"]],["Flickering luma measure",69,"Stores the luma before translucency for the flicker analysis.","partial","PRD-539 lever 4 (flicker-aware rejection) is named in Context and Decisions with no box. Propose a box.",["539"]],["Weight relaxation",263,"Relaxes the history weight for thin geometry using the network.","deferred","Rides with thin geometry detection and the network. Revisit with them.",[]]]},{"parent":"Velocity and depth analysis","internals":[["Velocity dilation",432,"Takes the velocity of the closest depth in the neighbourhood and anti-aliases it by depth.","partial","TRAANode takes the closest depth of 3 by 3 (PRD-269 supplies the velocity). The anti-aliased dilation belongs to the reprojection field.",["269"]],["Closest-occluder scatter and parallax disocclusion test",331,"Scatters each pixel's closest depth and velocity into the previous frame with an atomic max, then tests and hole-fills.","open","PRD-717.",["717"]],["Depth and velocity analysis (depth error, bilaterals, Jacobian, edge)",607,"Computes depth error from the format, bilateral weights, the reprojection Jacobian and the reprojection edge.","partial","Depth error serves PRD-717. The Jacobian and edge serve the reprojection field (PRD-539 lever 5).",["717","539"]]]},{"parent":"Convolution network","internals":[["Network weights and layer code",1158,"A small learned network of convolutions run in tiles of 32 by 32.","deferred","The weights are Epic's trained data, so a clean-room port needs its own training. Revisit if PRD-539 gate arms 1 to 4 and PRD-719 fail.",[]],["Tiled network pass",151,"Runs the network without a round trip to memory, with an overscan.","deferred","Same as the network.",[]]]},{"parent":"Common, kernels, visualize","internals":[["Common types, packing and wave helpers",505,"Shared types, bit packing and wave helpers.","rule","Plumbing.",[]],["Reconstruction kernels and neighbourhood offsets",455,"Kernel weights and neighbourhood pixel offsets for the filters.","open","PRD-720.",["720"]],["Visualization shader (16 views)",595,"Shows sample count, parallax disocclusion, resurrection, anti-aliaser and flicker masks.","deferred","PRD-676 defers TSR visualize. Same revisit condition as the visualize dispatch.",[]]]},{"parent":"Spatial anti-aliasing","internals":[["Spatial anti-aliaser kernels",679,"Edge-aware filter that smooths pixels whose history was rejected.","partial","PRD-539 lever 3 names it with no box. Propose a box.",["539"]],["Spatial anti-aliaser pass",235,"The compute pass that applies it per tile.","partial","Same as the kernels.",["539"]]]},{"parent":"Thin geometry detection","internals":[["Thin geometry detection pass",645,"Finds sub-pixel lines and leaves and keeps their history.","deferred","Off in the cvar defaults, on only with Nanite foliage. PRD-539 lever 5 lists it last. Revisit when a default template ships sub-pixel foliage under temporal AA and the judge sees it flicker.",[]],["Thin geometry shared helpers",141,"Encoding shared by the pass and the relaxation.","deferred","Same as the pass.",[]],["Thin geometry coverage measure",84,"Measures sub-pixel coverage of the scene color.","deferred","Same as the pass.",[]]]}]},"vsm":{"system":"vsm","notes":"LOC is wc -l of UE 5.8.3 Renderer/Private/VirtualShadowMaps and Shaders/Private/VirtualShadowMaps files, split by measured line ranges. Rows sum to the SYS row LOC, with the remainder in a Shared and glue internal. The last three rows have no LOC in the map (null).","rows":[{"parent":"Page marking and physical page pool","internals":[["Pixel page marking from receiver footprint",1212,"Turns each depth pixel into a requested shadow page at the mip its footprint needs, with a border dilation, back-face skip, depth-of-field and first-person resolution bias.","partial","ReceiverDemandPass (virtual-shadow-pages.ts) computes demand but nothing renders sparse pages. PRD-457 Phase 2 names demand. The refinements (page dilation 0.05, back-facing pixel skip, depth-of-field bias) wait for PRD-457 admitting pages. Propose one PRD-457 box.",["457"]],["Froxel page marking",473,"Experimental path that marks pages from 8 by 8 pixel froxels built during the depth pyramid pass, plus the light grid prune.","deferred","Off by default in Unreal (r.Shadow.Virtual.MarkPagesUsingFroxels 0, approximate by design). Revisit if PRD-457 admits sparse pages and pixel marking is the measured cost.",[]],["Coarse page marking",73,"Keeps the coarsest levels resident everywhere so low-resolution data always exists.","shipped","The outer clip levels of VirtualShadowNode cover their whole window every frame, so coarse data always exists by construction.",[]],["Hierarchical page flags and mip propagation",508,"Builds the page flags, propagates mapped mips and filterable requests, merges receiver-mask mips.","partial","Page keys and level addressing exist in virtual-shadow-pages.ts. A sparse atlas needs the rest, gated by PRD-457 Phase 1.",["457"]],["Page table addressing and handles",511,"Virtual to physical page lookup helpers shared by marking, rendering and projection.","shipped","DirectionalClipmap and makePageKey/parsePageKey (virtual-shadow-pages.ts) carry the addressing.",[]],["Physical page allocation, LRU and eviction",1609,"Maps requested pages to physical pages, reuses cached ones, evicts the oldest request first and packs the free list.","partial","PhysicalPagePool does LRU bookkeeping with no atlas behind it. PRD-457 Phase 2 box 1 and 2 name demand, LRU eviction and the bias before fallback.",["457"]],["Static and dynamic page merge, clear and initialize",355,"Selects pages to clear, merges the static page copy into the dynamic one and initializes new pages.","shipped","Static cached levels plus a separate mover map ship (PRD-538 partial redraw, PRD-572 automatic mover detection).",["538","572"]],["Per-page depth pyramid (HZB)",369,"Builds a depth pyramid for each dirty physical page for two-pass occlusion culling of casters.","open","No pyramid of the light view exists. PRD-716 measures the waste first, then builds the cull.",["716"]],["Prefiltered distant shadows",565,"Experimental separable blur of coarse pages, border gather and merge-down that makes far shadows soft and stable.","deferred","Off by default in Unreal (r.Shadow.Virtual.PrefilteredDistant 0, project-enable read-only 0). Revisit if the horizon scene of PRD-649 shows far-shadow shimmer that the clip levels cannot hide.",[]],["Page pool pressure and dynamic resolution throttle",222,"Raises a resolution bias when the pool passes 85 percent. An experimental mode throttles from a shadow-depth time budget.","partial","PRD-457 Phase 2 box 1 names the bias before any fallback. ShadowFilterBudget and adaptiveRefresh step cost from measurement (PRD-652 done phase). The time-budget mode is experimental in Unreal.",["457","652"]],["Shadow depth rendering into pages",1101,"Nanite and non-Nanite draw passes, culling dispatch and per-page view setup for the depth render.","partial","VirtualShadowNode renders levels with the ordinary renderer. Clustered casters get their own cut in PRD-602 and compute raster in PRD-696.",["602","696"]],["Array setup, slot allocation and uniform buffers",956,"Per-frame setup of shadow map slots, uniform buffers and sampling parameters.","shipped","VirtualShadowNode owns its levels and uniforms.",[]],["CVars, scalability tiers and defaults",900,"The console variables that set page pool size, biases, ray counts and marking modes per quality level.","partial","PRD-652 carries the tier table (sample counts, directional bias, page pool).",["652"]],["Page-management dispatcher and shader declarations",686,"Per-page compute dispatch machinery and shader permutation declarations.","rule","C++ and shader plumbing for the DirectX/Vulkan path. WebGPU and the owned engine dispatch their own passes.",[]],["Debug overlays and stats readback in the array code",1116,"Stats logging, light search for the visualizer, caster bounds draw and visualization passes inside the array code.","open","PRD-676 reports the shadow-level view. The TN_VIRTUAL_SHADOW marker already ships.",["676"]],["Receiver masks and instance-to-page overlap tests",464,"Tests whether an instance rectangle overlaps pages that hold visible receivers or are occluded.","open","PRD-716 gates and builds the receiver test with the light-view cull.",["716"]],["Shared and glue",120,"Lines of the row that no single internal owns.","rule","Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",[]]]},{"parent":"Projection + SMRT soft shadows","internals":[["Directional projection and clip-level pick",201,"Chooses a clip level per pixel and blends to the next near the level edge.","shipped","VirtualShadowNode reads the finest covering level first and stops when the blend weight is spent (PRD-634 round 2).",["634"]],["Shadow-map ray tracing (SMRT) ray loop",783,"Shoots 7 to 8 rays of 4 to 8 samples across the source disc through the shadow map for a penumbra that grows with the caster gap.","partial","PRD-634 and PRD-650 copy the effect with a blocker-search filter, not the method, by design. PRD-652 sets the sample counts per tier.",["634","650","652"]],["Adaptive ray count early exit",45,"After the first ray, a group of pixels that all missed leaves the loop. After N rays, a group that all hit also leaves.","open","The source-angle filter always loads 16 blocker and 16 filter texels. PRD-715 gates the exit by measurement.",["715"]],["Screen-space start ray (smart bias)",86,"A 4-step depth-buffer ray of 1.5 percent of scene depth that tells the shadow ray where to start.","open","PRD-649 only measures it by ablation. PRD-715 builds it if the contact delta passes. Not the declined contact shadow of PRD-561.",["715"]],["Normal bias, slope bias and geometric normal estimate",168,"Offsets the lookup along the normal by an amount that follows camera distance and lens, then adds a slope bias from the receiver plane.","partial","receiverPlaneBias ships (slope). The normal offset is a fixed world-unit constant. PRD-715 Phase 2.",["715"]],["Local-light projection (cube face, footprint mip, spot and point)",292,"Picks the cube face and the mip from the pixel footprint for point and spot lights.","partial","PRD-650 sizes each lamp map from the pixels it covers and widens its penumbra with the lamp radius.",["650"]],["Page lookup, clipmap level selection and level blend",563,"Looks a texel up through the page table, offsets to coarser levels and converts between level bases.","shipped","Level selection and blend ship in the receiver. Reach to the horizon is PRD-634.",["634"]],["Prefiltered distant sampling",47,"Samples the blurred distant pages for far shadows.","deferred","Same switch as the prefiltered distant pages. Off by default in Unreal.",[]],["Projection passes and shadow-mask composite",1537,"Per-light projection into a shadow mask, composite into a screen mask, packed formats and mask clears.","shipped","ThreeNative evaluates the shadow in the material, so it needs no screen mask. Glue of a deferred renderer.",[]],["One-pass projection and per-pixel light list",173,"Projects all lights of a pixel in the lighting pass from a clustered light grid, up to 16 lights.","deferred","Needs clustered deferred lighting. Revisit with PRD-660 if many shadowed lamps become a measured cost.",[]],["Hair strand shadow rays",40,"A single-sample shadow ray path for strand hair.","deferred","Revisit when PRD-671 (strand hair) ships and a hair shadow looks wrong.",[]],["Subsurface and translucent receivers",141,"Transmission through subsurface materials and translucency quality.","deferred","No subsurface shading model ships. Revisit with a skin material (PRD-VQ-14).",[]],["Projection visualization",278,"Debug colors for pages, cache state and ray counts.","open","PRD-676 shadow-level view.",["676"]],["Shared and glue",35,"Lines of the row that no single internal owns.","rule","Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",[]]]},{"parent":"Cache and invalidation","internals":[["Per-light cache entries and clip-level cache keys",406,"Keeps each light's cache across frames, resets on a camera cut, a light move or a scale change.","shipped","VirtualShadowNode caches levels with a window key and resets on cuts (PRD-538, PRD-572).",["538","572"]],["Instance invalidation: collectors, scene updater, payloads",803,"Collects moved, revealed, deformed and removed primitives and turns them into page invalidations.","shipped","ShadowInvalidationTracker and automatic mover detection ship. WPO and sway are PRD-651 Phase 3.",["538","572","651"]],["GPU-driven invalidation",455,"Compute passes that invalidate the pages an instance bounds covers, with a load balancer.","partial","The tracker runs on the CPU. PRD-524 names invalidation by caster bounds for the owned engine.",["524"]],["Physical pool resize and memory",100,"Reserved-resource pool allocation, resize and free, and the pyramid pool.","deferred","A sparse atlas does not exist yet. Revisit with PRD-457 Phase 2.",[]],["Frame data extraction and persistent primitive indices",214,"Saves page tables and metadata for the next frame and keeps primitive flag buffers.","shipped","Level state persists in the node.",["538"]],["Stats extraction, overflow messages and cache views",242,"Accumulates cache stats and shows overflow notices and cache visualization.","open","PRD-676 shadow-level view.",["676"]],["Shadow caster bounds debug draw",218,"Draws caster bounds in a debug pass.","open","Debug view. PRD-676 owns it if the shadow-level view needs it.",["676"]],["Cache CVars (static threshold, page age, light age)",210,"Console variables such as frames before a mover returns to the static cache (100).","shipped","staticAfterFrames defaults to 100 (PRD-572).",["572"]],["Shared and glue",1116,"Lines of the row that no single internal owns.","rule","Header types, page cache common helpers and uncounted lines of the manager.",[]]]},{"parent":"Debug and stats","internals":[["Statistics counters, print and CSV log",644,"Counts pages, draws and cache hits and prints or logs them.","partial","The TN_VIRTUAL_SHADOW marker ships with level, refresh and gate counters. PRD-676 adds the shadow-level view.",["676"]],["Page and cache visualization overlays",295,"Colors pages by mip, cache state and age for the viewport.","open","PRD-676 shadow-level view.",["676"]],["Shared and glue",76,"Lines of the row that no single internal owns.","rule","Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",[]]]},{"parent":"Directional clipmaps","internals":[["Level geometry, snapping, bounding volumes and view matrices",491,"Computes level radii that double, snaps each origin to its grid and builds the per-level light view.","shipped","VirtualShadowNode builds snapped, camera-centered levels. Reach to the horizon is PRD-634.",["634"]],["Lens, viewport and orthographic scaling of level choice",114,"Scales the resolution bias by the camera focal length and viewport width, and picks the first level from an orthographic width.","open","VirtualShadowNode uses fixed clipExtents [16, 48, 144] and never reads the lens. PRD-714.",["714"]],["Clipmap CVars and tier bias",198,"First and last level, coarse levels, z range, resolution bias for still and moving suns.","partial","resolutionLodBiasDirectional ships in PRD-652. The moving-sun bias defaults to the still value in Unreal, so it changes no default look.",["652"]],["Cache hooks",28,"Tells the cache a primitive rendered into the clipmap and persists frame data.","shipped","PRD-538 and PRD-572.",["538","572"]]]},{"parent":"Per-page draw commands","internals":[["Per-page draw command build and instance culling",503,"Builds the list of instances to draw for each dirty page, culling by page rectangle, footprint and occlusion.","partial","Dirty-rectangle redraw and a minimum caster size in texels ship (partialRedraw, minCasterTexels 1.5). The occlusion half is PRD-716.",["538","716"]],["View compaction and explicit chunk view masks",141,"Packs the active views of a multi-view raster pass.","rule","Needs a single-pass multi-view raster. VirtualShadowNode draws one level at a time.",[]],["Mask bit helpers",70,"Bit helpers for view and page masks.","rule","Glue.",[]]]},{"parent":"Leaf and alpha-masked casters","internals":[["Alpha-masked depth in the page raster",null,"Casters with alpha-tested materials discard in the shadow depth pass.","partial","Native masked depth program done, browser alphaTestNode cut and parity open. Lines are counted in the rows above.",["651"]],["Wind and sway of casters near the camera",null,"Animates world position offset in fine levels and disables it past a distance.","open","PRD-651 Phase 3 is blocked on the wind node of PRD-488.",["651"]],["Two-sided foliage receiver",null,"Skips the normal bias and widens the source angle for a marked leaf receiver.","partial","Done on both engines, parity run open.",["651"]]]},{"parent":"Calibration and tiers","internals":[["Shadow quality tiers",null,"Low, Medium, High and Epic set ray counts, the resolution bias and the page pool.","partial","PRD-652 tier table and ShadowFilterBudget step.",["652"]],["Calibration scenes and judged parity",null,"Unreal-built scenes isolate penumbra, lamp, leaf and motion cases.","open","PRD-649.",["649"]],["Distance-field far shadows",null,"A far shadow from mesh distance fields beyond the virtual map reach.","open","PRD-649 AC-2 records whether the default look includes it. Revisit if the horizon ablation shows it.",["649"]]]}]}};
+// @internals-end
+// A subsystem with internals becomes one row per internal; the 7th field keeps the parent's name.
+for (const { system, rows } of Object.values(INTERNALS)) {
+  const S = SYS[system];
+  if (!S) continue;
+  S.subs = S.subs.flatMap(r => {
+    const row = rows.find(x => x.parent === r[0]);
+    if (!row || !row.internals.length) return [r];
+    return row.internals.length === 1 ? [[r[0], ...row.internals[0].slice(1, 6)]] : row.internals.map(i => [...i.slice(0, 6), r[0]]);
+  });
+}
+
+// ---- Impact scores per PRD: [visual, performance, visual reason, performance reason]. Each score is 0 to 5.
+// A visual score "Lk" is measured: it comes from the share of parity locks still broken in layer k (LOCKS).
+// A performance score "ms:N" is measured: it comes from N GPU ms (PERF_MS). Any number is an estimate.
+const SCORES = {
+ "631": ["L0", 0, "No parity lock in L0 is broken", "The harness adds no frame cost"],
+ "632": ["L1", 1, "L1 parity gap is small but covers every pixel", "Tone curve and exposure are sub-millisecond"],
+ "633": ["L2", 2, "The sky fills the frame", "Atmosphere lookup tables, about 1 ms"],
+ "636": ["L9", 2, "Finishing chain is close to Unreal", "Several full-screen passes"],
+ "635": ["L6", 2, "Contact darkening at every crease", "One half-resolution pass"],
+ "651": ["L5", 1, "Leaf shadows on every tree", "Adds shadow draws"],
+ "649": [0, 0, "Calibration scenes change no shipped pixel", "No frame cost"],
+ "646": [0, 0, "Calibration scenes change no shipped pixel", "No frame cost"],
+ "603": ["L7", 4, "Foundation of every GI layer", "Every GI ray traces here; the largest GI cost"],
+ "539": [3, 4, "Resolve sharpness sets the detail of every frame", "A cheaper resolve lets the internal resolution drop"],
+ "562": ["L3", 2, "Haze with distance", "Froxel volume, about 1 ms"],
+ "VQ-08": ["L4", 3, "The default Unreal map has clouds", "Cloud ray march, 2 to 3 ms in Unreal"],
+ "634": ["L5", "ms:0.46", "Largest shadow gap to Unreal", "Unreal shadow stage median 0.46 ms"],
+ "604": ["L7", 3, "Unreal Medium GI tier", "Irradiance field gather is the cheap GI tier"],
+ "639": ["L7", 3, "Bounce light takes the colour of what it hits", "Cache update plus a lookup per ray hit"],
+ "640": ["L7", "ms:5.79", "Unreal Epic GI tier, the default", "Unreal 3.09 to 5.79 ms; ThreeNative SSGI stage 15.95 ms"],
+ "641": [2, 1, "Bounce light stops crawling", "Temporal filter is cheap"],
+ "642": ["L8", 4, "Glossy surfaces show what the camera cannot see", "Traced reflections cost 2 to 4 ms in Unreal (estimate)"],
+ "644": [1, "ms:5.79", "Tiers change the look only when one steps down", "Sets which GI tier a frame can afford"],
+ "650": [2, 1, "Interior lamp shadows", "A few lamp shadow maps"],
+ "652": [0, "ms:0.46", "Tiers change the look only when one steps down", "Unreal shadow stage median 0.46 ms"],
+ "643": [1, 1, "Small share of the frame", "Extra GI lookups on a few surfaces"],
+ "605": [1, 2, "Open worlds only", "Clipmap update cost"],
+ "457": [0, 2, "Same shadow pixels", "Only where measured cheaper"],
+ "600": [1, 4, "Same pixels, dense scenes keep detail", "Cluster submit cuts draw cost in dense scenes"],
+ "601": [1, 2, "Far clusters keep their shading", "Follows 600"],
+ "602": [0, 2, "Same shadow pixels", "Fewer shadow draws for dense casters"],
+ "570": [0, 3, "Same pixels", "Crowd skinning cost; a lane is measuring it"],
+ "VQ-10": [1, 1, "Fewer blurry mips under memory pressure", "Saves memory more than time"],
+ "460": [1, 2, "Hides pop-in", "Removes streaming hitches"],
+ "606": [0, 1, "Same pixels", "Shorter travel hitch"],
+ "607": [1, 1, "Closes holes in the world", "Fewer wasted loads"],
+ "611": [0, 2, "Same pixels", "Removes a first-frame hitch"],
+ "610": [2, 1, "Sparks bounce off visible surfaces", "A few particle collision reads"],
+ "660": [1, 2, "Off in a fresh Unreal project", "Fixes the cost of many shadowed lamps"],
+ "661": [0, 2, "Same quality by design", "No Unreal tier turns it on; fewer GI rays"],
+ "662": [2, 1, "Low tier look", "Distance-field AO on the BVH, cheap"],
+ "665": [2, 1, "Light shafts through cloud gaps", "One more cloud lookup"],
+ "663": [1, 1, "Sailing template first", "Few fog volumes"],
+ "664": [2, 2, "Off at Unreal low and medium tiers", "Volume march per effect"],
+ "667": [1, 1, "Off in a fresh Unreal project", "One extra pass on request"],
+ "679": [1, 0, "Additive effects add fog colour today", "No cost change"],
+ "676": [0, 0, "Reads the frame, changes no pixel", "Saves no time itself"],
+ "670": ["L1", 0, "Every rough pixel", "No cost change"],
+ "668": [1, 1, "Per-material opt-in in Unreal", "Extra vertex work where on"],
+ "669": [1, 3, "Far trees change shape slightly", "Cuts far-foliage cost"],
+ "671": [1, 1, "Off in a fresh project", "Strands cost more than cards"],
+ "672": [0, 2, "Same pixels", "Terrain layers shade once"],
+ "674": [0, 2, "Same pixels", "Ambient particles cost no simulation"],
+ "673": [0, 2, "Same pixels", "Fewer placement tests"],
+ "675": [0, 1, "Same pixels", "Tests one streaming budget"],
+ "683": [0, 2, "Same pixels", "Fewer passes and targets"],
+ "682": [0, 2, "Flat areas shade coarser", "Needs a Dawn patch; off in Unreal"],
+ "677": [0, 1, "Off by default in Unreal", "Small blend fix"],
+ "678": [0, 1, "Only a 100K-triangle character needs it", "Small share of scenes"],
+ "695": [1, 1, "Fixes an orthographic camera throw", "Per-view cut costs a little"],
+ "694": [0, 0, "Colliders built before the first frame are empty", "No frame cost"],
+ "685": [2, 1, "Missed rays take the sky direction", "Small lookup"],
+ "684": [2, 1, "Fills depth-edge gaps", "Fewer noisy rays"],
+ "686": [1, 0, "Moving doors block bounce light", "No cost change"],
+ "687": [0, 0, "Reads the frame, changes no pixel", "Saves no time itself"],
+ "696": [0, 2, "Same shadow pixels", "Compute raster for tiny triangles"],
+ "704": [2, 0, "Four effects hand-write streaks today", "No cost change"],
+ "705": [2, 0, "A sword swing draws as a ribbon", "No cost change"],
+ "706": [2, 0, "Effects start on the skin", "No cost change"],
+ "714": [2, 1, "Shadow texels follow the lens", "Same budget"],
+ "715": [2, 1, "Cleaner shadow edges", "Skips flat areas"],
+ "717": [2, 0, "Less ghosting behind movers", "No cost change"],
+ "720": [3, 1, "Sharper disocclusions at low internal resolution", "Wider input reads more"],
+ "716": [0, 2, "Same shadow pixels", "Fewer shadow draws"],
+ "718": [2, 0, "Detail returns when a surface returns", "No cost change"],
+ "719": [2, 0, "Less flicker on bright edges", "No cost change"],
+ "VQ-03": [3, 1, "Interiors reflect their room", "A few probe captures"],
+ "VQ-13": [1, 2, "Needs the Unreal lens model", "One blur pass"],
+ "VQ-09": [2, 2, "Lights relight only the dirty region", "Saves a full relight"],
+ "488": [2, 1, "Leaf shadows that sway", "Vertex work"],
+ "456": [1, 3, "Far cells as merged proxies", "Open worlds draw less"],
+ "459": [1, 2, "Fewer streaming hitches", "One admission budget per frame"],
+ "493": [1, 0, "Blocked on a private game", "No cost change"],
+ "486": [0, 3, "Same pixels", "Crowds draw cheaper characters"],
+ "523": [0, 2, "Native only; changes no pixel", "A graph that skips unread passes frees time"],
+ "524": [1, 2, "Native shadows match the web ones", "Paged shadows scale with the frame"],
+ "VQ-12": [2, 0, "Overlapping effects stop sorting wrong", "Bounded approximation cost"],
+ "VQ-15": [2, 0, "Hair keeps its silhouette and highlights", "No cost change"],
+};
+// Parity locks broken / all, per layer: the calibration lock board (epic 340abbffd, 2026-10-22). L7 adds L7-high. L9 leaves out 24 stale locks.
+const LOCKS = { L0: [0, 81], L1: [19, 148], L2: [10, 28], L3: [8, 14], L4: [11, 20], L5: [8, 18], L6: [11, 17], L7: [21, 67], L8: [14, 22], L9: [8, 132] };
+// GPU ms at 1080p on the RTX 2080: Unreal GI screen probe gather, top of 3.09 to 5.79 (PRD-644 Decisions); Unreal shadow stage median (PRD-652 Decisions).
+const PERF_MS = { "5.79": 5.79, "0.46": 0.46 };
+const band = (x, cuts) => cuts.filter(c => x >= c).length;
+const visOf = v => typeof v === "string" ? [band(LOCKS[v][0] / LOCKS[v][1], [.05, .15, .30, .45, .60]), "measured"] : [v, "estimate"];
+const perfOf = v => typeof v === "string" ? [band(PERF_MS[v.slice(3)], [.1, .5, 1, 2, 4]), "measured"] : [v, "estimate"];
+// Rank: higher visual and performance impact first, lower complexity first.
+const rankScore = p => (p.vis + p.perf) / p.cx;
+
+// ---- Port order: [PRD, title, layer, complexity, estimated?, done, total, wave, waits, why, system]; the impact scores come from SCORES
+const PORT = [
+ ["631","Reference scene + comparison harness","L0",6,0,15,15,1,"—","All boxes ticked; close it",null],
+ ["632","Filmic tone curve, EV100, auto exposure","L1",6,0,4,16,1,"631","Every pixel; later layers compare at matched exposure","post"],
+ ["633","Sky atmosphere + sky light","L2",6,0,1,11,2,"632","The sky fills the frame and lights the scene","sky"],
+ ["636","Finishing post chain","L9",5,0,15,28,2,"632","Half done; cheap finish","post"],
+ ["635","AO on indirect light only","L6",5,0,5,14,2,"632","Low cost, visible at every contact","ao"],
+ ["651","Leaf cards cast leaf shadows","L5",6,0,5,12,2,"—","Phase 1 is an engine bug","vsm"],
+ ["649","Shadow calibration scenes","L5",5,0,3,12,2,"646","Unblocks 634, 650, 652","vsm"],
+ ["646","Recreate GI calibration scenes","L7",6,0,6,15,2,"632","Unblocks every GI verdict","lumen"],
+ ["603","RadianceCache traces the packed scene","L7",7,0,0,10,2,"—","GI foundation; can start now","lumen"],
+ ["539","TSR quality and cost","Perf",6,1,0,5,2,"—","A cheaper frame pays for every layer","tsr"],
+ ["562","Aerial perspective (froxel volume)","L3",4,0,0,8,3,"633","Needs the atmosphere","fog"],
+ ["VQ-08","Volumetric clouds + overhead shadow","L4",7,1,0,9,3,"633","The default Unreal map has clouds","clouds"],
+ ["634","Sun shadows: reach + penumbra","L5",6,0,2,14,3,"649","Biggest shadow gap to Unreal","vsm"],
+ ["604","IrradianceFieldGather, no leaks","L7",5,0,0,10,3,"603","Unreal Medium GI tier","lumen"],
+ ["639","SurfaceCache","L7",7,0,6,9,3,"603","Two thirds done","lumen"],
+ ["640","ScreenProbeGather + ShortRangeAO","L7",8,0,2,9,3,"603, 647","Unreal Epic GI tier: the default","lumen"],
+ ["641","GI temporal filter","L7",6,0,4,13,4,"640","Stability once the gather exists","lumen"],
+ ["642","TracedReflections","L8",7,0,1,10,4,"603, 639","Needs the surface cache","lumen"],
+ ["644","GI tiers follow Unreal quality levels","Perf",6,0,5,10,4,"647","Cost per GI tier","lumen"],
+ ["650","Lamp shadows","L5",7,0,2,11,4,"649","Interiors","vsm"],
+ ["652","Shadow tiers","Perf",5,0,5,9,4,"634, 650","Cost per shadow tier","vsm"],
+ ["643","Glass, fog, leaves take GI","L7",5,0,0,8,5,"603, 604","Small share of the frame","lumen"],
+ ["605","Radiance cache clipmaps","L7",6,0,0,8,5,"603, 604","Open worlds","lumen"],
+ ["457","Shadow pages only where cheaper","Perf",7,0,0,4,2,"—","Wave 2: the counters in its Phase 1 are the gate of 714 (wave 2) and 716. Pages only where measured cheaper","vsm"],
+ ["600","Nanite: submit visible clusters","Perf",6,0,0,8,4,"—","Wave 4: score 0.83 per complexity point with no gate, and 601, 602, 668, 677 and 678 wait on it. Dense scenes","nanite"],
+ ["601","Far clusters keep shading","Perf",4,0,0,7,5,"600","Follows 600","nanite"],
+ ["602","Cluster shadow casters","Perf",5,0,0,8,5,"600","Follows 600","nanite"],
+ ["570","Characters cost what the camera sees","Perf",5,0,0,10,5,"—","Crowds; a lane is measuring it",null],
+ ["VQ-10","Texture mip residency","Perf",5,1,0,8,5,"—","When texture memory limits a game","streaming"],
+ ["460","Invisible streaming transitions","Perf",6,0,0,15,5,"—","Open worlds","wp"],
+ ["606","Fast travel ready before reveal","Perf",3,0,0,13,5,"—","Open worlds","wp"],
+ ["607","Streaming reports and closes holes","Perf",5,0,0,11,5,"—","Open worlds","wp"],
+ ["611","Hidden effect's first frame is ready","Perf",4,0,0,10,5,"—","First-frame hitch","niagara"],
+ ["610","Sparks bounce off visible surfaces","VFX",6,0,0,12,5,"609","Effect detail","niagara"],
+ // filed 2026-10-21 for the gaps this map found
+ ["660","Many shadowed lamps, one fixed budget","Perf",8,0,0,8,5,"650","Off in a fresh Unreal project; gate first","megalights"],
+ ["661","ReSTIR: fewer GI rays, same quality","Perf",7,0,0,7,5,"640, 641","No Unreal tier turns it on; gate first","lumen"],
+ ["662","Sky light stops at walls with GI off","L6",6,0,0,6,5,"644","Low tier look; DFAO on the BVH","ao"],
+ ["665","Clouds shade the haze and fog below","L4",5,0,0,7,5,"VQ-08, 562","Light shafts through cloud gaps","clouds"],
+ ["663","Local fog volumes","L3",4,0,0,6,5,"—","Sailing template first; gate first","fog"],
+ ["664","Smoke and explosions as lit volumes","VFX",6,0,0,7,5,"—","Off at Unreal low and medium tiers","f-heterogeneous-volumes"],
+ ["667","Lens flare and FFT bloom on request","L9",4,0,0,7,5,"636","Off in a fresh Unreal project","post"],
+ ["679","Fog behind glass and sparks","L3",5,0,0,8,2,"—","Additive effects add fog colour today; gate first","fog"],
+ ["676","Debug views an agent can read","Perf",5,0,0,7,2,"—","Explains frame cost before perf work",null],
+ ["670","Rough diffuse like a fresh Unreal project","L1",5,0,0,5,2,"632","Substrate is on in Unreal 5.8.3; every rough pixel","f-substrate-materials"],
+ ["668","Displacement changes the silhouette","Look",7,0,0,6,5,"600","Per-material opt-in in Unreal","nanite"],
+ ["669","Far foliage as voxels","Perf",7,0,0,7,5,"—","Off in a fresh project; gate first","nanite"],
+ ["671","Strand hair","Look",7,0,0,6,5,"VQ-15","Off in a fresh project","f-hair-strands"],
+ ["672","Terrain layers cached in virtual pages","Perf",8,0,0,6,5,"VQ-10","Saves shading time on many-layer terrain","f-virtual-texturing"],
+ ["674","Ambient particles cost no simulation","Perf",5,0,0,8,4,"—","Rain template draws its own today","niagara"],
+ ["673","Cull by grid cell before placement","Perf",6,0,0,7,5,"—","Dense placements; gate first","gpuscene"],
+ ["675","Named world layers, one streaming budget","Perf",5,0,0,6,5,"606","Tests the two-WorldCells claim","wp"],
+ ["683","Skip unread passes, share targets","Perf",5,0,0,7,5,"523","Render graph outcomes that need no new API","f-rendercore-rdg-"],
+ ["682","Coarse shading where the GPU allows","Perf",7,0,0,6,5,"—","Off in Unreal; needs a Dawn patch","f-variable-rate-shading"],
+ ["677","Clustered glass and water blend right","Perf",3,0,0,5,5,"600","Off by default in Unreal","nanite"],
+ ["678","Skinned bodies take the cluster cut","Perf",6,0,0,7,5,"486","Only a 100K-triangle character needs it","nanite"],
+  // filed 2026-10-22 from the Lumen and Nanite deep dives
+ ["695","Every view takes its own cluster cut","Perf",6,0,0,9,2,"—","Phase 1 fixes an orthographic-camera throw","nanite"],
+ ["694","Traces and colliders see a fixed cluster error","Perf",4,0,0,10,2,"—","Colliders built before the first frame are empty today","nanite"],
+ ["685","Directional radiance for missed rays","L7",7,0,0,10,3,"640","PRD-640 decision: the miss tier needs direction","lumen"],
+ ["684","Adaptive probes and importance sampling","L7",6,0,0,10,4,"640, 641","Wave 4: it needs 641 Phase 4, the blotch metric. Fills depth-edge gaps; fewer noisy rays","lumen"],
+ ["686","Moving doors block GI rays","L7",6,0,0,9,3,"603","The traced scene is a static snapshot today","lumen"],
+ ["687","GI debug views an agent can read","Perf",5,0,0,7,4,"676","PRD-676 leaves GI views out","lumen"],
+ ["696","Compute raster for tiny shadow triangles","Perf",7,0,0,8,5,"602","Depth-only raster needs only 32-bit atomics","nanite"],
+  // filed 2026-10-22 from the Niagara deep dive
+ ["704","Sparks streak along their motion","VFX",4,0,0,8,2,"—","Four effects hand-write streak alignment today","niagara"],
+ ["705","Ribbon trails for a sword swing","VFX",5,0,0,7,4,"609","180 short sprites draw the arc today","niagara"],
+ ["706","Effects start on a moving character's skin","VFX",6,0,0,7,5,"609","Effects start at the origin point today","niagara"],
+  // filed 2026-10-22 from the shadow-map and TSR deep dives
+ ["714","Sun shadow texels follow the lens","L5",5,0,0,6,2,"457","Fixed clip extents ignore zoom today","vsm"],
+ ["715","Shadow filter skips flat areas, starts off its surface","L5",4,0,0,6,3,"634","Wave 3: it needs 634's sourceAngleShadowFilter. Cheaper, cleaner shadow edges","vsm"],
+ ["717","Disoccluded pixels reproject through the surface that left","Perf",6,0,0,6,3,"539","Less ghosting behind movers","tsr"],
+ ["720","Wider resolve input where history fails","Perf",6,0,0,6,3,"539","Sharper disocclusions at low internal resolution","tsr"],
+ ["716","Skip casters no visible pixel receives","Perf",7,0,0,6,4,"457","Fewer shadow draws","vsm"],
+ ["718","History resurrection","Perf",6,0,0,6,4,"717","On at Unreal Epic scalability","tsr"],
+ ["719","Rejection judged in display space","Perf",6,0,0,6,4,"539, 632","Less flicker on bright edges","tsr"],
+ // filed outside docs/PRDs/Unreal/
+ ["VQ-03","Local reflection probes","L8",5,1,0,8,4,"—","Interiors and shaded areas reflect their room, not the sky","refl"],
+ ["VQ-13","Cinematic stage: depth of field","Look",6,1,0,8,5,"—","Owns DOF; needs Unreal lens model","post"],
+ ["VQ-09","Incremental diffuse relight","L7",6,1,0,8,4,"—","Light changes relight only the dirty region","lumen"],
+ ["488","Foliage moves in the wind","Look",4,0,0,8,3,"—","Leaf shadows that sway (PRD-651) need it",null],
+ ["456","Distant world cell proxies (HLOD)","Perf",8,0,0,6,5,"—","Open worlds: far cells as merged proxies","wp"],
+ ["459","One streaming admission budget per frame","Perf",6,0,4,16,5,"—","Streaming hitches in open worlds","wp"],
+ ["493","Terrain layers past sixteen textures","Look",3,0,6,8,5,"—","Blocked on a private game walk","f-landscape"],
+ ["486","Characters get a LOD chain","Perf",4,0,0,8,4,"—","Wave 4: score 0.75 per complexity point with no gate, and 678 waits on it. Crowds","f-anim-budget-animgraphruntime"],
+ ["523","The render graph owns passes and history","Perf",4,0,0,7,5,"—","Native only; starts after PRD-534 passes. 524 and 683 wait on it","f-rendercore-rdg-"],
+ ["524","Virtual shadows run native","Perf",4,0,0,5,5,"523","Native port of the paged shadows","vsm"],
+ ["VQ-12","Overlapping effects composite correctly","Look",5,1,0,8,5,"—","A real overlapping-effects consumer is the admission gate",null],
+ ["VQ-15","Hair cards keep coverage and highlights","Look",5,1,0,8,5,"—","Cards stay the far and low-tier hair that 671 builds on","f-hair-strands"],
+].map(([id,title,layer,cx,est,done,total,wave,waits,why,sys]) => {
+  const s = SCORES[id];
+  if (!s) throw new Error(`PORT ${id}: no entry in SCORES`);
+  const [vis, visSrc] = visOf(s[0]), [perf, perfSrc] = perfOf(s[1]);
+  return {id,title,layer,cx,est,done,total,wave,waits,why,sys,vis,visSrc,visWhy:s[2],perf,perfSrc,perfWhy:s[3],rank:null};
+});
+
+const WAVES = { 1: "Gate: everything compares against it", 2: "Cheap look layers + foundations, in parallel", 3: "Main look layers", 4: "Finish and tier", 5: "When a game or a measurement asks" };
+
+// ---- Feature table (top level)
+const F = [
+ ["Lumen GI + reflections","Lighting & GI",45712,33515,10,"Very high","partial","PRD-638, 647 done. PRD-603–605, 639–644, 646 open. HW ray tracing deferred (PRD-645) until WebGPU exposes ray tracing.",0,"lumen"],
+ ["Distance fields","Lighting & GI",10870,6189,7,"High","open","PRD-662 maps distance-field AO onto GPUSceneBVH. The distance fields themselves stay deferred: the BVH gives the trace.",0,null,["662"]],
+ ["Deferred shading + clustered lights","Lighting & GI",16918,8254,6,"n/a","shipped","Covered by three.js and the owned C++ engine.",0,null,[]],
+ ["Reflection captures + SSR","Lighting & GI",7226,4842,5,"Medium","partial","SSR stage ships. Captures PRD-VQ-03, traced reflections PRD-642 open.",0,"refl"],
+ ["Ambient occlusion","Lighting & GI",4501,2363,4,"Low","partial","GTAO ships in templates. PRD-635 applies it to indirect light only (#541).",0,"ao"],
+ ["Substrate materials","Lighting & GI",12154,16982,8,"High","open","On in a fresh 5.8.3 project. three r185 matches its specular energy, not its rough diffuse: PRD-670.",0,null,["670"]],
+ ["MegaLights","Lighting & GI",10136,9857,8,"High","open","PRD-660, gate first. Off in a fresh Unreal project.",0,"megalights"],
+ ["Virtual shadow maps","Shadows",11261,10692,9,"High","partial","Sun clipmap, page cache, mover maps shipped (PRD-538, 572). PRD-634, 649–652, 457 open.",0,"vsm"],
+ ["Classic shadows (CSM, contact)","Shadows",18513,2411,6,"Medium","shipped","CSM replaced by the shipped virtual shadow map. Contact shadows deferred (PRD-561): revisit when a light needs a contact-shadow length.",0,null,["561"]],
+ ["Sky atmosphere","Sky & volumes",2666,2318,6,"Medium","open","PRD-633, in PR #541.",0,"sky"],
+ ["Volumetric clouds","Sky & volumes",3449,2695,7,"Medium","partial","Template clouds in rain. PRD-VQ-08 open.",0,"clouds"],
+ ["Height + volumetric fog","Sky & volumes",6663,4050,5,"Medium","partial","Height fog done (PRD-560). Aerial perspective PRD-562 open.",0,"fog"],
+ ["Heterogeneous volumes","Sky & volumes",15562,11390,8,"High","open","PRD-664: dense 128³ march with a lighting cache, gate first. Off at Unreal low and medium effects tiers.",0,null,["664"]],
+ ["TSR upscaler","Post & temporal",3780,10851,9,"High","partial","Catmull-Rom history done (PRD-455). PRD-539 open.",0,"tsr"],
+ ["TAA","Post & temporal",1531,2463,5,"Low","shipped","Template temporal AA ships.",0,"post"],
+ ["Tone map + LUT + ACES","Post & temporal",2237,5079,4,"Low","partial","LUT grade done (PRD-492). Filmic curve PRD-632 open (#541).",0,"post"],
+ ["Exposure (eye adaptation, local)","Post & temporal",3147,1971,5,"Low","partial","Template auto exposure. PRD-571 needs a device. PRD-632, 636 open.",0,"post"],
+ ["Bloom + lens flare","Post & temporal",1797,932,3,"Low","partial","Bloom exists. PRD-636 open. Lens flare and FFT bloom: PRD-667.",0,"post"],
+ ["Motion blur","Post & temporal",1518,2552,5,"Low","open","PRD-636.",0,"post"],
+ ["Depth of field","Post & temporal",4160,8194,7,"Medium","open","PRD-VQ-13 owns it. Off in a fresh Unreal project.",0,"post"],
+ ["Denoisers","Post & temporal",5800,10068,7,"High","partial","Unreal ScreenSpaceDenoise does not run in a fresh project. Each denoiser the default look uses has an owner: GI history PRD-641, reflections PRD-642, many lights PRD-660, low-tier AO PRD-635.",0,null,["641","642","660","635"]],
+ ["Nanite","Geometry & scene",27571,28101,10,"Very high","open","PRD-600–602. Persistent culling, software raster and page streaming deferred.",0,"nanite"],
+ ["GPU scene + instance culling","Geometry & scene",12019,2420,7,"Medium","shipped","world-gpu-scene.ts: cull and LOD into indirect draws.",0,"gpuscene"],
+ ["Visibility + HZB occlusion","Geometry & scene",10140,3178,6,"Medium","deferred","HZB deferred (PRD-489): our scenes would cull 1.3%. Revisit with a dense city or interior.",0,"gpuscene"],
+ ["Mesh draw commands","Geometry & scene",12081,0,7,"Medium","shipped","Owned C++ engine area.",0,"gpuscene"],
+ ["Virtual texturing","Geometry & scene",15462,1851,8,"High","deferred","Runtime VT: PRD-672 caches terrain layer shading in pages, gate first. It saves shading time, not memory. Mip residency PRD-VQ-10 first.",0,null,["VQ-10","672"]],
+ ["Dynamic resolution","Geometry & scene",847,0,4,"Low","shipped","PRD-384, 563, 564 done.",0,null,["384","563","564"]],
+ ["PSO precache","Geometry & scene",8895,0,6,"Medium","shipped","Pipeline warm-up and native disk cache."],
+ ["Variable rate shading","Geometry & scene",1799,583,4,"n/a","deferred","PRD-682, gate first. Off by default in Unreal (r.VRS.Enable=0). Web waits for a WebGPU feature; Linux needs a Dawn patch.",0,null,["682"]],
+ ["Mobile renderer","Geometry & scene",9086,3093,6,"Medium","partial","PRD-565, 568 done.",0,null,["565","568"]],
+ ["Texture + mesh streaming","World, anim, VFX",20414,0,7,"Medium","open","PRD-VQ-10.",0,"streaming"],
+ ["Anim budget + AnimGraphRuntime","World, anim, VFX",29104,0,6,"Medium","open","PRD-570, PRD-486.",0,null,["570","486"]],
+ ["GPU skinning","World, anim, VFX",6782,1207,5,"Low","shipped","Through three.js and the owned engine."],
+ ["Niagara runtime","World, anim, VFX",255512,0,9,"High","partial","GPUParticles3D. PRD-569, 609 done. PRD-610, 611 open. Graph editor out of scope.",1,"niagara"],
+ ["Landscape","World, anim, VFX",86937,2567,8,"High","partial","PRD-566, 567 done. PRD-493 open.",1,null,["566","567","493"]],
+ ["World Partition + HLOD","World, anim, VFX",70618,0,9,"High","partial","WorldCells, streaming.ts. PRD-456, 459, 460, 606, 607 open.",1,"wp"],
+ ["RenderCore (RDG)","Foundation",103555,0,9,"n/a","deferred","PRD-683 takes what needs no new API: skip passes nothing reads, share targets that never overlap. Bindless and async compute wait for WebGPU.",1,null,["683"]],
+ ["RHI","Foundation",67546,0,8,"n/a","shipped","WebGPU and the owned C++ engine fill this role.",1],
+ ["HW ray tracing + path tracer","Foundation",24257,29756,9,"High","deferred","Deferred (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Revisit when WebGPU exposes ray tracing.",0,null,["645"]],
+ ["Hair strands","Foundation",17639,28297,9,"High","open","PRD-671: ribbon strands and hair shading first. Off in a fresh project.",0,null,["671"]],
+].map(([name,area,cpp,shd,cx,port,status,note,big,sys,prds]) => ({name,area,cpp,shd,loc:cpp+shd,cx,port,status,note,big:!!big,sys,prds:prds||[]}));
+
+// A feature with no subsystem split becomes a one-row system, so every feature opens the same way.
+const AREA_OF = {};
+for (const f of F) {
+  if (!f.sys) {
+    f.sys = "f-" + f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    SYS[f.sys] = { name: f.name, what: f.note, subs: [["Whole system (not split)", f.loc, "Measured as one system.", f.status, f.note, f.prds]] };
+  }
+  AREA_OF[f.sys] ??= f.area;
+}
+PORT.find(p => p.id === "570").sys = "f-anim-budget-animgraphruntime";
+// coverage of one subsystem: a PRD names it, it ships, the repo rules close it, or nothing covers it
+const cov = r => r[3] === "rule" ? "rule" : r[5].length ? "prd" : r[3] === "shipped" ? "ships" : "gap";
+const weight = r => r[1] || 400;
+
+const LADDER = [
+ ["L1","Tone curve, exposure","PRD-632","partial"],["L2","Sky atmosphere","PRD-633","open"],
+ ["L3","Fog, aerial perspective","PRD-560 / 562","partial"],["L4","Volumetric clouds","PRD-VQ-08","partial"],
+ ["L5","Sun shadows","PRD-634 / 649–652","partial"],["L6","AO on indirect","PRD-635","partial"],
+ ["L7","Global illumination","PRD-603–647","partial"],["L8","Reflections","PRD-642 / VQ-03","partial"],
+ ["L9","Post chain + AA","PRD-636 / 539","partial"],
+];
+
+// box counts come from the PRD files when the registry has them
+for (const p of PORT) if (PRDS[p.id]) { p.total = PRDS[p.id].n; p.done = PRDS[p.id].f === "done" ? p.total : PRDS[p.id].d; }
+// Rank the open PRDs after the sync above, so a PRD filed under done/ never takes a rank.
+PORT.filter(p => p.done < p.total).sort((a, b) => rankScore(b) - rankScore(a) || a.cx - b.cx || a.wave - b.wave || a.id.localeCompare(b.id))
+  .forEach((p, i) => { p.rank = i + 1; });
+
+const PROG = { done: "Done", progress: "In progress", notstarted: "Not started", deferred: "Deferred", gap: "No PRD", rule: "Out of scope by rule", unsplit: "Not split (shared files)" };
+// a PRD that is not on this branch yet (e.g. still on the Unreal look epic) falls back to its PORT row
+const prdOf = id => PRDS[id] || (p => p && { t: p.title, d: p.done, n: p.total, f: "elsewhere" })(PORT.find(q => q.id === id));
+const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
+function prog(r) {
+  if (r[3] === "rule") return { k: "rule" };
+  if (r[3] === "shipped") return { k: "done", pct: 1 };
+  if (!r[5].length) return { k: "gap" };
+  if (r[3] === "deferred") return { k: "deferred" };
+  const ps = r[5].map(prdOf).filter(Boolean);
+  const n = sum(ps, p => p.n), d = sum(ps, p => p.f === "done" ? p.n : p.d), pct = n ? d / n : 0;
+  return { k: pct >= 1 ? "done" : pct > 0 || r[3] === "partial" ? "progress" : "notstarted", pct };
+}
+// @data-end
+
+// ---------- state
+let selSys = "lumen", selPrd = null;
+function select(sys, prd, scroll) {
+  if (sys) selSys = sys;
+  selPrd = prd;
+  renderMatrix(); renderWaves(); renderRail(); renderDetail();
+  if (scroll) document.getElementById("detail-sec").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+}
+
+// ---------- port order
+document.getElementById("k-prds").textContent = PORT.filter(p => p.done < p.total).length;
+{ // total progress over every filed PRD box; a PRD filed under done/ counts as fully ticked
+  let ticked = 0, boxes = 0;
+  for (const p of Object.values(PRDS)) { boxes += p.n; ticked += p.f === "done" ? p.n : p.d; }
+  const pct = boxes ? ticked / boxes * 100 : 0;
+  document.getElementById("total-bar").style.width = pct.toFixed(1) + "%";
+  document.getElementById("total-lbl").textContent = `Total progress: ${pct.toFixed(1)}% (${ticked} of ${boxes} PRD boxes ticked)`;
+}
+document.getElementById("wave-legend").innerHTML = Object.keys(WAVES).map(w => `<span class="pill"><span class="dot" style="background:var(--w${w});border-radius:50%"></span>Wave ${w}</span>`).join("");
+
+function renderMatrix() {
+  const imp = p => Math.max(p.vis, p.perf);
+  const W = 520, H = 440, L = 44, R = 12, T = 14, B = 40;
+  const x = c => L + (c - 2.5) / (8.5 - 2.5) * (W - L - R);
+  const y = i => T + (5.5 - i) / 6 * (H - T - B);
+  let s = "";
+  // quadrants split at complexity 5.5, impact 3.5
+  const qx = x(5.5), qy = y(3.5);
+  s += `<rect x="${L}" y="${T}" width="${qx - L}" height="${qy - T}" fill="var(--shipped)" opacity=".07"/>`;
+  s += `<rect x="${qx}" y="${T}" width="${W - R - qx}" height="${qy - T}" fill="var(--open)" opacity=".07"/>`;
+  s += `<rect x="${qx}" y="${qy}" width="${W - R - qx}" height="${H - B - qy}" fill="var(--deferred)" opacity=".07"/>`;
+  s += `<text class="ql" x="${L + 6}" y="${T + 14}">Quick wins</text><text class="ql" x="${W - R - 6}" y="${T + 14}" text-anchor="end">Big bets</text>`;
+  s += `<text class="ql" x="${L + 6}" y="${H - B - 6}">Fill-ins</text><text class="ql" x="${W - R - 6}" y="${H - B - 6}" text-anchor="end">Wait for a game that asks</text>`;
+  for (let c = 3; c <= 8; c++) s += `<line x1="${x(c)}" x2="${x(c)}" y1="${T}" y2="${H - B}" stroke="var(--line)"/><text x="${x(c)}" y="${H - B + 16}" text-anchor="middle">${c}</text>`;
+  for (let i = 0; i <= 5; i++) s += `<line x1="${L}" x2="${W - R}" y1="${y(i)}" y2="${y(i)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(i) + 4}" text-anchor="end">${i}</text>`;
+  s += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">Complexity (PRD rating)</text>`;
+  s += `<text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Impact (higher of visual and performance)</text>`;
+  // spread points that share a cell on a small ring
+  const cells = d3.group(PORT.filter(p => p.done < p.total && Number.isFinite(imp(p))), p => p.cx + "," + imp(p));
+  for (const pts of cells.values()) pts.forEach((p, k) => {
+    const n = pts.length, r = n === 1 ? 0 : 13 + n * 1.6, a = (k / n) * 2 * Math.PI - Math.PI / 2;
+    const px = x(p.cx) + r * Math.cos(a), py = y(imp(p)) + r * Math.sin(a);
+    s += `<g class="pt${selPrd === p.id ? " sel" : ""}" tabindex="0" role="button" data-id="${p.id}" aria-label="PRD-${p.id} ${esc(p.title)}, wave ${p.wave}">
+      <title>PRD-${p.id}: ${esc(p.title)} — rank ${p.rank}, complexity ${p.cx}${p.est ? " (est.)" : ""}, visual ${p.vis} (${p.visSrc}), performance ${p.perf} (${p.perfSrc}), wave ${p.wave}</title>
+      <circle cx="${px}" cy="${py}" r="11" fill="var(--w${p.wave})"/><text x="${px}" y="${py + 3.3}" text-anchor="middle">${p.id.replace("VQ-", "V")}</text></g>`;
+  });
+  document.getElementById("matrix").innerHTML = s;
+}
+const shown = n => Number.isFinite(n) ? n : "–";
+const bdg = (k, p) => {
+  const n = shown(p[k]), src = p[k + "Src"], why = p[k + "Why"], name = k === "vis" ? "Visual" : "Performance";
+  return `<span class="bdg ${k === "vis" ? "v" : "p"} ${src}" title="${name} impact ${n} of 5, ${src}. ${esc(why)}"><i>${k === "vis" ? "V" : "P"}</i>${src === "estimate" && n !== "–" ? "~" : ""}${n}<span class="pips" aria-hidden="true">${[1, 2, 3, 4, 5].map(i => `<u class="${i <= p[k] ? "on" : ""}"></u>`).join("")}</span></span>`;
+};
+const badges = p => `<span class="badges">${bdg("vis", p)}${bdg("perf", p)}</span>`;
+let psort = "wave";
+const SORTS = { rank: (a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9), vis: (a, b) => b.vis - a.vis || SORTS.rank(a, b), perf: (a, b) => b.perf - a.perf || SORTS.rank(a, b), cx: (a, b) => a.cx - b.cx || SORTS.rank(a, b) };
+function prdBtn(p) {
+  const closed = p.done >= p.total;
+  return `<button type="button" class="prd${selPrd === p.id ? " sel" : ""}${closed ? " closed" : ""}" data-id="${p.id}">
+      <span class="id">PRD-${p.id}<span class="rk">${closed ? "✓ done" : "#" + p.rank}</span></span>
+      <span class="t">${esc(p.title)}<small>${esc(p.why)}${p.waits !== "—" ? " · waits on " + esc(p.waits) : ""}</small>${closed ? "" : badges(p)}</span>
+      <span class="m">cx ${p.cx}${p.est ? "*" : ""}<span class="prog"><b style="width:${(p.done / p.total * 100).toFixed(0)}%"></b></span>${p.done}/${p.total}</span>
+    </button>`;
+}
+function renderWaves() {
+  const flat = psort !== "wave";
+  document.getElementById("waves").innerHTML = flat
+    ? `<div class="wave"><h4>${{ rank: "By rank", vis: "By visual impact", perf: "By performance impact", cx: "By complexity" }[psort]} <small>open PRDs, every wave</small></h4>${PORT.filter(p => p.done < p.total).sort(SORTS[psort]).map(prdBtn).join("")}</div>`
+    : Object.entries(WAVES).map(([w, label]) => `
+    <div class="wave"><h4><i style="background:var(--w${w})"></i>Wave ${w} <small>${label}</small></h4>
+    ${PORT.filter(p => p.wave == w).sort(SORTS.rank).map(prdBtn).join("")}</div>`).join("");
+  document.querySelectorAll("#sortbar button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === psort));
+}
+document.getElementById("sortbar").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { psort = b.dataset.k; renderWaves(); } });
+let ptK = "rank", ptDir = 1;
+function prdTable() {
+  const rows = PORT.filter(p => p.done < p.total).sort((a, b) => {
+    const x = a[ptK], y = b[ptK];
+    return ((x > y ? 1 : x < y ? -1 : 0) * ptDir) || SORTS.rank(a, b);
+  });
+  document.querySelector("#ptbl tbody").innerHTML = rows.map(p => `<tr data-id="${p.id}" data-s="${p.sys || ""}">
+    <td class="num mono">${p.rank ?? "–"}</td><td><b class="mono">PRD-${p.id}</b><div class="note">${esc(p.title)}</div></td><td>${p.layer}</td>
+    <td>${bdg("vis", p)}<div class="note why">${esc(p.visWhy)}</div></td><td>${bdg("perf", p)}<div class="note why">${esc(p.perfWhy)}</div></td>
+    <td class="mono">${p.cx}${p.est ? "*" : ""}</td><td class="mono">${p.wave}</td><td class="mono">${p.done}/${p.total}</td></tr>`).join("");
+}
+document.querySelectorAll("#ptbl th").forEach(th => {
+  const go = () => { const k = th.dataset.k; ptDir = ptK === k ? -ptDir : (k === "vis" || k === "perf" ? -1 : 1); ptK = k; prdTable(); };
+  th.addEventListener("click", go); th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+});
+document.querySelector("#ptbl tbody").addEventListener("click", e => { const t = e.target.closest("tr"); if (t) onPick({ target: t }); });
+function onPick(e) {
+  const t = e.target.closest("[data-id]"); if (!t) return;
+  const p = PORT.find(q => q.id === t.dataset.id); select(p.sys || selSys, p.id, true);
+}
+document.getElementById("waves").addEventListener("click", onPick);
+const mx = document.getElementById("matrix");
+mx.addEventListener("click", onPick);
+mx.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(e); } });
+
+// ---------- coverage explorer
+const GH = "https://github.com/ThreeNativeHQ/threenative-engine/blob/";
+const gapCount = k => SYS[k].subs.filter(r => cov(r) === "gap").length;
+document.getElementById("k-gaps").textContent = Object.keys(SYS).reduce((a, k) => a + gapCount(k), 0);
+const gaponly = document.getElementById("gaponly");
+gaponly.addEventListener("change", renderRail);
+function renderRail() {
+  const keys = [...new Set(F.map(f => f.sys))].filter(k => !gaponly.checked || gapCount(k));
+  document.getElementById("rail").innerHTML = d3.groups(keys, k => AREA_OF[k]).map(([area, ks]) =>
+    `<div class="area">${area}</div>` + ks.map(k => {
+      const subs = SYS[k].subs, g = gapCount(k);
+      const parts = ["prd", "ships", "rule", "gap"].map(c => [c, d3.sum(subs.filter(r => cov(r) === c), weight)]).filter(x => x[1]);
+      return `<button type="button" class="sysbtn" data-s="${k}" aria-pressed="${k === selSys}">
+        <span class="nm">${esc(SYS[k].name)}</span><span class="gb${g ? "" : " ok"}">${g ? g + " no PRD" : "✓ covered"}</span>
+        <span class="cbar" aria-hidden="true">${parts.map(([c, w]) => `<i class="c-${c}" style="flex:${w}"></i>`).join("")}</span></button>`;
+    }).join("")).join("");
+}
+document.getElementById("rail").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  select(b.dataset.s, null, false);
+  if (matchMedia("(max-width: 900px)").matches) document.getElementById("detail").scrollIntoView({ block: "start" });
+});
+
+function prdCard(id, subs) {
+  const P = PRDS[id], port = PORT.find(p => p.id === id), elsewhere = !P && port;
+  const covered = subs.filter(r => r[5].includes(id)), covers = covered.map(r => r[0]);
+  // a finished PRD whose measurement deferred the feature reads as such, not as shipped work
+  const deferred = covered.length && covered.every(r => r[3] === "deferred");
+  const state = elsewhere ? "Not on develop yet" : !P ? "Not found" : P.f === "done" ? (deferred ? "Closed · deferred" : "Done") : P.f === "blocked" ? "Blocked" : deferred ? "Deferred" : "Open";
+  const c = !P ? "--notfiled" : state === "Done" ? "--shipped" : state === "Open" ? "--open" : "--deferred";
+  return `<div class="card${selPrd === id ? " sel" : ""}" style="--c:var(${c})" data-id="${id}" tabindex="0" role="button" aria-pressed="${selPrd === id}">
+    <span class="top"><b>PRD-${id}</b><span>${state}${port ? ` · wave ${port.wave}` : ""}</span></span>
+    <span class="ttl">${esc(P ? P.t : port ? port.title : "File not found on this branch")}</span>
+    ${P && P.n ? `<span class="prog"><b style="width:${(P.d / P.n * 100).toFixed(0)}%"></b></span><span class="cov mono">${P.d}/${P.n} boxes</span>` : ""}
+    ${port ? badges(port) : ""}
+    ${covers.length ? `<span class="cov">Covers: ${esc(covers.join(" · "))}</span>` : ""}
+    ${P ? `<a href="${GH}${P.r}/${P.p}" target="_blank" rel="noopener">Open the PRD ↗</a>` : elsewhere ? `<span class="cov">${port.done}/${port.total} boxes. The file is on an open PR branch (the Unreal look epic, PR #541).</span>` : ""}</div>`;
+}
+function renderDetail() {
+  const s = SYS[selSys], subs = s.subs;
+  const total = subs.reduce((a, r) => a + (r[1] || 0), 0);
+  const order = id => { const P = PRDS[id], w = PORT.find(p => p.id === id)?.wave; return (P?.f === "done" ? 100 : 0) + (w || 9); };
+  const ids = [...new Set([...subs.flatMap(r => r[5]), ...PORT.filter(p => p.sys === selSys).map(p => p.id)])].sort((a, b) => order(a) - order(b));
+  const gaps = subs.filter(r => cov(r) === "gap").sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  const rule = subs.filter(r => cov(r) === "rule");
+  const gapLoc = d3.sum(gaps, r => r[1] || 0);
+  document.getElementById("detail").innerHTML = `
+    <div class="dhead"><div><h3>${esc(s.name)}</h3><div class="note">${esc(s.what)}</div></div>
+      <div><span class="big">${fmt(total)}</span> <span class="note">Unreal lines · ${subs.length - gaps.length - rule.length} of ${subs.length - rule.length} subsystems covered${gaps.length ? ` · <b style="color:var(--gap)">${fmt(gapLoc)} lines with no PRD</b>` : ""}</span></div></div>
+    <div class="blk"><h4>PRDs that port it (${ids.length})</h4>
+      ${ids.length ? `<div class="cards">${ids.map(id => prdCard(id, subs)).join("")}</div>` : `<div class="note">No PRD names this feature yet.</div>`}</div>
+    <div class="blk"><h4>Not covered by any PRD (${gaps.length})</h4>
+      ${gaps.length ? `<div class="gaps">${gaps.map(r => `<div class="gapi"><b>${r[6] ? esc(r[6]) + " › " : ""}${esc(r[0])}</b><span class="num">${r[1] ? fmt(r[1]) + " lines" : "shared file"} · ${STATUS[r[3]]}</span><span class="note">${esc(r[2])} ${r[4] !== "—" ? "ThreeNative: " + esc(r[4]) : ""}</span></div>`).join("")}</div>`
+        : `<div class="allok">Every subsystem has a PRD or already ships.</div>`}
+      ${rule.length ? `<div class="note" style="margin-top:8px">Out of scope by rule: ${esc(rule.map(r => r[0]).join(", "))}.</div>` : ""}</div>
+    <div class="blk"><h4>All subsystems</h4><div class="subs"><table><thead><tr><th>Subsystem</th><th style="text-align:right">LOC</th><th>What it does</th><th>ThreeNative</th><th>PRDs</th></tr></thead><tbody>
+      ${subs.map((r, i) => `${r[6] && r[6] !== subs[i - 1]?.[6] ? `<tr><td colspan="5" class="grouprow">${esc(r[6])}</td></tr>` : ""}<tr class="${selPrd && r[5].includes(selPrd) ? "hit" : ""}"><td><b>${esc(r[0])}</b></td>
+        <td class="num">${r[1] ? fmt(r[1]) : "shared"}</td><td>${esc(r[2])}</td>
+        <td><span class="pill"><span class="dot s-${r[3]}"></span>${STATUS[r[3]]}</span><div class="note">${esc(r[4])}</div></td>
+        <td>${r[5].length ? r[5].map(id => `<button type="button" class="tag" data-id="${id}">${id}</button>`).join("") : cov(r) === "gap" ? `<span class="tag no">No PRD</span>` : `<span class="note">${cov(r) === "rule" ? "by rule" : "ships"}</span>`}</td></tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+const det = document.getElementById("detail");
+const pickPrd = e => { if (e.target.closest("a")) return; const t = e.target.closest("[data-id]"); if (t) select(null, selPrd === t.dataset.id ? null : t.dataset.id, false); };
+det.addEventListener("click", pickPrd);
+det.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".card")) { e.preventDefault(); pickPrd(e); } });
+
+// ---------- ladder
+document.getElementById("ladder").innerHTML = LADDER.map(([l, n, p, s]) =>
+  `<div class="rung" style="--c:var(--${s})"><span class="l">${l} · ${STATUS[s]}</span><span class="n">${n}</span><span class="p">${p}</span></div>`).join("");
+
+// ---------- treemap: area -> Unreal system -> subsystem, coloured by port progress
+const on = new Set(Object.keys(PROG));
+const legend = document.getElementById("legend");
+legend.innerHTML = Object.entries(PROG).map(([k, v]) =>
+  `<button type="button" aria-pressed="true" data-s="${k}"><span class="dot p-${k}"></span>${v}</button>`).join("");
+legend.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const s = b.dataset.s; on.has(s) ? on.delete(s) : on.add(s);
+  b.setAttribute("aria-pressed", on.has(s)); drawTreemap();
+});
+document.getElementById("big").addEventListener("change", drawTreemap);
+const tm = document.getElementById("tm"), tip = document.getElementById("tip");
+let LEAVES = [];
+function showTip(l, x, y) {
+  const r = l.r, p = l.p;
+  tip.innerHTML = `<b>${esc(r[0])}</b><div class="row">${esc(SYS[l.sys].name)}${r[6] ? " › " + esc(r[6]) : ""} · ${r[1] ? fmt(r[1]) + " lines" : "shared file"}</div>
+    <div style="margin-top:6px"><span class="pill"><span class="dot p-${p.k}"></span>${PROG[p.k]}${p.pct != null && p.k !== "done" ? ` · ${Math.round(p.pct * 100)}% of PRD boxes` : ""}</span></div>
+    ${r[5].length ? `<div class="row" style="margin-top:4px">PRD-${r[5].join(", PRD-")}</div>` : ""}
+    <div style="margin-top:4px">${esc(r[4] !== "—" ? r[4] : r[2])}</div><div class="row" style="margin-top:6px">Select to see its PRDs and gaps</div>`;
+  tip.hidden = false;
+  const b = tip.getBoundingClientRect();
+  tip.style.left = Math.min(x + 14, innerWidth - b.width - 8) + "px";
+  tip.style.top = Math.min(y + 14, innerHeight - b.height - 8) + "px";
+}
+function drawTreemap() {
+  const big = document.getElementById("big").checked;
+  const keys = [...new Set(F.filter(f => big || !f.big).map(f => f.sys))];
+  const areas = d3.groups(keys, k => AREA_OF[k]).map(([name, ks]) => ({ name, children: ks.map(k => {
+    const total = d3.sum(F.filter(f => f.sys === k), f => f.loc), subs = SYS[k].subs;
+    const kids = subs.map(r => ({ r, sys: k, p: prog(r), v: r[1] || 400 }));
+    const rest = total - d3.sum(subs, r => r[1] || 0);
+    if (rest > total * 0.03) kids.push({ r: ["Rest of " + SYS[k].name, rest, "Shared files not split by subsystem.", "", "—", []], sys: k, p: { k: "unsplit" }, v: rest });
+    return { name: SYS[k].name, sys: k, total, children: kids.filter(c => on.has(c.p.k)) };
+  }).filter(f => f.children.length) })).filter(a => a.children.length);
+  const W = tm.clientWidth, H = tm.clientHeight;
+  const root = d3.hierarchy({ children: areas }).sum(d => d.v || 0).sort((a, b) => b.value - a.value);
+  d3.treemap().size([W, H]).paddingOuter(d => d.depth === 2 ? 2 : 4).paddingTop(d => d.depth === 1 ? 18 : d.depth === 2 ? 16 : 0).paddingInner(d => d.depth === 2 ? 1 : 3).round(true)(root);
+  let html = ""; LEAVES = [];
+  for (const g of root.children || []) {
+    html += `<div class="grp" style="left:${g.x0}px;top:${g.y0}px;width:${g.x1 - g.x0}px;height:${g.y1 - g.y0}px"><div class="gl">${g.data.name} · ${fmt(g.value)}</div></div>`;
+    for (const f of g.children) {
+      const w = f.x1 - f.x0;
+      html += `<div class="fgrp" data-s="${f.data.sys}" style="left:${f.x0}px;top:${f.y0}px;width:${w}px;height:${f.y1 - f.y0}px">${w > 40 ? `<div class="fl">${esc(f.data.name)} <small>${(f.data.total / 1000).toFixed(1)}K</small></div>` : ""}</div>`;
+      for (const l of f.leaves()) {
+        const d = l.data, lw = l.x1 - l.x0, lh = l.y1 - l.y0, i = LEAVES.push(d) - 1;
+        const txt = lw > 64 && lh > 26 ? `<div class="tn">${esc(d.r[0])}</div>${lh > 40 ? `<div class="tl">${d.r[1] ? (d.r[1] / 1000).toFixed(1) + "K" : "shared"}</div>` : ""}` : "";
+        const bar = d.p.k === "progress" ? `<span class="pb" style="width:${Math.max(3, d.p.pct * 100).toFixed(0)}%"></span>` : "";
+        html += `<div class="tile p-${d.p.k}" tabindex="0" role="button" data-i="${i}" aria-label="${esc(d.r[0])}, ${esc(SYS[d.sys].name)}, ${PROG[d.p.k]}" style="left:${l.x0}px;top:${l.y0}px;width:${lw}px;height:${lh}px">${txt}${bar}</div>`;
+      }
+    }
+  }
+  tm.innerHTML = html || `<p class="note" style="padding:16px">No subsystems match the selected states.</p>`;
+}
+tm.addEventListener("pointermove", e => { const t = e.target.closest(".tile"); t ? showTip(LEAVES[t.dataset.i], e.clientX, e.clientY) : (tip.hidden = true); });
+tm.addEventListener("pointerleave", () => tip.hidden = true);
+tm.addEventListener("focusin", e => { const t = e.target.closest(".tile"); if (t) { const r = t.getBoundingClientRect(); showTip(LEAVES[t.dataset.i], r.left, r.top + 10); } });
+tm.addEventListener("focusout", () => tip.hidden = true);
+const openTile = e => { const t = e.target.closest(".tile, .fgrp"); if (!t) return; tip.hidden = true;
+  select(t.classList.contains("tile") ? LEAVES[t.dataset.i].sys : t.dataset.s, null, true); };
+tm.addEventListener("click", openTile);
+tm.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTile(e); } });
+new ResizeObserver(drawTreemap).observe(tm);
+
+// ---------- table
+const ORDER = { shipped: 0, partial: 1, open: 2, deferred: 3, notfiled: 4 };
+const PORTC = { "Low": 0, "Medium": 1, "High": 2, "Very high": 3, "n/a": -1 };
+let sortK = "loc", dir = -1;
+function table() {
+  const val = f => sortK === "status" ? ORDER[f.status] : sortK === "port" ? PORTC[f.port] : f[sortK];
+  const rows = [...F].sort((a, b) => { const x = val(a), y = val(b); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
+  document.querySelector("#tbl tbody").innerHTML = rows.map(f => `<tr data-s="${f.sys}">
+    <td><b>${f.name}</b><div class="note">${f.note}</div></td><td>${f.area}</td><td class="num">${fmt(f.loc)}</td>
+    <td><span class="cxbar" aria-label="${f.cx} of 10">${Array.from({ length: 10 }, (_, i) => `<i class="${i < f.cx ? "on" : ""}"></i>`).join("")}</span> <span class="mono">${f.cx}</span></td>
+    <td>${f.port}</td><td><span class="pill"><span class="dot s-${f.status}"></span>${STATUS[f.status]}</span></td></tr>`).join("");
+}
+document.querySelectorAll("#tbl th").forEach(th => {
+  const go = () => { const k = th.dataset.k; dir = sortK === k ? -dir : (k === "name" || k === "area" ? 1 : -1); sortK = k; table(); };
+  th.addEventListener("click", go); th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+});
+
+document.querySelector("#tbl tbody").addEventListener("click", e => { const t = e.target.closest("tr"); if (t) select(t.dataset.s, null, true); });
+table();
+prdTable();
+select("lumen", null, false);
+</script>
+</body>
+</html>

@@ -31,6 +31,7 @@ namespace {
 struct GraphFind {
     const Texture* texture = nullptr;
     std::shared_ptr<const void> reflector;
+    std::vector<shader::graph::Node> textureNodes;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
     std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads, by binding
 };
@@ -45,11 +46,11 @@ GraphFind findGraphSources(const Material& material) {
             if (found.texture && found.texture != texture)
                 throw std::runtime_error("TN_NATIVE_PMREM_UNSUPPORTED: one material samples two pmremTexture sources");
             found.texture = texture;
-        } else if (node->kind == shader::graph::Kind::Texture && node->object) {
-            const auto* texture = static_cast<const Texture*>(node->object.get());
+        } else if ((node->kind == shader::graph::Kind::Texture || node->kind == shader::graph::Kind::StorageTexture) && node->textureObject()) {
+            const auto* texture = static_cast<const Texture*>(node->textureObject().get());
             if (std::none_of(found.textures.begin(), found.textures.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
-                found.textures.emplace_back(node->name, texture);
+                { found.textures.emplace_back(node->name, texture); found.textureNodes.push_back(node); }
         } else if (node->kind == shader::graph::Kind::StorageElement && node->object) {
             if (std::none_of(found.storages.begin(), found.storages.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
@@ -160,6 +161,9 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.view = toArray(camera.matrixWorldInverse);
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
+    out.virtualShadow = shadow.virtualShadow;
+    out.sourceAngleFilter = shadow.sourceAngleFilter;
+    out.sourceRadiusFilter = shadow.sourceRadiusFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -167,6 +171,12 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.width = static_cast<uint32_t>(shadow.mapSize.x);
     out.height = static_cast<uint32_t>(shadow.mapSize.y);
     out.layersMask = layersMask;
+    // A spot map is perspective: its depth turns back into a distance for the source-radius filter.
+    if (const auto* perspective = dynamic_cast<const PerspectiveCamera*>(&camera)) {
+        out.near = perspective->near;
+        out.far = perspective->far;
+        out.tanHalfFov = 1.0 / camera.projectionMatrix.elements[5];
+    }
     return out;
 }
 
@@ -194,6 +204,9 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     out.view = out.faceViews[0];
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
+    out.virtualShadow = shadow.virtualShadow;
+    out.sourceAngleFilter = shadow.sourceAngleFilter;
+    out.sourceRadiusFilter = shadow.sourceRadiusFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -246,6 +259,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.color = {float(m.color.r), float(m.color.g), float(m.color.b)};
     p.opacity = float(m.opacity);
     p.alphaTest = float(m.alphaTest);
+    p.alphaHash = m.alphaHash;
     p.roughness = float(m.roughness);
     p.metalness = float(m.metalness);
     p.envMapIntensity = float(m.envMapIntensity);
@@ -256,6 +270,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.ior = float(m.ior);
     p.specularIntensity = float(m.specularIntensity);
     p.specularColor = {float(m.specularColor.r), float(m.specularColor.g), float(m.specularColor.b)};
+    p.subsurfaceColor = {float(m.subsurfaceColor.r), float(m.subsurfaceColor.g), float(m.subsurfaceColor.b)};
     p.clearcoat = float(m.clearcoat);
     p.clearcoatRoughness = float(m.clearcoatRoughness);
     p.bumpScale = float(m.bumpScale);
@@ -280,17 +295,18 @@ BufferStore* store(const BufferGeometry& g, const char* name) {
 // with normalized 8/16-bit attributes (GLTFExporter writes int8 normals, WEIGHTS_0 is unsigned byte
 // in most files): they reach the shader as a dequantized float32 copy, kept while the source is unchanged.
 // three's vertexColors: a material that asks for them reads the geometry's `color` attribute (3 or 4
-// components); without the attribute three draws the plain colour, and so does this.
+// components); without the attribute three draws the plain colour, and so does this. A TSL
+// attribute("color") reads the attribute whatever vertexColors says, so the store is kept either way.
 void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Material& material, DrawItem& d) {
     d.colors = nullptr;
     d.colorSize = 0;
-    if (!material.vertexColors) return;
     const auto it = geometry.attributes.find("color");
     if (it == geometry.attributes.end() || !it->second) return;
+    d.colors = floatStore(geometry, "color");
+    if (!material.vertexColors) return;
     if (it->second->itemSize != 3 && it->second->itemSize != 4)
         throw std::runtime_error("TN_NATIVE_VERTEX_COLORS_UNSUPPORTED: a color attribute of " +
                                  std::to_string(it->second->itemSize) + " components");
-    d.colors = floatStore(geometry, "color");
     d.colorSize = static_cast<uint8_t>(it->second->itemSize);
 }
 
@@ -381,9 +397,14 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     const Material* material = mesh.material.get();
     const uint64_t geometryRevision = mesh.geometry ? mesh.geometry->revision() : 0;
     const uint32_t materialVersion = material ? material->version() : 0;
+    // Copies whose geometry bytes are equal draw from one of them (projection::contentClassOf), so their
+    // buffers are the same stores and the batch passes below fold them into one instanced draw. A rig
+    // keeps its own: the skinned lane groups by geometry identity, as core's does.
+    const bool merges = mesh.geometry && typeid(mesh) != typeid(SkinnedMesh);
+    const BufferGeometry* drawn = merges ? projection::contentClassOf(mesh.geometry).drawn : mesh.geometry.get();
     const bool cached = r.drawable && r.meshId == mesh.id() && r.geometry == mesh.geometry &&
                         r.geometryRevision == geometryRevision && r.material.get() == material &&
-                        r.materialVersion == materialVersion;
+                        r.materialVersion == materialVersion && r.canonical.get() == drawn;
     auto& diagnostic = Material::diagnostics();
     if (!cached) {
         Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.recordCpuNs);
@@ -394,6 +415,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         r.cacheId = cacheId;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
+        r.canonical = merges ? projection::canonicalGeometry(mesh.geometry) : mesh.geometry;
         r.geometryRevision = geometryRevision;
         r.material = mesh.material;
         r.materialVersion = materialVersion;
@@ -408,7 +430,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         // A decoded map the standard program does not read is refused by name, never drawn without it.
         // (A placeholder with no image was already refused where models load.)
         for (const auto& [slot, texture] : material->maps) {
-            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap") continue;
+            // envMap is read through the PMREM path below (a sphere reflection capture sets it).
+            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap" || slot == "envMap")
+                continue;
             const auto pbr = std::find(std::begin(shader::kPbrMapNames), std::end(shader::kPbrMapNames), slot);
             if (pbr - std::begin(shader::kPbrMapNames) < pbrMapsRead(*material)) continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
@@ -417,17 +441,18 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         }
         if (const auto normal = material->maps.find("normalMap");
             normal != material->maps.end() && normal->second && normal->second->sampleable() &&
-            !store(*mesh.geometry, "uv")) {
+            !store(*r.canonical, "uv")) {
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) +
                                    ": normalMap needs a uv attribute (drawn without it)");
         }
         for (int k = 0; k < pbrMapsRead(*material); ++k)
             if (const auto map = material->maps.find(shader::kPbrMapNames[k]); map != material->maps.end() &&
-                map->second && map->second->sampleable() && !store(*mesh.geometry, "uv"))
+                map->second && map->second->sampleable() && !store(*r.canonical, "uv"))
                 diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " +
                                        shader::kPbrMapNames[k] + " needs a uv attribute (drawn without it)");
-        r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
-                     floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
+        const BufferGeometry& geometry = *r.canonical;
+        r.buffers = {floatStore(geometry, "position"), floatStore(geometry, "normal"), floatStore(geometry, "uv"),
+                     geometry.index ? geometry.index->store.get() : nullptr};
         // Match three's (0, 1, 0) fallback: geometry roughness still reads it when normalNode overrides lighting.
         // Flat shading instead derives its normals from position derivatives.
         if (!r.buffers[1] && r.buffers[0] && !material->flatShading && !material->nodes.fragmentNode &&
@@ -472,21 +497,25 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.aoMapIntensity = material->aoMapIntensity;
     d.normalScaleX = material->normalScale.x;
     d.normalScaleY = material->normalScale.y;
-    vertexColorsOf(*mesh.geometry, *material, d);
+    vertexColorsOf(*r.canonical, *material, d);
     depthBiasOf(*material, d);
-    geometryInputsOf(*mesh.geometry, d);
+    geometryInputsOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = material->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
     d.transparent = material->transparent;
     d.forceSinglePass = material->forceSinglePass;
     d.depthWrite = material->depthWrite;
+    d.depthTest = material->depthTest;
     d.colorWrite = material->colorWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
     d.nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
+    d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
+    d.twoSidedFoliage = material->twoSidedFoliage;
+    d.roughDiffuse = material->roughDiffuse;
     d.blending = static_cast<uint8_t>(material->blending);
     r.drawable = d.positions != nullptr;
     return r;
@@ -500,9 +529,13 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.transparent = r.material->transparent;
     d.forceSinglePass = r.material->forceSinglePass;
     d.depthWrite = r.material->depthWrite;
+    d.depthTest = r.material->depthTest;
     d.colorWrite = r.material->colorWrite;
     d.side = static_cast<uint8_t>(r.material->side);
+    d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;
     d.flatShading = r.material->flatShading;
+    d.twoSidedFoliage = r.material->twoSidedFoliage;
+    d.roughDiffuse = r.material->roughDiffuse;
     d.blending = static_cast<uint8_t>(r.material->blending);
     d.positionNode = r.material->positionNode;
     d.nodes = r.material->nodes;
@@ -521,11 +554,12 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.aoMapIntensity = r.material->aoMapIntensity;
     d.normalScaleX = r.material->normalScale.x;
     d.normalScaleY = r.material->normalScale.y;
-    if (mesh.geometry) vertexColorsOf(*mesh.geometry, *r.material, d);
+    if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
     depthBiasOf(*r.material, d);
-    if (mesh.geometry) geometryInputsOf(*mesh.geometry, d);
+    if (r.canonical) geometryInputsOf(*r.canonical, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
+    d.shadowObject = &mesh;
     d.layers = Layers::bits(mesh.layers().mask);
     d.mainPass = true;
     return d;
@@ -533,7 +567,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
     static const GraphSources none;
-    std::array<const void*, 12> roots{};
+    std::array<const void*, 14> roots{};
     const auto graphs = material.nodes.pointers();
     static_assert(decltype(graphs){}.size() == decltype(roots){}.size(), "a node slot was added to MaterialNodes");
     std::copy(graphs.begin(), graphs.end(), roots.begin());
@@ -545,8 +579,10 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
         if (diagnostic.enabled) ++diagnostic.graphRebuilds;
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
-                              std::move(found.textures), std::move(found.storages)};
+                              std::move(found.textures), std::move(found.textureNodes), std::move(found.storages)};
     }
+    for (size_t i = 0; i < cached.textureNodes.size(); ++i)
+        cached.textures[i].second = static_cast<const Texture*>(cached.textureNodes[i]->textureObject().get());
     return cached;
 }
 
@@ -720,7 +756,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
                     markSeen(*r);
             } else {
-                const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
+                const bool compact = batching && !(virtualShadows_ && mesh.castShadow()) && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                      !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                      !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                      !mesh.geometry->instanced &&
@@ -839,6 +875,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.position = worldPosition(l);
             d.distance = l.distance;
             d.decay = l.decay;
+            d.sourceRadius = l.sourceRadius;
             if (shadowMapEnabled && l.castShadow())
                 d.shadow = pointShadowOf(l.shadow, d.position, l.distance, effectiveShadowLayersMask(*l.shadow.camera, camera));
             direct_.emplace_back(object.id(), d);
@@ -854,6 +891,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.direction = normalized({d.position[0] - to[0], d.position[1] - to[1], d.position[2] - to[2]});
             d.distance = l.distance;
             d.decay = l.decay;
+            d.sourceRadius = l.sourceRadius;
             d.coneCos = std::cos(l.angle);
             d.penumbraCos = std::cos(l.angle * (1 - l.penumbra));
             if (shadowMapEnabled && l.castShadow()) {
@@ -951,23 +989,69 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
 // first member's place.
 void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
                            const std::vector<std::pair<double, const DrawItem*>>& ordered) {
-    // A decline writes no verdict, so a settled one is an empty decision until its rescan; an empty
-    // scene (still loading) or a projecting one is judged again next frame, as SceneRenderProjection.
-    projection::Decision decision;
-    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig && !item.gpuJoints; }) &&
-        ++framesSinceDeclineScan_ >= kDeclineRescanFrames) {
-        decision = projection::decide(scene, 200, true);
-        framesSinceDeclineScan_ = decision.projecting || decision.sourceRenderables == 0 ? kDeclineRescanFrames : 0;
+    // A decline writes no verdict, so a settled one holds no verdict until its rescan; an empty scene (still
+    // loading) is judged again next frame. A projecting one holds while the scene's structure does, re-judged on
+    // the same cadence (PRD-613: hostProjectionReport's rule; deciding every frame cost Midway ~1.5 ms).
+    static const projection::Decision none;
+    const projection::Decision* decision = &none;
+    if (std::any_of(items.begin(), items.end(), [](const DrawItem& item) { return item.skinnedRig && !item.gpuJoints; })) {
+        using Walks = projection::WalkCounters;
+        Walks& walks = projection::walkCounters(projection::WalkCaller::RenderDatabase);
+        uint64_t& nodes = projection::walkedNodes();
+        const bool cadence = ++framesSinceDeclineScan_ >= kDeclineRescanFrames;
+        bool due = cadence || &scene != batchScene_;
+        Walks::Trigger trigger = cadence ? Walks::Cadence : Walks::Scene;
+        if (!due && batchDecision_.projecting && Object3D::hierarchyVersion() != batchHierarchy_) {
+            batchHierarchy_ = Object3D::hierarchyVersion();
+            const uint64_t before = nodes;
+            due = projection::structureStamp(scene) != batchStamp_;
+            ++walks.stampWalks;
+            walks.stampNodes += nodes - before;
+            ++walks.stampBy[Walks::Hierarchy];
+            trigger = Walks::Structure;
+        }
+        // The structure held, so every rig is alive: a rig that scaled, mirrored or changed material leaves now.
+        for (std::size_t i = 0; !due && i < batchRigs_.size(); ++i) {
+            due = projection::detail::rigLaneKey(*batchRigs_[i].first) != batchRigs_[i].second;
+            trigger = Walks::Rig;
+        }
+        if (due) {
+            uint64_t before = nodes;
+            batchDecision_ = projection::decide(scene, 200, true, true);
+            ++walks.decideWalks;
+            walks.decideNodes += nodes - before;
+            ++walks.decideBy[trigger];
+            ++batchDecisions_;
+            batchScene_ = &scene;
+            batchHierarchy_ = Object3D::hierarchyVersion();
+            before = nodes;
+            batchStamp_ = batchDecision_.projecting ? projection::structureStamp(scene) : -1;
+            if (batchDecision_.projecting) {
+                ++walks.stampWalks;
+                walks.stampNodes += nodes - before;
+                ++walks.stampBy[trigger];
+            }
+            batchRigs_.clear();
+            if (batchDecision_.projecting)
+                for (const auto& [object, lane] : batchDecision_.verdict)
+                    if (const auto* rig = dynamic_cast<const SkinnedMesh*>(object))
+                        batchRigs_.emplace_back(rig, projection::detail::rigLaneKey(*rig));
+            // TN_BATCH_DECISION_CACHE=0 (diagnostic): a projecting decision is judged again next frame, as before PRD-613.
+            static const bool held = [] { const char* flag = std::getenv("TN_BATCH_DECISION_CACHE"); return !flag || std::strcmp(flag, "0") != 0; }();
+            framesSinceDeclineScan_ = batchDecision_.sourceRenderables == 0 || (!held && batchDecision_.projecting) ? kDeclineRescanFrames : 0;
+        }
+        decision = &batchDecision_;
     }
+    projection::countWalkCall(projection::WalkCaller::RenderDatabase);
     skinnedPalettes_.clear();
     batchGroupsList_.clear();
     candidatesByKey_.clear();
     for (const auto& [depth, item] : ordered) {
         const std::size_t i = item - items.data();
         const DrawItem& d = items[i];
-        const auto verdict = decision.verdict.find(d.skinnedRig);
-        const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned");
-        if (!d.batchable && !skinned)
+        const auto verdict = decision->verdict.find(d.skinnedRig);
+        const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision->verdict.end() && verdict->second == "skinned");
+        if ((virtualShadows_ && d.castShadow) || (!d.batchable && !skinned))
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
@@ -1008,7 +1092,6 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     }
     absorbed_.assign(items.size(), false);
     merged_.clear();
-    batchParams_.resize(batchGroupsList_.size());
     for (const std::vector<std::size_t>& g : batchGroupsList_) {
         const bool skinned = items[g.front()].skinnedRig != nullptr;
         if (!skinned && g.size() < kMinBatchMembers)
@@ -1020,9 +1103,9 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
             palette = skinnedPalettes_.back().get();
             palette->begin();
         }
-        if (batchStores_.size() <= batchGroups_)
-            batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
-        const auto slot = batchGroups_++;
+        ++batchGroups_;
+        const auto slot = batchSlot(uint64_t{1} << 63 | uint64_t(&g - batchGroupsList_.data()));
+        while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         BufferStore& store = *batchStores_[slot];
         if (store.count() != g.size() * 16)
             store.resize(g.size() * 16);
@@ -1071,7 +1154,8 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (uniform) {
             batchColors_[slot]->needsUpdate();
             d.instanceColors = batchColors_[slot].get();
-            auto& params = batchParams_[slot];
+            while (batchParams_.size() <= slot) batchParams_.push_back(std::make_unique<shader::StandardMaterial>());
+            auto& params = *batchParams_[slot];
             params = *d.material;
             params.color = {1, 1, 1};
             d.material = &params;
@@ -1131,6 +1215,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
         const auto found = std::find_if(bucket.begin(), bucket.end(), same);
         if (found == bucket.end()) {
             group = meshGroupCount_++;
+            const uint64_t identity = uint64_t(hash) * 0x9e3779b97f4a7c15ull + bucket.size();
             bucket.push_back(group);
             if (group == meshGroups_.size()) meshGroups_.push_back({geometry, {}});
             else {
@@ -1139,6 +1224,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
                 reused.members.clear();
                 reused.orderedIds = true;
             }
+            meshGroups_[group].identity = identity;
         } else
             group = *found;
         lastMeshGroup_ = group;
@@ -1159,6 +1245,26 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
     batchRgb_.push_back({static_cast<float>(mesh.material->color.r), static_cast<float>(mesh.material->color.g),
                          static_cast<float>(mesh.material->color.b)});
     batchTransforms_.push_back(packed);
+}
+
+std::size_t RenderDatabase::batchSlot(uint64_t identity) {
+#ifdef __EMSCRIPTEN__
+    (void)identity;
+    return batchGroups_ - 1;  // the web engine compiles the stable passes out: a batch takes the next slot each frame
+#else
+    auto [slot, fresh] = batchSlotOf_.try_emplace(identity, 0);
+    if (fresh) {
+        if (batchSlotFree_.empty()) {
+            slot->second = batchSlotSeen_.size();
+            batchSlotSeen_.push_back(0);
+        } else {
+            slot->second = batchSlotFree_.back();
+            batchSlotFree_.pop_back();
+        }
+    }
+    batchSlotSeen_[slot->second] = frame_;
+    return slot->second;
+#endif
 }
 
 void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
@@ -1222,7 +1328,6 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             at = end;
         }
     }
-    batchParams_.resize(batchGroups_ + meshGroupCount_);
     for (std::size_t groupIndex = 0; groupIndex < meshGroupCount_; ++groupIndex) {
         const auto& group = meshGroups_[groupIndex];
         const auto& members = group.members;
@@ -1244,14 +1349,20 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.mainPass = firstMember.mainPass;
         d.castShadow = firstMember.shadowCaster;
         d.layers = firstMember.layers;
-        const auto slot = batchGroups_++;
+#ifndef __EMSCRIPTEN__
+        // PRD-754: the group, not its nearest member, keys the draw, so culling a member moves no uniform slot. The id
+        // stays the member's: it breaks three's depth ties, and with it the winner of two coplanar draws.
+        d.key = uint64_t{1} << 62 | (group.identity & ((uint64_t{1} << 62) - 1));
+#endif
+        ++batchGroups_;
+        const auto slot = batchSlot(group.identity);
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
         d.cache = &batchCaches_[slot];
-        if (batchStores_.size() <= slot)
-            batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
+        while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         auto& matrices = *batchStores_[slot];
-        if (matrices.count() != members.size() * 16)
-            matrices.resize(members.size() * 16);
+        // Grow only, by half again: a member culled or back keeps the buffer, so the draw's vertex binding holds.
+        if (matrices.count() < members.size() * 16)
+            matrices.resize(members.size() * 24);
         auto* matrix = reinterpret_cast<float*>(matrices.data());
         const bool uniform = std::any_of(members.begin(), members.end(), [&](std::size_t i) {
             return batchMeshes_[i].material != first.material.get();
@@ -1260,8 +1371,8 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             batchColors_.resize(slot + 1);
         if (uniform && !batchColors_[slot])
             batchColors_[slot] = std::make_shared<BufferStore>(Scalar::F32, 0);
-        if (uniform && batchColors_[slot]->count() != members.size() * 3)
-            batchColors_[slot]->resize(members.size() * 3);
+        if (uniform && batchColors_[slot]->count() < members.size() * 3)
+            batchColors_[slot]->resize(members.size() * 9 / 2);
         auto* color = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
         for (std::size_t i = 0; i < members.size(); ++i) {
 #if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
@@ -1285,13 +1396,15 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &matrices;
         d.instanceCount = static_cast<uint32_t>(members.size());
+        // The slot's copy of the material, not the nearest member's: its address stays the draw's state key.
+        while (batchParams_.size() <= slot) batchParams_.push_back(std::make_unique<shader::StandardMaterial>());
+        *batchParams_[slot] = *d.material;
         if (uniform) {
             batchColors_[slot]->needsUpdate();
             d.instanceColors = batchColors_[slot].get();
-            batchParams_[slot] = *d.material;
-            batchParams_[slot].color = {1, 1, 1};
-            d.material = &batchParams_[slot];
+            batchParams_[slot]->color = {1, 1, 1};
         }
+        d.material = batchParams_[slot].get();
         items.push_back(std::move(d));
         batchMembers_ += members.size();
     }
@@ -1328,7 +1441,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             if (mesh) continue;
             const Object3D* target = nullptr;
             if (type == typeid(DirectionalLight)) target = static_cast<const DirectionalLight*>(child)->target.get();
-            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target;
+            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target.get();
             const bool light = type == typeid(Light) || type == typeid(AmbientLight) ||
                                type == typeid(PointLight) || type == typeid(HemisphereLight) ||
                                (target && typeid(*target) == typeid(Object3D) && target->parent == nullptr);
@@ -1454,9 +1567,15 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     }
     if (erased) std::fill(slotRecords_.begin(), slotRecords_.end(), nullptr);  // one of these may have been erased
     batchGroups_ = batchMembers_ = 0;
+#ifndef __EMSCRIPTEN__
+    for (auto slot = batchSlotOf_.begin(); slot != batchSlotOf_.end();) {
+        if (frame_ - batchSlotSeen_[slot->second] <= 600) { ++slot; continue; }
+        batchSlotFree_.push_back(slot->second);
+        slot = batchSlotOf_.erase(slot);
+    }
+#endif
     const auto beforeBatch = profiling ? Clock::now() : Clock::time_point{};
     if (batching) {
-        batchParams_.reserve(items.size() + meshGroupCount_);
         CameraState state;
         state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
         state.projectionMatrix = toArray(camera.projectionMatrix);
@@ -1515,8 +1634,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
         items_.swap(twoPasses_);
     }
-    if (world && world->backgroundTexture) {
-        if (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0)
+    if (world && (world->backgroundNode || world->backgroundTexture)) {
+        if (!world->backgroundNode && (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0))
             throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: sharp EquirectangularReflectionMapping required");
         if (!backgroundGeometry_) backgroundGeometry_ = makeSphereGeometry(1, 32, 32);
         DrawItem sky;
@@ -1525,6 +1644,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         sky.positions = backgroundGeometry_->attributes.at("position")->store.get();
         sky.normals = backgroundGeometry_->attributes.at("normal")->store.get();
         sky.indices = backgroundGeometry_->index->store.get();
+        sky.uvs = backgroundGeometry_->attributes.at("uv")->store.get();
         Matrix4 model;
         if (camera.projectionMatrix.elements[15] == 1) {
             const double scale = 3 / camera.projectionMatrix.elements[5]; model.makeScale(scale, scale, scale);
@@ -1537,7 +1657,16 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         sky.backgroundRotation = toArray(rotation);
         backgroundParams_.color.fill(static_cast<float>(world->backgroundIntensity));
         sky.material = &backgroundParams_;
-        sky.map = world->backgroundTexture.get();
+        sky.map = world->backgroundNode ? nullptr : world->backgroundTexture.get();
+        if (backgroundNodeMaterial_.nodes.colorNode != world->backgroundNode) {
+            backgroundNodeMaterial_.nodes.colorNode = world->backgroundNode;
+            backgroundNodeMaterial_.needsUpdate();
+        }
+        sky.nodes = backgroundNodeMaterial_.nodes;
+        const auto& sources = graphSources(backgroundNodeMaterial_);
+        sky.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
+        sky.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
+        sky.pmremMap = sources.texture;
         sky.kind = MaterialKind::Basic; sky.side = 1; sky.depthWrite = false;
         sky.mainPass = true;
         sky.layers = Layers::bits(camera.layers().mask);
@@ -1569,6 +1698,17 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     return renderer.compileAsync(items, state, lights, outputFormat);
 }
 
+bool RenderDatabase::prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera) {
+    LightState lights;
+    gpuJoints_ = renderer.currentGpuJoints();
+    gpuPreparing_ = true;
+    compiling_ = true;
+    try { prepare(scene, camera, lights, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = compiling_ = false; throw; }
+    gpuPreparing_ = compiling_ = false;
+    if (!diagnostics_.empty()) throw std::runtime_error(diagnostics_.front());
+    return renderer.prepareEnvironments(items_);
+}
+
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {
     // Planning rewrites the draws a pending encode reads, so a second frame in flight is refused first.
     if (renderer.framePending())
@@ -1584,6 +1724,11 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     gpuPreparing_ = true;
     try { prepare(scene, camera, lights_, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
+    const bool hadVirtual = renderer.hasVirtualShadows();
+    // The main view's tan(hfov / 2) is 1 / P[0]; a reflection pass is another view and measures nothing.
+    const bool mainView = !reflecting_ && dynamic_cast<const PerspectiveCamera*>(&camera) && camera.projectionMatrix.elements[0] > 0;
+    renderer.syncVirtualShadows(lights_, mainView ? 1.0 / camera.projectionMatrix.elements[0] : 0.0);
+    if (!hadVirtual && renderer.hasVirtualShadows()) prepare(scene, camera, lights_, nullptr, true);
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,
     // advance one retained packet and skip the frame. No partial target is published and the covered

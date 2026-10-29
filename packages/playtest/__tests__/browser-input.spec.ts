@@ -4,6 +4,7 @@ import * as ts from "typescript";
 import { expect, test, vi } from "vitest";
 
 import {
+  measurementBrowserArgs,
   PERFORMANCE_BROWSER_ARGS,
   reconcileBrowserPointers,
   WEBGPU_BROWSER_ARGS,
@@ -54,6 +55,21 @@ test("performance probes can bypass the virtual display compositor cadence", () 
   ]);
 });
 
+test("a frame-time assertion unthrottles only the virtual display, so a real display keeps its cadence", () => {
+  expect(measurementBrowserArgs(true, false, "virtual")).toEqual(PERFORMANCE_BROWSER_ARGS);
+  // Unthrottled on a real display, a game faster than 60 fps reads the swapchain's back-pressure
+  // (about one 17 ms wait every few rAF callbacks) as an interval p95 over 16.7 ms.
+  expect(measurementBrowserArgs(true, false, "real")).toEqual([]);
+  // The completion window measures unthrottled completion on the session display by design.
+  expect(measurementBrowserArgs(false, true, "real")).toEqual(PERFORMANCE_BROWSER_ARGS);
+  expect(measurementBrowserArgs(false, false, "virtual")).toEqual([]);
+  // PRD-752: Xvfb does not pace a worker's OffscreenCanvas frames, and an unlimited frame rate
+  // throttled them (shooter: 36 ms presented against 16.7 ms), so a worker game keeps the limit.
+  expect(measurementBrowserArgs(true, false, "virtual", "worker")).toEqual(["--disable-gpu-vsync"]);
+  expect(measurementBrowserArgs(false, true, "real", "worker")).toEqual(["--disable-gpu-vsync"]);
+  expect(measurementBrowserArgs(true, false, "virtual", "page")).toEqual(PERFORMANCE_BROWSER_ARGS);
+});
+
 test("browser module loads without Node process and keeps software adapter detection", () => {
   const source = readFileSync(new URL("../src/runner/browser.ts", import.meta.url), "utf8");
   const module = { exports: {} as Record<string, unknown> };
@@ -69,27 +85,17 @@ test("browser module loads without Node process and keeps software adapter detec
   expect(softwareAdapterName({ architecture: "swiftshader" })).toBe("swiftshader");
 });
 
-test("the host-display webgpu recipe selects the Vulkan hardware adapter", async () => {
-  vi.stubEnv("TN_PLAYTEST_HOST_DISPLAY", "1");
-  vi.resetModules();
-  try {
-    const { WEBGPU_BROWSER_ARGS: args } = await import("../src/runner/browser.js");
-    expect(args).toContain("--use-angle=vulkan");
-    expect(args).toContain("--use-vulkan");
-  } finally {
-    vi.unstubAllEnvs();
-    vi.resetModules();
-  }
-});
-
-test.each([undefined, "0", "1"])("surface-less Vulkan requires the host-display opt-in (%s)", async (hostDisplay) => {
+// The forced ANGLE/Vulkan flags turned the sky black on the owner's KDE Xwayland display
+// (2026-10-23): the same NVIDIA adapter drew the sky with them off. One recipe for every display.
+test.each([undefined, "0", "1"])("the webgpu recipe adds no ANGLE/Vulkan override on any display (%s)", async (hostDisplay) => {
   vi.stubEnv("TN_PLAYTEST_HOST_DISPLAY", hostDisplay);
   vi.resetModules();
   try {
     const { WEBGPU_BROWSER_ARGS: args } = await import("../src/runner/browser.js");
-    expect(args.includes("--disable-vulkan-surface")).toBe(hostDisplay === "1");
-    expect(args.includes("--use-angle=vulkan")).toBe(hostDisplay === "1");
-    expect(args.includes("--use-vulkan")).toBe(hostDisplay === "1");
+    expect(args).not.toContain("--disable-vulkan-surface");
+    expect(args).not.toContain("--use-angle=vulkan");
+    expect(args).not.toContain("--use-vulkan");
+    expect(args).toContain("--enable-features=Vulkan");
   } finally {
     vi.unstubAllEnvs();
     vi.resetModules();

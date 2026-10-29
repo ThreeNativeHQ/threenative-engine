@@ -24,7 +24,14 @@
 // frame. With the gather on, `playtests/play.playtest.json` measured **34.2 ms p95 against the
 // 33 ms ceiling**; without it the same scenario passes. Turn it on when you replace the
 // atmosphere with a flat sky, and read the p95 back out of `TN_FRAME_BUDGET`.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import {
+  type IWorldEnvironmentOptions,
+  qualityPreset as coreQualityPreset,
+  qualityTiers,
+} from "@threenative/core";
+import { exposureSettings } from "./exposure.js";
+export type { QualityTier } from "@threenative/core";
+import type { QualityTier } from "@threenative/core";
 
 /**
  * The three names this game's look comes in.
@@ -34,91 +41,42 @@ import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
  * laptop iGPU, a handheld, a desktop that is dropping frames. Nothing outside this file decides
  * what any of them mean.
  */
-export type QualityTier = "low" | "medium" | "high";
+export const resolveQualityTier = qualityTiers.resolve;
 
-const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
-
-/**
- * Narrows an arbitrary string — a URL parameter, a saved setting — to a tier name. Not exported:
- * `resolveQualityTier` is the one door in, so an unknown name cannot be waved past the throw.
- */
-function isQualityTier(value: string): value is QualityTier {
-  return (QUALITY_TIERS as readonly string[]).includes(value);
-}
-
-/**
- * Where each GPU family starts, from `ctx.renderer.gpuClass`.
- *
- * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
- * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
- * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
- * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
- */
-const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
-  software: "low",
-  "mobile-low": "low",
-  "mobile-mid": "low",
-  "mobile-high": "medium",
-  integrated: "medium",
-  discrete: "high",
+const legacyDefaults: IWorldEnvironmentOptions = {
+  // PRD-723: retain authored costs under the approved core filmic curve and meter.
+  // Bloom cost: unmeasured; retain the authored stage and quality choices.
+  bloomEnabled: true,
+  bloomRadius: 0.5,
+  bloomStrength: 0.7,
+  bloomThreshold: 0.2,
+  exposure: 1,
+  finalGatherMethod: "none",
+  gtaoEnabled: false,
+  gtaoRadius: 0.25,
+  gtaoSamples: 16,
+  gtaoDistanceExponent: 1,
+  gtaoDistanceFalloff: 1,
+  gtaoIndirectOnly: false,
+  localExposureEnabled: false,
+  motionBlurEnabled: false,
+  ssgiEnabled: false,
+  ssgiRadius: 12,
+  ssgiResolutionScale: 0.5,
+  ssrEnabled: false,
+  ssrResolutionScale: 0.5,
+  temporalAA: false,
+  unrealBloomEnabled: false,
+  vignetteAmount: 0,
 };
 
-/**
- * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
- *
- * Fails closed. An unrecognised tier name throws with the value it was handed rather than
- * quietly rendering the default, because a silent fallback here looks exactly like a tier that
- * turned out to have no effect.
- */
-export function resolveQualityTier(
-  request: {
-    readonly gpuClass?: string;
-    readonly mobile?: boolean;
-    readonly software?: boolean;
-    readonly tier?: string;
-  } = {},
-): QualityTier {
-  const requested = request.tier;
-  if (requested !== undefined) {
-    if (!isQualityTier(requested)) {
-      throw new Error(
-        `Unknown quality tier ${JSON.stringify(requested)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-      );
-    }
-    return requested;
-  }
-  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
-  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
-  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
-  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
-  // `tier` above still wins over it.
-  if (request.software === true) return "low";
-  const family =
-    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
-  if (family !== undefined) return family;
-  return request.mobile === true ? "low" : "high";
-}
-
-/**
- * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the sun
- * disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey walls and
- * flattens contrast), and a corner falloff. Antialiasing is on in every tier that installs a chain;
- * see `screenSpaceAA` in `worldEnvironment.ts`.
- *
- * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
- * captured sky (`sky.ts`), and SSR on rough floors traced speckle into the grid; RCAS then rang the
- * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
- */
 const shared: IWorldEnvironmentOptions = {
-  // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
+  // Bloom cost: unmeasured here; PRD-636 records it in ms.
   bloomEnabled: true,
-  bloomRadius: 0.6,
-  bloomStrength: 0.22,
-  bloomThreshold: 1,
-  autoExposureEnabled: false,
   exposure: 0.62,
-  tonemapMode: "aces",
-  vignetteAmount: 0.22,
+  // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
+  unrealBloomEnabled: true,
+  vignetteAmount: 0.4,
 };
 
 /**
@@ -129,15 +87,27 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
+  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
+  temporalAA: true,
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,
+  // Measures against `exposure` while auto exposure is off. Cost: unmeasured.
+  localExposureEnabled: true,
+  // Unreal enables motion blur on high-end PCs only. It needs the chain's velocity. Cost: unmeasured.
+  motionBlurEnabled: true,
 };
 
 /** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
+const medium: IWorldEnvironmentOptions = {
+  ...high,
+  gtaoSamples: 8,
+  motionBlurEnabled: false,
+  renderChainTier: "medium",
+};
 
-/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
+/** What a phone gets: bloom, vignette and the tone curve. Unreal's mobile profile has no local exposure. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
@@ -147,10 +117,16 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   const preset = QUALITY_PRESETS[tier as QualityTier];
   if (preset === undefined) {
     throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
+      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
     );
   }
-  return preset;
+  return {
+    ...coreQualityPreset(tier),
+    ...legacyDefaults,
+    ...preset,
+    exposurePolicy: exposureSettings,
+    samples: preset.samples ?? 4,
+  };
 }
 
 /** First admitted material lane: high desktop hardware WebGPU in the browser only. */

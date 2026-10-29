@@ -533,6 +533,30 @@
       "reject": []
     },
     {
+      "id": "request.collectathon-triple-jump",
+      "query": "make a 3D platformer with a triple jump, long jump and wall kick",
+      "scope": "request",
+      "source": "template:collectathon#AGENTS.md \u2014 __PROJECT_NAME__ collectathon (Hop Garden)",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
+      "id": "request.adventure-lock-on",
+      "query": "make a 3D action adventure: the hero character runs, rolls and blocks with a shield, and enemies chase her around walls",
+      "scope": "request",
+      "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ adventure",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
+      "id": "request.kart-drift-sparks",
+      "query": "a kart racer with a particle burst of sparks when drifting",
+      "scope": "request",
+      "source": "template:kart#AGENTS.md \u2014 __PROJECT_NAME__ kart racer (Clover Cup)",
+      "expect": ["GPUParticles3D"],
+      "reject": []
+    },
+    {
       "id": "prd451.matrix-world",
       "query": "only update world matrices of visible objects each frame instead of the whole scene",
       "scope": "mechanic",
@@ -725,6 +749,22 @@
       "reject": []
     },
     {
+      "id": "request.lumen-reflections",
+      "query": "lumen reflections",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
+      "id": "request.dedicated-reflection-rays",
+      "query": "dedicated reflection rays",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
       "id": "request.vehicle-suspension-grip",
       "query": "suspension wheel traction tyre grip",
       "scope": "request",
@@ -746,6 +786,94 @@
       "scope": "request",
       "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
       "expect": ["VehicleBody3D"],
+      "reject": []
+    },
+    {
+      "id": "request.pcss-soft-shadows",
+      "query": "PCSS soft shadows",
+      "scope": "request",
+      "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
+      "expect": ["sourceRadiusShadowFilter"],
+      "reject": []
+    },
+    {
+      "id": "request.rough-diffuse-substrate-eon",
+      "query": "Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar",
+      "scope": "request",
+      "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
+      "expect": ["useRoughDiffuse"],
+      "reject": []
+    },
+    {
+      "id": "request.lumen-surface-cache",
+      "query": "lumen surface cache",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["SurfaceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.gi-visualize",
+      "query": "lumen visualize indirect diffuse only r.Lumen.Visualize.IndirectDiffuse",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["GIVisualize"],
+      "reject": []
+    },
+    {
+      "id": "request.lumen-scene",
+      "query": "lumen scene",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["SurfaceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.mesh-cards",
+      "query": "mesh cards",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["SurfaceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.lumen-translucency-volume",
+      "query": "lumen translucency volume",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["ProbeVolume"],
+      "reject": []
+    },
+    {
+      "id": "request.translucency-gi",
+      "query": "translucency gi",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["ProbeVolume"],
+      "reject": []
+    },
+    {
+      "id": "request.gi-quality-scalability",
+      "query": "lumen scalability sg.GlobalIlluminationQuality final gather method",
+      "scope": "request",
+      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "expect": ["GIBudget"],
+      "reject": []
+    },
+    {
+      "id": "request.shadow-quality-scalability",
+      "query": "virtual shadow map scalability sg.ShadowQuality",
+      "scope": "request",
+      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "expect": ["ShadowFilterBudget"],
+      "reject": []
+    },
+    {
+      "id": "request.two-sided-foliage",
+      "query": "two sided foliage",
+      "scope": "request",
+      "source": "sandbox:wildwood-backlit#scenes/CalibrationScene.ts",
+      "expect": ["addFoliageBackLight"],
       "reject": []
     }
   ]

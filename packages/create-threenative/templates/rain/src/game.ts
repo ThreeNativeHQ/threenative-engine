@@ -1,4 +1,4 @@
-import { type IGame, defineGame } from "@threenative/core";
+import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { UI_READY_INTENT } from "@threenative/core/ui-layer";
 import config from "../threenative.config.js";

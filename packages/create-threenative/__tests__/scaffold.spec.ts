@@ -22,12 +22,16 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
 import {
+  canonicalRenderSourcePath,
   cliHelp,
   createProject,
   discoverKitManifests,
   discoverTemplateNames,
   parseArgs,
+  projectMcpServers,
+  referenceDigest,
   scaffoldCompletionMessage,
+  scaffoldNextSteps,
 } from "../src/index.js";
 
 const run = promisify(execFile);
@@ -193,7 +197,33 @@ const BUG_REPORT_SKILL_PATHS = [
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 // Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
 // Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
+// Recomputed 2026-10-22 merging develop 9c34f695c into the epic: the 0.3.6 cohort pins, the PRD-626 lint files and the epic's tone curve
+// land in every kit. Measured by this test.
+// Recomputed 2026-10-22 for the Unreal tone curve in every kit (PRD-632): template-assets/tonemap.ts gains the gamut expansion, blue
+// correction, glow, red modifier and output dither of the harness curve; `tonemapMode` stays "aces". Measured by this test.
+// Recomputed 2026-10-21 for the finishing-stage templates (PRD-636, lane/emissive): every kit gains localExposure.ts,
+// motionBlur.ts, unrealBloom.ts and vignette.ts and a changed worldEnvironment.ts and quality.ts. Measured by this test
+// on the merge of lane/emissive into the epic.
+// Recomputed 2026-10-22: worldEnvironment.ts drops the unused smoothstep and vec2 imports (19eb1b38f); measured by this test.
+// Recomputed 2026-10-22 on the merge of lane/tonemap (PRD-632 GAP-1..5: grade, white balance, tone curve amount) with the unused-import removal; measured by this test.
+// Recomputed 2026-10-22 again: only snow moves, its snowSurface.ts uploads the moved windows (lane/snow e764013de); measured by this test.
+// Recomputed 2026-10-20 for the Unreal look epic (PR #541): every template gains the opt-in `filmic` tone mode (tonemap.ts,
+// worldEnvironment.ts), the exposure cold-read retry and the histogram-walk fix, and one AGENTS.md/CLAUDE.md line on the engine
+// default. Measured from the committed branch head.
+// Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
+// two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
+// Recomputed 2026-10-28: only rts moves, its health bars keep a pixel size above the model and its HUD panels
+// re-render only on the values they show; measured by this test.
+// Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
+// Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
+// trees gain the `threenative-animation` server; no other scaffold byte changed.
+// Recomputed 2026-10-28 (0.3.7): the cohort's own pins now hash as a placeholder, so a release bump
+// leaves every tree as it is; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
+  // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
+  // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
+  // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
   // PRD-637: every tree gains the npm `@vitejs/devtools` override, and `starter` also moves (grade
   // table reused across a restart, two more restarts in production-readiness). Measured by this test.
@@ -267,25 +297,61 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18: a queue-fenced renderer prepares PMREMNode textures asynchronously; only the patch bytes move.
   // Recomputed 2026-10-18: the Three patch groups async PMREM face fences by GPU cost; only the patch bytes move, so all thirteen trees change.
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
+  // PRD-743 (2026-10-25): every template AGENTS.md gains the on-demand assets convention, so all thirteen trees move.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "be8ab8f13dd28ee3086274521ab1fb7c2cc148f692fc8894b1ef3b494132fe0f",
-  minimal: "136a29554bb1010c8d46cf2407706535ea98b6b668c5539ce128360b50ffc889",
-  platformer: "315fbe53bc456c8542d409b256a77d4efcd9124624ea82b0462083301d67af54",
-  puzzle: "687ff478e9dc530fe597e3791c1b714c604c510688bf35e4a834d2399380ad87",
-  racing: "693a730f3857e1c124b046e78ce8f05b69525aad41f84609a279e076db237d14",
-  rain: "5e89648da3d89c9c9b60f1423f778494fff950420dbe8d401d0e59196c634362",
-  rts: "99d5d0cc45a7131250bd581aabb42aa1131d5a090b95861be3c16e8eaff449ea",
-  runner: "cba600e53a0242809a6bc1262a6fac066e9a9c4125867250c761ed0bc3c1f6ea",
+  // Recomputed 2026-10-25: action-rpg and shooter state the batching-projection opt-out in
+  // `threenative.config.ts`, the field core reads, instead of the untyped `renderer` block.
+  // Recomputed 2026-10-26 (PR #574 merges #572): the action-rpg draw fix, the rain terrain cache,
+  // the sailing and snow core-look migrations on top of the on-demand asset loader.
+  // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
+  // to its clip; platformer binds R to restart.
+  // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
+  "action-rpg": "2b8695b82a99bab0364ad5ee7f10cd3cebc6303a815bae2cbe44f0461467c8f1",
+  // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
+  // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
+  // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
+  // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
+  // Recomputed 2026-10-24 for the look round: terrain, castle, meadow, sky and world assertions
+  // (method checked against this kit's previous value, from a copy holding only this template).
+  // Recomputed 2026-10-24 for the double jump (chain window, press buffer, HUD hint, double-tap
+  // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
+  // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
+  // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
+  // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
+  // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
+  // stay the same.
+  collectathon: "379cb8767e9bc4ef9bba02bc7decbaeaf6b18c03a964ced7e64f2628f46ce2ec",
+  // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
+  // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
+  // wind on the crowns, clusters and grass tufts. Only this tree moves.
+  // Recomputed 2026-10-26 (PRD-747 exposure): adventure, collectathon, kart, platformer, racing, runner,
+  // sailing and starter ship the shared kitExposure.ts meter (0 EV).
+  // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
+  // reads state through `useUiStateDuringStartup`.
+  // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
+  adventure: "4ea0e955379eec3f2bc66b436f1c91126a9ff3c5f71611887710d9a3c4546069",
+  // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
+  kart: "7b3613bccaa6324ae5514968af432481c55d70c19e8732f4d2ceb5d0235b1d2e",
+  minimal: "f01eb7fa62ff8886baf2484b4576051caed1592939e8760b7410b8176793f30d",
+  platformer: "3f79f7e9627106f50f7e63ebb34469083f90738ea014550f225c8d18c7fef18c",
+  puzzle: "70e9e60a2400e8dcec79f69a882370c2169d07eb6deed3828816c4d94c397465",
+  racing: "388bbe65ed8214dac991be61b1462c07486327280b7718c9fc77c9ee16ab2c0c",
+  rain: "6640d55336c2e52899b7b8fee270be13de8693e360a292f1b8377c736a16cad3",
+  rts: "4a887a611c7c9d67645b8c04325034c724f4326daa0be1be0791f655fcaa5240",
+  runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "3981069bd2ff997ff34862f77fb7e885b46b94df88be7aafab5ed147b0dea17a",
-  shooter: "abc85ff36707c7d5dd833637940de8afc6f283f32d978c72575b9c092998d01a",
-  snow: "a93e8c2b0fe28c9722f299db89c9c542348587764d9b2fb1011b35e786b2a3ac",
+  sailing: "f1d59f24bf3e0d8e5565a4854753cd09c21cdc63cb30ca9cf795e6bd6fd09021",
+  // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
+  shooter: "f387ed1b6075b4b225b34ddb95fb51d7b5f0da28c95697790ae317aa5ec7994b",
+  snow: "c6859d4d9f2256efcffeaeabba1933e1803484d0aa4db34adadf549ede3fb780",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "b3fd8ba960c712e8c2eab62f400f6f0b64aef62e485b1b67f9dbc6438382e935",
-  "tower-defense": "af7db885838a0dc6276e9a5e2ccf2225c5adf1a0c3edb1c694dd55e98015655c",
+  // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
+  // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
+  starter: "670240cedf496b8e8741c85b4a5df95e377fea9a3c16ce1cdf1b0b2fc3b8aa57",
+  "tower-defense": "37e7e94389b116c34ce408722999efaa473bcceb31d0bdcc7a29fcebd9317183",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -326,6 +392,9 @@ async function withBrokenTemplateFile<T>(
   }
 }
 
+const COHORT_PIN =
+  /("(?:@threenative\/[\w-]+|create-threenative|threenative-[\w-]+)":\s*)"\d+\.\d+\.\d+(?:-[\w.]+)?"/gu;
+
 async function scaffoldTreeHash(directory: string): Promise<string> {
   const files: Array<[string, Buffer]> = [];
   async function walk(current: string): Promise<void> {
@@ -340,7 +409,15 @@ async function scaffoldTreeHash(directory: string): Promise<string> {
       } else {
         const relative = path.relative(directory, file);
         if (!GENERATED_SCAFFOLD_METADATA.test(relative)) {
-          files.push([relative, await readFile(file)]);
+          const bytes = await readFile(file);
+          // `pnpm release:prepare` moves the cohort's own pins on every release, so they hash as
+          // one placeholder: a version bump alone must not move a tree this test guards.
+          files.push([
+            relative,
+            entry.name === "package.json"
+              ? Buffer.from(bytes.toString("utf8").replace(COHORT_PIN, '$1"<cohort>"'))
+              : bytes,
+          ]);
         }
       }
     }
@@ -367,6 +444,8 @@ const STARTER_PATHS = [
   ".codex/hooks.json",
   "kit.json",
   "package.json",
+  "eslint.config.js",
+  "biome.json",
   "patches/three@0.185.1.patch",
   "patches/vite@8.2.0.patch",
   "patches/@tailwindcss__node@4.3.3.patch",
@@ -385,7 +464,6 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/qualityPolicy.ts",
-  "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
   "src/render/temporalAAResolve.ts",
@@ -398,7 +476,6 @@ const STARTER_PATHS = [
   "src/render/temporalCurrentVisibility.ts",
   "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
-  "src/render/autoExposure.ts",
   "src/render/volumetricFog.ts",
   "src/render/volumetricFogOptions.ts",
   "src/render/volumetricFogVolume.ts",
@@ -540,6 +617,104 @@ describe("create-threenative", () => {
       );
       expect(source).toContain("scaffoldCompletionMessage(discoverKitManifests())");
       expect(source).not.toContain("Templates: minimal (smallest)");
+      // Kit-loop rows 1-6 (PRD-750): a cold agent scaffolds from its session folder, so the host
+      // never loads the game's .mcp.json (a probe that wrote it mid-session got NO_TOOL) and five
+      // builds made zero engine calls. The last line hands it every server through mcp/call.mjs.
+      const servers = [
+        "threenative-assets",
+        "threenative-sculpt",
+        "threenative-engine",
+        "threenative-blender",
+      ];
+      const next = scaffoldNextSteps("/w/mario64", true, servers);
+      expect(next).toMatch(/\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u);
+      expect(next).toContain(`.mcp.json (${servers.join(", ")})`);
+      expect(next).toContain(
+        "`node /w/mario64/node_modules/@threenative/core/mcp/call.mjs <server>` lists its tools",
+      );
+      expect(next).toContain(
+        "node /w/mario64/node_modules/@threenative/core/mcp/call.mjs threenative-engine engine_search_capabilities",
+      );
+      expect(next).toMatch(
+        /Read AGENTS\.md once; CLAUDE\.md is its copy, and the skills it names are \.claude\/skills/u,
+      );
+      expect(scaffoldNextSteps("/w/mario64", false)).toMatch(/pnpm install[\s\S]*\.mcp\.json/u);
+      expect(projectMcpServers(root)).toEqual([]);
+      // Sandboxes 4-6 (2026-10-27): no reference call even with a ready command, and a printed title
+      // list was read and none opened. The scaffold runs the search and prints the pinned sources.
+      const calls: string[][] = [];
+      const hit = (id: string, kind: string) => ({
+        game: "sm64",
+        id,
+        kind,
+        name: id,
+        summary: `${id} summary`,
+        title: "Super Mario 64",
+      });
+      const detail = (id: string) =>
+        id === "a"
+          ? {
+              repo: "https://github.com/n64decomp/sm64",
+              sha: "9921382a68",
+              node: {
+                purpose: "Mario actions",
+                functions: [
+                  { name: "set_mario_action", path: "src/game/mario.c", lines: [979, 1013] },
+                ],
+              },
+              children: [{ id: "wall-kick" }],
+            }
+          : {
+              repo: "https://github.com/n64decomp/sm64",
+              sha: "9921382a68",
+              card: {
+                behavior: `${id} behavior`,
+                constants: [
+                  {
+                    name: "kick speed",
+                    value: 24,
+                    unit: "units/frame",
+                    source: "src/game/mario_actions_airborne.c:12",
+                  },
+                ],
+                sources: [{ path: "src/game/mario_actions_airborne.c", line: 40 }],
+              },
+            };
+      const digest = referenceDigest("/w/mario64", "mario", (args) => {
+        calls.push(args);
+        if (args[1] === "engine_reference_detail")
+          return JSON.stringify(detail(JSON.parse(args[2] ?? "{}").id));
+        return JSON.stringify({
+          results: [hit("a", "node"), ...["b", "c", "d", "e", "f"].map((id) => hit(id, "card"))],
+        });
+      });
+      const engine = "/w/mario64/node_modules/@threenative/core/mcp/engine.mjs";
+      expect(calls).toEqual([
+        [engine, "engine_search_references", '{"situation":"mario"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"a","kind":"node"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"b","kind":"card"}'],
+        [engine, "engine_reference_detail", '{"game":"sm64","id":"c","kind":"card"}'],
+      ]);
+      expect(digest).toContain('Mechanics references for "mario"');
+      expect(digest).toContain(
+        "- Super Mario 64 / a: a summary\n  https://github.com/n64decomp/sm64@9921382: Mario actions\n  set_mario_action src/game/mario.c:979\n  children: wall-kick\n",
+      );
+      expect(digest).toContain(
+        "- Super Mario 64 / b: b summary\n  https://github.com/n64decomp/sm64@9921382: b behavior\n  kick speed = 24 units/frame (src/game/mario_actions_airborne.c:12)\n  sources: src/game/mario_actions_airborne.c:40\n",
+      );
+      expect(digest).toContain("- Super Mario 64 / d: d summary\n- Super Mario 64 / e:");
+      expect(digest).not.toContain("- Super Mario 64 / f:");
+      expect(digest).toContain(
+        `node /w/mario64/node_modules/@threenative/core/mcp/call.mjs threenative-engine engine_search_references '{"situation":"<mechanic>"}'`,
+      );
+      expect(
+        referenceDigest("/w/mario64", "mario", () => {
+          throw new Error("TN_REFERENCES_OFFLINE: fetch failed\nstack");
+        }),
+      ).toBe("References unavailable: TN_REFERENCES_OFFLINE: fetch failed\n");
+      expect(referenceDigest("/w/x", "zzz", () => '{"results":[]}')).toBe(
+        'No mechanics references match "zzz".\n',
+      );
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -577,8 +752,78 @@ describe("create-threenative", () => {
         if (template === "platformer") {
           await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
         }
+        if (template === "collectathon" || template === "adventure") {
+          // Hop Garden's and Lantern Vale's geometry is procedural; their tiling surfaces are images (owner,
+          // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
+          // traced in PROVENANCE.md.
+          const files = await readdir(path.join(target, "assets"), { recursive: true });
+          const sizes = await Promise.all(
+            files.map(async (file) => {
+              const info = await stat(path.join(target, "assets", file));
+              return info.isFile() ? info.size : 0;
+            }),
+          );
+          expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
+          // The textures ship once in `template-assets/assets/tex-*`; the licence record follows.
+          const provenance = await readFile(
+            path.join(target, "assets", "tex-PROVENANCE.md"),
+            "utf8",
+          );
+          const textures = files.filter((name) => name.endsWith(".webp"));
+          expect(textures).toHaveLength(template === "collectathon" ? 12 : 5);
+          for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
+        }
+        if (template === "kart") {
+          // Clover Cup is all procedural (owner, 2026-10-24): no assets folder and
+          // no image or model file but the shared icon, so every texture is painted in code.
+          await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
+          const media = (await readdir(target, { recursive: true })).filter(
+            (file) =>
+              /\.(png|jpe?g|webp|ktx2|hdr|exr|glb|gltf|fbx|obj)$/u.test(file) &&
+              file !== path.join("public", "icon.png"),
+          );
+          expect(media).toEqual([]);
+        }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("ships the quality gate as two thin root configs and three scripts in every template", async () => {
+    const root = await makeTempDir("threenative-quality-config-");
+    try {
+      for (const template of ALL_TEMPLATES) {
+        const { target } = await createProject(
+          { install: false, target: template, template },
+          root,
+        );
+        const nonblank = (
+          await Promise.all(
+            ["eslint.config.js", "biome.json"].map((name) =>
+              readFile(path.join(target, name), "utf8"),
+            ),
+          )
+        )
+          .join("\n")
+          .split("\n")
+          .filter((line) => line.trim() !== "").length;
+        expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
+        const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+          devDependencies: Record<string, string>;
+          scripts: Record<string, string>;
+        };
+        expect(manifest.scripts.check, template).toBe(
+          "pnpm typecheck && pnpm lint && pnpm format:check",
+        );
+        expect(manifest.scripts.lint, template).toBe("eslint src");
+        expect(manifest.scripts["format:check"], template).toBe("biome format src");
+        expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
+        expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
+        expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
+        expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
+      }
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -995,7 +1240,9 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, "src/render", file), "utf8"),
         ),
       );
-      expect(renderFiles.join("\n")).not.toContain("@threenative/");
+      expect(
+        renderFiles.join("\n").replaceAll('from "@threenative/core"', 'from "shared-core"'),
+      ).not.toContain("@threenative/");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -1580,6 +1827,10 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
           },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
+          },
         },
       });
       await withBrokenTemplateFile("starter/.mcp.json", broken, async (templates) => {
@@ -1615,6 +1866,10 @@ describe("create-threenative", () => {
           "threenative-blender": {
             command: "node",
             args: [`${CORE_SHIM}/blender.mjs`],
+          },
+          "threenative-animation": {
+            command: "node",
+            args: [`${CORE_SHIM}/animation.mjs`],
           },
         },
       });
@@ -1713,4 +1968,39 @@ describe("create-threenative", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+});
+
+describe("authored temporal detail distribution", () => {
+  it("retains global shared assets for a custom template root", () => {
+    expect(canonicalRenderSourcePath("src/render/loading.ts", "/tmp/tn-absent-templates")).toBe(
+      path.resolve("packages/create-threenative/template-assets/loading.ts"),
+    );
+  });
+  it.each(["collectathon", "adventure", "kart"])(
+    "copies the canonical detail stage with a closed local import graph into %s",
+    async (template) => {
+      const parent = await makeTempDir("tn-temporal-detail-");
+      const target = path.join(parent, "game");
+      try {
+        await createProject({ target, template, install: false }, parent, TEMPLATE_ROOT);
+        const relative = "src/render/temporalDetailStage.ts";
+        const generated = await readFile(path.join(target, relative), "utf8");
+        expect(generated).toBe(
+          await readFile(path.join(TEMPLATE_ROOT, "starter", relative), "utf8"),
+        );
+        const post = await readFile(path.join(target, "src/render/postprocessing.ts"), "utf8");
+        expect(post).toContain('from "./temporalDetailStage.js"');
+        // The generated helper depends only on public Three/TSL plus an erased core type.
+        for (const match of generated.matchAll(/from ["'](\.[^"']+)["']/g)) {
+          const specifier = match[1];
+          if (specifier === undefined) throw new Error("Missing local import specifier capture");
+          expect(
+            existsSync(path.resolve(target, "src/render", specifier.replace(/\.js$/, ".ts"))),
+          ).toBe(true);
+        }
+      } finally {
+        await rm(parent, { recursive: true, force: true });
+      }
+    },
+  );
 });

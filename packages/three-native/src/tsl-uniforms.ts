@@ -17,17 +17,50 @@ interface IUniformState {
   value: unknown;
   /** three's `node.update`, set by onRenderUpdate/onFrameUpdate; its result becomes `.value`. */
   update?: (frame: IUpdateFrame) => unknown;
+  /** three's update type: "frame" runs once per renderer frame, "render" once per render call. */
+  updateType?: string;
+  /** The renderer frame a "frame" update last ran in. */
+  ranFrame?: number;
+  /** The lanes last written to the engine: an unchanged value is not written again. */
+  lanes?: readonly number[];
+  /** Reused extraction storage, never aliased with `lanes`: the sink reads it before it is refilled. */
+  scratch?: number[];
 }
 
-/** One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. */
-export function uniformLanes(value: unknown): number[] {
-  if (typeof value === "number") return [value];
+function sameLanes(a: readonly number[] | undefined, b: readonly number[]): boolean {
+  if (a === undefined || a.length !== b.length) return false;
+  for (let i = 0; i < b.length; i++) if (!Object.is(a[i], b[i])) return false;
+  return true;
+}
+
+/**
+ * One float per lane: a number, a Color's r, g, b, or a VectorN's x, y, z, w. `out`, when given,
+ * receives the lanes and is returned, so a uniform can refill one bounded scratch array per sync.
+ */
+export function uniformLanes(value: unknown, out?: number[]): number[] {
+  const lanes = out ?? [];
+  if (typeof value === "number") {
+    lanes.length = 1;
+    lanes[0] = value;
+    return lanes;
+  }
   if (typeof value === "object" && value !== null) {
     const v = value as Record<string, unknown>;
-    if (typeof v.x === "number" && typeof v.y === "number")
-      return [v.x, v.y, v.z, v.w].filter((lane): lane is number => typeof lane === "number");
-    if (typeof v.r === "number" && typeof v.g === "number" && typeof v.b === "number")
-      return [v.r, v.g, v.b];
+    if (typeof v.x === "number" && typeof v.y === "number") {
+      lanes.length = 2;
+      lanes[0] = v.x;
+      lanes[1] = v.y;
+      if (typeof v.z === "number") lanes[lanes.length] = v.z;
+      if (typeof v.w === "number") lanes[lanes.length] = v.w;
+      return lanes;
+    }
+    if (typeof v.r === "number" && typeof v.g === "number" && typeof v.b === "number") {
+      lanes.length = 3;
+      lanes[0] = v.r;
+      lanes[1] = v.g;
+      lanes[2] = v.b;
+      return lanes;
+    }
   }
   throw new TypeError(`TN_TSL_UNIFORM_VALUE: ${String(value)} is not a number, Color or vector`);
 }
@@ -61,7 +94,7 @@ function referenceValue(property: string, type: string, object: unknown): unknow
  * Wraps a back end's `uniform` so each uniform node it returns answers `.value` (an accessor on the
  * node itself: a V8 node has no prototype of its own to carry it) and three's update hooks. `setValues`
  * writes a node's lanes into the engine. `sync()` runs once per render: the update callbacks first,
- * then the edited objects' lanes.
+ * then the edited objects' lanes, each written only when its lanes changed.
  */
 export function liveUniforms<TNode extends object>(
   uniform: (value: unknown, type?: unknown) => TNode,
@@ -73,7 +106,7 @@ export function liveUniforms<TNode extends object>(
     type?: string,
   ) => { array: unknown[]; element(index: unknown): TNode };
   reference(property: string, type: string, object?: unknown): TNode;
-  sync(frame?: { camera?: unknown; scene?: unknown }): void;
+  sync(frame?: { camera?: unknown; scene?: unknown; frameId?: number }): void;
 } {
   const states = new WeakMap<object, IUniformState>();
   const objects = new Set<WeakRef<TNode>>();
@@ -82,23 +115,34 @@ export function liveUniforms<TNode extends object>(
   // of such a node waits too. Release with the owning material if a game builds hooked uniforms in a loop.
   const updating = new Set<TNode>();
   let frameId = 0;
+  // An unchanged value is not written again: an edited Color or vector is found by its lanes, and a
+  // hook that returns the same number every render costs no engine write.
+  const write = (node: TNode, state: IUniformState, lanes: readonly number[]) => {
+    if (sameLanes(state.lanes, lanes)) return;
+    // A snapshot for the sink and the state: `lanes` is the state's scratch, refilled by the next
+    // extraction, so a sink that keeps its argument must not see later values.
+    const written = lanes.slice();
+    setValues(node, written);
+    state.lanes = written;
+  };
   const live = {
     uniform(value: unknown, type?: unknown): TNode {
       const node = type === undefined ? uniform(value) : uniform(value, type);
-      const state: IUniformState = { value };
+      const state: IUniformState = { value, scratch: [] };
       states.set(node, state);
       Object.defineProperty(node, "value", {
         configurable: true,
         get: () => state.value,
         set: (next: unknown) => {
-          setValues(node, uniformLanes(next));
+          write(node, state, uniformLanes(next, state.scratch));
           state.value = next;
         },
       });
       if (typeof value === "object" && value !== null) objects.add(new WeakRef(node));
       // three's UniformNode.onUpdate: the callback runs with the node as `this` and its result,
-      // unless undefined, becomes the value. ponytail: FRAME and RENDER both run once per sync (one
-      // per render call); a game that renders twice a frame runs a FRAME callback twice.
+      // unless undefined, becomes the value. RENDER runs once per sync (one per render call); FRAME
+      // runs once per renderer frame. A post chain renders about ten passes a frame (Lantern Vale), and
+      // running every FRAME callback in each of them cost a tenth of the frame.
       const onUpdate = (
         callback: (this: TNode, frame: unknown, node: TNode) => unknown,
         updateType: string,
@@ -109,6 +153,8 @@ export function liveUniforms<TNode extends object>(
           );
         if (state.update === undefined) updating.add(node);
         state.update = (frame) => callback.call(node, frame, node);
+        state.updateType = updateType;
+        state.ranFrame = undefined;
         return node;
       };
       Object.defineProperties(node, {
@@ -174,10 +220,19 @@ export function liveUniforms<TNode extends object>(
         },
       };
     },
-    sync(extra?: { camera?: unknown; scene?: unknown }) {
+    sync(extra?: { camera?: unknown; scene?: unknown; frameId?: number }) {
+      // `extra.frameId` is the renderer's frame: every render, target draw and compute of one frame
+      // shares it. The callbacks see this module's own counter, as three's NodeFrame counts renders.
+      const rendererFrame = extra?.frameId;
       const frame: IUpdateFrame = { ...extra, frameId: ++frameId };
       for (const node of updating) {
-        const next = states.get(node)?.update?.(frame);
+        const state = states.get(node);
+        if (state?.update === undefined) continue;
+        if (state.updateType === "frame" && rendererFrame !== undefined) {
+          if (state.ranFrame === rendererFrame) continue;
+          state.ranFrame = rendererFrame;
+        }
+        const next = state.update(frame);
         if (next !== undefined) (node as { value: unknown }).value = next;
       }
       for (const ref of objects) {
@@ -186,11 +241,37 @@ export function liveUniforms<TNode extends object>(
           objects.delete(ref);
           continue;
         }
-        setValues(node, uniformLanes(states.get(node)?.value));
+        const state = states.get(node);
+        if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
       }
     },
   };
   return live;
+}
+
+/**
+ * three's `uniform(false)` (a boolean toggle such as the exposure meter's `enabled`) over a back end's numeric
+ * uniform. The ABI stores numeric lanes, so the boolean is the live float compared with zero (`notZero`); its
+ * `.value` reads and writes booleans. Any other value goes to `uniform` as before.
+ */
+export function booleanUniforms<TNode extends object>(
+  uniform: (value: unknown, type?: unknown) => TNode,
+  notZero: (scalar: TNode) => TNode,
+): (value: unknown, type?: unknown) => TNode {
+  return (value, type) => {
+    if (typeof value !== "boolean") return uniform(value, type);
+    if (type !== undefined && type !== "bool")
+      throw new TypeError("TN_TSL_UNIFORM_VALUE: a boolean uniform requires bool type");
+    const scalar = uniform(Number(value)) as TNode & { value: number };
+    return Object.defineProperty(notZero(scalar), "value", {
+      get: () => Boolean(scalar.value),
+      set: (next: unknown) => {
+        if (typeof next !== "boolean")
+          throw new TypeError("TN_TSL_UNIFORM_VALUE: expected a boolean");
+        scalar.value = Number(next);
+      },
+    });
+  };
 }
 
 /** The three classes a constant's value is made of. */

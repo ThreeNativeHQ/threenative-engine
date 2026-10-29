@@ -1,6 +1,7 @@
 import type { Camera, Object3D, Texture } from "three";
 import { pmremTexture } from "three/tsl";
 
+import { isAutoBatchSource } from "./auto-batch.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { STARTUP_HOLD_BUDGET_MS } from "./startup-readiness.js";
 
@@ -125,6 +126,16 @@ export interface IWarmUpOptions {
    */
   readonly renderPasses?: boolean;
   /**
+   * Runs right after every draw the warm-up makes outside the game's frame loop, so the loading
+   * cover can be painted over it.
+   *
+   * Such a draw runs in a timer task, and the browser presents it on its own: a Wasm engine that is
+   * still baking the environment presents black, and the cover flickers against it for the whole
+   * bake. Painting the cover in the same task makes the presented frame the cover again. Leave it
+   * unset when nothing covers the canvas.
+   */
+  readonly afterCoveredDraw?: () => void;
+  /**
    * Also render objects the scene has hidden for that one covered render. Default `false`.
    *
    * `renderPasses` already disables frustum culling, so every caster is submitted to the shadow
@@ -239,6 +250,7 @@ export interface IWarmUpRenderer {
     scene: Object3D,
     camera: Camera,
     targetScene?: Object3D,
+    afterDraw?: () => void,
   ) => void | Promise<void>;
   /** The renderer's own render path, used to build every pass's pipelines once. */
   render?: (scene: Object3D, camera: Camera) => void;
@@ -252,7 +264,12 @@ interface IPMREMNodeClass {
 
 /** The native engine's facade bakes the environment itself; warm-up draws the held scene until it is done. */
 interface INativeEnvironmentPreparer {
-  prepareEnvironmentAsync(scene: Object3D, camera: Camera, deadlineMs: number): Promise<boolean>;
+  prepareEnvironmentAsync(
+    scene: Object3D,
+    camera: Camera,
+    deadlineMs: number,
+    afterDraw?: () => void,
+  ): Promise<boolean>;
 }
 
 function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | undefined {
@@ -262,7 +279,10 @@ function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | u
     : undefined;
 }
 
-function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Object3D): boolean {
+export function sceneNeedsEnvironmentPreparation(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+): boolean {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return false;
 
@@ -273,11 +293,12 @@ function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Obje
   return backend?.isWebGPUBackend === true;
 }
 
-async function prepareSceneEnvironment(
+export async function prepareSceneEnvironment(
   renderer: IWarmUpRenderer,
   scene: Object3D,
   camera: Camera,
   deadlineMs: number,
+  afterDraw?: () => void,
 ): Promise<boolean> {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return true;
@@ -285,7 +306,8 @@ async function prepareSceneEnvironment(
   const raw = renderer.raw;
   if (typeof raw !== "object" || raw === null) return true;
   const native = nativeEnvironmentPreparer(raw);
-  if (native !== undefined) return native.prepareEnvironmentAsync(scene, camera, deadlineMs);
+  if (native !== undefined)
+    return native.prepareEnvironmentAsync(scene, camera, deadlineMs, afterDraw);
   const backend = (raw as { backend?: { isWebGPUBackend?: boolean } }).backend;
   if (backend?.isWebGPUBackend !== true) return true;
 
@@ -296,7 +318,22 @@ async function prepareSceneEnvironment(
       "TN_PMREM_ASYNC_PREPARER_UNAVAILABLE: patched Three.js has no PMREM cache preparer.",
     );
   }
-  return prepare.call(PMREMNode, raw, environment);
+  // False at the deadline, as the native preparer does; the bake keeps running. Unbounded, an Action
+  // RPG restart on 2-CPU SwiftShader waited the whole sky bake (about 30 s) with no frame drawn.
+  const prepared = prepare.call(PMREMNode, raw, environment);
+  const remaining = deadlineMs - (globalThis.performance?.now() ?? Date.now());
+  if (!Number.isFinite(remaining)) return prepared;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      prepared,
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), Math.max(0, remaining));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const DEFAULT_SLICE_SIZE = 24;
@@ -621,7 +658,12 @@ function collectRenderables(root: Object3D): Object3D[] {
   const stack: Object3D[] = [root];
   while (stack.length > 0) {
     const object = stack.pop() as Object3D;
-    if ((object as Object3D & { material?: unknown }).material !== undefined) found.push(object);
+    // A source the engine merged draws through its merged mesh, which is counted in its place.
+    if (
+      (object as Object3D & { material?: unknown }).material !== undefined &&
+      !isAutoBatchSource(object)
+    )
+      found.push(object);
     // A structural stand-in for a scene may carry no children at all; count what is there.
     const children = object.children ?? [];
     for (let index = children.length - 1; index >= 0; index -= 1) {
@@ -764,14 +806,19 @@ function nodeHasReflector(root: unknown, depth: number): boolean {
 
 function hasReflector(scene: Object3D): boolean {
   const stack: Object3D[] = [scene];
+  // A material is read once however many objects draw with it: on the engine, every field of its
+  // values is a call into the host.
+  const read = new Set<object>();
   while (stack.length > 0) {
     const object = stack.pop() as Object3D & { material?: unknown };
     const material = object.material;
     if (
       typeof material === "object" &&
       material !== null &&
-      (material as { isNodeMaterial?: boolean }).isNodeMaterial === true
+      (material as { isNodeMaterial?: boolean }).isNodeMaterial === true &&
+      !read.has(material)
     ) {
+      read.add(material);
       for (const value of Object.values(material as Record<string, unknown>)) {
         if (nodeHasReflector(value, 0)) return true;
       }
@@ -807,14 +854,18 @@ async function renderWarmPasses(
   enabled: boolean,
   includeHidden: boolean,
   targetScene?: Object3D,
+  afterCoveredDraw?: () => void,
 ): Promise<IWarmPassRender | undefined> {
   const coveredWorldPass = renderer.warmUpWorldPass;
   const render =
     coveredWorldPass === undefined
       ? renderer.render === undefined
         ? undefined
-        : () => renderer.render?.(scene, camera)
-      : () => coveredWorldPass(scene, camera, targetScene);
+        : () => {
+            renderer.render?.(scene, camera);
+            afterCoveredDraw?.();
+          }
+      : () => coveredWorldPass(scene, camera, targetScene, afterCoveredDraw);
   if (render === undefined) return undefined;
   const skipped: IWarmPassRender = {
     passes: [],
@@ -864,7 +915,12 @@ async function renderWarmPasses(
     }
     // The root's own visibility is forced below whether or not hidden objects are included, so it
     // is not counted here; a hidden child or group is.
-    if (includeHidden && object !== scene && object.visible === false) {
+    if (
+      includeHidden &&
+      object !== scene &&
+      object.visible === false &&
+      !isAutoBatchSource(object)
+    ) {
       entry.visible = false;
       object.visible = true;
       visibilityForced += 1;
@@ -962,6 +1018,7 @@ export async function warmUpScene(
         targetScene,
         camera,
         environmentDeadline,
+        options.afterCoveredDraw,
       ).then((prepared) => {
         environmentPrepared = prepared;
         if (!prepared) {
@@ -1178,6 +1235,7 @@ export async function warmUpScene(
         options.renderPasses !== false,
         options.includeHidden === true,
         options.targetScene,
+        options.afterCoveredDraw,
       );
     } catch (error) {
       passError = error;

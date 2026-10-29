@@ -18,7 +18,11 @@ import {
   createImageBlindBundle,
   hashPromptFile,
 } from "./score-blind.js";
-import { localPackageEntries, workspacePackages } from "./workspace-packages.js";
+import {
+  assertWebEngineBuilt,
+  localPackageEntries,
+  workspacePackages,
+} from "./workspace-packages.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE_ROOT = path.join(
@@ -199,7 +203,19 @@ export function inspectTemplate(
   const sky = readRender("sky.ts");
   const lighting = readRender("lighting.ts");
   const post = readRender("postprocessing.ts");
-  const worldEnvironment = readRender("worldEnvironment.ts");
+  const coreWorldEnvironment = path.join(REPO_ROOT, "packages/core/src/look/world-environment.ts");
+  const liveCoreWorldEnvironment = sources.some(
+    ({ source }) =>
+      /import\s*\{[^}]*\bWorldEnvironment\b[^}]*\}\s*from\s*["']@threenative\/core["']/u.test(
+        source,
+      ) && /\bnew\s+WorldEnvironment\s*\(/u.test(source),
+  );
+  const worldEnvironment = [
+    readRender("worldEnvironment.ts"),
+    liveCoreWorldEnvironment && existsSync(coreWorldEnvironment)
+      ? readFileSync(coreWorldEnvironment, "utf8")
+      : "",
+  ].join("\n");
   const postPipeline = `${post}\n${worldEnvironment}`;
   if (!/from ["']\.\/palette\.js["']/u.test(materials))
     errors.push(`${template}: materials.ts must import palette.ts`);
@@ -217,10 +233,17 @@ export function inspectTemplate(
   // occlusion and enables no shadow map, so demanding the soft-filter settings there would only
   // demand dead configuration.
   if (/castShadow\s*=\s*true/u.test(lighting)) {
-    for (const marker of ["PCFSoftShadowMap", "normalBias"]) {
-      if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
-    }
+    // Three's PCFSoftShadowMap ignores `shadow.radius`, so PCFShadowMap with a radius is the soft
+    // filter a kit can actually widen (collectathon, kart, adventure).
+    const softFilter =
+      lighting.includes("PCFSoftShadowMap") ||
+      (/\bPCFShadowMap\b/u.test(lighting) && /\bshadow\.radius\s*=/u.test(lighting));
+    if (!softFilter) errors.push(`${template}: lighting.ts is missing PCFSoftShadowMap`);
+    if (!lighting.includes("normalBias"))
+      errors.push(`${template}: lighting.ts is missing normalBias`);
   }
+  // A kit on the core look carries no chain source: when it imports and constructs core's
+  // `WorldEnvironment`, the markers are read from core's own source (`worldEnvironment` above).
   for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("]) {
     if (!postPipeline.includes(marker))
       errors.push(`${template}: render pipeline is missing ${marker}`);
@@ -333,6 +356,7 @@ export async function packageLocalFramework(root: string): Promise<Record<string
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
   const packages = LOCAL_FRAMEWORK_PACKAGES;
+  if (packages.some(([name]) => name === "@threenative/runtime-native")) assertWebEngineBuilt();
   const manifests = new Map(workspacePackages(REPO_ROOT).map((item) => [item.name, item]));
   const archives = new Map<string, string>();
   for (const [name] of packages) {

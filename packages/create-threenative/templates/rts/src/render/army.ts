@@ -11,6 +11,7 @@
 // scenario is really measuring.
 import {
   type BufferAttribute,
+  type BufferGeometry,
   type Camera,
   Color,
   DynamicDrawUsage,
@@ -19,10 +20,11 @@ import {
   Object3D,
   PlaneGeometry,
   RingGeometry,
+  Vector3,
 } from "three";
 import type { Game } from "../sim/game.js";
 import { HALF, STARTS, terrainHeight } from "../sim/terrain.js";
-import { type IEntity, TYPES } from "../sim/types.js";
+import type { IEntity } from "../sim/types.js";
 import type { IUnitModels } from "./models.js";
 import { palette } from "./palette.js";
 
@@ -30,8 +32,15 @@ import { palette } from "./palette.js";
 const CAPACITY = 128;
 /** Order markers alive at once, oldest released first. */
 const MARKERS = 24;
-/** Bar thickness, in metres. Enough to read at the closest zoom, thin enough not to crowd. */
-const BAR = 0.34;
+/**
+ * Bar sizes in screen pixels, not metres: an orthographic zoom-out shrank a 0.34 m bar to a 3 px line
+ * that the model under it cut through. A readout keeps one size on screen, as in every strategy game.
+ */
+const BAR_HEIGHT = 8;
+const BAR_BORDER = 2;
+const BAR_WIDTH = { building: 72, unit: 38 } as const;
+/** Gap between the model's top on screen and the bar's lower edge. */
+const BAR_LIFT = 6;
 const MARKER_LIFE = 0.8;
 
 interface IBatch {
@@ -55,6 +64,8 @@ export interface IArmy {
     time: number,
     dt: number,
     camera: Camera,
+    /** Screen pixels per metre at depth 1, measured by the scene: a render file imports no package. */
+    pixelsPerMetre: number,
   ) => void;
   readonly dispose: () => void;
 }
@@ -66,7 +77,7 @@ const _hurt = new Color(0xddad71);
 const _hostile = new Color(0xff8756);
 const _work = new Color(0x77eddf);
 const _queue = new Color(0x77cddd);
-const _backing = new Color(palette.gridLine);
+const _backing = new Color(palette.unseen);
 
 export function createArmy(
   models: IUnitModels,
@@ -101,6 +112,26 @@ export function createArmy(
   // Read back per frame instead of destructuring `rings.entries()`, which hands back a two-element
   // array for every ring, every frame.
   const ringTeams = STARTS.map((start, index) => start.team ?? index);
+
+  // Dark borders keep the authored faction colours readable on bright ground. Both underlays
+  // share one owned material and follow the foreground transforms without another per-frame walk.
+  const backingMaterial = new MeshBasicMaterial({ color: palette.unseen, depthWrite: false });
+  const ringBackings = new InstancedMesh(
+    new RingGeometry(0.97, 1.105, 40).rotateX(-Math.PI / 2),
+    backingMaterial,
+    CAPACITY * STARTS.length,
+  );
+  const markerBackings = new InstancedMesh(
+    new RingGeometry(0.47, 0.69, 24).rotateX(-Math.PI / 2),
+    backingMaterial,
+    MARKERS,
+  );
+  for (const backing of [ringBackings, markerBackings]) {
+    backing.instanceMatrix.setUsage(DynamicDrawUsage);
+    backing.frustumCulled = false;
+    backing.renderOrder = 1;
+    root.add(backing);
+  }
 
   // Two quads per readout — a coloured fill over the dark backdrop ring that frames it — so a bar
   // reads against any ground. `toneMapped: false` keeps them at the colour they were authored.
@@ -149,25 +180,61 @@ export function createArmy(
   };
 
   let barCount = 0;
+  /** Screen pixels per metre this frame (orthographic: the same at every depth). */
+  let pixels = 1;
+  /** The camera's up axis in world space this frame: what "above the model" means on screen. */
+  const up = new Vector3();
+  /**
+   * How far above its origin each model reaches on screen, in metres along the camera's up axis: the
+   * highest of its vertices, each turned to face the camera (`y·up.y + r·|up.xz|`), so the answer holds
+   * whatever way the model faces. The rig's pitch is fixed, so each model is scanned once.
+   */
+  const tops = new Map<string, number>();
+  let topsPitch = Number.NaN;
+  const screenTop = (type: IEntity["type"]): number => {
+    const tilt = Math.hypot(up.x, up.z);
+    if (Math.abs(tilt - topsPitch) > 1e-4) {
+      tops.clear();
+      topsPitch = tilt;
+    }
+    let top = tops.get(type);
+    if (top === undefined) {
+      top = 0;
+      for (const part of models.parts(type, 0))
+        top = Math.max(top, reach(part.geometry, up.y, tilt));
+      tops.set(type, top);
+    }
+    return top;
+  };
 
   /**
-   * One readout: a fill over its own backdrop, both camera-facing quads, the fill growing from
-   * the left so a half-full bar reads as "half" rather than as "small".
+   * One readout: a coloured fill inset in a dark frame, both camera-facing quads sized in pixels, the
+   * fill growing from the left so a half-full bar reads as "half" rather than as "small". `row` 0 is
+   * the health bar on the model's top; row 1 stacks the build or queue bar above it.
    */
-  const pushBar = (entity: IEntity, width: number, fraction: number, y: number, colour: Color) => {
-    const height = terrainHeight(entity.x, entity.z) + y;
+  const pushBar = (entity: IEntity, row: number, fraction: number, colour: Color) => {
+    const width = (entity.building ? BAR_WIDTH.building : BAR_WIDTH.unit) / pixels;
+    const height = BAR_HEIGHT / pixels;
     _dummy.quaternion.copy(camera.quaternion);
-    _dummy.position.set(entity.x, height, entity.z);
-    _dummy.scale.set(width, BAR, 1);
+    _dummy.position.set(
+      entity.x,
+      terrainHeight(entity.x, entity.z) + (entity.altitude || 0),
+      entity.z,
+    );
+    // Up the screen, not up the world: the camera's own Y axis lifts the bar clear of the model.
+    _dummy.translateY(
+      screenTop(entity.type) + (BAR_LIFT + BAR_HEIGHT / 2 + row * (BAR_HEIGHT + 2)) / pixels,
+    );
+    _dummy.scale.set(width, height, 1);
     _dummy.updateMatrix();
     bars.setMatrixAt(barCount, _dummy.matrix);
     bars.setColorAt(barCount, _backing);
     barCount += 1;
-    const fill = width * Math.max(0, Math.min(1, fraction));
+    const inner = width - (2 * BAR_BORDER) / pixels;
+    const fill = inner * Math.max(0, Math.min(1, fraction));
     if (fill <= 0) return;
-    _dummy.scale.set(fill, BAR * 0.7, 1);
-    _dummy.updateMatrix();
-    _dummy.translateX((fill - width) / 2);
+    _dummy.translateX((fill - inner) / 2);
+    _dummy.scale.set(fill, height - (2 * BAR_BORDER) / pixels, 1);
     _dummy.updateMatrix();
     bars.setMatrixAt(barCount, _dummy.matrix);
     bars.setColorAt(barCount, colour);
@@ -187,8 +254,10 @@ export function createArmy(
       slot.z = z;
       markerRings.setColorAt(index, _tint.set(hostile ? 0xff775a : 0x6cfbe2));
     },
-    sync: (game, selected, time, dt, view) => {
+    sync: (game, selected, time, dt, view, pixelsPerMetre) => {
       camera = view;
+      pixels = pixelsPerMetre;
+      up.set(0, 1, 0).applyQuaternion(view.quaternion);
       for (const entry of batches.values()) entry.list.length = 0;
       for (const entity of game.entities) {
         if (entity.garrisonId !== null) continue;
@@ -228,6 +297,7 @@ export function createArmy(
         }
       }
 
+      let backingCount = 0;
       for (let teamIndex = 0; teamIndex < rings.length; teamIndex++) {
         const ring = rings[teamIndex];
         const team = ringTeams[teamIndex] ?? 0;
@@ -243,11 +313,14 @@ export function createArmy(
           _dummy.scale.set(radius, 1, radius);
           _dummy.updateMatrix();
           ring.setMatrixAt(count, _dummy.matrix);
+          ringBackings.setMatrixAt(backingCount++, _dummy.matrix);
           count += 1;
         }
         ring.count = count;
         upload(ring.instanceMatrix, count);
       }
+      ringBackings.count = backingCount;
+      upload(ringBackings.instanceMatrix, backingCount);
 
       barCount = 0;
       for (const entity of game.entities) {
@@ -257,21 +330,15 @@ export function createArmy(
         // A unit earns a bar once something has happened to it, or once it is selected; a building
         // always has one, because its queue and its build site are the numbers being watched.
         if (!entity.building && !hurt && !selected.has(entity.id)) continue;
-        const width = entity.building ? 6 : 3;
-        const y =
-          (entity.altitude || 0) +
-          (entity.air ? 2.1 : entity.building ? TYPES[entity.type].r + 1.3 : 3.1);
         pushBar(
           entity,
-          width,
+          0,
           entity.maxHp > 0 ? entity.hp / entity.maxHp : 0,
-          y,
           entity.team > 0 ? _hostile : hurt ? _hurt : _friendly,
         );
-        if (entity.building && !entity.built)
-          pushBar(entity, width, entity.progress, y - 0.9, _work);
+        if (entity.building && !entity.built) pushBar(entity, 1, entity.progress, _work);
         else if (entity.queue.length > 0)
-          pushBar(entity, width, entity.queue[0]?.progress ?? 0, y - 0.9, _queue);
+          pushBar(entity, 1, entity.queue[0]?.progress ?? 0, _queue);
       }
       bars.count = barCount;
       upload(bars.instanceMatrix, barCount);
@@ -286,10 +353,13 @@ export function createArmy(
         _dummy.scale.setScalar(1 + (1 - slot.life / MARKER_LIFE) * 3);
         _dummy.updateMatrix();
         markerRings.setMatrixAt(live, _dummy.matrix);
+        markerBackings.setMatrixAt(live, _dummy.matrix);
         live += 1;
       }
       markerRings.count = live;
+      markerBackings.count = live;
       upload(markerRings.instanceMatrix, live);
+      upload(markerBackings.instanceMatrix, live);
     },
     dispose: () => {
       // The model geometries belong to `models`, which frees them; the materials are shared by
@@ -308,6 +378,10 @@ export function createArmy(
       (bars.material as MeshBasicMaterial).dispose();
       markerRings.geometry.dispose();
       (markerRings.material as MeshBasicMaterial).dispose();
+      ringBackings.geometry.dispose();
+      markerBackings.geometry.dispose();
+      backingMaterial.dispose();
+      root.remove(ringBackings, markerBackings);
     },
   };
 }
@@ -324,6 +398,18 @@ export function createArmy(
  * keyed by the attribute it describes.
  */
 const _ranges = new WeakMap<BufferAttribute, { start: number; count: number }>();
+
+/** The highest point of a geometry along a camera up axis `(rise, tilt)`, whatever way it faces. */
+function reach(geometry: BufferGeometry, rise: number, tilt: number): number {
+  const position = geometry.getAttribute("position");
+  let top = 0;
+  for (let index = 0; index < position.count; index++)
+    top = Math.max(
+      top,
+      position.getY(index) * rise + Math.hypot(position.getX(index), position.getZ(index)) * tilt,
+    );
+  return top;
+}
 
 function upload(attribute: BufferAttribute, live: number): void {
   if (live === 0) return;

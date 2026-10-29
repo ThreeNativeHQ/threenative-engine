@@ -1,6 +1,6 @@
-import { useUiIntent, useUiState } from "@threenative/ui";
+import { useUiIntent } from "@threenative/ui";
 import { type BuildingType, type EntityType, TYPES } from "../sim/types.js";
-import type { GameState } from "../state.js";
+import { useUiStateShown } from "./Hud.js";
 
 /** Every structure the rules table knows how to place, in the table's own order. */
 const STRUCTURES = (Object.keys(TYPES) as EntityType[]).filter(
@@ -16,7 +16,7 @@ const STRUCTURES = (Object.keys(TYPES) as EntityType[]).filter(
  * because `canAfford` is the same arithmetic the simulation charges them with.
  */
 export function Commands() {
-  const state = useUiState<GameState>();
+  const state = useUiStateShown((s) => [s.primaryType, s.mode, s.ore, s.gas, s.selection]);
   const send = useUiIntent();
   if (state === undefined) return null;
   const card = state.primaryType === "" ? undefined : TYPES[state.primaryType as EntityType];
@@ -24,7 +24,7 @@ export function Commands() {
   const placing = state.mode.startsWith("build:") ? state.mode.slice(6) : "";
 
   return (
-    <section className="pointer-events-none absolute right-4 bottom-14 flex max-w-80 flex-col gap-2">
+    <section className="pointer-events-none flex max-w-80 flex-col gap-2">
       {producer === undefined ? null : (
         <div className="flex flex-wrap justify-end gap-1">
           {(card?.trains ?? []).map((type) => {
@@ -83,7 +83,10 @@ export function Commands() {
           );
         })}
       </div>
-      <p className="text-right text-[10px] uppercase tracking-[0.14em] text-dim" id="command-hint">
+      <p
+        className="bg-black/80 text-right text-[10px] uppercase tracking-[0.14em] text-dim"
+        id="command-hint"
+      >
         {placing === ""
           ? "drag to select · right-click to order · wheel to zoom"
           : `placing ${TYPES[placing as BuildingType].name} — click the ground, esc to cancel`}
@@ -115,7 +118,7 @@ function Button({
       // class is load-bearing rather than decoration — without it every order in this panel is
       // dead to a mouse and only the keyboard can issue one.
       className={`pointer-events-auto border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${
-        active ? "border-lume bg-lume/20 text-lume" : "border-line bg-panel/80 text-text"
+        active ? "border-lume bg-lume/20 text-lume" : "border-line bg-black/80 text-text"
       } ${afford ? "" : "text-dim/60 line-through"}`}
       data-tn-interactive
       data-testid={testid}

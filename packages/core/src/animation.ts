@@ -2,6 +2,10 @@ import {
   type AnimationAction,
   type AnimationClip,
   AnimationMixer,
+  type AnimationMixerEventMap,
+  type Box3,
+  type BufferGeometry,
+  type EventListener,
   LoopOnce,
   LoopRepeat,
   Matrix4,
@@ -9,7 +13,20 @@ import {
   Vector3,
   type VectorKeyframeTrack,
 } from "three";
+import {
+  type IAnimationPacketState,
+  animationPacketField,
+  animationPacketMethodsPristine,
+  animationPacketReaders,
+  animationPacketTime,
+  animationPacketTimeReaders,
+} from "./animation-packet-state.js";
 import { clipTrackBindings } from "./clip-audit.js";
+import {
+  type IAnimationRateState,
+  animationRateStates,
+  trackAnimationRate,
+} from "./render-camera-cull.js";
 import { type ISharedStride, type RigPreparation, uniformYawScale } from "./rig-preparation.js";
 
 export interface IAnimationPlayerOptions {
@@ -29,6 +46,10 @@ export interface IAnimationPlayerOptions {
    * way. Set `false` to keep the authored rate; the measurement below stays live either way and
    * says that it was overridden. The convention re-times locomotion only: a `"once"` clip — a
    * death, a flinch — always plays at its authored rate.
+   *
+   * Left unset, a rig carried by a camera (first-person hands, a held weapon) keeps its authored
+   * rate: the camera moves it, and a mouse turn sweeps its root metres a second, which read as
+   * stride played the hands at the 3x ceiling. `stride.cameraCarried` reports it; `true` syncs anyway.
    */
   readonly strideSync?: boolean;
   /**
@@ -39,6 +60,27 @@ export interface IAnimationPlayerOptions {
    * the clip's motion back as if it were the body's.
    */
   readonly strideRoot?: Object3D;
+  /**
+   * Evaluate by measured screen size by default; a positive integer names a frame interval.
+   * A stride-synced walk at 32 px or more evaluates every frame.
+   * Public mixer listeners/speed overrides stay full-rate; action speed interpolations do until settled.
+   */
+  readonly updateRate?: "auto" | number;
+  /**
+   * Let the skinned batch evaluate a held, distant rig's pose on the GPU from keyframes and time.
+   * Off by default: each vertex re-evaluates the pose in the main and shadow passes, which cost
+   * 2.7 / 10.3 / 13.8 ms of GPU time at 32 / 128 / 256 rigs on Intel gen-12lp (PRD-570). Held rigs
+   * otherwise keep their last CPU pose until their next evaluation.
+   */
+  readonly gpuPose?: boolean;
+}
+
+export interface IAnimationUpdateRateReport {
+  readonly rate: number;
+  readonly overridden: boolean;
+  readonly evaluated: boolean;
+  /** Frames between CPU bone refreshes: `rate`, or longer while the GPU evaluates the pose. */
+  readonly boneRate: number;
 }
 
 /**
@@ -58,6 +100,8 @@ export interface IStrideReport {
   readonly synced: boolean;
   /** True when a rate was measured and deliberately not applied. */
   readonly overridden: boolean;
+  /** True when a camera carries the rig, so an unset `strideSync` keeps the authored rate. */
+  readonly cameraCarried: boolean;
   /**
    * True when the clip carries no root motion and its stride was read off the feet instead.
    *
@@ -76,12 +120,27 @@ export interface IStrideReport {
  * clip reads as a cartoon; at zero it freezes mid-stride while the body drifts, which is worse
  * than a slow cycle. Both ends are a property of the clip set, so both are the game's to move.
  */
+/** Packet-state reads that reuse the last full validation of the action and mixer internals. */
+const PACKET_REVALIDATE_READS = 256;
+/**
+ * While the GPU evaluates a rig's pose, the CPU bones refresh every this many scheduled
+ * evaluations. The drawn pose stays exact every frame; only bone readers see the longer interval.
+ */
+const GPU_POSE_BONE_REFRESH = 4;
 const STRIDE_RATE_MIN = 0.15;
 const STRIDE_RATE_MAX = 3;
 /** Below this the body is standing, and a measured rate would be noise. */
 const STRIDE_SPEED_FLOOR = 1e-4;
 /** A clip carrying less ground than this per second is not locomotion. */
 const CLIP_GROUND_FLOOR = 1e-3;
+
+/** True when `object` is a camera or sits under one: the camera moves it, not its own clip. */
+function cameraCarried(object: Object3D): boolean {
+  for (let node: Object3D | null = object; node !== null; node = node.parent) {
+    if ((node as { isCamera?: boolean }).isCamera === true) return true;
+  }
+  return false;
+}
 /** Poses taken across one cycle when reading an in-place clip's stride off its feet. */
 const PLANT_SAMPLES = 64;
 /** A contact bone is one that reaches this near the lowest point the rig visits. */
@@ -120,13 +179,196 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 }
 
 /**
+ * The box a mesh's contact point is read from, or undefined for the object's own origin.
+ *
+ * A procedural boot or sole has its origin wherever the author put the geometry, usually the
+ * middle. On a leg that swings from the hip the origin sweeps a smaller circle than the sole does,
+ * so reading it reports a stride shorter than the ground the sole covers, and the clip plays too
+ * fast. A skinned mesh keeps its bind-pose box under a static matrix, so its bones carry the
+ * motion and it stays on the origin path.
+ */
+function contactBox(object: Object3D): Box3 | undefined {
+  const mesh = object as Object3D & { geometry?: BufferGeometry; isSkinnedMesh?: boolean };
+  if (mesh.geometry === undefined || mesh.isSkinnedMesh === true) return undefined;
+  if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox;
+  if (box === null || box.isEmpty()) return undefined;
+  const finite = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+  return finite.every(Number.isFinite) ? box : undefined;
+}
+
+/**
+ * Where an object meets the floor: its lowest world-space geometry point, with the horizontal
+ * position taken at the middle of the four lowest corners of its box (the sole, however it tilts).
+ * An object without geometry is its origin.
+ */
+function contactPoint(elements: Float64Array, box: Box3 | undefined, target: Vector3): Vector3 {
+  if (box === undefined)
+    return target.set(elements[12] as number, elements[13] as number, elements[14] as number);
+  // Plain arithmetic over one read of the matrix and the box, Vector3.applyMatrix4's own formula:
+  // on the owned engine each vector call crosses into the engine, and 8 corners per mesh per sample
+  // held Lantern Vale's first walk and first run for 43 ms each.
+  const e0 = elements[0] as number;
+  const e1 = elements[1] as number;
+  const e2 = elements[2] as number;
+  const e3 = elements[3] as number;
+  const e4 = elements[4] as number;
+  const e5 = elements[5] as number;
+  const e6 = elements[6] as number;
+  const e7 = elements[7] as number;
+  const e8 = elements[8] as number;
+  const e9 = elements[9] as number;
+  const e10 = elements[10] as number;
+  const e11 = elements[11] as number;
+  const e12 = elements[12] as number;
+  const e13 = elements[13] as number;
+  const e14 = elements[14] as number;
+  const e15 = elements[15] as number;
+  const { x: minX, y: minY, z: minZ } = box.min;
+  const { x: maxX, y: maxY, z: maxZ } = box.max;
+  for (let index = 0; index < 8; index += 1) {
+    const x = index & 1 ? maxX : minX;
+    const y = index & 2 ? maxY : minY;
+    const z = index & 4 ? maxZ : minZ;
+    const w = 1 / (e3 * x + e7 * y + e11 * z + e15);
+    cornerX[index] = (e0 * x + e4 * y + e8 * z + e12) * w;
+    cornerY[index] = (e1 * x + e5 * y + e9 * z + e13) * w;
+    cornerZ[index] = (e2 * x + e6 * y + e10 * z + e14) * w;
+    // Insert by height as each corner lands: a stable sort of 8 without Array.sort's comparator calls,
+    // which cost three quarters of this function on Lantern Vale's first walk.
+    const height = cornerY[index] as number;
+    let slot = index;
+    while (slot > 0 && (cornerY[cornerOrder[slot - 1] as number] as number) > height) {
+      cornerOrder[slot] = cornerOrder[slot - 1] as number;
+      slot -= 1;
+    }
+    cornerOrder[slot] = index;
+  }
+  let x = 0;
+  let z = 0;
+  for (let index = 0; index < 4; index += 1) {
+    const corner = cornerOrder[index] as number;
+    x += cornerX[corner] as number;
+    z += cornerZ[corner] as number;
+  }
+  return target.set(x / 4, cornerY[cornerOrder[0] as number] as number, z / 4);
+}
+
+/** An object's current world matrix into `target`, identity for none; the engine copies it out. */
+function worldOf(object: Object3D | null, target: Float64Array): void {
+  if (object === null) {
+    target.set(IDENTITY);
+    return;
+  }
+  const source = object as Object3D & { __tnCopyMatrixWorld?: (target: Matrix4) => void };
+  // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
+  if (source.__tnCopyMatrixWorld === undefined) target.set(object.matrixWorld.elements);
+  else {
+    source.__tnCopyMatrixWorld(scratchMatrixWorld);
+    target.set(scratchMatrixWorld.elements);
+  }
+}
+
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+/** Matrix4.compose from the object's position, quaternion and scale, three's own formula. */
+function composeLocal(object: Object3D, te: Float64Array): void {
+  const { x, y, z, w } = object.quaternion;
+  const x2 = x + x;
+  const y2 = y + y;
+  const z2 = z + z;
+  const xx = x * x2;
+  const xy = x * y2;
+  const xz = x * z2;
+  const yy = y * y2;
+  const yz = y * z2;
+  const zz = z * z2;
+  const wx = w * x2;
+  const wy = w * y2;
+  const wz = w * z2;
+  const { x: sx, y: sy, z: sz } = object.scale;
+  te[0] = (1 - (yy + zz)) * sx;
+  te[1] = (xy + wz) * sx;
+  te[2] = (xz - wy) * sx;
+  te[3] = 0;
+  te[4] = (xy - wz) * sy;
+  te[5] = (1 - (xx + zz)) * sy;
+  te[6] = (yz + wx) * sy;
+  te[7] = 0;
+  te[8] = (xz + wy) * sz;
+  te[9] = (yz - wx) * sz;
+  te[10] = (1 - (xx + yy)) * sz;
+  te[11] = 0;
+  te[12] = object.position.x;
+  te[13] = object.position.y;
+  te[14] = object.position.z;
+  te[15] = 1;
+}
+
+/**
+ * Matrix4.multiplyMatrices(a, b) into `te`, three's own formula. Indexed reads on purpose: this runs
+ * on a clip's first play, before the JIT warms, where destructuring a Float64Array runs its
+ * iterator at twice the cost.
+ */
+function multiplyInto(ae: Float64Array, be: Float64Array, te: Float64Array): void {
+  const a11 = ae[0] as number;
+  const a21 = ae[1] as number;
+  const a31 = ae[2] as number;
+  const a41 = ae[3] as number;
+  const a12 = ae[4] as number;
+  const a22 = ae[5] as number;
+  const a32 = ae[6] as number;
+  const a42 = ae[7] as number;
+  const a13 = ae[8] as number;
+  const a23 = ae[9] as number;
+  const a33 = ae[10] as number;
+  const a43 = ae[11] as number;
+  const a14 = ae[12] as number;
+  const a24 = ae[13] as number;
+  const a34 = ae[14] as number;
+  const a44 = ae[15] as number;
+  const b11 = be[0] as number;
+  const b21 = be[1] as number;
+  const b31 = be[2] as number;
+  const b41 = be[3] as number;
+  const b12 = be[4] as number;
+  const b22 = be[5] as number;
+  const b32 = be[6] as number;
+  const b42 = be[7] as number;
+  const b13 = be[8] as number;
+  const b23 = be[9] as number;
+  const b33 = be[10] as number;
+  const b43 = be[11] as number;
+  const b14 = be[12] as number;
+  const b24 = be[13] as number;
+  const b34 = be[14] as number;
+  const b44 = be[15] as number;
+  te[0] = a11 * b11 + a12 * b21 + a13 * b31 + a14 * b41;
+  te[4] = a11 * b12 + a12 * b22 + a13 * b32 + a14 * b42;
+  te[8] = a11 * b13 + a12 * b23 + a13 * b33 + a14 * b43;
+  te[12] = a11 * b14 + a12 * b24 + a13 * b34 + a14 * b44;
+  te[1] = a21 * b11 + a22 * b21 + a23 * b31 + a24 * b41;
+  te[5] = a21 * b12 + a22 * b22 + a23 * b32 + a24 * b42;
+  te[9] = a21 * b13 + a22 * b23 + a23 * b33 + a24 * b43;
+  te[13] = a21 * b14 + a22 * b24 + a23 * b34 + a24 * b44;
+  te[2] = a31 * b11 + a32 * b21 + a33 * b31 + a34 * b41;
+  te[6] = a31 * b12 + a32 * b22 + a33 * b32 + a34 * b42;
+  te[10] = a31 * b13 + a32 * b23 + a33 * b33 + a34 * b43;
+  te[14] = a31 * b14 + a32 * b24 + a33 * b34 + a34 * b44;
+  te[3] = a41 * b11 + a42 * b21 + a43 * b31 + a44 * b41;
+  te[7] = a41 * b12 + a42 * b22 + a43 * b32 + a44 * b42;
+  te[11] = a41 * b13 + a42 * b23 + a43 * b33 + a44 * b43;
+  te[15] = a41 * b14 + a42 * b24 + a43 * b34 + a44 * b44;
+}
+
+/**
  * The ground an in-place clip was authored for, read off the feet, in world metres per clip-second.
  *
  * A planted foot sweeps backward relative to the body at exactly the speed the body is meant to be
  * travelling — that is what "planted" means — so the stance phase of a cycle states the clip's
  * speed even though nothing in it translates. Contact bones are found by where they go rather than
  * by what they are called: whatever reaches the bottom of the rig's arc is a foot, in any rig and
- * any language. The median over stance frames rejects the toe-off and heel-strike ends of the
+ * any language. A mesh counts at its lowest geometry point, not its origin (`contactPoint`). The median over stance frames rejects the toe-off and heel-strike ends of the
  * sweep, and the median over feet rejects a limb that never plants.
  *
  * The rig is driven and then restored to the transforms it arrived with, once per clip.
@@ -134,6 +376,7 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const objects: Object3D[] = [];
   root.traverse((object) => objects.push(object));
+  const boxes = objects.map(contactBox);
 
   // The root belongs to the game, which turns it with `rotation.y +=`. A quaternion restore
   // rewrites `rotation` as the equivalent Euler, so a yaw of PI comes back as (PI, 0, PI) and the
@@ -148,19 +391,38 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const step = clip.duration / PLANT_SAMPLES;
   // The mixer animates only the rig, so its ancestors need one refresh, not one per sample.
   root.parent?.updateWorldMatrix(true, false);
+  // A rig that updates its own matrices gets its world matrices here, with three's own compose and
+  // multiply over plain arrays: on the owned engine a world read is one crossing and a matrix read
+  // sixteen proxied ones, per node per sample, and those held Lantern Vale's first walk 13 ms on a
+  // desktop. A node with a hand-set matrix keeps the engine's world read.
+  const composed = objects.every(
+    (object) => object.matrixAutoUpdate !== false && object.matrixWorldAutoUpdate !== false,
+  );
+  const worlds = objects.map(() => new Float64Array(16));
+  const local = new Float64Array(16);
+  const rootParentWorld = new Float64Array(16);
+  const parentOf = new Map(objects.map((object, index) => [object, index]));
+  const parents = objects.map((object) =>
+    object === root ? -1 : (parentOf.get(object.parent as Object3D) ?? -1),
+  );
+  if (composed) worldOf(root.parent, rootParentWorld);
   try {
     for (let frame = 0; frame <= PLANT_SAMPLES; frame += 1) {
       mixer.setTime(frame * step);
-      root.updateMatrixWorld(true);
+      if (!composed) root.updateMatrixWorld(true);
       for (let index = 0; index < objects.length; index += 1) {
-        // The frame's updateMatrixWorld already holds every bone; getWorldPosition re-walks ancestors.
-        const object = objects[index] as Object3D & {
-          __tnCopyMatrixWorld?: (target: Matrix4) => void;
-        };
-        if (object.__tnCopyMatrixWorld !== undefined) {
-          object.__tnCopyMatrixWorld(scratchMatrixWorld);
-          scratchWorld.setFromMatrixPosition(scratchMatrixWorld);
-        } else scratchWorld.setFromMatrixPosition(object.matrixWorld);
+        const object = objects[index] as Object3D;
+        const world = worlds[index] as Float64Array;
+        if (composed) {
+          composeLocal(object, local);
+          const parent = parents[index] as number;
+          multiplyInto(
+            parent < 0 ? rootParentWorld : (worlds[parent] as Float64Array),
+            local,
+            world,
+          );
+        } else worldOf(object, world);
+        contactPoint(world, boxes[index], scratchWorld);
         (paths[index] as { x: number; y: number; z: number }[]).push({
           x: scratchWorld.x,
           y: scratchWorld.y,
@@ -229,13 +491,127 @@ export interface IAnimationPlayOptions {
    * also keeps its authored rate — stride sync re-times locomotion, not events.
    */
   readonly mode?: "loop" | "once";
+  /**
+   * The playback rate of this play of a `"once"` clip, like Godot's `play(name, blend, speed)`.
+   * `1` (the default) is the authored rate; the next play without it returns to `1`. A looping clip
+   * keeps its stride-synced rate and ignores it.
+   */
+  readonly speed?: number;
 }
 
 type AnimationMode = "loop" | "once";
+let nextAnimationOffset = 0;
+const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
+
+type LoopListener = EventListener<AnimationMixerEventMap["loop"], "loop", LoopAwareAnimationMixer>;
+type FinishedListener = EventListener<
+  AnimationMixerEventMap["finished"],
+  "finished",
+  LoopAwareAnimationMixer
+>;
+type BeforeFirstLoopListener = (duringUpdate: boolean) => void;
+
+class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
+  readonly #loopListeners = new Set<LoopListener>();
+  readonly #finishedListeners = new Set<FinishedListener>();
+  readonly #beforeFirstLoopListener: BeforeFirstLoopListener;
+  #updateDepth = 0;
+
+  constructor(
+    root: Object3D,
+    beforeFirstLoopListener: BeforeFirstLoopListener,
+    internalFinishedListener: FinishedListener,
+  ) {
+    super(root);
+    this.#beforeFirstLoopListener = beforeFirstLoopListener;
+    super.addEventListener("finished", internalFinishedListener);
+  }
+
+  get hasPublicListeners(): boolean {
+    return this.#loopListeners.size > 0 || this.#finishedListeners.size > 0;
+  }
+
+  override addEventListener(type: "loop", listener: LoopListener): void;
+  override addEventListener(type: "finished", listener: FinishedListener): void;
+  override addEventListener(
+    type: "loop" | "finished",
+    listener: LoopListener | FinishedListener,
+  ): void {
+    if (type === "loop") {
+      const loopListener = listener as LoopListener;
+      if (!this.hasEventListener(type, loopListener)) {
+        if (!this.hasPublicListeners) {
+          const duringUpdate = this.#updateDepth > 0;
+          this.#beforeFirstLoopListener(duringUpdate);
+        }
+        this.#loopListeners.add(loopListener);
+      }
+      super.addEventListener(type, loopListener);
+      return;
+    }
+    const finishedListener = listener as FinishedListener;
+    if (!this.hasEventListener(type, finishedListener)) {
+      if (!this.hasPublicListeners) this.#beforeFirstLoopListener(this.#updateDepth > 0);
+      this.#finishedListeners.add(finishedListener);
+    }
+    super.addEventListener(type, finishedListener);
+  }
+
+  override removeEventListener(type: "loop", listener: LoopListener): void;
+  override removeEventListener(type: "finished", listener: FinishedListener): void;
+  override removeEventListener(
+    type: "loop" | "finished",
+    listener: LoopListener | FinishedListener,
+  ): void {
+    if (type === "loop") {
+      const loopListener = listener as LoopListener;
+      const wasRegistered = this.hasEventListener(type, loopListener);
+      super.removeEventListener(type, loopListener);
+      if (wasRegistered) this.#loopListeners.delete(loopListener);
+      return;
+    }
+    const finishedListener = listener as FinishedListener;
+    super.removeEventListener(type, finishedListener);
+    this.#finishedListeners.delete(finishedListener);
+  }
+
+  override update(deltaTime: number): AnimationMixer {
+    this.#updateDepth += 1;
+    try {
+      return super.update(deltaTime);
+    } finally {
+      this.#updateDepth -= 1;
+    }
+  }
+}
 
 export class AnimationPlayer {
+  readonly #packetReader = () => this.#readPacketState();
+  readonly #packetTimeReader = () => this.#trustedPacketTime();
+  /** The action and clip the last full packet validation accepted, reused for a bounded number of reads. */
+  #packetTrust: { action: AnimationAction; clip: AnimationClip; left: number } | undefined;
   readonly mixer: AnimationMixer;
   readonly root: Object3D;
+  readonly #rateState: IAnimationRateState = {
+    rate: 1,
+    effectiveRate: 1,
+    frame: 0,
+    source: undefined,
+    evaluated: true,
+    evaluation: 0,
+    syncBones: () => this.#flushPending(),
+  };
+  readonly #staggerOffset = nextAnimationOffset++;
+  #updateRate: "auto" | number = "auto";
+  #updateFrame = 0;
+  #skippedFrames = 0;
+  #pendingDt = 0;
+  readonly #pendingActionTimes = new Map<AnimationAction, number>();
+  readonly #evaluationScales = new Map<AnimationAction, number>();
+  readonly #evaluationPaused = new Set<AnimationAction>();
+  readonly #timeScaleInterpolations = new Set<AnimationAction>();
+  #evaluating = false;
+  #evaluated = false;
   #actions = new Map<string, AnimationAction>();
   #current: string | undefined;
   #mode: AnimationMode = "loop";
@@ -254,10 +630,18 @@ export class AnimationPlayer {
   #blendElapsed = 0;
   #blendStarts = new Map<string, number>();
   #preparation: RigPreparation | undefined;
-  #strideSync: boolean;
+  #strideSync: boolean | undefined;
   #strideRoot: Object3D;
+  #cameraCarried = false;
   #lastRootPosition = new Vector3();
   #hasLastRootPosition = false;
+  /**
+   * The clip whose last stride measurement could not change any time scale: it is not locomotion,
+   * or the game declined stride sync. While it is still playing, a held tick only banks its `dt`
+   * and the next evaluation measures the whole interval, so a held rig pays no world-matrix walk.
+   */
+  #strideReportOnlyFor: string | undefined;
+  #strideDtDebt = 0;
   // The last update's numbers, kept as scalars so a frame that never reads `.stride` builds no
   // report. A read materializes a fresh snapshot, so a retained report never changes under it.
   #strideGroundSpeed = 0;
@@ -272,9 +656,17 @@ export class AnimationPlayer {
   constructor(options: IAnimationPlayerOptions) {
     const owner = new.target.name || "AnimationPlayer";
     this.root = options.root;
-    this.mixer = new AnimationMixer(options.root);
+    this.updateRate = options.updateRate ?? "auto";
+    this.#rateState.gpuPoseEnabled = options.gpuPose === true;
+    this.mixer = new LoopAwareAnimationMixer(
+      options.root,
+      (duringUpdate) => {
+        if (!duringUpdate) this.#flushPending();
+      },
+      this.#onFinished,
+    );
     this.#preparation = options.preparation;
-    this.#strideSync = options.strideSync ?? true;
+    this.#strideSync = options.strideSync;
     this.#strideRoot = options.strideRoot ?? options.root;
     for (const clip of options.clips) {
       if (this.#actions.has(clip.name))
@@ -288,6 +680,7 @@ export class AnimationPlayer {
       const action = this.mixer.clipAction(clip);
       if (action === null)
         throw new Error(`Animation clip '${clip.name}' could not create an action.`);
+      this.#observeTimeScaleInterpolation(action);
       this.#actions.set(clip.name, action);
       this.#clips.set(clip.name, clip);
     }
@@ -307,7 +700,81 @@ export class AnimationPlayer {
           `${owner}: clip '${name}' binds 0 tracks to '${options.root.name || options.root.type}'.`,
         );
     }
-    this.mixer.addEventListener("finished", this.#onFinished);
+    animationPacketReaders.set(this.root, this.#packetReader);
+    animationPacketTimeReaders.set(this.root, this.#packetTimeReader);
+    trackAnimationRate(this.root, this.#rateState);
+    this.root.userData[ANIMATION_RATE_STATE_KEY] = this.#rateState;
+  }
+
+  get updateRate(): "auto" | number {
+    return this.#updateRate;
+  }
+
+  set updateRate(value: "auto" | number) {
+    if (value !== "auto" && (!Number.isSafeInteger(value) || value < 1))
+      throw new Error("AnimationPlayer.updateRate requires 'auto' or a positive safe integer.");
+    this.#updateRate = value;
+  }
+
+  get updateRateReport(): IAnimationUpdateRateReport {
+    const rate = this.#effectiveUpdateRate();
+    return {
+      rate,
+      overridden: this.#updateRate !== "auto",
+      evaluated: this.#evaluated,
+      boneRate: this.#boneRate(rate),
+    };
+  }
+
+  /** An explicit `updateRate` keeps the CPU pose on that interval; auto lets the GPU pose stretch it. */
+  #boneRate(rate: number): number {
+    return this.#updateRate === "auto" && rate > 1 && this.#rateState.gpuPose === true
+      ? rate * GPU_POSE_BONE_REFRESH
+      : rate;
+  }
+
+  #effectiveUpdateRate(mixerScale = this.mixer.timeScale): number {
+    // Public mixer speed overrides and observed events retain ordinary Three.js tick semantics.
+    if (mixerScale !== 1) return 1;
+    // Event deadlines and changing blend weights remain exactly on the gameplay tick.
+    if (
+      this.#mode === "once" ||
+      this.#fadeOut.length > 0 ||
+      this.#blendElapsed < this.#blendDuration
+    )
+      return 1;
+    if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners) return 1;
+    if (this.#timeScaleInterpolations.size > 0) return 1;
+    if (this.#updateRate !== "auto") return this.#updateRate;
+    const state = this.#rateState;
+    if (state.source === undefined) return 1;
+    // A held pose rides on a moving body, so a stride-synced walk in the 32-128 px band evaluates
+    // every frame, or its planted foot slides by the body's travel; smaller rigs keep the band rate.
+    return state.frame === state.source.animationFrame
+      ? state.rate === 2 && this.#strideSynced && this.#strideGroundSpeed >= STRIDE_SPEED_FLOOR
+        ? 1
+        : state.rate
+      : 8;
+  }
+
+  #observeTimeScaleInterpolation(action: AnimationAction): void {
+    const warp = action.warp.bind(action);
+    const stopWarping = action.stopWarping.bind(action);
+    const crossFadeFrom = action.crossFadeFrom.bind(action);
+    action.warp = (startTimeScale, endTimeScale, duration) => {
+      if (!this.#evaluating) this.#flushPending();
+      this.#timeScaleInterpolations.add(action);
+      return warp(startTimeScale, endTimeScale, duration);
+    };
+    action.crossFadeFrom = (fadeOutAction, duration, warp) => {
+      if (!this.#evaluating) this.#flushPending();
+      return crossFadeFrom(fadeOutAction, duration, warp);
+    };
+    action.stopWarping = () => {
+      const result = stopWarping();
+      this.#timeScaleInterpolations.delete(action);
+      return result;
+    };
   }
 
   get current(): string | undefined {
@@ -339,6 +806,7 @@ export class AnimationPlayer {
       clipGroundSpeed: measured?.groundSpeed ?? 0,
       groundSpeed: this.#strideGroundSpeed,
       inPlace: measured?.inPlace ?? this.#strideInPlace,
+      cameraCarried: this.#cameraCarried,
       overridden: this.#strideOverridden,
       rate: this.#strideRate,
       synced: this.#strideSynced,
@@ -459,22 +927,30 @@ export class AnimationPlayer {
       : 0;
     this.#lastRootPosition.copy(scratchWorld);
     this.#hasLastRootPosition = true;
+    this.#cameraCarried = cameraCarried(this.#strideRoot);
     if (name === undefined || action === undefined || dt <= 0) return;
+    const strideSync = this.#strideSync ?? !this.#cameraCarried;
     const measured = this.#measureOf(name);
     const clipGroundSpeed = measured.groundSpeed;
     const groundSpeed = moved / dt;
     // A dominant idle must not leave a contributing walk at its authored speed.
-    if (this.#blendTargets !== undefined && this.#strideSync && this.#mode === "loop")
+    if (this.#blendTargets !== undefined && strideSync && this.#mode === "loop")
       this.#syncBlendParticipants(groundSpeed);
     if (clipGroundSpeed < CLIP_GROUND_FLOOR) {
       // Not locomotion. An idle, a reload or a death is authored at the rate it is authored at,
       // and warping it by how fast the body happens to be sliding is a bug, not a convention.
-      if (action.getEffectiveTimeScale() !== 1) action.setEffectiveTimeScale(1);
+      if (
+        this.#strideSynced &&
+        !this.#timeScaleInterpolations.has(action) &&
+        action.getEffectiveTimeScale() === this.#strideRate
+      )
+        action.setEffectiveTimeScale(1);
       this.#strideGroundSpeed = groundSpeed;
       this.#strideRate = 1;
       this.#strideSynced = false;
       this.#strideOverridden = false;
       this.#strideInPlace = measured.inPlace;
+      this.#strideReportOnlyFor = this.#blendTargets === undefined ? name : undefined;
       return;
     }
     const wanted =
@@ -484,13 +960,15 @@ export class AnimationPlayer {
     // event happens at, however still the body stands: its own root motion is the movement, so
     // re-timing it against a stationary body only slows the event down. A travelling death clip
     // clamped to the rate floor held a corpse upright through its whole death in the sandbox.
-    const applies = this.#strideSync && this.#mode === "loop";
-    if (applies) action.setEffectiveTimeScale(rate);
+    const applies =
+      strideSync && this.#mode === "loop" && !this.#timeScaleInterpolations.has(action);
+    if (applies && action.timeScale !== rate) action.setEffectiveTimeScale(rate);
     this.#strideGroundSpeed = groundSpeed;
     this.#strideRate = rate;
     this.#strideSynced = applies;
-    this.#strideOverridden = !this.#strideSync;
+    this.#strideOverridden = !strideSync;
     this.#strideInPlace = measured.inPlace;
+    this.#strideReportOnlyFor = !applies && this.#blendTargets === undefined ? name : undefined;
   }
 
   /**
@@ -504,13 +982,14 @@ export class AnimationPlayer {
     for (const [name, action] of this.#actions) {
       if (!action.isScheduled() || action.getEffectiveWeight() <= 0) continue;
       const ground = this.#measureOf(name).groundSpeed;
-      if (ground < CLIP_GROUND_FLOOR) continue;
+      if (ground < CLIP_GROUND_FLOOR || this.#timeScaleInterpolations.has(action)) continue;
       const wanted = groundSpeed < STRIDE_SPEED_FLOOR ? STRIDE_RATE_MIN : groundSpeed / ground;
-      action.setEffectiveTimeScale(Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted)));
+      const rate = Math.min(STRIDE_RATE_MAX, Math.max(STRIDE_RATE_MIN, wanted));
+      if (action.timeScale !== rate) action.setEffectiveTimeScale(rate);
     }
   }
 
-  #playAction(action: AnimationAction, mode: AnimationMode, weight: number): void {
+  #playAction(action: AnimationAction, mode: AnimationMode, weight: number, speed: number): void {
     const once = mode === "once";
     action
       .reset()
@@ -518,29 +997,35 @@ export class AnimationPlayer {
       .setEffectiveWeight(weight)
       .play();
     action.clampWhenFinished = once;
+    if (once) action.setEffectiveTimeScale(speed);
   }
 
-  #replayCurrent(action: AnimationAction, mode: AnimationMode): void {
+  #replayCurrent(action: AnimationAction, mode: AnimationMode, speed: number): void {
     for (const entry of this.#fadeOut) entry.action.stop();
     this.#fadeOut = [];
     for (const other of this.#actions.values()) {
       if (other !== action) other.setEffectiveWeight(0).stop();
     }
-    this.#playAction(action, mode, 1);
+    this.#playAction(action, mode, 1, speed);
     this.#mode = mode;
     this.#finished = false;
     this.#advancedFrames = 0;
   }
 
-  #playCurrent(action: AnimationAction, requestedMode: AnimationMode | undefined): void {
+  #playCurrent(
+    action: AnimationAction,
+    requestedMode: AnimationMode | undefined,
+    speed: number,
+  ): void {
     const mode = requestedMode ?? "loop";
     if (!this.#finished && mode === this.#mode) return;
-    this.#replayCurrent(action, mode);
+    this.#replayCurrent(action, mode, speed);
   }
 
   #playNext(name: string, next: AnimationAction, options: IAnimationPlayOptions): void {
     const fade = Math.max(0, options.fade ?? 0);
     const once = options.mode === "once";
+    const speed = options.speed ?? 1;
     const from = fade > 0 && next.isScheduled() ? next.getEffectiveWeight() : 0;
     // A loop that is still visible keeps its gait; explicit one-shots and mode changes replay.
     const time = from > 0 && !once && next.loop === LoopRepeat ? next.time : 0;
@@ -559,7 +1044,12 @@ export class AnimationPlayer {
       else action.setEffectiveWeight(0).stop();
     }
 
-    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? from : 1);
+    this.#playAction(
+      next,
+      once ? "once" : "loop",
+      fade > 0 && outgoing.length > 0 ? from : 1,
+      speed,
+    );
     next.time = time;
     if (outgoing.length === 0 || fade === 0) {
       for (const entry of outgoing) entry.action.setEffectiveWeight(0).stop();
@@ -603,8 +1093,13 @@ export class AnimationPlayer {
   }
 
   #start(name: string, options: IAnimationPlayOptions): void {
+    const speed = options.speed ?? 1;
+    if (!(Number.isFinite(speed) && speed > 0))
+      throw new Error(`Animation play speed must be a positive finite number, got ${speed}.`);
     const next = this.#actions.get(name);
     if (next === undefined) throw new Error(`Unknown animation clip '${name}'.`);
+    if (this.#current !== name || this.#finished || (options.mode ?? "loop") !== this.#mode)
+      this.#flushPending();
     // One owner at a time. A single-clip request takes the rig back from a weighted blend, exactly
     // as it took it back from a crossfade.
     const weighted = this.#blendTargets !== undefined;
@@ -617,7 +1112,7 @@ export class AnimationPlayer {
         const keepPhase = this.#mode === "loop" && options.mode !== "once";
         this.#playNext(name, next, options);
         if (keepPhase) next.time = time;
-      } else this.#playCurrent(next, options.mode);
+      } else this.#playCurrent(next, options.mode, speed);
       return;
     }
     this.#playNext(name, next, options);
@@ -663,6 +1158,7 @@ export class AnimationPlayer {
       [...targets].every(([name, weight]) => this.#blendTargets?.get(name) === weight)
     )
       return;
+    this.#flushPending();
     // Any crossfade in flight stops owning the rig; its outgoing actions join the blend ramp below
     // as participants with a target of zero, so they leave the same bounded way they arrived.
     this.#fadeOut = [];
@@ -772,14 +1268,245 @@ export class AnimationPlayer {
     }
   }
 
-  update(dt: number): void {
+  /** `force` evaluates accumulated time now, even outside this player's stagger slot. */
+  update(dt: number, force = false): void {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("AnimationPlayer.update requires a finite non-negative dt.");
+    const mixerScale = this.mixer.timeScale;
+    if (mixerScale !== 1) this.#flushPending();
+    const elapsed = dt * mixerScale;
+    const rate = this.#effectiveUpdateRate(mixerScale);
+    this.#rateState.effectiveRate = force ? 1 : rate;
+    this.#updateFrame += 1;
+    this.#skippedFrames += 1;
+    this.#rateState.evaluated = false;
+    const boneRate = this.#boneRate(rate);
+    this.#evaluated =
+      force ||
+      (this.#updateFrame + this.#staggerOffset) % boneRate === 0 ||
+      this.#skippedFrames >= boneRate;
+    // A full-rate tick with no held time advances through the mixer's own actions; only deferred
+    // integration needs per-action elapsed time. Scanning the whole clip library to bank that time
+    // costs every full-rate rig every frame.
+    if (
+      !this.#evaluated ||
+      this.#pendingDt !== 0 ||
+      this.#pendingActionTimes.size !== 0 ||
+      rate !== 1
+    ) {
+      for (const action of this.#actions.values()) {
+        if (!action.isScheduled()) continue;
+        const time = action.paused ? 0 : action.timeScale * elapsed;
+        this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
+      }
+    }
+    this.#pendingDt += elapsed;
+    if (this.#evaluated) this.#evaluate(dt, mixerScale);
+    // Measure the body's movement on every tick, including skipped pose evaluations. A held tick of
+    // a clip whose measurement only reports banks its dt: the average speed over the interval is
+    // the same number, measured once.
+    if (
+      !this.#evaluated &&
+      this.#strideReportOnlyFor !== undefined &&
+      this.#strideReportOnlyFor === this.#current &&
+      this.#blendTargets === undefined &&
+      dt > 0
+    ) {
+      this.#strideDtDebt += dt;
+      return;
+    }
+    if (dt > 0) {
+      const interval = dt + this.#strideDtDebt;
+      this.#strideDtDebt = 0;
+      this.#syncStride(interval);
+    } else this.#syncStride(dt);
+  }
+
+  /**
+   * The playhead a trusted packet reads, as a bare number: the same checks as the trusted branch
+   * of `#readPacketState` without building a state object. Undefined sends the caller to the full
+   * read, which also renews the trust.
+   */
+  #trustedPacketTime(): number | undefined {
+    const trust = this.#packetTrust;
+    if (
+      trust === undefined ||
+      trust.left <= 0 ||
+      this.#evaluating ||
+      this.#actions.size !== 1 ||
+      this.#mode !== "loop" ||
+      this.#finished ||
+      this.#fadeOut.length !== 0 ||
+      this.#blendTargets !== undefined ||
+      this.#timeScaleInterpolations.size !== 0
+    )
+      return undefined;
+    const name = this.#current ?? "";
+    const action = this.#actions.get(name);
+    if (action !== trust.action || this.#clips.get(name) !== trust.clip) return undefined;
+    trust.left -= 1;
+    return animationPacketTime(
+      action.time,
+      this.#pendingActionTimes.get(action) ?? 0,
+      trust.clip.duration,
+    );
+  }
+
+  #readPacketState(): IAnimationPacketState | undefined {
+    if (
+      this.#evaluating ||
+      this.#actions.size !== 1 ||
+      this.#mode !== "loop" ||
+      this.#finished ||
+      this.#fadeOut.length !== 0 ||
+      this.#blendTargets !== undefined ||
+      this.#timeScaleInterpolations.size !== 0
+    )
+      return undefined;
+    const action = this.#actions.get(this.#current ?? "");
+    const clip = this.#clips.get(this.#current ?? "");
+    const trust = this.#packetTrust;
+    if (trust !== undefined && trust.left > 0 && action === trust.action && clip === trust.clip) {
+      trust.left -= 1;
+      // Between full validations only the playhead is read: plain data fields, no author code.
+      const time = animationPacketTime(
+        action.time,
+        this.#pendingActionTimes.get(action) ?? 0,
+        clip.duration,
+      );
+      if (time === undefined) return undefined;
+      return Object.freeze({
+        root: this.root,
+        mixer: this.mixer,
+        action,
+        clip,
+        time,
+        evaluated: this.#rateState.evaluated,
+        evaluation: this.#rateState.evaluation,
+      });
+    }
+    this.#packetTrust = undefined;
+    if (
+      action === undefined ||
+      clip === undefined ||
+      !animationPacketMethodsPristine(action, this.mixer)
+    )
+      return undefined;
+    const field = animationPacketField;
+    const duration = field(clip, "duration");
+    const held = field(action, "time");
+    const index = field(action, "_cacheIndex");
+    const active = field(this.mixer, "_nActiveActions");
+    const actions = field(this.mixer, "_actions");
+    if (
+      field(action, "_mixer") !== this.mixer ||
+      field(action, "_clip") !== clip ||
+      field(this.mixer, "_root") !== this.root ||
+      field(this.mixer, "timeScale") !== 1 ||
+      field(action, "loop") !== LoopRepeat ||
+      field(action, "repetitions") !== Number.POSITIVE_INFINITY ||
+      field(action, "clampWhenFinished") !== false ||
+      field(action, "paused") !== false ||
+      field(action, "enabled") !== true ||
+      field(action, "weight") !== 1 ||
+      field(action, "_effectiveWeight") !== 1 ||
+      field(action, "timeScale") !== 1 ||
+      field(action, "_effectiveTimeScale") !== 1 ||
+      field(action, "_startTime") !== null ||
+      field(action, "_weightInterpolant") !== null ||
+      field(action, "_timeScaleInterpolant") !== null ||
+      active !== 1 ||
+      typeof index !== "number" ||
+      index !== 0 ||
+      !Array.isArray(actions) ||
+      field(actions, String(index)) !== action ||
+      typeof duration !== "number" ||
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      typeof held !== "number" ||
+      !Number.isFinite(held) ||
+      held < 0 ||
+      held > duration
+    )
+      return undefined;
+    const time = animationPacketTime(held, this.#pendingActionTimes.get(action) ?? 0, duration);
+    if (time === undefined) return undefined;
+    this.#packetTrust = { action, clip, left: PACKET_REVALIDATE_READS };
+    return Object.freeze({
+      root: this.root,
+      mixer: this.mixer,
+      action,
+      clip,
+      time,
+      evaluated: this.#rateState.evaluated,
+      evaluation: this.#rateState.evaluation,
+    });
+  }
+
+  #flushPending(): void {
+    if (this.#pendingDt !== 0) this.#evaluate(this.#pendingDt);
+  }
+
+  #evaluate(dt: number, mixerScale = this.mixer.timeScale): void {
     // Read before mixer.update(): the "finished" listener fires inside it for a completing
     // once-clip, and that final frame still counts as advancement.
     const wasFinished = this.#finished;
     const before = this.mixer.time;
-    this.mixer.update(dt);
+    const elapsed = this.#pendingDt;
+    const direct =
+      this.#skippedFrames === 1 &&
+      elapsed === dt * mixerScale &&
+      (this.#pendingActionTimes.size === 0 ||
+        mixerScale !== 1 ||
+        (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners));
+    if (!direct) {
+      this.mixer.timeScale = 1;
+      for (const [action, pending] of this.#pendingActionTimes) {
+        const wasPaused = action.paused;
+        if (wasPaused && pending !== 0) {
+          this.#evaluationPaused.add(action);
+          action.paused = false;
+        }
+        let time = pending;
+        let seamAdjusted = false;
+        const duration = action.getClip().duration;
+        if (action.loop === LoopRepeat && duration > 0) {
+          const end = action.time + time;
+          const seam = Math.round(end / duration) * duration;
+          // Grouped addition must not hold the last pose when rate 1 already crossed a loop seam.
+          if (Math.abs(end - seam) <= Number.EPSILON * 16 * Math.max(duration, Math.abs(end))) {
+            time = seam - action.time;
+            seamAdjusted = true;
+          }
+        }
+        // Integrate changing stride rates; the last tick's rate must not own earlier skipped time.
+        if (elapsed !== 0) {
+          const scale = time / elapsed;
+          const equalToActionScale =
+            Math.abs(scale - action.timeScale) <=
+            Number.EPSILON * 16 * Math.max(1, Math.abs(scale), Math.abs(action.timeScale));
+          const warpActive = !wasPaused && action.getEffectiveTimeScale() !== action.timeScale;
+          if (!warpActive && (seamAdjusted || !equalToActionScale)) {
+            this.#evaluationScales.set(action, action.timeScale);
+            action.setEffectiveTimeScale(scale);
+          }
+        }
+      }
+    }
+    this.#evaluating = true;
+    try {
+      this.mixer.update(direct ? dt : elapsed);
+    } finally {
+      this.#evaluating = false;
+      if (!direct) this.mixer.timeScale = mixerScale;
+      for (const action of this.#evaluationPaused) action.paused = true;
+      this.#evaluationPaused.clear();
+      for (const [action, scale] of this.#evaluationScales) action.setEffectiveTimeScale(scale);
+      this.#evaluationScales.clear();
+      this.#pendingDt = 0;
+      this.#pendingActionTimes.clear();
+      this.#skippedFrames = 0;
+    }
     if (this.#fadeOut.length > 0) {
       this.#fadeElapsed = Math.min(this.#fadeDuration, this.#fadeElapsed + dt);
       const linear = this.#fadeDuration === 0 ? 1 : this.#fadeElapsed / this.#fadeDuration;
@@ -803,11 +1530,17 @@ export class AnimationPlayer {
     if (this.#current !== undefined && !wasFinished && this.mixer.time !== before)
       this.#advancedFrames += 1;
     this.#advanceBlend(dt);
-    this.#syncStride(dt);
+    this.#rateState.evaluation += 1;
+    this.#rateState.evaluated = true;
   }
 
   stop(): void {
+    this.#pendingDt = 0;
+    this.#pendingActionTimes.clear();
+    this.#skippedFrames = 0;
+    this.#evaluated = false;
     this.mixer.stopAllAction();
+    this.#rateState.evaluation += 1;
     this.#current = undefined;
     this.#mode = "loop";
     this.#finished = false;
@@ -817,11 +1550,14 @@ export class AnimationPlayer {
     this.#blendDuration = 0;
     this.#blendElapsed = 0;
     this.#blendStarts.clear();
+    this.#timeScaleInterpolations.clear();
     this.#resetStride();
   }
 
   #resetStride(): void {
     this.#hasLastRootPosition = false;
+    this.#strideReportOnlyFor = undefined;
+    this.#strideDtDebt = 0;
     this.#strideGroundSpeed = 0;
     this.#strideRate = 1;
     this.#strideSynced = false;
@@ -837,6 +1573,14 @@ export class AnimationPlayer {
     this.#clips.clear();
     this.#clipGroundSpeed.clear();
     this.#preparation = undefined;
+    if (animationPacketReaders.get(this.root) === this.#packetReader)
+      animationPacketReaders.delete(this.root);
+    if (animationPacketTimeReaders.get(this.root) === this.#packetTimeReader)
+      animationPacketTimeReaders.delete(this.root);
+    if (animationRateStates.get(this.root) === this.#rateState)
+      animationRateStates.delete(this.root);
+    if (this.root.userData[ANIMATION_RATE_STATE_KEY] === this.#rateState)
+      delete this.root.userData[ANIMATION_RATE_STATE_KEY];
   }
 }
 
@@ -844,6 +1588,10 @@ export class AnimationPlayer {
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
 const scratchMatrixWorld = new Matrix4();
+const cornerX = new Float64Array(8);
+const cornerY = new Float64Array(8);
+const cornerZ = new Float64Array(8);
+const cornerOrder = new Uint8Array(8);
 
 /**
  * Validate one weighted request into normalized, non-zero target weights.

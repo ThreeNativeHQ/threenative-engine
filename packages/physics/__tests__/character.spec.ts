@@ -180,6 +180,54 @@ describe("CharacterBody3D", () => {
     floor.dispose();
   });
 
+  it("stays grounded on a floor while it presses into a vertical wall", async () => {
+    const { ctx, plugin } = await setup();
+    const floorMesh = new Mesh(new BoxGeometry(10, 0.2, 4));
+    floorMesh.position.set(0, -0.1, 0);
+    const floor = new RigidBody3D({
+      object: floorMesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(floorMesh, "trimesh"),
+      type: "fixed",
+    });
+    // Kinematic, like a push block: a box whose west face stands at x = 0.5.
+    const blockMesh = new Mesh(new BoxGeometry(1, 1, 1));
+    blockMesh.position.set(1, 0.5, 0);
+    const block = new RigidBody3D({
+      object: blockMesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.fromMesh(blockMesh),
+      type: "kinematic",
+    });
+    const mesh = new Group();
+    mesh.position.set(0, 0.86, 0.36);
+    const character = new CharacterBody3D({
+      autostep: { maxHeight: 0.3, minWidth: 0.2 },
+      gravity: -20,
+      object: mesh,
+      physics: ctx.physics,
+      shape: CollisionShape3D.capsule(0.55, 0.3),
+      snapToGround: 0.3,
+    });
+    for (let step = 0; step < 30; step += 1) {
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+    }
+    for (let tick = 0; tick < 100; tick += 1) {
+      character.velocity.x = 2.5;
+      // The block slides one metre away and stops, the way a pushed block does.
+      if (tick >= 20 && tick < 70) blockMesh.position.x += 1 / 50;
+      character.moveAndSlide(1 / 60);
+      plugin.update?.(ctx, 1 / 60);
+      if (tick >= 20) expect(character.grounded, `tick ${tick}`).toBe(true);
+    }
+    expect(mesh.position.x).toBeGreaterThan(0.15);
+    expect(mesh.position.y).toBeLessThan(0.9);
+    character.dispose();
+    block.dispose();
+    floor.dispose();
+  });
+
   it("should carry a grounded rider with a moving kinematic platform", async () => {
     const { ctx, plugin } = await setup();
     const platformMesh = new Mesh(new BoxGeometry(4, 0.2, 4));

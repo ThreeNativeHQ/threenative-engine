@@ -6,7 +6,7 @@
  * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
  * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
  */
-export const version = "0.3.6";
+export const version = "0.3.7";
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -16,23 +16,39 @@ export const version = "0.3.6";
  * `player.stride` reports the measurement either way. Name the body a game moves as
  * `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and
  * Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their
- * stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
+ * stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so. A mesh counts
+ * at its lowest geometry point, so a boot's origin may sit anywhere; an in-place clip with no
+ * foot plant reports `inPlace: true` and `clipGroundSpeed: 0`, and stride sync stays off.
+ * Evaluation is automatic by default: `updateRate: "auto"` follows measured camera visibility
+ * and projected size. `updateRate: 1` evaluates every frame; another positive safe integer names
+ * that frame interval. `updateRateReport` reports the effective rate, whether a named override is
+ * active, and whether the latest update evaluated. One-shots and fades stay full-rate; root-motion
+ * `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs
+ * stay full-rate. A public `mixer` `"loop"` listener promotes the player to full-rate and observes
+ * only loop events after registration, so skipped pre-registration cycles are not replayed;
+ * `updateRateReport` reports that effective rate.
  * @situation play an animation on a character
  * @situation switch a character between idle and attack clips
  * @situation stop a walking character's feet from sliding or spinning
  * @situation match a walk or run cycle to how fast a character is moving
  * @situation match an in-place walk cycle with no root motion to the body's speed
  * @situation find out what speed an animation clip was authored for
+ * @situation reduce animation CPU for distant characters
+ * @situation inspect the effective animation evaluation rate
  * @constraint name the body a game moves as strideRoot when the animated rig is a child of it
  * @constraint a one-shot clip always plays at its authored rate; the matched rate re-times loops only
+ * @constraint a foot mesh is measured at its lowest geometry point (the sole), never its origin; a skinned mesh is measured through its bones
+ * @constraint `stride.inPlace: true` with `clipGroundSpeed: 0` means no foot plant was found and stride sync is not active; the playtest `stride` observation carries `inPlace`
  * @constraint the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
  * @override strideSync controls whether the matched rate is applied while stride is still measured
+ * @override updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
  * @example const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
  */
 export { AnimationPlayer } from "./animation.js";
 export type {
   IAnimationPlayerOptions,
   IAnimationPlayOptions,
+  IAnimationUpdateRateReport,
   IStrideReport,
 } from "./animation.js";
 /**
@@ -70,15 +86,25 @@ export { BlendSpace1D, BlendSpace2D } from "./animation-blend.js";
  * Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement,
  * validates requested clips against the file and rig at load time, and sets up AnimationPlayer
  * with honest stride-root accounting.
+ * Animation evaluation inherits AnimationPlayer's automatic camera-based `updateRate: "auto"`
+ * default; `updateRate: 1` evaluates every frame, another positive safe integer requests that
+ * interval, and `updateRateReport` exposes the effective rate, override status and latest result.
+ * One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and
+ * auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `"loop"`
+ * listener promotes effective evaluation to 1 and observes only loop events after registration,
+ * so skipped pre-registration cycles are not replayed.
  * @situation put an animated character in the scene
  * @situation my imported character renders deformed
  * @situation instance an imported rigged character
  * @situation validate animation clips on a character rig at load time
  * @situation prepare a skinned character with safe skeleton cloning and stride sync
+ * @situation reduce animation CPU for a crowd of imported rigs
+ * @situation inspect an imported rig's effective animation evaluation rate
  * @constraint use strideRoot to name the body moved by game code when the rig is parented under it
  * @constraint requiredClips fails closed at load time if any requested clip is missing or binds 0 tracks
  * @override strideSync controls whether locomotion playback rate matches ground covered
  * @override size normalises the instance to real-world metres with skin-aware measurement
+ * @override updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
  * @example import { SkeletalMesh3D } from "@threenative/core";
  * const character = new SkeletalMesh3D({
  *   source: gltf.scene, clips: gltf.animations, requiredClips: ["idle", "walk"],
@@ -113,10 +139,17 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
 /**
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
+ * @situation keep downloaded web assets on disk between visits
+ * @situation download the next scene before the player gets there
+ * @situation free the disk cache from a settings menu
+ * @situation prefetch assets into the Cache Storage disk cache of a large web game
  * @situation load assets from a nonstandard base path or a compiled asset manifest
  * @alias different area props
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
+ * @constraint await everything the spawn camera sees before the reveal; `ctx.assets.prefetch` and the background fill are for content out of view, or the player spawns into a half-built world
+ * @constraint web only: a native host reads installed files, so `ctx.assets.cache` reports `enabled: false` with the reason and `prefetch` resolves at once
+ * @override `assets.cache: false` turns the disk cache off and `assets.backgroundFill: false` turns the post-reveal fill off; both are reported on `ctx.assets.cache`
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */
@@ -124,7 +157,15 @@ export { createAssetLoader } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
-export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
+export type {
+  IAssetCacheState,
+  IAssetLoader,
+  IAssetLoaderOptions,
+  IAssetPrefetchProgress,
+  IAssetRequestOptions,
+  ITextureOptions,
+} from "./assets.js";
+export type { AssetPriority, IAssetCacheReport } from "./asset-cache.js";
 export type {
   IAudioBusOptions,
   IAudioCompressorOptions,
@@ -225,6 +266,15 @@ export type {
   ISolarPositionInput,
 } from "./atmosphere/index.js";
 /**
+ * Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.
+ * @situation light a scene from a procedural sky when its sun moves
+ * @constraint use an initialized WebGPURenderer; the game supplies the sky and assigns the texture
+ * @example const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;
+ */
+export { SkyCapture, SkyCaptureSchedule } from "./render/sky-capture.js";
+export type { ISkyCaptureOptions } from "./render/sky-capture.js";
+
+/**
  * Register game-owned IComputeDriven objects with the shared compute lifetime.
  * @situation use IComputeDriven for a cloth, fluid, boid, or other GPU simulation
  * @situation run a cloth or fluid simulation with ordered GPU passes
@@ -250,6 +300,31 @@ export type {
   IGPUSceneBVHMaterialGroup,
   IGPUSceneBVHOptions,
 } from "./gpu-scene-bvh.js";
+/**
+ * Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot
+ * show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material.
+ * The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+ * @situation reflect what is behind the camera in a mirror or a chrome sphere
+ * @situation make a glossy or wet floor reflect objects that are off screen
+ * @situation trace a shadow ray from a reflected surface toward the sun
+ * @situation split a surface's specular by roughness into traced, radiance-cache and diffuse-GI shares
+ * @alias lumen reflections
+ * @alias dedicated reflection rays
+ * @constraint the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves
+ * @constraint instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them
+ * @constraint trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree
+ * @constraint a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/
+ * @constraint the pack needs a device with float32-filterable
+ * @override maxRoughnessToTrace, roughnessFadeLength, maxRoughnessToEvaluateRoughSpecular, roughSpecularFadeLength and maxSteps are game-owned choices
+ * @example const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
+ */
+export { TracedReflections } from "./render/traced-reflections.js";
+export type {
+  IReflectionRoute,
+  ITracedHit,
+  ITracedRay,
+  ITracedReflectionsOptions,
+} from "./render/traced-reflections.js";
 /**
  * Collapse many copies of one game-authored shape into a single draw, without counting them first.
  *
@@ -557,6 +632,117 @@ export type {
 } from "./frame-budget.js";
 export type { FramePassKind, IRenderPassSample, MainDrawSource } from "./render-pass-budget.js";
 /**
+ * Read the GPU milliseconds of each named render pass of the newest resolved frame, such as `SSGI`
+ * or `AO`, with the whole frame's total.
+ * @situation read the GPU cost of one post-processing stage
+ * @situation tell which render pass takes the GPU time
+ * @constraint absent before a whole frame resolves and on an adapter without timestamp queries; the frame number counts each reading once
+ * @example const reading = stageGpuReading(renderer); const ssgiMs = reading?.stages.SSGI;
+ */
+export { stageGpuReading } from "./render-pass-budget.js";
+export type { IStageGpuReading } from "./render-pass-budget.js";
+/**
+ * A cost ladder for one render stage: the whole GPU frame against the frame period moves it, by
+ * Unreal's DynamicRenderScaling rule. A frame over the period for 2 frames in a row steps the level
+ * down at once, a frame over the period less 10% headroom steps it down after the 8-frame change
+ * period, and a frame with room steps it up. A stage steps only when it could absorb the overage at
+ * zero cost, and a level that failed is retried after a growing wait. It decides when to move; the
+ * game applies the move.
+ * @situation step a render stage down when the GPU frame goes over the frame period
+ * @situation pick a quality level from measured GPU time without oscillating
+ * @constraint levels are listed cheapest first, and the frame period is the game's own display target
+ * @constraint a frame without a resolved GPU reading never moves the level
+ * @override explicit: true keeps the level and only reports a frame over the target
+ * @example const ladder = new BudgetLadder({ levels: ["low", "high"], framePeriodMs: 1000 / 60, start: "high" }); const window = ladder.observe(stageMs, frameMs);
+ */
+export { BudgetLadder } from "./render/budget-ladder.js";
+export type { BudgetVerdict, IBudgetLadderOptions, IBudgetWindow } from "./render/budget-ladder.js";
+/**
+ * Reports what a game's global illumination costs against the frame period: the GI share of the GPU
+ * frame and whether the frame fits its period less 10% headroom. The method (`none`,
+ * `irradianceField`, `screenProbeGather`) holds its level while the game runs, as Unreal's Lumen
+ * does: a frame over its period gets cheaper through the primary resolution scale, and the GI pass
+ * follows the lower resolution. The budget is the frame period, never a GI time in milliseconds,
+ * because a stage reading moves with the GPU clock.
+ * @situation global illumination costs too much on a weak GPU
+ * @situation see what share of the GPU frame the bounce light takes
+ * @situation quality tier for indirect lighting that follows the hardware
+ * @constraint the method never changes while the game runs: the primary resolution scale is the run-time lever
+ * @constraint the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`
+ * @constraint timestamp queries are needed: without them every window is unobserved
+ * @alias lumen scalability
+ * @alias sg.GlobalIlluminationQuality
+ * @alias final gather method
+ * @example
+ * const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePeriodMs: 1000 / 60 });
+ * ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
+ */
+export { GI_METHODS, GIBudget } from "./render/gi-budget.js";
+/**
+ * Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen
+ * `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap.
+ * The game's chain builds the term; this class selects it and fails when the term is missing.
+ * @situation see only the bounce light of a frame
+ * @situation compare indirect lighting alone against Unreal
+ * @situation debug global illumination by looking at the indirect diffuse term
+ * @constraint the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else
+ * @constraint a mode whose term the chain did not build throws instead of showing the finished frame
+ * @override mode: "off" returns the finished frame unchanged
+ * @alias lumen visualize
+ * @alias indirect diffuse only
+ * @alias r.Lumen.Visualize.IndirectDiffuse
+ * @example
+ * const view = new GIVisualize({ mode: "indirectDiffuse", beauty: frame, indirectDiffuse: albedo.mul(bounce) });
+ * pipeline.outputNode = view.node;
+ */
+export { GI_VISUALIZE_MODES, GIVisualize } from "./render/gi-visualize.js";
+export type { GIVisualizeMode, IGIVisualizeOptions } from "./render/gi-visualize.js";
+/**
+ * Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the whole GPU frame stays over
+ * the frame period, and back up when the frame has room, by the settings of Unreal's virtual shadow
+ * map budget (a linear model, 5% headroom). A frame that is slow for another reason keeps its
+ * shadows: the tier steps only when the shadow passes could absorb the overage. The game owns the
+ * sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's
+ * `sg.ShadowQuality` Low, Medium and Epic.
+ * @situation soft shadow filter costs too much on a weak GPU
+ * @situation step the shadow quality tier when the GPU frame goes over the frame period
+ * @situation shadow quality tier that follows the hardware
+ * @constraint the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing
+ * @constraint timestamp queries are needed: without them every window is unobserved and the tier holds
+ * @constraint the rule reads the whole GPU frame and the `Shadow` stage, which the receiver filter inside the colour pass is not part of
+ * @override explicit: true keeps the game's own sample counts and reports an over-budget frame
+ * @alias virtual shadow map scalability
+ * @alias sg.ShadowQuality
+ * @example
+ * const filter = new ShadowFilterBudget({ tier: "high", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+ * ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
+ */
+export {
+  SHADOW_FILTER_TIERS,
+  SHADOW_STAGES,
+  ShadowFilterBudget,
+} from "./render/shadow-filter-budget.js";
+/**
+ * Parse a `TN_SHADOW_TIER` console line back into its report, or `undefined`.
+ * @situation inspect which shadow filter tier ran and why it stepped
+ * @constraint non-marker lines and malformed markers return `undefined`
+ * @example const report = readShadowTierMarker(line); if (report?.stepped) console.log(report.reason);
+ */
+export { readShadowTierMarker } from "./render/shadow-filter-budget.js";
+export type {
+  IShadowFilterBudgetOptions,
+  IShadowFilterReport,
+  ShadowFilterTier,
+} from "./render/shadow-filter-budget.js";
+/**
+ * Parse a `TN_GI` console line back into its report, or `undefined`.
+ * @situation inspect which global illumination method ran and what the frame cost
+ * @constraint non-marker lines and malformed markers return `undefined`
+ * @example const report = readGIMarker(line); if (report?.verdict === "over") console.log(report.reason);
+ */
+export { readGIMarker } from "./render/gi-budget.js";
+export type { GIMethod, IGIBudgetOptions, IGIBudgetReport } from "./render/gi-budget.js";
+/**
  * Read what frame rate a game gets when its config does not say, and why.
  *
  * `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather
@@ -814,10 +1000,14 @@ export type {
  * Bake static diffuse irradiance that reaches surfaces from outside the camera view.
  * @situation light bouncing from a room I cannot see
  * @situation light a wall with an off-screen emitter
+ * @situation glass or fog inside a room takes the room's bounce light
  * @alias readable world lighting
+ * @alias lumen translucency volume
+ * @alias translucency gi
  * @constraint request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting
  * @constraint add the volume with ctx.add() so its incremental work is measured in the render phase
  * @constraint call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
+ * @constraint a translucent material or a fog sample has no side that faces the light: it reads sampleNonDirectional(position), one atlas fetch, the same in every direction (divide by pi for a radiance)
  * @override density, bounds, bakeBudgetMs, and bounces are game-owned choices
  * @example const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
  */
@@ -826,6 +1016,39 @@ export {
   PROBE_VOLUME_MARKER,
   ProbeVolume,
 } from "./render/probe-volume.js";
+/**
+ * The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas
+ * (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat
+ * material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+ * @situation give a traced bounce ray the texture colour and glow of the surface it hits
+ * @alias lumen surface cache
+ * @alias lumen scene
+ * @alias mesh cards
+ * @constraint the materials are fixed when the cache is built; build a new one when a material or a map changes
+ * @constraint a map whose image the runtime does not show to JavaScript (the owned engine's glTF maps) returns the flat colour and is listed in `report.fallbacks`; the `images` option hands over its pixels
+ * @constraint the cache owns no colour, texture or light; the game's materials and lamps are the only source
+ * @override atlasSize and cardTexelDensityScale size the atlas; images supplies the pixels of a map the runtime hides
+ * @example const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+ */
+export { SurfaceCache } from "./render/surface-cache.js";
+/**
+ * The local lamps at the hit of a traced ray: the point and spot lights whose range reaches it, the brightest eight,
+ * one shadow ray each. The Surface Cache gives the hit its colour; this gives it the lamps.
+ * @situation light the hit of a traced ray with the scene's point and spot lamps
+ * @constraint the cap skips the ninth-brightest lamp and every one after it, and counts them in `skipped`
+ * @constraint the caller answers each shadow ray; the class owns no scene
+ * @override maxLights caps the lamps evaluated at one hit
+ * @example const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
+ */
+export { SurfaceLights } from "./render/surface-cache.js";
+export type {
+  ISurfaceCacheMaterial,
+  ISurfaceCacheOptions,
+  ISurfaceCacheReport,
+  ISurfaceCacheTexture,
+  ISurfaceLight,
+  ISurfaceLightsOptions,
+} from "./render/surface-cache.js";
 /**
  * Read the most recent observation from a probe volume.
  * @situation inspect the latest probe bake observation
@@ -899,6 +1122,60 @@ export {
   VirtualShadowNode,
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
+export {
+  LAMP_SHADOW_MARKER,
+  lampShadowMarker,
+  readLampShadowMarker,
+} from "./render/virtual-shadow.js";
+export type { ILampShadowStats } from "./render/virtual-shadow.js";
+/**
+ * Source-angle blocker search and variable-radius PCF on three's shadow map.
+ * @situation soften a directional shadow as the caster-receiver gap grows
+ * @constraint sourceAngleRad is required, in radians in [0, PI/2); orthographic depth shadows only, not VSM
+ * @example sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: angle });
+ */
+export { sourceAngleShadowFilter } from "./render/soft-shadow.js";
+/**
+ * Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
+ * @situation soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
+ * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+ * @alias PCSS soft shadows
+ * @override penumbraScale: 1 gives the geometric penumbra of a disk lamp
+ * @example lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
+ */
+export { sourceRadiusShadowFilter } from "./render/soft-shadow.js";
+/**
+ * A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
+ * @situation measure a lamp shadow's penumbra width without a GPU
+ * @constraint sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
+ * @example const tangent = lampPenumbraTangent(0.05, 2, 3);
+ */
+export { lampPenumbraTangent } from "./render/soft-shadow.js";
+/**
+ * Convert world-space caster gap to a shadow UV radius, floored at one texel.
+ * @situation measure a source-angle shadow's filter radius without a GPU
+ * @constraint inputs must be finite and non-negative; sizes must be positive and angle < PI/2 radians
+ * @example const radius = penumbraUv(10, angle, 40, 2048);
+ */
+export { penumbraUv } from "./render/soft-shadow.js";
+/**
+ * Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.
+ * @situation add bounce light to the far face of a two sided foliage leaf
+ * @constraint the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material
+ * @example addFoliageBackLight(leaf, backIrradiance);
+ */
+export { addFoliageBackLight } from "./render/two-sided-foliage.js";
+export type { ISourceAngleShadowInputs, ISourceAngleShadowOptions } from "./render/soft-shadow.js";
+/**
+ * Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface
+ * the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+ * @situation shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+ * @constraint direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+ * @alias Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar
+ * @override material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+ * @example useRoughDiffuse(scene);
+ */
+export { useRoughDiffuse } from "./render/rough-diffuse.js";
 /**
  * An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye,
  * hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.
@@ -915,7 +1192,103 @@ export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
  * ctx.add(daylight);
  */
 export { Daylight } from "./render/daylight.js";
+/**
+ * Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg
+ * (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT.
+ * `installFilmicToneMapping` registers it as three's custom tone mapping.
+ *
+ * @situation the frame should tone map the way a fresh Unreal project does
+ * @constraint WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+ * @override `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins
+ * @example const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
+ */
+export { installFilmicToneMapping } from "./look/filmic-tone-mapping.js";
+export type { RendererToneMapping } from "./look/default-tone-mapping.js";
+/**
+ * Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10%
+ * ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour
+ * texture and outputs the adapted exposure; `exposureSettings` holds the defaults.
+ *
+ * @situation the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+ * @constraint WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
+ * @override every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
+ * @override `setExposureBias(stops)` is Unreal's Exposure Compensation, live: the game changes it per place or weather (`WorldEnvironment.apply` returns the node as `exposure`)
+ * @situation a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather
+ * @example const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
+ */
+export { AutoExposureNode } from "./look/auto-exposure.js";
+export { exposureSettings } from "./look/exposure-settings.js";
+export type { IExposureSettings } from "./look/exposure-settings.js";
+/**
+ * The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's
+ * defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's
+ * bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN`
+ * naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.
+ *
+ * @situation a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand
+ * @situation turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+ * @constraint post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`
+ * @constraint an unknown option value throws instead of becoming the default
+ * @override every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
+ * @example const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, view);
+ */
+export { WorldEnvironment } from "./look/world-environment.js";
+export type {
+  ChainStage,
+  IWorldEnvironmentOptions,
+  IWorldEnvironmentStageContext,
+  IWorldEnvironmentTarget,
+  OutputRenderer,
+  ScreenSpaceAA,
+  SsgiQuality,
+  TonemapMode,
+} from "./look/world-environment.js";
+/**
+ * The diagnosis switches of the calibration harness for the look (ladder layer, the alpha-squeeze BEFORE arm, a denoise
+ * pass count, the film curve's channel clip, a GI visualisation). A game never sets them; the defaults are the shipped look.
+ *
+ * @situation a calibration capture needs one look effect off or one GI term alone
+ * @constraint set them before the `WorldEnvironment` is built; the layer is 0 to 9 and 9 is everything on
+ * @override each field of `lookDiagnostics`
+ * @example lookDiagnostics.layer = 6; // no gather, no reflections
+ */
+export { lookDiagnostics } from "./look/look-diagnostics.js";
+/**
+ * The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn
+ * on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named
+ * after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+ *
+ * `qualityTiers` holds the tier tables: `resolve` picks a start tier from a GPU class, `gi` and `shadow` read a tier's settings.
+ *
+ * @situation pick a start tier for the GPU class and read what that tier costs the look
+ * @situation build a `WorldEnvironment` for a weaker device from a named tier
+ * @constraint an unknown tier name throws with the names it expected
+ * @override pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `qualityTiers.resolve`
+ * @example const world = new WorldEnvironment({ ...qualityPreset(qualityTiers.resolve({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+ */
+export { EPIC_SSGI, qualityPreset, qualityTiers } from "./look/quality.js";
+export type {
+  FinalGatherMethod,
+  IGiTier,
+  IShadowFilter,
+  IShadowTier,
+  QualityTier,
+} from "./look/quality.js";
 export type { IDaylightOptions } from "./render/daylight.js";
+/**
+ * Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's
+ * EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+ *
+ * @situation expose a frame lit in lux and nits with a physical camera exposure value
+ * @constraint arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0
+ * @example renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+ */
+export {
+  ev100FromCamera,
+  ev100FromExposure,
+  ev100FromLuminance,
+  exposureFromEv100,
+} from "./render/exposure-units.js";
 export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtual-shadow.js";
 /**
  * Attach hundreds of built objects to the scene in slices, presenting a frame between each.
@@ -1256,7 +1629,9 @@ export type {
  * @situation choose touch controls for a mobile device
  * @situation can I raytrace on native
  * @constraint only use the returned platform facts; native globals are host-owned
- * @constraint ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+ * @constraint image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+ * @constraint a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
+ * @constraint when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
  * @example if (isMobile()) showTouchControls();
  */
 export { getPlatform, isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";

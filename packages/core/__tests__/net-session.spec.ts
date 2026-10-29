@@ -90,6 +90,7 @@ interface IFakeConfig {
   reliableWriteError?: unknown;
   datagramWriteGate?: () => Promise<void>;
   reliableWriteGate?: () => Promise<void>;
+  streamGate?: () => Promise<void>;
 }
 
 interface IFakeServer {
@@ -171,20 +172,26 @@ function makeServer(config: IFakeConfig = {}): IFakeServer {
     datagrams,
     createBidirectionalStream() {
       if (config.createStreamError !== undefined) throw config.createStreamError;
-      const isControl = streams.length === 0;
-      const beforeWrite =
-        !isControl &&
-        (config.reliableWriteError !== undefined || config.reliableWriteGate !== undefined)
-          ? async (chunk: Uint8Array): Promise<void> => {
-              if (decodeAll(chunk).some((frame) => frame.kind === KIND_DATA)) {
-                await config.reliableWriteGate?.();
-                if (config.reliableWriteError !== undefined) throw config.reliableWriteError;
+      const create = (): {
+        readable: ReadableStream<Uint8Array>;
+        writable: WritableStream<Uint8Array>;
+      } => {
+        const isControl = streams.length === 0;
+        const beforeWrite =
+          !isControl &&
+          (config.reliableWriteError !== undefined || config.reliableWriteGate !== undefined)
+            ? async (chunk: Uint8Array): Promise<void> => {
+                if (decodeAll(chunk).some((frame) => frame.kind === KIND_DATA)) {
+                  await config.reliableWriteGate?.();
+                  if (config.reliableWriteError !== undefined) throw config.reliableWriteError;
+                }
               }
-            }
-          : undefined;
-      const pipe = makePipe((chunk) => handleStream(pipe, chunk), beforeWrite);
-      streams.push(pipe);
-      return { readable: pipe.readable, writable: pipe.writable };
+            : undefined;
+        const pipe = makePipe((chunk) => handleStream(pipe, chunk), beforeWrite);
+        streams.push(pipe);
+        return { readable: pipe.readable, writable: pipe.writable };
+      };
+      return config.streamGate === undefined ? create() : config.streamGate().then(create);
     },
     close() {
       closeCalls += 1;
@@ -274,7 +281,8 @@ describe("openConnection", () => {
 
   it("times out a transport that stays pending", async () => {
     vi.useFakeTimers();
-    install(makeServer({ ready: new Promise(() => {}) }).transport);
+    const server = makeServer({ ready: new Promise(() => {}) });
+    install(server.transport);
     const pending = openConnection(
       "https://example.test/game",
       normalized({ connectTimeoutMs: 50 }),
@@ -282,6 +290,36 @@ describe("openConnection", () => {
     const rejection = expect(pending).rejects.toThrow(/TN_NET_TIMEOUT/);
     await vi.advanceTimersByTimeAsync(60);
     await rejection;
+    expect(server.closeCalls).toBeGreaterThan(0);
+  });
+
+  it("times out a transport whose handshake stream never opens and closes it", async () => {
+    vi.useFakeTimers();
+    const server = makeServer({ streamGate: () => new Promise(() => {}) });
+    install(server.transport);
+    const pending = openConnection(
+      "https://example.test/game",
+      normalized({ connectTimeoutMs: 20 }),
+    );
+    const rejection = expect(pending).rejects.toThrow(/TN_NET_TIMEOUT/);
+    await vi.advanceTimersByTimeAsync(30);
+    await rejection;
+    expect(server.closeCalls).toBeGreaterThan(0);
+  });
+
+  it("cancels a stalled handshake when the caller aborts", async () => {
+    const server = makeServer({ streamGate: () => new Promise(() => {}) });
+    install(server.transport);
+    const controller = new AbortController();
+    const pending = openConnection(
+      "https://example.test/game",
+      normalized({ signal: controller.signal, connectTimeoutMs: 10_000 }),
+    );
+    const rejection = expect(pending).rejects.toThrow(/TN_NET_CANCELLED/);
+    await microtasks();
+    controller.abort();
+    await rejection;
+    expect(server.closeCalls).toBeGreaterThan(0);
   });
 
   it("rejects a WELCOME frame with the wrong kind or channel", async () => {
@@ -544,17 +582,26 @@ describe("net session failure paths", () => {
     await connection.close();
   });
 
-  it("drops a reliable frame that would overflow the receive window", async () => {
+  it("holds a reliable frame until the receive window has room and never reorders", async () => {
     const server = makeServer();
     install(server.transport);
     const connection = await openConnection(
       "https://example.test/game",
       normalized({ maxReliableMessageBytes: 6, maxQueuedReliableBytes: 10 }),
     );
-    server.stream(1).enqueue(encodeFrame(KIND_DATA, 2, new Uint8Array(6)));
-    server.stream(1).enqueue(encodeFrame(KIND_DATA, 2, new Uint8Array(6)));
-    await microtasks();
-    expect(connection.poll().messages).toHaveLength(1);
+    server.stream(1).enqueue(encodeFrame(KIND_DATA, 2, new Uint8Array([1, 1, 1, 1, 1, 1])));
+    server.stream(1).enqueue(encodeFrame(KIND_DATA, 2, new Uint8Array([2, 2, 2, 2, 2, 2])));
+    server.stream(1).enqueue(encodeFrame(KIND_DATA, 2, new Uint8Array([3, 3, 3])));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const first = connection.poll().messages;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const rest = connection.poll().messages;
+    expect([...first, ...rest].map((message) => Array.from(message.data))).toEqual([
+      [1, 1, 1, 1, 1, 1],
+      [2, 2, 2, 2, 2, 2],
+      [3, 3, 3],
+    ]);
+    expect(connection.getStats().droppedDatagrams).toBe(0);
     await connection.close();
   });
 

@@ -282,7 +282,43 @@ is `undefined` for a layer with no height set. Leave it out and the weight is th
 curve: a half-painted layer holds the crests of its relief first, a fully painted layer covers, and
 an unpainted one stays hidden. Edit or replace it to change the look. The package does not decide it.
 
-## 4. Prove it
+## 4. Keep the bytes on disk
+
+On the web, the asset loader stores every compiled file it downloads in the Cache API and reads it
+back on the next visit, so a returning player downloads no compiled asset again. Files a game
+authors straight into `public/` outside the asset pipeline (for example its own audio) are not in
+the manifest and are not covered. Entries are content-addressed, so
+they never go stale. Each game (page, base path and manifest) keeps one cache across releases:
+startup deletes only the files the new manifest no longer lists, so a one-file patch downloads one
+file. When the browser refuses a write for quota, the loader evicts the least recently accessed
+entries the current session has not touched, one at a time, and retries after each. Only a complete body reaches disk: a
+short or failed download retries after 0.5 s, 1 s and 2 s, then rejects naming the url and the last
+status. A 404 or 403 is not retried, so the next candidate url starts at once.
+
+Call `prefetch` before a scene change. It downloads the next scene's files at `soon` priority and
+returns how many bytes it served (`requested`, `settled`, `requestedBytes`, `settledBytes`),
+with no decode and no GPU memory:
+
+```ts
+await ctx.assets.prefetch(["world/assets/castle.glb", "ui/level-two.png"]);
+await ctx.goto("level-two");
+```
+
+After the reveal, the loader fills the rest of the manifest at idle priority, in manifest order. A
+`WorldCells` cell load is `soon`, so the ring's nearest files start before the fill; a `now`
+request from the running scene starts first and pauses new idle starts until it settles. The fill
+stops at the next file chunk when the browser reports `navigator.connection.saveData`. Read the result from
+`ctx.assets.cache`: `{ enabled, persisted, hits, misses, bytesOnDisk, bytesTotal, filling,
+backgroundFill }`, so a settings screen can show "1.2 of 2.0 GB on disk" and call
+`await ctx.assets.cache.clear()`.
+
+Two named overrides, both on `defineGame`'s `assets`: `cache: false` turns the disk cache off and
+`backgroundFill: false` turns the fill off. Both are reported (`cache.enabled`,
+`cache.backgroundFill`). A native host has no Cache API: the
+cache reports `enabled: false` with the reason "native host reads installed files", `prefetch`
+resolves at once, and the load path is unchanged.
+
+## 5. Prove it
 
 The in-repo fixture
 [`world-flythrough.playtest.json`](../../examples/abyss-framework/playtests/world-flythrough.playtest.json)

@@ -136,6 +136,13 @@
       "binaryDir": "${sourceDir}/build/wasm",
       "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "wasm-threads",
+      "inherits": "wasm",
+      "displayName": "ThreeNative web engine with Wasm threads (-pthread), for cross-origin-isolated pages",
+      "binaryDir": "${sourceDir}/build/wasm-threads",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "TN_WEB_THREADS": "ON" }
     }
   ],
   "buildPresets": [
@@ -144,7 +151,8 @@
     { "name": "tn-macos", "configurePreset": "tn-macos" },
     { "name": "tn-android", "configurePreset": "tn-android" },
     { "name": "tn-ios", "configurePreset": "tn-ios" },
-    { "name": "wasm", "configurePreset": "wasm", "targets": ["tn-native-engine-web"] }
+    { "name": "wasm", "configurePreset": "wasm", "targets": ["tn-native-engine-web"] },
+    { "name": "wasm-threads", "configurePreset": "wasm-threads", "targets": ["tn-native-engine-web"] }
   ],
   "testPresets": [
     { "name": "tn-linux", "configurePreset": "tn-linux", "output": { "outputOnFailure": true } }

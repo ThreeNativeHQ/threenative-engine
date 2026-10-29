@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   type IScalerWindow,
   RESOLUTION_SCALER,
@@ -9,7 +9,7 @@ import {
  * The desktop floor. Ten rungs with no temporal reconstruction behind them end at 0.23, which on
  * a desktop panel is 5% of the pixels presented at display size and no way back: nothing in the
  * chain reconstructs the frame, so the picture is simply blocky. The rungs stay the device ladder
- * the phones measure with; a desktop stops at 0.61 and reports that it is out of room.
+ * the phones measure with; a desktop holds full resolution and reports that it is out of room.
  */
 
 /** A window whose GPU cost tracks the drawing buffer and never meets a 60 fps budget. */
@@ -34,11 +34,38 @@ function walkToTheEnd(built: ResolutionScaler): ResolutionScaler {
 }
 
 describe("the desktop floor", () => {
-  it("stops at 0.61 and reports being out of room instead of stepping past it", () => {
+  it("holds a desktop at full resolution and says once why, instead of stretching fewer pixels", () => {
+    // Unreal ships dynamic resolution off (r.DynamicRes.OperationMode 0) and lets it lower the
+    // pixels only under its temporal upscaler: 0.61 bilinearly stretched read as a blurred frame.
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const built = walkToTheEnd(scaler({ minScale: RESOLUTION_SCALER.desktopFloorScale }));
-    expect(built.scale).toBe(0.61);
+    expect(built.scale).toBe(1);
     expect(built.atFloor).toBe(true);
     expect(built.scaleSource).toBe("auto");
+    const floor = info.mock.calls.filter(([line]) =>
+      String(line).startsWith("TN_RESOLUTION_FLOOR"),
+    );
+    expect(floor).toEqual([
+      ["TN_RESOLUTION_FLOOR scale=1 reason=no-reconstruction override=renderer.resolutionScale"],
+    ]);
+    info.mockRestore();
+  });
+
+  it("holds an integrated GPU's desktop at full resolution from its class's start rung", () => {
+    // The Intel laptop: GPU-bound at 42 ms on medium at 1080p, the case that walked the old floor.
+    const start = RESOLUTION_SCALER.startScaleByGpuClass.integrated;
+    const built = walkToTheEnd(scaler({ minScale: RESOLUTION_SCALER.desktopFloorScale, start }));
+    expect(built.scale).toBe(1);
+    expect(built.atFloor).toBe(true);
+  });
+
+  it("names the end of the ladder when the floor is the last rung", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    walkToTheEnd(scaler());
+    expect(info.mock.calls.map(([line]) => String(line))).toContain(
+      "TN_RESOLUTION_FLOOR scale=0.23 reason=ladder-end override=renderer.resolutionScale",
+    );
+    info.mockRestore();
   });
 
   it("leaves the phone rungs unchanged when the host states no floor", () => {
@@ -55,7 +82,10 @@ describe("the desktop floor", () => {
     const built = walkToTheEnd(scaler({ minScale: 0.61, temporalUpscale: () => temporal }));
     expect(built.scale).toBe(0.61);
     temporal = true;
-    expect(walkToTheEnd(built).scale).toBe(0.23);
+    expect(walkToTheEnd(built).scale).toBe(0.27);
+    temporal = false;
+    expect(built.observe(pixelBound(built.scale))).toBe(0.61);
+    expect(built.scale).toBe(0.61);
   });
 
   it("keeps a host's own start rung when it already sits above the floor", () => {

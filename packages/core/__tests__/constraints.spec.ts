@@ -62,6 +62,14 @@ describe("core constraints", () => {
           // configures no property of one, and reads only `name` for the error label; which
           // materials exist, and how each looks, is entirely the game's.
           file !== "merge-parts.ts" &&
+          // The automatic caller of `mergeByMaterial`: it reads each mesh's material identity and
+          // render flags to decide which meshes share a draw, and constructs or edits no material.
+          file !== "auto-batch.ts" &&
+          // The scene trace flattens the game's meshes into triangle and material-texel buffers, and
+          // `TracedReflections` walks them. They read the game's materials and write none of them.
+          // The tighter check is below.
+          file !== "render/scene-trace.ts" &&
+          file !== "render/traced-reflections.ts" &&
           // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
           // constructs no material, light, colour or shader; the word "light" it trips on is
           // inside "flight".
@@ -98,6 +106,45 @@ describe("core constraints", () => {
           // appearance inputs without constructing or choosing any visual output.
           file !== "pipeline-census.ts" &&
           file !== "render/probe-volume.ts" &&
+          // PRD-633 captures the game's sky; its only authored surface masks the lower hemisphere
+          // with black when requested. It supplies no sky, scattering coefficient or lighting look.
+          file !== "render/sky-capture.ts" &&
+          // PRD-634 widens three's shadow filter by gap × tan(angle); the angle and every light,
+          // map size and shadow camera come from the game. It decides no edge width of its own.
+          file !== "render/soft-shadow.ts" &&
+          // Owner exception to "never own the look" (2026-10-22): `createRenderer` starts a WebGPU renderer on a
+          // fresh Unreal 5.8.3 project's tone curve. The curve is plain maths on the frame's colour; it builds no
+          // material, light or scene object, and `toneMapping` names the override.
+          file !== "look/default-tone-mapping.ts" &&
+          // Auto exposure meters the frame the game already drew with screen-space quads on scratch targets. The
+          // materials never reach a game object, and the metering constants are Unreal 5.8.3's defaults.
+          // The look's post chain (owner exception, 2026-10-22): `WorldEnvironment` and its stages are the Unreal 5.8.3
+          // defaults of the frame. They draw the game's scene through the renderer's chain and name every override.
+          file !== "look/auto-exposure.ts" &&
+          file !== "look/world-environment.ts" &&
+          file !== "look/reflection-trace.ts" &&
+          file !== "look/gi-registry.ts" &&
+          file !== "look/ao-reach.ts" &&
+          file !== "look/ao-multibounce.ts" &&
+          file !== "look/local-exposure.ts" &&
+          file !== "look/unreal-bloom.ts" &&
+          file !== "look/motion-blur.ts" &&
+          file !== "look/vignette.ts" &&
+          file !== "look/look-diagnostics.ts" &&
+          file !== "look/quality.ts" &&
+          file !== "look/exposure-graph.ts" &&
+          file !== "look/exposure-readback.ts" &&
+          file !== "look/exposure-settings.ts" &&
+          file !== "look/filmic-tone-mapping.ts" &&
+          // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
+          // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and
+          // the game chooses which materials take it. It constructs no material, light or colour and sets no appearance
+          // value of its own; the assertions below keep that true.
+          file !== "render/rough-diffuse.ts" &&
+          // PRD-639 reduces the maps and flat colours of the game's own materials to atlas tiles that a traced GI ray reads.
+          // Every colour, texture and light comes from the game's materials and lights; it constructs none and chooses no
+          // look. The assertions below keep that true.
+          file !== "render/surface-cache.ts" &&
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
@@ -117,6 +164,11 @@ describe("core constraints", () => {
           // them. It reads appearance fields only to compare them; it constructs, sets and chooses
           // nothing, and the surface kept is the package's own.
           file !== "render/material-key.ts" &&
+          // The Surface Cache is a lookup of the game's own materials in texture space: it reads a
+          // material's colour, emissive and map, flattens them into an atlas the trace samples, and
+          // returns them untouched. It names a material only to read it, and it constructs no
+          // material, light, colour or shader and picks no value. The assertions below keep it so.
+          file !== "render/surface-cache.ts" &&
           // The daylight rig wires a sky, a sun, a fill light, haze and the tone curve from values
           // the game must supply — every colour, angle, intensity, density and exposure is a
           // required option. It constructs the objects those values need and chooses none of them.
@@ -134,6 +186,11 @@ describe("core constraints", () => {
           // map, the colour, the geometry and every other appearance value stay the game's, and the
           // assertions below keep it that way.
           file !== "render/foliage-alpha.ts" &&
+          // The foliage back light multiplies the game's own `subsurfaceColor` by an irradiance node the
+          // game reads from its own cache and adds the product to the material's emissive node. It
+          // constructs no material, picks no colour and reads no other appearance value; a material
+          // without the marker or the colour is left untouched.
+          file !== "render/two-sided-foliage.ts" &&
           // The impostor baker is a SOURCE-derived mechanism: it stages the package's own parts into
           // a private scene and captures their own albedo and normals into an atlas. It constructs a
           // material only as a node twin of the source and copies every value from it; it chooses no
@@ -186,6 +243,14 @@ describe("core constraints", () => {
     expect(assets).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    const surfaceCache = withoutComments(
+      readFileSync(path.join(sourceDirectory, "render/surface-cache.ts"), "utf8"),
+    );
+    expect(surfaceCache).not.toMatch(
+      /new\s+\w*(Material|Light|Texture|Geometry)|new\s+(Color|Scene)|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(surfaceCache).not.toMatch(/\bmaterial\.\w+\s*(=(?!=)|\+=|-=|\*=|\/=|\+\+|--)/u);
 
     const renderTrapAudit = withoutComments(
       readFileSync(path.join(sourceDirectory, "profiling/render-trap-audit.ts"), "utf8"),
@@ -286,6 +351,44 @@ describe("core constraints", () => {
     expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
+    // The rough diffuse option reads the game's roughness and albedo through three's own nodes and writes one flag of its
+    // own, `roughDiffuse`. Naming a look value is how a framework starts deciding one.
+    const roughDiffuse = readFileSync(
+      path.join(sourceDirectory, "render/rough-diffuse.ts"),
+      "utf8",
+    );
+    expect(roughDiffuse).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(roughDiffuse).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
+    expect(roughDiffuse.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The scene trace and the traced reflections read the game's materials into buffers. They construct no
+    // material, light or colour and assign no look property of one.
+    for (const file of ["render/scene-trace.ts", "render/traced-reflections.ts"]) {
+      const traced = withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8"));
+      expect(traced, file).not.toMatch(
+        /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+      );
+      expect(traced, file).not.toMatch(
+        /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+      );
+    }
+
+    // The surface cache reads the game's maps and colours and writes none of them.
+    const surfaceCacheRaw = readFileSync(
+      path.join(sourceDirectory, "render/surface-cache.ts"),
+      "utf8",
+    );
+    expect(surfaceCacheRaw).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(surfaceCacheRaw).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
+
     // The unlit-foliage warning names an envMap for the same reason foliage-alpha names a map: it
     // asks whether one is there. Reading its absence is the whole finding, so the check is that it
     // is never WRITTEN — a framework that assigns a sky has decided how the game looks.
@@ -369,7 +472,10 @@ describe("core constraints", () => {
     // `renderer.ts` is exempted because `prewarm` must inspect and clone the game's own render
     // surfaces to compile them early. It does not construct a surface or choose its appearance.
     const renderer = readFileSync(path.join(sourceDirectory, "renderer.ts"), "utf8");
-    expect(renderer).not.toMatch(
+    // The one tone mapping it may name is the default curve it applies (owner exception, 2026-10-22).
+    expect(
+      renderer.replace(/\b(?:applyRendererToneMapping|RendererToneMapping|toneMapping)\b/gu, " "),
+    ).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
 
@@ -486,7 +592,13 @@ describe("core constraints", () => {
 
     // The public surface may NAME the types it re-exports (`IGPUSceneBVHMaterialGroup` is a data
     // group, not a look); what it may never do is originate an appearance.
-    expect(indexSource).not.toMatch(
+    // The renderer's default tone curve (owner exception, 2026-10-22) is re-exported by name; naming it is the
+    // only use of "tone mapping" the index may make.
+    const withoutToneCurveNames = indexSource.replace(
+      /\b(?:installFilmicToneMapping|RendererToneMapping)\b|look\/(?:default|filmic)-tone-mapping\.js/gu,
+      " ",
+    );
+    expect(withoutToneCurveNames).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
 

@@ -5,7 +5,6 @@ import {
   type DirectionalLight,
   Material,
   type MeshStandardMaterial,
-  type Object3D,
   type Scene,
   Vector3,
 } from "three";
@@ -75,41 +74,73 @@ export function backlightMaterial(source: MeshStandardMaterial, controls: IBackl
   return material;
 }
 
+interface IRenderFrame {
+  readonly renderId?: number;
+  readonly frameId?: number;
+  readonly camera?: Camera | null;
+}
+
 function createGraph(controls: IBacklightControls) {
-  const rimGain = uniform(controls.rimGain).onRenderUpdate(() => {
+  // One render validates the controls and resolves the key once for all eight uniforms: each read can
+  // be a native bridge call, and a render reads the same values throughout.
+  let checkedFrame: IRenderFrame | undefined;
+  let checkedRender: number | undefined;
+  const check = (frame: IRenderFrame) => {
+    const render = frame.renderId ?? frame.frameId;
+    if (frame === checkedFrame && render === checkedRender) return;
     validateControls(controls);
-    return controls.rimGain;
-  });
-  const fillGain = uniform(0).onRenderUpdate(() => {
-    validateControls(controls);
-    return controls.fillAdmitted ? controls.fillGain : 0;
-  });
-  const fillColor = uniform(controls.fillColor).onRenderUpdate(() => {
-    validateControls(controls);
-    return controls.fillColor;
-  });
-  const fillDirection = uniform(controls.fillDirection).onRenderUpdate(() => {
-    validateControls(controls);
-    return controls.fillDirection;
-  });
-  const fillAngularSize = uniform(controls.fillAngularSize).onRenderUpdate(() => {
-    validateControls(controls);
-    return controls.fillAngularSize;
-  });
-  const keyColor = uniform(controls.key.color).onRenderUpdate(() => {
-    validateControls(controls);
-    return controls.key.color;
-  });
+    checkedFrame = frame;
+    checkedRender = render;
+  };
   const keyDirectionValue = new Vector3(0, 1, 0);
   const keyTargetValue = new Vector3();
+  let keyFrame: IRenderFrame | undefined;
+  let keyRender: number | undefined;
+  let keyGainValue = 0;
+  const key = (frame: IRenderFrame) => {
+    const render = frame.renderId ?? frame.frameId;
+    if (frame !== keyFrame || render !== keyRender) {
+      keyGainValue = resolveKey(
+        controls,
+        keyDirectionValue,
+        keyTargetValue,
+        frame.camera ?? controls.camera,
+      );
+      keyFrame = frame;
+      keyRender = render;
+    }
+    return keyGainValue;
+  };
+  const rimGain = uniform(controls.rimGain).onRenderUpdate((frame) => {
+    check(frame);
+    return controls.rimGain;
+  });
+  const fillGain = uniform(0).onRenderUpdate((frame) => {
+    check(frame);
+    return controls.fillAdmitted ? controls.fillGain : 0;
+  });
+  const fillColor = uniform(controls.fillColor).onRenderUpdate((frame) => {
+    check(frame);
+    return controls.fillColor;
+  });
+  const fillDirection = uniform(controls.fillDirection).onRenderUpdate((frame) => {
+    check(frame);
+    return controls.fillDirection;
+  });
+  const fillAngularSize = uniform(controls.fillAngularSize).onRenderUpdate((frame) => {
+    check(frame);
+    return controls.fillAngularSize;
+  });
+  const keyColor = uniform(controls.key.color).onRenderUpdate((frame) => {
+    check(frame);
+    return controls.key.color;
+  });
   const keyDirection = uniform(keyDirectionValue).onRenderUpdate((frame) => {
-    resolveKey(controls, keyDirectionValue, keyTargetValue, frame.camera ?? controls.camera);
+    key(frame);
     return keyDirectionValue;
   });
   // Removal/visibility/intensity are live. A removed sun cannot leave an invented rim behind.
-  const keyGain = uniform(0).onRenderUpdate((frame) =>
-    resolveKey(controls, keyDirectionValue, keyTargetValue, frame.camera ?? controls.camera),
-  );
+  const keyGain = uniform(0).onRenderUpdate((frame) => key(frame));
   const N = normalView.normalize();
   const V = positionViewDirection.normalize();
   const L = cameraViewMatrix.transformDirection(keyDirection);

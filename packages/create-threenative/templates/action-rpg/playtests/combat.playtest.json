@@ -23,6 +23,12 @@
       "release": true
     },
     {
+      "kind": "wait",
+      "label": "swing-landed",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
       "kind": "input",
       "label": "surge",
       "press": "KeyE",

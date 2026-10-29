@@ -37,6 +37,7 @@ import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { markEngineRenderHook } from "../src/engine-render-hook.js";
 import { ProjectionMirror } from "../src/projection-apply.js";
+import { formatProjectionWindow } from "../src/projection-marker.js";
 import { hasMorphAttributes } from "../src/projection-plan.js";
 import {
   createProjectionScanWorkspace,
@@ -488,7 +489,8 @@ describe("SceneRenderProjection", () => {
     const material = new MeshStandardMaterial();
     fill(scene, material, 32);
     for (let index = 0; index < 32; index += 1) {
-      const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.001, 1), material);
+      // Never 1: a copy of the filler's box would batch with it by content.
+      const mesh = new Mesh(new BoxGeometry(1, 1 + (index + 1) * 0.001, 1), material);
       mesh.position.z = index < 8 ? 0 : 1_000;
       scene.add(mesh);
     }
@@ -528,7 +530,8 @@ describe("SceneRenderProjection", () => {
     const anchorGeometry = new BoxGeometry(1, 1, 1);
 
     for (let index = 0; index < 8; index += 1) {
-      const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.01, 1), material);
+      // Never 1: a copy of the anchor's box would batch with it by content.
+      const mesh = new Mesh(new BoxGeometry(1, 1 + (index + 1) * 0.01, 1), material);
       mesh.position.z = index < 4 ? -1_000 : 1_000;
       mesh.frustumCulled = index < 4;
       scene.add(mesh);
@@ -2146,6 +2149,22 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
     // same fact the spy asserts, counted from the report the boundary actually publishes.
     expect(projection.report.sourceRenderables).toBe(0);
     scanSpy.mockRestore();
+  });
+
+  // The window line every five seconds reads the report but not its scene count: on the native
+  // engine a whole-scene walk crosses the bridge per node, and the shooter town's 8,900 nodes made
+  // that window's frame miss its vsync. The full report still counts it.
+  it("walks the scene for its draw-candidate count only when the count is read", () => {
+    const scene = new Scene();
+    fill(scene, new MeshStandardMaterial(), 300);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
+    projection.reconcile();
+    const walk = vi.spyOn(projection.root, "traverse");
+
+    formatProjectionWindow(projection.windowReport, 1, 300);
+    expect(walk).not.toHaveBeenCalled();
+    expect(projection.report.resultDrawCandidates).toBe(300);
+    walk.mockRestore();
   });
 
   // (c) The verdict names the opt-out: `disabled`, its own reason code, not `belowMeshFloor` or

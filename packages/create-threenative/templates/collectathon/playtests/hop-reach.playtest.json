@@ -1,0 +1,117 @@
+{
+  "name": "collectathon-hop-reach",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "hopper.1",
+        "at": {
+          "x": 5,
+          "y": 0,
+          "z": 30
+        }
+      },
+      {
+        "entity": "walker.3",
+        "at": {
+          "x": 0,
+          "y": 0,
+          "z": -14
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.0",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": -10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": -30,
+          "y": 0,
+          "z": -5
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.2",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": 10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.4",
+        "at": {
+          "x": -28,
+          "y": 0,
+          "z": 8
+        },
+        "frozen": true
+      },
+      {
+        "entity": "thornback.1",
+        "at": {
+          "x": -30,
+          "y": 0,
+          "z": -20
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "hopper-hops",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "hopper.1",
+        "component": "attacks",
+        "changed": true
+      },
+      {
+        "entity": "hopper.1",
+        "component": "longestHop",
+        "gte": 1,
+        "lte": 2.65
+      }
+    ]
+  }
+}

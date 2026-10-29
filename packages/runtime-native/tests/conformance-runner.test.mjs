@@ -48,10 +48,14 @@ import {
   hardwareAdapterBlocker,
   missingHardwareReferenceBlocker,
   makeEntry,
+  bundleOwnedWeb,
+  desktopEngine,
+  ownedEnginePlayerPath,
   launchAndroidConformanceActivity,
   runCommand,
   validateWindowedSurfaceOutput,
   validateWorldGpuReadbackOutput,
+  waitForNativeMarker,
   temporalCaptureLabel,
   unexpectedBlockedRows,
   expiredExclusions,
@@ -577,6 +581,80 @@ test("dry run validates and bundles implemented rows without a browser or native
   // place: `report.summary.validated === implemented` above is what fails when rows stop being
   // bundled, and it fails on the count no matter how fast or slow the run was. The timeout is a
   // hang detector and only ever was one, so 240 s is the right size for it.
+}, 240_000);
+
+test("the desktop lane names its engine and refuses an unknown one", () => {
+  assert.equal(desktopEngine(["--target", "desktop"]), "threejs", "legacy host stays the default until a follow-up flips it");
+  assert.equal(desktopEngine(["--engine", "threenative"]), "threenative");
+  assert.throws(() => desktopEngine(["--engine", "native"]), /--engine must be threejs or threenative/u);
+  assert.equal(ownedEnginePlayerPath({ THREENATIVE_ENGINE_PLAYER: "/opt/player" }, "linux"), "/opt/player");
+  assert.equal(
+    ownedEnginePlayerPath({}, "linux"),
+    join(root, "build/tn-engine-ui/tn-native-engine-player-v8"),
+  );
+  const android = run(["--target", "android", "--engine", "threenative", "--dry-run"]);
+  assert.notEqual(android.status, 0);
+  assert.match(android.stderr, /use --target web\|desktop/u);
+});
+
+test("a scene that throws on the owned player is reported at once, not after the ready timeout", async () => {
+  const child = { exitCode: null, signalCode: null };
+  const output = {
+    error: null,
+    stderr: "[ThreeNative conformance] failed: Error: TN_NATIVE_UNSUPPORTED_MESHPHYSICALNODEMATERIAL",
+    stdout: "",
+  };
+  const started = Date.now();
+  await expect(
+    waitForNativeMarker(child, output, "TN_CONFORMANCE_READY:row", 60_000, "[ThreeNative conformance] failed:"),
+  ).rejects.toThrow(/Native scene failed before TN_CONFORMANCE_READY:row: .*MESHPHYSICALNODEMATERIAL/u);
+  expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+test("native frame failures reject even when the ready or completion marker is already present", async () => {
+  const child = { exitCode: null, signalCode: null };
+  for (const marker of ["TN_CONFORMANCE_READY:row", "TN_CONFORMANCE_UPSAMPLE_300_FRAMES"]) {
+    const output = { error: null, stdout: marker, stderr: "[Playtest] TN_V8_FRAME_FAILED: Error: temporal dimensions were never observed" };
+    await expect(waitForNativeMarker(child, output, marker, 1)).rejects.toThrow(/TN_V8_FRAME_FAILED/u);
+  }
+});
+
+test("a missing native completion observation times out instead of accepting startup readiness", async () => {
+  const child = { exitCode: null, signalCode: null };
+  const output = { error: null, stdout: "TN_CONFORMANCE_READY:row", stderr: "" };
+  await expect(waitForNativeMarker(child, output, "TN_CONFORMANCE_UPSAMPLE_300_FRAMES", 1)).rejects.toThrow(/timed out/u);
+});
+
+test("the owned web lane refuses to bundle without the Wasm engine", async () => {
+  await expect(bundleOwnedWeb("entry.js", "out.js", "/nonexistent/tn-native-engine-web.mjs")).rejects.toThrow(
+    /TN_WASM_ENGINE_MISSING/u,
+  );
+});
+
+test("an owned-engine row whose scene needs an unbound import fails at the bundle, not as a pass", () => {
+  // `gi-tier-medium` runs core's ProbeVolume, which imports CubeCamera, a class the V8 engine player's
+  // `three` does not bind. The legacy lane bundled it with upstream three and passed; the owned lane must say why it cannot.
+  const dir = makeTempDirSync("threenative-owned-conformance-");
+  try {
+    const out = join(dir, "owned-report.json");
+    // A hardware row is blocked without a browser reference; the bundle fails before it is read.
+    mkdirSync(join(dir, "web"));
+    writeFileSync(join(dir, "web/gi-tier-medium.png"), PNG.sync.write(new PNG({ width: 2, height: 2 })));
+    const proc = run(
+      ["--target", "desktop", "--engine", "threenative", "--only-tests", "gi-tier-medium", "--reference", join(dir, "web"), "--out", out],
+      { THREENATIVE_ENGINE_PLAYER: join(dir, "missing-player") },
+      240_000,
+    );
+    // 1: a failed row; the 117 rows outside --only-tests are blocked, which the runner also counts.
+    assert.ok([1, 2].includes(proc.status), proc.stderr || proc.stdout);
+    const row = JSON.parse(readFileSync(out, "utf8")).results.find((entry) => entry.id === "gi-tier-medium");
+    assert.equal(row.status, "fail");
+    assert.equal(row.native.engine, "threenative");
+    assert.equal(row.native.phase, "bundle");
+    assert.match(row.native.error, /TN_NATIVE_ENGINE_UNBOUND: three:CubeCamera/u);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }, 240_000);
 
 test("project mode resolves the configured native entry and dry-bundles only that project", () => {

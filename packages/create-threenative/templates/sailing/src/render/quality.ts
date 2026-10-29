@@ -24,7 +24,14 @@
 // over moving water reads as smear. That is a template decision recorded here, not an omission:
 // the two most expensive stages in the reference ablation are off on a desktop as well as on a
 // phone, which is also why the rung between the tiers is bloom strength and nothing else.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import {
+  type IWorldEnvironmentOptions,
+  qualityPreset as coreQualityPreset,
+  qualityTiers,
+} from "@threenative/core";
+import { exposureSettings } from "./exposure.js";
+export type { QualityTier } from "@threenative/core";
+import type { QualityTier } from "@threenative/core";
 
 /**
  * The three names this game's look comes in.
@@ -34,147 +41,33 @@ import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
  * laptop iGPU, a handheld, a desktop that is dropping frames. Nothing outside this file decides
  * what any of them mean.
  */
-export type QualityTier = "low" | "medium" | "high";
-
-const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
+export const resolveQualityTier = qualityTiers.resolve;
 
 /**
- * Narrows an arbitrary string — a URL parameter, a saved setting — to a tier name. Not exported:
- * `resolveQualityTier` is the one door in, so an unknown name cannot be waved past the throw.
+ * The stages and strengths a tier turns on: the core preset, this game's exposure policy and the
+ * named override from the header: no final gather, no SSGI, no SSR. The frame is the water,
+ * and a screen-space reflection over moving water reads as smear. Motion blur is off too: with the
+ * camera chasing the ship it smeared the sails and the buoys at 1920x1080.
  */
-function isQualityTier(value: string): value is QualityTier {
-  return (QUALITY_TIERS as readonly string[]).includes(value);
-}
-
-/**
- * Where each GPU family starts, from `ctx.renderer.gpuClass`.
- *
- * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
- * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
- * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
- * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
- */
-const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
-  software: "low",
-  "mobile-low": "low",
-  "mobile-mid": "low",
-  "mobile-high": "medium",
-  integrated: "medium",
-  discrete: "high",
-};
-
-/**
- * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
- *
- * Fails closed. An unrecognised tier name throws with the value it was handed rather than
- * quietly rendering the default, because a silent fallback here looks exactly like a tier that
- * turned out to have no effect.
- */
-export function resolveQualityTier(
-  request: {
-    readonly gpuClass?: string;
-    readonly mobile?: boolean;
-    readonly software?: boolean;
-    readonly tier?: string;
-  } = {},
-): QualityTier {
-  const requested = request.tier;
-  if (requested !== undefined) {
-    if (!isQualityTier(requested)) {
-      throw new Error(
-        `Unknown quality tier ${JSON.stringify(requested)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-      );
-    }
-    return requested;
-  }
-  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
-  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
-  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
-  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
-  // `tier` above still wins over it.
-  if (request.software === true) return "low";
-  const family =
-    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
-  if (family !== undefined) return family;
-  return request.mobile === true ? "low" : "high";
-}
-
-/**
- * What a desktop gets: this template's shipped desktop look, unchanged.
- */
-const high: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.38,
-  // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
-  denoiseEnabled: false,
-  autoExposureEnabled: false,
-  exposure: 0.9,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
-/**
- * The rung in between. With no screen-space stage to drop at any tier, the only thing left to
- * move is how hard the sun blooms off the water, so that is what the three tiers differ by.
- * The saving is **unmeasured** and small by construction — if this template needs to be cheaper,
- * the water material is where the frame actually goes.
- */
-const medium: IWorldEnvironmentOptions = {
-  // The chain's own quality tier: without it the renderer keeps its `high` default at this tier.
-  renderChainTier: "medium",
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.33,
-  // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
-  denoiseEnabled: false,
-  exposure: 0.9,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
-/**
- * What a phone gets: this template's shipped mobile look, unchanged.
- */
-const low: IWorldEnvironmentOptions = {
-  // The chain's own quality tier, separate from which stages this preset enables: without it
-  // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
-  // paid for the high chain's denoise and slice counts.
-  renderChainTier: "low",
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.28,
-  exposure: 0.9,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
-
-const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
-
-/** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
-  const preset = QUALITY_PRESETS[tier as QualityTier];
-  if (preset === undefined) {
-    throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-    );
-  }
-  return preset;
+  console.info(
+    `TN_RENDER_CHAIN_COST_OVERRIDE ${JSON.stringify({
+      reason:
+        "Sailing: the frame is the water; screen-space reflections over moving water read as smear, the gather is the costliest stage, and motion blur smeared the chase-camera ship",
+      finalGatherMethod: "none",
+      ssgiEnabled: false,
+      ssrEnabled: false,
+      motionBlurEnabled: false,
+    })}`,
+  );
+  return {
+    ...coreQualityPreset(tier),
+    exposurePolicy: exposureSettings,
+    finalGatherMethod: "none",
+    ssgiEnabled: false,
+    ssrEnabled: false,
+    motionBlurEnabled: false,
+  };
 }
 
 export interface IMaterialLightingEnvironment {

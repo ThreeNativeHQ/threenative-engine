@@ -2,9 +2,11 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  Camera,
   Group,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
   OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
@@ -51,6 +53,7 @@ const COMBAT_CLIPS = [
 ] as const;
 
 const probeState = vi.hoisted(() => ({
+  colliderReads: 0,
   vector2Allocations: 0,
   vector3Allocations: 0,
   vector3Clones: 0,
@@ -89,10 +92,113 @@ vi.mock("@threenative/core", async (importOriginal) => {
   return { ...actual, AudioBus: FixtureAudioBus };
 });
 vi.mock("@threenative/physics", () => import("../../physics/src/index.js"));
+// Every read of a town collider's bounds, so a navigation query's scan of the whole town shows.
+vi.mock("../templates/shooter/src/render/town.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../templates/shooter/src/render/town.js")>();
+  const counted = <T extends object>(value: T): T =>
+    new Proxy(value, {
+      get(target, key, receiver) {
+        if (key === "min" || key === "max") probeState.colliderReads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+  return {
+    ...actual,
+    buildTown: (...args: Parameters<typeof actual.buildTown>) => {
+      const town = actual.buildTown(...args);
+      return { ...town, colliders: town.colliders.map(counted) };
+    },
+  };
+});
 
 const WARMUP_FRAMES = 30;
+/** The `Object3D` calls that walk a node's ancestors, which on the engine are each a crossing. */
+const WORLD_WALKS = [
+  "getWorldDirection",
+  "getWorldPosition",
+  "getWorldQuaternion",
+  "getWorldScale",
+  "localToWorld",
+  "updateMatrixWorld",
+  "updateWorldMatrix",
+  "worldToLocal",
+] as const;
 const MEASURED_FRAMES = 600;
 const DT = 1 / 60;
+
+interface IKitWalkSite {
+  readonly method: string;
+  readonly owner: string;
+  readonly file: string;
+  readonly line: number;
+  count: number;
+}
+
+/**
+ * Count the world-matrix walks the kit's own code starts, by the kit function that starts them.
+ *
+ * On the engine each of these is a call into Wasm that walks the node's ancestors, so a kit line
+ * that runs one every frame pays a crossing for a value it already had. `Camera` overrides two of
+ * the names, so its own copies are counted too; three's own recursive calls show a caller inside
+ * three and are not counted, which is what "started by the kit" means.
+ */
+function countKitWalks(): {
+  rate(owner: string): number;
+  hottest(count?: number): string;
+  reset(): void;
+  stop(): void;
+} {
+  const sites = new Map<string, IKitWalkSite>();
+  const restore: Array<() => void> = [];
+  for (const target of [Object3D.prototype, Camera.prototype] as unknown as Record<
+    string,
+    unknown
+  >[]) {
+    for (const method of WORLD_WALKS) {
+      if (!Object.hasOwn(target, method)) continue;
+      const original = target[method] as (...args: unknown[]) => unknown;
+      target[method] = function (this: unknown, ...args: unknown[]) {
+        const caller = new Error().stack?.split("\n")[2] ?? "";
+        const at = /at (\S+) .*templates\/shooter\/src\/(.+?):(\d+)/.exec(caller);
+        if (at !== null) {
+          const owner = at[1] as string;
+          const file = at[2] as string;
+          const line = Number(at[3]);
+          const key = `${method} ${owner} ${file}`;
+          const site = sites.get(key) ?? { count: 0, file, line, method, owner };
+          site.count += 1;
+          sites.set(key, site);
+        }
+        return original.apply(this, args);
+      };
+      restore.push(() => {
+        target[method] = original;
+      });
+    }
+  }
+  return {
+    rate: (owner: string): number => {
+      let count = 0;
+      for (const site of sites.values()) if (site.owner === owner) count += site.count;
+      return count / MEASURED_FRAMES;
+    },
+    hottest: (count = 6): string =>
+      [...sites.values()]
+        .sort((left, right) => right.count - left.count)
+        .slice(0, count)
+        .map(
+          (site) =>
+            `${(site.count / MEASURED_FRAMES).toFixed(2)}/f ${site.method} ${site.owner} ${site.file}:${site.line}`,
+        )
+        .join("; "),
+    reset: (): void => {
+      sites.clear();
+    },
+    stop: (): void => {
+      for (const undo of restore) undo();
+    },
+  };
+}
 
 /**
  * Every other template's car here is kinematic, so the zero-gravity default below costs it
@@ -370,12 +476,15 @@ describe("generated template ordinary-frame runtime cost", () => {
     try {
       const camera = new PerspectiveCamera(60, 16 / 9);
       const target = new Vector3(-2, 0.9, 0);
-      for (let frame = 0; frame < WARMUP_FRAMES; frame += 1)
-        minimal.followCamera(camera, target, DT);
-      expect(
-        measureVectorAllocations(() => minimal.followCamera(camera, target, DT)),
-        "minimal followCamera vector allocation sentinel",
-      ).toEqual({ clones: 0, constructors: 0 });
+      // Both arms: a clear way eases the lens, a wall at 1 m pulls it in and climbs.
+      for (const probe of [() => undefined, () => 1]) {
+        for (let frame = 0; frame < WARMUP_FRAMES; frame += 1)
+          minimal.followCamera(camera, target, DT, probe);
+        expect(
+          measureVectorAllocations(() => minimal.followCamera(camera, target, DT, probe)),
+          "minimal followCamera vector allocation sentinel",
+        ).toEqual({ clones: 0, constructors: 0 });
+      }
 
       const ctx = gameContext(physics.physics);
       const player = new starter.Player(
@@ -710,6 +819,141 @@ describe("generated template ordinary-frame runtime cost", () => {
       );
     } finally {
       defensePhysics.dispose();
+    }
+  });
+
+  it("runs the shooter's firefight frame without engine walks for constants", async () => {
+    const { Play } = await import("../templates/shooter/src/scenes/Play.js");
+    const { ENEMY_CLIPS } = await import("../templates/shooter/src/entities/Enemy.js");
+    const physics = await physicsFixture();
+    const entities = new Registry();
+    const base = sceneContext(physics.physics, Play.initialState);
+    // The kit's touch controls read the viewport size, which only the real host provides.
+    const viewport = { ...base.viewport, size: { height: 900, width: 1600 } };
+    const context = { ...base, entities, viewport };
+    const play = new Play();
+    try {
+      await play.load({
+        ...context,
+        assets: {
+          ...context.assets,
+          model: async <T>(): Promise<T> => templatedRig(ENEMY_CLIPS) as T,
+        },
+      } as never);
+      const frame = play.enter(context as never);
+      const walks = countKitWalks();
+      try {
+        runSceneFrames(frame, context, () => {
+          walks.reset();
+          probeState.colliderReads = 0;
+        });
+      } finally {
+        walks.stop();
+      }
+      // The waste the profile found, each named by the function that ran it. A fight is five
+      // soldiers plus the player for 600 frames; the budgets are rates per frame, not totals, so
+      // a longer run cannot make them pass by accident.
+      const townReads = probeState.colliderReads / MEASURED_FRAMES;
+      expect
+        .soft(
+          townReads,
+          `reads of a town collider's bounds per frame: navigation samples every wall in town instead of the ones beside the point (the sight-line slab test's handful stay)`,
+        )
+        .toBeLessThan(1000);
+      expect
+        .soft(
+          walks.rate("Enemy.get"),
+          `world walks per frame started by an Enemy getter: the model height is measured once per model, not per call. ${walks.hottest()}`,
+        )
+        .toBe(0);
+      expect
+        .soft(
+          walks.rate("Enemy.#handGap"),
+          `world walks per frame started by Enemy#handGap: the right hand's gap follows from the rifle's own hold and is measured once per hold. ${walks.hottest()}`,
+        )
+        .toBeLessThan(1);
+      expect
+        .soft(
+          walks.rate("FpsPlayer.aimRay"),
+          `world walks per frame started by FpsPlayer.aimRay: the camera pose it reads is the one for the frame. ${walks.hottest()}`,
+        )
+        .toBe(0);
+    } finally {
+      play.exit();
+      entities.clear();
+      physics.dispose();
+    }
+  });
+
+  it("answers the shooter's navigation queries like a full scan of the town", async () => {
+    const { occupancyBlocked, occupancyIndex } = await import(
+      "../templates/shooter/src/entities/Enemy.js"
+    );
+    const { buildTown } = await import("../templates/shooter/src/render/town.js");
+    const { createTownMaterials } = await import(
+      "../templates/shooter/src/render/townMaterials.js"
+    );
+    const { scale } = await import("../templates/shooter/src/render/scale.js");
+    const colliders = buildTown(createTownMaterials()).colliders;
+    expect(colliders.length, "town colliders under test").toBeGreaterThan(50);
+    const index = occupancyIndex(colliders);
+    // The independent oracle: the box test `#occupied` ran per collider before the index.
+    const wallHeight = scale.humanHeight + scale.ankleHeight * 6;
+    const scanned = (x: number, z: number, padding: number): boolean =>
+      colliders.some(
+        (box) =>
+          box.min[1] <= wallHeight &&
+          box.max[1] > 0.5 &&
+          x > box.min[0] - padding &&
+          x < box.max[0] + padding &&
+          z > box.min[2] - padding &&
+          z < box.max[2] + padding,
+      );
+    // Every body width the kit asks for, up to the widest the index files a wall for; the step is
+    // deliberately not a divisor of the 4 m bucket, so a query lands off-centre and on a seam.
+    const paddings = [0, 0.24, 0.48, index.pad];
+    let mismatch: string | undefined;
+    for (let x = -22; mismatch === undefined && x <= 22; x += 0.37) {
+      for (let z = -22; mismatch === undefined && z <= 22; z += 0.37) {
+        for (const padding of paddings) {
+          const bucketed = occupancyBlocked(index, x, z, padding);
+          const expected = scanned(x, z, padding);
+          if (bucketed !== expected) {
+            mismatch = `(${x.toFixed(2)}, ${z.toFixed(2)}) at ${padding} m: bucket ${bucketed}, scan ${expected}`;
+            break;
+          }
+        }
+      }
+    }
+    expect(mismatch, "bucketed wall test against the full scan").toBeUndefined();
+    // A body wider than the index files for is a broken query, not a slow one.
+    expect(() => occupancyBlocked(index, 0, 0, index.pad + 0.01)).toThrow(RangeError);
+  });
+
+  it("keeps the shooter's aim on the camera under yaw, pitch and shake", async () => {
+    const { FpsPlayer } = await import("../templates/shooter/src/entities/FpsPlayer.js");
+    const physics = await physicsFixture();
+    try {
+      const context = sceneContext(physics.physics, {});
+      const player = new FpsPlayer(context as never, context.camera);
+      // Off-axis, looking down, and mid-flinch: the shake bends the axis and rolls the horizon, so
+      // a basis read from anything other than the camera's own pose shows up as a distance.
+      player.look.yaw = 0.73;
+      player.look.pitch = -0.31;
+      player.hurt(0.5);
+      player.syncCamera();
+      const aim = player.aimRay();
+      expect(
+        aim.origin.distanceTo(context.camera.getWorldPosition(new Vector3())),
+        "aim origin against the placed camera",
+      ).toBeLessThan(1e-6);
+      expect(
+        aim.direction.distanceTo(context.camera.getWorldDirection(new Vector3())),
+        "aim direction against the placed camera",
+      ).toBeLessThan(1e-6);
+      player.dispose();
+    } finally {
+      physics.dispose();
     }
   });
 

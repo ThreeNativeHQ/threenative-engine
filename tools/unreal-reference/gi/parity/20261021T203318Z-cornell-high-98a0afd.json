@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "id": "20261021T203318Z-cornell-high-98a0afd",
+  "date": "2026-10-21T20:33:18.434Z",
+  "scene": "cornell",
+  "tier": "high",
+  "expect": "preserve",
+  "before": {
+    "commit": "851f406813ebc3adb0ca828ba423e02916c03e12",
+    "stamp": "98a0afd52e951ec4567fb3c147f089a13eb0b020f2dca16cfea82285e5f8e1ce",
+    "dirty": false
+  },
+  "after": {
+    "commit": "851f406813ebc3adb0ca828ba423e02916c03e12",
+    "stamp": "98a0afd52e951ec4567fb3c147f089a13eb0b020f2dca16cfea82285e5f8e1ce",
+    "dirty": false
+  },
+  "engine": "threenative",
+  "adapter": "nvidia turing",
+  "directLight": {
+    "pass": false,
+    "overridden": true,
+    "worst": 2700
+  },
+  "cells": [
+    {
+      "pose": "cornell",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The BEFORE and AFTER paths point to the same files (run1 and run2 of one capture), so the arms can't be told apart. The two runs also look identical to each other: red and green walls, the red tint on the tall box, the pink and green tint on the back wall, the floor casts and the ceiling fall-off. Against Unreal the same lighting is present: red and green bleed on the walls, the red face of the tall box, the green edge of the short box, and the dark red and green shadows on the side walls.",
+      "differences": "The front of Box_Short is much brighter and cooler grey, with a vertical gradient. Unreal has it dim and warm brown-grey, and this is the largest measured gap. The back wall and floor tint is weaker than in Unreal. Thin dark contact lines and slight grain run along the wall seams and the ceiling and back-wall edge, and Unreal has a clean crease. The lamp pocket on the ceiling is smaller and fainter. The wall edges are slightly darker than in Unreal.",
+      "worst": 82.76,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.03597,
+          "deltaE": 1.827,
+          "dEv": null,
+          "iou": 0.9726,
+          "pass": false,
+          "ratio": 3.597,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.009901,
+          "deltaE": 0.5747,
+          "dEv": null,
+          "iou": 0.977,
+          "pass": false,
+          "ratio": 1.003,
+          "spread": 0
+        },
+        {
+          "region": "Back",
+          "dP50": 0.004386,
+          "deltaE": 0.6381,
+          "dEv": null,
+          "iou": 0.995,
+          "pass": true,
+          "ratio": 0.9849,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Red",
+          "dP50": 0.05,
+          "deltaE": 1.35,
+          "dEv": null,
+          "iou": 0.9826,
+          "pass": false,
+          "ratio": 5,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Green",
+          "dP50": 0.01156,
+          "deltaE": 2.233,
+          "dEv": null,
+          "iou": 0.9825,
+          "pass": false,
+          "ratio": 2.233,
+          "spread": 0
+        },
+        {
+          "region": "Box_Tall",
+          "dP50": 0.02312,
+          "deltaE": 2.84,
+          "dEv": null,
+          "iou": 0.9933,
+          "pass": false,
+          "ratio": 2.84,
+          "spread": 0
+        },
+        {
+          "region": "Box_Short",
+          "dP50": 0.8276,
+          "deltaE": 17.35,
+          "dEv": null,
+          "iou": 0.9861,
+          "pass": false,
+          "ratio": 82.76,
+          "spread": 0
+        },
+        {
+          "region": "Shade",
+          "dP50": 0.03922,
+          "deltaE": 2.012,
+          "dEv": null,
+          "iou": 0.7837,
+          "pass": false,
+          "ratio": 3.922,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "corner",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "BEFORE and AFTER are the same capture, and run1 and run2 are identical. The floor strip has a red-brown cast that darkens toward the back corner. The back corner is pink-grey and darker than the open wall. The tall box's red side and its shadow are dark red, not black. All of this matches Unreal's structure.",
+      "differences": "Dark, hard contact lines run along the box-floor and wall-floor creases, and Unreal darkens these softly. A dark blotch sits at the bottom of the floor strip next to the right wall. The back wall is a little darker and more muddy brown than Unreal's. The shadow edge on the red box face is slightly sharper. The floor is slightly redder and darker.",
+      "worst": 16.36,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.01075,
+          "deltaE": 1.015,
+          "dEv": null,
+          "iou": 0.996,
+          "pass": false,
+          "ratio": 1.075,
+          "spread": 0
+        },
+        {
+          "region": "Back",
+          "dP50": 0.1636,
+          "deltaE": 7.439,
+          "dEv": null,
+          "iou": 0.9936,
+          "pass": false,
+          "ratio": 16.36,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Red",
+          "dP50": 0.1333,
+          "deltaE": 2.593,
+          "dEv": null,
+          "iou": 0.9993,
+          "pass": false,
+          "ratio": 13.33,
+          "spread": 0
+        },
+        {
+          "region": "Box_Tall",
+          "dP50": 0.07317,
+          "deltaE": 5.708,
+          "dEv": null,
+          "iou": 0.9993,
+          "pass": false,
+          "ratio": 7.317,
+          "spread": 0
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "verdict": "NEUTRAL",
+    "vsUnreal": "CLOSE",
+    "reasons": "BEFORE and AFTER resolve to the same files in both poses, so the change has no visible effect. Against Unreal the colour bleeding, fill and contact darkening are all present and in the right direction. The remaining gaps are a too-bright, cool front on Box_Short, thin dark crease lines and slight grain at the seams, and a weaker tint on the back wall."
+  },
+  "judge": {
+    "model": "claude-sonnet-5-5",
+    "sessionId": "7e52c75f-bdcd-4695-9cb3-ec304903f505",
+    "costUsd": 0.0697042,
+    "durationMs": 16330,
+    "criteriaSha256": "43c8712bb1ee1270da8b2be1faba857e7eac6236d9b24a780785ec1b65bd69ca"
+  }
+}

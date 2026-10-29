@@ -65,7 +65,8 @@ function rgbaTexture(
  * car lays rubber. The band is the thing that makes a road read as a **racing** surface rather
  * than a grey plane — it also tells the player where the line is without a single word of UI.
  */
-const asphalt = rgbaTexture(256, (u, v) => {
+// Not applied to the road yet, so it is prefixed rather than deleted: wiring it in changes the look.
+const _asphalt = rgbaTexture(256, (u, v) => {
   const grain = (noise(Math.floor(u * 256), Math.floor(v * 256), 11) - 0.5) * 26;
   const rubber = 1 - 0.34 * falloff(u - 0.5, 0.16);
   const shoulder = 1 + 0.1 * falloff(u - 0.5, 0.42);

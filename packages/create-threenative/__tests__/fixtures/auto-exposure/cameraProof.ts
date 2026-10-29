@@ -1,5 +1,5 @@
 import { Matrix4, Quaternion, Vector3 } from "three";
-import type { createFixedExposureRooms } from "./fixedRooms.js";
+import { ROOM_BASE_STOPS, type createFixedExposureRooms } from "./fixedRooms.js";
 
 type CameraPose = ReturnType<ReturnType<typeof createFixedExposureRooms>["snapshot"]>;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -29,7 +29,8 @@ function validateRooms(rooms: CameraPose["rooms"], stops: number): void {
       if (
         light === null ||
         typeof light !== "object" ||
-        light.intensity !== (lightIndex === 0 ? 2.1 : 0.36) * 2 ** (index * stops) ||
+        light.intensity !==
+          (lightIndex === 0 ? 2.1 : 0.36) * 2 ** (ROOM_BASE_STOPS + index * stops) ||
         light.distance !== 25 ||
         light.decay !== 2 ||
         light.layers !== 1 ||

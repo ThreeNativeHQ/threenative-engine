@@ -128,6 +128,9 @@ struct DrawRange {
     double count = std::numeric_limits<double>::infinity();
 };
 
+struct GeometryContentClass;  // engine/renderer/projection/plan.h
+struct TriangleBVH;  // engine/scene/raycaster.cpp
+
 /** three's BufferGeometry: attributes, index, groups, bounds and the mutation methods on them. */
 class BufferGeometry {
 public:
@@ -147,6 +150,7 @@ public:
     DrawRange drawRange;
     std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Sphere> boundingSphere;
+    std::shared_ptr<TriangleBVH> raycastBVH;
     std::map<std::string, std::string> parameters;  // already-JSON values, keyed by parameter name
     std::string name;
     std::string uuid = generateUuid();  // three's: unique per geometry
@@ -212,6 +216,13 @@ public:
     [[nodiscard]] std::string parametersJson() const;
     /** three's `groups` array as canonical JSON. */
     [[nodiscard]] std::string groupsJson() const;
+
+    // projection::contentClassOf (plan.h): the class of byte-identical geometries this one is in, and
+    // the revision, stores and versions it was classed at; resolved once per prepare.
+    mutable std::shared_ptr<GeometryContentClass> contentClass_;
+    mutable uint64_t contentKey_ = 0;
+    mutable uint64_t contentEpoch_ = 0;
+    mutable bool contentStreamed_ = false;
 
 private:
     uint64_t revision_ = 0;

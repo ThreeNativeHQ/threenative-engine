@@ -9,8 +9,9 @@ import {
   type PointLight,
   Vector3,
 } from "three";
-import { Fn, If, float, getViewPosition, max, rtt, screenUV, uniform, vec2, vec4 } from "three/tsl";
+import { Fn, If, max, rtt, screenUV, uniform, vec4 } from "three/tsl";
 import type { Node, NodeMaterial, RenderTarget } from "three/webgpu";
+import { type IFogCamera, viewDepth } from "./volumetricFogCamera.js";
 import type { IFogVolume, IVolumetricFogOptions } from "./volumetricFogOptions.js";
 import {
   type IFogBounds,
@@ -41,6 +42,30 @@ function lightRadiance(light: DirectionalLight | PointLight) {
   );
 }
 
+/** The scene camera's pose and lens as vectors edited in place before each render (see IFogCamera). */
+function liveCamera(camera: PerspectiveCamera): IFogCamera {
+  const vector = (read: (value: Vector3) => void) => {
+    const value = new Vector3();
+    return uniform(value).onRenderUpdate(() => {
+      camera.updateMatrixWorld();
+      read(value);
+    });
+  };
+  return {
+    right: vector((value) => value.setFromMatrixColumn(camera.matrixWorld, 0)),
+    up: vector((value) => value.setFromMatrixColumn(camera.matrixWorld, 1)),
+    back: vector((value) => value.setFromMatrixColumn(camera.matrixWorld, 2)),
+    lens: vector((value) =>
+      value.set(
+        1 / (camera.projectionMatrix.elements[0] as number),
+        1 / (camera.projectionMatrix.elements[5] as number),
+        0,
+      ),
+    ),
+    clip: vector((value) => value.set(camera.near, camera.far, 0)),
+  };
+}
+
 export function composeFogVolume(
   camera: PerspectiveCamera,
   options: IVolumetricFogOptions,
@@ -52,8 +77,7 @@ export function composeFogVolume(
     low: uniform(volume.bounds.min.clone()),
     high: uniform(volume.bounds.max.clone()),
   }));
-  const cameraMatrix = uniform(camera.matrixWorld);
-  const inverseProjection = uniform(camera.projectionMatrixInverse);
+  const fogCamera = liveCamera(camera);
   const cameraPosition = new Vector3();
   const origin = uniform(cameraPosition).onRenderUpdate(() =>
     camera.getWorldPosition(cameraPosition),
@@ -87,11 +111,11 @@ export function composeFogVolume(
   const inputs = {
     albedo,
     ambient,
+    ambientNode: options.ambientNode,
     anisotropy: options.anisotropy,
     bounds,
-    cameraMatrix,
+    camera: fogCamera,
     depth,
-    inverseProjection,
     localLights,
     origin,
     shadowDepth,
@@ -118,8 +142,8 @@ export function composeFogVolume(
     // integrate the full-resolution pixel instead; do not borrow stale/foreground history.
     if (options.resolutionScale < 1) {
       const lowUV = screenUV.mul(size.xy).floor().add(0.5).div(size.xy);
-      const fullZ = getViewPosition(screenUV, depth.r, inverseProjection).z;
-      const lowZ = getViewPosition(lowUV, depth.sample(lowUV).r, inverseProjection).z;
+      const fullZ = viewDepth(depth.r, fogCamera);
+      const lowZ = viewDepth(depth.sample(lowUV).r, fogCamera);
       If(
         fullZ
           .sub(lowZ)

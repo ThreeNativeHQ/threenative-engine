@@ -15,8 +15,11 @@ export function GameUi() {
   return (
     <UiLayer>
       <Hud />
-      <Minimap />
-      <Commands />
+      {/* One right-hand column, so a tall command panel pushes the map up instead of covering it. */}
+      <div className="pointer-events-none absolute right-4 bottom-14 flex flex-col items-end gap-2">
+        <Minimap />
+        <Commands />
+      </div>
     </UiLayer>
   );
 }

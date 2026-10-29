@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "engine/abi/abi_internal.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/object3d.h"
 #include "engine/abi/tsl_call.h"
@@ -36,6 +37,9 @@
 #include <string>
 
 extern "C" uint16_t tn_type_id(const char* name);
+
+// Lane "waste" counters (foundation/waste_counters.h), by their short name in this file.
+namespace waste = tn::engine::waste;
 
 namespace {
 
@@ -159,25 +163,33 @@ struct tn_context : tn::binding::Store {
     }
     tn::binding::Value share(std::string cls, std::shared_ptr<void> shared) override {
         if (!shared) return tn::binding::Value{};
+        waste::count(waste::counters().shareCalls);
         // An object the caller already holds answers its own handle (`mesh.geometry` is the
         // BoxGeometry it was built from), whatever class name the asking binding knows it by.
         if (const auto known = primary_.find(shared.get()); known != primary_.end() && object(known->second) != nullptr) {
+            waste::count(waste::counters().shareHits);
             return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(known->second)};
         }
-        return identity(std::move(cls), std::move(shared), true);
+        // Counted here, not in identity(): adoptAlias asks identity() too, and is not a share.
+        bool minted = false;
+        auto value = identity(std::move(cls), std::move(shared), true, &minted);
+        waste::count(minted ? waste::counters().shareMints : waste::counters().shareHits);
+        return value;
     }
     // The cached handle while its object lives; a released handle is replaced, never reused.
-    tn::binding::Value identity(std::string cls, std::shared_ptr<void> ptr, bool primary) {
+    tn::binding::Value identity(std::string cls, std::shared_ptr<void> ptr, bool primary, bool* minted = nullptr) {
         auto& known = identities_[ptr.get()];
         for (auto& [knownCls, handle] : known) {
             if (knownCls != cls) continue;
             if (object(handle) != nullptr) return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(handle)};
             tn_handle_t h{};
+            if (minted != nullptr) *minted = true;
             if (!hold(cls, std::move(ptr), h, primary)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
             handle = h;
             return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};
         }
         tn_handle_t h{};
+        if (minted != nullptr) *minted = true;
         if (!hold(cls, std::move(ptr), h, primary)) throw tn::binding::Unsupported{"the catalog publishes no such class"};
         known.emplace_back(std::move(cls), h);
         return tn::binding::Value{tn::binding::Value::Kind::Ref, 0, refText(h)};

@@ -109,13 +109,21 @@ function DebugOverlayView() {
     const clearOutline = () => setSelected(undefined);
     hostWindow.addEventListener("keydown", toggle);
     hostWindow.addEventListener("resize", clearOutline);
-    const timer = hostWindow.setInterval(() => setSnapshot(readSnapshot()), 100);
     return () => {
       hostWindow.removeEventListener("keydown", toggle);
       hostWindow.removeEventListener("resize", clearOutline);
-      hostWindow.clearInterval(timer);
     };
   }, []);
+
+  // A snapshot calls every entity's `debug()`, which a game may make as costly as it likes, so the
+  // panel reads it only while it is open: polling a closed panel cost the shooter most of its frame.
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return undefined;
+    const hostWindow = window;
+    setSnapshot(readSnapshot());
+    const timer = hostWindow.setInterval(() => setSnapshot(readSnapshot()), 100);
+    return () => hostWindow.clearInterval(timer);
+  }, [open]);
 
   const capture = useCallback(() => {
     const geometry = devTools()?.geometry;

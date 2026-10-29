@@ -10,6 +10,31 @@ import {
 } from "./handles.js";
 
 /** One record is logical body id, xyz position, and xyzw rotation. */
+/** Adds `count` to the running total `name` in `globalThis.__tnEngineCost`, which core puts per frame into TN_FRAME_BUDGET.counters.engine. */
+function countEngineCost(name: string, count: number): void {
+  const host = globalThis as { __tnEngineCost?: Record<string, number> };
+  host.__tnEngineCost ??= {};
+  host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + count;
+}
+
+/**
+ * The knob a playtest sets to bound engine work (`ENGINE_COST_KNOB` in core, same wire name).
+ *
+ * A step's own counters are opt-in where the crossing counters are not: reading a sleep flag is a
+ * Wasm call per dynamic body, and a shipped frame must not pay for a diagnostic nothing reads.
+ */
+const ENGINE_COST_KNOB = "__THREENATIVE_ENGINE_COST__";
+
+/** Wall clock in milliseconds, from the same source the loop meters frames with. */
+function stepClock(): number {
+  return globalThis.performance?.now() ?? Date.now();
+}
+
+/** True while a playtest has asked for engine work counters (core's `ENGINE_COST_KNOB`). */
+function engineCostAsked(): boolean {
+  return Reflect.get(globalThis, ENGINE_COST_KNOB) === true;
+}
+
 export const PHYSICS_TRANSFORM_STRIDE = 8;
 
 export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
@@ -135,6 +160,8 @@ export interface IPhysicsRayQuery {
   readonly from: IPhysicsVector3;
   readonly to: IPhysicsVector3;
   readonly collisionMask: number;
+  /** Godot `hit_from_inside`; default false: a solid that contains `from` is skipped. */
+  readonly hitFromInside?: boolean;
 }
 
 export interface IPhysicsShapeQuery {
@@ -348,6 +375,12 @@ export interface IPhysicsSimulation {
   /** Cold-path respawn: move the chassis, drop both velocities, and face the given yaw in radians. */
   resetVehicle?(id: number, position: IPhysicsVector3, yaw: number): void;
   drainCollisionEvents(buffer: Uint32Array): number;
+  /**
+   * Per-body backend crossings of the last `step()` and `readVisibleTransforms()`: bodies whose
+   * forces were cleared and bodies whose pose was read from the backend. Fixed and sleeping
+   * bodies cost neither. Optional: a bulk backend crosses once per step, whatever the count.
+   */
+  readonly crossings?: { readonly forceResets: number; readonly transformReads: number };
   dispose(): void;
 }
 
@@ -500,6 +533,10 @@ interface ISimulationBody {
   controllerHandle?: IPhysicsHandle;
   character?: IPhysicsCharacterOptions;
   groundCollider?: number;
+  /** The last step asked to move down and the floor held the character in place. */
+  held?: boolean;
+  /** Last pose read while fixed or asleep; replayed without crossing until the body can move. */
+  restingPose?: Float32Array;
 }
 
 interface IStoredCharacterState {
@@ -621,6 +658,13 @@ const QUERY_SHAPE_KINDS = new Set<PhysicsShapeKind>([
   "heightfield",
 ]);
 
+/** Rapier reports a solid cast that starts inside a collider as toi 0 with a zero normal. */
+// A solid cast that starts inside a collider stops at toi 0. The normal is no test: Rapier gives
+// a box a zero normal there but a ball or capsule the reversed ray.
+function startsInside(hit: { readonly timeOfImpact: number }): boolean {
+  return hit.timeOfImpact === 0;
+}
+
 function queryObject(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null)
     throw new Error(`IPhysicsSimulation ${label} must be an object.`);
@@ -718,9 +762,12 @@ export function requirePhysicsRayQuery(value: unknown): IPhysicsRayQuery {
   const to = queryVector(query.to, "ray to");
   if (from.x === to.x && from.y === to.y && from.z === to.z)
     throw new Error("IPhysicsSimulation ray must have non-zero length.");
+  if (query.hitFromInside !== undefined && typeof query.hitFromInside !== "boolean")
+    throw new Error("IPhysicsSimulation ray hitFromInside must be a boolean.");
   return {
     collisionMask: requirePhysicsCollisionMask(query.collisionMask),
     from,
+    hitFromInside: query.hitFromInside === true,
     to,
   };
 }
@@ -794,7 +841,6 @@ function bodyDescription(
   type: PhysicsBodyType,
   position: IPhysicsBodyCreateOptions["position"],
   rotation: IPhysicsBodyCreateOptions["rotation"],
-  mass: number,
   continuousCollision: boolean,
 ): rapier.RigidBodyDesc {
   const description =
@@ -810,7 +856,6 @@ function bodyDescription(
   // transforms (including teleports), so enabling it there changes the existing bulk-transform
   // contract; CCD is meaningful for the dynamic bodies this option targets.
   if (type === "dynamic") description.setCcdEnabled(continuousCollision);
-  if (mass !== 0) description.setAdditionalMass(mass);
   return description;
 }
 
@@ -847,7 +892,9 @@ function characterState(
   let groundNormal: IPhysicsVector3 | undefined;
   // Rapier flags a contact as ground at any positive up component, so a wall that leans back a
   // degree reads as floor. When the only contacts are such walls, the character is not grounded;
-  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone.
+  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone. A
+  // character standing still on a floor while it presses a wall records only the wall: the floor
+  // held its downward step in place, so Rapier's answer stands there too.
   let walkable = false;
   let contacts = 0;
   for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
@@ -865,7 +912,8 @@ function characterState(
       }
     }
   }
-  const grounded = controller.computedGrounded() && (walkable || contacts === 0);
+  const grounded =
+    controller.computedGrounded() && (walkable || contacts === 0 || simulationBody.held === true);
   if (groundCollider !== undefined) simulationBody.groundCollider = groundCollider;
   else if (!grounded) simulationBody.groundCollider = undefined;
   state.grounded = grounded;
@@ -928,6 +976,32 @@ function writeRapierTransformRecord(
   renderBuffer[offset + 5] = rotation.y;
   renderBuffer[offset + 6] = rotation.z;
   renderBuffer[offset + 7] = rotation.w;
+}
+
+/**
+ * A fixed body moves only through `setBodyTransform`, which drops the cached pose, and a sleeping
+ * one not at all. Reading either costs 13 Wasm calls a step for an unchanged value: 95% of the
+ * shooter's 2,260 Rapier calls a step. A pose moved through `raw` is outside the contract and is
+ * not seen until the body moves on this seam.
+ */
+function writeVisibleRecord(
+  entry: ISimulationBody,
+  renderBuffer: Float32Array,
+  offset: number,
+): "invalid" | "read" | "replayed" {
+  const fixed = entry.type === "fixed";
+  if (!(fixed && entry.restingPose !== undefined) && !entry.body.isValid()) return "invalid";
+  const resting = fixed || (entry.type === "dynamic" && entry.body.isSleeping());
+  if (resting && entry.restingPose !== undefined) {
+    renderBuffer[offset] = entry.id;
+    renderBuffer.set(entry.restingPose, offset + 1);
+    return "replayed";
+  }
+  writeRapierTransformRecord(entry, renderBuffer, offset);
+  entry.restingPose = resting
+    ? renderBuffer.slice(offset + 1, offset + PHYSICS_TRANSFORM_STRIDE)
+    : undefined;
+  return "read";
 }
 
 /** One `PHYSICS_CONTACT_STRIDE` record summarising a solved manifold. */
@@ -1006,6 +1080,29 @@ export function createWebPhysicsSimulation(
     if (disposed) throw new Error("Physics simulation is disposed.");
   };
 
+  /**
+   * The work one step is handed, into the engine-cost bag a playtest reads per frame: bodies,
+   * colliders, and how many dynamic bodies Rapier will solve.
+   *
+   * The awake count is read before `world.step` moves the sleep flags, because it describes the
+   * solve that is about to run, not what survived it. Units: `physicsAwakeBodies` and
+   * `physicsDynamicBodies` are bodies, `physicsColliders` is colliders.
+   */
+  const countStepWork = (): void => {
+    if (!engineCostAsked()) return;
+    let awake = 0;
+    let dynamic = 0;
+    for (const entry of bodies.values()) {
+      if (entry.type !== "dynamic") continue;
+      dynamic += 1;
+      if (!entry.body.isSleeping()) awake += 1;
+    }
+    countEngineCost("physicsBodies", bodies.size);
+    countEngineCost("physicsColliders", byCollider.size);
+    countEngineCost("physicsDynamicBodies", dynamic);
+    countEngineCost("physicsAwakeBodies", awake);
+  };
+
   // Actuation on a fixed, kinematic or character body is not a weaker push, it is no push at
   // all -- Rapier discards it. Failing here beats a silently motionless body.
   const requireDynamic = (
@@ -1075,7 +1172,10 @@ export function createWebPhysicsSimulation(
     return record;
   };
 
+  const crossings = { forceResets: 0, transformReads: 0 };
+
   const simulation: IPhysicsRuntimeSimulation = {
+    crossings,
     version: options.version,
     rawWorld: options.world,
     rawEventQueue: options.eventQueue,
@@ -1096,13 +1196,15 @@ export function createWebPhysicsSimulation(
       const id = nextId;
       nextId += 1;
       const rawShape = createWebPhysicsShape(options.rapier, bodyOptions.shape, sensor);
+      // Explicit mass is the body's total mass. Adding it to the collider's density-derived
+      // mass made `mass: 2` weigh 10 kg on a 2 m cube, while the public field still said 2.
+      if (bodyOptions.mass > 0) rawShape.setMass(bodyOptions.mass);
       const rawBody = options.world.createRigidBody(
         bodyDescription(
           options.rapier,
           bodyOptions.type,
           bodyOptions.position,
           bodyOptions.rotation,
-          bodyOptions.mass,
           effectiveContinuousCollision(bodyOptions.type, bodyOptions.continuousCollision),
         ),
       );
@@ -1218,6 +1320,7 @@ export function createWebPhysicsSimulation(
       entry.body.setTranslation(position, true);
       options.world.propagateModifiedBodyPositionsToColliders();
       dirtyBodies.add(entry);
+      entry.restingPose = undefined;
     },
     applyBodyImpulse: (id, impulse) => {
       requireLive();
@@ -1253,6 +1356,11 @@ export function createWebPhysicsSimulation(
     },
     step: (deltaTime, inputSnapshot) => {
       requireLive();
+      // Microseconds, because a step of a small scene costs well under one millisecond and a
+      // millisecond count would round most of them to zero. Counted only while a playtest asks.
+      const counted = engineCostAsked();
+      const startedAt = counted ? stepClock() : 0;
+      if (counted) countStepWork();
       requirePhysicsStepInput(deltaTime, inputSnapshot, (id) => bodies.has(id));
       if (inputSnapshot !== undefined) {
         for (let index = 0; index < inputSnapshot.kinematicCount; index += 1) {
@@ -1299,6 +1407,7 @@ export function createWebPhysicsSimulation(
               filterPredicate,
             );
             const movement = controller.computedMovement();
+            entry.held = desired.y < -1e-4 && Math.abs(movement.y) < 1e-4;
             const nextTranslation = kinematicScratch.nextTranslation;
             nextTranslation.x = current.x + movement.x;
             nextTranslation.y = current.y + movement.y;
@@ -1342,22 +1451,31 @@ export function createWebPhysicsSimulation(
       // Rapier retains accumulated forces and torques unless the caller clears them. The public
       // seam is a fixed-step force — an off-centre one adds a torque — so clear both after every
       // step to keep web and native actuation aligned.
+      // Rapier accumulates a force only on a dynamic body, so clearing any other is a no-op that
+      // still costs two Wasm calls: the shooter's 144 walls spent 288 a step on it.
+      crossings.forceResets = 0;
       for (const entry of bodies.values()) {
+        if (entry.type !== "dynamic") continue;
         entry.body.resetForces(true);
         entry.body.resetTorques(true);
+        crossings.forceResets += 1;
       }
+      countEngineCost("physicsForceResets", crossings.forceResets);
       dirtyBodies.clear();
+      if (counted) countEngineCost("physicsStepUs", Math.round((stepClock() - startedAt) * 1000));
     },
     readVisibleTransforms: (renderBuffer) => {
       requireLive();
       requirePhysicsRenderBuffer(renderBuffer, bodies.size);
       let index = 0;
+      crossings.transformReads = 0;
       for (const entry of bodies.values()) {
-        if (!entry.body.isValid()) continue;
-        const offset = index * PHYSICS_TRANSFORM_STRIDE;
-        writeRapierTransformRecord(entry, renderBuffer, offset);
+        const written = writeVisibleRecord(entry, renderBuffer, index * PHYSICS_TRANSFORM_STRIDE);
+        if (written === "invalid") continue;
+        if (written === "read") crossings.transformReads += 1;
         index += 1;
       }
+      countEngineCost("physicsTransformReads", crossings.transformReads);
       return index;
     },
     readBodySleepStates: (buffer) => {
@@ -1385,24 +1503,40 @@ export function createWebPhysicsSimulation(
         y: dy / distance,
         z: dz / distance,
       });
-      const hit = options.world.castRayAndGetNormal(
-        ray,
-        distance,
-        true,
-        options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
-        undefined,
-        undefined,
-        undefined,
-        queryPredicate(query.collisionMask),
-      );
-      let closestCollider = hit?.collider;
-      let closestTime = hit?.timeOfImpact;
-      let closestNormal = hit?.normal;
+      // Rapier's solid cast reports a ray that starts inside a collider as toi 0. Godot's default
+      // (`hit_from_inside` false) skips that collider, so skip it here and cast again; the loop
+      // ends after at most one pass per overlapping collider.
+      const skipped = new Set<number>();
+      const accepts = queryPredicate(query.collisionMask);
+      let closestCollider: rapier.Collider | undefined;
+      let closestTime: number | undefined;
+      let closestNormal: { readonly x: number; readonly y: number; readonly z: number } | undefined;
+      for (;;) {
+        const hit = options.world.castRayAndGetNormal(
+          ray,
+          distance,
+          true,
+          options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+          undefined,
+          undefined,
+          undefined,
+          (collider) => !skipped.has(collider.handle) && accepts(collider),
+        );
+        if (hit !== null && !query.hitFromInside && startsInside(hit)) {
+          skipped.add(hit.collider.handle);
+          continue;
+        }
+        closestCollider = hit?.collider;
+        closestTime = hit?.timeOfImpact;
+        closestNormal = hit?.normal;
+        break;
+      }
       for (const dirtyBody of dirtyBodies) {
         if (!queryMatches(query.collisionMask, dirtyBody.collider)) continue;
         const dirtyHit = dirtyBody.collider.castRayAndGetNormal(ray, distance, true);
         if (
           dirtyHit === null ||
+          (!query.hitFromInside && startsInside(dirtyHit)) ||
           (closestTime !== undefined && dirtyHit.timeOfImpact >= closestTime)
         )
           continue;
@@ -1419,7 +1553,11 @@ export function createWebPhysicsSimulation(
       return {
         ...queryHit(entry),
         distance: closestTime,
-        normal: { x: closestNormal.x, y: closestNormal.y, z: closestNormal.z },
+        // `hitFromInside` reports the solid around the origin with a zero normal, whatever its shape.
+        normal:
+          closestTime === 0
+            ? { x: 0, y: 0, z: 0 }
+            : { x: closestNormal.x, y: closestNormal.y, z: closestNormal.z },
         position: { x: position.x, y: position.y, z: position.z },
       };
     },

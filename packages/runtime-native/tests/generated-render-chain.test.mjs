@@ -32,28 +32,42 @@ test("the conformance registry binds the composed render-chain scenario to deskt
   const scenarioPath = join(runtimeRoot, entry.scenario);
   assert.ok(existsSync(scenarioPath), `scenario must exist: ${entry.scenario}`);
   const scenario = readJson(scenarioPath);
+  // High and medium run Unreal's temporal AA (traa) after AO; low keeps the SMAA antialias stage.
+  const finishing = ["bloom", "vignette"];
+  const lowFinishing = [...finishing, "antialias"];
+  const excluded = ["grade", "grain"];
   const fullChain = {
-    contributions: { graphOutputChanged: ["grade", "grain"] },
+    contributions: { graphOutputChanged: ["ambientOcclusion", "traa", "motionBlur", ...finishing] },
     stages: {
-      includes: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
-      order: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+      includes: ["ambientOcclusion", "traa", "motionBlur", ...finishing],
+      excludes: excluded,
+      order: ["ambientOcclusion", "traa", "motionBlur", ...finishing],
     },
     tier: "high",
   };
-  const lowChain = {
-    contributions: { graphOutputChanged: ["grade"] },
+  const mediumChain = {
+    contributions: { graphOutputChanged: ["ambientOcclusion", "traa", ...finishing] },
     stages: {
-      includes: ["bloom", "vignette", "grade"],
-      excludes: ["ambientOcclusion", "grain"],
-      order: ["bloom", "vignette", "grade"],
+      includes: ["ambientOcclusion", "traa", ...finishing],
+      excludes: ["motionBlur", ...excluded],
+      order: ["ambientOcclusion", "traa", ...finishing],
+    },
+    tier: "medium",
+  };
+  const lowChain = {
+    contributions: { graphOutputChanged: lowFinishing },
+    stages: {
+      includes: lowFinishing,
+      excludes: ["ambientOcclusion", "motionBlur", ...excluded],
+      order: lowFinishing,
     },
     tier: "low",
   };
   assert.deepEqual(scenario.assert?.renderChain, {
     ...fullChain,
     perAdapter: {
-      integrated: { ...fullChain, tier: "medium" },
-      "mobile-high": { ...fullChain, tier: "medium" },
+      integrated: mediumChain,
+      "mobile-high": mediumChain,
       "mobile-low": lowChain,
       "mobile-mid": lowChain,
       software: lowChain,
@@ -67,10 +81,11 @@ test("the conformance registry binds the composed render-chain scenario to deskt
     "utf8",
   );
   assert.match(postprocessing, /new WorldEnvironment/u);
+  assert.match(postprocessing, /import \{[^}]*WorldEnvironment[^}]*\} from "@threenative\/core"/u);
   assert.match(postprocessing, /world\.apply\(renderer, scene, camera/u);
 
   const worldEnvironment = readFileSync(
-    join(workspaceRoot, "packages/create-threenative/templates/starter/src/render/worldEnvironment.ts"),
+    join(workspaceRoot, "packages/core/src/look/world-environment.ts"),
     "utf8",
   );
   assert.match(worldEnvironment, /renderer\.createRenderChain/u);

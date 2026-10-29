@@ -101,7 +101,17 @@ describe("bake receipt", () => {
   it("should list the Basis transcoder it ships beside the compiled textures", async () => {
     const root = await makeTempDir("threenative-receipt-transcoder-");
     await mkdir(path.join(root, "assets"));
-    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+    // A textured image, so the pass actually encodes a KTX2 the transcoder can serve.
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        height: 256,
+        width: 256,
+        red: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+        green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+        blue: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+      }),
+    );
 
     await compileAssets({ cwd: root, transcoder: TRANSCODER });
     const receipt = await readReceipt(root);
@@ -349,7 +359,17 @@ describe("bake receipt", () => {
     // Written before the bake and never touched by it — a scaffolded project's own icon.
     await writeFile(path.join(root, "public", "icon.png"), rgbaPng({ height: 8, width: 8 }));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+    // A textured image, so the pass actually encodes a KTX2 the transcoder can serve.
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        height: 256,
+        width: 256,
+        red: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+        green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+        blue: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+      }),
+    );
 
     await compileAssets({ cwd: root, transcoder: TRANSCODER });
     const receipt = await readReceipt(root);

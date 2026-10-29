@@ -60,6 +60,11 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
    */
   clock: "fixed-step" | "wall-clock";
   /**
+   * `worker` when the page drew its game from a worker and the run relaunched with that thread's
+   * measurement flags (`measurementBrowserArgs`); absent for a page-thread game.
+   */
+  gameThread?: "worker";
+  /**
    * What the run waited for before it observed anything, and what it settled on.
    *
     * `rule: "compile-settled"` means the sustained in-budget frame window was not required,

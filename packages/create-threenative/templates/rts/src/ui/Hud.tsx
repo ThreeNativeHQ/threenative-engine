@@ -1,4 +1,5 @@
 import { useUiIntent, useUiState } from "@threenative/ui";
+import { useRef } from "react";
 import { type EntityType, TYPES } from "../sim/types.js";
 import type { GameState } from "../state.js";
 
@@ -17,6 +18,21 @@ function clock(seconds: number): string {
 }
 
 /**
+ * The published snapshot, renewed only when what a panel shows changed. Every publish is a fresh
+ * copy and the game publishes each frame, so a panel reading the whole state re-rendered 20 times a
+ * second standing still (the 20 Hz sim clock) and 50 while panning (the camera fields it never
+ * shows). `shown` lists the values the panel draws, already rounded the way it draws them.
+ */
+export function useUiStateShown(shown: (state: GameState) => unknown): GameState | undefined {
+  const last = useRef<{ key: string; state: GameState } | undefined>(undefined);
+  return useUiState<GameState, GameState>((state) => {
+    const key = JSON.stringify(shown(state));
+    if (last.current?.key !== key) last.current = { key, state };
+    return last.current.state;
+  });
+}
+
+/**
  * The top bar and the selection panel: what is banked, what is selected, what it is doing.
  *
  * Plain Tailwind, plain DOM, and the same file on every target. The unit's *name*, role and cost
@@ -24,7 +40,27 @@ function clock(seconds: number): string {
  * rebalance cannot leave this panel quoting last season's numbers.
  */
 export function Hud() {
-  const state = useUiState<GameState>();
+  const state = useUiStateShown((s) => [
+    s.ore,
+    s.gas,
+    s.supplyUsed,
+    s.supplyCap,
+    Math.floor(s.simTime / 20),
+    s.notice,
+    s.selection,
+    s.primaryType,
+    s.primaryHp,
+    s.primaryMaxHp,
+    s.selectionX.toFixed(0),
+    s.selectionZ.toFixed(0),
+    s.primaryBuilt,
+    Math.round(s.primaryProgress * 100),
+    s.queue,
+    s.selectionOrder,
+    s.dragBox,
+    s.result,
+    s.paused,
+  ]);
   const send = useUiIntent();
   // Nothing to draw until the game publishes its first snapshot. Rendering zeros instead would put
   // a wrong supply figure on screen and then correct it.
@@ -38,7 +74,7 @@ export function Hud() {
   return (
     <>
       <header className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 p-4">
-        <div className="flex items-center gap-5 bg-panel/80 px-4 py-2 text-lume">
+        <div className="flex items-center gap-5 bg-black/80 px-4 py-2 text-lume">
           <Stat label="ore" value={state.ore.toLocaleString()} id="ore" />
           <Stat label="gas" value={state.gas.toLocaleString()} id="gas" />
           <Stat
@@ -50,13 +86,13 @@ export function Hud() {
           <Stat label="clock" value={clock(state.simTime / 20)} id="clock" />
         </div>
         {state.notice === "" ? null : (
-          <output className="max-w-sm bg-panel/80 px-3 py-2 text-xs uppercase tracking-[0.14em] text-warn">
+          <output className="max-w-sm bg-black/80 px-3 py-2 text-xs uppercase tracking-[0.14em] text-warn">
             {state.notice}
           </output>
         )}
       </header>
 
-      <section className="pointer-events-none absolute bottom-4 left-4 w-72 bg-panel/80 p-3">
+      <section className="pointer-events-none absolute bottom-4 left-4 w-72 bg-black/80 p-3">
         <div className="flex items-baseline justify-between text-[10px] uppercase tracking-[0.14em] text-dim">
           <span>{state.selection === 0 ? "no selection" : "strike group"}</span>
           <span id="selection-count">{state.selection} selected</span>
@@ -72,8 +108,8 @@ export function Hud() {
           />
         </div>
         <div className="mt-1 flex justify-between text-[10px] uppercase tracking-[0.14em] text-dim">
-          <span id="health">
-            {state.primaryMaxHp} / {state.primaryMaxHp}
+          <span data-value={state.primaryHp} id="health">
+            {state.primaryHp} / {state.primaryMaxHp}
           </span>
           <span id="selection-position">
             {state.selectionX.toFixed(0)} · {state.selectionZ.toFixed(0)}
@@ -121,15 +157,30 @@ export function Hud() {
       <p className="sr-only" id="selection-live">
         {`${state.selection} selected, orders ${state.selectionOrder}`}
       </p>
+      {/* The match result is the screen, not a tag in the corner: the command column covers that. */}
+      {state.result === "" ? null : (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="pointer-events-auto flex flex-col items-center gap-3 border border-line bg-black/80 px-8 py-5">
+            <span className="text-2xl uppercase tracking-[0.2em] text-warn" id="result">
+              {state.result}
+            </span>
+            <button
+              className="border border-line bg-black/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
+              data-tn-interactive
+              data-testid="restart"
+              onClick={() => send("restart")}
+              type="button"
+            >
+              play again
+            </button>
+          </div>
+        </div>
+      )}
       <div className="pointer-events-none absolute right-4 bottom-4 flex flex-col items-end gap-1">
-        {state.result === "" ? null : (
-          <span className="bg-panel/80 px-3 py-1 text-xs uppercase tracking-[0.2em] text-warn">
-            {state.result}
-          </span>
-        )}
         <button
-          className="pointer-events-auto border border-line bg-panel/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
+          className="pointer-events-auto border border-line bg-black/80 px-3 py-1 text-[10px] uppercase tracking-[0.14em] text-text"
           data-tn-interactive
+          data-testid="pause-toggle"
           onClick={() => send(state.paused ? "resume" : "pause")}
           type="button"
         >

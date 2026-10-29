@@ -1,0 +1,198 @@
+{
+  "name": "collectathon-double-tap-air",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "walker.0",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": -10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": -30,
+          "y": 0,
+          "z": -5
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "rising-first",
+      "press": ["Space"],
+      "holdTicks": 7,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "rising-gap",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "rising-second",
+      "press": ["Space"],
+      "holdTicks": 12,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "rising-after",
+      "press": [],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "rising-land",
+      "waitTicks": 150,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "apex-first",
+      "press": ["Space"],
+      "holdTicks": 19,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "apex-gap",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "apex-second",
+      "press": ["Space"],
+      "holdTicks": 12,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "apex-after",
+      "press": [],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "apex-land",
+      "waitTicks": 150,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "falling-first",
+      "press": ["Space"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "falling-gap",
+      "press": [],
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "falling-second",
+      "press": ["Space"],
+      "holdTicks": 12,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "falling-after",
+      "press": [],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "falling-land",
+      "waitTicks": 150,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "counts",
+        "path": "airDouble",
+        "equals": 3,
+        "allowTrivial": "Three single jumps each take a second Space in the air: 8 ticks after take-off while rising, 20 ticks in at the apex, and 30 ticks in while falling 1.8 m above the ground; each is the air double jump."
+      },
+      {
+        "entity": "player",
+        "component": "counts",
+        "path": "single",
+        "equals": 3,
+        "allowTrivial": "Each flight starts from one single jump; the second press never becomes another single."
+      },
+      {
+        "entity": "player",
+        "component": "action",
+        "equals": "idle",
+        "atSteps": [
+          {
+            "label": "rising-after",
+            "equals": "double"
+          },
+          {
+            "label": "apex-after",
+            "equals": "double"
+          },
+          {
+            "label": "falling-after",
+            "equals": "double"
+          }
+        ],
+        "allowTrivial": "The hero stands idle between flights; the claim is the double right after each second press."
+      }
+    ]
+  }
+}

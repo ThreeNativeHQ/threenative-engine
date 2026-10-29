@@ -1101,7 +1101,16 @@ describe("compileAssets", () => {
   it("should copy three's Basis transcoder next to the compiled outputs", async () => {
     const root = await makeTempDir("threenative-compile-transcoder-");
     await mkdir(path.join(root, "assets"));
-    await writeFile(path.join(root, "assets", "rock.png"), rgbaPng({ height: 32, width: 32 }));
+    await writeFile(
+      path.join(root, "assets", "rock.png"),
+      rgbaPng({
+        height: 256,
+        width: 256,
+        red: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+        green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+        blue: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+      }),
+    );
 
     await compileAssets({ cwd: root, transcoder: TRANSCODER });
 

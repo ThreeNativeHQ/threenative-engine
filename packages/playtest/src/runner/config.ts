@@ -55,7 +55,8 @@ export interface IStandalonePlaytestConfig {
    * Injects `__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` ahead of every page script, so the
    * host's frame pump moves the simulation and `advance` names the span its ticks cover — the
    * browser half of what the native production profile's `--live-clock` already does there. It is
-   * a measurement opt-in and never a scenario semantics change: a deterministic scenario is still
+   * also selected automatically for browser frame-time/FPS assertions unless explicitly false.
+   * It never changes the authored tick unit: a deterministic scenario is still
    * a count of ticks, and a run that takes this flag reports the clock it measured on.
    */
   liveClock?: boolean;
@@ -133,6 +134,11 @@ export class PlaytestCliUsageError extends Error {
     super(message);
     this.name = "PlaytestCliUsageError";
   }
+}
+
+/** A scenario that asks for `clock: "wall-clock"` runs as `--live-clock` does, whatever the other scenarios of the glob do. */
+export function withScenarioClock<T extends { liveClock?: boolean }>(config: T, scenario: { clock?: "wall-clock" }): T {
+  return scenario.clock === "wall-clock" && config.liveClock !== true ? { ...config, liveClock: true } : config;
 }
 
 export function formatUsage(): string {
@@ -399,7 +405,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
   };
 }
 
-const SCENARIO_GLOB = /[*?[]/u;
+const SCENARIO_GLOB = /[*?[{]/u;
 
 function expandScenarioPattern(projectPath: string, pattern: string): string[] {
   if (!SCENARIO_GLOB.test(pattern)) return [pattern];
@@ -443,14 +449,24 @@ function matchGlobParts(pattern: readonly string[], file: readonly string[]): bo
 }
 
 function segmentMatches(pattern: string, value: string): boolean {
-  let expression = "^";
+  return new RegExp(`^${segmentExpression(pattern)}$`, "u").test(value);
+}
+
+// `{a,b}` is the shell's brace list; an agent quotes one and expects it to work (PRD-750 row 2).
+// ponytail: one level, no nesting; nest when a scenario name needs it.
+function segmentExpression(pattern: string): string {
+  let expression = "";
   for (let index = 0; index < pattern.length; index += 1) {
     const character = pattern[index]!;
-    if (character === "*") expression += "[^/]*";
+    const close = character === "{" ? pattern.indexOf("}", index) : -1;
+    if (close > index) {
+      expression += `(?:${pattern.slice(index + 1, close).split(",").map(segmentExpression).join("|")})`;
+      index = close;
+    } else if (character === "*") expression += "[^/]*";
     else if (character === "?") expression += "[^/]";
     else expression += escapeRegExp(character);
   }
-  return new RegExp(`${expression}$`, "u").test(value);
+  return expression;
 }
 
 function escapeRegExp(value: string): string {

@@ -1,6 +1,6 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { Group, MathUtils, Vector3 } from "three";
+import { Group, MathUtils, type Object3D, Vector3 } from "three";
 import { type IFox, createFox } from "../render/fox.js";
 import type { ITouchInput } from "../render/touch-layout.js";
 import type { GameState } from "../state.js";
@@ -61,9 +61,12 @@ export class Fox {
   coyoteJumps = 0;
   dashes = 0;
   jumps = 0;
+  /** The widest leg swing, in radians, on any step the fox stood still on the ground. */
+  standingSwing = 0;
   state: FoxState = "idle";
   #facing = 1;
   #coyote = 0;
+  #legL: Object3D | undefined;
   #buffered = 0;
   #dashTimer = 0;
   #dashCooldown = 0;
@@ -75,6 +78,7 @@ export class Fox {
 
   constructor(ctx: GameCtx, spawn: Vector3) {
     this.rig = createFox();
+    this.#legL = this.rig.group.getObjectByName("legL");
     this.mesh = new Group();
     this.mesh.add(this.rig.group);
     this.rig.group.position.y = -FOOT_OFFSET;
@@ -133,7 +137,9 @@ export class Fox {
 
     if (this.#dashTimer > 0) this.#driveDash();
     else this.#driveWalk(dt);
-    this.#tryJump();
+    // A jump ends the dash and keeps its speed: left running, the next dash tick zeroed the rise
+    // and the jump was spent without leaving the ground.
+    if (this.#tryJump()) this.#dashTimer = 0;
     this.body.moveAndSlide(dt);
     // The route is a line: the authored ground is 13 m wide and the fox is not going for a walk in
     // the clouds, so the sideways axis is clamped rather than left to a wall 60 m away.
@@ -151,6 +157,11 @@ export class Fox {
       speed: Math.hypot(this.body.velocity.x, this.body.velocity.z),
       vy: this.body.velocity.y,
     });
+    if (this.body.grounded && Math.hypot(this.body.velocity.x, this.body.velocity.z) < 0.05)
+      this.standingSwing = Math.max(
+        this.standingSwing,
+        Math.abs(this.#legL?.rotation.z ?? Number.NaN),
+      );
   }
 
   /** The stomp bounce: one jump, and no coyote window for the frames it spends rising. */
@@ -183,6 +194,7 @@ export class Fox {
       jumps: this.jumps,
       position: this.mesh.position.toArray(),
       speed: Math.hypot(this.body.velocity.x, this.body.velocity.z),
+      standingSwing: this.standingSwing,
       state: this.state,
       velocity: this.body.velocity.toArray(),
     };
@@ -193,21 +205,22 @@ export class Fox {
     this.mesh.removeFromParent();
   }
 
-  #tryJump(): void {
-    if (this.#buffered <= 0) return;
+  #tryJump(): boolean {
+    if (this.#buffered <= 0) return false;
     if (this.#coyote > 0) {
       this.body.velocity.y = FOX_FEEL.jumpSpeed;
       this.#buffered = 0;
       this.#coyote = 0;
       this.coyoteJumps += 1;
       this.jumps += 1;
-      return;
+      return true;
     }
-    if (this.#airJumpUsed) return;
+    if (this.#airJumpUsed) return false;
     this.body.velocity.y = FOX_FEEL.jumpSpeed * FOX_FEEL.jumpBoost;
     this.#buffered = 0;
     this.#airJumpUsed = true;
     this.jumps += 1;
+    return true;
   }
 
   #startDash(): void {

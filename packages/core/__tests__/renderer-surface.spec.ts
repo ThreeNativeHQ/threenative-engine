@@ -88,3 +88,37 @@ describe("renderer.setResolutionScale()", () => {
     created.dispose();
   });
 });
+
+describe("owned temporal upsampling", () => {
+  it("scales the engine input while retaining display pixels only while the temporal resolve runs", async () => {
+    const canvas = testCanvas();
+    let active = false;
+    const scales: number[] = [];
+    const created = await createRenderer({
+      canvas,
+      resolutionScale: 0.72,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: () => undefined,
+        setSize: () => undefined,
+        get temporalUpscale() {
+          return active;
+        },
+        setRenderScale: (scale: number) => scales.push(scale),
+      }),
+    });
+    expect(created.surface().drawingBufferWidth).toBe(1728);
+    active = true;
+    created.setResolutionScale(0.72, "auto");
+    expect(created.surface().drawingBufferWidth).toBe(2400);
+    expect(created.surface().drawingBufferHeight).toBe(1080);
+    expect(scales.at(-1)).toBe(0.72);
+    active = false;
+    created.setResolutionScale(0.85, "auto");
+    expect(created.surface().drawingBufferWidth).toBe(2040);
+    expect(scales.at(-1)).toBe(1);
+    created.dispose();
+  });
+});

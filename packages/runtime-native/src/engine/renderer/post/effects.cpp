@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <set>
 
 namespace tn::engine {
 namespace {
@@ -41,14 +42,23 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
     // Validate all packages before allocating any GPU resources.
     for (const auto& source : sources) {
         std::string error;
-        if (!shader::acceptPackage(source.package, error))
+        if (source.host.empty() && !shader::acceptPackage(source.package, error))
             throw std::runtime_error(error);
     }
     linear_ = makeSampler(device, false, false);
+    // A graph that reads the scene's depth binds it as a depth texture, whose sampler is a comparison one.
+    WGPUSamplerDescriptor compare{};
+    compare.minFilter = compare.magFilter = WGPUFilterMode_Nearest;
+    compare.addressModeU = compare.addressModeV = WGPUAddressMode_ClampToEdge;
+    compare.compare = WGPUCompareFunction_LessEqual;
+    compare.maxAnisotropy = 1;
+    compare_ = wgpuDeviceCreateSampler(device, &compare);
     try {
         for (auto& source : sources) {
             passes_.push_back({std::move(source)});
             auto& pass = passes_.back();
+            // The renderer draws a host pass: it has no shader, bindings or uniforms of its own.
+            if (!pass.source.host.empty()) continue;
             const auto& stages = pass.source.package.variants.at(0).stages;
             const auto layoutFor = [&](const shader::StageModule& stage, WGPUShaderStage visibility) {
                 std::vector<WGPUBindGroupLayoutEntry> entries;
@@ -65,7 +75,7 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
                         entry.texture.viewDimension =
                             binding.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
                     } else if (binding.kind == shader::BindingKind::Sampler) {
-                        entry.sampler.type = WGPUSamplerBindingType_Filtering;
+                        entry.sampler.type = binding.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
                     } else
                         throw std::runtime_error("TN_POST_BINDING_UNSUPPORTED: " + binding.name);
                     entries.push_back(entry);
@@ -147,6 +157,7 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
                 wgpuTextureRelease(image.texture);
         }
         wgpuSamplerRelease(linear_);
+        wgpuSamplerRelease(compare_);
         throw;
     }
 }
@@ -159,8 +170,10 @@ PostEffects::~PostEffects() {
             wgpuBufferRelease(pass.vertexUniforms);
         if (pass.vertexLayout)
             wgpuBindGroupLayoutRelease(pass.vertexLayout);
-        wgpuPipelineLayoutRelease(pass.pipelineLayout);
-        wgpuBindGroupLayoutRelease(pass.layout);
+        if (pass.pipelineLayout)
+            wgpuPipelineLayoutRelease(pass.pipelineLayout);
+        if (pass.layout)
+            wgpuBindGroupLayoutRelease(pass.layout);
     }
     for (auto& [name, image] : images_) {
         wgpuSamplerRelease(image.sampler);
@@ -168,17 +181,13 @@ PostEffects::~PostEffects() {
         wgpuTextureRelease(image.texture);
     }
     wgpuSamplerRelease(linear_);
+    wgpuSamplerRelease(compare_);
 }
 void PostEffects::releaseGroups() {
     for (auto& pass : passes_) {
-        if (pass.group)
-            wgpuBindGroupRelease(pass.group);
-        if (pass.vertexGroup)
-            wgpuBindGroupRelease(pass.vertexGroup);
-        pass.vertexGroup = nullptr;
-        pass.vertexEntries.clear();
-        pass.group = nullptr;
-        pass.groupEntries.clear();
+        pass.groups.clear();
+        pass.vertexGroups.clear();
+        pass.group = pass.vertexGroup = nullptr;
     }
 }
 void PostEffects::clearTargets() {
@@ -192,21 +201,52 @@ void PostEffects::clearTargets() {
     for (auto& pass : passes_)
         pass.rendered = false;
 }
-void PostEffects::resize(uint32_t width, uint32_t height) {
-    if (width == width_ && height == height_)
+std::array<uint32_t, 2> PostEffects::targetSize(const std::string& name) const {
+    const auto texture = targets_.at(name).texture;
+    return {wgpuTextureGetWidth(texture), wgpuTextureGetHeight(texture)};
+}
+
+void PostEffects::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uint32_t outputHeight,
+                         bool sceneResolved) {
+    if (!outputWidth) outputWidth = width;
+    if (!outputHeight) outputHeight = height;
+    if (width == width_ && height == height_ && outputWidth == outputWidth_ && outputHeight == outputHeight_ &&
+        sceneResolved == sceneResolved_)
         return;
     clearTargets();
     width_ = width;
     height_ = height;
-    for (const auto& pass : passes_) {
+    outputWidth_ = outputWidth;
+    outputHeight_ = outputHeight;
+    sceneResolved_ = sceneResolved;
+    std::set<std::string> displayInputs;
+    if (sceneResolved) displayInputs.insert("scene");
+    // Serialized passes can arrive out of dependency order; propagate the resolve's extent before allocating.
+    for (size_t iteration = 0; iteration < passes_.size(); ++iteration) {
+        bool changed = false;
+        for (const auto& pass : passes_) {
+            const bool display = pass.source.host == "traa" ||
+                std::any_of(pass.source.reads.begin(), pass.source.reads.end(), [&](const auto& read) {
+                    return displayInputs.contains(read.second);
+                });
+            if (display) changed |= displayInputs.insert(pass.source.output).second;
+        }
+        if (!changed) break;
+    }
+    for (auto& pass : passes_) {
+        pass.displaySized = displayInputs.contains(pass.source.output);
+        const auto baseWidth = pass.displaySized ? outputWidth : width;
+        const auto baseHeight = pass.displaySized ? outputHeight : height;
         auto& target = targets_[pass.source.output];
         const auto rounding = pass.source.floorSize ? 0.0f : 0.5f;
         target.width = std::max(
-            1u, uint32_t(std::floor((pass.source.width ? pass.source.width : width) * pass.source.resolutionScale +
+            1u, uint32_t(std::floor((pass.source.width ? pass.source.width : baseWidth) * pass.source.resolutionScale +
                                     rounding)));
         target.height = std::max(
-            1u, uint32_t(std::floor((pass.source.height ? pass.source.height : height) * pass.source.resolutionScale +
+            1u, uint32_t(std::floor((pass.source.height ? pass.source.height : baseHeight) * pass.source.resolutionScale +
                                     rounding)));
+        target.width = std::max(1u, target.width >> pass.source.mipLevel);
+        target.height = std::max(1u, target.height >> pass.source.mipLevel);
         if (pass.source.rtt) {
             target.sampler =
                 makeSampler(device_, pass.source.rtt->minFilter == 1003, false, pass.source.rtt->magFilter == 1003);
@@ -228,8 +268,14 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
             pass.source.rtt->actualHeight = target.height;
         }
         target.format = pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float;
+        // A host pass copies what it reads and what it wrote (the resolve seeds and stores its history from them).
+        const bool copied = std::any_of(passes_.begin(), passes_.end(), [&](const auto& host) {
+            return !host.source.host.empty() &&
+                   (host.source.output == pass.source.output || host.source.reads.at("beauty") == pass.source.output);
+        });
         target.texture = makeTexture(device_, target.width, target.height, target.format,
-                                     WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding);
+                                     WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding |
+                                         (copied ? WGPUTextureUsage_CopySrc : WGPUTextureUsage_None));
         target.view = wgpuTextureCreateView(target.texture, nullptr);
     }
 }
@@ -244,8 +290,8 @@ bool PostEffects::syncScales() {
                 if ((r.minFilter != 1003 && r.minFilter != 1006) || (r.magFilter != 1003 && r.magFilter != 1006))
                     throw std::runtime_error("TN_NATIVE_RTT_FILTER: expected NearestFilter or LinearFilter");
                 if (r.width == 0 && (r.autoUpdate || r.textureNeedsUpdate) &&
-                    (r.target->width != std::max(1u, uint32_t(std::floor(width_ * r.scale))) ||
-                     r.target->height != std::max(1u, uint32_t(std::floor(height_ * r.scale)))))
+                    (r.target->width != std::max(1u, uint32_t(std::floor((pass.displaySized ? outputWidth_ : width_) * r.scale))) ||
+                     r.target->height != std::max(1u, uint32_t(std::floor((pass.displaySized ? outputHeight_ : height_) * r.scale)))))
                     changed = true;
 
                 if (const auto current = targets_.find(pass.source.output);
@@ -277,7 +323,7 @@ bool PostEffects::syncScales() {
         return filtersChanged;
     const uint32_t width = width_, height = height_;
     width_ = height_ = 0;
-    resize(width, height);
+    resize(width, height, outputWidth_, outputHeight_, sceneResolved_);
     return true;
 }
 bool PostEffects::target(const std::string& name, WGPUTextureView view) {
@@ -393,7 +439,8 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
     for (const auto& [name, image] : images_)
         resources[name] = graph.external(name, {image.width, image.height, uint32_t(WGPUTextureFormat_RGBA8Unorm),
                                                 uint32_t(WGPUTextureUsage_TextureBinding)});
-    resources["scene"] = graph.external("scene", desc);
+    resources["scene"] = graph.external("scene", {sceneResolved_ ? outputWidth_ : width_,
+                                                    sceneResolved_ ? outputHeight_ : height_, desc.format, desc.usage});
     resources["depth"] = graph.external("depth", {width_, height_, uint32_t(WGPUTextureFormat_Depth32Float),
                                                   uint32_t(WGPUTextureUsage_TextureBinding)});
     for (const auto& [name, view] : inputs_)
@@ -428,6 +475,15 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
                     break;
                 }
         auto& target = targets_.at(pass.source.output);
+        if (!pass.source.host.empty()) {
+            if (!host_)
+                throw std::runtime_error("TN_POST_HOST_MISSING: " + pass.source.host);
+            const auto& beauty = targets_.at(pass.source.reads.at("beauty"));
+            host_(encoder, beauty.texture, beauty.view, target.texture, target.view);
+            pass.rendered = true;
+            ++drawn;  // three's Info counts the resolve like any other fullscreen effect pass
+            continue;
+        }
         if (pass.source.rtt)
             pass.rttRevision = pass.rttRequested;
         const auto& stages = pass.source.package.variants.at(0).stages;
@@ -448,6 +504,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
         values["screenSize"] = {float(target.width), float(target.height)};
         values["_cameraProjectionMatrix"] = {camera.projectionMatrix.begin(), camera.projectionMatrix.end()};
         values["_cameraProjectionMatrixInverse"] = {inverse.elements.begin(), inverse.elements.end()};
+        values["_cameraWorldMatrix"] = {camera.matrixWorld.begin(), camera.matrixWorld.end()};
         constexpr float rotations[]{60, 300, 180, 240, 120, 0};
         values["_temporalDirection"] = {pass.source.temporal ? rotations[frame % 6] / 360.0f : 0.0f};
         for (size_t stageIndex = 0; stageIndex < 2; ++stageIndex) {
@@ -457,7 +514,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
             const auto buffer = stageIndex == 0 ? pass.vertexUniforms : pass.uniforms;
             const auto layout = stageIndex == 0 ? pass.vertexLayout : pass.layout;
             auto& cachedGroup = stageIndex == 0 ? pass.vertexGroup : pass.group;
-            auto& cachedEntries = stageIndex == 0 ? pass.vertexEntries : pass.groupEntries;
+            auto& cache = stageIndex == 0 ? pass.vertexGroups : pass.groups;
             if (buffer) {
                 std::vector<uint8_t> block(stage.uniformBlockSize);
                 for (const auto& field : stage.uniforms) {
@@ -488,27 +545,13 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
                     if (binding.kind == shader::BindingKind::Texture)
                         entry.textureView = name == "scene" ? scene : name == "depth" ? depth : view(name);
                     else
-                        entry.sampler = sampler(name);
+                        entry.sampler = binding.depth ? compare_ : sampler(name);
                     if (binding.kind == shader::BindingKind::Texture && !entry.textureView)
                         throw std::runtime_error("TN_POST_INPUT_MISSING: " + name);
                 }
                 entries.push_back(entry);
             }
-            const auto same = [](const WGPUBindGroupEntry& a, const WGPUBindGroupEntry& b) {
-                return a.binding == b.binding && a.buffer == b.buffer && a.offset == b.offset && a.size == b.size &&
-                       a.sampler == b.sampler && a.textureView == b.textureView;
-            };
-            if (!cachedGroup ||
-                !std::equal(entries.begin(), entries.end(), cachedEntries.begin(), cachedEntries.end(), same)) {
-                if (cachedGroup)
-                    wgpuBindGroupRelease(cachedGroup);
-                WGPUBindGroupDescriptor groupDesc{};
-                groupDesc.layout = layout;
-                groupDesc.entryCount = entries.size();
-                groupDesc.entries = entries.data();
-                cachedGroup = createBindGroup(device_, &groupDesc);
-                cachedEntries = entries;
-            }
+            cachedGroup = cache.get(device_, layout, entries);  // a ping-pong input hits one of the last two
         }
         const auto group = pass.group;
         WGPURenderPassColorAttachment color{};
@@ -522,7 +565,11 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
         WGPURenderPassDescriptor passDesc{};
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &color;
-        const auto render = beginTimedRenderPass(encoder, &passDesc);
+        std::array<uint32_t, 2> extent{};
+        if (auto* timer = FrameGpuTimer::current; timer && timer->trace) extent = targetSize(pass.source.output);
+        const auto render = beginTimedRenderPass(encoder, &passDesc,
+            pass.source.stage == shader::graph::kStageScreenSpaceGi ? kGpuGiSegment : 2,
+            {"post", extent[0], extent[1]});
         if (pass.source.visible) {
             wgpuRenderPassEncoderSetPipeline(render, pass.pipeline);
             wgpuRenderPassEncoderSetBindGroup(render, 0, group, 0, nullptr);

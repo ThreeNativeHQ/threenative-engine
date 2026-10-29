@@ -119,6 +119,7 @@ export function createFox(): IFox {
     arm.add(part(new SphereGeometry(0.095, 8, 6), cream, 0, -0.27, 0));
 
     const leg = limbs[`leg${name}`];
+    leg.name = `leg${name}`; // read back by `Fox.standingSwing`
     leg.position.set(0, 0.02, 0.14 * side);
     body.add(leg);
     leg.add(part(new CapsuleGeometry(0.1, 0.18, 4, 8), cream, 0, -0.16, 0));
@@ -155,14 +156,16 @@ export function createFox(): IFox {
   root.add(blob);
 
   let time = 0;
+  let cycle = 0; // The run phase advances with speed: a fox standing still stands still.
   return {
     group: root,
     update(pose: IFoxPose): void {
       time += pose.dt;
       const run = Math.min(1, pose.speed / 7);
-      const cycle = time * (6 + run * 9);
+      const moving = Math.min(1, pose.speed / 0.6);
+      cycle += pose.dt * (6 + run * 9) * moving;
       if (pose.grounded) {
-        const swing = Math.sin(cycle) * (0.35 + run * 0.75);
+        const swing = Math.sin(cycle) * (0.35 + run * 0.75) * moving;
         limbs.legL.rotation.z = swing;
         limbs.legR.rotation.z = -swing;
         limbs.armL.rotation.z = -swing * 0.85;

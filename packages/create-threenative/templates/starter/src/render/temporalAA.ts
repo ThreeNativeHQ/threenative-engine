@@ -4,7 +4,7 @@
 import { Matrix4, type OrthographicCamera, type PerspectiveCamera, Vector2 } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { uniform } from "three/tsl";
-import type { Node, PassNode, Renderer, TextureNode } from "three/webgpu";
+import type { Node, PassNode, TextureNode } from "three/webgpu";
 import { type ITemporalAANode, createTemporalAAFrame } from "./temporalAAFrame.js";
 import { type PipelineContext, createTemporalAAHooks } from "./temporalAAHooks.js";
 import { disposeTemporalAAInput } from "./temporalAAInput.js";

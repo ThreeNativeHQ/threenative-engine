@@ -1,5 +1,7 @@
 import { PerspectiveCamera, Scene, type Vector2, type WebGLRenderer } from "three";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import type { Page } from "playwright";
+import { waitFrames, waitWarmupFrames } from "../src/runner/steps.js";
 
 import { installThreePlaytestBridge } from "../src/three/bridge.js";
 import { validatePlaytestScenario } from "../src/scenario/schema-validate.js";
@@ -51,6 +53,24 @@ test("holds until the application reports its world is safe to observe", async (
   expect(observed).toEqual({ rule: "sustained-frames", startup: ready });
   // Three not-ready readings, so three frames were pumped rather than the baseline being taken
   // against a game that had not finished loading.
+  expect(pumped).toBe(3);
+});
+
+test("holds past readiness until the UI cover has lifted, where the game reports it", async () => {
+  // Hosted CI's puzzle and starter pause runs pressed Tab at tick 600 while the loading cover still
+  // hid the HUD (the hand-off waits for frames to leave a software GPU), so the pause button did
+  // not exist and the player walked on. A player cannot press a button the cover still hides.
+  const covered = { ...ready, revealed: false };
+  const revealed = { ...ready, revealed: true };
+  const bridge = source(["runtime.startup"], [collapsing, covered, covered, revealed]);
+  let pumped = 0;
+  const observed = await waitForStartupReady({
+    bridge,
+    pump: async () => {
+      pumped += 1;
+    },
+  });
+  expect(observed).toEqual({ rule: "sustained-frames", startup: revealed });
   expect(pumped).toBe(3);
 });
 
@@ -341,3 +361,165 @@ test("an unreadable liveness probe never invents a crash", async () => {
     }),
   ).resolves.toEqual({ rule: "sustained-frames", startup: ready });
 });
+
+test("startup frame timeouts consume the remaining deadline without resetting it", async () => {
+  let clock = 0;
+  const budgets: Array<number | undefined> = [];
+  const timeout = new PlaytestBridgeError(playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "RAF stalled", "Check rendering"));
+  await expect(waitForStartupReady({
+    bridge: source(["runtime.startup"], [collapsing]),
+    now: () => clock,
+    timeoutMs: 200,
+    pump: async (remainingMs) => {
+      budgets.push(remainingMs);
+      clock += 50;
+      throw timeout;
+    },
+  })).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+  expect(budgets).toEqual([200, 150, 100, 50]);
+  expect(clock).toBe(200);
+});
+
+
+test("warmup does not spend the readiness allowance", async () => {
+  let clock = 0;
+  const budgets: Array<number | undefined> = [];
+  await expect(waitForStartupReady({
+    bridge: source(["runtime.startup"], [collapsing, collapsing, ready]),
+    now: () => clock,
+    timeoutMs: 200,
+    warmup: async () => {
+      clock += 300;
+    },
+    pump: async (remainingMs) => {
+      budgets.push(remainingMs);
+      clock += 50;
+    },
+  })).resolves.toEqual({ rule: "sustained-frames", startup: ready });
+  expect(budgets).toEqual([200, 150]);
+  expect(clock).toBe(400);
+});
+
+test("warmup is one wait whose budget grows with its frames", async () => {
+  vi.useFakeTimers();
+  try {
+    let result: unknown = "pending";
+    const slow = { evaluate: () => new Promise((resolve) => setTimeout(resolve, 39_000)) } as unknown as Page;
+    const pending = waitWarmupFrames(slow, 3).then(() => { result = "done"; }, (error) => { result = error; });
+    await vi.advanceTimersByTimeAsync(39_000);
+    await pending;
+    expect(result).toBe("done");
+    const hung = { evaluate: () => new Promise(() => {}) } as unknown as Page;
+    result = "pending";
+    const stalled = waitWarmupFrames(hung, 3).then(() => { result = "done"; }, (error) => { result = error; });
+    await vi.advanceTimersByTimeAsync(74_999);
+    expect(result).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" } });
+    await stalled;
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a hung readiness read is Node-bounded by the shared startup allowance", async () => {
+  vi.useFakeTimers();
+  try {
+    let result: unknown = "pending";
+    const bridge = source(["runtime.startup"], [ready]);
+    bridge.readiness = () => new Promise(() => {});
+    const pending = waitForStartupReady({
+      bridge,
+      timeoutMs: 100,
+      warmup: async () => undefined,
+      pump: async () => { throw new Error("hung phase cannot pump"); },
+    }).then(value => { result = value; }, error => { result = error; });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(result).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+    await pending;
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test.each(["success", "warmup-error", "readiness-error"] as const)("the shared startup timer clears after %s", async (outcome) => {
+  vi.useFakeTimers();
+  try {
+    const sentinel = new Error(outcome);
+    const bridge = source(["runtime.startup"], [ready]);
+    if (outcome === "readiness-error") bridge.readiness = async () => { throw sentinel; };
+    const pending = waitForStartupReady({
+      bridge,
+      timeoutMs: 100,
+      warmup: async () => { if (outcome === "warmup-error") throw sentinel; },
+      pump: async () => undefined,
+    });
+    if (outcome === "success") await expect(pending).resolves.toEqual({ rule: "sustained-frames", startup: ready });
+    else await expect(pending).rejects.toBe(sentinel);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("without runtime.startup warmup keeps its original operation deadline", async () => {
+  vi.useFakeTimers();
+  try {
+    let result: unknown = "pending";
+    const page = { evaluate: () => new Promise(() => {}) } as unknown as Page;
+    const bridge = source([], [undefined]);
+    const pending = waitForStartupReady({
+      bridge,
+      timeoutMs: 100,
+      warmup: () => waitFrames(page, 10),
+      pump: async () => { throw new Error("unsupported startup must not pump"); },
+    }).then(value => { result = value; }, error => { result = error; });
+    await vi.advanceTimersByTimeAsync(22_499);
+    expect(result).toBe("pending");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" } });
+    await pending;
+    expect(bridge.calls).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test.each(["collapsing", "busy"] as const)("late %s readiness cannot resume startup work after the Node deadline", async (late) => {
+  vi.useFakeTimers();
+  try {
+    let release: (value: IPlaytestBridgeReady) => void = () => undefined;
+    let fail: (error: Error) => void = () => undefined;
+    let reads = 0;
+    let pumps = 0;
+    let hostChecks = 0;
+    const pending = waitForStartupReady({
+      bridge: {
+        description: { capabilities: ["runtime.startup"] },
+        readiness: () => {
+          reads += 1;
+          return new Promise((resolve, reject) => { release = resolve; fail = reject; });
+        },
+      },
+      now: () => 0,
+      timeoutMs: 100,
+      hostAlive: async () => { hostChecks += 1; return true; },
+      pump: () => { pumps += 1; return new Promise(() => {}); },
+    });
+    const failed = expect(pending).rejects.toMatchObject({ diagnostic: { code: "TN_PLAYTEST_STARTUP_NOT_READY" } });
+    await vi.advanceTimersByTimeAsync(100);
+    await failed;
+    if (late === "collapsing") release({ ready: true, startup: collapsing });
+    else fail(new PlaytestBridgeError(playtestDiagnostic("TN_PLAYTEST_OPERATION_TIMEOUT", "late timeout", "x")));
+    await vi.advanceTimersByTimeAsync(0);
+    expect({ reads, pumps, hostChecks }).toEqual({ reads: 1, pumps: 0, hostChecks: 0 });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+

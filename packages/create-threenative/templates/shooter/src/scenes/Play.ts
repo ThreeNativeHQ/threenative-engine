@@ -8,15 +8,23 @@ import {
   isMobile,
 } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import type { AnimationClip, Group, Object3D, PerspectiveCamera, Quaternion, Texture } from "three";
+import type {
+  AnimationClip,
+  Group,
+  Mesh,
+  Object3D,
+  PerspectiveCamera,
+  Quaternion,
+  Texture,
+} from "three";
 import {
   AdditiveBlending,
+  Box3,
   CylinderGeometry,
   MathUtils,
   MeshBasicMaterial,
-  Mesh as MeshClass,
   PlaneGeometry,
-  PointLight as PointLightClass,
+  Ray,
   Vector3,
 } from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -43,7 +51,8 @@ import {
 } from "../render/quality.js";
 import { scale } from "../render/scale.js";
 import { setupSky } from "../render/sky.js";
-import { TOWN_HALF, type Town, buildTown } from "../render/town.js";
+import { loadSurfaces } from "../render/surface.js";
+import { TOWN_HALF, type Town, type TownCollider, buildTown } from "../render/town.js";
 import { createTownMaterials } from "../render/townMaterials.js";
 import { type GameState, TARGET_GOAL } from "../state.js";
 import { resolveSurface } from "../surfaces.js";
@@ -130,6 +139,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.assets.model<LoadedModel>("player-viewmodel.glb"),
       ctx.assets.texture("sky.jpg"),
     ]);
+    // The town's five generated surfaces (`render/surface.ts`), before `enter` builds the town.
+    await loadSurfaces(ctx.assets);
     this.#assets = { enemy, viewmodel, sky };
     setupSky(ctx.scene, this.#assets.sky);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
@@ -197,6 +208,30 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const loading = createLoadingScreen(ctx);
     const materials = createTownMaterials();
     const town: Town = buildTown(materials);
+    // The exact half of a sight answer reads the town's own pieces and their world boxes. The
+    // engine's auto batch hides the pieces behind merged draws and keeps them; `matrixAutoUpdate`
+    // goes off because the town never moves, and the vans carry a parent transform.
+    town.group.updateMatrixWorld(true);
+    const sightBounds = new Map<Mesh, Box3>();
+    for (const mesh of town.hittable) sightBounds.set(mesh, new Box3().setFromObject(mesh));
+    for (const mesh of sightBounds.keys()) mesh.matrixAutoUpdate = false;
+    // Which pieces can answer for a crossed collider. The town never moves, so this index is
+    // built once and a sight call then narrows from every solid in the lane to the handful
+    // standing in the boxes the segment actually enters. Overlap, not equality, because the
+    // arch's colliders are its piers and the mass over the opening while its pierced mesh
+    // spans all three.
+    const sightByBox = new Map<TownCollider, Mesh[]>();
+    for (const collider of town.colliders) {
+      const box = new Box3(
+        new Vector3(collider.min[0], collider.min[1], collider.min[2]),
+        new Vector3(collider.max[0], collider.max[1], collider.max[2]),
+      );
+      const pieces: Mesh[] = [];
+      for (const [mesh, bounds] of sightBounds) {
+        if (box.intersectsBox(bounds)) pieces.push(mesh);
+      }
+      sightByBox.set(collider, pieces);
+    }
     ctx.add(town.group);
     // Plates are raycast targets like any solid: without them in the list a round flies
     // straight through and scores whatever soldier happens to stand behind the plate.
@@ -400,27 +435,51 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // at least as much as the walls they stand for — which means "no box in the way" is a
     // trustworthy *clear*, and that is the common case while a firefight is in the open. Only a
     // box-blocked line needs the exact answer, and that is where the doorways are.
+    //
+    // The exact stage then tests only the pieces standing in the boxes the segment crosses.
+    // After the merge the drawn town is a few town-wide buffers, so a raycast against it walks
+    // geometry from every lane at once; narrowing to the crossed pieces is the same triangles,
+    // same answer, a handful of objects per call. Plates stay out of the list: they are the one
+    // hittable the old test knowingly skipped.
     const boxes = new BoxOccluders(town.colliders);
     ctx.entities.remove("occluders");
     ctx.entities.add("occluders", boxes);
-    const occluders: Object3D[] = [...town.hittable, ...plateMeshes];
+    const crossedBoxes: TownCollider[] = [];
+    const sightSeen = new Set<Mesh>();
+    const sightRay = new Ray();
+    const sightHit = new Vector3();
+    const sightCandidates: Mesh[] = [];
 
     const lineOfSight = (from: Vector3, to: Vector3): boolean => {
-      if (boxes.clear(from, to)) return true;
+      if (boxes.clear(from, to, crossedBoxes)) return true;
       const direction = new Vector3().subVectors(to, from);
       const distance = direction.length();
       if (distance < 0.001) return true;
-      for (const hit of ctx.raycastAll({
-        direction: direction.multiplyScalar(1 / distance),
-        far: distance - 0.2,
-        origin: from,
-        targets: occluders,
-      })) {
-        // Plates and paint are thin dressing; only solids block sight.
-        if (hit.object.userData.target !== undefined) continue;
-        return false;
+      direction.multiplyScalar(1 / distance);
+      sightRay.set(from, direction);
+      sightSeen.clear();
+      for (const box of crossedBoxes) {
+        for (const mesh of sightByBox.get(box) ?? []) sightSeen.add(mesh);
       }
-      return true;
+      sightCandidates.length = 0;
+      for (const mesh of sightSeen) {
+        const bounds = sightBounds.get(mesh);
+        if (bounds === undefined) continue;
+        const point = sightRay.intersectBox(bounds, sightHit);
+        if (point === null) continue;
+        // A box around the eye is crossed even when the ray leaves it past the far end.
+        if (!bounds.containsPoint(from) && from.distanceTo(point) > distance) continue;
+        sightCandidates.push(mesh);
+      }
+      if (sightCandidates.length === 0) return true;
+      return (
+        ctx.raycast({
+          direction,
+          far: distance - 0.2,
+          origin: from,
+          targets: sightCandidates,
+        }) === undefined
+      );
     };
 
     // Impact bursts: flash, sparks, chips and dust in one pooled system keyed by
@@ -804,10 +863,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       player.touch = touch.update(frameCtx);
       player.update(frameCtx, dt, !rifle.reloading);
-      const moveVector = frameCtx.input.vector("move");
       const aimRay = player.aimRay();
       rifle.converge(aimRay.origin, aimRay.direction);
-      rifle.update(dt, player.aiming, Math.min(1, Math.hypot(moveVector.x, moveVector.y)));
+      // The bob and the walk clip follow the body's speed, which eases in and out, not the keys.
+      rifle.update(dt, player.aiming, player.speed, player.sprinting);
       // Held, not tapped. The trigger is polled every frame and `Rifle` decides which of those
       // frames sends a round, so a held button fires at the weapon's cyclic rate instead of asking
       // the player to produce ten clicks a second by hand.

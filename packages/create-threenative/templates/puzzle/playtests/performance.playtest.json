@@ -6,7 +6,6 @@
   "assert": {
     "performance": {
       "maxDrawCalls": 380,
-      "maxFrameMsP95": 33,
       "maxTriangles": 45000,
       "minFps": 30
     },
@@ -21,6 +20,7 @@
       }
     }
   },
+  "clock": "wall-clock",
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [

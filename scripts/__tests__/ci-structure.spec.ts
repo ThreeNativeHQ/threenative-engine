@@ -716,8 +716,12 @@ function classifyScope(
       path.join(repo, "scripts/ci-change-scope.mjs"),
       "--root",
       root,
+      // PRD-731: a pull request earns the thin review lane; the merge queue owns the selected
+      // board these scope cases are about. `extra` may override the event.
       "--event-name",
-      "pull_request",
+      "merge_group",
+      "--candidate-sha",
+      head,
       "--target",
       "develop",
       "--base",
@@ -1199,8 +1203,14 @@ describe("CI pipeline structure", () => {
       // Nothing calls the Actions API to cancel its own run, so nothing may ask to write to it.
       // `ci-janitor.yml` is the single named exception: it cancels *other* runs, on a closed PR,
       // never from a failure step, and never its own run id — all four pinned in its own case.
+      // PRD-731 adds the second: `queue-watch` in ci.yml, for a merge group only, which names the
+      // first red job on the pull request before it cancels the rest (pinned below).
+      const writes =
+        relative === ".github/workflows/ci.yml"
+          ? source.replace(requiredJob(source, "queue-watch"), "")
+          : source;
       if (relative !== ".github/workflows/ci-janitor.yml") {
-        expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
+        expect(writes, `${relative} needs no actions: write`).not.toContain("actions: write");
       }
     }
 
@@ -1342,7 +1352,8 @@ describe("CI pipeline structure", () => {
   // publish itself — `permissions: contents: write` and a `gh release upload` — and PRD-480 keeps
   // release writes on GitHub's own machines.
   const hosted = new Map<string, ReadonlySet<string>>([
-    [".github/workflows/ci.yml", new Set(["supply-chain"])],
+    // PRD-731: queue-watch waits for a whole merge-group run, which a local slot must not hold.
+    [".github/workflows/ci.yml", new Set(["supply-chain", "queue-watch"])],
     [
       ".github/workflows/native-platforms.yml",
       // publish-android-v8 writes the release; android-emulator-parity is CPU-bound SwiftShader that
@@ -1644,6 +1655,52 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // PRD-731. The thin lane a ready pull request runs: the workflow admits `review` to exactly the
+  // jobs the plan requires for it, and to no job of the queue's board.
+  it("admits the review lane to its jobs only", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const plan = (
+      (await import(new URL("../ci-change-scope.mjs", import.meta.url).href)) as {
+        selectionPlan: (...args: unknown[]) => { jobs: Record<string, { required: boolean }> };
+      }
+    ).selectionPlan(
+      "review",
+      "fixture",
+      ["packages/core/src/a.ts"],
+      "a".repeat(40),
+      false,
+      0,
+      "develop",
+    );
+    for (const [name, section] of jobSections(ci)) {
+      if (["scope", "ci-required", "run-summary", "queue-watch", "integration"].includes(name))
+        continue;
+      const admitted = /\bselection == 'review'/u.test(section);
+      expect(
+        admitted,
+        `${name}: review admission must match the plan (${String(plan.jobs[name]?.required)})`,
+      ).toBe(plan.jobs[name]?.required === true);
+    }
+    expect(plan.jobs.integration?.required).toBe(false);
+    expect(requiredJob(ci, "integration")).toContain("jobs.integration.required");
+  });
+
+  // PRD-731. A red merge group is named on its pull request before the rest of the run is
+  // cancelled, which is the exception to "no job cancels its own run" and the reason for the order.
+  it("names the first red job on the pull request before the queue run is cancelled", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const watch = requiredJob(ci, "queue-watch");
+    expect(watch).toContain("if: ${{ github.event_name == 'merge_group' }}");
+    expect(watch).toContain("github.event.merge_group.head_ref");
+    const script = await readFile(path.join(repo, "scripts/ci-queue-watch.mjs"), "utf8");
+    expect(script.indexOf("/comments")).toBeGreaterThan(0);
+    expect(script.indexOf("/comments")).toBeLessThan(script.indexOf('"cancel"'));
+    // The watcher gates nothing: no job waits on it, or it would wait on itself.
+    for (const [name, section] of jobSections(ci)) {
+      if (name !== "queue-watch") expect(declaredNeeds(section), name).not.toContain("queue-watch");
+    }
+  });
+
   // A draft PR spends no runner: every job needs `scope`, so skipping it and the always() gate
   // skips the board, and `ready_for_review` starts it once the draft is marked ready.
   it("runs nothing on draft pull requests until they are marked ready", async () => {
@@ -1669,6 +1726,11 @@ describe("CI pipeline structure", () => {
         continue;
       }
       if (name === "ci-required" || name === "scope") continue;
+      // PRD-731: the watcher is no gate. It runs for a merge group only and has no selection.
+      if (name === "queue-watch") {
+        expect(section).toContain("if: ${{ github.event_name == 'merge_group' }}");
+        continue;
+      }
       expect(section, `${name} does not name the selection it admits`).toContain(
         "selection == 'full'",
       );
@@ -2197,6 +2259,23 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // PRD-626 P3.2: the generated static gate is reached before any scenario or parity capture, and
+  // replaces the typecheck-only step instead of running the compiler a second time.
+  it("runs the generated check once, before the scenarios and the engine parity capture", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const lane = requiredJob(ci, "template-nonvisual");
+    const at = (needle: string): number => {
+      const index = lane.indexOf(needle);
+      expect(index, `${needle} is missing from template-nonvisual`).toBeGreaterThan(-1);
+      return index;
+    };
+    const check = at("- name: Check pristine template");
+    expect(check).toBeLessThan(at("- name: Run the template's GPU-free scenarios"));
+    expect(check).toBeLessThan(at("- name: Compare the two engines on one pose"));
+    expect(lane.match(/run check$/gmu)?.length).toBe(1);
+    expect(lane).not.toMatch(/run typecheck$/mu);
+  });
+
   // The obsolete shard arithmetic snapshots are replaced by complete kit/scenario coverage.
   // ci-template-selection.spec.ts checks PR selections and exhaustive queue matrices.
   it("runs the complete classifier output once, without repeated scaffold shards", async () => {
@@ -2317,7 +2396,7 @@ describe("CI pipeline structure", () => {
     // so the condition names every selection it admits instead of the one it refuses.
     expect(supplyChain).toContain("needs: scope");
     expect(supplyChain).toContain(
-      "if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'",
+      "if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'",
     );
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
@@ -3257,6 +3336,17 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("run: pnpm verify:golden-path");
   });
 
+  it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {
+    // #560's first review run: `vitest related` picked the browser e2e specs for a playtest change
+    // and every one died on a missing Chromium, because the install step ran for `full` only.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "test-unit");
+    const prepare =
+      "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'";
+    expect(job).toContain(`uses: ./.github/actions/playwright-chromium\n        ${prepare}`);
+    expect(job).toContain(`${prepare}\n        run: pnpm --filter strata-terrain-preview bake`);
+  });
+
   it("the golden-path required context is still reported by a job of that exact name", async () => {
     // `golden-path` is a required check in the `main protection` ruleset, and required checks are
     // matched by exact context string. A matrix job reports `golden-path (starter)` and
@@ -3271,7 +3361,7 @@ describe("CI pipeline structure", () => {
     // wrong spelling: it also fires when the run was cancelled, where the matrix result is
     // `cancelled` and this job then reported failure on a run nobody had broken.
     expect(aggregate).toContain(
-      "if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}",
+      "if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') }}",
     );
     expect(aggregate).toContain(
       'echo "golden-path templates: not applicable (explicit selective exemption)"',

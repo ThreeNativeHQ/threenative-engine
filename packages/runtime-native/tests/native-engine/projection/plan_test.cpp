@@ -29,11 +29,13 @@ std::string text(const Value* v) { return v && v->isString() ? v->string() : std
 
 struct Assets {
     std::map<std::string, std::shared_ptr<BufferGeometry>> geometries;
+    std::map<std::string, const Value*> specs;
     std::map<std::string, std::shared_ptr<Material>> materials;
 };
 
 std::shared_ptr<BufferGeometry> geometryOf(const Value& spec) {
-    auto geometry = text(spec.find("kind")) == "box" ? makeBoxGeometry() : makeSphereGeometry(0.5, 8, 6);
+    auto geometry =
+        text(spec.find("kind")) == "box" ? makeBoxGeometry() : makeSphereGeometry(num(spec.find("radius"), 0.5), 8, 6);
     const uint64_t count = geometry->attributes.at("position")->count();
     if (flag(spec.find("morph"))) geometry->morphPositions.push_back(geometry->attributes.at("position"));
     if (flag(spec.find("skinned"))) {
@@ -59,9 +61,14 @@ std::shared_ptr<Material> materialOf(const Value& spec) {
     return material;
 }
 
-std::shared_ptr<Object3D> build(const Value& spec, Assets& assets) {
+std::shared_ptr<Object3D> build(const Value& spec, Assets& assets, int copy = 0) {
     const std::string kind = text(spec.find("kind"));
-    const auto geometry = assets.geometries[text(spec.find("geometry"))];
+    auto geometry = assets.geometries[text(spec.find("geometry"))];
+    // A geometry per copy, as agent-written games build them: the same bytes, or copy i scaled in y.
+    if (const std::string own = text(spec.find("ownGeometry")); !own.empty()) {
+        geometry = geometryOf(*assets.specs[text(spec.find("geometry"))]);
+        if (own == "varied") geometry->scale(1, 1 + copy / 100.0, 1);
+    }
     const auto material = assets.materials[text(spec.find("material"))];
     std::shared_ptr<Object3D> object;
     if (kind == "mesh") object = std::make_shared<Mesh>(geometry, material);
@@ -94,13 +101,121 @@ std::shared_ptr<Object3D> build(const Value& spec, Assets& assets) {
                 [](const RenderCallbackArgs&, std::string&) { return true; });
     if (const Value* children = spec.find("children"))
         for (const Value& child : children->items())
-            for (int i = 0; i < int(num(child.find("repeat"), 1)); ++i) object->add(*build(child, assets));
+            for (int i = 0; i < int(num(child.find("repeat"), 1)); ++i) object->add(*build(child, assets, i));
     return object;
+}
+
+// Forty copies of one box, each its own geometry: one batch. A member whose data then moves (a new
+// prepare, as the renderer bumps the epoch) leaves the batch, and the rest draw from one that did not.
+int memberWhoseGeometryMovesLeaves() {
+    auto scene = std::make_shared<Scene>();
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 40; ++i) {
+        meshes.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+        scene->add(*meshes.back());
+    }
+    scene->updateMatrixWorld(true);
+    ++projection::detail::uniformEpoch();
+    const projection::Decision before = projection::decide(*scene, 8);
+    const auto canonical = projection::canonicalGeometry(meshes[5]->geometry);
+    const auto moved = std::find_if(meshes.begin(), meshes.end(), [&](const auto& m) { return m->geometry == canonical; });
+    int failures = 0;
+    const auto expect = [&](bool ok, const char* what) {
+        if (!ok) std::printf("  content identity: %s\n", what), ++failures;
+    };
+    expect(before.projecting && before.instancedBatches == 1 && before.projectedObjects == 40, "40 copies are one batch");
+    expect(moved != meshes.end(), "the canonical geometry is a member's");
+    if (moved == meshes.end()) return failures;
+    auto position = (*moved)->geometry->attributes.at("position");
+    position->setY(0, 5);
+    position->setNeedsUpdate();
+    ++projection::detail::uniformEpoch();
+    const projection::Decision after = projection::decide(*scene, 8);
+    expect(after.projecting && after.instancedBatches == 1 && after.projectedObjects == 39, "the moved member left");
+    expect(after.exact.count("tooFewToBatch") && after.exact.at("tooFewToBatch") == 1, "the moved member draws alone");
+    const auto redrawn = projection::canonicalGeometry(meshes[(moved - meshes.begin() + 1) % 40]->geometry);
+    expect(redrawn && redrawn != (*moved)->geometry, "the batch draws from a member that did not move");
+    expect(projection::canonicalGeometry((*moved)->geometry) == (*moved)->geometry, "the moved geometry draws itself");
+    // The same vertex count with one float different never merges, whatever the hash says.
+    auto other = makeBoxGeometry();
+    other->attributes.at("normal")->setX(3, 0.5);
+    expect(!projection::detail::sameContent(*other, *redrawn), "a one-float difference is not equal content");
+    return failures;
+}
+
+// The renderer decides on what it draws: core's auto batch hides the sources it merged (8,300 in the
+// shooter town), and grouping them on every rescan cost 25 ms. A hidden subtree or mesh counts for
+// nothing; the visible part decides exactly as it would alone.
+int hiddenSubtreesAreNoDraws() {
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto drawn = std::make_shared<Scene>();
+    auto alone = std::make_shared<Scene>();
+    std::vector<std::shared_ptr<Object3D>> keep;
+    for (int i = 0; i < 40; ++i)
+        for (Scene* scene : {drawn.get(), alone.get()}) {
+            keep.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+            scene->add(*keep.back());
+        }
+    auto hidden = std::make_shared<Group>();
+    hidden->setVisible(false);
+    drawn->add(*hidden);
+    for (int i = 0; i < 300; ++i) {
+        keep.push_back(std::make_shared<Mesh>(makeSphereGeometry(0.5, 8, 6), material));
+        hidden->add(*keep.back());
+    }
+    auto lone = std::make_shared<Mesh>(makeSphereGeometry(0.5, 8, 6), material);
+    lone->setVisible(false);
+    drawn->add(*lone);
+    drawn->updateMatrixWorld(true);
+    alone->updateMatrixWorld(true);
+    ++projection::detail::uniformEpoch();
+    const projection::Decision d = projection::decide(*drawn, 8, true, true);
+    const projection::Decision expected = projection::decide(*alone, 8, true);
+    const bool same = d.sourceRenderables == 40 && d.sourceRenderables == expected.sourceRenderables &&
+                      d.projecting == expected.projecting && d.projectedObjects == expected.projectedObjects &&
+                      d.instancedBatches == expected.instancedBatches && d.exact == expected.exact;
+    if (!same) std::printf("  hidden subtrees: %d sources counted, %d expected\n", d.sourceRenderables, expected.sourceRenderables);
+    return same ? 0 : 1;
+}
+
+// PRD-753 sizing: the walk counter sees every node a structure stamp or a decision visits, and a hidden
+// subtree the renderer's decision skips is not counted as visited past its root.
+int walkCounterCountsNodes() {
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto scene = std::make_shared<Scene>();
+    std::vector<std::shared_ptr<Object3D>> keep;
+    auto group = std::make_shared<Group>();
+    scene->add(*group);
+    for (int i = 0; i < 1000; ++i) {
+        keep.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+        (i % 2 ? *group : static_cast<Object3D&>(*scene)).add(*keep.back());
+    }
+    uint64_t& nodes = projection::walkedNodes();
+    const uint64_t start = nodes;
+    projection::structureStamp(*scene);
+    const uint64_t stamp = nodes - start;
+    projection::decide(*scene, 8);
+    const uint64_t decided = nodes - start - stamp;
+    group->setVisible(false);
+    projection::decide(*scene, 8, true, true);
+    const uint64_t drawn = nodes - start - stamp - decided;
+    const bool ok = stamp == 1001 && decided == 1001 && drawn == 501;
+    if (!ok) std::printf("  walk counter: stamp %llu decide %llu drawn %llu, expected 1001 1001 501\n",
+                         (unsigned long long)stamp, (unsigned long long)decided, (unsigned long long)drawn);
+    return ok ? 0 : 1;
 }
 
 } // namespace
 
 int main() {
+    Material opaque(MaterialType::Standard), hashed(MaterialType::Standard);
+    hashed.alphaHash = true;
+    if (projection::detail::sameUniforms(opaque, hashed) ||
+        projection::detail::uniformHash(opaque) == projection::detail::uniformHash(hashed)) {
+        std::printf("FAIL: alphaHash materials share a uniform batch\n");
+        return 1;
+    }
     Value reference;
     json::Error error;
     if (!json::parse(readFile(TN_PROJECTION_REFERENCE), reference, error)) {
@@ -112,13 +227,16 @@ int main() {
         const Value& spec = *entry.find("scene");
         const Value& expected = *entry.find("decision");
         Assets assets;
-        for (const Value& g : spec.find("geometries")->items()) assets.geometries[text(g.find("id"))] = geometryOf(g);
+        for (const Value& g : spec.find("geometries")->items()) {
+            assets.geometries[text(g.find("id"))] = geometryOf(g);
+            assets.specs[text(g.find("id"))] = &g;
+        }
         for (const Value& m : spec.find("materials")->items()) assets.materials[text(m.find("id"))] = materialOf(m);
         auto scene = std::make_shared<Scene>();
         std::vector<std::shared_ptr<Object3D>> keep;
         for (const Value& object : spec.find("objects")->items())
             for (int i = 0; i < int(num(object.find("repeat"), 1)); ++i) {
-                keep.push_back(build(object, assets));
+                keep.push_back(build(object, assets, i));
                 scene->add(*keep.back());
             }
         scene->updateMatrixWorld(true);
@@ -138,6 +256,9 @@ int main() {
         check("materialBatches", d.materialBatches);
         check("skinnedBatches", d.skinnedBatches);
         check("exactObjects", d.exactObjects);
+        if (mismatch.empty() && d.cause != text(expected.find("cause")))
+            mismatch = "cause " + d.cause + " vs " + text(expected.find("cause"));
+        check("causeMeshes", expected.find("causeMeshes") ? d.causeMeshes : -1);
         const Value* exact = expected.find("exact");
         if (mismatch.empty() && exact->members().size() != d.exact.size()) mismatch = "exact reasons";
         for (const auto& [reason, count] : exact->members())
@@ -165,7 +286,10 @@ int main() {
         }
     }
     std::printf("projection plan: %d scenes, %d differ\n", scenes, differ);
-    if (scenes == 0 || differ != 0) {
+    const int moved = memberWhoseGeometryMovesLeaves();
+    const int hidden = hiddenSubtreesAreNoDraws();
+    const int walks = walkCounterCountsNodes();
+    if (scenes == 0 || differ != 0 || moved != 0 || hidden != 0 || walks != 0) {
         std::printf("FAIL\n");
         return 1;
     }

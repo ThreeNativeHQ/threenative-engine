@@ -56,6 +56,7 @@ shares: animation about 13%, cull and project about 11%, `Renderer::render` 21%,
   when its web and desktop rows both pass on the engine ([PRD-617](PRD-617-every-template-runs-on-the-native-engine.md)).
   The engine exposes the upstream Three.js API, and a game uses the same source on every back end.
   This refines the previous decision: the default is not reverted while templates remain pinned.
+- 2026-10-26 (owner): the worker HUD contract is confirmed (one state snapshot per frame out, intents back): "Yes, and v5.2 threads too". Cycle v5 moves to [PRD-752](./PRD-752-web-games-run-in-a-worker-so-the-page-cannot-stall-them.md).
 - 2026-10-15 (owner): housekeeping. Delete junk and reduce the file count; keep every behaviour.
 - Deferred, filed again only on scorecard evidence: transform compose skip (if
   `updateMatrixWorldSelf` is above 2% of the frame), projection reuse and SIMD world matrices (if
@@ -160,7 +161,7 @@ Cherry-picks of F `c1ef353ca 2007efe12 3d3695197 3b29482a6 504709d17 726df7f5c d
 #### Phase v1.9: The scorecard
 **Status:** NOT STARTED
 Today: `perf` has p95, p99 and hitches but no memory or host load; `bench:scoreboard` has medians only; the R-ladder runs only on legacy and Godot arms; `run-godot.ts` has no workloads, so Godot ratios exist only on the ladders; `profile:wasm-page --load` means load phases, not host load; no soak command exists.
-- [x] `pnpm perf:live` serves a page that re-reads every bench report under `artifacts/engine-load-test` every 2 s and plots p50 per workload and arm, with a red ring for a >30% regression against the series best. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts` (2 passed) and a browser check against the 505 recorded pilot points, 2026-10-11. Revamped 2026-10-12: cycle tabs v1 to v5, native-vs-legacy KPI tiles against the 2x target, epic progress and gate pills read live from this PRD (`--prd`), `epicOf` spec; the server watches `artifacts/engine-load-test/prd-573` only. Checked in a browser against the 18 first A/B reports.
+- [x] `pnpm dashboard` serves a page that re-reads every bench report under `artifacts/engine-load-test` every 2 s and plots p50 per workload and arm, with a red ring for a >30% regression against the series best. proof: `pnpm exec vitest run scripts/__tests__/perf-live.spec.ts` (2 passed) and a browser check against the 505 recorded pilot points, 2026-10-11. Revamped 2026-10-12: cycle tabs v1 to v5, native-vs-legacy KPI tiles against the 2x target, epic progress and gate pills read live from this PRD (`--prd`), `epicOf` spec; the server watches `artifacts/engine-load-test/prd-573` only. Checked in a browser against the 18 first A/B reports.
 - [x] `bench:engines` and `bench:scoreboard` rows carry p95, p99, the hitch count, draw calls and pipeline compiles, and fail closed on a missing counter. proof: a red-green case in the engine-load-test report spec Result 2026-10-11: 147 engine-load-test specs green, red first (14 failures); Godot rows are exempt from `pipelineCompiles` only (Godot load test has no counter; `ponytail:` note in `report.ts`), a Godot rung with no draw call still fails. Unverified: the counter has not run in a real three/WebGPU renderer.
 - [ ] `perf`, `bench:engines` and `profile:wasm-page` carry `hostLoad` and the core count, and mark absolutes `invalid-absolute` above half the core count. proof: a red-green case per spec with a stubbed load Partial: `bench:engines` and `perf` stamp `hostLoad` and `invalid-absolute` (stubbed-load specs green, 4 red first for `perf`); `profile:wasm-page` is slice 7 and does not exist yet.
 - [ ] Memory (partial 2026-10-12, arm run reviewed by the lead: `parseProcStatusMemory` and `parseTotalPssMb` pure parsers fail closed with named errors, `--executable` reads `VmHWM`, 4 specs red then green; the `--logcat` PSS wiring and `profile:wasm-page --memory` are not exercised, no desktop or emulator run yet): `perf --executable` peak RSS (`VmHWM`), `perf --logcat` PSS (`dumpsys meminfo <pid>`), `profile:wasm-page --memory` (Wasm memory, JS heap). proof: red-green cases in `perf.spec.ts` and the profile-wasm-page spec, then one desktop run and one emulator run
@@ -274,6 +275,12 @@ Today `getAsync` and a 2-worker pool exist (`pipeline_cache.cpp:191`, `.h:118`),
 - [ ] Android first-launch pipeline compiles fall against the v1 build. proof: emulator `perf --logcat` compile counter
 - [ ] Stability gate S with the emulator journey is green. proof: the S commands
 
+#### Phase v2.7: Web glue under 2% of the frame
+**Status:** NOT STARTED
+The shooter kit's web CPU profile (2026-10-26, NVIDIA, no DevTools, 10 s) still spends 4-5% of the frame in the JS side of the Wasm bridge: `fromEngine`, `accessor.get`, `read`, `write`, `writeHandle`, `countCall` and `toEngine` in `web-engine-runtime.js`. The owner asked for this box after the crossing cuts in v1.
+- [ ] The JS bridge functions in `web-engine-runtime.js` take under 2% of sampled main-thread time on the shooter profile, with crossings per frame no higher. proof: `~/.cache/tmp-tn/pr574-shooter-feel/trace-tools/profile.mjs`-style CPU profile before and after on the same scaffold (two runs per arm), plus `native_engine_player_crossing_budget` unchanged
+- [ ] Measured case from PRD-748 (shooter, 2026-10-26, after the sibling-generation fix): `onRender` is about 340 ms/s, of which Wasm and WebGPU API about 150, JS-to-Wasm crossings (1600-2200 per frame, about 1 us each with the callee) 84, other glue 66 (`fromEngine` 21 from wrapping `__walk` arrays) and other JS 31. Bridge functions stay above 2%; the cuts are in PRD-748 Phase 2 (uniform callbacks per draw, `prepareAnimation`). proof: the profile in the box above after those land
+
 ## Cycle v3 — every core and the GPU scene
 
 Six hazards block a render thread: non-atomic `nextObjectId`/`hierarchyRevision` and file-scope scratch (`object3d.cpp:67-77`); a snapshot `shared_ptr` release running a destructor off-thread; renderer state set from JS (`v8_main.cpp:228,575`); `renderReflections` mutating live materials (`render_database.cpp:1405`); single-thread loop glue with no frame-in-flight limit (`run.cpp`); the Android surface-released handshake (`run.cpp:260,525`). A render thread alone caps at 0.68–0.79x of the frame, so jobs come first.
@@ -284,11 +291,16 @@ Six hazards block a render thread: non-atomic `nextObjectId`/`hierarchyRevision`
 - [ ] Mixers and independent transform subtrees run as jobs, bit-equal to one thread, events dispatched after the join, hazard 1 fixed. proof: `native_engine_skinned_crowd_cpu` and `native_engine_static_transform` with 1 and N workers, under ThreadSanitizer
 
 #### Phase v3.2: Recorded passes survive camera motion
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-10-28). The owner chose PRD-754 option 1: three's opaque order stays; native desktop replays the shadow passes from bundles with persistent uniform slots by default (Midway recording plus shadow CPU -17%); the rows wait behind `setStableRows` (native, off); the web engine compiles all of it out (no web gain, 4 MiB budget). The camera-turn goal and the 80% gate are Deferred in PRD-754.
+**Owned by [PRD-754](../Unreal/performance/PRD-754-a-camera-turn-re-records-no-pass.md)** (lane `lane/perf-stable-passes`, 2026-10-27). The boxes below stay as the summary; PRD-754 carries the proof.
 Today the bundle key (`renderer.cpp:2702-2722`) moves with depth order (`sortDraws`), plan-order uniform offsets and visible-count batch stores (`render_database.cpp:893`); shadow, normal and velocity passes encode directly (`renderer.cpp:2693,2784,2813`).
-- [ ] Rebuilds by cause and direct encodes by pass are counted, and shadow, normal and velocity passes replay bundles pixel-identically. proof: red-green `native_engine_batched_vs_unbatched`; `profile:wasm-page --gpu-calls` ratio below 1.0
+- [x] Rebuilds by cause and direct encodes by pass are counted, and shadow, normal and velocity passes replay bundles pixel-identically. proof: red-green `native_engine_batched_vs_unbatched`; `profile:wasm-page --gpu-calls` ratio below 1.0
+  result: PRD-754 Phase 1 and Phase 2 box 1 (`stable_passes_match_direct`, `camera_cull_keeps_bundle`: 0 differ; `--gpu-calls` ratio 0.25)
 - [ ] State-first opaque order and a persistent uniform slot per record: a camera turn on an opaque scene rebuilds nothing, and the judge passes. proof: red-green `native_engine_batched_vs_unbatched`; a judge subagent; `--gpu-time` ratio at most 1.0
-- [ ] Capacity-stable stores and `drawIndexedIndirect` (`firstInstance` 0): a culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
+  result: reopened 2026-10-28, the judge at c58d8f16f reads REGRESSION (coplanar door trim); see PRD-754 Blocked on
+  Deferred 2026-10-28 (owner, option 1): rows behind `setStableRows`, off; the judge reads NEUTRAL on the default at 4a7e82414
+- [x] Capacity-stable stores and `drawIndexedIndirect` (`firstInstance` 0): a culling turn rebuilds nothing, `info.render` matches, and CPU falls on Chrome. proof: `native_engine_camera_cull`; `profile:wasm-page --cpu-work` ratio below 1.0
+  result: PRD-754 Phase 2 box 2 (`cull_keeps_main_bundle` 0 differ; Chrome worker recording CPU ratio 0.45 over 3 pairs)
 
 #### Phase v3.3: An opt-in render thread
 **Status:** NOT STARTED
@@ -311,6 +323,8 @@ TN today: HZB declined ([PRD-489](../done/PRD-489-gpu-scene-occlusion-culling.md
 
 ## Cycle v5 — web worker
 
+**Owned by [PRD-752](./PRD-752-web-games-run-in-a-worker-so-the-page-cannot-stall-them.md)** (owner, 2026-10-26: worker HUD contract confirmed, "Yes, and v5.2 threads too"). The boxes below stay as the summary; PRD-752 carries the proof.
+
 The game side reads the DOM directly (23 core files read `document.` or `window.`; audio, pointer lock, gamepads, `localStorage`). A worker keeps frame p50; only Wasm threads can cut it.
 
 #### Phase v5.1: Worker mode
@@ -328,7 +342,6 @@ The game side reads the DOM directly (23 core files read `document.` or `window.
 - The v3 margin over Godot is an owner number, set before v3 starts.
 - Whether engine-only commits may skip `native-platforms` is an owner call (slice 0b).
 - `AnimationMixer.updateRate` adds a non-three property; João confirms the name before v2.3.
-- The worker HUD contract (state out once per frame) needs João's confirmation before v5.1.
 - Android timing rows need the Pixel 8 attached; the emulator holds counter and memory rows.
 - Safari rows need a macOS machine.
 
@@ -336,7 +349,7 @@ The game side reads the DOM directly (23 core files read `document.` or `window.
 
 PRD-553 on F (JS-to-Wasm calls, upload bytes);
 [PRD-519](../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) (batching, LOD, GPU-scene kernel);
-[PRD-570](../Unreal/animation/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (core animation rate);
+[PRD-570](../done/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (core animation rate);
 [PRD-327](./critical/PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md),
 [PRD-540](./critical/PRD-540-the-compile-walk-leaves-the-main-thread.md) and
 [PRD-368](../assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) (legacy pipelines);

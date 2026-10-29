@@ -1,6 +1,6 @@
 {
   "name": "@threenative/core",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "license": "MIT AND GPL-2.0-or-later",
   "description": "The small vanilla Three.js game runtime foundation.",
   "keywords": [
@@ -64,6 +64,10 @@
       "types": "./dist/ui-layer.d.ts",
       "import": "./dist/ui-layer.js"
     },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    },
     "./world": {
       "types": "./dist/world.d.ts",
       "import": "./dist/world.js"
@@ -80,7 +84,7 @@
   "sideEffects": false,
   "scripts": {
     "postinstall": "node ./scripts/postinstall.mjs",
-    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && node scripts/bundle-blender-mcp.mjs && publint",
+    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && node scripts/bundle-blender-mcp.mjs && node scripts/bundle-animation-mcp.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict"
   },
@@ -99,6 +103,7 @@
     "publint": "0.3.22",
     "react": "catalog:",
     "react-reconciler": "0.33.0",
+    "threenative-animation-mcp": "workspace:*",
     "threenative-blender-mcp": "workspace:*",
     "threenative-engine-mcp": "workspace:*",
     "tsup": "8.5.1",
@@ -106,7 +111,7 @@
     "@typescript/native": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.3.6 <0.4.0",
+    "@threenative/playtest": ">=0.3.7 <0.4.0",
     "react": ">=19.2.0 <20",
     "react-reconciler": ">=0.33.0 <0.34"
   },

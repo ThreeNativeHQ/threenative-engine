@@ -30,6 +30,13 @@ revisit later is the engine's job, not yours.
   `matrixWorldAutoUpdate = false` is allowed and the engine will skip it, but its parents must stay
   still. For one node that never moves, `node.updateMatrix(); node.matrixAutoUpdate = false` is the
   cheaper pair: it skips the per-object compose and leaves the walk intact.
+- **Web threads.** The dev and preview servers send `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: require-corp`, and the build writes both into `dist/_headers`, so the
+  page is cross-origin isolated and loads the threaded engine: the world-matrix walk splits over up
+  to 3 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"` or `"off (<reason>)"`. A host that
+  cannot send the two headers serves the single-thread engine, unchanged; do not add a service-worker
+  shim for it. A cross-origin asset without a `Cross-Origin-Resource-Policy` header needs
+  `credentialless` in place of `require-corp`. `?tnIsolation=0` serves a page without the headers.
 - **Per-pass culling.** The main camera, each shadow and each reflection pass cull their own way,
   and the engine owns that. Do not set `frustumCulled = false` on a batch, and do not give one
   batch bounds that span the map.
@@ -116,3 +123,14 @@ exactly when someone is measuring. `npx @threenative/playtest perf` turns a log 
 report. When the percentile is
 bad but the cause is not obvious, `node_modules/create-threenative/agent-docs/references/trace-a-slow-frame.md` names the function before you
 change a line.
+
+## Static checks, and what they cannot tell you
+
+`pnpm check` runs the strict typecheck, ESLint and a Biome format check, and `pnpm test` runs it
+first. ESLint fails on a floating Promise and on an async callback given to a synchronous slot, and
+it warns when a `new Vector3()`-style math constructor runs directly inside `Scene.update`,
+`Scene.render` or a `ctx.beforeRender` callback. That warning is a prompt to measure, not a
+finding: reuse an instance the scene owns only if `TN_FRAME_BUDGET` shows allocation pressure.
+It does not follow helper calls, so a quiet result is not proof a frame allocates nothing. A
+suppression needs a reason: `// eslint-disable-next-line <rule> -- <why>`. Lint does not prove a
+frame rate, a resource leak or native portability; the playtest and the meters do.

@@ -1,5 +1,5 @@
 import { AudioContext, Object3D, PerspectiveCamera, Vector3 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AudioBus,
   type IAudioCompressorOptions,
@@ -160,6 +160,27 @@ const buffer = { duration: 1 } as AudioBuffer;
 function endVoice(voice: { source: unknown }): void {
   (voice.source as { onended?: (() => void) | null } | null)?.onended?.();
 }
+
+describe("AudioBus in a worker (PRD-752)", () => {
+  it("takes the AudioContext the worker host installed, not three's window lookup", () => {
+    // three's AudioContext.getContext() reads `window.AudioContext`. A worker has no window, so the
+    // starter on the three.js engine threw "window is not defined" building its first AudioBus.
+    const remote = audioContext();
+    (AudioContext as unknown as { setContext(value: unknown): void }).setContext(undefined);
+    vi.stubGlobal("AudioContext", function RemoteAudioContext() {
+      return remote;
+    });
+    try {
+      const bus = new AudioBus({
+        camera: new PerspectiveCamera(),
+        gestureTarget: new EventTarget(),
+      });
+      expect(bus.listener.context).toBe(remote);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("AudioBus", () => {
   it("should queue playback before the first user gesture and flush after", async () => {
@@ -626,6 +647,25 @@ describe("AudioBus", () => {
       expect(bus.voices).toBe(0);
       bus.resume();
       expect(bus.voices).toBe(0);
+    } finally {
+      bus.dispose();
+    }
+  });
+
+  it("should start a new cue at zero after a paused voice is stopped and reused", async () => {
+    const context = audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.play({ duration: 10 } as AudioBuffer);
+      advance(context, 3);
+      bus.pause();
+      bus.stop();
+      bus.resume();
+      const second = bus.play({ duration: 10 } as AudioBuffer);
+      const source = second.source as unknown as IFakeSource;
+      expect(source.startArgs.at(-1)?.[1]).toBe(0);
     } finally {
       bus.dispose();
     }

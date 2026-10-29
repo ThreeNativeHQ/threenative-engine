@@ -13,14 +13,13 @@ import {
   type AnimationClip,
   Box3,
   BoxGeometry,
-  Color,
   Group,
   MathUtils,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   type Object3D,
-  Quaternion,
   Vector3,
 } from "three";
 import { scale } from "../render/scale.js";
@@ -47,6 +46,8 @@ const WALK_SPEED = 2.4;
 const CHASE_SPEED = 3.4;
 const HEAR_RANGE = 26;
 const VIEW_RANGE = 30;
+/** The grip bound the rifle-grip playtest holds each hand to, metres; a wider cheap gap is re-measured exactly. */
+const GRIP_GAP_EXACT_ABOVE = 0.05;
 const VIEW_HALF_ANGLE = MathUtils.degToRad(46);
 const ENGAGE_RANGE = 13;
 const BURST_ROUNDS = 3;
@@ -240,9 +241,103 @@ const ROUTE_START = ROUTE[0] ?? new Vector3();
 const GOAL_REPLAN_SECONDS = 0.15;
 /** Blocked-cell bitmaps per collider set, so the squad pays for the nav grid once. */
 const NAV_GRIDS = new WeakMap<object, Map<string, Uint8Array>>();
+/** Side, in metres, of one bucket of the collider index `#occupied` searches. */
+const OCCUPANCY_BUCKET = 4;
+/** The widest padding `#occupied` is asked for; each box is filed under every bucket it reaches. */
+const OCCUPANCY_PAD = AGENT_RADIUS + 0.16;
+
+/** The town's walls bucketed on the ground plane: `[minX, maxX, minZ, maxZ]` per box, per bucket. */
+export interface IOccupancyIndex {
+  readonly minX: number;
+  readonly minZ: number;
+  readonly columns: number;
+  readonly rows: number;
+  /** The widest padding this index files for; a wider query would silently miss a wall. */
+  readonly pad: number;
+  readonly buckets: readonly number[][];
+}
+const OCCUPANCY = new WeakMap<object, IOccupancyIndex>();
+
+/**
+ * Index the colliders that block a walker once per collider set. The same two filters `#occupied`
+ * used to apply per box per query: the raised deck is overhead, not a wall, so a soldier routes
+ * through the open space under it; and a box under half a metre is a step, not an obstacle.
+ *
+ * Each wall is filed under every bucket its padded box reaches, so a query looks only at the walls
+ * its own bucket holds and still finds a wall whose face is up to `pad` away.
+ */
+export function occupancyIndex(colliders: readonly BoxCollider[]): IOccupancyIndex {
+  const cached = OCCUPANCY.get(colliders);
+  if (cached !== undefined) return cached;
+  const walls = colliders.filter(
+    (box) => box.min[1] <= scale.humanHeight + scale.ankleHeight * 6 && box.max[1] > 0.5,
+  );
+  const minX = Math.min(...walls.map((box) => box.min[0])) - OCCUPANCY_PAD;
+  const minZ = Math.min(...walls.map((box) => box.min[2])) - OCCUPANCY_PAD;
+  const maxX = Math.max(...walls.map((box) => box.max[0])) + OCCUPANCY_PAD;
+  const maxZ = Math.max(...walls.map((box) => box.max[2])) + OCCUPANCY_PAD;
+  const columns = walls.length === 0 ? 0 : Math.floor((maxX - minX) / OCCUPANCY_BUCKET) + 1;
+  const rows = walls.length === 0 ? 0 : Math.floor((maxZ - minZ) / OCCUPANCY_BUCKET) + 1;
+  const buckets = Array.from({ length: columns * rows }, (): number[] => []);
+  const cell = (value: number, origin: number): number =>
+    Math.floor((value - origin) / OCCUPANCY_BUCKET);
+  for (const box of walls) {
+    for (
+      let row = cell(box.min[2] - OCCUPANCY_PAD, minZ);
+      row <= cell(box.max[2] + OCCUPANCY_PAD, minZ);
+      row += 1
+    ) {
+      for (
+        let column = cell(box.min[0] - OCCUPANCY_PAD, minX);
+        column <= cell(box.max[0] + OCCUPANCY_PAD, minX);
+        column += 1
+      ) {
+        buckets[row * columns + column]?.push(box.min[0], box.max[0], box.min[2], box.max[2]);
+      }
+    }
+  }
+  const index = { minX, minZ, columns, rows, pad: OCCUPANCY_PAD, buckets };
+  OCCUPANCY.set(colliders, index);
+  return index;
+}
+
+/** True when a body `padding` wide at (x, z) overlaps one of the walls `index` holds near it. */
+export function occupancyBlocked(
+  index: IOccupancyIndex,
+  x: number,
+  z: number,
+  padding: number,
+): boolean {
+  if (padding > index.pad) {
+    throw new RangeError(
+      `Occupancy index files walls ${index.pad} m from a point, asked for ${padding} m.`,
+    );
+  }
+  const column = Math.floor((x - index.minX) / OCCUPANCY_BUCKET);
+  const row = Math.floor((z - index.minZ) / OCCUPANCY_BUCKET);
+  // Off the filed ground: no wall is within `pad` of a point outside every wall's own range.
+  if (column < 0 || column >= index.columns || row < 0 || row >= index.rows) return false;
+  const walls = index.buckets[row * index.columns + column];
+  if (walls === undefined) return false;
+  for (let at = 0; at < walls.length; at += 4) {
+    if (
+      x > (walls[at] as number) - padding &&
+      x < (walls[at + 1] as number) + padding &&
+      z > (walls[at + 2] as number) - padding &&
+      z < (walls[at + 3] as number) + padding
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 
 // Scratch for the per-frame sight test; five soldiers × three vectors × 60 Hz is real garbage.
 const scratchGoal = new Vector3();
+/** The hand joint in the rifle's own frame, its clamp onto the rifle box, and the rifle's scale. */
+const scratchGap = new Vector3();
+const scratchScale = new Vector3();
+const scratchHold = new Matrix4();
 const scratchTo = new Vector3();
 const scratchFacing = new Vector3();
 const scratchFlat = new Vector3();
@@ -576,7 +671,8 @@ export class Enemy {
   #leftKnee: Object3D | undefined;
   #rightKnee: Object3D | undefined;
   #colliders: readonly BoxCollider[];
-  #bodyMeshes: Object3D[] = [];
+  #occupancy: IOccupancyIndex;
+  #bodyMeshes: Mesh[] = [];
   #poseBones: Object3D[] = [];
   #bodyProxy: Object3D | undefined;
   #body: CharacterBody3D | undefined;
@@ -587,6 +683,12 @@ export class Enemy {
   #weaponVelocity = new Vector3();
   #rifleLocalMinZ = -scale.rifleLength * 0.35;
   #rifleLocalMaxZ = scale.rifleLength * 0.65;
+  /** The rifle's bounds in its own frame, measured once at equip: it is rigid, so they never change. */
+  #rifleLocalBox: Box3 | null = null;
+  /** `hand_r`'s gap to the rifle box, kept until the hold or the parent changes. */
+  #rightGripGap: number | null = null;
+  /** The rifle's world scale, read with `#rightGripGap`, so a left-hand sample needs no walk for it. */
+  #rifleWorldScale = 1;
   #rightHand: Object3D | undefined;
   #leftHand: Object3D | undefined;
   #weaponNodes: string[] = [];
@@ -621,6 +723,7 @@ export class Enemy {
     options: EnemyOptions = {},
   ) {
     this.#colliders = colliders;
+    this.#occupancy = occupancyIndex(colliders);
     this.#route = options.route ?? ROUTE;
     this.#navMin = options.navBounds?.min ?? NAV_MIN;
     this.#navMax = options.navBounds?.max ?? NAV_MAX;
@@ -675,11 +778,7 @@ export class Enemy {
     this.group.add(figure);
     this.#ground = new GroundSnap(figure, { enabled: false, meshes: this.#bodyMeshes });
     this.#equip(figure);
-    // Before the first draw, not on the first death. `#respawn` also calls this, but `#respawn`
-    // only ever runs off the death timer, so a soldier that has never died would otherwise reach
-    // his own death still carrying the blend state the asset shipped with — which is both a
-    // mid-fight pipeline compile and, once `#setOpacity` stopped flipping the flag, a fade that
-    // does not render at all because opacity is ignored on an opaque material.
+    // Precompile the dither fade before the first death.
     this.#fixBlendState();
     this.group.name = "enemy";
     this.group.position.copy(this.#route[0] ?? ROUTE_START);
@@ -799,8 +898,12 @@ export class Enemy {
     return this.group.position.y;
   }
 
+  /**
+   * The crown height measured once when the model bound, not re-read per call: `chest` asks for it
+   * on every sight test, and each live `modelHeight` read is a bone-chain walk into the engine.
+   */
   get bodyHeight(): number {
-    return this.modelHeight || this.#modelHeightMeasured;
+    return this.#modelHeightMeasured;
   }
 
   get headZoneMinY(): number {
@@ -838,6 +941,7 @@ export class Enemy {
     const bounds = new Box3().setFromObject(rifle);
     this.#rifleLocalMinZ = bounds.min.z;
     this.#rifleLocalMaxZ = bounds.max.z;
+    this.#rifleLocalBox = bounds;
 
     if (hand === undefined) {
       // No hand bone: hang it beside the hip rather than dropping it. A soldier without a
@@ -890,6 +994,7 @@ export class Enemy {
     const holder = this.#weapon;
     if (holder === undefined || this.#rightHand === undefined) return;
     this.#rightHand.add(holder);
+    this.#rightGripGap = null;
     this.#weaponDetached = false;
     this.#weaponSettled = false;
     this.#weaponVelocity.set(0, 0, 0);
@@ -913,25 +1018,7 @@ export class Enemy {
     body.teleport(proxy.position);
   }
 
-  /**
-   * Fade a soldier in or out without changing his pipeline.
-   *
-   * `transparent` and `depthWrite` are blend and depth state, not shader uniforms, so flipping
-   * either one makes WebGPU compile a *new* render pipeline for every material it touches — and a
-   * soldier is a skinned mesh with several. This used to set `transparent = alpha < 0.999` and
-   * `depthWrite = alpha > 0.5`, which meant the first death in a round compiled a fresh pipeline
-   * per material on the frame the corpse started fading. Measured as a single ~180 ms frame,
-   * mid-round, entirely outside game logic: `outsideGame` peaked at 177-186 ms with a firefight in
-   * the scenario and 28.6 ms without one, on identical movement.
-   *
-   * So the state is fixed at construction and never moves. Only `opacity` changes, which is a
-   * uniform the existing pipeline already reads. `needsUpdate` is deliberately not set: it forces
-   * the material to be re-evaluated, and there is nothing left to re-evaluate.
-   *
-   * Keeping `depthWrite` on for a fading corpse is the deliberate half of this. It costs a little
-   * correctness on a half-faded body seen through another one, and it buys never compiling
-   * mid-fight — and a corpse fading on the ground is not what anyone is looking at.
-   */
+  /** Change only opacity: switching pipeline state mid-death previously cost ~180 ms. */
   #setOpacity(alpha: number): void {
     const objects = [
       ...this.#bodyMeshes,
@@ -951,12 +1038,7 @@ export class Enemy {
     if (alpha < this.#opacityFloor) this.#opacityFloor = alpha;
   }
 
-  /**
-   * Put every material into its final blend state once, before the soldier is ever drawn.
-   *
-   * Called at construction so the transparent pipeline is compiled during loading, where a long
-   * frame is part of the loading screen, rather than on the frame someone dies.
-   */
+  /** Dither fades keep solid soldiers in the opaque depth/normal passes. */
   #fixBlendState(): void {
     const objects = [
       ...this.#bodyMeshes,
@@ -968,7 +1050,8 @@ export class Enemy {
         if (mesh.isMesh !== true) return;
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const material of materials) {
-          material.transparent = true;
+          material.transparent = false;
+          material.alphaHash = true;
           material.depthWrite = true;
           material.needsUpdate = true;
         }
@@ -1004,6 +1087,7 @@ export class Enemy {
 
   #holdRifle(clip: string): void {
     const hold = RIFLE_HOLD[clip];
+    this.#rightGripGap = null;
     if (hold !== undefined) {
       this.#weaponModel?.rotation.set(
         ...(hold.map(MathUtils.degToRad) as [number, number, number]),
@@ -1028,7 +1112,7 @@ export class Enemy {
     crouched: boolean,
     dt: number,
     poseLocked = false,
-    armed = false,
+    _armed = false,
   ): void {
     // Ground speed is measured from where the body actually got to this frame, not from the
     // speed constant it was asked for: a blocked step, a corner, or a slow turn all cut it.
@@ -1119,8 +1203,44 @@ export class Enemy {
     this.#clipFrames.set(current, frames);
     // Not the first frames: a clip that has only just started is still a crossfade from the last.
     if (frames < 12 || frames % 4 !== 0 || this.#weaponDetached) return;
-    const worst = Math.max(this.#contact("hand_r") ?? 0, this.#contact("hand_l") ?? 0);
+    // The rifle's own box sits inside the world box `boneContact` clamps to, so the cheap gap is
+    // never smaller than the honest one: under the 5 cm grip bound it already proves the grip,
+    // and only a wider gap pays for the exact vertex walk.
+    const cheap = Math.max(this.#handGap("hand_r") ?? 0, this.#handGap("hand_l") ?? 0);
+    const worst =
+      cheap <= GRIP_GAP_EXACT_ABOVE
+        ? cheap
+        : Math.max(this.#contact("hand_r") ?? 0, this.#contact("hand_l") ?? 0);
     this.#contactPeak.set(current, Math.max(this.#contactPeak.get(current) ?? 0, worst));
+  }
+
+  /**
+   * Metres from a hand joint to the rifle's own bounds, sampled without touching its vertices.
+   *
+   * `boneContact` measures a world-space box over every rifle vertex, which is the honest number
+   * for a playtest and far too much work to repeat while playing. The rifle is rigid, so its
+   * bounds in its own frame never change: transform the joint into that frame, clamp, and scale
+   * the local gap back to metres. One matrix invert and one clamp, no walk.
+   *
+   * The rifle is a child of `hand_r`, so that joint sits where the rifle's own hold puts it: its
+   * gap follows from the rifle's local transform alone and is measured once per hold. Only the
+   * left hand, on another branch of the skeleton, needs the posed world matrices per sample.
+   */
+  #handGap(bone: "hand_r" | "hand_l"): number | null {
+    const weapon = this.#weaponModel;
+    const bounds = this.#rifleLocalBox;
+    const joint = bone === "hand_r" ? this.#rightHand : this.#leftHand;
+    if (weapon === undefined || bounds === null || joint === undefined) return null;
+    if (this.#rightGripGap === null) {
+      weapon.updateWorldMatrix(true, false);
+      this.#rifleWorldScale = weapon.getWorldScale(scratchScale).x;
+      scratchGap.setFromMatrixPosition(scratchHold.copy(weapon.matrix).invert());
+      this.#rightGripGap = bounds.distanceToPoint(scratchGap) * this.#rifleWorldScale;
+    }
+    if (bone === "hand_r") return this.#rightGripGap;
+    weapon.updateWorldMatrix(true, false);
+    weapon.worldToLocal(joint.getWorldPosition(scratchGap));
+    return bounds.distanceToPoint(scratchGap) * this.#rifleWorldScale;
   }
 
   /**
@@ -1158,22 +1278,19 @@ export class Enemy {
     return "Death01";
   }
 
+  /**
+   * True when a body `padding` wide at (x, z) overlaps a wall or leaves the map. A path check asks
+   * this for every sample along a segment, so it searches only the walls filed in (x, z)'s bucket
+   * (`occupancyIndex`) instead of the whole town; the answer is the same box test.
+   */
   #occupied(x: number, z: number, padding: number): boolean {
-    for (const box of this.#colliders) {
-      // The raised deck is overhead, not a wall. Keep its supports and the lower range solids
-      // in the navigation map, but let a soldier route through the open space underneath it.
-      if (box.min[1] > scale.humanHeight + scale.ankleHeight * 6) continue;
-      if (
-        x > box.min[0] - padding &&
-        x < box.max[0] + padding &&
-        z > box.min[2] - padding &&
-        z < box.max[2] + padding &&
-        box.max[1] > 0.5
-      ) {
-        return true;
-      }
-    }
-    return x < this.#navMin || x > this.#navMax || z < this.#navMin || z > this.#navMax;
+    return (
+      occupancyBlocked(this.#occupancy, x, z, padding) ||
+      x < this.#navMin ||
+      x > this.#navMax ||
+      z < this.#navMin ||
+      z > this.#navMax
+    );
   }
 
   /** True when the soldier stands in any raised deck's footprint — routing beneath it. */
@@ -1603,8 +1720,7 @@ export class Enemy {
     this.#reattachWeapon();
     this.#bodyClearance = null;
     this.#footClearance = null;
-    // Blend state first, and only here: it is what costs a pipeline, so it is set once per
-    // soldier and never again. The fade below is a uniform on the pipeline this just built.
+    // Restore the precompiled fade state before changing its opacity uniform.
     this.#fixBlendState();
     this.#setOpacity(0);
     this.#reaction = 0;
@@ -1905,6 +2021,7 @@ export class Enemy {
      * all five at once.
      */
     materialOpacity: number;
+    bodyUsesOpaqueFade: boolean;
     /** Lowest `materialOpacity` this soldier has ever reported. See `#opacityFloor`. */
     materialOpacityFloor: number;
     reaction: number;
@@ -1984,6 +2101,11 @@ export class Enemy {
       deadFor: this.#deadFor,
       armed: this.#weapon !== undefined,
       materialOpacity: this.#fade,
+      bodyUsesOpaqueFade: this.#bodyMeshes.every((mesh) =>
+        (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).every(
+          (material) => !material.transparent && material.alphaHash && material.depthWrite,
+        ),
+      ),
       materialOpacityFloor: this.#opacityFloor,
       reaction: this.#reaction,
       bodyClearance: this.#bodyClearance,

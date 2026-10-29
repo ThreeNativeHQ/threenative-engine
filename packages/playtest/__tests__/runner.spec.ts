@@ -357,6 +357,21 @@ test("a rendered fixed-step advance draws one world frame per tick and lets the 
   expect(page.evaluate).toHaveBeenCalledTimes(9);
 });
 
+test("a live-clock hold counts the ticks the game ran, not the requests (PRD-752)", async () => {
+  // A 30 fps host on a 60 Hz step runs two ticks per frame, so each one-tick wall-clock request
+  // returns two. Counting requests held a 169-tick key for about 338 ticks.
+  let ran = 0;
+  const bridge = {
+    advance: vi.fn(async (_ticks: number) => {
+      ran += 2;
+      return 2;
+    }),
+  };
+  await advanceFixedStep({} as Page, bridge, 10);
+  expect(bridge.advance).toHaveBeenCalledTimes(5);
+  expect(ran).toBe(10);
+});
+
 test.each([0, -1, 1.5, Number.NaN])("fixed-step driving rejects invalid tick count %s", async (ticks) => {
   const bridge = { advance: vi.fn() };
   await expect(advanceFixedStep({} as Page, bridge, ticks)).rejects.toThrow("positive integer");
@@ -1568,17 +1583,20 @@ test("an authored hold counts for a pointer step, not only a key press", () => {
   ).toBe(0);
 });
 
+/** The engine meter's GPU reading: the frame bound judges CPU and GPU cost, so a fixture needs both. */
+const GPU_METER = `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}`;
+
 test("runner carries performance samples in their separate report channel", () => {
   const currentScenario = scenario({ performance: { maxFrameMsP95: 20 } });
   const snapshot: IPlaytestObservationSnapshot = {
     clock: { mode: "render-frame", timeMs: 32 },
     runtimeDiagnosticsSeries: [
-      { frameMs: 16, drawCalls: 2, triangles: 12 },
-      { frameMs: 18, drawCalls: 3, triangles: 20 },
+      { frameMs: 16, drawCalls: 2, phases: { render: 1, update: 0.1 }, triangles: 12 },
+      { frameMs: 18, drawCalls: 3, phases: { render: 1, update: 0.1 }, triangles: 20 },
     ],
   };
 
-  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], []);
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [{ text: GPU_METER, type: "log" }], []);
 
   expect(result.observations?.performanceSeries).toEqual(snapshot.runtimeDiagnosticsSeries);
   expect(result.assertionResults).toContainEqual(expect.objectContaining({ id: "performance.maxFrameMsP95", pass: true }));
@@ -1617,7 +1635,7 @@ test("runner keeps performance samples out of visual throughout-frame observatio
   });
   const snapshot: IPlaytestObservationSnapshot = {
     clock: { mode: "render-frame", timeMs: 32 },
-    runtimeDiagnosticsSeries: [{ frameMs: 16, drawCalls: 2, triangles: 12 }],
+    runtimeDiagnosticsSeries: [{ frameMs: 16, drawCalls: 2, phases: { render: 1, update: 0.1 }, triangles: 12 }],
   };
   const visualSeries = [{
     scene: {
@@ -1625,7 +1643,7 @@ test("runner keeps performance samples out of visual throughout-frame observatio
     },
   }];
 
-  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [], [], undefined, {}, true, {
+  const result = buildReport(CONFIG, currentScenario, snapshot, snapshot, [{ text: GPU_METER, type: "log" }], [], undefined, {}, true, {
     runtimeDiagnosticsSeries: visualSeries,
   });
 

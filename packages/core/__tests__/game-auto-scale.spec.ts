@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defineGame } from "../src/game.js";
 import { Scene } from "../src/scene.js";
+
+// A desktop holds full resolution (`resolution-scaler-desktop-floor.spec.ts`), so the ladder's
+// mechanics are driven on the phone platform, whose rungs still move. `getPlatform()` memoises
+// with no reset hook, so the module is mocked (vitest hoists the mock above the imports), as in
+// warmup-default.spec.ts.
+const platform = vi.hoisted(() => ({ os: "android" }));
+vi.mock("../src/platform.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/platform.js")>();
+  return { ...actual, getPlatform: () => ({ ...actual.getPlatform(), os: platform.os }) };
+});
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -190,9 +200,10 @@ describe('resolutionScale: "auto"', () => {
   it("reports atFloor once the scaler has run out of rungs and the frame is still over budget", async () => {
     // Measured on a physical Pixel 8 the same day: Bayview walked all ten rungs to 0.23 and was
     // still under 60 fps. A window reporting 0.23 and nothing else would read as a budget met at a
-    // low resolution. A desktop stops earlier — the floor is 0.61, because nothing reconstructs a
-    // frame from 5% of its pixels — and the phone walk itself is covered in
-    // resolution-scaler.spec.ts and resolution-scaler-desktop-floor.spec.ts.
+    // low resolution. A desktop holds full resolution instead — nothing reconstructs a frame from
+    // fewer pixels, so each rung it lost was blur on screen — and reports the same flag; the phone
+    // walk itself is covered in resolution-scaler.spec.ts.
+    platform.os = "linux";
     //
     // Reaching the floor takes measured GPU cost that genuinely falls with the pixels: an fps
     // deficit alone only ever probes, and a *constant* GPU cost is now the insensitivity guard's
@@ -245,10 +256,11 @@ describe('resolutionScale: "auto"', () => {
       const startTime = performance.now();
       for (let index = 1; index <= 30; index += 1) frame(startTime + index * 60);
       const last = windows.at(-1);
-      expect(last?.surface?.resolutionScale).toBe(0.61);
+      expect(last?.surface?.resolutionScale).toBe(1);
       expect(last?.surface?.atFloor).toBe(true);
       expect(windows[0]?.surface?.atFloor).toBe(false);
     } finally {
+      platform.os = "android";
       await game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {
         configurable: true,
@@ -418,6 +430,79 @@ describe('resolutionScale: "auto"', () => {
       }
       expect(postReadiness).toContain(0.85);
       expect(postReadiness.at(-1)).toBe(1);
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
+
+  it("keeps the measured display budget when a late scene recreates the scaler", async () => {
+    // A late temporal chain must retain the measured 120 Hz budget instead of the startup 60 Hz fallback.
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    const surfaces: number[] = [];
+    const rawRenderer = {
+      domElement: canvas,
+      render: () => undefined,
+      setRenderScale: () => undefined,
+      setSize: () => undefined,
+      temporalUpscale: false,
+    };
+    const game = defineGame({
+      step: 0.001,
+      frameBudget: {
+        report: () => {},
+        reportEvery: 1,
+        onWindow: (window) => {
+          if (window.surface !== undefined) surfaces.push(window.surface.resolutionScale);
+        },
+      },
+      render: { resolutionScale: "auto" },
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => rawRenderer,
+      },
+      scenes: { test: Empty },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      const drive = frame;
+      let time = performance.now();
+      const stepBy = (ms: number): void => {
+        time += ms;
+        drive(time);
+      };
+      // Establish the faster display target before the chain exists.
+      for (let index = 0; index < 10; index += 1) {
+        stepBy(8);
+        await Promise.resolve();
+      }
+      await game.ctx?.startup.whenReady();
+      for (let index = 0; index < 2; index += 1) stepBy(8);
+      // The late scene installs temporal upsampling; the next frame recreates the scaler.
+      rawRenderer.temporalUpscale = true;
+      surfaces.length = 0;
+      // 9 ms exceeds the measured 120 Hz budget but fits 60 Hz: keep probing down instead of climbing to 1.
+      for (let index = 0; index < 6; index += 1) {
+        stepBy(9);
+        await Promise.resolve();
+      }
+      expect(surfaces).toContain(0.72);
+      expect(surfaces).not.toContain(1);
     } finally {
       await game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {

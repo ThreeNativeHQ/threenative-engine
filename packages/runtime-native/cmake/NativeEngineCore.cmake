@@ -11,6 +11,13 @@
 option(TN_ENGINE_SANITIZE "Build the native engine targets under ASan and UBSan" OFF)
 option(TN_ENGINE_TSAN "Build the native engine targets under ThreadSanitizer (a separate build: TSan excludes ASan)" OFF)
 option(TN_ENGINE_FUZZ "Build the native engine libFuzzer targets (clang only)" OFF)
+# PRD-752 phase 4: the threaded web engine (`wasm-threads` preset), which a cross-origin-isolated page
+# loads instead of the single-thread one. Every object takes -pthread: shared memory needs atomics in all.
+option(TN_WEB_THREADS "Wasm: build tn-native-engine-web-threads (-pthread, shared memory, the job pool's workers)" OFF)
+if(EMSCRIPTEN AND TN_WEB_THREADS)
+    add_compile_options(-pthread)
+    add_link_options(-pthread)
+endif()
 function(tn_native_engine_target target)
     set_target_properties(${target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
     if(EMSCRIPTEN)
@@ -52,6 +59,7 @@ add_library(tn_engine_foundation STATIC
     src/engine/foundation/buffers.cpp
     src/engine/foundation/reachability.cpp
     src/engine/foundation/members.cpp
+    src/engine/foundation/job_pool.cpp
     src/engine/foundation/math/Vector.cpp
     src/engine/foundation/math/Matrix.cpp
     src/engine/foundation/math/Quaternion.cpp
@@ -60,6 +68,11 @@ add_library(tn_engine_foundation STATIC
     src/engine/foundation/math/Primitives.cpp
     src/engine/foundation/math/ieee754.cpp)
 tn_native_engine_target(tn_engine_foundation)
+if(NOT EMSCRIPTEN)
+    # The job pool's workers (foundation/job_pool.h); the threaded web build passes -pthread instead.
+    find_package(Threads REQUIRED)
+    target_link_libraries(tn_engine_foundation PUBLIC Threads::Threads)
+endif()
 target_include_directories(tn_engine_foundation PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Scene graph, transforms and cameras (PRD-508 phases 1-2): Object3D, the node classes and the two
@@ -69,6 +82,13 @@ add_library(tn_engine_scene STATIC src/engine/scene/object3d.cpp src/engine/scen
     src/engine/scene/material.cpp src/engine/scene/lights.cpp src/engine/scene/static_transform.cpp
     src/engine/scene/projected_cull.cpp)
 tn_native_engine_target(tn_engine_scene)
+if(EMSCRIPTEN)
+    # The web engine ships under a 4 MiB budget (native-engine-wasm action). The ray BVH (PRD-752) and
+    # the geometry generators, which run when a scene is built and not per frame, are built at -Os
+    # there; native keeps -O3.
+    set_source_files_properties(src/engine/scene/raycaster.cpp src/engine/scene/geometries.cpp
+        src/engine/scene/curves.cpp src/engine/scene/shape_utils.cpp PROPERTIES COMPILE_OPTIONS "-Os")
+endif()
 target_link_libraries(tn_engine_scene PUBLIC tn_engine_foundation)
 target_include_directories(tn_engine_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -287,22 +307,59 @@ else()
     message(STATUS "cgltf not provisioned (or Emscripten): the native glTF loader is not built")
 endif()
 
+tn_native_engine_test(tn-native-engine-tsl-shared-node-test tests/native-engine/tsl_shared_node_test.cpp
+    native_engine_tsl_shared_node=shared
+    native_engine_tsl_shared_node_scopes=scopes)
+target_link_libraries(tn-native-engine-tsl-shared-node-test PRIVATE tn_engine_shader)
+
+tn_native_engine_test(tn-native-engine-tsl-material-accessors-test tests/native-engine/tsl_material_accessors_test.cpp
+    native_engine_tsl_material_accessors_sample_their_map=accessors_sample_their_map
+    native_engine_tsl_material_accessors_listed=every_accessor_is_listed)
+target_link_libraries(tn-native-engine-tsl-material-accessors-test PRIVATE tn_engine_abi)
+
+tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
+    native_engine_tsl_math=math)
+target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
+
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
+    native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
     native_engine_tsl_ir_types=types
     native_engine_tsl_unsupported=unsupported)
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
+tn_native_engine_test(tn-native-engine-material-uniforms-test tests/native-engine/material_uniforms_test.cpp
+    native_engine_material_uniforms_name_hash=material-uniforms-resolve-by-name-hash
+    native_engine_material_uniforms_conflict=material-uniforms-conflict-throws
+    native_engine_material_uniforms_shadow_field=material-uniforms-shadow-field)
+target_link_libraries(tn-native-engine-material-uniforms-test PRIVATE tn_engine_shader)
+if(EMSCRIPTEN)
+    # The conflict case throws a named runtime_error; enable Wasm EH on the test only, as material-test does.
+    target_compile_options(tn-native-engine-material-uniforms-test PRIVATE -fwasm-exceptions)
+endif()
+
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
+    native_engine_material_alpha_hash=alpha_hash
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
+    native_engine_material_emissive_output=emissive_output
     native_engine_fog_math=fog
     native_engine_fog_node_mixes_color=fog_node_mixes_color
     native_engine_material_node_key=node_key
+    native_engine_material_ssr_passes=ssr_passes
+    native_engine_material_denoise_reads_raw_normals=denoise_reads_raw_normals
+    native_engine_material_ssr_rejects_inputs=ssr_rejects_inputs
+    native_engine_material_depth_texture_lowering=depth_texture_lowering
     native_engine_material_bloom_passes=bloom_passes
-    native_engine_material_slots_share_one_lowering=slots_share_one_lowering)
+    native_engine_material_slots_share_one_lowering=slots_share_one_lowering
+    native_engine_material_rough_diffuse=rough_diffuse)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
+if(EMSCRIPTEN)
+    # ssr_rejects_inputs catches the named TN_TSL_POST_INPUT refusal, so enable Wasm EH on the test only.
+    target_compile_options(tn-native-engine-material-test PRIVATE -fwasm-exceptions)
+    target_link_options(tn-native-engine-material-test PRIVATE -fwasm-exceptions)
+endif()
 tn_native_engine_test(tn-native-engine-tonemap-test tests/native-engine/tonemap_test.cpp
     native_engine_tonemap_operators=operators)
 target_link_libraries(tn-native-engine-tonemap-test PRIVATE tn_engine_shader)
@@ -327,12 +384,21 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_unsupported_member=unsupported_member
     native_engine_abi_material=material
     native_engine_abi_light=light
+    native_engine_abi_spot_target_in_scene=spot_target_in_scene
+    native_engine_abi_hierarchy_revision=hierarchy_revision
+    native_engine_abi_matrix_evaluations=matrix_evaluations
+    native_engine_abi_source_guard=source_guard
+    native_engine_abi_shadow_camera_in_scene=shadow_camera_in_scene
     native_engine_abi_callbacks=callbacks
     native_engine_abi_color_set=color_set
     native_engine_abi_children=children
+    native_engine_join_converts_integer_parts=join_converts_integer_parts
     native_engine_struct_function_return=struct_function_return
     native_engine_authored_output=authored_output
     native_engine_starter_post_bindings=starter_post_bindings
+    native_engine_abi_tsl_ssr_parameters=tsl_ssr_parameters
+    native_engine_abi_tsl_texture_store=tsl_texture_store
+    native_engine_abi_tsl_mat4_element=tsl_mat4_element
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
@@ -347,9 +413,12 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_object_addresses=object_addresses
     native_engine_abi_geometry_shapes=geometry_shapes
     native_engine_abi_typed_bytes=typed_bytes
+    native_engine_abi_array_offset=array_offset
+    native_engine_abi_tsl_matrix_columns=tsl_matrix_columns
     native_engine_abi_data_texture_bytes=data_texture_bytes
     native_engine_abi_attribute_view_writes=attribute_view_writes
     native_engine_abi_attribute_defer=attribute_defer
+    native_engine_abi_material_alpha_hash=material_alpha_hash
     native_engine_abi_material_uuid=material_uuid
     native_engine_abi_matrix_walk_count=matrix_walk_count
     native_engine_abi_geometry_index_null=geometry_index_null
@@ -470,8 +539,12 @@ target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOU
 tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vsm_atlas_test.cpp
     native_engine_vsm_atlas=atlas
     native_engine_vsm_continuous_invalidation=continuous_invalidation
-    native_engine_vsm_sampling=sampling)
-target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader)
+    native_engine_vsm_sampling=sampling
+    native_engine_vsm_ground_window=ground_window
+    native_engine_vsm_lod_rung=lod_rung
+    native_engine_vsm_packing=packing
+    native_engine_vsm_map_sizes=map_sizes)
+target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader tn_engine_bindings)
 
 # The header compiles as strict C11 and a C program links against the ABI.
 add_executable(tn-native-engine-abi-c11 EXCLUDE_FROM_ALL tests/native-engine/abi_c11.c)
@@ -631,7 +704,9 @@ tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hier
     native_engine_scene_transform_layout=transform_layout
     native_engine_scene_transform_lease=transform_lease
     native_engine_scene_raw_writes=raw_writes
-    native_engine_scene_needs_update_setter=needs_update_setter)
+    native_engine_scene_needs_update_setter=needs_update_setter
+    native_engine_scene_pruned_walk=pruned_walk
+    native_engine_scene_unlinked_destruction=unlinked_destruction)
 # The alias case drives the fixture driver's Store as well, which is the other implementor of it.
 target_link_libraries(tn-native-engine-scene-test PRIVATE tn_engine_scene tn_fixture_driver)
 
@@ -644,10 +719,13 @@ tn_native_engine_test(tn-native-engine-ieee754-test tests/native-engine/ieee754_
 add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_mathutils.cpp
     src/engine/abi/bindings_scene.cpp src/engine/abi/bindings_geometry.cpp src/engine/abi/bindings_material.cpp)
 tn_native_engine_target(tn_engine_bindings)
+target_link_libraries(tn_engine_bindings PUBLIC tn_engine_vsm)
 target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene tn_engine_animation)
 if(EMSCRIPTEN)
-    # Bindings report an unsupported member by exception and the ABI catches it at the boundary;
-    # engine algorithms never throw. Both sides need Wasm exception handling.
+    # Bindings and graph lowering report refusals by exception; the ABI/host catches them.
+    # Both sides need Wasm exception handling.
+    target_compile_options(tn_engine_shader PUBLIC -fwasm-exceptions)
+    target_link_options(tn_engine_shader PUBLIC -fwasm-exceptions)
     target_compile_options(tn_engine_bindings PUBLIC -fwasm-exceptions)
     target_link_options(tn_engine_bindings PUBLIC -fwasm-exceptions)
 endif()
@@ -759,6 +837,14 @@ tn_native_engine_test(tn-native-engine-static-transform-test tests/native-engine
 target_link_libraries(tn-native-engine-static-transform-test PRIVATE tn_engine_scene)
 target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene)
 
+# PRD-752 phase 4: the job pool runs each item once, and the matrix walk on it is the one-thread walk, bit for bit.
+tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
+    native_engine_job_pool=for_each_once
+    native_engine_matrix_walk_jobs=matrix_walk_jobs
+    native_engine_matrix_walk_threshold=matrix_walk_threshold
+    native_engine_job_pool_starts_on_need=pool_starts_on_need)
+target_link_libraries(tn-native-engine-job-pool-test PRIVATE tn_engine_scene)
+
 # The engine's JSON reader and writer (header-only), against JSON.parse, JSON.stringify and
 # Number::toString.
 tn_native_engine_test(tn-native-engine-json-test tests/native-engine/json/json_test.cpp
@@ -809,7 +895,7 @@ target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_
 if(NOT EMSCRIPTEN)
     find_program(TN_PNPM_EXECUTABLE pnpm)
     if(TN_PNPM_EXECUTABLE)
-        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "scene_object_bounds:scene-object-bounds-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*" "material_props:materials-props-*" "light_props:lights-props-*")
+        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "math_array:math-array-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "scene_object_bounds:scene-object-bounds-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*" "material_props:materials-props-*" "light_props:lights-props-*")
             string(REPLACE ":" ";" math_pair "${math_case}")
             list(GET math_pair 0 math_name)
             list(GET math_pair 1 math_glob)
@@ -907,16 +993,50 @@ if(EMSCRIPTEN)
     if(TARGET tn_engine_gltf)
         target_link_libraries(tn-native-engine-web PRIVATE tn_engine_gltf)
         target_compile_definitions(tn-native-engine-web PRIVATE TN_WEB_GLTF=1)
+    else()
+        # A web engine with no glTF loader refuses every model at runtime (TN_WASM_GLTF_UNAVAILABLE),
+        # so building one is an error, not a quieter engine. Only this target fails; a configure
+        # that never builds it is unaffected.
+        add_custom_command(TARGET tn-native-engine-web PRE_LINK
+            COMMAND ${CMAKE_COMMAND} -E echo "TN_WEB_ENGINE_DEPS_MISSING: third_party/cgltf is not provisioned. Run node scripts/download-deps.mjs --only cgltf, also stb and webp-source, then reconfigure."
+            COMMAND ${CMAKE_COMMAND} -E false
+            VERBATIM)
     endif()
     target_include_directories(tn-native-engine-web PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     tn_native_engine_target(tn-native-engine-web)
     set_target_properties(tn-native-engine-web PROPERTIES SUFFIX ".mjs"
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/web)
-    target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
+    # The module names the sources it was built from, and `prepack` refuses a stale one
+    # (scripts/web-engine-stamp.mjs): a pack after an engine commit shipped the older Wasm.
+    find_program(TN_NODE_EXECUTABLE node REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+    if(TN_WEB_THREADS)
+        # The job pool's workers (foundation/job_pool.h) start as pthreads on the first walk that needs them,
+        # not with the module: a preloaded pool put 3 idle workers in the page that only hosts the game's
+        # worker. A job never waits on a worker that has not started (the caller runs the items it finds).
+        # The node ABI check below cannot start this glue (no `node` environment); the stamp ties it to the
+        # same sources as the single-thread module, which that check runs on.
+        set_target_properties(tn-native-engine-web PROPERTIES OUTPUT_NAME tn-native-engine-web-threads)
+        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0)
+        add_custom_command(TARGET tn-native-engine-web POST_BUILD
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write tn-native-engine-web-threads
+            VERBATIM)
+    else()
+        add_custom_command(TARGET tn-native-engine-web POST_BUILD
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write
+            VERBATIM)
+        # The module speaks this tree's facade's web host ABI and refuses any other (scripts/web-host-abi.mjs):
+        # an older facade on a newer module drew every frame without post (39295d1f3).
+        add_custom_command(TARGET tn-native-engine-web POST_BUILD
+            COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-host-abi.mjs
+            VERBATIM)
+    endif()
+    target_link_options(tn-native-engine-web PRIVATE -Os --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
         # The whole 32-bit address space: a game the size of Midway (161 MB of GLBs, decoded on the
         # engine side) ran past emscripten's 2 GB default maximum and failed with std::bad_alloc.
-        -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage"
+        # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
+        # reads `document` while the module loads.
+        -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 

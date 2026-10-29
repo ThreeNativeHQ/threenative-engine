@@ -187,6 +187,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       inventory.add("rusted-blade", 1);
       inventory.add("ember-blade", 1);
       inventory.add("potion", 2);
+      // The hero starts with the rusted blade in hand, so the HUD names the sword the figure holds.
+      inventory.equip("rusted-blade");
     }
 
     const playerRef: { value?: Player } = {};
@@ -509,13 +511,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (frameCtx.input.justPressed("lethal")) player.takeDamage(player.health + 1);
       if (frameCtx.input.justPressed("damage")) player.takeDamage(18);
       const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
-      if (frameCtx.input.justPressed("attack") || touch?.attackPressed === true) {
-        player.strike();
-        strike(Math.round(damageStats.value(elapsed)));
+      // A fallen hero swings, casts and rolls no more: the run is over, not the input.
+      if (!player.dead) {
+        if (frameCtx.input.justPressed("attack") || touch?.attackPressed === true)
+          player.strike(() => strike(Math.round(damageStats.value(elapsed))));
+        if (frameCtx.input.justPressed("ability") || touch?.abilityPressed === true) ability.cast();
+        if (frameCtx.input.justPressed("dodge") && player.dodge())
+          emitPlaytestEvent({ entity: "player", name: "dodged" });
       }
-      if (frameCtx.input.justPressed("ability") || touch?.abilityPressed === true) ability.cast();
-      if (frameCtx.input.justPressed("dodge") && player.dodge())
-        emitPlaytestEvent({ entity: "player", name: "dodged" });
       if (frameCtx.input.justPressed("equip")) {
         if (inventory.equip("ember-blade")) {
           syncEquipmentStat();

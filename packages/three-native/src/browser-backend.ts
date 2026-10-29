@@ -12,8 +12,10 @@
  * collected wrapper releases its object.
  */
 
-import { defineMath } from "./browser-math.js";
+import { ENGINE_COST_KNOB, createBridgeMeter } from "./bridge-meter.js";
+import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
+import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
@@ -55,6 +57,7 @@ export type EngineValue =
   | number
   | boolean
   | string
+  | TypedArray
   | readonly EngineValue[]
   | IEngineRef
   | { readonly [key: string]: EngineValue };
@@ -69,6 +72,8 @@ export interface IBrowserRuntime {
   release(self: IEngineRef): void;
   /** For each ref, how many references other engine objects hold to its object; one call a batch. */
   engineReferences?(refs: readonly IEngineRef[]): ArrayLike<number>;
+  /** A numeric typed array argument crosses as is, no boxed copy; Wasm only. */
+  readonly typedArrays?: boolean;
   /** Doubles at `address` in the engine's memory (one as a number, more as an array); Wasm only. */
   readDoubles?(address: number, count: number): number | number[];
   /**
@@ -78,6 +83,8 @@ export interface IBrowserRuntime {
   heapF64?(): Float64Array;
   /** The byte at `address` in the engine's memory; Wasm only. A registry field `[offset, 0]` is a byte flag. */
   readByte?(address: number): number;
+  /** The 32-bit word at `address` in the engine's memory (the hierarchy counter's low word); Wasm only. */
+  readWord?(address: number): number;
   /** Writes one double at `address` in the engine's memory; Wasm only. */
   writeDouble?(address: number, value: number): void;
   /**
@@ -120,6 +127,8 @@ export interface IBrowserEngine {
   collect(): void;
   /** Engine crossings so far (construct, get, set, invoke, engineReferences): a bench rung's bridgeCalls. */
   crossings(): number;
+  /** Running work totals by name (this back end's and the engine's), for TN_FRAME_BUDGET.counters.engine. */
+  counters(): Record<string, number>;
   /** The wrapper for an engine object the engine handed over (a loaded model's scene). */
   wrap(ref: IEngineRef): object;
 }
@@ -128,6 +137,8 @@ export interface IBrowserEngine {
 const SETTLED_PASS = 64;
 
 const REF = Symbol("tn.engineRef");
+/** An engine object's address, kept on it after the first ask: every lane read and write needs it. */
+const ADDRESS = Symbol("tn.engineAddress");
 
 type TypedArray =
   | Float32Array
@@ -161,6 +172,20 @@ const ATTRIBUTE_CLASSES = new Set([
 
 interface IWrapped {
   [REF]: IEngineRef;
+}
+
+/** One own, enumerable field of a material: its descriptor is built once per class and shared by every instance. */
+interface IOwnField {
+  readonly key: string;
+  readonly descriptor: PropertyDescriptor;
+}
+
+/**
+ * Define a class's own fields on one instance. A loop of `Object.defineProperty` takes about 12 us for the
+ * 40 fields of a standard material where one `Object.defineProperties` takes 17 us (node 20, 20000 builds).
+ */
+function defineOwn(target: object, own: readonly IOwnField[]): void {
+  for (const field of own) Object.defineProperty(target, field.key, field.descriptor);
 }
 
 /** The engine object behind a back-end wrapper, for a host that talks to the ABI directly. */
@@ -236,10 +261,17 @@ export const LANGUAGE_MEMBERS = [
   "traverse",
   "traverseVisible",
   "traverseAncestors",
+  "getObjectsByProperty",
+  "getObjectByProperty",
+  "getObjectByName",
+  "getObjectById",
   "raycast",
 ] as const;
 
 type TraverseCallback = (object: object) => void;
+
+/** The engine classes with their own raycast (`Mesh::raycast`, `Line::raycast`, `LOD::raycast`). */
+const RAYCASTERS = new Set(["Mesh", "Line", "Sprite", "LOD"]);
 
 /**
  * The `traverse` family, written over `children`, as three writes it. A class whose engine binding
@@ -250,20 +282,32 @@ function defineTraversal(
   className: string,
   hasChildren: boolean,
   walks: boolean,
+  keep?: (object: object) => Record<string, unknown> | undefined,
+  visited?: (count: number) => void,
+  raycasts = true,
 ) {
   const childrenOf = (object: object): object[] => {
     if (!hasChildren) throw new TypeError(`TN_BROWSER_UNBOUND: ${className}.children`);
     return (object as { children: object[] }).children;
   };
-  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`).
-  const walk = (object: object, visibleOnly: boolean): object[] =>
-    (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
+  // The engine's walk: one crossing for the whole subtree, in three's order (`__walk`). The whole walk
+  // depends on the hierarchy alone, so it is kept with `children` until the hierarchy counter moves;
+  // a visible-only walk reads the visible flags too, so it is asked each time.
+  const walk = (object: object, visibleOnly: boolean): object[] => {
+    const entry = visibleOnly ? undefined : keep?.(object);
+    if (entry !== undefined && entry.__walk !== undefined) return entry.__walk as object[];
+    const found = (object as { __walk(visibleOnly: boolean): object[] }).__walk(visibleOnly);
+    if (entry !== undefined) entry.__walk = found;
+    visited?.(found.length);
+    return found;
+  };
   const methods: Record<string, (this: object, callback: TraverseCallback) => void> = {
     traverse(callback) {
       if (walks) {
         for (const object of walk(this, false)) callback(object);
         return;
       }
+      visited?.(1);
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverse(c: TraverseCallback): void }).traverse(callback);
@@ -274,6 +318,7 @@ function defineTraversal(
         return;
       }
       if ((this as { visible: boolean }).visible === false) return;
+      visited?.(1);
       callback(this);
       for (const child of childrenOf(this))
         (child as { traverseVisible(c: TraverseCallback): void }).traverseVisible(callback);
@@ -287,18 +332,48 @@ function defineTraversal(
   };
   for (const [name, value] of Object.entries(methods))
     Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
+  // three's lookups, written over `traverse` as three writes them: the first match in walk order.
+  const lookups: Record<string, (this: object, ...args: never[]) => unknown> = {
+    getObjectsByProperty(this: object, name: string, value: unknown, result: object[] = []) {
+      (this as { traverse(c: TraverseCallback): void }).traverse((object) => {
+        if ((object as Record<string, unknown>)[name] === value) result.push(object);
+      });
+      return result;
+    },
+    getObjectByProperty(this: object, name: string, value: unknown) {
+      return (
+        this as { getObjectsByProperty(n: string, v: unknown): object[] }
+      ).getObjectsByProperty(name, value)[0];
+    },
+    getObjectByName(this: object, name: string) {
+      return (this as { getObjectByProperty(n: string, v: unknown): object }).getObjectByProperty(
+        "name",
+        name,
+      );
+    },
+    getObjectById(this: object, id: number) {
+      return (this as { getObjectByProperty(n: string, v: unknown): object }).getObjectByProperty(
+        "id",
+        id,
+      );
+    },
+  };
+  for (const [name, value] of Object.entries(lookups))
+    Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
   // three's Object3D.raycast(raycaster, intersects): push this object's own hits, no recursion. The engine
-  // answers them through Raycaster.intersectObject (the object's native raycast; a Group answers none).
+  // answers them through Raycaster.intersectObject (the object's native raycast). A class the engine
+  // raycasts nothing for (a Group, a Bone, a light) keeps three's empty raycast and crosses nothing.
+  const raycast = function (
+    this: object,
+    raycaster: { intersectObject(object: object, recursive: boolean): unknown[] },
+    intersects: unknown[],
+  ) {
+    intersects.push(...raycaster.intersectObject(this, false));
+  };
   Object.defineProperty(prototype, "raycast", {
     configurable: true,
     writable: true,
-    value(
-      this: object,
-      raycaster: { intersectObject(object: object, recursive: boolean): unknown[] },
-      intersects: unknown[],
-    ) {
-      intersects.push(...raycaster.intersectObject(this, false));
-    },
+    value: raycasts ? raycast : () => undefined,
   });
 }
 
@@ -312,38 +387,68 @@ export function defineBrowserClasses(
   catalog?: ICatalogShape,
 ): IBrowserEngine {
   // Every call into the engine counts, one increment each: the bench's crossing budget reads it per frame.
+  // A census frame (bridge-meter.ts) also records each one by name, so a redundant read is named.
   let crossings = 0;
-  const counted =
-    <A extends unknown[], R>(call: (...args: A) => R) =>
-    (...args: A): R => {
-      crossings++;
-      return call(...args);
-    };
+  const typeNames = new Map<number, string>();
+  const meter = createBridgeMeter({
+    now: () => performance.now(),
+    // One getter crossing, timed over a thousand on a scratch Group through the uncounted runtime.
+    crossingMicros() {
+      const ref = source.construct("Group", []);
+      const start = performance.now();
+      for (let i = 0; i < 1000; i++) source.get(ref, "name");
+      const micros = performance.now() - start;
+      source.release(ref);
+      return micros;
+    },
+    typeName: (type) => typeNames.get(type) ?? String(type),
+    stack: () => new Error().stack,
+    report: (line) => console.warn(line),
+  });
   const runtime: IBrowserRuntime = {
     ...source,
-    construct: counted(source.construct),
-    get: counted(source.get),
-    set: counted(source.set),
-    invoke: counted(source.invoke),
+    construct: (className, args) => {
+      crossings++;
+      return source.construct(className, args);
+    },
+    get: (self, path) => {
+      crossings++;
+      if (meter.counting) meter.record("get", self, path);
+      return source.get(self, path);
+    },
+    set: (self, path, value) => {
+      crossings++;
+      if (meter.counting) meter.record("set", self, path);
+      source.set(self, path, value);
+    },
+    invoke: (self, method, args) => {
+      crossings++;
+      if (meter.counting) meter.record("call", self, method);
+      return source.invoke(self, method, args);
+    },
     ...(source.engineReferences === undefined
       ? {}
-      : { engineReferences: counted(source.engineReferences) }),
+      : {
+          engineReferences: (refs: readonly IEngineRef[]) => {
+            crossings++;
+            return source.engineReferences?.(refs) ?? [];
+          },
+        }),
   };
   const classes: Record<string, new (...args: unknown[]) => object> = {};
-  const byType = new Map<number, { prototype: object }>();
-  const typeNames = new Map<number, string>();
+  const byType = new Map<number, { prototype: object; own?: readonly IOwnField[] }>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
   // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
   // `readDoubles`), and a fixed member (`position`, `matrixWorld`) is kept after its first answer.
   // Writes still go through the engine's setters, which it reacts to.
-  const addresses = new WeakMap<object, number>();
-  // Each object's kept `rotation` Euler -> the object, whose quaternion a rotation write syncs.
+  // Each object's kept `rotation` Euler (or `quaternion`) -> the object, whose other form a write syncs.
   const rotations = new WeakMap<object, object>();
+  const quaternions = new WeakMap<object, object>();
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
   // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
   // geometry and material. The answer is kept until JS sets it or calls a method on that object.
   // ponytail: an engine call on another object that changes one of these is missed; none does today.
-  const labelled = new Set([
+  const legacyLabelled = new Set([
     "name",
     "type",
     "itemSize",
@@ -352,7 +457,147 @@ export function defineBrowserClasses(
     "geometry",
     "material",
   ]);
+  // The bridge-read mirror (PRD-748): more properties whose only writers are their own setter and the
+  // object's own methods, read from the bindings and every engine-side write (rg over src/engine), so
+  // a game that reads them per callback pays one crossing, not one a read. Object3D's flags
+  // (static_transform.cpp writes the two auto-update flags but nothing calls it), a light's shape and
+  // target, fog density, the scene's slots, and the material state no animation track drives.
+  // A fixed member with a setter (a light's or material's `color`) is a value the setter copies into,
+  // so its handle is kept too, and so is a material's texture slot (`map`, `normalMap`, ...).
+  const labelled = new Set([
+    ...legacyLabelled,
+    "id",
+    "uuid",
+    "renderOrder",
+    "frustumCulled",
+    "matrixAutoUpdate",
+    "matrixWorldAutoUpdate",
+    "static",
+    "__alwaysRender",
+    "distance",
+    "decay",
+    "angle",
+    "penumbra",
+    "sourceRadius",
+    "target",
+    "density",
+    "fog",
+    "background",
+    "environment",
+    "backgroundIntensity",
+    "backgroundBlurriness",
+    "environmentIntensity",
+    "side",
+    "shadowSide",
+    "transparent",
+    "depthTest",
+    "depthWrite",
+    "blending",
+    "toneMapped",
+    "vertexColors",
+    "flatShading",
+    "colorWrite",
+    "alphaHash",
+    "forceSinglePass",
+    "polygonOffset",
+    "polygonOffsetFactor",
+    "polygonOffsetUnits",
+    "envMapIntensity",
+    "aoMapIntensity",
+    "bumpScale",
+    // AnimationClip only: no setter, and no engine call rewrites a clip's length.
+    "duration",
+  ]);
+  // The numbers an animation track can also drive (animation/property_binding.cpp: a light's intensity,
+  // a perspective camera's lens, a material's numbers): kept like the rest, and dropped by any mixer or
+  // action call, since the mixer writes them in the engine. Colours are written in place, so they stay.
+  const animatedNames = new Set([
+    "intensity",
+    "fov",
+    "zoom",
+    "near",
+    "far",
+    "aspect",
+    "focus",
+    "opacity",
+    "alphaTest",
+    "emissiveIntensity",
+    "roughness",
+    "metalness",
+    "shininess",
+    "ior",
+    "specularIntensity",
+    // An action's and a mixer's own state (only these two classes carry the names): the mixer's update
+    // advances time, ends fades and warps, and finishes a clip, so the same rule holds.
+    "time",
+    "timeScale",
+    "weight",
+    "paused",
+    "enabled",
+    "loop",
+    "repetitions",
+    "clampWhenFinished",
+  ]);
+  const mirrored = (binding: IRegistryClass, property: string, setters: Set<string>): boolean =>
+    labelled.has(property) ||
+    animatedNames.has(property) ||
+    (setters.has(property) &&
+      (binding.fixedMembers?.includes(property) === true || /^(map|[a-z]+Map)$/u.test(property)));
   const labels = new WeakMap<object, Map<string, unknown>>();
+  let animated = new WeakMap<object, Map<string, unknown>>();
+  // An action's `isScheduled()`: the mixer's list of active actions, which only the action's own
+  // play/stop and the mixer's stopAllAction/uncache calls change (animation/mixer.cpp), never update,
+  // setTime or clipAction (a rifle asks clipAction each frame).
+  // core's AnimationPlayer asks it of every clip of every rig each step: 171 crossings a frame.
+  let scheduling = new WeakMap<object, unknown>();
+  // Object3D methods that move only the transform: the mirrored labels and numbers stay.
+  const transformOnly =
+    /^(updateMatrix|updateMatrixWorld|updateWorldMatrix|lookAt|rotate(X|Y|Z|OnAxis|OnWorldAxis)|translate(X|Y|Z|OnAxis)|apply(Matrix4|Quaternion)|setRotationFrom\w+|localToWorld|worldToLocal|updateProjectionMatrix)$/u;
+  // `__THREENATIVE_BRIDGE_CACHE__ = false` (a page global the worker host forwards) turns the mirror, the
+  // hierarchy cache and the JS Layers test off at the next safe point: the paired A/B knob.
+  const knob = "__THREENATIVE_BRIDGE_CACHE__";
+  const cacheWanted = () => (globalThis as Record<string, unknown>)[knob] !== false;
+  let caching = cacheWanted();
+  // Running totals a playtest bounds per frame (TN_FRAME_BUDGET.counters.engine): JS reads of
+  // `children` (core's auto batch read the scene's each still frame) and the objects a `traverse`
+  // visits (the projection window line walked 8,900 nodes every five seconds). One add each.
+  let childrenReads = 0;
+  let walkVisits = 0;
+  const walked = (count: number) => {
+    walkVisits += count;
+  };
+  // The glue's own entries, which the crossing count cannot see: a method wrapper and a property getter
+  // run whether the cache answers or the engine does, and the cache answers most of them. Counted only
+  // while a playtest bounds engine counters, so a shipped frame pays one branch and no store;
+  // `collect()` is the safe point that reads the flag.
+  let methodCalls = 0;
+  let propertyReads = 0;
+  let glueCounting = false;
+  // The hierarchy cache: `children`, `parent` and a whole-subtree walk are kept until the engine's
+  // process-wide hierarchy counter (Object3D::hierarchyVersion, read in place) moves. Every add,
+  // remove, attach, clear and destructor moves it, and nothing else in the engine writes a children
+  // list, so a kept answer is never stale. The table is replaced when the counter moves, so a kept
+  // array never holds a removed subtree alive past the next read or safe point.
+  let hierarchyAt: number | undefined;
+  let engineCountersAt: readonly (readonly [string, number])[] = [];
+  let keptVersion = -1;
+  let kept = new WeakMap<object, Record<string, unknown>>();
+  const readWord = source.readWord;
+  const hierarchyKept = (self: object): Record<string, unknown> | undefined => {
+    if (!caching || readWord === undefined) return undefined;
+    hierarchyAt ??= runtime.get(refOf(self), "__hierarchy") as number;
+    const version = readWord(hierarchyAt);
+    if (version !== keptVersion) {
+      keptVersion = version;
+      kept = new WeakMap();
+    }
+    let entry = kept.get(self);
+    if (entry === undefined) {
+      entry = {};
+      kept.set(self, entry);
+    }
+    return entry;
+  };
   const mixerStats = new WeakMap<object, object>();
   const fastGetter = (binding: IRegistryClass, property: string) => {
     const field = binding.fields?.[property];
@@ -365,9 +610,11 @@ export function defineBrowserClasses(
         return readByte === undefined
           ? undefined
           : function (this: object) {
+              if (glueCounting) propertyReads += 1;
               return readByte(addressOf(this) + offset) !== 0;
             };
       return function (this: object) {
+        if (glueCounting) propertyReads += 1;
         return read(addressOf(this) + offset, count);
       };
     }
@@ -376,19 +623,21 @@ export function defineBrowserClasses(
       // Object3D has it: every later read is a plain property load, never this getter (R5 reads
       // position and rotation three times per cube per frame).
       return function (this: object) {
+        if (glueCounting) propertyReads += 1;
         const member = fromEngine(runtime.get(refOf(this), property));
         Object.defineProperty(this, property, { value: member, writable: false });
         if (property === "rotation") rotations.set(member as object, this);
+        if (property === "quaternion") quaternions.set(member as object, this);
         return member;
       };
     return undefined;
   };
+  // An own property, not a WeakMap: `position.x` and every other lane access reads it (PRD-748).
   const addressOf = (self: object): number => {
-    let address = addresses.get(self);
-    if (address === undefined) {
-      address = runtime.get(refOf(self), "__address") as number;
-      addresses.set(self, address);
-    }
+    const known = (self as { [ADDRESS]?: number })[ADDRESS];
+    if (known !== undefined) return known;
+    const address = runtime.get(refOf(self), "__address") as number;
+    Object.defineProperty(self, ADDRESS, { value: address });
     return address;
   };
   // three's math values are JS (browser-math.ts): `new Vector3()` holds its own lanes. The engine's
@@ -396,21 +645,186 @@ export function defineBrowserClasses(
   // An engine call takes a JS value by value: a method borrows a pooled engine object and copies
   // the lanes back after the call (an output argument); a constructor or setter, which may keep the
   // object, gets the value itself turned into an engine object in place, so identity survives.
+  //
+  // A class may store its lanes under three's private names (`Quaternion._x`, `Matrix4.elements`) or
+  // hold them in member vectors (`Box3.min`): its plan reads and writes those, and says which own
+  // properties a promoted value must drop so the engine accessors take over.
+  /** A value class's JS storage: its public lanes, three's private names, and member vectors. */
+  interface IValueLanes {
+    [key: string]: unknown;
+    _x?: number;
+    _y?: number;
+    _z?: number;
+    _w?: number;
+    _order?: string;
+    elements?: number[];
+    radius?: number;
+    min?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
+    max?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
+    center?: { x: number; y: number; z: number; set(x: number, y: number, z: number): unknown };
+  }
+  interface IValuePlan {
+    /** The engine's lane names, in the order its constructor takes them. */
+    lanes: readonly string[];
+    /** Own JS properties the class keeps its storage in; a promoted value drops them. */
+    drop: readonly string[];
+    /** The lanes of a JS value, in `lanes` order (Euler appends its order). */
+    read(value: IValueLanes): number[];
+    /** Writes engine lanes back into a JS value, as `lend` copies them back. */
+    write(value: IValueLanes, values: readonly number[]): void;
+    /** Engine constructor arguments; the lanes themselves by default. */
+    args?(values: number[], make: (name: string, values: number[]) => IEngineRef): EngineValue[];
+    /** A method argument becomes an engine object in place: whole-object lanes and output targets. */
+    promote?: boolean;
+    /** Copies the lanes from one value to another with no list between: a loan's two copies. */
+    copy?(target: IValueLanes, source: IValueLanes): void;
+  }
   interface IValueClass {
     name: string;
-    lanes: string[];
     engine: object;
     pool: object[];
     top: number;
+    plan: IValuePlan;
   }
-  const math = defineMath(
-    () =>
-      new (classes.Quaternion as new () => object)() as ReturnType<
-        Parameters<typeof defineMath>[0]
-      >,
-  ) as Record<string, new (...args: unknown[]) => object>;
+  const eulerOrders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
+  const defaultPlan = (lanes: readonly string[]): IValuePlan => ({
+    lanes,
+    drop: lanes,
+    copy: (target, source) => {
+      for (const lane of lanes) target[lane] = source[lane];
+    },
+    read: (value) => lanes.map((lane) => value[lane] as number),
+    write: (value, values) => {
+      lanes.forEach((lane, index) => {
+        value[lane] = values[index] as number;
+      });
+    },
+  });
+  /** A value's member vector (`Box3.min`, `Sphere.center`): present on every real instance. */
+  const memberVector = (vector: IValueLanes["min"]): NonNullable<IValueLanes["min"]> => {
+    if (vector === undefined)
+      throw new TypeError("TN_BROWSER_VALUE_MEMBER: the value has no vector");
+    return vector;
+  };
+  // three's private storage names, and the classes whose lanes are not plain fields.
+  const valuePlans: Record<string, IValuePlan> = {
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Color: defaultPlan(["r", "g", "b"]),
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Vector4: defaultPlan(["x", "y", "z", "w"]),
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Quaternion: {
+      lanes: ["x", "y", "z", "w"],
+      drop: ["_x", "_y", "_z", "_w"],
+      read: (value) => [value._x, value._y, value._z, value._w] as number[],
+      write: (value, values) => {
+        value._x = values[0];
+        value._y = values[1];
+        value._z = values[2];
+        value._w = values[3];
+      },
+    },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Euler: {
+      lanes: ["x", "y", "z"],
+      drop: ["_x", "_y", "_z", "_order"],
+      read: (value) =>
+        [
+          value._x,
+          value._y,
+          value._z,
+          eulerOrders.indexOf(value._order as (typeof eulerOrders)[number]),
+        ] as number[],
+      write: (value, values) => {
+        value._x = values[0];
+        value._y = values[1];
+        value._z = values[2];
+        value._order = eulerOrders[values[3] as number] ?? "XYZ";
+      },
+      args: (values) => [
+        values[0],
+        values[1],
+        values[2],
+        eulerOrders[values[3] as number] ?? "XYZ",
+      ],
+    },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Matrix3: {
+      promote: true,
+      lanes: ["elements"],
+      drop: ["elements"],
+      read: (value) => Array.from(value.elements as number[]),
+      write: (value, values) => {
+        value.elements = Array.from(values);
+      },
+      // `elements` is column-major; the engine constructor takes three's row-major set order.
+      args: (values) => [0, 3, 6, 1, 4, 7, 2, 5, 8].map((index) => values[index] as number),
+    },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Matrix4: {
+      promote: true,
+      lanes: ["elements"],
+      drop: ["elements"],
+      read: (value) => Array.from(value.elements as number[]),
+      write: (value, values) => {
+        value.elements = Array.from(values);
+      },
+      // `elements` is column-major; the engine constructor takes three's row-major set order.
+      args: (values) =>
+        [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15].map(
+          (index) => values[index] as number,
+        ),
+    },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Box3: {
+      promote: true,
+      lanes: [],
+      drop: ["min", "max"],
+      read: (value) => {
+        const min = memberVector(value.min);
+        const max = memberVector(value.max);
+        return [min.x, min.y, min.z, max.x, max.y, max.z];
+      },
+      write: (value, values) => {
+        memberVector(value.min).set(values[0] as number, values[1] as number, values[2] as number);
+        memberVector(value.max).set(values[3] as number, values[4] as number, values[5] as number);
+      },
+      args: (values, make) => [
+        make("Vector3", values.slice(0, 3).map(Number)),
+        make("Vector3", values.slice(3, 6).map(Number)),
+      ],
+    },
+    // quality-allow: the plan table is keyed by three's PascalCase class names, so the name rule cannot apply.
+    // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
+    Sphere: {
+      promote: true,
+      lanes: ["radius"],
+      drop: ["center", "radius"],
+      read: (value) => {
+        const center = memberVector(value.center);
+        return [center.x, center.y, center.z, value.radius as number];
+      },
+      write: (value, values) => {
+        memberVector(value.center).set(
+          values[0] as number,
+          values[1] as number,
+          values[2] as number,
+        );
+        value.radius = values[3] as number;
+      },
+      args: (values, make) => [make("Vector3", values.slice(0, 3).map(Number)), values[3]],
+    },
+  };
+  const math = defineMath() as Record<string, new (...args: unknown[]) => object>;
   const valueClasses = new Map<object, IValueClass>(); // JS prototype -> its engine side
-  const loans: [Record<string, number>, Record<string, number>, IValueClass][] = [];
+  const loans: [IValueLanes, IValueLanes, IValueClass][] = [];
   let borrowing = false;
   const toEngineArgs = (args: readonly unknown[]): EngineValue[] => {
     borrowing = true;
@@ -420,15 +834,36 @@ export function defineBrowserClasses(
       borrowing = false;
     }
   };
-  const lend = (value: Record<string, number>, info: IValueClass): IEngineRef => {
+  // A plan's member-vector arguments (Box3's two, Sphere's one) are native temporaries: the engine
+  // copies them, so they are released as soon as the value that owns the lanes is constructed.
+  const engineArgs = (
+    info: IValueClass,
+    values: number[],
+  ): { args: EngineValue[]; temporaries: IEngineRef[] } => {
+    if (info.plan.args === undefined) return { args: values, temporaries: [] };
+    const temporaries: IEngineRef[] = [];
+    const args = info.plan.args(values, (name, lanes) => {
+      const ref = runtime.construct(name, lanes);
+      temporaries.push(ref);
+      return ref;
+    });
+    return { args, temporaries };
+  };
+  const lend = (value: IValueLanes, info: IValueClass): IEngineRef => {
     let scratch = info.pool[info.top];
     if (scratch === undefined) {
-      scratch = wrap(runtime.construct(info.name, []));
+      const built = engineArgs(info, info.plan.read(value));
+      try {
+        scratch = wrap(runtime.construct(info.name, built.args));
+      } finally {
+        for (const temporary of built.temporaries) runtime.release(temporary);
+      }
       info.pool.push(scratch);
     }
     info.top++;
-    const lanes = scratch as Record<string, number>;
-    for (const lane of info.lanes) lanes[lane] = value[lane] as number;
+    const lanes = scratch as IValueLanes;
+    if (info.plan.copy !== undefined) info.plan.copy(lanes, value);
+    else info.plan.write(lanes, info.plan.read(value));
     loans.push([value, lanes, info]);
     return refOf(scratch);
   };
@@ -437,18 +872,194 @@ export function defineBrowserClasses(
     let result = returned;
     for (let i = loans.length - 1; i >= mark; i--) {
       const [value, scratch, info] = loans[i] as (typeof loans)[number];
-      for (const lane of info.lanes) value[lane] = scratch[lane] as number;
+      if (info.plan.copy !== undefined) info.plan.copy(value, scratch);
+      else info.plan.write(value, info.plan.read(scratch));
       info.top--;
       if (result === scratch) result = value;
     }
     loans.length = mark;
     return result;
   };
-  const promote = (value: Record<string, number>, info: IValueClass): void => {
-    const lanes = info.lanes.map((lane) => value[lane] as number);
-    for (const lane of info.lanes) delete value[lane];
+  const promote = (value: IValueLanes, info: IValueClass): void => {
+    const values = info.plan.read(value);
+    for (const key of info.plan.drop) delete value[key];
     Object.setPrototypeOf(value, info.engine);
-    adopt(value, runtime.construct(info.name, lanes));
+    const built = engineArgs(info, values);
+    try {
+      adopt(value, runtime.construct(info.name, built.args));
+    } finally {
+      for (const temporary of built.temporaries) runtime.release(temporary);
+    }
+  };
+  // An engine-owned value reads and writes its lanes in the engine's memory through accessors named
+  // for the storage its class actually uses. Quaternion and Euler store `_x`, Matrix stores
+  // `elements`, and an Euler's order is a string over the engine's byte enum; Box3 and Sphere reach
+  // their vectors through the registry's fixed members, so they need nothing here.
+  const defineValueView = (
+    name: string,
+    accessors: Record<string, unknown>,
+    binding: IRegistryClass,
+    skip: Set<string>,
+  ): void => {
+    const read = runtime.readDoubles;
+    const write = runtime.writeDouble;
+    const peek = runtime.readByte;
+    if (read === undefined || write === undefined) return;
+    const heap = runtime.heapF64;
+    const lane = heap
+      ? (address: number): number => heap()[address / 8] as number
+      : (address: number): number => read(address, 1) as number;
+    if (name === "Quaternion" && binding.fields !== undefined) {
+      const offsets = ["x", "y", "z", "w"].map((key) => binding.fields?.[key]?.[0] ?? 0);
+      ["_x", "_y", "_z", "_w"].forEach((key, index) => {
+        const offset = offsets[index] as number;
+        Object.defineProperty(accessors, key, {
+          configurable: true,
+          get(this: object): number {
+            return lane(addressOf(this) + offset);
+          },
+          set(this: object, value: number): void {
+            write(addressOf(this) + offset, Number(value));
+          },
+        });
+      });
+      skip.add("x").add("y").add("z").add("w");
+      // three syncs an Object3D's rotation from its quaternion; the engine does it in C++.
+      Object.defineProperty(accessors, "_onChangeCallback", {
+        configurable: true,
+        writable: true,
+        value(this: object): void {
+          const owner = quaternions.get(this) as
+            | { rotation?: object & { _order?: string } }
+            | undefined;
+          if (owner?.rotation === undefined) return;
+          // The rotation's own order; the engine refuses a missing one on this call.
+          runtime.invoke(refOf(owner.rotation), "setFromQuaternion", [
+            refOf(this),
+            owner.rotation._order ?? "XYZ",
+          ]);
+        },
+      });
+      return;
+    }
+    if (name === "Euler" && binding.fields !== undefined && peek !== undefined) {
+      const offsets = ["x", "y", "z"].map((key) => binding.fields?.[key]?.[0] ?? 0) as number[];
+      const orderAt = binding.fields.__order?.[0] ?? 0;
+      const quaternionFields = registry.classes.Quaternion?.fields;
+      const targets = ["x", "y", "z", "w"].map((key) => quaternionFields?.[key]?.[0] ?? 0);
+      // three's setFromEuler: each order only signs the second terms, in the engine enum's order.
+      const signs = [
+        [1, -1, 1, -1],
+        [1, -1, -1, 1],
+        [-1, 1, 1, -1],
+        [-1, 1, -1, 1],
+        [1, 1, -1, -1],
+        [-1, -1, 1, 1],
+      ];
+      const sync = (euler: object): void => {
+        const owner = rotations.get(euler) as { quaternion?: object } | undefined;
+        if (owner?.quaternion === undefined) return;
+        const at = addressOf(euler);
+        const q = addressOf(owner.quaternion);
+        const x = lane(at + (offsets[0] as number)) / 2;
+        const y = lane(at + (offsets[1] as number)) / 2;
+        const z = lane(at + (offsets[2] as number)) / 2;
+        const sign = signs[peek(at + orderAt)] ?? (signs[0] as number[]);
+        const c1 = Math.cos(x);
+        const c2 = Math.cos(y);
+        const c3 = Math.cos(z);
+        const s1 = Math.sin(x);
+        const s2 = Math.sin(y);
+        const s3 = Math.sin(z);
+        write(q + (targets[0] as number), s1 * c2 * c3 + (sign[0] as number) * c1 * s2 * s3);
+        write(q + (targets[1] as number), c1 * s2 * c3 + (sign[1] as number) * s1 * c2 * s3);
+        write(q + (targets[2] as number), c1 * c2 * s3 + (sign[2] as number) * s1 * s2 * c3);
+        write(q + (targets[3] as number), c1 * c2 * c3 + (sign[3] as number) * s1 * s2 * s3);
+      };
+      ["_x", "_y", "_z"].forEach((key, index) => {
+        const offset = offsets[index] as number;
+        Object.defineProperty(accessors, key, {
+          configurable: true,
+          get(this: object): number {
+            return lane(addressOf(this) + offset);
+          },
+          set(this: object, value: number): void {
+            write(addressOf(this) + offset, Number(value));
+          },
+        });
+      });
+      Object.defineProperty(accessors, "_order", {
+        configurable: true,
+        get(this: object): string {
+          return eulerOrders[peek(addressOf(this) + orderAt)] ?? "XYZ";
+        },
+        set(this: object, value: unknown): void {
+          const index = eulerOrders.indexOf(value as (typeof eulerOrders)[number]);
+          if (index < 0)
+            throw new TypeError(
+              `Euler order is not one of ${eulerOrders.join(", ")}: ${String(value)}`,
+            );
+          // The order is the engine's byte enum: its setter reorders and syncs, so only a change
+          // crosses (four numbers are not worth a call on every `rotation.set`).
+          if (index !== peek(addressOf(this) + orderAt))
+            runtime.set(refOf(this), "order", value as string);
+        },
+      });
+      Object.defineProperty(accessors, "_onChangeCallback", {
+        configurable: true,
+        writable: true,
+        value(this: object): void {
+          sync(this);
+        },
+      });
+      skip.add("x").add("y").add("z").add("order");
+      return;
+    }
+    if ((name === "Matrix3" || name === "Matrix4") && binding.fields?.elements !== undefined) {
+      const [offset = 0, count = 0] = binding.fields.elements;
+      // three keeps one `elements` array; this keeps one proxy per matrix over a mirrored array and
+      // writes every element it sets straight to engine memory, so the array never detaches.
+      const mirrors = new WeakMap<object, { values: number[]; view: number[] }>();
+      // Off the heap view when there is one: a game reads `matrixWorld.elements` hundreds of times
+      // a frame, and a copy call allocates two arrays a read.
+      const refresh = heap
+        ? (address: number, values: number[]): void => {
+            const memory = heap();
+            for (let i = 0, at = address / 8; i < count; i++) values[i] = memory[at + i] as number;
+          }
+        : (address: number, values: number[]): void => {
+            const memory = read(address, count) as number[];
+            for (let i = 0; i < count; i++) values[i] = memory[i] as number;
+          };
+      Object.defineProperty(accessors, "elements", {
+        configurable: true,
+        get(this: object): number[] {
+          const address = addressOf(this) + offset;
+          let mirror = mirrors.get(this);
+          if (mirror === undefined) {
+            const values = new Array<number>(count);
+            const view = new Proxy(values, {
+              set: (target, key, value): boolean => {
+                const index = typeof key === "string" ? Number(key) : Number.NaN;
+                if (Number.isInteger(index) && index >= 0 && index < count)
+                  write(address + index * 8, Number(value));
+                target[key as never] = value as never;
+                return true;
+              },
+            });
+            mirror = { values, view };
+            mirrors.set(this, mirror);
+          }
+          refresh(address, mirror.values);
+          return mirror.view;
+        },
+        set(this: object, value: ArrayLike<number>): void {
+          const address = addressOf(this) + offset;
+          for (let i = 0; i < count; i++) write(address + i * 8, Number(value[i]));
+        },
+      });
+      skip.add("elements");
+    }
   };
   const wrappers = new Map<string, WeakRef<object>>();
   // Callbacks: the function lives on its wrapper (a WeakMap entry), so wrapper -> closure is an edge
@@ -560,6 +1171,7 @@ export function defineBrowserClasses(
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
     // Held until the next safe point decides: the engine may reference what it just handed out.
     const wrapper = adopt(Object.create(cls.prototype) as object, ref);
+    if (cls.own !== undefined) defineOwn(wrapper, cls.own);
     hold(wrapper);
     return wrapper;
   };
@@ -576,6 +1188,8 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      if (runtime.typedArrays === true && SCALARS.some((scalar) => value instanceof scalar))
+        return value as TypedArray;
       // quality-allow: a typed-array view read as its numeric index signature, which ArrayBufferView does not declare.
       const list = Array.from(value as unknown as ArrayLike<number>);
       Object.defineProperty(list, TYPED, { value: value.constructor.name });
@@ -584,8 +1198,8 @@ export function defineBrowserClasses(
     if (Array.isArray(value)) return Array.from(value as ArrayLike<unknown>, toEngine);
     const info = valueClasses.get(Object.getPrototypeOf(value) as object);
     if (info !== undefined) {
-      if (borrowing) return lend(value as Record<string, number>, info);
-      promote(value as Record<string, number>, info);
+      if (borrowing && info.plan.promote !== true) return lend(value as IValueLanes, info);
+      promote(value as IValueLanes, info);
     }
     if (typeof value === "object" && REF in value) {
       // A wrapper passed into the engine is held until the next safe point decides (collect()).
@@ -686,12 +1300,31 @@ export function defineBrowserClasses(
     "setIndex",
   ]);
 
+  const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
+  // The engine raycasts a Mesh, a Line, a Sprite (each a Mesh in C++) and a LOD, and every kind of
+  // them; any other node answers no hits. Without a catalog the chain is unknown, so every node asks.
+  const raycasts = (name: string): boolean => {
+    if (catalog === undefined) return true;
+    for (
+      let link = entries.get(name);
+      link !== undefined;
+      link = link.extends ? entries.get(link.extends) : undefined
+    )
+      if (RAYCASTERS.has(link.name)) return true;
+    return false;
+  };
   for (const [name, binding] of Object.entries(registry.classes)) {
     const adopts =
       attributeWrite !== undefined &&
       (name === "BufferAttribute" || name === "InstancedBufferAttribute");
     const attributeClass = ATTRIBUTE_CLASSES.has(name);
     const geometryClass = name.endsWith("Geometry");
+    // three keeps a material's slots as own, enumerable fields, and the desktop host gives each
+    // material instance its accessors as own ones. `for...in`, `Object.keys` and `Object.values` find
+    // them on the web too: core's node-twin copy loops and "dispose every texture" rely on that.
+    const materialClass = name.endsWith("Material");
+    const hierarchyClass = readWord !== undefined && binding.getters.includes("__hierarchy");
+    const own: IOwnField[] = [];
     const engineClass = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
@@ -704,6 +1337,17 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        // The hierarchy counter's address, asked once a process at the first scene node made, and the
+        // engine's work counts ("name@address,..."), each read in place per frame by counters().
+        if (hierarchyAt === undefined && hierarchyClass) {
+          hierarchyAt = runtime.get(refOf(this), "__hierarchy") as number;
+          if (binding.getters.includes("__engineCounters"))
+            engineCountersAt = String(runtime.get(refOf(this), "__engineCounters"))
+              .split(",")
+              .map((entry) => entry.split("@"))
+              .map(([counter, address]) => [String(counter), Number(address)] as const);
+        }
+        if (materialClass) defineOwn(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
         // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
         const handed = args[0];
@@ -723,14 +1367,22 @@ export function defineBrowserClasses(
       string,
       unknown
     >;
-    if (valueClass !== undefined && binding.fields !== undefined)
-      valueClasses.set(prototype, {
+    // Engine properties a class's own view already names: the generic accessors stay off them.
+    const skip = new Set<string>();
+    if (valueClass !== undefined) {
+      const info: IValueClass = {
         name,
-        lanes: Object.keys(binding.fields ?? {}),
         engine: accessors,
         pool: [],
         top: 0,
-      });
+        plan: valuePlans[name] ?? defaultPlan(Object.keys(binding.fields ?? {})),
+      };
+      valueClasses.set(prototype, info);
+      // Box3 and Sphere build their default members from three's own Vector3 module, not the
+      // hand-written class; both are the same value and cross the same way.
+      if (name === "Vector3") valueClasses.set(UpstreamVector3.prototype, info);
+      defineValueView(name, accessors, binding, skip);
+    }
     for (const method of binding.methods) {
       if (valueClass !== undefined && Object.hasOwn(prototype, method)) continue;
       // A geometry's attribute lookups are kept with its labels, until anything else runs on it.
@@ -744,13 +1396,44 @@ export function defineBrowserClasses(
       const rangeMethod = attributeClass && rangeMethods.has(method);
       const transformMethod = attributeClass && transformMethods.has(method);
       const geometryWrite = geometryClass && geometryWrites.has(method);
+      // A mixer or action call may write the tracks' targets (update, stop restoring originals).
+      const drives =
+        /^Animation(Mixer|Action|ObjectGroup)$/u.test(name) && !keeps && !/^is[A-Z]/u.test(method);
+      const transforms = hierarchyClass && transformOnly.test(method);
+      const schedule =
+        name === "AnimationAction" && method === "isScheduled"
+          ? "read"
+          : name === "AnimationAction" && drives
+            ? "own"
+            : drives && !/^(update|setTime|clipAction|existingAction)$/u.test(method)
+              ? "all"
+              : undefined;
+      // An action's clip and root are its construction arguments: kept like a geometry's attributes.
+      const lifelong = name === "AnimationAction" && (method === "getClip" || method === "getRoot");
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
+          if (glueCounting) methodCalls += 1;
+          // three's toArray(array, offset) writes the lanes into the array it is given and answers that array; the
+          // engine answers a new one, since a plain array crosses by value.
+          if (method === "toArray" && args[0] !== undefined) {
+            const target = args[0] as number[];
+            const start = (args[1] as number | undefined) ?? 0;
+            const lanes = (prototype.toArray as () => unknown[]).call(this);
+            for (let i = 0; i < lanes.length; i++) target[start + i] = lanes[i] as number;
+            return target;
+          }
           const intersections = method === "intersectObject" || method === "intersectObjects";
-          const key = query ? `${method} ${String(args[0])}` : "";
-          if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
+          const kept = query || (lifelong && caching);
+          const key = kept ? `${method} ${String(args[0])}` : "";
+          if (kept && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
+          if (schedule === "read" && caching && scheduling.has(this)) return scheduling.get(this);
+          if (schedule === "own") {
+            scheduling.delete(this);
+            for (const arg of args)
+              if (typeof arg === "object" && arg !== null) scheduling.delete(arg);
+          } else if (schedule === "all") scheduling = new WeakMap();
           // A per-vertex setter writes its own range and reads no kept array, so a whole-shadow flush
           // would cost O(N) a call; it syncs just its range back below. Anything else flushes edits.
           if (pending.size > 0 && !rangeMethod) writeBack();
@@ -779,7 +1462,10 @@ export function defineBrowserClasses(
               );
             }
           }
-          if (!keeps) labels.delete(this);
+          if (!keeps && !(transforms && caching)) {
+            labels.delete(this);
+            animated.delete(this);
+          }
           const mark = loans.length;
           let result: unknown;
           try {
@@ -792,6 +1478,7 @@ export function defineBrowserClasses(
             );
           } finally {
             if (loans.length > mark) result = repay(mark, result);
+            if (drives) animated = new WeakMap();
           }
           // The engine wrote only this range: copy it back, so a later game edit to the shadow wins.
           if (rangeMethod) {
@@ -811,9 +1498,29 @@ export function defineBrowserClasses(
             args[2].sort((a, b) => a.distance - b.distance);
             return args[2];
           }
-          if (query)
+          if (kept)
             labels.get(this)?.set(key, result) ?? labels.set(this, new Map([[key, result]]));
+          if (schedule === "read" && caching) scheduling.set(this, result);
           return result;
+        },
+      });
+    }
+    // three's `layers.test(other)` is one AND of two masks the engine holds in place (field `mask`): a
+    // game tests each light's layers against the camera's per callback, so it stays in JS.
+    if (
+      name === "Layers" &&
+      binding.fields?.mask !== undefined &&
+      Object.hasOwn(prototype, "test")
+    ) {
+      const engineTest = prototype.test as (this: object, other: unknown) => boolean;
+      Object.defineProperty(prototype, "test", {
+        configurable: true,
+        writable: true,
+        value(this: { mask: number }, other: unknown) {
+          if (!caching || other === null || typeof other !== "object")
+            return engineTest.call(this, other);
+          if (Object.getPrototypeOf(other) !== prototype) return engineTest.call(this, other);
+          return (this.mask & (other as { mask: number }).mask) !== 0;
         },
       });
     }
@@ -822,7 +1529,12 @@ export function defineBrowserClasses(
     // cut 2, the web side of the desktop's TransformPage views). Anything else takes the engine method.
     const elements = binding.fields?.elements;
     const heapF64 = runtime.heapF64;
-    if (elements !== undefined && heapF64 !== undefined && binding.methods.includes("copy")) {
+    if (
+      valueClass === undefined &&
+      elements !== undefined &&
+      heapF64 !== undefined &&
+      binding.methods.includes("copy")
+    ) {
       const [offset = 0, count = 0] = elements;
       const engineCopy = prototype.copy as (this: object, other: unknown) => object;
       const engineEquals = prototype.equals as (this: object, other: unknown) => boolean;
@@ -872,6 +1584,37 @@ export function defineBrowserClasses(
         },
         set(this: object, value: unknown) {
           const ref = refOf(this);
+          if (property === "filterNode") {
+            runtime.set(ref, property, shadowFilterOptions(value));
+            const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            shaderNodes.set(ref.key, slots.set(property, value));
+            return;
+          }
+          if (property === "shadowNode") {
+            if (shaderNodes.get(ref.key)?.get(property) === value) return;
+            const options = virtualShadowOptions(value, (command) =>
+              runtime.set(
+                ref,
+                property,
+                Object.fromEntries(
+                  Object.entries(command).map(([key, item]) => [key, toEngine(item)]),
+                ),
+              ),
+            );
+            runtime.set(
+              ref,
+              property,
+              options === null
+                ? null
+                : Object.fromEntries(
+                    Object.entries(options).map(([key, item]) => [key, toEngine(item)]),
+                  ),
+            );
+            const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            if (slots.get(property) !== value) detachVirtualShadow(slots.get(property));
+            shaderNodes.set(ref.key, slots.set(property, value));
+            return;
+          }
           if (value === null) {
             runtime.set(ref, property, null);
             shaderNodes.get(ref.key)?.delete(property);
@@ -892,7 +1635,13 @@ export function defineBrowserClasses(
         (path) => path.startsWith(`${head}.`) && /^\d+$/u.test(path.slice(head.length + 1)),
       );
     for (const property of binding.getters) {
-      if (property.includes(".") || setters.has(property) || !indexed(property)) continue;
+      if (
+        property.includes(".") ||
+        setters.has(property) ||
+        skip.has(property) ||
+        !indexed(property)
+      )
+        continue;
       Object.defineProperty(prototype, property, {
         configurable: true,
         get(this: object) {
@@ -920,7 +1669,8 @@ export function defineBrowserClasses(
       if (
         property.includes(".") ||
         binding.methods.includes(property) ||
-        Object.hasOwn(accessors, property)
+        Object.hasOwn(accessors, property) ||
+        skip.has(property)
       )
         continue;
       // A value class's lane is written in place: its engine setter is a plain store.
@@ -931,7 +1681,10 @@ export function defineBrowserClasses(
         flagField !== undefined && flagField[1] === 0 && peek !== undefined
           ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
           : undefined;
-      Object.defineProperty(accessors, property, {
+      // A geometry's bounds, once present, are one engine object the engine recomputes in place
+      // (BufferGeometry::computeBoundingSphere); only its setter, copy() or another method replaces it.
+      const bounds = geometryClass && (property === "boundingSphere" || property === "boundingBox");
+      const accessor: PropertyDescriptor = {
         configurable: true,
         get:
           fastGetter(binding, property) ??
@@ -968,20 +1721,44 @@ export function defineBrowserClasses(
                 return stats;
               }
             : undefined) ??
-          (labelled.has(property)
+          ((property === "children" || property === "parent") &&
+          binding.getters.includes("__hierarchy")
             ? function (this: object) {
-                let known = labels.get(this);
-                if (known === undefined) {
-                  known = new Map();
-                  labels.set(this, known);
+                if (glueCounting) propertyReads += 1;
+                if (property === "children") {
+                  childrenReads += 1;
+                  // The census names who reads it, though the cache answers without a crossing.
+                  if (meter.counting) meter.record("read", refOf(this), "children");
                 }
-                if (!known.has(property))
-                  known.set(property, fromEngine(runtime.get(refOf(this), property)));
-                return known.get(property);
+                const entry = hierarchyKept(this);
+                if (entry === undefined) return fromEngine(runtime.get(refOf(this), property));
+                if (!(property in entry))
+                  entry[property] = fromEngine(runtime.get(refOf(this), property));
+                return entry[property];
               }
-            : function (this: object) {
-                return fromEngine(runtime.get(refOf(this), property));
-              }),
+            : mirrored(binding, property, setters) || bounds
+              ? function (this: object) {
+                  if (glueCounting) propertyReads += 1;
+                  const legacy = legacyLabelled.has(property);
+                  if (!caching && !legacy) return fromEngine(runtime.get(refOf(this), property));
+                  const table = !legacy && animatedNames.has(property) ? animated : labels;
+                  let known = table.get(this);
+                  if (known === undefined) {
+                    known = new Map();
+                    table.set(this, known);
+                  }
+                  if (!known.has(property)) {
+                    const value = fromEngine(runtime.get(refOf(this), property));
+                    // The renderer computes a missing bound itself, so only a present one is kept.
+                    if (bounds && value === null) return value;
+                    known.set(property, value);
+                  }
+                  return known.get(property);
+                }
+              : function (this: object) {
+                  if (glueCounting) propertyReads += 1;
+                  return fromEngine(runtime.get(refOf(this), property));
+                }),
         ...(lane !== undefined && write !== undefined
           ? {
               set(this: object, value: number) {
@@ -995,101 +1772,32 @@ export function defineBrowserClasses(
                   // writes `visible` on hundreds of nodes a frame, so those stay out of the bridge.
                   if (flag !== undefined && typeof value === "boolean" && flag(this) === value)
                     return;
-                  labels.delete(this);
+                  if (caching && (mirrored(binding, property, setters) || bounds)) {
+                    // A mirrored property's setter writes only that property: the others stay kept,
+                    // and a write of the primitive the mirror holds changes nothing in the engine.
+                    const legacy = legacyLabelled.has(property);
+                    const known = (!legacy && animatedNames.has(property) ? animated : labels).get(
+                      this,
+                    );
+                    if (
+                      (value === null || typeof value !== "object") &&
+                      known?.has(property) &&
+                      known.get(property) === value
+                    )
+                      return;
+                    labels.get(this)?.delete(property);
+                    animated.get(this)?.delete(property);
+                  } else {
+                    labels.delete(this);
+                    animated.delete(this);
+                  }
                   runtime.set(refOf(this), property, toEngine(value));
                 },
               }
             : {}),
-      });
-    }
-    // Games turn objects every frame: an object's `rotation` is written in place (the transform page's
-    // rotation column), and its quaternion follows here, as three's onRotationChange does. Any other
-    // Euler, or a set with a new order, still crosses, callback and all. Ported from feat/native-engine
-    // 07297c986 and 5ef18a54f.
-    const order = binding.fields?.__order;
-    const quaternion = registry.classes.Quaternion?.fields;
-    const readLane = runtime.readDoubles;
-    const readByte = runtime.readByte;
-    if (name === "Euler" && order && quaternion && readLane && readByte && write) {
-      const angles = ["x", "y", "z"].map((lane) => binding.fields?.[lane]?.[0] ?? 0);
-      const targets = ["x", "y", "z", "w"].map((lane) => quaternion[lane]?.[0] ?? 0);
-      // three's setFromEuler: each order only signs the second terms, in the engine enum's order.
-      const names = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"];
-      const signs = [
-        [1, -1, 1, -1],
-        [1, -1, -1, 1],
-        [-1, 1, 1, -1],
-        [-1, 1, -1, 1],
-        [1, 1, -1, -1],
-        [-1, -1, 1, 1],
-      ];
-      // Two writes per object per frame land here (R5 turns x then y on 4,096 cubes), so the hot path
-      // allocates nothing: offsets are numbers, the owner's quaternion address is kept per Euler (an
-      // engine object never moves), and lanes are read off HEAPF64 when the runtime has it.
-      const [ox = 0, oy = 0, oz = 0] = angles;
-      const [qx = 0, qy = 0, qz = 0, qw = 0] = targets;
-      const orderAt = order[0] ?? 0;
-      const heap = runtime.heapF64;
-      const lane = heap
-        ? (address: number) => heap()[address / 8] as number
-        : (address: number) => readLane(address, 1) as number;
-      // An object's rotation -> [its address, its owner's quaternion address]: one lookup per write.
-      const places = new WeakMap<object, [number, number]>();
-      const placeOf = (euler: object): [number, number] | undefined => {
-        let place = places.get(euler);
-        if (place === undefined) {
-          const owner = rotations.get(euler);
-          if (owner === undefined) return undefined;
-          place = [addressOf(euler), addressOf((owner as { quaternion: object }).quaternion)];
-          places.set(euler, place);
-        }
-        return place;
       };
-      const sync = (at: number, q: number) => {
-        const x = lane(at + ox) / 2;
-        const y = lane(at + oy) / 2;
-        const z = lane(at + oz) / 2;
-        const sign = (signs[readByte(at + orderAt)] ?? signs[0]) as number[];
-        const c1 = Math.cos(x);
-        const c2 = Math.cos(y);
-        const c3 = Math.cos(z);
-        const s1 = Math.sin(x);
-        const s2 = Math.sin(y);
-        const s3 = Math.sin(z);
-        write(q + qx, s1 * c2 * c3 + (sign[0] as number) * c1 * s2 * s3);
-        write(q + qy, c1 * s2 * c3 + (sign[1] as number) * s1 * c2 * s3);
-        write(q + qz, c1 * c2 * s3 + (sign[2] as number) * s1 * s2 * c3);
-        write(q + qw, c1 * c2 * c3 + (sign[3] as number) * s1 * s2 * s3);
-      };
-      angles.forEach((offset, i) => {
-        const lane = "xyz"[i] as string;
-        const crossing = Object.getOwnPropertyDescriptor(prototype, lane);
-        Object.defineProperty(prototype, lane, {
-          ...crossing,
-          set(this: object, value: number) {
-            const place = placeOf(this);
-            if (place === undefined) return crossing?.set?.call(this, value);
-            write(place[0] + offset, value);
-            sync(place[0], place[1]);
-          },
-        });
-      });
-      const set = prototype.set as (...args: unknown[]) => unknown;
-      Object.defineProperty(prototype, "set", {
-        configurable: true,
-        writable: true,
-        value(this: object, ...args: unknown[]) {
-          const place = placeOf(this);
-          if (place === undefined) return set.apply(this, args);
-          const [at, q] = place;
-          // Games pass their one order on every set; only a new order goes to the engine.
-          if (args[3] !== undefined && args[3] !== names[readByte(at + (order[0] ?? 0))])
-            return set.apply(this, args);
-          angles.forEach((offset, i) => write(at + offset, args[i] as number));
-          sync(at, q);
-          return this;
-        },
-      });
+      Object.defineProperty(accessors, property, accessor);
+      if (materialClass) own.push({ key: property, descriptor: { ...accessor, enumerable: true } });
     }
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
     // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.
@@ -1138,7 +1846,8 @@ export function defineBrowserClasses(
     // A write-only setter (three's `texture.needsUpdate`) is a property too: without an accessor
     // the write lands on a plain JS property and never reaches the engine.
     for (const property of binding.setters) {
-      if (property.includes(".") || Object.hasOwn(accessors, property)) continue;
+      if (property.includes(".") || Object.hasOwn(accessors, property) || skip.has(property))
+        continue;
       Object.defineProperty(accessors, property, {
         configurable: true,
         set(this: object, value: unknown) {
@@ -1267,7 +1976,10 @@ export function defineBrowserClasses(
         },
       });
     }
-    if (binding.members.includes("parent") || binding.getters.includes("parent")) {
+    const graphNode = binding.members.includes("parent") || binding.getters.includes("parent");
+    // three gives Object3D, Material, Texture and BufferGeometry a `userData`; the engine classes
+    // with a parent or a `dispose` are those.
+    if (graphNode || binding.methods.includes("dispose")) {
       Object.defineProperty(prototype, "userData", {
         configurable: true,
         get(this: object) {
@@ -1278,15 +1990,20 @@ export function defineBrowserClasses(
           userData.set(this, value);
         },
       });
+    }
+    if (graphNode) {
       defineTraversal(
         prototype,
         name,
         binding.members.includes("children") || binding.getters.includes("children"),
         binding.methods.includes("__walk"),
+        binding.getters.includes("__hierarchy") ? hierarchyKept : undefined,
+        walked,
+        raycasts(name),
       );
     }
     classes[name] = cls;
-    byType.set(runtime.typeId(name), { prototype: accessors });
+    byType.set(runtime.typeId(name), { prototype: accessors, ...(materialClass ? { own } : {}) });
     typeNames.set(runtime.typeId(name), name);
   }
   for (const name of ATTRIBUTE_CLASSES) {
@@ -1332,7 +2049,6 @@ export function defineBrowserClasses(
         });
     }
   }
-  const entries = new Map((catalog?.entries ?? []).map((entry) => [entry.name, entry]));
   const isFlag = (field: { name: string; type: string; mutable?: boolean }) =>
     /^is[A-Z]/u.test(field.name) &&
     (field.type === "true" || (field.type === "boolean" && field.mutable === false));
@@ -1346,14 +2062,54 @@ export function defineBrowserClasses(
       link !== undefined;
       link = link.extends ? entries.get(link.extends) : undefined
     )
+      // Writable: three's own value classes assign `this.isColor = true` in their constructors.
       for (const field of (link.fields ?? []).filter(isFlag))
-        Object.defineProperty(cls.prototype, field.name, { configurable: true, value: true });
+        Object.defineProperty(cls.prototype, field.name, {
+          configurable: true,
+          writable: true,
+          value: true,
+        });
   }
   return {
     classes,
     wrap,
     crossings: () => crossings,
+    // The back end's running totals, for TN_FRAME_BUDGET.counters.engine. `hierarchyMoves` is the
+    // engine's hierarchy counter itself: each move drops every cache keyed on it, here and in C++.
+    counters: () => {
+      // Crossings ride their own series, TN_FRAME_BUDGET.counters.bridgeCrossings (__tnCrossingCount).
+      // `methodCalls` and `propertyReads` are the glue entries that series cannot see: every wrapper
+      // entry, crossed or answered by the cache.
+      const totals: Record<string, number> = {
+        childrenReads,
+        methodCalls,
+        propertyReads,
+        walkVisits,
+      };
+      if (readWord === undefined) return totals;
+      if (hierarchyAt !== undefined) totals.hierarchyMoves = readWord(hierarchyAt);
+      // The low word of each 64-bit total: core takes per-frame differences, which stay exact.
+      for (const [counter, address] of engineCountersAt) totals[counter] = readWord(address) >>> 0;
+      return totals;
+    },
     collect() {
+      meter.frame();
+      glueCounting = (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
+      const wanted = cacheWanted();
+      // A setter or method drops an object's kept answers whether or not the cache is on, so turning it
+      // back on keeps nothing stale; the two tables that other calls drop are emptied anyway.
+      if (wanted !== caching) {
+        caching = wanted;
+        animated = new WeakMap();
+        scheduling = new WeakMap();
+        kept = new WeakMap();
+      }
+      if (
+        hierarchyAt !== undefined &&
+        readWord !== undefined &&
+        readWord(hierarchyAt) !== keptVersion
+      )
+        kept = new WeakMap();
       // A wrapper handed out since the last safe point is asked now: the engine either references it (it
       // settles) or does not (JS alone keeps it). A settled wrapper is asked again a sixty-fourth of the
       // settled set per safe point, round robin (a live Set iterator): Midway settles about 50,000
@@ -1653,7 +2409,14 @@ function tslOf(
       setPost: (node) =>
         h.scoped(() => {
           if (setPost === undefined) throw new Error("TN_WASM_POST: this module has no web host");
-          if (setPost(context, nodeOf(node)) !== 0) throw new Error("TN_WASM_POST: refused");
+          if (setPost(context, nodeOf(node), 0) !== 0) throw new Error("TN_WASM_POST: refused");
+        }),
+      setToneMapping: (node) =>
+        h.scoped(() => {
+          if (setPost === undefined)
+            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no web output binding");
+          if (setPost(context, nodeOf(node), 1) !== 0)
+            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_INVALID: refused output node");
         }),
       // PRD-620: renderer.compute and storage reads over the product web host.
       compute: (node) =>
@@ -1732,10 +2495,23 @@ function countCall(kind: string, self: IEngineRef, name: string): void {
 }
 
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
-  let dataView = new DataView(abi.HEAPU8.buffer);
+  // The heap's views, made again only when the memory grows: Emscripten replaces HEAPU8 then, so one
+  // identity test per use stands in for reading two `.buffer`s, which every crossing paid (PRD-748).
+  let heap = abi.HEAPU8;
+  let dataView = new DataView(heap.buffer);
+  let words = new Uint32Array(heap.buffer);
+  const grown = () => {
+    heap = abi.HEAPU8;
+    dataView = new DataView(heap.buffer);
+    words = new Uint32Array(heap.buffer);
+  };
   const view = () => {
-    if (dataView.buffer !== abi.HEAPU8.buffer) dataView = new DataView(abi.HEAPU8.buffer);
+    if (abi.HEAPU8 !== heap) grown();
     return dataView;
+  };
+  const wordView = () => {
+    if (abi.HEAPU8 !== heap) grown();
+    return words;
   };
   // Each call frees what it allocated, and only that: a callback can run a nested call.
   // A call's scratch (its handle, arguments, result and diagnostic) comes from one arena that each
@@ -1753,10 +2529,14 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       arenaTop += aligned;
     } else {
       // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
-      pointer = abi._malloc(size) >>> 0;
+      pointer = abi._malloc(aligned) >>> 0;
       allocations.push(pointer);
     }
-    abi.HEAPU8.fill(0, pointer, pointer + size);
+    // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
+    // `wordView` first: a `_malloc` above may have grown the memory.
+    const w = wordView();
+    if (aligned > 64) heap.fill(0, pointer, pointer + aligned);
+    else for (let at = pointer >>> 2, end = (pointer + aligned) >>> 2; at < end; at++) w[at] = 0;
     return pointer;
   };
   const scoped = <T>(work: () => T): T => {
@@ -1765,7 +2545,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     try {
       return work();
     } finally {
-      for (const pointer of allocations.splice(mark)) abi._free(pointer);
+      while (allocations.length > mark) abi._free(allocations.pop() as number);
       arenaTop = top;
     }
   };
@@ -1797,11 +2577,6 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   };
   // A handle is three words in memory: type and context as two halves of the first, then index and
   // generation. A ref made here keeps those words, so writing one back is three stores, no parse.
-  let words = new Uint32Array(abi.HEAPU8.buffer);
-  const wordView = () => {
-    if (words.buffer !== abi.HEAPU8.buffer) words = new Uint32Array(abi.HEAPU8.buffer);
-    return words;
-  };
   const keyOf = (pointer: number): IEngineRef => {
     const v = view();
     const type = v.getUint16(pointer, true);
@@ -1865,6 +2640,18 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     if (isRef(value)) {
       v.setUint32(pointer, KIND.handle, true);
       return writeHandle(pointer + 16, value);
+    }
+    if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+      // A forwarded typed array (see `toEngine`): one heap copy, its view bounds kept, no boxed list.
+      const typed = value as TypedArray;
+      const numbers = alloc(Math.max(8, typed.length * 8));
+      abi.HEAPF64.set(typed, numbers / 8);
+      const name = string(typed.constructor.name).pointer;
+      const w = view();
+      w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer + 32, name, true);
+      w.setUint32(pointer + 48, numbers, true);
+      return w.setBigUint64(pointer + 40, BigInt(typed.length), true);
     }
     if (!Array.isArray(value)) {
       // A record: count key/value pairs, each key a string value, as the engine returns one.
@@ -2021,6 +2808,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
+    typedArrays: true,
     typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
       scoped(() => {
@@ -2062,6 +2850,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         return refs.map((_, i) => v.getUint32(out + i * 4, true));
       }),
     readByte: (address) => abi.HEAPU8[address] as number,
+    readWord: (address) => view().getUint32(address, true),
     writeDouble: (address, value) => {
       abi.HEAPF64[address / 8] = value;
     },
@@ -2083,7 +2872,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     set: (self, path, value) =>
       scoped(() => {
         countCall("set", self, path);
-        const pointer = values([value]);
+        // One value written in place: no one-item list per write.
+        const pointer = alloc(VALUE);
+        writeValue(pointer, value);
         const diag = diagnostic();
         check(abi._tn_set(handleOf(self), name(path), pointer, diag), diag, `set ${path}`);
       }),

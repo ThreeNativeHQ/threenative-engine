@@ -1,3 +1,4 @@
+#include "engine/renderer/probes/capture.h"
 // tn-native-engine-player-v8 (PRD-531 phase 3): the native-engine desktop player with a game on V8.
 // It links the V8 adapter, so it is a JS artifact and never an engine target; the JS-free player
 // stays tn-native-engine-player. The window, loop, mailbox, render and screenshot path are the same
@@ -24,8 +25,10 @@
 #include <libplatform/libplatform.h>
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/post/traa.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -227,12 +230,20 @@ class V8Game {
     bool hasGpu_;
     // three's renderer settings the game last set (WebGPURenderer's defaults until it does).
     OutputState output_{std::nullopt, 1, true};
+    float renderScale_ = 1;
     // The GPU adapter's `info` fields, read before the bundle boots; empty without a GPU (a check).
     std::vector<std::pair<std::string, std::string>> adapterInfo_;
     // The last frame the player drew: three's `renderer.info.render` draw calls and triangles.
     uint32_t drawCalls_ = 0;
     uint64_t triangles_ = 0;
     uint64_t pipelineCompiles_ = 0;  // pipelines the renderer has compiled so far, cumulative
+    // The newest resolved GPU time, as the Wasm engine reports it (tnw_web_frame 7..9, 19..23). Timing is off until a
+    // reader asks (`tn.setGpuTimer`), since a timed frame resolves and reads back a query set every frame.
+    bool gpuTimerWanted_ = false, gpuTimerRuns_ = false;
+    uint64_t gpuSamples_ = 0, gpuSource_ = 0;
+    uint64_t sourceFrame_ = 0;  // the game's `info.frame` at its last render(): the id the next drawn frame's GPU time reports
+    double gpuMs_ = -1;
+    std::array<double, kGpuSegments> gpuSegments_{};
     bool shadowMap_ = false;  // three's WebGPURenderer defaults: shadowMap off, PCFShadowMap
     int shadowMapType_ = 1;
     uint32_t samples_ = 1;
@@ -242,6 +253,7 @@ class V8Game {
     static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void setGpuTimer(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void surfaceSize(const v8::FunctionCallbackInfo<v8::Value>& info);
     v8::Local<v8::Value> adapterValue();
   public:
@@ -252,6 +264,11 @@ class V8Game {
         drawCalls_ = renderer.lastFrame().draws + renderer.lastFrame().shadowDraws;
         triangles_ = renderer.lastFrame().triangles + renderer.lastFrame().shadowTriangles;
         pipelineCompiles_ = renderer.pipelines().compiles();
+        gpuTimerRuns_ = renderer.gpuTimerEnabled();
+        gpuSamples_ = renderer.gpuSamples();
+        gpuSource_ = renderer.gpuSourceFrame();
+        gpuMs_ = renderer.lastGpuMs();
+        gpuSegments_ = renderer.lastGpuSegments();
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
         profileFrame();
     }
@@ -269,10 +286,29 @@ class V8Game {
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
         renderer.setSampleCount(samples_);
+        renderer.setRenderScale(renderScale_);
+        renderer.setGpuTimerSourceFrame(sourceFrame_);
         database.shadowMapEnabled = shadowMap_;
         database.shadowMapType = shadowMapType_;
     }
+    /** run.h overlay: 0 for no overlay this frame, 1 over the world frame, 2 alone (a held loader frame drew no world). */
+    int overlay() const { return !overlaySceneHold_ ? 0 : overlayAlone_ ? 2 : 1; }
+    /** run.h drawOverlay: this frame's overlay over the renderer's output frame, as web_host.cpp draws it over the canvas. */
+    void drawOverlay(Renderer& renderer) {
+        const auto scene = std::exchange(overlaySceneHold_, nullptr);
+        const auto camera = std::exchange(overlayCameraHold_, nullptr);
+        if (!scene || !renderer.outputColorView()) return;
+        Renderer& target = renderer.overlayRenderer();
+        Renderer::PresentScope present(target, renderer.outputColorView(), WGPUTextureFormat_RGBA8Unorm);
+        overlayDatabase_.render(target, *static_cast<Object3D*>(scene.get()), *static_cast<Camera*>(camera.get()), {0, 0, 0, 0});
+        for (const std::string& diagnostic : overlayDatabase_.diagnostics()) std::printf("[Playtest] %s\n", diagnostic.c_str());
+    }
   private:
+    // three's overlay render of this frame (tn.renderOverlay), drawn by the loop after the world frame.
+    std::shared_ptr<void> overlaySceneHold_, overlayCameraHold_;
+    bool overlayAlone_ = false;
+    RenderDatabase overlayDatabase_;
+    static void renderOverlay(const v8::FunctionCallbackInfo<v8::Value>& info);
     // Everything this game does to the renderer outside the loop's own handoff calls this first.
     void idleRenderer() { if (renderBarrier_) renderBarrier_(); }
     std::function<void()> renderBarrier_;
@@ -288,6 +324,8 @@ class V8Game {
     double frameClockMs_ = 0;
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void hasRenderer(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void captureFace(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readFrame(const v8::FunctionCallbackInfo<v8::Value>& info);
     /** PRD-620: `tn.compute(node | [node])`, `tn.readStorage(attribute)` and `tn.deleteStorage(attribute)`. */
@@ -300,6 +338,7 @@ class V8Game {
     /** Settles a read promise from the GPU event drain: bytes as a Uint8Array (an ArrayBuffer for a storage read), or a rejection. */
     void settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus status, const std::vector<uint8_t>& bytes, bool asBuffer = false);
     static void compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void prepareEnvironment(const v8::FunctionCallbackInfo<v8::Value>& info);
     struct Compilation {
         std::shared_ptr<void> root, camera, scene;
         OutputState output;
@@ -506,6 +545,13 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
     };
     if (info.Length() != 1 || !info[0]->IsObject()) return refuse("expected one settings object");
     const auto settings = info[0].As<v8::Object>();
+    v8::Local<v8::Value> renderScale;
+    if (settings->Get(ctx, v8str(isolate, "renderScale")).ToLocal(&renderScale) && !renderScale->IsUndefined()) {
+        if (!renderScale->IsNumber() || !std::isfinite(renderScale.As<v8::Number>()->Value()) ||
+            renderScale.As<v8::Number>()->Value() < .25 || renderScale.As<v8::Number>()->Value() > 1)
+            return refuse("renderScale must be between 0.25 and 1");
+        game.renderScale_ = static_cast<float>(renderScale.As<v8::Number>()->Value());
+    }
     v8::Local<v8::Value> mapping, exposure, colorSpace, shadowMap, enabled, type;
     if (!settings->Get(ctx, v8str(isolate, "toneMapping")).ToLocal(&mapping) ||
         !settings->Get(ctx, v8str(isolate, "toneMappingExposure")).ToLocal(&exposure) ||
@@ -520,15 +566,20 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
         return;
     v8::String::Utf8Value space(isolate, colorSpace);
     std::string refusal;
+    shader::graph::Node custom;
+    v8::Local<v8::Value> customValue;
+    if (!settings->Get(ctx, v8str(isolate, "__customToneMapping")).ToLocal(&customValue)) return;
+    if (!customValue->IsNullOrUndefined() && !game.adapter_->tsl().unwrap(customValue, custom))
+        return refuse("TN_NATIVE_CUSTOM_TONEMAPPING_TYPE: expected a TSL node");
     const auto state = outputStateOf(mapping.As<v8::Number>()->Value(), exposure.As<v8::Number>()->Value(),
-                                     std::string(*space, space.length()), refusal);
+                                     std::string(*space, space.length()), refusal, custom);
     if (!state) return refuse(refusal);
     // PCFShadowMap and PCFSoftShadowMap are the filters the engine draws (PCFShadowFilter, PCFSoftShadowFilter).
     if (!enabled->IsBoolean() || !type->IsNumber() || (type.As<v8::Number>()->Value() != 1 && type.As<v8::Number>()->Value() != 2))
         return refuse("shadowMap.enabled must be a boolean and shadowMap.type PCFShadowMap or PCFSoftShadowMap");
     const OutputState output = *state;
     if (output.toneMapping != game.output_.toneMapping || output.toneMappingExposure != game.output_.toneMappingExposure ||
-        output.srgb != game.output_.srgb) {
+        output.srgb != game.output_.srgb || output.customToneMapping != game.output_.customToneMapping) {
         game.output_ = output;
         game.outputChanged_ = true;
     }
@@ -539,6 +590,12 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
         const double s = samples.As<v8::Number>()->Value();
         game.samples_ = s == 4 ? 4 : 1;
     }
+    // The frame id core counts presented frames with (`info.frame`), so a GPU time says which frame it belongs to.
+    v8::Local<v8::Value> frameInfo, frameId;
+    if (settings->Get(ctx, v8str(isolate, "info")).ToLocal(&frameInfo) && frameInfo->IsObject() &&
+        frameInfo.As<v8::Object>()->Get(ctx, v8str(isolate, "frame")).ToLocal(&frameId) && frameId->IsNumber() &&
+        frameId.As<v8::Number>()->Value() >= 0)
+        game.sourceFrame_ = static_cast<uint64_t>(frameId.As<v8::Number>()->Value());
     // The facade's clear colour and alpha (setClearColor), linear, as `__clearColor: [r, g, b, a]`.
     v8::Local<v8::Value> clear;
     if (settings->Get(ctx, v8str(isolate, "__clearColor")).ToLocal(&clear) && clear->IsArray()) {
@@ -568,7 +625,11 @@ v8::Local<v8::Value> V8Game::adapterValue() {
 }
 
 // `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew, and the renderer's
-// cumulative pipelineCompiles (a window's compiles are the difference between two reads).
+// cumulative pipelineCompiles (a window's compiles are the difference between two reads), the samples the scene draws
+// with, and the temporal pass as the last planned frame left it: { active, frame, historyValid, jitter: [x, y], rejected,
+// clamped, pixels, countedFrame } (the last four are the newest counted frame, one in 16).
+// `gpuTiming` is the newest resolved GPU time once `tn.setGpuTimer(true)` asked for it: { enabled, samples, source, ms, segments }
+// (segments: shadow, scene, other, output passes, then the stages a post pass is labelled with, frame_gpu_timer.h).
 void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
     auto* isolate = info.GetIsolate();
@@ -577,7 +638,44 @@ void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     record->Set(ctx, v8str(isolate, "drawCalls"), v8::Number::New(isolate, game.drawCalls_)).Check();
     record->Set(ctx, v8str(isolate, "triangles"), v8::Number::New(isolate, static_cast<double>(game.triangles_))).Check();
     record->Set(ctx, v8str(isolate, "pipelineCompiles"), v8::Number::New(isolate, static_cast<double>(game.pipelineCompiles_))).Check();
+    const Renderer::TemporalStatus temporal = game.renderer_ ? game.renderer_->temporalStatus() : Renderer::TemporalStatus{};
+    record->Set(ctx, v8str(isolate, "samples"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->sampleCount() : 1)).Check();
+    auto status = v8::Object::New(isolate);
+    status->Set(ctx, v8str(isolate, "active"), v8::Boolean::New(isolate, temporal.active)).Check();
+    status->Set(ctx, v8str(isolate, "frame"), v8::Number::New(isolate, static_cast<double>(temporal.frame))).Check();
+    status->Set(ctx, v8str(isolate, "historyValid"), v8::Boolean::New(isolate, temporal.historyValid)).Check();
+    status->Set(ctx, v8str(isolate, "rejected"), v8::Number::New(isolate, temporal.rejected)).Check();
+    status->Set(ctx, v8str(isolate, "clamped"), v8::Number::New(isolate, temporal.clamped)).Check();
+    status->Set(ctx, v8str(isolate, "pixels"), v8::Number::New(isolate, temporal.pixels)).Check();
+    status->Set(ctx, v8str(isolate, "countedFrame"), v8::Number::New(isolate, static_cast<double>(temporal.countedFrame))).Check();
+    v8::Local<v8::Value> jitter[] = {v8::Number::New(isolate, temporal.jitterX), v8::Number::New(isolate, temporal.jitterY)};
+    status->Set(ctx, v8str(isolate, "jitter"), v8::Array::New(isolate, jitter, 2)).Check();
+    status->Set(ctx, v8str(isolate, "inputWidth"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputWidth() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "inputHeight"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputHeight() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "outputWidth"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->width() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "outputHeight"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->height() : 0)).Check();
+    status->Set(ctx, v8str(isolate, "jitterLength"), v8::Number::New(isolate, game.renderer_ && game.renderer_->traaDebugPass() ? game.renderer_->traaDebugPass()->status().jitterLength : 0)).Check();
+    record->Set(ctx, v8str(isolate, "temporal"), status).Check();
+    record->Set(ctx, v8str(isolate, "temporalUpscale"), v8::Boolean::New(isolate, game.renderer_ && game.renderer_->temporalUpscale())).Check();
+    record->Set(ctx, v8str(isolate, "inputWidth"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputWidth() : 0)).Check();
+    record->Set(ctx, v8str(isolate, "inputHeight"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->inputHeight() : 0)).Check();
+    auto timing = v8::Object::New(isolate);
+    timing->Set(ctx, v8str(isolate, "enabled"), v8::Boolean::New(isolate, game.gpuTimerRuns_)).Check();
+    timing->Set(ctx, v8str(isolate, "samples"), v8::Number::New(isolate, static_cast<double>(game.gpuSamples_))).Check();
+    timing->Set(ctx, v8str(isolate, "source"), v8::Number::New(isolate, static_cast<double>(game.gpuSource_))).Check();
+    timing->Set(ctx, v8str(isolate, "ms"), v8::Number::New(isolate, game.gpuMs_)).Check();
+    v8::Local<v8::Value> segments[kGpuSegments];
+    for (size_t i = 0; i < kGpuSegments; ++i) segments[i] = v8::Number::New(isolate, game.gpuSegments_[i]);
+    timing->Set(ctx, v8str(isolate, "segments"), v8::Array::New(isolate, segments, kGpuSegments)).Check();
+    record->Set(ctx, v8str(isolate, "gpuTiming"), timing).Check();
     info.GetReturnValue().Set(record);
+}
+
+// `tn.setGpuTimer(on)`: the first reader of GPU times turns frame timing on; a game that never reads them pays nothing.
+void V8Game::setGpuTimer(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    game.gpuTimerWanted_ = info.Length() > 0 && info[0]->BooleanValue(info.GetIsolate());
+    if (game.renderer_) game.renderer_->setGpuTimer(game.gpuTimerWanted_);
 }
 
 // `tn.surfaceSize()`: { width, height } of the drawing buffer. The player owns the window, so a game's
@@ -679,6 +777,13 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
                                         game.clear_, game.shadowMap_, info.Length() == 4 && info[3]->BooleanValue(isolate));
     if (!refused.empty()) refuse(refused.front());
+}
+
+// `tn.hasRenderer()`: whether the player has opened its renderer. The game's startup runs before it,
+// so a render() then only publishes the scene, and a draw into a render target has nothing to draw with.
+void V8Game::hasRenderer(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    info.GetReturnValue().Set(game.renderer_ != nullptr);
 }
 
 void V8Game::settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus status, const std::vector<uint8_t>& bytes, bool asBuffer) {
@@ -817,6 +922,43 @@ void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     else if (started != GpuStatus::Ok) reject("TN_NATIVE_READ_TARGET: region outside the target");
 }
 
+// One real-scene HDR reflection face, using the probe renderer on the player's device.
+void V8Game::captureFace(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+    info.GetReturnValue().Set(resolver->GetPromise());
+    const auto reject = [&](const std::string& message) {
+        resolver->Reject(ctx, v8::Exception::Error(v8str(isolate, message))).Check();
+    };
+    auto* root = info.Length() == 6 ? game.engineObject(info[0], "Object3D") : nullptr;
+    if (!root || !game.renderer_) return reject("TN_REFLECTION_CAPTURE_SCENE");
+    double values[5];
+    for (int i = 0; i < 5; ++i) {
+        if (!info[i + 1]->IsNumber()) return reject("TN_REFLECTION_CAPTURE_INPUT");
+        values[i] = info[i + 1].As<v8::Number>()->Value();
+        if (!std::isfinite(values[i])) return reject("TN_REFLECTION_CAPTURE_INPUT");
+    }
+    if (values[3] < 1 || values[3] > 1024 || std::floor(values[3]) != values[3] ||
+        values[4] < 0 || values[4] >= 6 || std::floor(values[4]) != values[4])
+        return reject("TN_REFLECTION_CAPTURE_INPUT");
+    auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    game.idleRenderer();
+    game.flushCompute();
+    try {
+        const auto started = probes::captureFace(*game.renderer_, *static_cast<Object3D*>(root->ptr.get()),
+            Vector3{values[0], values[1], values[2]}, uint32_t(values[3]), uint32_t(values[4]), 0.01, 2000,
+            [&game, pending](GpuStatus status, std::vector<float> rgb) {
+                std::vector<uint8_t> bytes(rgb.size() * sizeof(float));
+                std::memcpy(bytes.data(), rgb.data(), bytes.size());
+                game.settleRead(*pending, status, bytes);
+            });
+        if (started == GpuStatus::Pending) resolver->Resolve(ctx, v8::Null(isolate)).Check();
+        else if (started != GpuStatus::Ok) reject("TN_REFLECTION_CAPTURE_FACE");
+    } catch (const std::exception& error) { reject(error.what()); }
+}
+
 // The scene walk stays on the isolate's thread; only owned pipeline descriptors reach workers.
 void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
@@ -841,6 +983,51 @@ void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
         scene ? scene->ptr : nullptr, game.output_, game.shadowMap_, game.shadowMapType_, game.samples_,
         v8::Global<v8::Promise::Resolver>(isolate, resolver), std::nullopt});
     game.pollCompilations();
+}
+
+// `tn.prepareEnvironment(scene, camera)`: one step of the PMREM bake that render() gates every frame
+// on, drawn or not, so startup warm-up can wait for it as three's PMREM preparer does on the web.
+// True once every environment the scene samples is baked; false while it bakes or before the renderer opens.
+void V8Game::prepareEnvironment(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    if (!game.hasGpu_) { info.GetReturnValue().Set(true); return; }  // --check-game: nothing will be drawn
+    if (!game.renderer_) { info.GetReturnValue().Set(false); return; }
+    auto* scene = info.Length() > 0 ? game.engineObject(info[0], "Object3D") : nullptr;
+    auto* camera = info.Length() > 1 ? game.engineObject(info[1], "Camera") : nullptr;
+    if (!scene || !camera) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_ENVIRONMENT: scene or camera invalid")));
+        return;
+    }
+    try {
+        game.idleRenderer();
+        game.renderer_->poll();  // the bake advances only after its previous submission completes
+        RenderDatabase database;
+        database.shadowMapEnabled = game.shadowMap_;
+        database.shadowMapType = game.shadowMapType_;
+        info.GetReturnValue().Set(database.prepareEnvironments(*game.renderer_, *static_cast<Object3D*>(scene->ptr.get()),
+            *static_cast<Camera*>(camera->ptr.get())));
+    } catch (const std::exception& error) {
+        isolate->ThrowException(v8::Exception::Error(v8str(isolate, error.what())));
+    }
+}
+
+// `tn.renderOverlay(scene, camera, worldDrawn)`: three's overlay render (core's canvas layer: a loading screen, a
+// canvas HUD) for this frame. The loop draws it over the world frame with Renderer::overlayRenderer, with no post and
+// no temporal step: published as tn.scene, it replaced the world frame and moved the world's temporal history and
+// metered exposure. `worldDrawn` false is a held loader frame: the overlay is drawn alone, over no new world frame.
+void V8Game::renderOverlay(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto* scene = info.Length() > 0 ? game.engineObject(info[0], "Object3D") : nullptr;
+    auto* camera = info.Length() > 1 ? game.engineObject(info[1], "Camera") : nullptr;
+    if (!scene || !camera) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_OVERLAY: scene or camera invalid")));
+        return;
+    }
+    game.overlaySceneHold_ = scene->ptr;
+    game.overlayCameraHold_ = camera->ptr;
+    game.overlayAlone_ = info.Length() > 2 && info[2]->IsFalse();
 }
 
 void V8Game::pollCompilations() {
@@ -896,7 +1083,11 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
     const auto apply = [&](shader::graph::Node value) {
         if (value == game.post_) return;  // RenderPipeline.render() hands the same graph every frame
         game.idleRenderer();
-        if (game.renderer_) game.renderer_->setPostGraph(value);
+        if (game.renderer_) {
+            if (game.outputChanged_) game.renderer_->setOutput(game.output_);
+            game.outputChanged_ = false;
+            game.renderer_->setPostGraph(value);
+        }
         game.post_ = std::move(value);
     };
     if (info.Length() == 1 && info[0]->IsNull()) { apply({}); return; }
@@ -921,6 +1112,9 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 void V8Game::initialize(Renderer& renderer) {
     renderer_ = &renderer;
+    if (gpuTimerWanted_) renderer.setGpuTimer(true);
+    renderer.setOutput(output_);
+    outputChanged_ = false;
     if (post_) renderer.setPostGraph(post_);
     pollCompilations();
 }
@@ -1107,7 +1301,11 @@ bool V8Game::start(const std::string& path, std::string& error) {
 #endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "hasRenderer"), v8::Function::New(ctx, &hasRenderer, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compileAsync"), v8::Function::New(ctx, &compileAsync, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "prepareEnvironment"), v8::Function::New(ctx, &prepareEnvironment, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "renderOverlay"), v8::Function::New(ctx, &renderOverlay, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "captureFace"), v8::Function::New(ctx, &captureFace, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readFrame"), v8::Function::New(ctx, &readFrame, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compute"), v8::Function::New(ctx, &compute, self).ToLocalChecked()).Check();
@@ -1116,6 +1314,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "setGpuTimer"), v8::Function::New(ctx, &setGpuTimer, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "surfaceSize"), v8::Function::New(ctx, &surfaceSize, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "presentMode"), v8str(isolate_, player::presentModeName())).Check();
     v8::Local<v8::Script> script;
@@ -1593,6 +1792,8 @@ int main(int argc, char** argv) {
     configured.bridgeCalls = [] { return tn::abi::crossings(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
+    configured.overlay = [&game] { return game.overlay(); };
+    configured.drawOverlay = [&game](Renderer& renderer) { game.drawOverlay(renderer); };
     configured.setRenderBarrier = [&game](std::function<void()> barrier) { game.setRenderBarrier(std::move(barrier)); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=

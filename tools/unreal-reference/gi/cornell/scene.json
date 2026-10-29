@@ -1,0 +1,203 @@
+{
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/GI/cornell/GI_cornell. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "scene": "cornell",
+  "resolution": [1280, 720],
+  "meshes": [
+    {
+      "name": "Floor",
+      "class": "StaticMeshActor",
+      "position": [0.0, -0.1, -2.85],
+      "rotationYDeg": -0.0,
+      "size": [5.9, 0.2, 5.7],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Ceiling",
+      "class": "StaticMeshActor",
+      "position": [0.0, 5.6, -2.85],
+      "rotationYDeg": -0.0,
+      "size": [5.9, 0.2, 5.7],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Back",
+      "class": "StaticMeshActor",
+      "position": [0.0, 2.75, -5.6],
+      "rotationYDeg": -0.0,
+      "size": [5.9, 5.9, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Red",
+      "class": "StaticMeshActor",
+      "position": [-2.85, 2.75, -2.85],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 5.5, 5.7],
+      "material": {
+        "name": "MI_Red",
+        "baseColor": [0.63, 0.065, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Green",
+      "class": "StaticMeshActor",
+      "position": [2.85, 2.75, -2.85],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 5.5, 5.7],
+      "material": {
+        "name": "MI_Green",
+        "baseColor": [0.14, 0.45, 0.091],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Box_Tall",
+      "class": "StaticMeshActor",
+      "position": [-0.9, 1.65, -3.6],
+      "rotationYDeg": 17.0,
+      "size": [1.65, 3.3, 1.65],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Box_Short",
+      "class": "StaticMeshActor",
+      "position": [0.95, 0.825, -1.9],
+      "rotationYDeg": -17.0,
+      "size": [1.65, 1.65, 1.65],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Shade",
+      "class": "StaticMeshActor",
+      "position": [0.0, 5.2, -2.75],
+      "rotationYDeg": -0.0,
+      "size": [1.0, 0.02, 1.0],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    }
+  ],
+  "lights": [
+    {
+      "name": "Lamp",
+      "class": "PointLight",
+      "position": [0.0, 4.9, -2.75],
+      "intensity": 16000.0,
+      "units": "lumens",
+      "attenuationRadiusM": 20.0,
+      "color": [1.0, 1.0, 1.0],
+      "useTemperature": false,
+      "castShadows": true,
+      "inverseSquaredFalloff": true,
+      "sourceRadiusM": 0.05
+    }
+  ],
+  "sky": null,
+  "sun": null,
+  "fog": null,
+  "exposure": {
+    "method": "aem_manual",
+    "physicalCamera": false,
+    "bias": -5.0,
+    "ev100": 5.0,
+    "lensAttenuation": 0.7799999713897705,
+    "exposureScale": 0.03124999885375683
+  },
+  "poses": [
+    {
+      "name": "cornell",
+      "position": [0, 2.75, 8],
+      "target": [0, 2.75, -2.75],
+      "hfovDeg": 70
+    },
+    {
+      "name": "corner",
+      "position": [-1.6, 1.8, -0.6],
+      "target": [-2.6, 0.5, -5.4],
+      "hfovDeg": 70
+    }
+  ],
+  "motion": {
+    "pan": {
+      "frames": 180,
+      "camera": {
+        "kind": "pan",
+        "position": [0, 2.75, 0.5],
+        "hfovDeg": 90,
+        "pitchDeg": 0,
+        "headingDeg": [-45, 45],
+        "sweepFrames": 60
+      },
+      "stills": [0, 15, 30, 45, 60],
+      "regions": ["Ceiling", "Back", "Wall_Green", "Box_Tall"]
+    },
+    "switch": {
+      "frames": 180,
+      "camera": {
+        "kind": "pose",
+        "pose": "cornell"
+      },
+      "light": {
+        "name": "Lamp",
+        "keys": [[0, 1.0], [60, 0.0]]
+      }
+    }
+  },
+  "regions": {
+    "Floor": [255, 0, 0],
+    "Ceiling": [0, 255, 0],
+    "Back": [0, 0, 255],
+    "Wall_Red": [255, 255, 0],
+    "Wall_Green": [255, 0, 255],
+    "Box_Tall": [0, 255, 255],
+    "Box_Short": [255, 128, 0],
+    "Shade": [128, 0, 255]
+  }
+}

@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  assertWebEngineBuilt,
   packageArchivePrefix,
   workspaceBuildOrder,
   workspacePackageSourceFlag,
@@ -581,6 +582,8 @@ export function makeSandbox(options: SandboxOptions): SandboxResult {
     arm === "vanilla" ? [packageKey("@threenative/playtest")] : [...workspaceKeys, CLI_PACKAGE];
   if (prepare) {
     run("pnpm", ["--filter", "./packages/**", "--if-present", "run", "build"], repo);
+    if (selectedWorkspaceItems.some(({ name }) => name === "@threenative/runtime-native"))
+      assertWebEngineBuilt(repo);
     for (const item of selectedWorkspaceItems) {
       run(
         "pnpm",

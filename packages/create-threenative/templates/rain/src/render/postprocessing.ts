@@ -1,3 +1,5 @@
+import type { ChainStage, OutputRenderer } from "@threenative/core";
+import { WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This is the storm's filmic half — the demo's own `BLOOM` and `POST` passes, ported rather than
@@ -8,22 +10,13 @@
 // Every engine stage that would double a job the demo's own pass already does exactly is off:
 // `quality.ts` decides those, and the built-in bloom is a mip pyramid rather than the demo's 5x5
 // quarter-resolution threshold kernel. The engine's tone curve and sRGB encode are applied by the
-// render pipeline *after* the graph, so the demo's ACES fit, its grade and its `pow(1/2.2)` would
-// otherwise be applied twice — hence `NoToneMapping` and the working colour space below, which is
-// what the source's own Three.js driver sets for the same reason.
+// render pipeline *after* the graph and the engine meters the exposure, so this pass does neither:
+// the demo's ACES fit and its `pow(1/2.2)` are removed and the weather exposure below only scales
+// the metered one.
 //
 // To change how the storm looks, edit the two `.frag` sources and run the generator. To change how
 // much of it there is, edit `quality.ts`.
-import {
-  type Camera,
-  DoubleSide,
-  LinearSRGBColorSpace,
-  Mesh,
-  NoToneMapping,
-  OrthographicCamera,
-  PlaneGeometry,
-  Scene,
-} from "three";
+import { type Camera, DoubleSide, Mesh, OrthographicCamera, PlaneGeometry, Scene } from "three";
 import { convertToTexture, positionGeometry, uv, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, PassNode } from "three/webgpu";
 import { setScene as setBloomScene, tempestBloom, uRes as uBloomRes } from "./bloom-shader.js";
@@ -38,8 +31,6 @@ import {
   uTime,
 } from "./post-shader.js";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
-import type { ChainStage, OutputRenderer } from "./worldEnvironment.js";
-import { WorldEnvironment } from "./worldEnvironment.js";
 
 /**
  * The bloom target's resolution, as a fraction of the frame: the demo's own
@@ -148,14 +139,6 @@ export function setupPost(
     );
   }
 
-  // The demo grades and gamma-encodes inside `POST`. The pipeline would tone map and encode again,
-  // so both are switched off here — the source's own driver does the same two lines.
-  const raw = renderer.raw as { toneMapping: number; outputColorSpace: string } | undefined;
-  if (raw === undefined)
-    throw new Error("setupPost: the renderer has no raw renderer to un-tone-map.");
-  raw.toneMapping = NoToneMapping;
-  raw.outputColorSpace = LinearSRGBColorSpace;
-
   return {
     get applied(): IStormPost["applied"] {
       return applied;
@@ -184,7 +167,8 @@ export function setupPost(
       // did, so it needs the same size; left at zero its kernel divides by zero.
       uBloomRes.value.set(width, height);
       uTime.value = elapsed;
-      uExposure.value = exposure;
+      // 0.85: the filmic shoulder is brighter than the old ACES curve, and a full weather exposure whites out the sky around the bolt.
+      uExposure.value = exposure * 0.85;
       uRain.value = rain;
       uLens.value = droplets ? 1 : 0;
     },

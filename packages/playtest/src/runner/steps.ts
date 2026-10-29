@@ -9,6 +9,8 @@ import {
   playtestStepHoldTicks,
   playtestStepWaitTicks,
   type IPlaytestAssertionResult,
+  type IPlaytestFootSlipObservation,
+  type IPlaytestSightLineObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestObservations,
   type IPlaytestSampleRequest,
@@ -22,7 +24,7 @@ import {
 import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
-import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
+import { advanceTimeoutMs, connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import { sampleElementVisibility } from "./sampling.js";
 import {
   PERFORMANCE_BROWSER_ARGS,
@@ -190,8 +192,8 @@ export function screenshotObservations(
 
 export function regionMetrics(
   png: PNG,
-  region: IPlaytestVisualRegionBounds & { maxLuminance?: number },
-): { darkPixelRatio: number; nonblankPixelRatio: number } {
+  region: IPlaytestVisualRegionBounds & { maxLuminance?: number; minSharpness?: number },
+): { darkPixelRatio: number; nonblankPixelRatio: number; sharpness?: number } {
   const x0 = Math.max(0, Math.floor(region.x));
   const y0 = Math.max(0, Math.floor(region.y));
   const x1 = Math.min(png.width, Math.ceil(region.x + region.width));
@@ -209,7 +211,57 @@ export function regionMetrics(
       if (luminance <= maximumLuminance) dark += 1;
     }
   }
-  return { darkPixelRatio: dark / pixels, nonblankPixelRatio: nonblank / pixels };
+  return {
+    darkPixelRatio: dark / pixels,
+    nonblankPixelRatio: nonblank / pixels,
+    ...(region.minSharpness === undefined ? {} : { sharpness: regionSharpness(png, x0, y0, x1, y1) }),
+  };
+}
+
+/**
+ * How much of the region's detail survives at full resolution: the variance of the 4-neighbour
+ * luminance Laplacian at full size over the same at half size (2x2 box). In-focus 3D frames read
+ * 0.39-0.61; a frame smeared by a post stage (motion blur at rest, a blur pass, a soft upscale) or
+ * a surface with no detail reads 0.21-0.24, measured on the starter kits on 2026-10-24. A ratio,
+ * so a dark or low-contrast scene is not called blurred for its contrast; a flat region reads 0.
+ */
+export function regionSharpness(png: PNG, x0: number, y0: number, x1: number, y1: number): number {
+  const width = x1 - x0;
+  const height = y1 - y0;
+  const luma = new Float64Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = ((y0 + y) * png.width + x0 + x) * 4;
+      luma[y * width + x] = 0.2126 * png.data[offset]! + 0.7152 * png.data[offset + 1]! + 0.0722 * png.data[offset + 2]!;
+    }
+  }
+  const halfWidth = Math.floor(width / 2);
+  const halfHeight = Math.floor(height / 2);
+  const half = new Float64Array(halfWidth * halfHeight);
+  for (let y = 0; y < halfHeight; y += 1) {
+    for (let x = 0; x < halfWidth; x += 1) {
+      const at = 2 * y * width + 2 * x;
+      half[y * halfWidth + x] = (luma[at]! + luma[at + 1]! + luma[at + width]! + luma[at + width + 1]!) / 4;
+    }
+  }
+  const coarse = laplacianVariance(half, halfWidth, halfHeight);
+  return coarse === 0 ? 0 : laplacianVariance(luma, width, height) / coarse;
+}
+
+function laplacianVariance(luma: Float64Array, width: number, height: number): number {
+  let sum = 0;
+  let squares = 0;
+  let count = 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const at = y * width + x;
+      const value = luma[at - 1]! + luma[at + 1]! + luma[at - width]! + luma[at + width]! - 4 * luma[at]!;
+      sum += value;
+      squares += value * value;
+      count += 1;
+    }
+  }
+  return count === 0 ? 0 : squares / count - (sum / count) ** 2;
 }
 
 export async function runStep(
@@ -225,7 +277,10 @@ export async function runStep(
   subject?: string,
   liveClock = false,
   cpuWindow?: (advance: () => Promise<void>) => Promise<void>,
-  completionWindow?: () => Promise<void>,
+  /** Advances the step's ticks itself, in place of the batched advance below. */
+  stepWindow?: (ticks: number) => Promise<void>,
+  /** Sight-line samples collected at the same cadence as path positions, when the scenario asserts one. */
+  sightLine?: { entity: string; samples: IPlaytestSightLineObservation[] },
 ): Promise<IRunStepSamples> {
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
@@ -242,7 +297,7 @@ export async function runStep(
       throw new PlaytestBridgeError(playtestDiagnostic(
         "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
         `Resource wait for '${wait.id}.${wait.path}' has no timeout.`,
-        "Validate the scenario with timeoutMs as a positive integer no greater than 120000.",
+        "Validate the scenario with timeoutMs as a positive integer no greater than 300000.",
       ));
     }
     const after = await waitForResource({
@@ -330,8 +385,8 @@ export async function runStep(
       "Advertise runtime.fixedStep from the bridge so ticks are deterministic, or author the step in waitFrames/holdFrames, which are display frames and say so.",
     ));
   }
-  if (completionWindow !== undefined) {
-    await completionWindow();
+  if (stepWindow !== undefined) {
+    await stepWindow(ticks);
   } else if (cpuWindow !== undefined) {
     if (step.kind !== "wait" || step.waitTicks !== 1000 || ticks < 1000 || !fixedStep || bridge === undefined || liveClock) {
       throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: measurement requires a fixed-step 1000-tick WAIT");
@@ -341,6 +396,7 @@ export async function runStep(
     await cpuWindow(() => advanceFixedStep(page, bridge, 1000, true));
     await waitFrames(page, 1);
     await samplePathPosition(bridge, pathEntity, pathPositions);
+    await sampleSightLine(bridge, sightLine);
   } else if (ticks > 0 && fixedStep) {
     // Keep the virtual clock ahead of requestAnimationFrame while preserving a bounded
     // path sample cadence. advanceFixedStep submits one tick per bridge request: a loaded visual
@@ -350,10 +406,12 @@ export async function runStep(
       const batch = Math.min(sampleTicks, ticks - index);
       await advanceFixedStep(page, bridge, batch);
       await samplePathPosition(bridge, pathEntity, pathPositions);
+      await sampleSightLine(bridge, sightLine);
     }
   } else {
     await waitFrames(page, Math.max(frames, ticks, 1));
     await samplePathPosition(bridge, pathEntity, pathPositions);
+    await sampleSightLine(bridge, sightLine);
   }
   const afterInput = bridge === undefined || movementSampleRequest === undefined
     ? undefined
@@ -550,7 +608,7 @@ async function executeAimAtStep(
  */
 export async function advanceFixedStep(
   page: Page,
-  bridge: Pick<IPlaytestBridgeClient, "advance">,
+  bridge: { advance(ticks: number, options?: { render?: boolean }): Promise<number | undefined | void> },
   ticks: number,
   render = false,
 ): Promise<void> {
@@ -560,11 +618,14 @@ export async function advanceFixedStep(
   // work during one tick to exceed a request's bounded budget. A measurement that couples updates
   // to world draws also asks for a drawn frame per tick and lets the HUD paint between ticks.
   // Every other step advances without drawing.
-  for (let tick = 0; tick < ticks; tick += 1) {
+  // A live clock answers a one-tick request with the ticks its own pump ran: two per frame at
+  // 30 fps on a 60 Hz step. Count those, or a held key stays down for twice its ticks (PRD-752).
+  // A stalled pump reports zero and still counts as one, so the loop always ends.
+  for (let tick = 0; tick < ticks; ) {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        if (render) await bridge.advance(1, { render: true });
-        else await bridge.advance(1);
+        const advanced = render ? await bridge.advance(1, { render: true }) : await bridge.advance(1);
+        tick += typeof advanced === "number" && advanced > 1 ? advanced : 1;
         break;
       } catch (error) {
         if (
@@ -576,7 +637,7 @@ export async function advanceFixedStep(
         await waitFrames(page, 1);
       }
     }
-    if (render && tick + 1 < ticks) await waitFrames(page, 1);
+    if (render && tick < ticks) await waitFrames(page, 1);
   }
 }
 
@@ -675,6 +736,40 @@ export async function setPointerButtons(
   inputState.pointerButtons = buttons;
 }
 
+/**
+ * Advances one tick at a time and records where the subject and each named foot are after every
+ * tick. The 10-tick path cadence cannot see a stride, so a footSlip step pays one round trip per tick.
+ */
+export async function sampleFootSlip(
+  page: Page,
+  bridge: IPlaytestBridgeClient,
+  ticks: number,
+  label: string,
+  entity: string,
+  feet: string[],
+): Promise<IPlaytestFootSlipObservation> {
+  const samples: IPlaytestFootSlipObservation["samples"] = [];
+  for (let tick = 0; tick < ticks; tick += 1) {
+    await advanceFixedStep(page, bridge, 1);
+    const snapshot = await bridge.sample({ entities: [entity], include: ["entities"], sceneNodes: feet.map((name) => ({ limit: 1, name })) });
+    samples.push({
+      body: entityPosition(snapshot, entity) ?? null,
+      feet: feet.map((_name, index) => snapshot.sceneNodes?.[index]?.nodes[0]?.position ?? null),
+    });
+  }
+  return { entity, feet, label, samples };
+}
+
+/** Asks the bridge where the camera's line to the entity goes; a bridge that cannot answer leaves no sample. */
+export async function sampleSightLine(
+  bridge: IPlaytestBridgeClient | undefined,
+  sightLine: { entity: string; samples: IPlaytestSightLineObservation[] } | undefined,
+): Promise<void> {
+  if (bridge === undefined || sightLine === undefined) return;
+  const snapshot = await bridge.sample({ sightLine: { entity: sightLine.entity } });
+  if (snapshot.sightLine !== undefined) sightLine.samples.push(snapshot.sightLine);
+}
+
 export async function samplePathPosition(
   bridge: IPlaytestBridgeClient | undefined,
   entity: string | undefined,
@@ -698,23 +793,62 @@ export async function sampleAfterTransition(
   return bridge.sample(request);
 }
 
-export async function waitFrames(page: Page, frames: number): Promise<void> {
+export async function waitFrames(page: Page, frames: number, timeoutMs?: number): Promise<void> {
   if (frames <= 0) return;
-  await page.evaluate((count) => new Promise<void>((resolveFrame) => {
-    const schedule = (globalThis as unknown as {
-      requestAnimationFrame(callback: () => void): number;
-    }).requestAnimationFrame;
-    let remaining = count;
-    const next = () => {
-      remaining -= 1;
-      if (remaining <= 0) resolveFrame();
-      else schedule(next);
-    };
-    schedule(next);
-  }), frames);
+  let budgetMs: number;
+  if (timeoutMs === undefined) {
+    budgetMs = advanceTimeoutMs(frames);
+  } else if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    // An expired or malformed budget must not start a fresh deadline.
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_OPERATION_TIMEOUT",
+      `waitFrames requested ${frames} frame(s) but the supplied remaining budget of ${String(timeoutMs)}ms is not a positive, finite value.`,
+      "Check that the page is producing requestAnimationFrame callbacks; the wait cannot complete while rendering is stalled.",
+    ));
+  } else {
+    budgetMs = timeoutMs;
+  }
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      page.evaluate((count) => new Promise<void>((resolveFrame) => {
+        const schedule = (globalThis as unknown as {
+          requestAnimationFrame(callback: () => void): number;
+        }).requestAnimationFrame;
+        let remaining = count;
+        const next = () => {
+          remaining -= 1;
+          if (remaining <= 0) resolveFrame();
+          else schedule(next);
+        };
+        schedule(next);
+      }), frames),
+      new Promise<void>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new PlaytestBridgeError(playtestDiagnostic(
+          "TN_PLAYTEST_OPERATION_TIMEOUT",
+          `waitFrames requested ${frames} frame(s) exceeded ${budgetMs}ms.`,
+          "Check that the page is producing requestAnimationFrame callbacks; the wait cannot complete while rendering is stalled.",
+        ))), budgetMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }
 
 /** Private opt-in, like CPU windows: one pose per fresh runner/process, deterministic prefix. */
+
+/**
+ * Warmup is one wait, as it was before, with a budget that grows with its frames. A software
+ * rasteriser can take over ten seconds a frame, so a fixed allowance cut the warmup short, while a
+ * frame that never arrives still fails within the budget instead of hanging the run.
+ */
+const WARMUP_FIRST_FRAME_BUDGET_MS = 15_000;
+const WARMUP_FRAME_BUDGET_MS = 20_000;
+export async function waitWarmupFrames(page: Page, frames: number): Promise<void> {
+  await waitFrames(page, frames, WARMUP_FIRST_FRAME_BUDGET_MS + frames * WARMUP_FRAME_BUDGET_MS);
+}
+
 export function completionWindowLabel(scenario: Pick<IPlaytestScenario, "steps">, target: string, live: boolean,
   raw = process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL): string | undefined {
   if (raw === undefined) return undefined;
@@ -765,6 +899,10 @@ export async function measureCompletionWindow(label: string,
       timer = setTimeout(() => reject(new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: operation timeout")), timeoutMs);
     })]); } finally { clearTimeout(timer); }
   };
+  const minimumFrames = Number(process.env.TN_PLAYTEST_COMPLETION_WINDOW_MIN_FRAMES ?? 101);
+  const timeoutMs = Number(process.env.TN_PLAYTEST_COMPLETION_WINDOW_TIMEOUT_MS ?? 10000);
+  if (!Number.isSafeInteger(minimumFrames) || minimumFrames < 1 || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1)
+    fail("invalid completion frame count or timeout");
   const samples: ICompletionWindow["samples"] = [];
   let previous: { sequence: number; completedAtMs: number } | undefined;
   let failure: unknown;
@@ -781,7 +919,7 @@ export async function measureCompletionWindow(label: string,
     if (negotiated?.mode !== "wall-clock" || !Number.isSafeInteger(negotiated.tick)
       || !Number.isSafeInteger(negotiated.epoch) || negotiated.epoch! < 0) fail("clock negotiation unavailable");
     epoch = negotiated.epoch;
-    const deadline = Date.now() + 10000;
+    const deadline = Date.now() + timeoutMs;
     measurement: while (Date.now() <= deadline) {
       const value = await bounded(poll, Math.max(1, deadline - Date.now())) as { clock?: { mode?: string }; epoch?: number; valid?: boolean; dropped?: number;
         source?: string; timebase?: string; samples?: ICompletionWindow["samples"] };
@@ -812,6 +950,7 @@ export async function measureCompletionWindow(label: string,
         samples.push({ sequence: sample.sequence, completedAtMs: sample.completedAtMs });
         if (sample.completedAtMs - samples[0]!.completedAtMs >= 5000) {
           if (samples.length < 101) fail("fewer than 100 complete intervals");
+          if (samples.length < minimumFrames) continue;
           const intervals = samples.slice(1).map((entry, index) => entry.completedAtMs - samples[index]!.completedAtMs).sort((a, b) => a - b);
           result = { label, metric: "application-completion-interval", clock: "wall-clock", source: source!, timebase: timebase!, epoch: epoch!,
             startTick: negotiated.tick!, startMs: samples[0]!.completedAtMs, endMs: sample.completedAtMs,

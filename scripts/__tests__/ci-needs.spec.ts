@@ -28,6 +28,17 @@ const BUILD = `  build:
 `;
 
 describe("ci needs graph", () => {
+  it("passes the classified base to every downstream candidate consumer", async () => {
+    const jobs = new Map(jobSections(await ci()));
+    const scope = jobs.get("scope") ?? "";
+    expect(scope).toContain("base_sha: ${{ steps.classify.outputs.base_sha }}");
+    expect(scope).toContain("TN_CI_BASE_SHA: ${{ steps.classify.outputs.base_sha }}");
+    expect(jobs.get("integration")).toContain("base_sha: ${{ needs.scope.outputs.base_sha }}");
+    expect(jobs.get("ci-required")).toContain(
+      "TN_CI_BASE_SHA: ${{ needs.scope.outputs.base_sha }}",
+    );
+  });
+
   it("should read every job in this repository's own ci.yml", async () => {
     const jobs = ciJobGraph(await ci());
     expect(jobs.map((job) => job.name)).toContain("golden-path");
@@ -189,13 +200,11 @@ describe("ci run summary", () => {
     // The guard against the summary itself going quiet: a job added to ci.yml without being added
     // to run-summary's `needs:` is an unreported job, which is the exact shape of the defect.
     const jobs = ciJobGraph(await ci());
-    const results = Object.fromEntries(
-      jobs
-        .filter((job) => job.name !== "run-summary")
-        .map((job) => [job.name, { result: "success" }]),
-    );
+    // The results are exactly what `toJSON(needs)` hands the script: the jobs run-summary waits on.
+    const waitedOn = jobs.find((job) => job.name === "run-summary")?.needs ?? [];
+    const results = Object.fromEntries(waitedOn.map((name) => [name, { result: "success" }]));
     const rows = summaryRows(jobs, "run-summary", results);
-    expect(rows).toHaveLength(jobs.length - 1);
+    expect(rows.map((row) => row.job).sort()).toEqual([...waitedOn].sort());
     expect(formatRunSummary(rows)).toContain(`Every one of the ${String(rows.length)} jobs ran.`);
   });
 
@@ -616,7 +625,9 @@ function classifyCandidate(
       "--target",
       options.target ?? "develop",
       "--event-name",
-      options.event ?? "pull_request",
+      // PRD-731: a pull request into develop earns the thin review lane, so the generic tree reuse
+      // of a full board is exercised with the event that still owes one on develop: a push.
+      options.event ?? "push",
       // The nightly split is decided from the clock, so the fixture states the day rather than
       // waiting for one.
       ...(options.dayOfWeek === undefined ? [] : ["--day-of-week", String(options.dayOfWeek)]),
@@ -969,15 +980,18 @@ describe("a develop push qualifies its tree and still warms the caches every pul
     expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
   });
 
-  it("leaves a pull request and the merge queue on develop on the same plan", () => {
+  it("gives a pull request the review lane and leaves the merge queue the full board", () => {
+    // PRD-731: the two events no longer share a plan. The queue's board is the one a tree reuse
+    // may replace, so it stays full here; the pull request's thin lane never consults the API.
     const fixture = reuseFixture();
     fakeActionsApi(fixture);
     listSourceRun(fixture);
-    for (const event of ["pull_request", "merge_group"]) {
-      expect(
-        classifyCandidate(fixture, fixture.candidate, { event, target: "develop" }),
-      ).toMatchObject({ selection: "full", reusedRunId: 0 });
-    }
+    expect(
+      classifyCandidate(fixture, fixture.candidate, { event: "pull_request", target: "develop" }),
+    ).toMatchObject({ selection: "review", lane: "review", reusedRunId: 0 });
+    expect(
+      classifyCandidate(fixture, fixture.candidate, { event: "merge_group", target: "develop" }),
+    ).toMatchObject({ selection: "full", reusedRunId: 0 });
   });
 
   it("never lets a warm run stand in as a reused verdict", () => {
@@ -985,7 +999,7 @@ describe("a develop push qualifies its tree and still warms the caches every pul
     fakeActionsApi(fixture, { event: "push", headBranch: "develop" });
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate, {
-      event: "pull_request",
+      event: "push",
       target: "develop",
     });
     expect(plan.selection).toBe("full");

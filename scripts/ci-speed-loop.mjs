@@ -4,10 +4,9 @@
 //   node scripts/ci-speed-loop.mjs record --since 2026-10-09 --label "gating board" [--notes ...] [--decision keep]
 //   node scripts/ci-speed-loop.mjs show
 //   node scripts/ci-speed-loop.mjs discard --iteration 3 --reason "queue outage"
-//   node scripts/ci-speed-loop.mjs report
+//   pnpm dashboard   # the CI speed tab renders the ledger on each load (PRD-751)
 //
-// docs/ci-speed/ledger.json is the durable record, one entry per iteration. docs/ci-speed/index.html is
-// generated from it and opens with file:// and no script. Neither is edited by hand. A superseded
+// docs/ci-speed/ledger.json is the durable record, one entry per iteration, not edited by hand. A superseded
 // iteration stays in the ledger and the table but leaves the charts and the progress strip.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -17,7 +16,6 @@ import { measure } from "./ci-merge-latency.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = resolve(ROOT, "docs/ci-speed/ledger.json");
-const HTML = resolve(ROOT, "docs/ci-speed/index.html");
 const DECISIONS = ["baseline", "keep", "reject", "provisional", "inconclusive", "invalid"];
 
 /** The PRD-550 targets. `better` says which side of the goal is a win. */
@@ -78,7 +76,7 @@ export function readLedger(path = LEDGER) {
   return ledger;
 }
 
-function writeAtomic(path, text) {
+export function writeAtomic(path, text) {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, text);
@@ -147,7 +145,7 @@ export const meetsGoal = (goal, value) =>
   value !== undefined &&
   (goal.better === "lower" ? value <= goal.goal : value >= goal.goal);
 
-const esc = (value) =>
+export const esc = (value) =>
   String(value ?? "").replace(
     /[&<>"']/gu,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
@@ -158,7 +156,7 @@ const num = (value, unit = "") =>
     : `${value}${unit === "%" ? "%" : ` ${unit}`}`.trim();
 
 /** One goal's trend: a line per live iteration, a dashed goal line, a break where a value is missing. */
-function lineChart(goal, live) {
+export function lineChart(goal, live) {
   const width = 380;
   const height = 190;
   const pad = { l: 44, r: 14, t: 14, b: 28 };
@@ -294,7 +292,7 @@ svg{width:100%;height:auto}
 tr.out td{opacity:.55;text-decoration:line-through}tr.out td small{text-decoration:none}
 </style></head><body><main>
 <h1>CI speed loop</h1>
-<p class="dim">${header} Snapshot ${esc(now.toISOString())}. Regenerate with <code>node scripts/ci-speed-loop.mjs report</code>, then reload; the page is a static render of <code>docs/ci-speed/ledger.json</code>. Goal: a change merges within 30 minutes of its last push (PRD-550).</p>
+<p class="dim">${header} Snapshot ${esc(now.toISOString())}. The <code>pnpm dashboard</code> CI speed tab renders <code>docs/ci-speed/ledger.json</code> on each load. Goal: a change merges within 30 minutes of its last push (PRD-550).</p>
 <h2>Progress toward the goal</h2>
 <div class="scroll"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Now</th><th>Goal</th><th>Progress</th><th></th></tr></thead><tbody>${strip}</tbody></table></div>
 <h2>Trend per iteration</h2>
@@ -347,12 +345,10 @@ function main(argv) {
     writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
   } else if (command === "show") {
     return show(ledger);
-  } else if (command !== "report") {
-    console.error("usage: ci-speed-loop.mjs record|show|discard|report");
+  } else {
+    console.error("usage: ci-speed-loop.mjs record|show|discard");
     process.exit(2);
   }
-  writeAtomic(HTML, renderHtml(ledger));
-  console.log(`wrote ${HTML} (${String(ledger.iterations.length)} iterations)`);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

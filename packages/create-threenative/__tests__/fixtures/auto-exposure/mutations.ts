@@ -46,12 +46,12 @@ export function exposureMutationPlugin(
     transform(source, id) {
       const suffix =
         mutation === "consumer"
-          ? "/template-assets/worldEnvironment.ts"
+          ? "/packages/core/src/look/world-environment.ts"
           : mutation === "clock"
             ? "/fixtures/auto-exposure/main.ts"
             : mutation === "disabled"
-              ? "/template-assets/autoExposure.ts"
-              : "/template-assets/exposureGraph.ts";
+              ? "/packages/core/src/look/auto-exposure.ts"
+              : "/packages/core/src/look/exposure-graph.ts";
       if (!id.endsWith(suffix)) return;
       const code = mutateExposureSource(source, mutation);
       count++;
@@ -71,7 +71,11 @@ export function exposureMutationPlugin(
 
 /** Pre-PRD-571 template sources: the clamped 1x1 mean meter, the red control for the histogram. */
 export const meanMeterBaselineRef = "2d212479255cf725f64343dc72aa2eafe9b7b92d";
-const baselineFiles = ["autoExposure", "exposure", "exposureGraph"];
+const baselineFiles = {
+  autoExposure: "auto-exposure",
+  exposure: "exposure-settings",
+  exposureGraph: "exposure-graph",
+};
 
 /** Serves the baseline meter from git for one disposable fixture build; shipped source is untouched. */
 export function meanMeterBaselinePlugin(ref: string = meanMeterBaselineRef): Plugin {
@@ -83,7 +87,9 @@ export function meanMeterBaselinePlugin(ref: string = meanMeterBaselineRef): Plu
       // The baseline has no histogram to probe; keep the page's dynamic import resolvable.
       if (id.endsWith("/fixtures/auto-exposure/histogramProbe.ts"))
         return "export const runHistogramProbe = async () => {};";
-      const file = baselineFiles.find((name) => id.endsWith(`/template-assets/${name}.ts`));
+      const file = Object.entries(baselineFiles).find(([, installed]) =>
+        id.endsWith(`/core/src/look/${installed}.ts`),
+      )?.[0];
       if (file === undefined) return;
       served.add(file);
       return execFileSync(
@@ -92,12 +98,15 @@ export function meanMeterBaselinePlugin(ref: string = meanMeterBaselineRef): Plu
         {
           encoding: "utf8",
         },
-      );
+      )
+        .replaceAll("./exposure.js", "./exposure-settings.js")
+        .replaceAll("./exposureGraph.js", "./exposure-graph.js")
+        .replaceAll("./exposureReadback.js", "./exposure-readback.js");
     },
     buildEnd(error) {
-      if (error === undefined && served.size !== baselineFiles.length)
+      if (error === undefined && served.size !== Object.keys(baselineFiles).length)
         throw new Error(
-          `Mean-meter baseline served ${served.size} of ${baselineFiles.length} modules.`,
+          `Mean-meter baseline served ${served.size} of ${Object.keys(baselineFiles).length} modules.`,
         );
     },
   };

@@ -6,6 +6,7 @@
 
 #include "check.h"
 #include "engine/renderer/compute.h"
+#include "engine/renderer/pipeline_cache.h"
 #include "mystral/webgpu/context.h"
 
 #include <algorithm>
@@ -219,6 +220,23 @@ void readback() {
     }
     std::printf("compute readback: %u positions, %zu components differ\n", kCount, mismatched);
     CHECK(mismatched == 0);
+
+    // A steady dispatch (the same buffers as last frame) creates no bind group; new buffers create one.
+    const auto groupsFor = [&](Handle buffer) {
+        const uint64_t before = bindGroupsCreated();
+        WGPUCommandEncoder steady = wgpuDeviceCreateCommandEncoder(context.getDevice(), &encoderDesc);
+        const Handle buffers[] = {buffer};
+        CHECK(pass.dispatch(steady, buffers, kCount, {{"spacing", 0.5}}));
+        gpu.submit(wgpuCommandEncoderFinish(steady, &commandDesc));
+        wgpuCommandEncoderRelease(steady);
+        return bindGroupsCreated() - before;
+    };
+    CHECK(groupsFor(positions) == 0);
+    CHECK(groupsFor(positions) == 0);
+    const Handle moved = gpu.createBuffer(bytes, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst);
+    CHECK(groupsFor(moved) == 1);
+    CHECK(groupsFor(positions) == 0);
+    gpu.destroy(moved);
 
     // A dispatch given the wrong buffers is refused, not recorded.
     WGPUCommandEncoder other = wgpuDeviceCreateCommandEncoder(context.getDevice(), &encoderDesc);

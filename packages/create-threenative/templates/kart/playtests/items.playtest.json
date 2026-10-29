@@ -1,0 +1,143 @@
+{
+  "name": "kart-items",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 115.4,
+          "y": -0.21,
+          "z": -31.37
+        },
+        "facing": {
+          "yaw": 0.8892
+        }
+      },
+      {
+        "entity": "burr.0",
+        "at": {
+          "x": 72.48,
+          "y": 1.74,
+          "z": 43.33
+        }
+      },
+      {
+        "entity": "acorn.0",
+        "at": {
+          "x": 51.85,
+          "y": 0.17,
+          "z": 36.56
+        },
+        "facing": {
+          "yaw": -2.0548
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot",
+      "press": ["KeyP"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "race-on",
+      "waitTicks": 660,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "burr.0",
+        "component": "hits",
+        "equals": 1,
+        "allowTrivial": "The burr on the grid's front row was run over once."
+      },
+      {
+        "entity": "cpu.1",
+        "component": "spins",
+        "equals": 1,
+        "allowTrivial": "The front-row CPU that ran over it spun out."
+      },
+      {
+        "entity": "cpu.1",
+        "component": "hitSeconds",
+        "gte": 1.49,
+        "lte": 1.51,
+        "allowTrivial": "A burr spin lasts MK64's 90 ticks, 1.5 s."
+      },
+      {
+        "entity": "acorn.0",
+        "component": "hits",
+        "equals": 1,
+        "allowTrivial": "The acorn fired up the grid hit once."
+      },
+      {
+        "entity": "cpu.7",
+        "component": "tumbles",
+        "equals": 1,
+        "allowTrivial": "The CPU ahead of the acorn tumbled."
+      },
+      {
+        "entity": "cpu.7",
+        "component": "hitSeconds",
+        "gte": 1.7,
+        "lte": 1.73,
+        "allowTrivial": "An acorn tumble lasts MK64's 103 ticks, 1.72 s."
+      },
+      {
+        "entity": "player",
+        "component": "boxes",
+        "gte": 1,
+        "allowTrivial": "The player's kart drove through an item box."
+      },
+      {
+        "entity": "player",
+        "component": "itemDraws",
+        "equals": 1,
+        "allowTrivial": "The one box the kart drove through gave exactly one item."
+      },
+      {
+        "entity": "player",
+        "component": "used",
+        "equals": "nitro",
+        "allowTrivial": "Last place draws from the 8th-place curve, which is all nitro cans, and the can was used."
+      },
+      {
+        "entity": "player",
+        "component": "boostSeconds",
+        "gte": 1.3,
+        "lte": 1.36,
+        "allowTrivial": "The nitro can's boost lasts 80 ticks, 1.33 s."
+      }
+    ]
+  }
+}

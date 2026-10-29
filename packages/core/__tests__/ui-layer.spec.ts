@@ -199,7 +199,7 @@ describe("the interactive-rect registry", () => {
     const registry = publishHitRegions({ bridge: bridge(), scope });
     expect(posted).toHaveLength(1);
 
-    scope.fire("transitionrun");
+    scope.fire("transitionstart");
     // The button slides: each frame it is somewhere new, and each frame must be published.
     for (let step = 1; step <= 3; step += 1) {
       scope.move(step * 40);
@@ -211,6 +211,22 @@ describe("the interactive-rect registry", () => {
 
     scope.fire("transitionend");
     const settled = posted.length;
+    scope.frames(4);
+    expect(posted).toHaveLength(settled);
+    registry.stop();
+  });
+
+  test("should count a browser transition once, not once per start event", () => {
+    scope = fakeScope([[{ left: 0, top: 0, width: 40, height: 40 }]]);
+    const registry = publishHitRegions({ bridge: bridge(), scope });
+    expect(posted).toHaveLength(1);
+
+    // What Chromium emits for one CSS transition, in order.
+    scope.fire("transitionrun");
+    scope.fire("transitionstart");
+    scope.fire("transitionend");
+    const settled = posted.length;
+    scope.move(80);
     scope.frames(4);
     expect(posted).toHaveLength(settled);
     registry.stop();

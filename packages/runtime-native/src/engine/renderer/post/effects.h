@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <functional>
 #include <vector>
 #include "engine/shader/graph/post_effects.h"
@@ -17,7 +18,15 @@ class PostEffects {
     ~PostEffects();
     PostEffects(const PostEffects&) = delete;
     PostEffects& operator=(const PostEffects&) = delete;
-    void resize(uint32_t width, uint32_t height);
+    void resize(uint32_t width, uint32_t height, uint32_t outputWidth = 0, uint32_t outputHeight = 0,
+                bool sceneResolved = false);
+    /**
+     * Draws a pass the graph names `host`, in its place in the graph's order: the renderer's own resolve of a texture this
+     * graph drew. `beauty` is that texture, `output` the target the pass writes. Unset, such a pass fails the frame.
+     */
+    using HostPass = std::function<void(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
+                                        WGPUTexture output, WGPUTextureView outputView)>;
+    void setHost(HostPass host) { host_ = std::move(host); }
     /** Takes each live effect's current `resolutionScale` (set after install, as three reads it every
      *  frame) and rebuilds the targets when one changed; true when the targets are new. */
     bool syncScales();
@@ -40,6 +49,8 @@ class PostEffects {
                 const std::function<bool(const std::string&)>& isDeferred = {},
                 const std::function<WGPUCommandEncoder(WGPUCommandEncoder)>& split = {});
     WGPUTextureView view(const std::string& name) const;
+    /** Actual allocation dimensions, for stage-size diagnostics. Unknown outputs throw. */
+    std::array<uint32_t, 2> targetSize(const std::string& name) const;
     WGPUSampler sampler(const std::string& name) const;
     /** Changes whenever any output view is replaced (a resize, a new target), so a cached bind group of one can be rebuilt. */
     uint64_t viewsStamp() const;
@@ -54,6 +65,7 @@ class PostEffects {
     };
     struct Pass {
         shader::graph::PostPass source;
+        bool displaySized = false;
         WGPUBuffer uniforms = nullptr, vertexUniforms = nullptr;
         WGPURenderPipeline pipeline = nullptr; // borrowed from cache
         // Explicit layout: an automatic one drops a binding the shader never reads (SMAA's unused
@@ -64,10 +76,10 @@ class PostEffects {
         uint16_t rttMin = 1006, rttMag = 1006;
         bool rendered = false;
         std::map<std::string, std::vector<double>> captured;  // the live nodes' and effect's values, over `source.uniforms`
-        // The bind group of the last frame and what it binds: reused while every entry is the same,
-        // dropped with the targets (a released view's handle can come back for a new one).
+        // This frame's bind groups, borrowed from the last two binding sets: reused while every entry is the same,
+        // dropped with the targets.
         WGPUBindGroup group = nullptr, vertexGroup = nullptr;
-        std::vector<WGPUBindGroupEntry> groupEntries, vertexEntries;
+        RecentBindGroups groups, vertexGroups;
     };
     void releaseGroups();
     void clearTargets();
@@ -80,7 +92,10 @@ class PostEffects {
     std::map<std::string, WGPUTextureView> outputViews_;
     std::map<std::string, WGPUSampler> inputSamplers_;
     WGPUSampler linear_ = nullptr;
-    uint32_t width_ = 0, height_ = 0;
+    WGPUSampler compare_ = nullptr;
+    uint32_t width_ = 0, height_ = 0, outputWidth_ = 0, outputHeight_ = 0;
+    bool sceneResolved_ = false;
+    HostPass host_;
     bool captured_ = false;
     float lastTime_ = -1;  // the frame time of the render before, for deltaTime
 };

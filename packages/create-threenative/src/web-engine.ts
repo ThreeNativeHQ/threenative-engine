@@ -47,12 +47,38 @@ const ENGINE_ADDON_PREFIX = "\0threenative:web-engine-addon:";
 const SKELETON_UTILS_ID = "\0threenative:web-engine-skeleton-utils";
 /** The product Wasm entry inside the installed `@threenative/runtime-native` (PRD-540 phase 2). */
 export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
+/**
+ * The threaded engine beside it (PRD-752 phase 4): a cross-origin-isolated page loads this one, so the
+ * engine's job pool has workers; any other page loads the single-thread entry. Optional: an install
+ * without it runs single-threaded and reports `threads: off`.
+ */
+export const WASM_THREADS_ENTRY = "build/web/tn-native-engine-web-threads.mjs";
+
+/**
+ * three's math modules the engine's own JS value classes borrow (PRD-742). They carry no renderer,
+ * so the runtime may bundle them; a game still may not (the deep-import refusal below).
+ */
+const ENGINE_MATH_MODULES = new Set([
+  "three/src/math/Box3.js",
+  "three/src/math/Color.js",
+  "three/src/math/ColorManagement.js",
+  "three/src/math/Euler.js",
+  "three/src/math/Matrix3.js",
+  "three/src/math/Matrix4.js",
+  "three/src/math/Quaternion.js",
+  "three/src/math/Sphere.js",
+  "three/src/math/Vector2.js",
+  "three/src/math/Vector3.js",
+  "three/src/math/Vector4.js",
+]);
+/** Where the browser back end's value classes live: only these may import three's math modules. */
+const ENGINE_MATH_IMPORTER = /[\\/](?:browser-math\.ts|web-engine-runtime\.js)(?:\?.*)?$/u;
 
 export interface IWebEnginePlugin {
   readonly name: string;
   readonly enforce: "pre";
   configResolved(config: { readonly root: string }): void;
-  resolveId(source: string): string | null;
+  resolveId(source: string, importer?: string): string | null;
   load(id: string): Promise<string | null>;
 }
 
@@ -67,6 +93,10 @@ function browserModule(built: string, source: string): string {
 
 /** The binding runtime every upstream three import resolves through. */
 const runtimeModule = () => browserModule("web-engine-runtime.js", "browser-entry.ts");
+
+// The engine is the default; upstream three is the user's choice to make, never a build fix.
+const OPT_OUT =
+  'engine: "threejs" in threenative.config.ts switches to upstream three only when the user asks for it.';
 
 function wasmModule(root: string, explicit: string | undefined): string {
   if (explicit !== undefined) {
@@ -85,12 +115,12 @@ function wasmModule(root: string, explicit: string | undefined): string {
     );
   } catch {
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "threenative" needs @threenative/runtime-native installed in ${root}. Set engine: "threejs" in threenative.config.ts to keep upstream three.`,
+      `TN_WASM_ENGINE_MISSING: engine "threenative" needs @threenative/runtime-native installed in ${root}; install it (its npm package ships the Wasm engine). ${OPT_OUT}`,
     );
   }
   if (!existsSync(entry))
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${entry}; build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native, or set engine: "threejs" in threenative.config.ts to keep upstream three.`,
+      `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${entry}; reinstall @threenative/runtime-native, or in a ThreeNative checkout run \`pnpm wasm:build\` from the repository root (it fetches stb, cgltf and webp-source, then builds), or build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native. ${OPT_OUT}`,
     );
   return entry;
 }
@@ -102,7 +132,7 @@ async function upstreamNames(root: string): Promise<string[]> {
     UPSTREAM.map((id) => import(pathToFileURL(require.resolve(id)).href) as Promise<object>),
   );
   return [...new Set(modules.flatMap((module) => Object.keys(module)))]
-    .filter((name) => name !== "default")
+    .filter((name) => name !== "default" && name !== "module.exports")
     .sort();
 }
 
@@ -134,7 +164,7 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
     configResolved(config) {
       root ??= config.root;
     },
-    resolveId(specifier) {
+    resolveId(specifier, importer = "") {
       if (!native) return null;
       // three ships each addon under `addons/` and under its older `examples/jsm/` path.
       const source = specifier.replace(/^three\/examples\/jsm\//u, "three/addons/");
@@ -170,7 +200,10 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         return browserModule("web-engine-lut-cube-loader.js", "addons/lut-cube-loader-web.ts");
       if (POST_EFFECT_ADDONS.includes(source))
         return browserModule("web-engine-post-effects.js", "addons/post-effects-web.ts");
-      if (/^three\/(?:src|build)\//u.test(source))
+      if (
+        /^three\/(?:src|build)\//u.test(source) &&
+        !(ENGINE_MATH_MODULES.has(source) && ENGINE_MATH_IMPORTER.test(importer))
+      )
         throw new Error(
           `TN_NATIVE_UPSTREAM_IMPORT: ${source} would bundle upstream three under engine "threenative"; import from three, three/webgpu or three/tsl.`,
         );
@@ -191,9 +224,15 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         "__tnTsl",
         "__tnLoadGltf",
       ];
+      const single = wasmModule(projectRoot(), options.wasm);
+      const threads = path.join(path.dirname(single), path.basename(WASM_THREADS_ENTRY));
+      // Shared memory exists only on a cross-origin-isolated page (COOP + COEP, createWebBrandPlugin).
+      const createModule = existsSync(threads)
+        ? `(globalThis.crossOriginIsolated === true ? await import(${JSON.stringify(threads)}) : await import(${JSON.stringify(single)})).default`
+        : `(await import(${JSON.stringify(single)})).default`;
       return [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        `import createModule from ${JSON.stringify(wasmModule(projectRoot(), options.wasm))};`,
+        `const createModule = ${createModule};`,
         `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
         `export const { ${names.join(", ")} } = engine;`,
         "",

@@ -1,7 +1,7 @@
 import { PerspectiveCamera, PointLight, Scene } from "three";
 import { describe, expect, it } from "vitest";
 import { assertExposureCameraCut } from "./fixtures/auto-exposure/cameraProof.js";
-import { createFixedExposureRooms } from "./fixtures/auto-exposure/fixedRooms.js";
+import { ROOM_BASE_STOPS, createFixedExposureRooms } from "./fixtures/auto-exposure/fixedRooms.js";
 
 function fixture(stops = 11) {
   const scene = new Scene();
@@ -43,10 +43,10 @@ describe("actual camera cuts between fixed-lit exposure rooms", () => {
       if (object instanceof PointLight) lights.push(object);
     });
     expect(lights.map((light) => light.intensity)).toEqual([
-      2.1,
-      0.36,
-      2.1 * 2 ** stops,
-      0.36 * 2 ** stops,
+      2.1 * 2 ** ROOM_BASE_STOPS,
+      0.36 * 2 ** ROOM_BASE_STOPS,
+      2.1 * 2 ** (ROOM_BASE_STOPS + stops),
+      0.36 * 2 ** (ROOM_BASE_STOPS + stops),
     ]);
     expect(lights.every((light) => light.distance === 25)).toBe(true);
     expect(before.layers).toBe(1);

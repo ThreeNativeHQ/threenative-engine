@@ -14,6 +14,7 @@ catalog:
   procedural-animals: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512
   '@jridgewell/trace-mapping': 0.3.31
   '@gltf-transform/core': 4.4.2
+  '@modelcontextprotocol/server': 2.0.0
   '@gltf-transform/extensions': 4.4.2
   '@gltf-transform/functions': 4.4.2
   three-mesh-bvh: 0.9.14
@@ -37,6 +38,11 @@ catalog:
   '@typescript/typescript6': 6.0.2
   vite: 8.2.0
   vitest: 4.1.10
+  eslint: 10.13.0
+  '@typescript-eslint/parser': 8.72.0
+  '@typescript-eslint/eslint-plugin': 8.72.0
+  eslint-plugin-react-hooks: 7.1.1
+  '@eslint-community/eslint-plugin-eslint-comments': 4.8.1
   esbuild: 0.27.0
   es-module-lexer: 2.3.1
   publint: 0.3.22

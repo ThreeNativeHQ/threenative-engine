@@ -1,0 +1,106 @@
+{
+  "name": "move-hollow",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "spawn": {
+      "x": 100,
+      "y": 0.9,
+      "z": -2
+    },
+    "place": [
+      {
+        "entity": "mossling.2",
+        "at": {
+          "x": 104,
+          "y": 0.42,
+          "z": -20
+        },
+        "frozen": true
+      },
+      {
+        "entity": "flicker.1",
+        "at": {
+          "x": 96,
+          "y": 1.9,
+          "z": -5
+        },
+        "frozen": true
+      },
+      {
+        "entity": "thornback.1",
+        "at": {
+          "x": 104,
+          "y": 0.55,
+          "z": -9
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run-north",
+      "press": "ArrowUp",
+      "holdTicks": 400,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "zone",
+        "equals": "hollow",
+        "allowTrivial": "The run starts in the Hollow's guard room and ends through its doorway in the block room, so the indoor run speed is the one measured and the camera follows her through a doorway."
+      },
+      {
+        "id": "state",
+        "path": "topSpeed",
+        "gte": 2.375,
+        "lte": 2.625
+      },
+      {
+        "id": "state",
+        "path": "stopSeconds",
+        "gte": 0.01,
+        "lte": 0.3
+      },
+      {
+        "id": "state",
+        "path": "cameraBlocked",
+        "lte": 0,
+        "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "nearWallWorst",
+        "lte": 0.2,
+        "allowTrivial": "The most of the frame that walls in the front half of the way from the lens to Wren covered (a 24-ray grid, every 6th tick), so the camera never films her through a doorway; a running maximum, 0 at the start."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 3
+    }
+  }
+}

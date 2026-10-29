@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -30,6 +30,7 @@ const PACKAGE_SOURCE_FLAGS = {
  * than in a chain of equality checks that a fourth unscoped package would have to be added to in
  * two places. */
 const UNSCOPED_PACKAGE_FLAG_ALIASES: Readonly<Record<string, string>> = {
+  "animation-mcp": "threenative-animation-mcp",
   "blender-mcp": "threenative-blender-mcp",
   cli: "create-threenative",
   "engine-mcp": "threenative-engine-mcp",
@@ -41,6 +42,8 @@ type PackageSources = Partial<Record<PackageSourceName, string>> & {
 };
 
 export interface IKitManifest {
+  /** Extra exact words `--genre` resolves to this kit, e.g. "mario". Optional in kit.json. */
+  readonly aliases: readonly string[];
   readonly blurb: string;
   readonly genre: string;
   readonly kit: boolean;
@@ -53,6 +56,8 @@ export interface IScaffoldOptions {
   packageSources?: PackageSources;
   target: string;
   template?: ScaffoldTemplate;
+  /** The `--genre` word the user asked with; the next-steps line searches references for it. */
+  genre?: string;
 }
 
 export interface IScaffoldResult {
@@ -123,18 +128,20 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * hand let one fall a revision behind without anything failing. A file belongs here only when a
  * kit editing it would be a mistake rather than a choice.
  */
-export const SHARED_RENDER_SOURCES = [
-  path.join("src", "render", "worldEnvironment.ts"),
-  path.join("src", "render", "autoExposure.ts"),
-  path.join("src", "render", "exposureGraph.ts"),
-  path.join("src", "render", "exposureReadback.ts"),
-] as const;
+export const SHARED_RENDER_SOURCES: readonly string[] = [
+  "src/render/kitExposure.ts",
+  "src/render/temporalDetailStage.ts",
+];
 
 export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {
   const name = path.basename(relativePath);
   const local = path.resolve(root, "..", "template-assets", name);
   if (existsSync(local)) return local;
-  return path.resolve(templateRoot(), "..", "template-assets", name);
+  const starter = path.resolve(root, "starter", relativePath);
+  if (existsSync(starter)) return starter;
+  const shared = path.resolve(templateRoot(), "..", "template-assets", name);
+  if (existsSync(shared)) return shared;
+  return path.resolve(templateRoot(), "starter", relativePath);
 }
 
 /** Re-copies every shared render source into each kit that ships it. */
@@ -217,12 +224,31 @@ async function copySharedAssets(target: string, templateRootDirectory: string): 
     }
   };
   if (existsSync(source)) await walk(source);
-  for (const name of readdirSync(shared)) {
-    if (!texts.some((text) => text.includes(`"${name}"`))) continue;
+  const names = readdirSync(shared);
+  // A `<prefix>-PROVENANCE.md` licence record travels with any copied `<prefix>-*` file.
+  const named = (name: string): boolean => texts.some((text) => text.includes(`"${name}"`));
+  const copied = (name: string): boolean => {
+    const record = /^(.+-)PROVENANCE\.md$/u.exec(name);
+    if (record)
+      return names.some(
+        (other) => other.startsWith(record[1] as string) && other !== name && named(other),
+      );
+    return named(name);
+  };
+  for (const name of names) {
+    if (!copied(name)) continue;
     const destination = path.join(target, "assets", name);
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(path.join(shared, name), destination, { errorOnExist: true, force: false });
   }
+}
+
+/** Every generated game gets the same two thin configs; the rules live in `create-threenative/quality`
+ * and the formatter settings in `biome.json`. Fails closed when the package lacks them. */
+async function copyQualityConfig(target: string, templateRootDirectory: string): Promise<void> {
+  const shared = path.join(path.dirname(templateRootDirectory), "template-assets", "quality");
+  if (!existsSync(shared)) throw new Error(`TN_QUALITY_CONFIG_MISSING: ${shared}`);
+  await cp(shared, target, { errorOnExist: true, recursive: true });
 }
 
 function invalidManifest(file: string, reason: string): never {
@@ -263,7 +289,10 @@ function loadManifest(directory: string): IKitManifest {
     return invalidManifest(file, `name '${name}' must match directory '${directoryName}'`);
   const kit = record.kit;
   if (typeof kit !== "boolean") return invalidManifest(file, "kit must be a boolean");
+  const rawAliases = record.aliases ?? [];
+  if (!Array.isArray(rawAliases)) return invalidManifest(file, "aliases must be an array");
   return {
+    aliases: rawAliases.map((alias) => nonEmptyString(alias, "aliases[]", file).toLowerCase()),
     blurb: nonEmptyString(record.blurb, "blurb", file),
     genre: nonEmptyString(record.genre, "genre", file),
     kit,
@@ -293,21 +322,30 @@ export function kitManifest(template: ScaffoldTemplate, root = templateRoot()): 
   return manifest;
 }
 
-/** Resolve an exact public genre to its kit. Unknown genres deliberately start from minimal:
- * genre words are authoring input, not an invitation to guess the closest preset. */
+/** Resolve an exact public genre, or an alias a kit declares in its own kit.json, to its kit.
+ * Unknown words deliberately start from minimal: genre words are authoring input, not an
+ * invitation to guess the closest preset. Two kits claiming one word is a manifest bug. */
 export function templateForGenre(genre: string, root = templateRoot()): ScaffoldTemplate {
   const normalized = genre.trim().toLowerCase();
   if (normalized.length === 0) throw new Error("Genre must not be empty.");
-  return (
-    discoverKitManifests(root).find((manifest) => manifest.genre.toLowerCase() === normalized)
-      ?.name ?? "minimal"
+  const matches = discoverKitManifests(root).filter(
+    (manifest) =>
+      manifest.genre.toLowerCase() === normalized || manifest.aliases.includes(normalized),
   );
+  if (matches.length > 1)
+    throw new Error(
+      `TN_KIT_GENRE_AMBIGUOUS: '${normalized}' names ${matches.map(({ name }) => name).join(", ")}.`,
+    );
+  return matches[0]?.name ?? "minimal";
 }
 
 function templateHelp(manifests: readonly IKitManifest[]): string {
   const width = Math.max(...manifests.map(({ name }) => name.length), 0);
   return manifests
-    .map(({ blurb, name, title }) => `  ${name.padEnd(width)}  ${title}: ${blurb}`)
+    .map(
+      ({ aliases, blurb, name, title }) =>
+        `  ${name.padEnd(width)}  ${title}: ${blurb}${aliases.length > 0 ? ` (also: ${aliases.join(", ")})` : ""}`,
+    )
     .join("\n");
 }
 
@@ -321,6 +359,122 @@ export function scaffoldCompletionMessage(
   return `Templates: ${names}. Choose with --template <name>.\n`;
 }
 
+/**
+ * The scaffold's last line. A host loads the MCP servers in `.mcp.json` only for a session started
+ * in the game folder, and an agent that scaffolds mid-session never gets them (PRD-750: five cold
+ * builds, zero engine calls). `mcp/call.mjs` starts any of them the way the host would.
+ */
+export function scaffoldNextSteps(
+  target: string,
+  installed: boolean,
+  servers: readonly string[] = [],
+): string {
+  const call = `node ${target}/node_modules/@threenative/core/mcp/call.mjs`;
+  const agent = `start your coding agent in ${target} so it loads the MCP servers in .mcp.json${servers.length > 0 ? ` (${servers.join(", ")})` : ""}. This session, started elsewhere, has them all through ${call}: \`${call} <server>\` lists its tools, \`${call} <server> <tool> '<json>'\` calls one, e.g. ${call} threenative-engine engine_search_capabilities '{"situation":"<words>"}'`;
+  return installed
+    ? `Next: ${agent}. Read AGENTS.md once; CLAUDE.md is its copy, and the skills it names are .claude/skills/<name>/SKILL.md. pnpm dev plays the game; pnpm test proves it.\n`
+    : `Skipped install (--no-install). Run pnpm install in ${target}, then ${agent}.\n`;
+}
+
+/** The server names in the game's `.mcp.json`, or none when the install has not written it. */
+export function projectMcpServers(target: string): string[] {
+  try {
+    return Object.keys(
+      JSON.parse(readFileSync(path.join(target, ".mcp.json"), "utf8")).mcpServers ?? {},
+    );
+  } catch {
+    return [];
+  }
+}
+
+const REFERENCE_DIGEST_SIZE = 5;
+/** Hits whose pinned sources print in full: sandbox 6 read the titles and opened none. */
+const REFERENCE_DETAIL_SIZE = 3;
+
+interface IReferenceHit {
+  game: string;
+  id: string;
+  kind: string;
+  name: string;
+  summary: string;
+  title: string;
+}
+
+interface IReferenceDetail {
+  repo: string;
+  sha: string;
+  card?: {
+    behavior: string;
+    constants?: { name: string; source: string; unit: string; value: unknown }[];
+    sources?: { line: number; path: string }[];
+  };
+  node?: { functions?: { lines: number[]; name: string; path: string }[]; purpose: string };
+  children?: { id: string }[];
+}
+
+function referenceLines(detail: IReferenceDetail): string[] {
+  const pin = `${detail.repo}@${detail.sha.slice(0, 7)}`;
+  if (detail.card !== undefined) {
+    const { behavior, constants = [], sources = [] } = detail.card;
+    return [
+      `  ${pin}: ${behavior}`,
+      ...constants
+        .slice(0, 4)
+        .map((c) => `  ${c.name} = ${String(c.value)} ${c.unit} (${c.source})`),
+      `  sources: ${sources.map((source) => `${source.path}:${source.line}`).join(", ")}`,
+    ];
+  }
+  const { functions = [], purpose = "" } = detail.node ?? {};
+  const children = (detail.children ?? []).slice(0, 6).map(({ id }) => id);
+  return [
+    `  ${pin}: ${purpose}`,
+    ...functions.slice(0, 4).map((f) => `  ${f.name} ${f.path}:${f.lines[0]}`),
+    ...(children.length > 0 ? [`  children: ${children.join(", ")}`] : []),
+  ];
+}
+
+/**
+ * The mechanics references for the game the user named with `--genre`, printed by the scaffold.
+ * Cold agents skipped the search even when the next-steps line gave the command (PRD-750
+ * sandboxes 4 and 5), and read a title list without opening one (sandbox 6), so the scaffold runs
+ * the search through the installed engine and prints the top hits' pinned sources and constants.
+ */
+export function referenceDigest(
+  target: string,
+  genre: string,
+  run: (args: string[]) => string = (args) =>
+    execFileSync(process.execPath, args, { encoding: "utf8", timeout: 60_000 }),
+): string {
+  const engine = `${target}/node_modules/@threenative/core/mcp/engine.mjs`;
+  let results: IReferenceHit[];
+  try {
+    results = JSON.parse(
+      run([engine, "engine_search_references", JSON.stringify({ situation: genre })]),
+    ).results;
+  } catch (error) {
+    return `References unavailable: ${String((error as Error).message).split("\n")[0]}\n`;
+  }
+  if (results.length === 0) return `No mechanics references match ${JSON.stringify(genre)}.\n`;
+  const lines = results.slice(0, REFERENCE_DIGEST_SIZE).flatMap((hit, index) => {
+    const head = `- ${hit.title} / ${hit.name}: ${hit.summary}`;
+    if (index >= REFERENCE_DETAIL_SIZE) return [head];
+    try {
+      const { game, id, kind } = hit;
+      const detail = run([engine, "engine_reference_detail", JSON.stringify({ game, id, kind })]);
+      return [head, ...referenceLines(JSON.parse(detail) as IReferenceDetail)];
+    } catch {
+      return [head];
+    }
+  });
+  const call = `node ${target}/node_modules/@threenative/core/mcp/call.mjs threenative-engine`;
+  return [
+    `Mechanics references for ${JSON.stringify(genre)} (borrow the mechanics, not code, layouts or art):`,
+    ...lines,
+    `Each mechanic you add: ${call} engine_search_references '{"situation":"<mechanic>"}', then engine_reference_detail '{"game":"<game>","id":"<id>","kind":"card|node"}'.`,
+    "",
+  ].join("\n");
+}
+
 export function cliHelp(): string {
   const manifests = discoverKitManifests();
   return `${[
@@ -332,7 +486,7 @@ export function cliHelp(): string {
     "",
     "Options:",
     "  --template <name>  Choose a template.",
-    "  --genre <name>     Choose an exact genre kit; unknown genres use minimal.",
+    "  --genre <name>     Choose a kit by its genre or a word its kit.json lists (mario, zelda); unknown words use minimal.",
     "  --no-install       Copy the project without running pnpm install.",
     "  --help             Show this help.",
     "",
@@ -739,8 +893,12 @@ export async function createProject(
   try {
     const source = path.join(root, template);
     await cp(source, target, { recursive: true, errorOnExist: true });
+    if (["starter", "collectathon", "adventure", "kart"].includes(template))
+      for (const relative of SHARED_RENDER_SOURCES)
+        await cp(canonicalRenderSourcePath(relative, root), path.join(target, relative));
     await copyTemplateIcon(target, root);
     await copySharedAssets(target, root);
+    await copyQualityConfig(target, root);
     // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
     // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
     if (existsSync(path.join(target, "gitignore"))) {
@@ -867,6 +1025,7 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
     target,
     ...(Object.keys(packageSources).length === 0 ? {} : { packageSources }),
     ...(resolvedTemplate === undefined ? {} : { template: resolvedTemplate }),
+    ...(genre === undefined ? {} : { genre }),
   };
 }
 
@@ -884,12 +1043,15 @@ async function main(): Promise<void> {
     process.stdout.write(cliHelp());
     return;
   }
-  const result = await createProject(parseArgs(argv));
+  const options = parseArgs(argv);
+  const result = await createProject(options);
   process.stdout.write(`Created ${result.template} project at ${result.target}\n`);
   process.stdout.write(scaffoldCompletionMessage(discoverKitManifests()));
-  if (!result.installed)
-    process.stdout.write("Skipped install (--no-install). Run pnpm install, then pnpm dev.\n");
-  else process.stdout.write("Next: cd into the project and run pnpm dev.\n");
+  if (options.genre !== undefined && result.installed)
+    process.stdout.write(referenceDigest(result.target, options.genre));
+  process.stdout.write(
+    scaffoldNextSteps(result.target, result.installed, projectMcpServers(result.target)),
+  );
 }
 
 // `realpathSync`, not `path.resolve`. A package manager installs a `bin` as a symlink, so the

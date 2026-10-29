@@ -5,12 +5,33 @@ import { expect, test } from "vitest";
 
 import { parseLaunchedPid, XcrunIosDriver } from "../src/runner/ios.js";
 
+// The shape `simctl listapps` prints: an old-style plist keyed by bundle identifier, with nested
+// dictionaries ahead of `Path`, and `Path` unquoted when it holds only path characters.
+const listed = (bundleId: string, path: string) =>
+  `{\n    "com.apple.Bridge" =     {\n        ApplicationType = System;\n        Path = "/Applications/Bridge.app";\n    };\n` +
+  `    "${bundleId}" =     {\n        ApplicationType = User;\n        CFBundleIdentifier = "${bundleId}";\n` +
+  `        GroupContainers =         {\n        };\n        Path = ${path};\n        SBAppTags =         (\n        );\n    };\n}\n`;
+
+// The simulator's app list around one `simctl install`: the previous bundle until the install
+// call, then whatever `afterInstall` lists, one entry per poll, repeating the last.
+function simulatorApps(bundleId: string, afterInstall: readonly string[] = ["/Bundle/Application/NEW/ThreeNative.app"]) {
+  let installed = false;
+  let polls = 0;
+  return (args: readonly string[]): string | undefined => {
+    if (args[1] === "install") installed = true;
+    if (args[1] !== "listapps") return undefined;
+    if (!installed) return listed(bundleId, "/Bundle/Application/OLD/ThreeNative.app");
+    return listed(bundleId, afterInstall[Math.min(polls++, afterInstall.length - 1)]!);
+  };
+}
+
 test("simctl installs, launches with mailbox environment, and uses the app data container", async () => {
   const root = await makeTempDir("playtest-ios-driver-");
   const appPath = join(root, "ThreeNative.app");
   const container = join(root, "data-container");
   await mkdir(appPath);
   const calls: Array<{ args: readonly string[]; env?: NodeJS.ProcessEnv }> = [];
+  const apps = simulatorApps("dev.threenative.runtime");
   const driver = new XcrunIosDriver({
     appPath,
     bundleId: "dev.threenative.runtime",
@@ -18,6 +39,8 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
     transport: "simulator",
   }, async (args, options) => {
     calls.push({ args, env: options?.env });
+    const app = apps(args);
+    if (app !== undefined) return app;
     if (args[1] === "get_app_container") return `${container}\n`;
     if (args[1] === "launch") return `dev.threenative.runtime: ${process.pid}\n`;
     if (args.includes("log")) return '[info] TN_UI_SAMPLE:{"sequence":321}\n[error] broken user script\n[info] {"failed":0}\n';
@@ -30,7 +53,9 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
   expect(driver.getMailboxRoot()).toBe(join(container, "Documents"));
   expect(calls.map(({ args }) => args.slice(0, 2))).toEqual([
     ["simctl", "bootstatus"],
+    ["simctl", "listapps"],
     ["simctl", "install"],
+    ["simctl", "listapps"],
     ["simctl", "get_app_container"],
     ["simctl", "terminate"],
     ["simctl", "launch"],
@@ -44,6 +69,41 @@ test("simctl installs, launches with mailbox environment, and uses the app data 
     { text: '[info] {"failed":0}', type: "log" },
   ]);
   expect(calls.at(-1)?.args).toContain(`processIdentifier == ${process.pid}`);
+});
+
+test("a simulator launch waits until the newly installed bundle replaces the dead one", async () => {
+  const root = await makeTempDir("playtest-ios-install-");
+  const appPath = join(root, "ThreeNative.app");
+  await mkdir(appPath);
+  const listedAtLaunch: Array<string | undefined> = [];
+  let lastListed: string | undefined;
+  const apps = simulatorApps("dev.threenative.runtime", [
+    "/data/Library/Caches/com.apple.containermanagerd/Dead/temp.X/OLD/ThreeNative.app",
+    "/Bundle/Application/OLD/ThreeNative.app",
+    "/Bundle/Application/NEW/ThreeNative.app",
+  ]);
+  const driver = new XcrunIosDriver({
+    appPath,
+    bundleId: "dev.threenative.runtime",
+    device: "SIM-123",
+    transport: "simulator",
+  }, async (args) => {
+    const app = apps(args);
+    if (app !== undefined) {
+      lastListed = [...app.matchAll(/Path = (\S+);/gu)].at(-1)?.[1];
+      return app;
+    }
+    if (args[1] === "get_app_container") return join(root, "container");
+    if (args[1] === "launch") {
+      listedAtLaunch.push(lastListed);
+      return "dev.threenative.runtime: 22";
+    }
+    return "";
+  });
+
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+
+  expect(listedAtLaunch).toEqual(["/Bundle/Application/NEW/ThreeNative.app"]);
 });
 
 test("iOS console classifies Apple-subsystem records as logs and real app errors as errors", async () => {
@@ -92,6 +152,7 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     '2026-09-23 14:10:45.300 Df threenative-ios[61943:23880] TN_UI_PAGE:{"type":"tn:ui-diagnostic","event":"ready"}';
   const uiPageFirstState =
     '2026-09-23 14:10:45.301 Df threenative-ios[61943:23880] TN_UI_PAGE:{"type":"tn:ui-diagnostic","event":"first-state"}';
+  const apps = simulatorApps("dev.threenative.runtime");
   const uiPageError =
     '2026-09-23 14:10:45.302 Df threenative-ios[61943:23880] TN_UI_PAGE [error]: {"type":"tn:ui-diagnostic","event":"error","kind":"onerror","message":"Uncaught ReferenceError: React is not defined"}';
 
@@ -101,6 +162,8 @@ test("iOS console classifies Apple-subsystem records as logs and real app errors
     device: "SIM-123",
     transport: "simulator",
   }, async (args) => {
+    const app = apps(args);
+    if (app !== undefined) return app;
     if (args[1] === "get_app_container") return `${container}\n`;
     if (args[1] === "launch") return `dev.threenative.runtime: ${process.pid}\n`;
     if (args.includes("log")) {
@@ -150,7 +213,10 @@ test("simulator mailbox paths are remapped after simctl resolves the container",
   const appPath = join(root, "ThreeNative.app");
   const container = join(root, "container");
   await mkdir(appPath);
+  const apps = simulatorApps("dev.example");
   const driver = new XcrunIosDriver({ appPath, bundleId: "dev.example", transport: "simulator" }, async (args) => {
+    const app = apps(args);
+    if (app !== undefined) return app;
     if (args[1] === "get_app_container") return container;
     if (args[1] === "launch") return "dev.example: 22";
     return "";

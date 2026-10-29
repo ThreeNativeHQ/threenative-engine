@@ -9,7 +9,7 @@ export const palette = {
   /** Beyond the walls, and the fog the far corners fade into. Almost black, faintly blue. */
   void: 0x0a0e16,
   /** The flagstone floor. */
-  floor: 0x2a3341,
+  floor: 0x44587a,
   /** The plaster band the lantern light lands on — the one warm surface that is not a crate. */
   wall: 0xbb9155,
   /** Pillars, capping rail, lantern housings. */

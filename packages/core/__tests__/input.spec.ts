@@ -93,6 +93,45 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("should ignore a wheel that landed on a game HUD overlay", () => {
+    const canvas = new EventTarget();
+    const listeners = new Map<string, Array<(event: Event) => void>>();
+    const host = {
+      addEventListener(type: string, listener: (event: Event) => void) {
+        const set = listeners.get(type) ?? [];
+        set.push(listener);
+        listeners.set(type, set);
+      },
+      removeEventListener(type: string, listener: (event: Event) => void) {
+        listeners.set(
+          type,
+          (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
+        );
+      },
+      dispatchEvent() {
+        return true;
+      },
+      fire(event: Event) {
+        for (const listener of [...(listeners.get(event.type) ?? [])]) listener(event);
+      },
+    };
+    const input = new InputMap({ zoom: { scroll: true } }, host, canvas);
+    const hud = { id: "settings-list" };
+
+    const overHud = wheelEvent(-30);
+    Object.defineProperty(overHud, "target", { value: hud });
+    host.fire(overHud);
+    input.tick();
+    expect(input.axis("zoom")).toBe(0);
+
+    const overCanvas = wheelEvent(-30);
+    Object.defineProperty(overCanvas, "target", { value: canvas });
+    host.fire(overCanvas);
+    input.tick();
+    expect(input.axis("zoom")).toBeCloseTo(0.3);
+    input.dispose();
+  });
+
   it("should keep the axis at zero when its scroll binding is removed", () => {
     const target = new EventTarget();
     const input = new InputMap({ zoom: { scroll: true } }, target);
@@ -515,6 +554,43 @@ describe("InputMap", () => {
 
     expect(input.pressed("aim")).toBe(true);
     expect(input.pressed("fire")).toBe(false);
+    input.dispose();
+  });
+
+  it("keeps a held mouse button held through a button-less move while the pointer is locked", () => {
+    const target = Object.assign(new EventTarget(), { requestPointerLock: () => undefined });
+    const input = new InputMap({ block: { mouseButtons: [2] } }, target, target);
+    input.captureMouse();
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 2));
+    // Chromium's pointer-locked move: no button changed, and `buttons` reads 0 with right held.
+    target.dispatchEvent(Object.assign(pointerEvent("pointermove", 1, 12, 10, 0), { button: -1 }));
+    input.tick();
+    expect(input.pressed("block")).toBe(true);
+    target.dispatchEvent(pointerEvent("pointerup", 1, 12, 10));
+    input.tick();
+    expect(input.pressed("block")).toBe(false);
+    input.dispose();
+  });
+
+  it("takes the lock state a worker host forwards with pointerlockchange, where no document exists (PRD-752)", () => {
+    const canvas = Object.assign(new EventTarget(), { requestPointerLock: () => undefined });
+    const input = new InputMap({ look: { pointerRelative: true } }, canvas, canvas);
+    input.captureMouse();
+    expect(input.raw.pointer.captured).toBe(true);
+    // Escape on the page: the host forwards the change with the page's verdict.
+    canvas.dispatchEvent(Object.assign(new Event("pointerlockchange"), { captured: false }));
+    expect(input.raw.pointer.captured).toBe(false);
+    input.dispose();
+  });
+
+  it("releases a held mouse button on a button-less move while the pointer is free", () => {
+    // Released outside the window, no pointerup arrives: the next move is what clears it.
+    const target = new EventTarget();
+    const input = new InputMap({ block: { mouseButtons: [2] } }, target, target);
+    target.dispatchEvent(pointerEvent("pointerdown", 1, 10, 10, 2));
+    target.dispatchEvent(Object.assign(pointerEvent("pointermove", 1, 12, 10, 0), { button: -1 }));
+    input.tick();
+    expect(input.pressed("block")).toBe(false);
     input.dispose();
   });
 

@@ -3,6 +3,16 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
+import {
+  type IReferenceIndex,
+  loadLocalReferenceGames,
+  loadReferenceGame,
+  loadReferenceIndex,
+  loadReleaseReferenceGame,
+  referenceStubs,
+  saveReferenceGame,
+} from "./references.js";
+
 export interface ICapabilityEntry {
   readonly symbol: string;
   readonly package: string;
@@ -30,6 +40,22 @@ export interface ICapabilityManifest {
   readonly version: number;
   readonly entries: readonly ICapabilityEntry[];
   readonly notOwned: readonly INotOwnedCapability[];
+  readonly starterKits?: readonly IStarterKit[];
+}
+
+export interface IStarterKit {
+  readonly name: string;
+  readonly title: string;
+  readonly blurb: string;
+  /** Genre plus kit.json aliases, lowercase. */
+  readonly words: readonly string[];
+}
+
+export interface IStarterKitResult {
+  readonly name: string;
+  readonly title: string;
+  readonly blurb: string;
+  readonly command: string;
 }
 
 export interface ICapabilitySearchResult {
@@ -44,7 +70,12 @@ export interface ICapabilitySearchResult {
 }
 
 export interface ICapabilitySearchResponse {
-  readonly verdict: "matched" | "none";
+  /** Present when the request names a genre or game a starter kit covers; it leads the response. */
+  readonly starterKits?: readonly IStarterKitResult[];
+  /** Present when the request asks to reverse engineer a game: the tools that read its pinned decomp. */
+  readonly referenceTools?: readonly string[];
+  /** "starterKit": a kit matched but no engine capability did; scaffold the kit, then search its gaps. */
+  readonly verdict: "matched" | "none" | "starterKit";
   readonly results: readonly ICapabilitySearchResult[];
   readonly guidance: string;
 }
@@ -56,8 +87,8 @@ export interface IEngineTool {
   readonly description: string;
   readonly annotations: {
     readonly destructiveHint: false;
-    readonly openWorldHint: false;
-    readonly readOnlyHint: true;
+    readonly openWorldHint: boolean;
+    readonly readOnlyHint: boolean;
   };
   readonly inputSchema: {
     readonly type: "object";
@@ -66,7 +97,7 @@ export interface IEngineTool {
       {
         readonly description?: string;
         readonly enum?: readonly string[];
-        readonly type: "string";
+        readonly type: "string" | "object";
       }
     >;
     readonly required: readonly string[];
@@ -77,6 +108,9 @@ export interface IEngineTool {
 export const ENGINE_MCP_TOOL_NAMES = [
   "engine_search_capabilities",
   "engine_capability_detail",
+  "engine_search_references",
+  "engine_reference_detail",
+  "engine_save_reference",
 ] as const;
 
 const DEFAULT_MANIFEST_FILE = "capabilities.json";
@@ -212,7 +246,7 @@ const MAX_SITUATION_RESULTS = 5;
 /** Chosen by the current-manifest threshold sweep: the highest recalled candidate at 0.27. */
 export const RELEVANCE_FLOOR = 0.27;
 const AUTHORING_INSTRUCTIONS =
-  'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.';
+  "Invoke threenative-capabilities to route authoring. New games: steps 1-8 — prompt, matching starter kit (minimal fallback), mechanics references PLUS built-in capabilities, core-mechanics plan via prd-creator, required textures, execute, mechanics playtest, reference-image visual judge. Existing games: steps 5-7 only — required textures, execute and mechanics playtest using existing context; no kit selection, rediscovery, whole-game replanning or added step 8. In both routes, execute plan with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before step 7 mechanics playtests. Follow binding capability constraints. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
 const GENERIC_GUIDANCE =
   "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 
@@ -303,6 +337,20 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
+    }
+  }
+  for (const [index, raw] of (Array.isArray(value.starterKits)
+    ? value.starterKits
+    : []
+  ).entries()) {
+    if (
+      !isRecord(raw) ||
+      typeof raw.name !== "string" ||
+      typeof raw.title !== "string" ||
+      typeof raw.blurb !== "string" ||
+      !isStringArray(raw.words)
+    ) {
+      throw manifestError(file, `starterKits ${index} is malformed`);
     }
   }
   const notOwnedIds = new Set<string>();
@@ -399,7 +447,9 @@ const tokens = capabilitySituationTokens;
  * every capability landed on the same near-zero score and the ranking fell through to the
  * alphabet. That is how a physics-puzzle request came back holding `attachToBone`.
  */
-function tokenWeights(entries: readonly ICapabilityEntry[]): ReadonlyMap<string, number> {
+function tokenWeights(
+  entries: readonly Pick<ICapabilityEntry, "situations" | "aliases">[],
+): ReadonlyMap<string, number> {
   const frequency = new Map<string, number>();
   let situations = 0;
   for (const entry of entries) {
@@ -621,6 +671,49 @@ function capabilitySearchKey(entry: ICapabilityEntry): string {
   return `${entry.importPath}\n${entry.summary}\n${entry.situations.join("\n")}`;
 }
 
+/** Kits whose genre or kit.json alias is a whole word or phrase of the request, earliest first. */
+function matchedStarterKits(
+  situation: string,
+  kits: readonly IStarterKit[],
+): readonly IStarterKitResult[] {
+  const words = (text: string) =>
+    ` ${text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, " ")
+      .trim()} `;
+  const request = words(situation);
+  const claims = kits.map((kit) => ({
+    kit,
+    spans: kit.words.flatMap((word) => {
+      const at = request.indexOf(words(word));
+      return at < 0 ? [] : [{ at, end: at + words(word).length }];
+    }),
+  }));
+  // A kit word inside a longer phrase another kit claims is that kit's: "mario kart" is the kart
+  // kit's, not the collectathon's "mario".
+  const inside = (span: { at: number; end: number }, own: (typeof claims)[number]) =>
+    claims.some(
+      (other) =>
+        other !== own &&
+        other.spans.some(
+          (o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at,
+        ),
+    );
+  return claims
+    .map((claim) => ({
+      at: Math.min(...claim.spans.filter((span) => !inside(span, claim)).map((span) => span.at)),
+      kit: claim.kit,
+    }))
+    .filter(({ at }) => Number.isFinite(at))
+    .sort((left, right) => left.at - right.at)
+    .map(({ kit: { blurb, name, title } }) => ({
+      blurb,
+      command: `npx create-threenative <dir> --template ${name}`,
+      name,
+      title,
+    }));
+}
+
 export function searchCapabilities(
   situation: string,
   manifestFile = defaultManifestPath(),
@@ -629,6 +722,44 @@ export function searchCapabilities(
   if (typeof situation !== "string" || situation.trim().length === 0)
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
+  const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
+  const response = withReferenceTools(situation, searchMechanics(situation, manifest, scope));
+  if (starterKits.length === 0) return response;
+  // The kit leads the response; the mechanics it does not cover follow unchanged.
+  return {
+    starterKits,
+    ...response,
+    ...(response.verdict === "none"
+      ? {
+          guidance: `Scaffold from the starter kit first, then search the mechanics it does not cover. ${response.guidance}`,
+          verdict: "starterKit" as const,
+        }
+      : {}),
+  };
+}
+
+const REVERSE_ENGINEER = /\breverse[\s-]?engineer|\bdecomp|\bdisassembl/iu;
+const REFERENCE_TOOLS = [
+  "engine_search_references",
+  "engine_reference_detail",
+  "engine_save_reference",
+];
+
+/** A reverse-engineer request leads with the reference tools (PRD-735); the mechanics follow unchanged. */
+function withReferenceTools(situation: string, response: ICapabilitySearchResponse) {
+  if (!REVERSE_ENGINEER.test(situation)) return response;
+  return {
+    referenceTools: REFERENCE_TOOLS,
+    ...response,
+    guidance: `Reverse engineer the game with engine_search_references, then engine_reference_detail for its pinned cards. ${response.guidance}`,
+  };
+}
+
+function searchMechanics(
+  situation: string,
+  manifest: ICapabilityManifest,
+  scope: "mechanic" | "request",
+): ICapabilitySearchResponse {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);
@@ -757,6 +888,52 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
       type: "object",
     },
   },
+  {
+    name: "engine_search_references",
+    description:
+      "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
+    annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { situation: { type: "string" } },
+      required: ["situation"],
+    },
+  },
+  {
+    name: "engine_reference_detail",
+    description:
+      "Reverse engineer a game: read its pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
+    annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        game: { type: "string" },
+        id: { type: "string" },
+        kind: { type: "string", enum: ["node", "card"] },
+      },
+      required: ["game", "id", "kind"],
+    },
+  },
+  {
+    name: "engine_save_reference",
+    description:
+      "Save what you reverse engineer: validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused.",
+    annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: false },
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        game: {
+          type: "object",
+          description:
+            "Pinned game reference: version, id, title, repo, sha (40 hex), nodes [{id,name,purpose,parent?,paths,functions:[{name,path,lines:[from,to]}],dependsOn}], cards [{id,node,name,summary,behavior,constants:[{name,value,unit,source}],sources:[{path,line}],capabilities,tags}]. No extra fields or code fences.",
+        },
+      },
+      required: ["game"],
+    },
+  },
 ];
 
 export function toolDefinitions(): readonly IEngineTool[] {
@@ -802,10 +979,89 @@ function toolText(value: unknown): { content: [{ type: "text"; text: string }] }
   return { content: [{ text: JSON.stringify(value, null, 2), type: "text" }] };
 }
 
-function handleToolCall(
+async function searchReferences(situation: string, limit = 5) {
+  const local = loadLocalReferenceGames();
+  let release: IReferenceIndex | undefined;
+  try {
+    release = await loadReferenceIndex();
+  } catch (error) {
+    if (!(error instanceof Error && error.message.startsWith("TN_REFERENCES_UNAVAILABLE:")))
+      throw error;
+    if (local.length === 0)
+      return {
+        results: [],
+        guidance:
+          "references unavailable: no release cache or network; capability search still works.",
+      };
+  }
+  const localIds = new Set(local.map((game) => game.id));
+  const localStubs = local.flatMap(referenceStubs);
+  const localKeys = new Set(localStubs.map((stub) => `${stub.game}/${stub.kind}/${stub.id}`));
+  const games = [
+    ...(release?.games ?? []).filter((game) => !localIds.has(game.id)),
+    ...local.map((game) => ({
+      id: game.id,
+      title: game.title,
+      repo: game.repo,
+      platform: "local",
+      tier: 1 as const,
+    })),
+  ];
+  const stubs = [
+    ...(release?.stubs ?? []).filter(
+      (stub) => !localKeys.has(`${stub.game}/${stub.kind}/${stub.id}`),
+    ),
+    ...localStubs,
+  ];
+  const titles = new Map(games.map((game) => [game.id, game.title]));
+  const candidates = [
+    ...stubs.map((stub) => ({
+      ...stub,
+      title: titles.get(stub.game) ?? "",
+    })),
+    ...games
+      .filter((game) => game.tier === 2)
+      .map((game) => ({
+        ...game,
+        game: game.id,
+        kind: "game",
+        name: game.title,
+        summary: game.title,
+        tags: [],
+        capabilities: [],
+        guidance: "Explore this repository, then call engine_save_reference.",
+      })),
+  ];
+  const phrases = candidates.map((stub) => ({
+    situations: [stub.name, stub.summary, ...stub.tags],
+    aliases: [stub.title],
+  }));
+  const weights = tokenWeights(phrases);
+  const query = tokens(situation);
+  return {
+    guidance: "",
+    results: candidates
+      .map((stub, index) => {
+        const content = situationScore(query, phrases[index]?.situations ?? [], [], weights);
+        // A shared game title must not erase agreement with the requested mechanic.
+        const title = scoreAliases(
+          phrases[index]?.aliases ?? [],
+          new Set(query),
+          query.join(" "),
+          weights,
+        );
+        return { ...stub, ...content, score: content.score + title };
+      })
+      .filter((stub) => stub.score >= RELEVANCE_FLOOR)
+      .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+      .slice(0, limit),
+  };
+}
+
+async function handleToolCall(
   params: Record<string, unknown>,
   manifestFile: string,
-): { content: [{ type: "text"; text: string }] } {
+): Promise<{ content: [{ type: "text"; text: string }] }> {
   const name = params.name;
   const argumentsValue = isRecord(params.arguments) ? params.arguments : {};
   // The raw value goes to the validator, never through String(): a numeric or null argument
@@ -825,7 +1081,19 @@ function handleToolCall(
       tool: name,
       verdict: response.verdict,
     });
-    return toolText(response);
+    return toolText(
+      response.verdict === "none"
+        ? {
+            ...response,
+            references: await searchReferences(argumentsValue.situation, 3).catch(
+              (error: unknown) => ({
+                results: [],
+                guidance: `references unavailable: ${String(error)}`,
+              }),
+            ),
+          }
+        : response,
+    );
   }
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
@@ -853,6 +1121,54 @@ function handleToolCall(
     });
     return toolText(detail);
   }
+  if (name === "engine_search_references") {
+    if (typeof argumentsValue.situation !== "string" || !argumentsValue.situation.trim())
+      throw new Error("engine_search_references requires a non-empty string 'situation'.");
+    const response = await searchReferences(argumentsValue.situation);
+    logToolCall({
+      tool: name,
+      situation: argumentsValue.situation,
+      results: response.results.map((entry) => entry.id),
+    });
+    return toolText(response);
+  }
+  if (name === "engine_reference_detail") {
+    if (
+      typeof argumentsValue.game !== "string" ||
+      typeof argumentsValue.id !== "string" ||
+      (argumentsValue.kind !== "node" && argumentsValue.kind !== "card")
+    )
+      throw new Error("engine_reference_detail requires game, id and kind (node or card).");
+    let game = await loadReferenceGame(argumentsValue.game);
+    const { id, kind } = argumentsValue;
+    let entry =
+      kind === "node"
+        ? game.nodes.find((node) => node.id === id)
+        : game.cards.find((card) => card.id === id);
+    if (!entry) {
+      game = await loadReleaseReferenceGame(argumentsValue.game);
+      entry =
+        kind === "node"
+          ? game.nodes.find((node) => node.id === id)
+          : game.cards.find((card) => card.id === id);
+    }
+    if (!entry) throw new Error(`No reference ${kind} '${id}' in '${game.id}'.`);
+    logToolCall({ tool: name, game: game.id, id, kind });
+    return toolText({
+      game: game.id,
+      title: game.title,
+      repo: game.repo,
+      sha: game.sha,
+      ...(kind === "node"
+        ? { node: entry, children: game.nodes.filter((node) => node.parent === id) }
+        : { card: entry }),
+    });
+  }
+  if (name === "engine_save_reference") {
+    const saved = saveReferenceGame(argumentsValue.game);
+    logToolCall({ tool: name, saved: saved.saved });
+    return toolText(saved);
+  }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
 }
 
@@ -861,7 +1177,7 @@ function handleToolCall(
  * line must be consumed silently. Extracted so the stdio contract is testable without a live
  * `process.stdin`: this framing is the whole surface an authoring agent's MCP client speaks.
  */
-export function handleLine(line: string, manifestFile: string): string | undefined {
+export async function handleLine(line: string, manifestFile: string): Promise<string | undefined> {
   if (line.trim().length === 0) return undefined;
   let request: unknown;
   try {
@@ -877,7 +1193,7 @@ export function handleLine(line: string, manifestFile: string): string | undefin
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.6" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.7" },
       });
     }
     if (request.method === "tools/list") {
@@ -885,7 +1201,7 @@ export function handleLine(line: string, manifestFile: string): string | undefin
     }
     if (request.method === "tools/call") {
       if (!isRecord(request.params)) throw new Error("tools/call requires an object params value.");
-      return jsonRpcResult(request.id, handleToolCall(request.params, manifestFile));
+      return jsonRpcResult(request.id, await handleToolCall(request.params, manifestFile));
     }
     return jsonRpcError(request.id, -32601, `Method not found: ${request.method}`);
   } catch (error) {
@@ -897,14 +1213,50 @@ export function handleLine(line: string, manifestFile: string): string | undefin
   }
 }
 
+/**
+ * One tool call from the command line: `engine.mjs <tool> '<json arguments>'` prints the tool's
+ * text and exits 0, or names the error and exits 1. A session started outside the project never
+ * loads its `.mcp.json`, and this is how it still searches (PRD-750 kit-loop row 1).
+ */
+export async function runCli(
+  argv: readonly string[],
+  manifestFile = defaultManifestPath(),
+  io: { stderr: (text: string) => void; stdout: (text: string) => void } = {
+    stderr: (text: string) => void process.stderr.write(text),
+    stdout: (text: string) => void process.stdout.write(text),
+  },
+): Promise<number> {
+  const [name, json = "{}"] = argv;
+  try {
+    const result = await handleToolCall(
+      { arguments: JSON.parse(json) as unknown, name },
+      manifestFile,
+    );
+    io.stdout(`${result.content[0].text}\n`);
+    return 0;
+  } catch (error) {
+    io.stderr(`${name}: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+}
+
 export function runServer(manifestFile = defaultManifestPath()): void {
+  const tool = process.argv[2];
+  if (tool?.startsWith("engine_") === true) {
+    void runCli(process.argv.slice(2), manifestFile).then((code) => {
+      process.exitCode = code;
+    });
+    return;
+  }
   // Load before accepting requests. A missing manifest is a startup failure, never an empty tool
   // response that an authoring agent could mistake for the engine having no capabilities.
   loadCapabilityManifest(manifestFile);
   const input = createInterface({ input: process.stdin });
+  void loadReferenceIndex().catch((error: unknown) => process.stderr.write(`${String(error)}\n`));
   input.on("line", (line) => {
-    const response = handleLine(line, manifestFile);
-    if (response !== undefined) writeLine(response);
+    void handleLine(line, manifestFile).then((response) => {
+      if (response !== undefined) writeLine(response);
+    });
   });
 }
 

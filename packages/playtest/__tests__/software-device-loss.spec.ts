@@ -55,6 +55,17 @@ const deviceLossCascade: IRunnerConsoleEntry[] = [
     text: "OperationError: Instance dropped error in getCompilationInfo\n    at WebGPUPipelineUtils._reportShaderDiagnostics",
     type: "pageerror",
   },
+  // The Wasm engine's cascade: its own report, and a readback the lost device dropped (hosted CI's rain).
+  {
+    source: "browser-console",
+    text: "TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. TN_WASM_DEVICE_LOST: GPU connection lost",
+    type: "error",
+  },
+  {
+    source: "browser-console",
+    text: 'TN_AUTO_EXPOSURE:{"measured":false,"applied":true,"reason":"Error: TN_WASM_READ_TARGET: the read failed: TN_WASM_DEVICE_LOST: GPU connection lost"}',
+    type: "error",
+  },
 ];
 
 const realError: IRunnerConsoleEntry = {

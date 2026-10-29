@@ -201,7 +201,7 @@ describe("project terrain editor document", () => {
     const cancellation = new AbortController();
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
-      const { path, base, get, post } = await api();
+      const { path, base, get, post, server } = await api();
       const before = await get();
       const stream = await fetch(`${base}events`, { signal: cancellation.signal });
       reader = stream.body?.getReader();
@@ -245,12 +245,22 @@ describe("project terrain editor document", () => {
       };
       const initial = await nextDocument();
       expect(initial).toContain(before.revision);
+      const committed = new Promise<void>((resolve) => {
+        const changed = (changedPath: string) => {
+          if (changedPath !== path) return;
+          server.watcher.off("change", changed);
+          resolve();
+        };
+        server.watcher.on("change", changed);
+      });
       const edit = await post({
         baseRevision: before.revision,
         commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 7 } } }],
       });
       const next = await edit.json();
       expect(await nextDocument()).toContain(next.revision);
+      // The API save must be observed before the next complete external save.
+      await committed;
       expect(heartbeat).toBeTypeOf("function");
       const sawHeartbeat = new Promise<void>((resolve) => {
         heartbeatSeen = resolve;

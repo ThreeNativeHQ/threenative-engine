@@ -1,3 +1,4 @@
+import { WebGPUCoordinateSystem } from "three";
 import { Fn, convert, expression, int, nodeObject, uv } from "three/tsl";
 import { NodeBuilder } from "three/webgpu";
 import { exportNativePost } from "./tsl-post-export.js";
@@ -53,7 +54,7 @@ export interface ISerializedTslGraph {
 export function exportTslGraph(root: unknown): ISerializedTslGraph {
   const builder = new (NodeBuilder as unknown as new (...args: unknown[]) => NodeBuilder)(
     null,
-    null,
+    { coordinateSystem: WebGPUCoordinateSystem },
     null,
   );
   const ids = new Map<ITslNode, number>();
@@ -318,8 +319,11 @@ export function exportTslGraph(root: unknown): ISerializedTslGraph {
           node.value !== null &&
           typeof node.value === "object" &&
           Object.keys(node.value).length > 0
-        )
+        ) {
           record.operation = "custom-context";
+          // The keys it carries, so a consumer can say which contexts it accounts for.
+          record.name = Object.keys(node.value).sort().join(",");
+        }
         record.args = [child("node")];
         break;
       case "VaryingNode":
@@ -389,13 +393,13 @@ export function exportTslGraph(root: unknown): ISerializedTslGraph {
           record.operation = "load";
           if (node.levelNode != null) record.args.push(child("levelNode"));
         }
-        if (
-          (node.levelNode != null && node.sampler !== false) ||
-          node.biasNode != null ||
-          node.compareNode != null ||
-          node.gradNode != null
-        )
+        if (node.biasNode != null || node.compareNode != null || node.gradNode != null)
           record.operation = "non-default-sampling";
+        else if (node.levelNode != null && node.sampler !== false) {
+          // An explicit mip, the form a loop body needs: under divergent control flow there are no implicit derivatives.
+          record.operation = node.uvNode != null ? "level" : "non-default-sampling";
+          if (node.uvNode != null) record.args.push(child("levelNode"));
+        }
         break;
       }
     }

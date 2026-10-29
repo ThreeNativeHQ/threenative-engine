@@ -39,6 +39,7 @@ export { resolveDiagnosticsPolicy } from "./assertion-report.js";
 export type {
   IPlaytestAssertionResult,
   IPlaytestDiagnostic,
+  IPlaytestFootSlipObservation,
   IPlaytestFramebufferCoverageObservation,
   IPlaytestVisualElementRegionObservation,
   IPlaytestObservations,
@@ -117,6 +118,7 @@ export type {
   IPlaytestRuntimeDiagnosticsSample,
   IPlaytestSampleRequest,
   IPlaytestSceneObservation,
+  IPlaytestSightLineObservation,
   IPlaytestSetupConfirmation,
   IPlaytestSetupRequest,
   IPlaytestStartupObservation,

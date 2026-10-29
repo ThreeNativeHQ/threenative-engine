@@ -146,7 +146,8 @@ describe("CI efficiency without lost evidence", () => {
     expect([...declaredNeeds(job("run-summary"))].sort()).toEqual(
       graph
         .map(({ name }) => name)
-        .filter((name) => name !== "run-summary")
+        // The watcher ends when every other job has, so run-summary must not wait on it.
+        .filter((name) => name !== "run-summary" && name !== "queue-watch")
         .sort(),
     );
   });
@@ -542,11 +543,7 @@ describe("PRD-373 fail-closed required verdict", () => {
 
   it("classifies the generated speed-loop record as prose, not a full board", () => {
     // Only scripts/ci-speed-loop.mjs reads these files, and no CI job runs that script.
-    for (const file of [
-      "docs/ci-speed/ledger.json",
-      "docs/ci-speed/index.html",
-      "docs/ci-speed/runs/39070176677.jobs.json",
-    ]) {
+    for (const file of ["docs/ci-speed/ledger.json", "docs/ci-speed/runs/39070176677.jobs.json"]) {
       expect(prosePlan(file).selection).toBe("prose");
     }
   });
@@ -556,7 +553,7 @@ describe("PRD-373 fail-closed required verdict", () => {
     const jobs = plan.jobs as Record<string, { required: boolean }>;
     const coverage = ciJobGraph(source)
       .map(({ name }) => name)
-      .filter((name) => !["scope", "ci-required", "run-summary"].includes(name))
+      .filter((name) => !["scope", "ci-required", "run-summary", "queue-watch"].includes(name))
       .sort();
     expect(Object.keys(jobs).sort()).toEqual(coverage);
     // The native matrix is a `needs` of ci-required because the plan can require it: a full
@@ -729,8 +726,9 @@ describe("PRD-373 fixed full candidates and current package products", () => {
     }
   });
 
-  // A stale recorded base must reject before a plan is emitted, exactly as the verdict's parent check does.
-  it("rejects a pull-request candidate whose recorded base is stale before emitting a plan", () => {
+  // The fetched target ref is the base under test; the API payload's base.sha can lag one push. A
+  // stale candidate relative to the fetched target still rejects before a plan is emitted.
+  it("resolves a live pull-request candidate against the fetched target ref, not stale payload metadata", () => {
     const root = makeTempDirSync("ci-stale-base-");
     const git = (...args: string[]) => {
       const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -758,7 +756,14 @@ describe("PRD-373 fixed full candidates and current package products", () => {
       git("add", ".");
       git("commit", "-qm", "moved base");
       const currentBase = git("rev-parse", "HEAD");
+      // actions/checkout fetch-depth 0 has already fetched and frozen this ref.
+      git("update-ref", "refs/remotes/origin/develop", currentBase);
+      git("checkout", "-q", recordedBase);
+      git("merge", "--no-ff", "-qm", "stale-candidate", "develop");
+      const staleCandidate = git("rev-parse", "HEAD");
+      git("checkout", "-q", "main");
       git("merge", "--no-ff", "-qm", "candidate", "develop");
+      const candidate = git("rev-parse", "HEAD");
       const live = ["--event-name", "pull_request", "--target", "develop", "--format", "github"];
       const run = (...args: string[]) =>
         spawnSync(process.execPath, [path.join(repo, "scripts/ci-change-scope.mjs"), ...args], {
@@ -766,20 +771,51 @@ describe("PRD-373 fixed full candidates and current package products", () => {
           encoding: "utf8",
           env: { ...process.env },
         });
-      // The same merge fixture proves the guard accepts the candidate's own base and head.
-      const valid = run("--base", currentBase, "--head", head, ...live);
+      // Stale API metadata resolves to the fetched target, and the candidate merge still proves it.
+      const valid = run(
+        "--base",
+        recordedBase,
+        "--candidate-sha",
+        candidate,
+        "--head",
+        head,
+        ...live,
+      );
       expect(valid.status, valid.stderr).toBe(0);
       expect(valid.stdout).toContain("plan=");
-      // Every stale or incomplete base/head reaches the live guard, so each rejects before a plan.
+      expect(valid.stdout).toContain(`base_sha=${currentBase}\n`);
+      // A stale merge parent, wrong head, absent target ref, non-merge or absent candidate rejects.
       const rejectedCases: readonly (readonly string[])[] = [
-        ["--base", recordedBase, "--head", head],
-        ["--base", recordedBase, "--head", head, "--target", "main"],
-        ["--base", recordedBase, "--head", head, "--full"],
-        ["--head", head],
-        ["--base", currentBase],
+        ["--base", recordedBase, "--candidate-sha", staleCandidate, "--head", head],
+        ["--base", recordedBase, "--candidate-sha", staleCandidate, "--head", head, "--full"],
+        [
+          "--base",
+          recordedBase,
+          "--candidate-sha",
+          candidate,
+          "--head",
+          head,
+          "--target",
+          "develop^{}",
+        ],
+        ["--base", recordedBase, "--candidate-sha", candidate, "--head", recordedBase],
+        [
+          "--base",
+          recordedBase,
+          "--candidate-sha",
+          candidate,
+          "--head",
+          head,
+          "--target",
+          "absent",
+        ],
+        ["--base", recordedBase, "--candidate-sha", recordedBase, "--head", head],
+        ["--base", recordedBase, "--candidate-sha", "f".repeat(40), "--head", head],
+        ["--head", head, "--candidate-sha", candidate],
+        ["--base", recordedBase, "--candidate-sha", candidate],
       ];
       for (const args of rejectedCases) {
-        // live first so a per-case --target (main) overrides the shared develop default.
+        // live first so a per-case --target (absent) overrides the shared develop default.
         const rejected = run(...live, ...args);
         expect(rejected.status, rejected.stderr).toBe(2);
         expect(rejected.stderr).toContain("CI_REQUIRED_PR_CANDIDATE_MISMATCH");
