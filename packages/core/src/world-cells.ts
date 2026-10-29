@@ -105,6 +105,16 @@ const LOD_RANGE_RECORD_BYTES = 8;
 export { bundleSafeMaterial } from "./world-bundle-safety.js";
 
 const DEFAULT_TILE_RESOLUTION = 129;
+
+/**
+ * One tile vertex per heightmap sample, rounded up so every default lod factor (1, 2, 4) divides it
+ * and capped at the old fixed 129. A finer tile only interpolates the same samples: 129 over a 2 m
+ * heightmap drew 3.01M terrain triangles, 25 ms on an Iris Xe (PRD-762).
+ */
+function tileResolutionFor(tileSize: number, spacing: number): number {
+  const cells = Math.ceil(tileSize / spacing / 4) * 4;
+  return Math.min(DEFAULT_TILE_RESOLUTION, Math.max(9, cells + 1));
+}
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
 const DEFAULT_ADMISSION_BUDGET_MS = 2;
 /**
@@ -1005,7 +1015,14 @@ export class WorldCells extends Group implements IComputeDriven {
       ),
       streamRadius,
       surface: init.surface,
-      tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
+      tileResolution:
+        init.terrain?.tileResolution ??
+        (init.terrain?.lodFactors === undefined
+          ? tileResolutionFor(
+              init.terrain?.tileSize ?? this.#cellSize,
+              init.manifest.terrain.spacing,
+            )
+          : DEFAULT_TILE_RESOLUTION),
       tileSize: init.terrain?.tileSize ?? this.#cellSize,
     });
     this.#stream(this.#terrain);

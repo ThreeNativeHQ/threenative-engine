@@ -2594,6 +2594,26 @@ describe("WorldCells", () => {
     }
   });
 
+  it("meshes terrain tiles at the heightmap's own sample spacing by default", async () => {
+    // 64 m tiles over a 2 m heightmap: 33 vertices a side. The fixed 129 interpolated the same
+    // samples at 0.5 m and drew 3.01M terrain triangles, 25 ms on an Iris Xe (PRD-762).
+    stubFixtureFetch();
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(0, 0),
+      loadModel: async () => new Group(),
+      ring: 0,
+      surface,
+      gpuScene: false,
+      url: "/world/world.json",
+    });
+    try {
+      expect(terrainOf(world).tileResolution).toBe(33);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("passes the resolved props pixel policy and current raster view to settled terrain", async () => {
     stubFixtureFetch();
     const world = await loadWorld({
