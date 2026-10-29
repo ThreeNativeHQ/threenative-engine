@@ -16,7 +16,7 @@ export function forestStageTerrainTargets(world: Object3D): Mesh[] {
 }
 
 /** The two explicit `?stage=` arms; each is a baked copy of the forest kit under `local-assets/forest-stage/`. */
-export const FOREST_STAGE_ARMS = ["before", "after"] as const;
+export const FOREST_STAGE_ARMS = ["before", "after", "wildwood"] as const;
 export type ForestStageArm = (typeof FOREST_STAGE_ARMS)[number];
 
 /** What the kit's `addForest` returns: its streamed world, ground, colliders and water. */

@@ -1145,7 +1145,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // An oblique traversal crosses cells; exact vertical edge/corner probes remain above. A
         // staged world admits no terrain tile before its first update, which the loop's settle
         // steps precede, so its contact is observed once its spawn region is ready.
-        if (!stage || spawnReady) {
+        // A staged world streams around the camera, so a benchmark view far from the player has no
+        // ground under it; the player is held there (see `update`) and its contact is not asked for.
+        if (!stage || (spawnReady && ctx.state.getState().view === "player")) {
           const terrainTargets = stage ? forestStageTerrainTargets(stage.world) : mesh;
           const visual =
             terrainTargets &&
@@ -1476,7 +1478,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       player.velocity.x = move.x * 9;
       player.velocity.z = move.y * 9;
       if (playable && ctx.input.justPressed("jump") && player.grounded) player.velocity.y = 5;
-      player.moveAndSlide(dt);
+      // A staged world streams its ground around the camera: in a benchmark view the player's
+      // ground streams out, so the hidden player is held instead of falling through the map.
+      if (!this.#stage || ctx.state.getState().view === "player") player.moveAndSlide(dt);
       if (!playable) return;
       for (const name of Object.keys(BIOMES) as WorldName[])
         if (name !== world && ctx.input.justPressed(name)) {
