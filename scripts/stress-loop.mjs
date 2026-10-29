@@ -28,6 +28,14 @@ export { readLedger };
 /** Owner bar (2026-10-29): as smooth as Unreal, read as 120 fps stable: every frame under 8.33 ms. */
 export const GOALS = [
   {
+    key: "fps",
+    short: "FPS",
+    label: "Frames per second (median of the measured windows)",
+    unit: "fps",
+    goal: 120,
+    better: "higher",
+  },
+  {
     key: "frameP95Ms",
     short: "CPU frame p95",
     label: "Frame callback p95 (CPU cost of one frame)",
@@ -198,7 +206,7 @@ export function renderHtml(ledger, now = new Date()) {
   const history = rows
     .map(
       (row) =>
-        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${GOALS.map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}<td class="n">${esc(fmt(row.metrics.gpuP50Ms, "ms"))}</td><td class="n">${esc(fmt(row.metrics.fps, "fps"))}</td></tr>`,
+        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${GOALS.map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}<td class="n">${esc(fmt(row.metrics.gpuP50Ms, "ms"))}</td></tr>`,
     )
     .join("");
   const header =
@@ -237,7 +245,7 @@ svg{width:100%;height:auto}
 <h2>Trend per iteration</h2>
 <div class="grid3">${charts}</div>
 <h2>Iterations</h2>
-<div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Preset</th><th>Adapter</th>${GOALS.map((goal) => `<th class="n">${esc(goal.short)}</th>`).join("")}<th class="n">GPU p50</th><th class="n">FPS</th></tr></thead><tbody>${history || `<tr><td colspan="${7 + GOALS.length + 2}" class="dim">pending</td></tr>`}</tbody></table></div>
+<div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Preset</th><th>Adapter</th>${GOALS.map((goal) => `<th class="n">${esc(goal.short)}</th>`).join("")}<th class="n">GPU p50</th></tr></thead><tbody>${history || `<tr><td colspan="${7 + GOALS.length + 1}" class="dim">pending</td></tr>`}</tbody></table></div>
 </main></body></html>
 `;
 }
