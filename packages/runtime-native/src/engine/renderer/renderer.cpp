@@ -2536,7 +2536,7 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
     // state key (FMeshDrawCommandSortKey: pipeline, then state), never by view depth, so its cached commands hold.
 #ifndef __EMSCRIPTEN__  // the web engine compiles the rows, which alone sort by state, out
     stateFirst = stateFirst && std::all_of(opaque.begin(), opaque.end(), [](const auto& d) {
-        return d.second->background || (d.second->depthWrite && d.second->colorWrite);
+        return d.second->background || (d.second->depthWrite && d.second->depthTest && d.second->colorWrite);
     });
     if (stateFirst) {
         // ponytail: material and geometry order by address, so exactly coplanar draws can swap winners between runs.
@@ -3165,7 +3165,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto drawTargetKey = [&](const DrawItem& item, const shader::StageModule& vertex) {
         uint64_t h = 0xcbf29ce484222325ull;
         const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
-        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.colorWrite);
+        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.depthTest); mix(item.colorWrite);
         mix(item.depthBias); mix(std::bit_cast<uint32_t>(item.depthBiasSlopeScale));
         mix(item.background); mix(item.frontFace() == WGPUFrontFace_CW);
         mix(static_cast<uint64_t>(item.topology));
@@ -3196,7 +3196,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
         target.layout = program.pipelineLayout;
-        if (item.background) target.depthCompare = WGPUCompareFunction_Always;
+        if (item.background || !item.depthTest) target.depthCompare = WGPUCompareFunction_Always;
         target.depthBias = item.depthBias;
         target.depthBiasSlopeScale = item.depthBiasSlopeScale;
         target.frontFace = item.frontFace();
@@ -4510,7 +4510,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (stablePasses_ && stableRows_ && !compilation &&
         std::all_of(plan.begin(), plan.end(), [](const Planned& p) {
             const DrawItem& i = *p.item;
-            return i.transparent || i.background || (i.depthWrite && i.colorWrite);
+            return i.transparent || i.background || (i.depthWrite && i.depthTest && i.colorWrite);
         })) {
         // The draws after the viewport copy record their own bundle, keyed by their rows of the per-draw key.
         // The transparent draws record their own bundle too: their depth order moves with every camera turn, and keeping them

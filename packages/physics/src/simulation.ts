@@ -17,6 +17,24 @@ function countEngineCost(name: string, count: number): void {
   host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + count;
 }
 
+/**
+ * The knob a playtest sets to bound engine work (`ENGINE_COST_KNOB` in core, same wire name).
+ *
+ * A step's own counters are opt-in where the crossing counters are not: reading a sleep flag is a
+ * Wasm call per dynamic body, and a shipped frame must not pay for a diagnostic nothing reads.
+ */
+const ENGINE_COST_KNOB = "__THREENATIVE_ENGINE_COST__";
+
+/** Wall clock in milliseconds, from the same source the loop meters frames with. */
+function stepClock(): number {
+  return globalThis.performance?.now() ?? Date.now();
+}
+
+/** True while a playtest has asked for engine work counters (core's `ENGINE_COST_KNOB`). */
+function engineCostAsked(): boolean {
+  return (globalThis as unknown as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
+}
+
 export const PHYSICS_TRANSFORM_STRIDE = 8;
 
 export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
@@ -1062,6 +1080,29 @@ export function createWebPhysicsSimulation(
     if (disposed) throw new Error("Physics simulation is disposed.");
   };
 
+  /**
+   * The work one step is handed, into the engine-cost bag a playtest reads per frame: bodies,
+   * colliders, and how many dynamic bodies Rapier will solve.
+   *
+   * The awake count is read before `world.step` moves the sleep flags, because it describes the
+   * solve that is about to run, not what survived it. Units: `physicsAwakeBodies` and
+   * `physicsDynamicBodies` are bodies, `physicsColliders` is colliders.
+   */
+  const countStepWork = (): void => {
+    if (!engineCostAsked()) return;
+    let awake = 0;
+    let dynamic = 0;
+    for (const entry of bodies.values()) {
+      if (entry.type !== "dynamic") continue;
+      dynamic += 1;
+      if (!entry.body.isSleeping()) awake += 1;
+    }
+    countEngineCost("physicsBodies", bodies.size);
+    countEngineCost("physicsColliders", byCollider.size);
+    countEngineCost("physicsDynamicBodies", dynamic);
+    countEngineCost("physicsAwakeBodies", awake);
+  };
+
   // Actuation on a fixed, kinematic or character body is not a weaker push, it is no push at
   // all -- Rapier discards it. Failing here beats a silently motionless body.
   const requireDynamic = (
@@ -1315,6 +1356,11 @@ export function createWebPhysicsSimulation(
     },
     step: (deltaTime, inputSnapshot) => {
       requireLive();
+      // Microseconds, because a step of a small scene costs well under one millisecond and a
+      // millisecond count would round most of them to zero. Counted only while a playtest asks.
+      const counted = engineCostAsked();
+      const startedAt = counted ? stepClock() : 0;
+      if (counted) countStepWork();
       requirePhysicsStepInput(deltaTime, inputSnapshot, (id) => bodies.has(id));
       if (inputSnapshot !== undefined) {
         for (let index = 0; index < inputSnapshot.kinematicCount; index += 1) {
@@ -1416,6 +1462,7 @@ export function createWebPhysicsSimulation(
       }
       countEngineCost("physicsForceResets", crossings.forceResets);
       dirtyBodies.clear();
+      if (counted) countEngineCost("physicsStepUs", Math.round((stepClock() - startedAt) * 1000));
     },
     readVisibleTransforms: (renderBuffer) => {
       requireLive();

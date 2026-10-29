@@ -68,6 +68,60 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   `JobPool(3)` has 0 workers, no walk shares out, and `std::thread` aborts. Gate the pool's checks on the build
   (`__EMSCRIPTEN_PTHREADS__`) and run that build before you push.
 
+- **On Xvfb, the drawn fps of a web WebGPU game is the virtual display, not the engine.** The RTS kit looped at
+  75 fps and drew 10-12 on Xvfb, and the same build drew 70-93 on the real display `:0` (2026-10-28). Take
+  drawn fps and presentation from a real display only. On `:0` the drawn fps also follows other GPU users: with
+  another job at 100 % GPU it swung from 25 to 95 between consecutive runs of one arm, so read
+  `nvidia-smi` before you compare drawn fps across arms, and compare main-thread time instead.
+- **Find React dev cost in the trace by component, then count why it renders.** A HUD that reads the whole
+  published state re-renders at the publish rate, not the rate of what it shows. `useUiState(selector)` compares
+  the result by identity, so a selector that builds a new object or array renders as often as no selector.
+
+## 2026-10-28 RTS kit probe (Chrome DevTools trace, web Wasm engine, real display)
+
+### 2026-10-28 — RTS HUD panels re-render only when a shown value changes — KEEP
+- Where: `templates/rts/src/ui/Hud.tsx` (`useUiStateShown`), `Commands.tsx`, `Minimap.tsx` (game layer).
+- Ceiling: in an 8.4 s CDP trace while panning, the `ui/react` bucket was 643 ms, 10.1 % of the active main
+  thread (`Hud` 203 ms, `Commands` 115 ms inclusive). The game publishes every frame (camera and minimap
+  fields), and each panel read the whole snapshot.
+- Result: same route, same build: `ui/react` 643 → 68 ms (1.4 %), `Hud` 203 → 8 ms, `Commands` 115 → 4 ms.
+  The untraced CDP `TaskDuration` A/B (10 pairs, 3 runs) was lower for NEW in 7 pairs, with mean deltas of
+  −34 to −115 ms/s. The host was at load 14-21 with another job at 100 % GPU, so that timing is INCONCLUSIVE.
+  The trace attribution is the evidence. RTS template playtests: 8 of 9 scenarios pass, and the kit contract
+  passes. `battlefield-performance` failed on GPU p95 (about 31 ms against 16.7 ms, CPU 7-15 ms) in 2 of 2
+  runs with the change. A paired A/B of that scenario failed 1 of 2 runs per arm, OLD included (GPU p95
+  30.1 ms), while other jobs held the shared GPU at 25-95 %. So the red is GPU contention, not the HUD.
+- Cause: a panel subscribed with no selector, so each publish re-rendered all three panels.
+- Fix: each panel lists the values it draws, rounded the way it draws them. The hook keeps the previous
+  snapshot while that list is unchanged. A field the panel reads but does not list goes stale on screen, so the
+  list must name every field the panel reads.
+
+### 2026-10-28 — Native engine draws `material.depthTest = false` over nearer surfaces — KEEP (correctness)
+- Where: `runtime-native/src/engine/renderer/` (`renderer.h`, `render_database.cpp`, `renderer.cpp`).
+- Symptom: the RTS health bars were cut by buildings and shimmered at their edges. `engine: "threejs"` drew
+  them on top, so the engine was the layer.
+- Cause: the engine ignored `depthTest`. A bar quad depth-tested against the model under it.
+- Result: red-green `depth_test_off_draws_over_nearer`, all 95 `render_database_test` cases pass. In a
+  30-frame still stack of the bar box, the max per-pixel std went 19.7 → 4.4. The visual judge (Opus) returned
+  IMPROVEMENT on 5 of 5 criteria. `depthTest` is part of the draw key, and order-independent batching now
+  requires it.
+
+### 2026-10-28 — `updateRanges` proxy read per geometry upload — REJECT (below the bar)
+- Where: `three-native/src/update-ranges.ts`, reached from the RTS `army.sync` uploads.
+- Ceiling: about 7 crossings and a JSON parse per upload. After the trace inflation is removed, this is about
+  0.03-0.07 ms per frame, under the 0.3 ms bar.
+- Revisit when: a game uploads hundreds of ranged attributes per frame.
+
+### 2026-10-28 — Post stages re-run the scene materials' render callbacks — OPEN (sized, not cut)
+- Where: `three-native/src/tsl-uniforms.ts` `liveUniforms.sync`, which runs once per `renderer.render()`.
+- Ceiling: bloom, auto exposure and local exposure each call `render()` per stage in `updateBefore`. That is
+  about 2 ms of the 3.1 ms traced `renderFrame`. `sync` is 419 ms over 997 traced frames, about 0.42 ms per
+  frame traced. It runs `onRenderUpdate` callbacks (`backlightMaterial.ts`, `heightFog.ts`, `uniformLanes`)
+  for quad passes that do not draw those materials.
+- Next: the once-per-frame object re-lane patch (entry below, "HANDED OVER") cuts part of it. Running
+  `render` callbacks only for the materials a pass draws needs a per-material owner list. Both need a visual
+  judge.
+
 ## 2026-10-27 shooter campaign (PR #574, worker mode, web Wasm engine)
 
 Baseline from the owner's trace: worker rAF interval p50 22.3 / p95 33.6 ms, 81% of frames over 17.5 ms, GPU 3-4 ms.

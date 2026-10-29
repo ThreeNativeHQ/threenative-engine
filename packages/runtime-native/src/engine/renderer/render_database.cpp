@@ -506,6 +506,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.transparent = material->transparent;
     d.forceSinglePass = material->forceSinglePass;
     d.depthWrite = material->depthWrite;
+    d.depthTest = material->depthTest;
     d.colorWrite = material->colorWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
@@ -528,6 +529,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.transparent = r.material->transparent;
     d.forceSinglePass = r.material->forceSinglePass;
     d.depthWrite = r.material->depthWrite;
+    d.depthTest = r.material->depthTest;
     d.colorWrite = r.material->colorWrite;
     d.side = static_cast<uint8_t>(r.material->side);
     d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;

@@ -11,6 +11,7 @@ import {
   packedTarballName,
   prepareReleaseCohort,
   proveUpgradeFromLatest,
+  provisionReleaseArtifacts,
   releaseOrder,
   unpublishedReleasePackages,
   validateReleaseCohort,
@@ -306,5 +307,39 @@ describe("pnpm release --dry-run --lock (PRD-629)", () => {
       stderr = String((error as { stderr?: unknown }).stderr);
     }
     expect(stderr).toMatch(message);
+  });
+});
+
+describe("provisionReleaseArtifacts", () => {
+  function steps(current: boolean) {
+    const calls = { built: 0, wrapper: [] as string[] };
+    return {
+      calls,
+      steps: {
+        webEngineCurrent: () => current,
+        buildWebEngine: () => {
+          calls.built += 1;
+        },
+        ensureGradleWrapper: async (output: string) => {
+          calls.wrapper.push(output);
+        },
+      },
+    };
+  }
+
+  it("builds a missing or stale web engine and provisions the Gradle wrapper from a fresh tree", async () => {
+    const { calls, steps: fresh } = steps(false);
+    await provisionReleaseArtifacts("/repo", fresh);
+    expect(calls.built).toBe(1);
+    expect(calls.wrapper).toEqual([
+      path.join("/repo", "packages/runtime-native/android/gradle/wrapper/gradle-wrapper.jar"),
+    ]);
+  });
+
+  it("keeps a current web engine and still verifies the Gradle wrapper", async () => {
+    const { calls, steps: built } = steps(true);
+    await provisionReleaseArtifacts("/repo", built);
+    expect(calls.built).toBe(0);
+    expect(calls.wrapper).toHaveLength(1);
   });
 });

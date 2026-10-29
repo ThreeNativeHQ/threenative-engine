@@ -229,7 +229,7 @@ export class Play extends Scene<GameState, undefined> {
       this.#prune(sim);
       applyRtsCamera(camera, view, frameCtx.viewport.size, dt);
       sun.follow(view.target.x, view.target.z);
-      this.#army?.sync(sim, this.#selected, sim.time, dt, camera);
+      this.#army?.sync(sim, this.#selected, sim.time, dt, camera, frameCtx.viewport.size.height);
       if (this.#minimapDirty) {
         this.#minimapDirty = false;
         this.#terrain?.updateFog(sim);

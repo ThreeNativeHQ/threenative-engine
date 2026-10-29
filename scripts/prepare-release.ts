@@ -12,7 +12,7 @@ import {
   publishSet,
 } from "./check-publish-state.js";
 import { progressOf } from "./prd-progress.js";
-import { validateReleaseCohort } from "./release.js";
+import { provisionReleaseArtifacts, validateReleaseCohort } from "./release.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const TEMPLATE_ROOT = path.join(REPO, "packages", "create-threenative", "templates");
@@ -351,6 +351,7 @@ async function main(): Promise<void> {
     "capture animation MCP surface",
   );
 
+  await provisionReleaseArtifacts(REPO);
   const report = await checkPublishState({
     allowCurrentPublishSetPins: true,
     allowMissingPrebuilt: true,

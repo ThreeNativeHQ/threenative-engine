@@ -219,11 +219,19 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-20 for the Unreal look epic (PR #541): every template gains the opt-in `filmic` tone mode (tonemap.ts,
 // worldEnvironment.ts), the exposure cold-read retry and the histogram-walk fix, and one AGENTS.md/CLAUDE.md line on the engine
 // default. Measured from the committed branch head.
+// Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
+// two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
+// Recomputed 2026-10-28: only rts moves, its health bars keep a pixel size above the model and its HUD panels
+// re-render only on the values they show; measured by this test.
 // Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
 // Recomputed 2026-10-27 (PRD-760): the `.mcp.json` pair and every host config in all sixteen
 // trees gain the `threenative-animation` server; no other scaffold byte changed.
+// Recomputed 2026-10-28 (0.3.7): the cohort's own pins now hash as a placeholder, so a release bump
+// leaves every tree as it is; measured by this test.
 // Recomputed 2026-10-28: every tree ships the regenerated three patch (a settled object refreshes once when a PMREM
 // swaps the texture it samples); no template file changed. Measured by this test.
+// Re-measured 2026-10-28 on the merge of develop bb8708b95 (0.3.7, rts and shooter fixes) into PR #483: every tree
+// carries both sides' bytes, so all sixteen were measured by this test on the merged tree.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
   // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
@@ -317,7 +325,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
   // to its clip; platformer binds R to restart.
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
-  "action-rpg": "69aa7507cac974ccb2d8f9a14c5f5b3d4a59459a893257237923d8b0e11ab1cb",
+  "action-rpg": "f215b7825b4c584fefe0791845d2c8f50f439587470569291adee875dc200f60",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -334,7 +342,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-741: authored temporal mip compensation; PR #563 camera fixes remain integrated.
   // Recomputed 2026-10-27 on the merge of origin/develop (#577 native player, #579 reference search)
   // into the PRD-741 lane: measured by this test on the merged tree, which is neither parent's tree.
-  collectathon: "ab55da60a4cbcb9296946c0eff0a12c88ffd321bca093e9fa651681be3b247a8",
+  collectathon: "4c50ffce212b76f890bf55a974f11a257ecf74af5c8005fd13f7907754586944",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -344,30 +352,30 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
   // PRD-741 merge: parent lock-target orbit fix plus automatic temporal texture mip bias.
-  adventure: "321fa67a984cbf60e4e0cb58057d239cdccdfae4ec31016801dc511779a108e4",
+  adventure: "a8e07b92b697ec9aa5b3d098fc3fb996171cbb57e43cbbda4338ce45f6839d36",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   // PRD-741: the kerb lies level with the road, closing the slot that showed grass under its edge.
-  kart: "c664e8ae95a17574cc8938ef0f347996486540a5dd6df31ce617009259f9ad11",
-  minimal: "94592b93eece1801fbd59b4188e202c9f1c9a0a3c25b76ffa280dd8b1a0cd5fa",
-  platformer: "012f538263f03e04c137e32bbc2c686d0b6f40f42decc1035b18c3fe4806227c",
-  puzzle: "84ef104b646ddd3f85089e1da2f9f30fd9b201a70f91594ea2a2b9eb18b6b4db",
-  racing: "d35c3aac6507cb211e4a9c33982acb824b700a708fcbb528ec3f38ccc8b953df",
-  rain: "ba86739ecd90d0f2a36c3258b21f7a135d1932c8d70c964f2420c33d4caba9b1",
-  rts: "4ef3d4a445241a9610e7032ca15dcd2e9aa8dbb798c432b73956538afc46d655",
-  runner: "1fb69212139835f9469895cd7d47f32fd8eac4efe5123161d334ce2a548c5001",
+  kart: "436974628fff63cb627d3da725015a063ce5f9c639f364c396d09978f4943cd3",
+  minimal: "08392b28fc884bb5fa4e1243562ec6121df1e6ba163bddd89e809b82e8a499e7",
+  platformer: "97bd100f90a2eb00796f6a55bbfab3353beb62c7444fb5ad75f911ce11c5bee8",
+  puzzle: "1b26a88d371afe8ee3e74c126a0b7bcb255d70f872ef53c6ff1faba872e5795d",
+  racing: "20b2c7f844f15c91b2298e15c83846aac4633ca0f4008373dab6e708ae847f4f",
+  rain: "caabbc8c3c0c5c0348f0d8c9da8bced3e65539445e3fb6c07b5f74fb9d5f3dab",
+  rts: "60a4fe096d26896995b76e5d54d5707eb8bd55513e2c0f5c432947d33560d919",
+  runner: "79dddd044ad342dc1b0650bcb338dfeab15fc320aefc4e09689b24e4ed905c7f",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "dd509ef50804b79b8d707e3fcfb8459a78d724929e948adace9faded8f88c6c8",
+  sailing: "1924f767a4e02dd950056f8891ad3a5460983a5c34f0fb48fb65ddfdbe66d770",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "1ab0fc40b0a6b12fec2393f78c93235ff0b5892ce91708a1a5d0946c7b97fac6",
-  snow: "87a27446524fee1927763219b475bc9d960f5756df075db87db48f956fa4ab59",
+  shooter: "ff7fe37ce3d22cb59011edfd57680548223bbe03795f8734511faf22d310b714",
+  snow: "acaf30b8aca4350970c0ac0b79f5d227650e517e968b8750e6d2f386d37ffd1f",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   // Recomputed 2026-10-27 on the merge of origin/develop into the PRD-741 lane.
-  starter: "934fdd7749322e00acb47d13186113d96ab670819282389285cefc6e13e003e6",
-  "tower-defense": "babf5079dbd569c7b13ad6105550330a5c100cabf8e253679c03bf67a22ff18d",
+  starter: "c62469d9083a5fe978565e04e0d77b799684824d9b0199438e1aa257e6f33c06",
+  "tower-defense": "ad121f851ef0839a75f59fe4c8945fd73fe87a49fdde47e6aec13439db16e5a0",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -408,6 +416,9 @@ async function withBrokenTemplateFile<T>(
   }
 }
 
+const COHORT_PIN =
+  /("(?:@threenative\/[\w-]+|create-threenative|threenative-[\w-]+)":\s*)"\d+\.\d+\.\d+(?:-[\w.]+)?"/gu;
+
 async function scaffoldTreeHash(directory: string): Promise<string> {
   const files: Array<[string, Buffer]> = [];
   async function walk(current: string): Promise<void> {
@@ -422,7 +433,15 @@ async function scaffoldTreeHash(directory: string): Promise<string> {
       } else {
         const relative = path.relative(directory, file);
         if (!GENERATED_SCAFFOLD_METADATA.test(relative)) {
-          files.push([relative, await readFile(file)]);
+          const bytes = await readFile(file);
+          // `pnpm release:prepare` moves the cohort's own pins on every release, so they hash as
+          // one placeholder: a version bump alone must not move a tree this test guards.
+          files.push([
+            relative,
+            entry.name === "package.json"
+              ? Buffer.from(bytes.toString("utf8").replace(COHORT_PIN, '$1"<cohort>"'))
+              : bytes,
+          ]);
         }
       }
     }

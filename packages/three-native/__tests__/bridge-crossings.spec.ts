@@ -329,4 +329,33 @@ describe("per-crossing glue on the Wasm bridge", () => {
     expect(scratch).toHaveLength(3);
     for (const seen of scratch) expect(seen.every((word) => word === 0)).toBe(true);
   });
+
+  // The glue a crossing pays, counted: `view()` used to read two `.buffer`s per use (3 uses here) and
+  // `alloc` filled its scratch through `HEAPU8.fill`, 466 ns a crossing against 340 with the kept views
+  // and the word-store zeroing (PERFORMANCE-LEARNINGS 2026-10-27, bridge glue). Both counts are zero
+  // again the moment the views are rebuilt per use, so undoing the lever reds this test.
+  it("reads the heap's buffer once a crossing, and zeroes its scratch without a fill", () => {
+    const { module } = growableModule();
+    let bufferReads = 0;
+    let fills = 0;
+    const counted = (heap: Uint8Array) =>
+      new Proxy(heap, {
+        get(target, property) {
+          if (property === "buffer") bufferReads += 1;
+          if (property === "fill") fills += 1;
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === "function" ? (value as () => unknown).bind(target) : value;
+        },
+      });
+    module.HEAPU8 = counted(module.HEAPU8) as Uint8Array;
+    const runtime = createWasmRuntime(module);
+    // The fixture's own `_tn_invoke` answers through one DataView of the heap, per crossing.
+    runtime.invoke(self, "updateMatrixWorld", []);
+    const readsBefore = bufferReads;
+    const fillsBefore = fills;
+    for (let crossing = 0; crossing < 50; crossing += 1)
+      runtime.invoke(self, "updateMatrixWorld", []);
+    expect((bufferReads - readsBefore) / 50).toBeLessThanOrEqual(1);
+    expect(fills - fillsBefore).toBe(0);
+  });
 });

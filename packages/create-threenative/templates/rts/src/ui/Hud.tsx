@@ -1,4 +1,5 @@
 import { useUiIntent, useUiState } from "@threenative/ui";
+import { useRef } from "react";
 import { type EntityType, TYPES } from "../sim/types.js";
 import type { GameState } from "../state.js";
 
@@ -17,6 +18,21 @@ function clock(seconds: number): string {
 }
 
 /**
+ * The published snapshot, renewed only when what a panel shows changed. Every publish is a fresh
+ * copy and the game publishes each frame, so a panel reading the whole state re-rendered 20 times a
+ * second standing still (the 20 Hz sim clock) and 50 while panning (the camera fields it never
+ * shows). `shown` lists the values the panel draws, already rounded the way it draws them.
+ */
+export function useUiStateShown(shown: (state: GameState) => unknown): GameState | undefined {
+  const last = useRef<{ key: string; state: GameState } | undefined>(undefined);
+  return useUiState<GameState, GameState>((state) => {
+    const key = JSON.stringify(shown(state));
+    if (last.current?.key !== key) last.current = { key, state };
+    return last.current.state;
+  });
+}
+
+/**
  * The top bar and the selection panel: what is banked, what is selected, what it is doing.
  *
  * Plain Tailwind, plain DOM, and the same file on every target. The unit's *name*, role and cost
@@ -24,7 +40,27 @@ function clock(seconds: number): string {
  * rebalance cannot leave this panel quoting last season's numbers.
  */
 export function Hud() {
-  const state = useUiState<GameState>();
+  const state = useUiStateShown((s) => [
+    s.ore,
+    s.gas,
+    s.supplyUsed,
+    s.supplyCap,
+    Math.floor(s.simTime / 20),
+    s.notice,
+    s.selection,
+    s.primaryType,
+    s.primaryHp,
+    s.primaryMaxHp,
+    s.selectionX.toFixed(0),
+    s.selectionZ.toFixed(0),
+    s.primaryBuilt,
+    Math.round(s.primaryProgress * 100),
+    s.queue,
+    s.selectionOrder,
+    s.dragBox,
+    s.result,
+    s.paused,
+  ]);
   const send = useUiIntent();
   // Nothing to draw until the game publishes its first snapshot. Rendering zeros instead would put
   // a wrong supply figure on screen and then correct it.

@@ -1172,7 +1172,7 @@ async function handleLine(line2, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.6" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.7" }
       });
     }
     if (request.method === "tools/list") {

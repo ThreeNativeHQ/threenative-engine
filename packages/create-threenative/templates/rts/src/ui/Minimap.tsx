@@ -1,7 +1,6 @@
-import { useUiState } from "@threenative/ui";
 import { useEffect, useRef } from "react";
 import { STARTS } from "../sim/terrain.js";
-import type { GameState } from "../state.js";
+import { useUiStateShown } from "./Hud.js";
 
 const SIZE = 28;
 /** Side of the minimap canvas in device pixels; the coarse raster is upscaled into it. */
@@ -21,10 +20,10 @@ const GAS = "#b7dd77";
  * payload, so the HUD and the map never disagree about a frame.
  */
 export function Minimap() {
-  const state = useUiState<GameState>();
+  const state = useUiStateShown((s) => [s.minimapFog, s.minimapDots, s.minimapView]);
   const canvas = useRef<HTMLCanvasElement>(null);
-  // The two payloads are replaced only on the simulation's clock, so their identity is the
-  // redraw signal: this map repaints twenty times a second, not once per published frame.
+  // The payloads change on the simulation's clock (the view only when the camera moves), and the
+  // snapshot is renewed only then: this map repaints twenty times a second, not once per frame.
   const fog = state?.minimapFog;
   const dots = state?.minimapDots;
   const view = state?.minimapView;
