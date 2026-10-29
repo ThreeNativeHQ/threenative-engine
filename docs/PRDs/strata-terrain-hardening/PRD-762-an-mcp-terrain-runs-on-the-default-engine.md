@@ -25,24 +25,24 @@ vec3 construction (sky); array textures; MeshPhysicalNodeMaterial; material addE
 
 Rule: the native engine stays the default. An `engine: "threejs"` pin does not count as done.
 
-## Phase 1: the MCP terrain path starts on the default engine
+### Phase 1 — the MCP terrain path starts on the default engine
 
 Fix each refusal in the layer that owns it, in the order the path hits them. Every fix gets a red-green
 spec.
 
 - [x] mat4 uniform: `WorldGpuScene` builds its occlusion-view uniform on first kernel use, not in a class field. proof: `world-gpu-scene-engine-uniforms.spec.ts` fails without the change and passes with it; `world-gpu-scene.spec.ts` plus the new spec: 106/106 pass; core `tsc` 0 errors.
-- [ ] Array textures: the terrain splat and its stacked layers draw on the Wasm engine.
-- [ ] Every later refusal on this path, each with its own box as it is found.
+- [ ] Array textures: the terrain splat and its stacked layers draw on the Wasm engine. proof: a three-native spec, then the sandbox past `loadTerrainSplat`
+- [ ] Every later refusal on this path, each with its own box as it is found. proof: the sandbox log names the next refusal, or none
 - [ ] The sandbox game starts on the default engine from the MCP snippet, with no game edit. proof: headed WebGPU, adapter checked, `TN_STARTUP_READY`.
 
-## Phase 2: the forest starter kit starts on the default engine
+### Phase 2 — the forest starter kit starts on the default engine
 
-- [ ] Sky gaps 1-4 (Daylight → SkyMesh).
-- [ ] The remaining kit gaps: VirtualShadowNode, world prewarm, `TN_virtual_geometry`, the reflector hook.
-- [ ] `verify-starter-kit.mjs` passes on the default engine.
+- [ ] Sky gaps 1-4 (Daylight → SkyMesh). proof: a three-native spec per gap
+- [ ] The remaining kit gaps: VirtualShadowNode, world prewarm, `TN_virtual_geometry`, the reflector hook. proof: a spec per gap
+- [ ] `verify-starter-kit.mjs` passes on the default engine. proof: `node examples/strata-terrain-preview/scripts/verify-starter-kit.mjs` exit 0
 
-## Phase 3: proof
+### Phase 3 — proof
 
-- [ ] A playtest scenario for the MCP terrain path on the default engine.
-- [ ] Load time to reveal, and presented FPS on a real display, both measured on the default engine.
-- [ ] Visual judge: the default engine against the `engine: "threejs"` arm at the same poses, 2 runs per arm.
+- [ ] A playtest scenario for the MCP terrain path on the default engine. proof: `playtest <scenario> --browser-recipe webgpu` pass
+- [ ] Load time to reveal, and presented FPS on a real display, both measured on the default engine. proof: `playtest perf` on the real display, adapter checked
+- [ ] Visual judge: the default engine against the `engine: "threejs"` arm at the same poses, 2 runs per arm. proof: a fresh judge verdict on the PR
