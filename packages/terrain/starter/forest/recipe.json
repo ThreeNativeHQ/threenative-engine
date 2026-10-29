@@ -279,21 +279,21 @@
         "type": "scatter",
         "params": {
           "asset": "fern-a",
-          "count": 5000,
+          "count": 17000,
           "minDistance": 1.4,
           "maxSlope": 28,
           "avoidWater": true,
           "scale": [
-            0.7,
-            1.3
+            0.9,
+            1.6
           ]
         },
         "mask": {
           "type": "noise",
-          "scale": 45,
-          "threshold": 0.3,
+          "scale": 30,
+          "threshold": 0.5,
           "seed": 61,
-          "fade": 0.3
+          "fade": 0.2
         }
       },
       {
@@ -303,30 +303,30 @@
         "type": "scatter",
         "params": {
           "asset": "fern-b",
-          "count": 4000,
+          "count": 12000,
           "minDistance": 1.4,
           "maxSlope": 28,
           "avoidWater": true,
           "scale": [
-            0.6,
-            1.2
+            0.8,
+            1.5
           ]
         },
         "mask": {
           "type": "noise",
-          "scale": 35,
-          "threshold": 0.3,
+          "scale": 24,
+          "threshold": 0.5,
           "seed": 67,
-          "fade": 0.3
+          "fade": 0.2
         }
       },
       {
         "enabled": true,
         "opacity": 1,
-        "id": "stones-a",
+        "id": "boulders-small-a",
         "type": "scatter",
         "params": {
-          "asset": "stone-a",
+          "asset": "boulder-small-a",
           "count": 450,
           "minDistance": 2.5,
           "maxSlope": 50,
@@ -347,10 +347,10 @@
       {
         "enabled": true,
         "opacity": 1,
-        "id": "stones-b",
+        "id": "boulders-small-b",
         "type": "scatter",
         "params": {
-          "asset": "stone-b",
+          "asset": "boulder-small-b",
           "count": 450,
           "minDistance": 2.5,
           "maxSlope": 50,

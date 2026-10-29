@@ -28,7 +28,7 @@ beforeAll(() => {
 });
 
 const FERNS = ["fern-a", "fern-b"];
-const STONES = ["stone-a", "stone-b"];
+const STONES = ["boulder-small-a", "boulder-small-b"];
 
 describe("forest ground cover", () => {
   it("cooks ferns and small stones with short draw distances", () => {
@@ -49,7 +49,7 @@ describe("forest ground cover", () => {
       placed[instance.asset] = (placed[instance.asset] ?? 0) + 1;
     for (const id of FERNS) expect(placed[id] ?? 0, id).toBeGreaterThanOrEqual(2_000);
     for (const id of STONES) expect(placed[id] ?? 0, id).toBeGreaterThanOrEqual(300);
-    expect(state.diagnostics.filter((line) => /fern|stone/u.test(line))).toEqual([]);
+    expect(state.diagnostics.filter((line) => /fern|boulder-small/u.test(line))).toEqual([]);
   });
 
   it("keeps the stony moss layer off flat ground, so flat ground reads grass or dirt", () => {
