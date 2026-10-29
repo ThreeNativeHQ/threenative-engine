@@ -1238,8 +1238,9 @@ bool V8Game::start(const std::string& path, std::string& error) {
     ctx->Global()->Set(ctx, v8str(isolate_, "__tnThreadCpuMs"), v8::Function::New(ctx,
         [](const v8::FunctionCallbackInfo<v8::Value>& info) { info.GetReturnValue().Set(player::threadCpuMs()); }).ToLocalChecked()).Check();
     if (const char* debug = std::getenv("TN_DEBUG");
-        debug && std::strcmp(debug, "1") == 0) {
+        tn::engine::waste::debugFlagEnabled(debug)) {
         tn::engine::waste::setDebugEnabled(true);
+        adapter_->enableGcTelemetry();
         ctx->Global()->Set(ctx, v8str(isolate_, "__THREENATIVE_DEBUG__"), v8::True(isolate_)).Check();
     }
     ctx->Global()->Set(ctx, v8str(isolate_, "__tnEngineCounters"), v8::Function::New(ctx,
@@ -1263,8 +1264,15 @@ bool V8Game::start(const std::string& path, std::string& error) {
 #define TN_COUNTER_VALUE(name) { std::string key = #name; if (key.ends_with("Micros")) { key.replace(key.size() - 6, 6, "Ms"); result->Set(context, v8str(isolate, key), v8::Number::New(isolate, double(w.name.load(std::memory_order_relaxed)) / 1000)).Check(); } else put(#name, w.name); }
             TN_DEBUG_COUNTERS(TN_COUNTER_VALUE)
 #undef TN_COUNTER_VALUE
+            if (tn::engine::waste::debugEnabled().load(std::memory_order_relaxed)) {
+                auto* game = static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+                if (game->adapter_) game->adapter_->enableGcTelemetry();
+                put("gcPauses", w.gcPauses);
+                result->Set(context, v8str(isolate, "gcPauseMs"),
+                    v8::Number::New(isolate, double(w.gcPauseMicros.load(std::memory_order_relaxed)) / 1000)).Check();
+            }
             info.GetReturnValue().Set(result);
-        }).ToLocalChecked()).Check();
+        }, v8::External::New(isolate_, this)).ToLocalChecked()).Check();
     // TN_PLAYER_CROSSINGS=1: the live per-name crossing counts as JSON, so the bench can diff them per rung.
     if (std::getenv("TN_PLAYER_CROSSINGS") != nullptr)
         ctx->Global()->Set(ctx, v8str(isolate_, "__tnCrossingHistogram"), v8::Function::New(ctx,

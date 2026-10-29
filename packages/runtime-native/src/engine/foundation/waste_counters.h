@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 
 /**
  * Running counts of engine work that a scene can make the renderer repeat without needing it
@@ -33,6 +34,7 @@ namespace tn::engine::waste {
     X(renderFrames) X(renderDraws) X(shadowDraws) X(auxPasses) X(cullCandidates) X(culledObjects)
 
 struct Counters {
+    std::atomic<uint64_t> gcPauses{0}, gcPauseMicros{0};  // V8-only: Wasm does not expose unobserved GC.
 #define TN_DECLARE_COUNTER(name) std::atomic<uint64_t> name{0};
     TN_DEBUG_COUNTERS(TN_DECLARE_COUNTER)
 #undef TN_DECLARE_COUNTER
@@ -67,6 +69,8 @@ inline Counters& counters() {
     static Counters value;
     return value;
 }
+
+inline bool debugFlagEnabled(const char* value) { return value && std::strcmp(value, "1") == 0; }
 
 inline std::atomic<bool>& debugEnabled() { static std::atomic<bool> enabled{false}; return enabled; }
 inline void setDebugEnabled(bool enabled) { debugEnabled().store(enabled, std::memory_order_relaxed); }

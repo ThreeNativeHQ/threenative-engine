@@ -2324,9 +2324,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) {
           if (debug && plugin.beforeUpdate !== undefined)
             measureDebug(
-              `beforeUpdate.${plugin.beforeUpdate.name || "anonymous"}`,
+              `beforeUpdate.${this.#activePlugins.indexOf(plugin)}.${plugin.beforeUpdate.name || "anonymous"}`,
               "update",
-              plugin.beforeUpdate.name || "plugin.beforeUpdate",
+              `plugins[${this.#activePlugins.indexOf(plugin)}].${plugin.beforeUpdate.name || "beforeUpdate"}`,
               () => plugin.beforeUpdate?.(ctx, dt),
             );
           else plugin.beforeUpdate?.(ctx, dt);
@@ -2359,9 +2359,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) {
           if (debug && plugin.update !== undefined)
             measureDebug(
-              `plugins.${plugin.update.name || "anonymous"}`,
+              `plugins.${this.#activePlugins.indexOf(plugin)}.${plugin.update.name || "anonymous"}`,
               "update",
-              plugin.update.name || "plugin.update",
+              `plugins[${this.#activePlugins.indexOf(plugin)}].${plugin.update.name || "update"}`,
               () => plugin.update?.(ctx, dt),
             );
           else plugin.update?.(ctx, dt);

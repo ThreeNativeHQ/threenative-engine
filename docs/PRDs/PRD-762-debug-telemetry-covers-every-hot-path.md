@@ -1,8 +1,8 @@
 # PRD-762 — One debug switch covers every engine hot path
 
-**Status:** PARTIAL — common producers implemented; review corrections and platform proof pending.
+**Status:** PARTIAL — producers and review corrections implemented; platform and renderer proof gaps remain.
 **Priority:** P1 — ordinary engine activity can consume a frame without an actionable warning.
-**Progress:** Phase 0 committed; phases 1–2 in progress.
+**Progress:** Phase 0 committed; implementation checkpoint `0112ecd2b`; final integration local, no push.
 **Owner:** João · 2026-10-28
 **Branch:** `feat/web-engine-debug-telemetry` (this checkout only; local commits, no push).
 **Complexity:** 9 → HIGH; risk override: none. Crosses JS/Wasm and native renderer boundaries.
@@ -44,16 +44,16 @@ Anchors name the audited baseline; implementation can move line numbers. All lis
 
 ### Phase 1 — producers and common window
 
-- [x] Bridge diagnostics detect the RTS crossing/widening/overflow classes, with debug-off census unchanged. proof: 105 related bridge tests plus 32 uniform/TSL tests pass; actual ABI allocation/crossing census, 995 distinct calls, fog expansion, 64-bit rollover and off timing checks included. Source-frame batch review correction pending separately.
-- [ ] Shared native renderer/scene/GPU/lifetime counters cover the matrix and expose the same names to Wasm and native JS. proof: matching native-engine C++ tests and `pnpm wasm:build`.
-- [x] Core activates incumbent diagnostics from one switch and feeds counters, measured callers, HUD/loading/main-thread observations into the existing frame budget. proof: 261 focused core tests across 10 files pass; package `tsc --noEmit -p .` exits 0. Browser observer availability remains explicit; native GC is still open in the memory row.
+- [x] Bridge diagnostics detect the RTS crossing/widening/overflow classes, with debug-off census unchanged. proof: 105 related bridge tests plus 32 uniform/TSL tests pass; actual ABI allocation/crossing census, 995 distinct calls, fog expansion, 64-bit rollover and off timing checks included. Actual native timestamp producer regression passes; direct shared TRS test counts 14 writes / 7 unchanged with identical values/calls off/on.
+- [ ] Shared native renderer/scene/GPU/lifetime counters cover the matrix and expose the same names to Wasm and native JS. proof: native counters and V8 GC producers implemented; core 23/23, GPU resources 7/7, timestamp 1/1, V8 GC/lifecycle 5/5 pass; owned-renderer Android unsupported and eight renderer tests remain unresolved below.
+- [x] Core activates incumbent diagnostics from one switch and feeds counters, measured callers, HUD/loading/main-thread observations into the existing frame budget. proof: actual loop, worker/HUD traffic, per-URL loading, source attribution, first-window and truncated-ring rates have focused red-green regressions; core typecheck passes. Browser GC availability remains explicit; native V8 forced-GC off/on and teardown pass.
 
 ### Phase 2 — verdicts, consumer proof and documentation
 
-- [ ] One report per budget window ranks offenders with explicit cost/share basis, source and matching lever; missing/malformed observations fail closed. proof: core report/window integration specs; playtest engine-cost evaluator and warning specs.
+- [x] One report per budget window ranks offenders with explicit cost/share basis, source and matching lever; missing/malformed observations fail closed. proof: 22 core debug regressions and 31 playtest consumer/scenario tests pass. Fresh read-only review accepts timing units, gauge populations, temporal names, batched timestamps, rate boundaries/truncation and per-URL decode attribution.
 - [ ] A runnable playtest scenario bounds the debug counters through `engineCost`. proof: focused playtest scenario/bridge integration (runtime lane recorded explicitly).
 - [ ] Changed TypeScript and C++ pass their requested checks. proof: `pnpm exec biome check <changed TS files>`, package `tsc --noEmit -p .`, focused Vitest, Wasm build and matching native tests.
-- [ ] Debug-surface reference and package instructions describe measured signals and limitations. proof: `pnpm sync:agents`, `pnpm check:docs`.
+- [x] Debug-surface reference and package instructions describe measured signals and limitations. proof: source equivalents of `pnpm sync:agents` and `pnpm check:docs` pass: 31 mirrors in sync, 1,528 Markdown files / 3,584 links / zero missing, Unreal status up to date. pnpm wrappers remain blocked by tsx IPC EPERM, not claimed green.
 
 ## Integration ledger
 
@@ -73,12 +73,14 @@ Browser playtest: both attempts stop before frame 1. Default headless Chromium a
 
 Android owned-renderer parity: `packages/runtime-native/cmake/NativeEngineAdapters.cmake:6` rejects Android/iOS. The new owned-renderer snapshot is in the desktop V8 player; forwarding `TN_DEBUG` to the legacy host does not make that renderer run there. This is an implementation/support gap, separate from missing device execution; the parity box remains open. No fabricated zero snapshot on a host that runs another renderer.
 
-No push or remote PR is authorized. The initial phase-0 commit completed asynchronously as `ef6d60aaf`; a later retry failed against read-only Git metadata. This did not prevent the committed-before-code ordering. Recheck Git writes at each phase commit.
+No push or remote PR is authorized. Phase 0 is committed as `ef6d60aaf` before code; implementation checkpoint is `0112ecd2b`. Keep this requested worktree/branch for review; no worktree cleanup or remote publication.
 
 ## Validation results
 
-Current evidence: 261 focused core tests across 10 files pass, including 15 debug integration regressions; 105 initial bridge tests and later 67 bridge/renderer/uniform regressions pass; 31 playtest consumer/scenario specs pass. Three-native, core and playtest typechecks pass after building the playtest declarations. Software-Vulkan native GPU resources: 7/7 pass using `/usr/lib/electron43/vk_swiftshader_icd.json`; core C++: 23/23 pass. Actual timestamp producer test `native_engine_gpu_timer_covers_offscreen`: 1/1 passes, including debug-off zero and debug-on one actual unsampled resolve. V8 player/adapter build passes; five V8 handle/scene/GC-release/wrapper-lifetime tests pass. Registry snapshot equals live native dump (1/1). `pnpm wasm:build` passes with a writable temporary Emscripten cache. These are correctness checks, not physical-GPU performance or Android proof.
+Final focused TypeScript evidence: **410/410 tests across 20 files pass**, covering core loop/budgets/spans/assets/UI/workers, bridge/renderer/uniform counters and playtest consumers/scenario loading. This includes 22 debug integration regressions. Core, three-native and playtest `tsc --noEmit -p .` each exit 0. Biome checks all 25 changed TypeScript files with exit 0 and 57 warnings (complexity and existing style diagnostics); no fixes applied. Earlier focused runs are subsets or adjacent fixtures, not additional unique-test totals. Software-Vulkan native GPU resources: 7/7 pass using `/usr/lib/electron43/vk_swiftshader_icd.json`; core C++: 23/23 pass. Actual timestamp producer test `native_engine_gpu_timer_covers_offscreen`: 1/1 passes, including debug-off zero and debug-on one actual unsampled resolve. V8 player/adapter build passes; five V8 GC/handle/scene/wrapper-lifetime tests pass. Registry snapshot equals live native dump (1/1). `pnpm wasm:build` passes after the final GC-header changes for both single-threaded and threaded targets using `EM_CACHE=<temporary writable copy> CMAKE_BUILD_PARALLEL_LEVEL=1`; cache removed after success. These are correctness checks, not physical-GPU performance or Android proof.
 
-Additional software renderer run: 10/18 pass. `cull_keeps_main_bundle`, `traa_reset_seed`, `traa_camera_velocity`, `traa_rejection` abort in Naga WGSL validation (`textureSampleLevel` exact-level type); `pipeline_cache`, `sibling_pipelines`, `pipeline_compile_async`, `recent_bind_groups` request the Dawn Null backend, absent from the wgpu-native test build. These eight checks are not passes; appearance/shader changes are outside this detection task. Native V8 GC pause telemetry remains an implementation gap. Independent review found timing-unit, population-gauge, temporal-name and batched-timestamp defects; corrected cases pass focused executable probes and regressions, including the actual native timestamp producer.
+Additional software renderer run: 10/18 pass. `cull_keeps_main_bundle`, `traa_reset_seed`, `traa_camera_velocity`, `traa_rejection` abort in Naga WGSL validation (`textureSampleLevel` exact-level type); `pipeline_cache`, `sibling_pipelines`, `pipeline_compile_async`, `recent_bind_groups` request the Dawn Null backend, absent from the wgpu-native test build. These eight checks are not passes; appearance/shader changes are outside this detection task. Native V8 GC pause telemetry now passes a forced-GC off/on/cleanup test and four lifecycle tests; exact `TN_DEBUG=1` parsing passes. Independent review found timing-unit, population-gauge, temporal-name, batched-timestamp, traffic-rate and decode-caller defects; corrected cases pass focused executable probes/regressions and the scoped reviewer accepts them. Counters are observations: scene visits are visible-world traversal calls, resource bytes begin at debug activation, async pipeline setup is not full backend compilation, worker bytes are shallow estimates with unknown fields explicit.
 
 `pnpm prd:progress`, `pnpm sync:agents` and `pnpm check:docs` wrappers encounter tsx IPC `EPERM`; their source-script fallbacks run without that listener. Mirrors: 31 checked, three expected updates. Documentation link checker: 1,528 files / 3,584 links, zero missing; Unreal status checker up to date. Biome exits 0 with existing/changed complexity warnings. Final per-row status also goes in the requested uncommitted `CODEX-RESULT.md`.
+
+Final small portability regression: GC observation also remains absent when a host provides `PerformanceObserver` without `supportedEntryTypes`; focused 22-test debug suite and core typecheck pass after the guard correction.

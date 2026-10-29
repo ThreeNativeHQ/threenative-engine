@@ -502,6 +502,26 @@ export function defineBrowserClasses(
   // Each object's kept `rotation` Euler (or `quaternion`) -> the object, whose other form a write syncs.
   const rotations = new WeakMap<object, object>();
   const quaternions = new WeakMap<object, object>();
+  const sharedTransforms = debug === undefined ? undefined : new WeakSet<object>();
+  const sharedTransformWrite =
+    debug === undefined
+      ? undefined
+      : (self: object, address: number, value: number): void => {
+          if (!sharedTransforms?.has(self)) return;
+          debug.add(
+            "sharedTransformWrites",
+            1,
+            "scene",
+            "browser-backend.ts:shared transform setter",
+          );
+          if (source.readDoubles !== undefined && Object.is(source.readDoubles(address, 1), value))
+            debug.add(
+              "unchangedSharedTransformWrites",
+              1,
+              "scene",
+              "browser-backend.ts:shared transform setter",
+            );
+        };
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
   // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
   // geometry and material. The answer is kept until JS sets it or calls a method on that object.
@@ -684,6 +704,13 @@ export function defineBrowserClasses(
         if (glueCounting) propertyReads += 1;
         const member = fromEngine(runtime.get(refOf(this), property));
         Object.defineProperty(this, property, { value: member, writable: false });
+        if (
+          property === "position" ||
+          property === "scale" ||
+          property === "rotation" ||
+          property === "quaternion"
+        )
+          sharedTransforms?.add(member as object);
         if (property === "rotation") rotations.set(member as object, this);
         if (property === "quaternion") quaternions.set(member as object, this);
         return member;
@@ -977,7 +1004,10 @@ export function defineBrowserClasses(
             return lane(addressOf(this) + offset);
           },
           set(this: object, value: number): void {
-            write(addressOf(this) + offset, Number(value));
+            const address = addressOf(this) + offset;
+            const next = Number(value);
+            sharedTransformWrite?.(this, address, next);
+            write(address, next);
           },
         });
       });
@@ -1042,7 +1072,10 @@ export function defineBrowserClasses(
             return lane(addressOf(this) + offset);
           },
           set(this: object, value: number): void {
-            write(addressOf(this) + offset, Number(value));
+            const address = addressOf(this) + offset;
+            const next = Number(value);
+            sharedTransformWrite?.(this, address, next);
+            write(address, next);
           },
         });
       });
@@ -1831,7 +1864,9 @@ export function defineBrowserClasses(
         ...(lane !== undefined && write !== undefined
           ? {
               set(this: object, value: number) {
-                write(addressOf(this) + (lane[0] ?? 0), value);
+                const address = addressOf(this) + (lane[0] ?? 0);
+                sharedTransformWrite?.(this, address, value);
+                write(address, value);
               },
             }
           : setters.has(property)

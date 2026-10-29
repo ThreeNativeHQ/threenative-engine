@@ -60,12 +60,26 @@ function memoryRuntime() {
     get(self, property) {
       if (property === "__address") return addresses.get(self.key) as number;
       calls.push(`get ${property}`);
-      if (property === "position" || property === "scale") {
-        const ref = construct("Vector3");
+      if (
+        property === "position" ||
+        property === "scale" ||
+        property === "quaternion" ||
+        property === "rotation"
+      ) {
+        const ref = construct(
+          property === "quaternion" ? "Quaternion" : property === "rotation" ? "Euler" : "Vector3",
+        );
         // The member's lanes follow its owner's, as the transform page lays them out.
         addresses.set(
           ref.key,
-          (addresses.get(self.key) as number) + (property === "scale" ? 64 : 0),
+          (addresses.get(self.key) as number) +
+            (property === "scale"
+              ? 64
+              : property === "quaternion"
+                ? 128
+                : property === "rotation"
+                  ? 160
+                  : 0),
         );
         return ref;
       }
@@ -83,6 +97,7 @@ function memoryRuntime() {
     writeDouble(address, value) {
       heap[address / 8] = value;
     },
+    readByte: () => 0,
   };
   return { runtime, calls, heap, addresses };
 }
@@ -429,5 +444,48 @@ describe("debug bridge ABI observations", () => {
       (globalThis as { __tnDebugSources?: Record<string, { unit: string }> }).__tnDebugSources
         ?.bridgeCrossingMs?.unit,
     ).toContain("estimated");
+  });
+});
+
+describe("shared transform write telemetry", () => {
+  it("observes repeated same-value position and quaternion writes without changing their values or crossings", () => {
+    function run(enabled: boolean) {
+      vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
+      const { runtime, calls, heap, addresses } = memoryRuntime();
+      const get = runtime.get;
+      runtime.get = (self, property) => (property === "name" ? "" : get(self, property));
+      const browser = defineBrowserClasses(registry, runtime);
+      const Object3D = browser.classes.Object3D as new () => {
+        position: { set(x: number, y: number, z: number): void };
+        quaternion: { set(x: number, y: number, z: number, w: number): void };
+      };
+      const object = new Object3D();
+      const { position, quaternion } = object;
+      const start = calls.length;
+      const now = vi.spyOn(performance, "now");
+      position.set(5, 6, 7);
+      position.set(5, 6, 7);
+      quaternion.set(1, 2, 3, 4);
+      quaternion.set(1, 2, 3, 4);
+      expect(now).not.toHaveBeenCalled();
+      now.mockRestore();
+      const writes = calls.slice(start);
+      const base = addresses.get(engineKey(object)) ?? 0;
+      const values = [
+        ...heap.subarray(base / 8, base / 8 + 3),
+        ...heap.subarray((base + 128) / 8, (base + 128) / 8 + 4),
+      ];
+      return { values, writes, counters: browser.counters() };
+    }
+    const off = run(false);
+    const on = run(true);
+    expect(off.values).toEqual([5, 6, 7, 1, 2, 3, 4]);
+    expect(on.values).toEqual(off.values);
+    expect(on.writes).toEqual(off.writes);
+    expect(off.counters).not.toHaveProperty("sharedTransformWrites");
+    expect(on.counters).toMatchObject({
+      sharedTransformWrites: 14,
+      unchangedSharedTransformWrites: 7,
+    });
   });
 });

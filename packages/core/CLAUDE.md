@@ -132,6 +132,13 @@ particular, Godot-borrowed node names stay unchanged.
 - `frameBudget.report` also receives window projection/span/static/validation/scene-warning telemetry.
   Its default preserves the existing console info/warn severities. A custom sink changes reporting,
   never measurement or validation.
+- `TN_DEBUG=1`, `?tnDebug=1` or `globalThis.__THREENATIVE_DEBUG__ = true` before boot enables
+  diagnostic producers and incumbent spans/counters. Each `TN_FRAME_BUDGET` window carries numeric
+  observations in `counters.engine` and one ranked `TN_DEBUG_REPORT`. Measured CPU shares,
+  getter-equivalent estimates, asynchronous wall times and counts/bytes have distinct bases;
+  absent observations stay absent. `TN_HOT_CALL` names a measured system exceeding the observed
+  frame interval; playtest fails that warning, while `TN_DEBUG_REPORT` remains informational.
+  Keep GPU sample identities and parent/child CPU spans separate when interpreting the ranking.
 - In a browser page, `start()` routes each `console.log` / `console.info` line that starts with `TN_` to
   `console.debug` (DevTools "Verbose", still read by Playwright); `stop()` restores the console. `warn`,
   `error`, other lines and native hosts are untouched. `TN_LOG=1`, `?tnLog=1` or

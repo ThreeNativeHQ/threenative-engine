@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "engine-debug-telemetry-window",
+  "target": "web",
+  "subject": "cube",
+  "viewport": { "width": 640, "height": 360 },
+  "warmupFrames": 0,
+  "steps": [{ "waitTicks": 360, "label": "debug window" }],
+  "artifacts": { "console": true, "screenshots": false },
+  "assert": {
+    "engineCost": {
+      "minWindows": 1,
+      "maxInFrame": { "sceneCallbacksCalls": 5 },
+      "source": "NativeSmoke has one scene update per fixed step; FixedStepLoop defaults to maxSteps=5 per rendered frame. Launch with ?tnDebug=1 before boot."
+    }
+  }
+}

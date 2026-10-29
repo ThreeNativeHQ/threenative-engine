@@ -276,6 +276,8 @@ export interface IFrameBudgetWindow {
   readonly threads?: string;
   /** Loop frames counted in this window, hitches excluded — one per present on the web. */
   readonly frames: number;
+  /** Debug-only elapsed time between completed report boundaries; absent on the first window. */
+  readonly durationMs?: number;
   /** Fixed simulation ticks in this window multiplied by the loop's step, when supplied. */
   readonly simulatedSeconds?: number;
   /** Frames excluded from the window because their present gap exceeded `hitchMs`. */
@@ -632,6 +634,7 @@ function round1(value: number): number {
  */
 export class FrameBudget {
   readonly #debug = debugRequested();
+  #debugWindowBoundary: number | undefined;
   #taskObserver: PerformanceObserver | undefined;
   #taskCount = 0;
   #longestTaskMs = 0;
@@ -1302,6 +1305,9 @@ export class FrameBudget {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
       frames: this.#framesInWindow,
+      ...(this.#debug && this.#debugWindowBoundary !== undefined && this.#lastFrameEnd !== undefined
+        ? { durationMs: Math.max(0, this.#lastFrameEnd - this.#debugWindowBoundary) }
+        : {}),
       // The Wasm engine's job pool (PRD-752 phase 4), as its facade reports it: `on (N)` or `off (<reason>)`.
       ...(typeof (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads === "string"
         ? { threads: (globalThis as { __tnWebThreads?: string }).__tnWebThreads }
@@ -1428,6 +1434,7 @@ export class FrameBudget {
       if (hotCalls !== undefined) this.#report(hotCalls);
     }
     this.#windowIndex += 1;
+    if (this.#debug) this.#debugWindowBoundary = this.#lastFrameEnd;
     this.#presented.reset();
     this.#drawn.reset();
     this.#drawnInWindow = 0;

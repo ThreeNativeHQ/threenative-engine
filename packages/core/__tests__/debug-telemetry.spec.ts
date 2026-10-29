@@ -1,3 +1,4 @@
+import { Texture, TextureLoader } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { FrameBudget } from "../src/frame-budget.js";
@@ -27,6 +28,70 @@ function drive(budget: FrameBudget, engine: Record<string, number>): void {
 }
 
 describe("one engine debug switch", () => {
+  it("derives message and byte rates from the budget window's measured duration", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnDebugSources", {
+      workerMessages: { area: "worker", caller: "worker.postMessage", unit: "count" },
+      workerBytes: { area: "worker", caller: "worker.postMessage", unit: "estimated-bytes" },
+    });
+    const lines: string[] = [];
+    const budget = new FrameBudget({ reportEvery: 2, report: (line) => lines.push(line) });
+    drive(budget, { workerMessages: 2, workerBytes: 128 });
+    const report = JSON.parse(
+      String(lines.filter((line) => line.startsWith("TN_DEBUG_REPORT:")).at(-1)).slice(
+        "TN_DEBUG_REPORT:".length,
+      ),
+    );
+    expect(report.durationMs).toBeGreaterThan(0);
+    expect(report.observations.workerMessages.perSecond).toBeCloseTo(4000 / report.durationMs);
+    expect(report.observations.workerBytes.perSecond).toBeCloseTo(256000 / report.durationMs);
+    budget.dispose();
+  });
+  it("includes between-window host gaps in message-rate duration", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnDebugSources", {
+      workerMessages: { area: "worker", caller: "worker.postMessage", unit: "count" },
+    });
+    const lines: string[] = [];
+    const budget = new FrameBudget({ reportEvery: 1, report: (line) => lines.push(line) });
+    for (let frame = 0; frame < 3; frame++) {
+      budget.beginFrame(frame * 16, frame * 16);
+      budget.addCounters({ engine: { workerMessages: 1 } });
+      budget.endFrame(frame * 16 + 1);
+    }
+    const reports = lines
+      .filter((line) => line.startsWith("TN_DEBUG_REPORT:"))
+      .map((line) => JSON.parse(line.slice("TN_DEBUG_REPORT:".length)));
+    expect(reports[0].observations.workerMessages.perSecond).toBeNull();
+    expect(reports[1].durationMs).toBe(16);
+    expect(reports[1].observations.workerMessages.perSecond).toBe(62.5);
+    budget.dispose();
+  });
+  it("leaves whole-window rates unavailable when the summary ring truncated observations", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnDebugSources", {
+      workerMessages: { area: "worker", caller: "worker.postMessage", unit: "count" },
+    });
+    const lines: string[] = [];
+    const budget = new FrameBudget({
+      capacity: 2,
+      reportEvery: 4,
+      report: (line) => lines.push(line),
+    });
+    for (let frame = 0; frame < 8; frame++) {
+      budget.beginFrame(frame * 16, frame * 16);
+      budget.addCounters({ engine: { workerMessages: 1 } });
+      budget.endFrame(frame * 16 + 1);
+    }
+    const report = JSON.parse(
+      String(lines.filter((line) => line.startsWith("TN_DEBUG_REPORT:")).at(-1)).slice(
+        "TN_DEBUG_REPORT:".length,
+      ),
+    );
+    expect(report.durationMs).toBe(64);
+    expect(report.observations.workerMessages.perSecond).toBeNull();
+    budget.dispose();
+  });
   it("reports an unavailable first-frame interval without interrupting the game", () => {
     vi.stubEnv("TN_DEBUG", "1");
     const lines: string[] = [];
@@ -49,6 +114,8 @@ describe("one engine debug switch", () => {
   it("counts available GC pause entries and disconnects, leaving unavailable observations absent", () => {
     vi.stubGlobal("__tnEngineCost", {});
     vi.stubGlobal("PerformanceObserver", undefined);
+    expect(observeDebugGc()).toBeUndefined();
+    vi.stubGlobal("PerformanceObserver", class {});
     expect(observeDebugGc()).toBeUndefined();
     let deliver: ((list: { getEntries: () => { duration: number }[] }) => void) | undefined;
     const disconnect = vi.fn();
@@ -180,6 +247,7 @@ describe("one engine debug switch", () => {
         }),
       },
       scenes: { army: Army },
+      plugins: [{ update() {} }, { update() {} }],
       start: "army",
     });
     try {
@@ -192,6 +260,12 @@ describe("one engine debug switch", () => {
       expect(measured.some((window) => window.counters?.engine?.sceneCallbacksCalls?.max > 0)).toBe(
         true,
       );
+      expect(
+        measured.some((window) => window.counters?.engine?.["plugins.0.updateCalls"]?.max > 0),
+      ).toBe(true);
+      expect(
+        measured.some((window) => window.counters?.engine?.["plugins.1.updateCalls"]?.max > 0),
+      ).toBe(true);
     } finally {
       game.stop();
     }
@@ -216,7 +290,111 @@ describe("one engine debug switch", () => {
       expect(host.__tnEngineCost?.textureDecodes).toBe(1);
       expect(host.__tnEngineCost?.textureDecodeBytes).toBe(4);
       expect(host.__tnDebugSources?.textureDecodeWallMs?.unit).toBe("async-ms");
-      expect(host.__tnDebugSources?.textureDecodeDispatchMs?.caller).toContain("fog.png");
+      expect(host.__tnDebugSources?.["textureDecode.fog.pngDispatchMs"]?.caller).toBe("fog.png");
+    } finally {
+      assets.dispose();
+    }
+  });
+  it("attributes bitmap dispatch after asynchronous fetch to the URL that actually decoded", async () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnEngineCost", {});
+    vi.stubGlobal("__tnDebugSources", {});
+    vi.stubGlobal("fetch", async (url: string) =>
+      url.endsWith("assets.manifest.json")
+        ? new Response("gone", { status: 404 })
+        : new Response(new Uint8Array([1, 2])),
+    );
+    let now = 0;
+    let decodes = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.stubGlobal("createImageBitmap", () => {
+      now += ++decodes === 1 ? 2 : 32;
+      return Promise.resolve({ width: 4, height: 4 });
+    });
+    const assets = createAssetLoader();
+    try {
+      await assets.texture("first.png");
+      await assets.texture("army.png");
+      const host = globalThis as {
+        __tnEngineCost?: Record<string, number>;
+        __tnDebugSources?: Record<string, { caller: string }>;
+      };
+      expect(host.__tnEngineCost?.["textureDecode.first.pngDispatchMs"]).toBe(2);
+      expect(host.__tnEngineCost?.["textureDecode.army.pngDispatchMs"]).toBe(32);
+      expect(host.__tnDebugSources?.textureDecodeDispatchMs?.caller).toBe(
+        "loadBitmapTexture (all URLs)",
+      );
+    } finally {
+      assets.dispose();
+    }
+  });
+  it("attributes synchronous streaming work to each asset and keeps async latency separate", async () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnEngineCost", {});
+    vi.stubGlobal("__tnDebugSources", {});
+    vi.stubGlobal("fetch", async () => new Response("gone", { status: 404 }));
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const assets = createAssetLoader({
+      texture: (url) => {
+        now += url === "army.png" ? 32 : 2;
+        return Promise.resolve(new Texture()).then((texture) => {
+          now += 100;
+          return texture;
+        });
+      },
+    });
+    try {
+      await assets.texture("army.png");
+      await assets.texture("hud.png");
+      const host = globalThis as {
+        __tnEngineCost?: Record<string, number>;
+        __tnDebugSources?: Record<string, { caller: string; unit: string }>;
+      };
+      expect(host.__tnEngineCost?.["assetDispatch.army.pngMs"]).toBe(32);
+      expect(host.__tnEngineCost?.["assetDispatch.hud.pngMs"]).toBe(2);
+      expect(host.__tnDebugSources?.["assetLoad.army.pngWallMs"]).toMatchObject({
+        caller: "army.png",
+        unit: "async-ms",
+      });
+      expect(host.__tnEngineCost?.["assetLoad.army.pngWallMs"]).toBe(132);
+    } finally {
+      assets.dispose();
+    }
+  });
+  it("records the image-element decode fallback without claiming its wall time is main-thread CPU", async () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnEngineCost", {});
+    vi.stubGlobal("fetch", async () => new Response("gone", { status: 404 }));
+    vi.stubGlobal("createImageBitmap", undefined);
+    vi.spyOn(TextureLoader.prototype, "load").mockImplementation((_url, onLoad) => {
+      const texture = new Texture();
+      onLoad?.(texture);
+      return texture;
+    });
+    const assets = createAssetLoader();
+    try {
+      await assets.texture("legacy.png");
+      expect(
+        (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost,
+      ).toMatchObject({ textureMainThreadDecodeFallbacks: 1 });
+    } finally {
+      assets.dispose();
+    }
+  });
+  it("keeps diagnostic streaming clocks and counters absent with debug off", async () => {
+    vi.stubEnv("TN_DEBUG", "0");
+    vi.stubGlobal("__THREENATIVE_DEBUG__", false);
+    vi.stubGlobal("location", { search: "" });
+    vi.stubGlobal("__tnEngineCost", undefined);
+    vi.stubGlobal("__TN_ASSET_TRACE__", false);
+    vi.stubGlobal("fetch", async () => new Response("gone", { status: 404 }));
+    const now = vi.spyOn(performance, "now");
+    const assets = createAssetLoader({ texture: async () => new Texture() });
+    try {
+      await assets.texture("quiet.png");
+      expect(now).not.toHaveBeenCalled();
+      expect((globalThis as { __tnEngineCost?: unknown }).__tnEngineCost).toBeUndefined();
     } finally {
       assets.dispose();
     }

@@ -23,7 +23,7 @@ import {
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
-import { countDebug, debugRequested } from "./profiling/debug-telemetry.js";
+import { countDebug, debugRequested, measureDebug } from "./profiling/debug-telemetry.js";
 
 export interface IAssetLoaderOptions {
   readonly basePath?: string;
@@ -569,12 +569,19 @@ async function loadBitmapTexture(
   const pending = flipsAtUpload
     ? createImageBitmap(blob)
     : createImageBitmap(blob, { imageOrientation: "flipY" });
-  if (debug) countDebug("textureDecodeDispatchMs", performanceNow() - start, "loading", url, "ms");
+  if (debug) {
+    const elapsed = performanceNow() - start;
+    countDebug("textureDecodeDispatchMs", elapsed, "loading", "loadBitmapTexture (all URLs)", "ms");
+    countDebug(`textureDecode.${url}DispatchMs`, elapsed, "loading", url, "ms");
+  }
   const bitmap = await pending;
   if (debug) {
-    countDebug("textureDecodes", 1, "loading", url);
-    countDebug("textureDecodeBytes", data.byteLength, "loading", url);
-    countDebug("textureDecodeWallMs", performanceNow() - start, "loading", url, "async-ms");
+    const caller = "loadBitmapTexture (all URLs)";
+    const elapsed = performanceNow() - start;
+    countDebug("textureDecodes", 1, "loading", caller);
+    countDebug("textureDecodeBytes", data.byteLength, "loading", caller, "bytes");
+    countDebug("textureDecodeWallMs", elapsed, "loading", caller, "async-ms");
+    countDebug(`textureDecode.${url}WallMs`, elapsed, "loading", url, "async-ms");
   }
   const texture = new Texture(bitmap);
   texture.flipY = flipsAtUpload;
@@ -877,6 +884,7 @@ export function reconcileMirroredClips(root: Object3D, clips: readonly Animation
 }
 
 export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoader {
+  const debug = debugRequested();
   const basePath = options.basePath ?? "";
   // `assets` is what `@threenative/assets` compiles from unless a project says otherwise, so it is
   // where an unbaked game's files are. A project that moved its sources passes `sourcePath`.
@@ -1083,14 +1091,26 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   ): Promise<T> => {
     const failures: string[] = [];
     for (const url of urls) {
+      const start = debug ? performanceNow() : 0;
       try {
-        const value = await load(url);
+        const value = await (debug
+          ? measureDebug(`assetDispatch.${url}`, "loading", url, () => load(url))
+          : load(url));
         // Recorded here, where the winner is known and nowhere else: a caller that asks which
         // url served its bytes gets the one that did, not the first one that was tried.
         resolvedAssets.set(path, { url, via });
         return value;
       } catch (error) {
         failures.push(`${url} (${error instanceof Error ? error.message : String(error)})`);
+      } finally {
+        if (debug)
+          countDebug(
+            `assetLoad.${url}WallMs`,
+            performanceNow() - start,
+            "loading",
+            url,
+            "async-ms",
+          );
       }
     }
     throw new Error(
@@ -1527,6 +1547,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           );
         }
         const { TextureLoader: Loader } = await import("three");
+        if (debug) countDebug("textureMainThreadDecodeFallbacks", 1, "loading", url);
         return loadWith(new Loader() as TextureLoader, url);
       });
       return textureOptions === undefined ? texture : configuredTexture(texture, textureOptions);

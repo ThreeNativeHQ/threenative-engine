@@ -55,7 +55,7 @@ export function measureDebug<T>(name: string, area: string, caller: string, run:
 
 /** GC entries are optional platform observations, and the observer exists only during a debug game. */
 export function observeDebugGc(): (() => void) | undefined {
-  if (!globalThis.PerformanceObserver?.supportedEntryTypes.includes("gc")) return undefined;
+  if (!globalThis.PerformanceObserver?.supportedEntryTypes?.includes("gc")) return undefined;
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
       countDebug("gcPauses", 1, "memory", "PerformanceObserver.gc");
@@ -97,8 +97,9 @@ function sourceOf(name: string): IDebugSource {
   const async = /queueCallback|queueDelivery/iu.test(name);
   return {
     area,
-    caller:
-      site === undefined
+    caller: /^gc/u.test(name)
+      ? `packages/runtime-native/src/adapters/v8/adapter.cpp (${name})`
+      : site === undefined
         ? `engine counter: ${name}`
         : `packages/runtime-native/src/engine/${site} (${name})`,
     unit: async ? "async-ms" : name.endsWith("Ms") ? "ms" : "count",
@@ -126,11 +127,28 @@ export function formatDebugReport(window: IFrameBudgetWindow): string {
   const interval =
     window.presented.samples > 0 && window.presented.mean > 0 ? window.presented.mean : undefined;
   const engine = window.counters?.engine ?? {};
+  const durationMs = window.durationMs;
   const observations = Object.fromEntries(
     Object.entries(engine).map(([name, series]) => {
       if (!Number.isFinite(series.mean) || series.mean < 0)
         throw new Error(`TN_DEBUG: invalid ${name} series.`);
-      return [name, { ...series, ...sourceOf(name) }];
+      const source = sourceOf(name);
+      const rate = source.unit === "count" || source.unit?.endsWith("bytes");
+      return [
+        name,
+        {
+          ...series,
+          ...source,
+          ...(rate
+            ? {
+                perSecond:
+                  durationMs !== undefined && durationMs > 0 && series.samples === window.frames
+                    ? (series.mean * series.samples * 1000) / durationMs
+                    : null,
+              }
+            : {}),
+        },
+      ];
     }),
   );
   const offenders: Array<{
@@ -249,7 +267,7 @@ export function formatDebugReport(window: IFrameBudgetWindow): string {
   activity("gate-completion-age-decline", "gateDeclinedAge");
   ratio("bridge-typed-array-widening", "bridgeTypedEncodedBytes", "bridgeTypedSourceBytes", 1);
   // Memory/population changes are observations until measured cost or a lifetime invariant fails.
-  return `TN_DEBUG_REPORT:${JSON.stringify({ window: window.window, frames: window.frames, intervalMs: interval ?? null, offenders, findings, observations, longTasks: window.longTasks, gpu: window.gpu, passes: window.passes })}`;
+  return `TN_DEBUG_REPORT:${JSON.stringify({ window: window.window, frames: window.frames, durationMs: durationMs ?? null, intervalMs: interval ?? null, offenders, findings, observations, longTasks: window.longTasks, gpu: window.gpu, passes: window.passes })}`;
 }
 
 /** A single slow named callback exceeds the interval the loop actually observed. Debug-only. */
