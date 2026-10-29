@@ -660,6 +660,26 @@ public:
                                    const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows);
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
+    /** One draw of the last planned frame's shadow passes, as the plan selected it: a test comparing two plans
+     *  (the page-wide caster selection runs serially or on the job pool) reads these rather than a count. */
+    struct ShadowPlanRow {
+        std::size_t pass = 0;          // its pass in frame order, and the state that pass drew with
+        std::size_t virtualLight = 0;
+        int virtualLevel = -1;
+        bool lamp = false, mover = false;
+        int x = 0, y = 0, size = 0;
+        std::array<double, 16> view{}, projection{};
+        uint64_t key = 0;  // the caster's stable identity, the same object in another renderer only by ordinal
+        const void* indices = nullptr;
+        uint32_t instanceCount = 0;
+        double instanceBase = 0;
+        std::array<double, 16> matrixWorld{};
+        uint32_t vertexOffset = 0, fragmentOffset = 0, vertexBytes = 0, fragmentBytes = 0;
+    };
+    /** The shadow draws the last planned frame kept, in pass order, and one row per draw in draw order. */
+    std::vector<ShadowPlanRow> shadowPlan() const;
+    /** The bytes `shadowPlan()`'s offsets point into: one buffer per planned frame, written once. */
+    std::span<const uint8_t> frameUniformBytes() const { return frameUniforms_; }
     /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
     void collectFrame() {
         std::lock_guard lock(frameMailMutex_);

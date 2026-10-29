@@ -1,3 +1,4 @@
+#include "engine/foundation/job_pool.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <exception>
 #include <span>
 #include <deque>
 #include <numeric>
@@ -186,6 +188,9 @@ constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's We
 // along the crate's far foot. The back faces go this many depth steps nearer the lamp, so a tie is a block
 // (native_engine_contact_shadow_foot needs 2; the lamp-room crate, 1).
 constexpr int32_t kLampBackFaceBias = 8;
+// The page x caster pairs below which one light's caster selection stays on the caller: a proposed gate, not a
+// measured crossover (a whole light's pairs below it cost less than a dispatch).
+constexpr uint64_t kShadowPageJobPairs = 16384;
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
 
 WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
@@ -525,6 +530,7 @@ struct Renderer::ShadowPass {
     std::size_t virtualLight = 0;  // the light the pass draws for
     int virtualLevel = -1;
     bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
+    bool mover = false;  // one light's mover map, drawn for the casters that are moving this frame
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
     // The camera this pass draws through, kept so the retained draws pack after the lamp cache decides.
     Matrix view{}, projection{};
@@ -2649,6 +2655,35 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
     return opaque;
 }
 
+std::vector<Renderer::ShadowPlanRow> Renderer::shadowPlan() const {
+    std::vector<ShadowPlanRow> rows;
+    if (!job_) return rows;
+    const std::vector<ShadowPass>& passes = job_->shadowPasses;
+    for (std::size_t p = 0; p < passes.size(); ++p) {
+        const ShadowPass& pass = passes[p];
+        for (const Planned& draw : pass.draws) {
+            const DrawItem& item = *draw.item;
+            ShadowPlanRow row;
+            row.pass = p;
+            row.virtualLight = pass.virtualLight; row.virtualLevel = pass.virtualLevel;
+            row.lamp = pass.lamp; row.mover = pass.mover;
+            row.x = pass.x; row.y = pass.y; row.size = pass.size;
+            std::copy(std::begin(pass.view), std::end(pass.view), row.view.begin());
+            std::copy(std::begin(pass.projection), std::end(pass.projection), row.projection.begin());
+            row.key = item.key;
+            row.indices = item.indices;
+            row.instanceCount = item.instanceCount;
+            row.instanceBase = draw.instanceBase;
+            std::copy(std::begin(item.matrixWorld), std::end(item.matrixWorld), row.matrixWorld.begin());
+            row.vertexOffset = draw.vertexOffset; row.fragmentOffset = draw.fragmentOffset;
+            row.vertexBytes = uint32_t(aligned(draw.program->vertex.uniformBlockSize));
+            row.fragmentBytes = draw.fragmentOffset ? uint32_t(aligned(draw.program->fragment.uniformBlockSize)) : 0;
+            rows.push_back(std::move(row));
+        }
+    }
+    return rows;
+}
+
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
                           std::array<double, 4> clear) {
     return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm);
@@ -3519,6 +3554,57 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const std::size_t firstPass = shadowPasses.size();
         const bool lampMap = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap;
         const bool lamp = lampMap && !compilation;
+        // Every page selects its casters from the same frozen draw list with the same read-only reducer, so the
+        // pages are independent: each one collects its own list, and a light worth splitting hands the pages to
+        // the pool. Only the selection moves — the programs, pipelines, LOD copies and uniform slices below stay
+        // on the caller, in page and render-list order.
+        std::vector<std::vector<const DrawItem*>> selectedCasters(static_cast<std::size_t>(passCount));
+        std::vector<std::exception_ptr> failedFace(selectedCasters.size());
+        const auto selectFace = [&](std::size_t face) {
+            try {
+                const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
+                std::vector<const DrawItem*>& selected = selectedCasters[face];
+                for (const auto& [depthKey, drawn] : opaque) {
+                    if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) continue;
+                    if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
+                    // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving
+                    // there neither costs a draw nor invalidates the lamp's cached map (PRD-650).
+                    if (lamp && shadow.far > 0 && drawn->shadowObject && !drawn->positionNode && !drawn->nodes.positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
+                        const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
+                            ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
+                            : drawn->shadowObject->type() == "Mesh" && static_cast<const Mesh*>(drawn->shadowObject)->geometry
+                                ? static_cast<const Mesh*>(drawn->shadowObject)->geometry->boundingSphere.get() : nullptr;
+                        if (local) {
+                            Sphere world = *local;
+                            Matrix4 model; model.elements = drawn->matrixWorld;
+                            world.applyMatrix4(model);
+                            const auto& at = lights.direct[i].position;
+                            if (world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far) continue;
+                        }
+                    }
+                    if (page) {
+                        const auto& atlas = virtualIt->second.atlas;
+                        if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
+                        if (!page->mover && !drawn->positionNode && !drawn->nodes.positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
+                            if (casterDiameters.at(i).at(drawn->key) < atlas.casterGate(page->level)) continue;
+                        }
+                    }
+                    if (page && !page->mover && !drawn->positionNode && !drawn->nodes.positionNode && !drawn->boneMatrices && !drawn->morphGeometry &&
+                        !drawn->gpuJoints && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(drawn->key))) continue;
+                    selected.push_back(drawn);
+                }
+            } catch (...) {
+                failedFace[face] = std::current_exception();  // rethrown on the caller, in page order
+            }
+        };
+        // The gate is a proposed one, not a measured crossover: a whole light's page x caster pairs below it
+        // cost less than a dispatch. The pool starts here, on the caller, never inside a job.
+        const bool split = !compilation && passCount >= 2 && !JobPool::inJob() &&
+            uint64_t(passCount) * opaque.size() >= kShadowPageJobPairs;
+        JobPool* pool = split && JobPool::shared().workers() > 0 ? &JobPool::shared() : nullptr;
+        if (pool) pool->forEach(uint32_t(selectedCasters.size()), [&](uint32_t face) { selectFace(face); });
+        else for (std::size_t face = 0; face < selectedCasters.size(); ++face) selectFace(face);
+        for (const std::exception_ptr& failure : failedFace) if (failure) std::rethrow_exception(failure);
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
@@ -3531,6 +3617,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const auto& atlas = virtualIt->second.atlas;
             const auto [x, y] = page->mover ? atlas.moverOrigin(page->level) : atlas.origin(page->slot);
             pass.x = x; pass.y = y; pass.size = page->mover ? atlas.options().moverMapSize + 2 * atlas.options().border : atlas.stride();
+            pass.mover = page->mover;
             if (!page->mover) { pass.virtualLight = i; pass.virtualLevel = page->level; }
         }
         // The error a coarser rung may have on this page: its texels in world units, along the window's
@@ -3538,7 +3625,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const double lodBudget = page && !page->mover
             ? (page->highU - page->lowU) / double(virtualIt->second.atlas.options().pageTexels + 2 * virtualIt->second.atlas.options().border) *
                   virtualIt->second.atlas.options().shadowLodTexels : 0;
-        for (const auto& [depthKey, drawn] : opaque) {
+        for (const DrawItem* drawn : selectedCasters[std::size_t(face)]) {
             const DrawItem* selected = drawn;
             if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
                 const auto& lods = virtualIt->second.atlas.options().control->lods;
@@ -3561,32 +3648,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
             const DrawItem& item = *selected;
-            if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
-            if ((item.layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
-            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving
-            // there neither costs a draw nor invalidates the lamp's cached map (PRD-650).
-            if (lamp && shadow.far > 0 && item.shadowObject && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry) {
-                const Sphere* local = item.shadowObject->type() == "InstancedMesh"
-                    ? static_cast<const InstancedMesh*>(item.shadowObject)->boundingSphere.get()
-                    : item.shadowObject->type() == "Mesh" && static_cast<const Mesh*>(item.shadowObject)->geometry
-                        ? static_cast<const Mesh*>(item.shadowObject)->geometry->boundingSphere.get() : nullptr;
-                if (local) {
-                    Sphere world = *local;
-                    Matrix4 model; model.elements = item.matrixWorld;
-                    world.applyMatrix4(model);
-                    const auto& at = lights.direct[i].position;
-                    if (world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far) continue;
-                }
-            }
-            if (page) {
-                const auto& atlas = virtualIt->second.atlas;
-                if (page->mover ? !atlas.isMover(item.key) : !atlas.drawsStatic(item.key)) continue;
-                if (!page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry) {
-                    if (casterDiameters.at(i).at(item.key) < atlas.casterGate(page->level)) continue;
-                }
-            }
-            if (page && !page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
-                !item.gpuJoints && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
             // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
             if (variant.alphaHash && (item.nodes.colorNode || item.nodes.opacityNode || variant.vertexColors == 4))

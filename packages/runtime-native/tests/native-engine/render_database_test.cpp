@@ -5,6 +5,7 @@
 
 #include "check.h"
 #include "engine/animation/property_binding.h"
+#include "engine/foundation/job_pool.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/animation/mixer.h"
 #include "engine/renderer/post/traa.h"
@@ -23,12 +24,15 @@
 #include "mystral/webgpu_compat.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <bit>
 #include <cmath>
 #include <chrono>
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <map>
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
@@ -6795,7 +6799,277 @@ void virtualShadowInstancePages() {
     }
 }
 
-TN_TEST_MAIN({"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+// F2: a virtual shadow's pages each select their casters from the same immutable draw list, so the frame
+// spreads that selection over the job pool. The pooled plan must keep every page's draw list exactly as the
+// caller's loop did: this case plans the same frames both ways, compares every planned shadow draw, and
+// requires a dispatch for a large scene and none for a small one.
+struct ShadowPageArm {
+    Scene scene;
+    PerspectiveCamera camera{70, 1, 0.1, 200};
+    DirectionalLight sun{Color(1, 1, 1), 3};
+    EventQueue events;
+    std::unique_ptr<Renderer> renderer;
+    RenderDatabase database;
+    // The scene's objects and geometries in creation order: a draw item's key and index store belong to one
+    // renderer, so the two arms address them by these ordinals.
+    std::map<uint64_t, std::size_t> objectOrdinal;
+    std::map<const void*, std::size_t> indexOrdinal;
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    std::vector<Mesh*> movers;
+};
+
+void setupShadowPageArm(ShadowPageArm& arm, mystral::webgpu::Context& context, bool malformed) {
+    arm.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), arm.events);
+    arm.renderer->setSize(64, 64);
+    arm.camera.position.set(0, 10, 4);
+    arm.camera.lookAt(0, 0, 0);
+    arm.camera.updateProjectionMatrix();
+    arm.database.shadowMapEnabled = true;
+    arm.database.batching = false;
+    arm.sun.position.set(3, 8, 2);
+    arm.sun.setCastShadow(true);
+    arm.scene.add(arm.sun);
+
+    const auto add = [&](std::shared_ptr<Mesh> mesh) {
+        arm.objectOrdinal.emplace(mesh->id(), arm.objectOrdinal.size());
+        arm.meshes.push_back(mesh);
+        mesh->setCastShadow(true);
+        arm.scene.add(*mesh);
+        return mesh;
+    };
+    // every caster is a cube, its edge the only variable
+    const auto box = [](double size) { return makeBoxGeometry(size, size, size); };
+    auto plain = std::make_shared<Material>(MaterialType::Standard);
+    auto masked = std::make_shared<Material>(MaterialType::Standard);
+    masked->alphaTest = 0.5;
+    auto blended = std::make_shared<Material>(MaterialType::Standard);
+    blended->transparent = true;
+    blended->opacity = 0.5;
+    // The finest level's 256 pages each cover a cell of this grid: the page x caster pairs alone pass the
+    // dispatch gate, and an 8x8 grid keeps the accepted draws per page small.
+    for (int z = 0; z < 8; ++z)
+        for (int x = 0; x < 8; ++x) {
+            auto mesh = add(std::make_shared<Mesh>(box(1.5), plain));
+            mesh->position.set(-8.75 + 2.5 * x, 0.75, -8.75 + 2.5 * z);
+        }
+    auto maskedMesh = add(std::make_shared<Mesh>(box(1.6), masked));
+    maskedMesh->position.set(-10, 0.8, 0);
+    auto blendedMesh = add(std::make_shared<Mesh>(box(1.4), blended));
+    blendedMesh->position.set(10, 0.7, 0);
+    auto instanced = std::make_shared<InstancedMesh>(box(1.2), plain, 4);
+    for (uint32_t i = 0; i < 4; ++i) {
+        Matrix4 matrix;
+        matrix.makeTranslation(-10.0 + 1.4 * i, 0.6, 8.0);
+        instanced->setMatrixAt(i, matrix);
+    }
+    add(instanced);
+    // A caster with a morph target: its bounds are its bind pose, so the pages take it without a cull.
+    auto morphGeometry = box(1.3);
+    const auto vertices = morphGeometry->attributes.at("position")->count();
+    morphGeometry->morphPositions.push_back(BufferAttribute::fromFloats(std::vector<double>(vertices * 3, 0.0), 3));
+    auto morphed = add(std::make_shared<Mesh>(morphGeometry, plain));
+    morphed->position.set(10, 0.65, 8);
+    auto mover = add(std::make_shared<Mesh>(box(1.3), plain));
+    mover->position.set(-3, 0.65, 3);
+    mover->setLayerMask(double(uint32_t{1} | (uint32_t{1} << 29)));  // the tracked caster layer: never still
+    arm.movers.push_back(mover.get());
+    auto pinnedMesh = add(std::make_shared<Mesh>(box(1.3), plain));
+    pinnedMesh->position.set(3, 0.65, -3);
+    // One mesh, two materials: its group draws are minted on its first frame and share its attributes.
+    auto grouped = box(1.4);
+    grouped->addGroup(0, 18, 0);
+    grouped->addGroup(18, 18, 1);
+    auto multi = std::make_shared<Mesh>();
+    multi->geometry = grouped;
+    multi->materials = {plain, masked};
+    add(multi)->position.set(0, 0.7, -10);
+    if (malformed) {
+        auto hashMaterial = std::make_shared<Material>(MaterialType::Standard);
+        hashMaterial->alphaHash = true;
+        hashMaterial->nodes.opacityNode = shader::graph::float_(0.3);
+        auto bad = add(std::make_shared<Mesh>(box(1.0), hashMaterial));
+        bad->position.set(0, 2, 0);
+        bad->setLayer(28);  // shadow only: the main pass never resolves this node graph
+    }
+    // Fixed atlas: no adaptive refresh or gate, a fixed clip and page size, so every frame's plan repeats.
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {16, 48};
+    atlas.mapSize = 512;
+    atlas.pageTexels = 32;
+    atlas.adaptiveRefresh = false;
+    atlas.adaptiveCasterGate = false;
+    atlas.control->pinned.insert(pinnedMesh->id());
+    arm.sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+}
+
+// A multi-material mesh mints its group draws on its first frame, in group order: register them once, in both
+// arms, so the ordinal a group draw reads is its group's. The index store a draw used is named by the ordinal of
+// its first user: equal geometry bytes fold to one canonical buffer, so two casters may draw the same store.
+void registerShadowPageDraws(ShadowPageArm& arm) {
+    for (const auto& mesh : arm.meshes)
+        for (const auto& part : mesh->groupMeshes) {
+            if (!part) continue;
+            arm.objectOrdinal.emplace(part->id(), arm.objectOrdinal.size());
+        }
+    for (const DrawItem& item : arm.database.drawn()) {
+        if (!item.indices) continue;
+        const auto object = arm.objectOrdinal.find(item.key);
+        arm.indexOrdinal.emplace(item.indices,
+                                 object == arm.objectOrdinal.end() ? arm.indexOrdinal.size() : object->second);
+    }
+}
+
+// Every planned shadow draw, byte for byte: the pass state, the caster and its index store by ordinal, and the
+// uniform blocks its offsets point at.
+std::string shadowPlanDump(const Renderer& renderer, const ShadowPageArm& arm) {
+    std::string out;
+    const auto hex = [](double value) {
+        char text[17];
+        std::snprintf(text, sizeof text, "%016llx", static_cast<unsigned long long>(std::bit_cast<uint64_t>(value)));
+        return std::string(text);
+    };
+    const auto ordinal = [](const auto& map, const auto& value) {
+        const auto found = map.find(value);
+        return found == map.end() ? std::size_t(-1) : found->second;
+    };
+    const std::span<const uint8_t> bytes = renderer.frameUniformBytes();
+    for (const Renderer::ShadowPlanRow& row : renderer.shadowPlan()) {
+        out += std::to_string(row.pass) + ' ' + std::to_string(row.virtualLight) + ' ' + std::to_string(row.virtualLevel) +
+               ' ' + (row.lamp ? "lamp" : "map") + ' ' + (row.mover ? "mover" : "static") + ' ' + std::to_string(row.x) +
+               ',' + std::to_string(row.y) + ',' + std::to_string(row.size) + ' ' +
+               std::to_string(ordinal(arm.objectOrdinal, row.key)) + ' ' +
+               std::to_string(ordinal(arm.indexOrdinal, row.indices)) + ' ' + std::to_string(row.instanceCount) + ' ' +
+               hex(row.instanceBase) + ' ' + std::to_string(row.vertexOffset) + ' ' + std::to_string(row.fragmentOffset) + ' ';
+        for (double value : row.view) out += hex(value);
+        for (double value : row.projection) out += hex(value);
+        for (double value : row.matrixWorld) out += hex(value);
+        for (const auto [offset, length] : {std::pair{row.vertexOffset, row.vertexBytes}, std::pair{row.fragmentOffset, row.fragmentBytes}})
+            if (length != 0 && std::size_t(offset) + length <= bytes.size())
+                out.append(reinterpret_cast<const char*>(bytes.data()) + offset, length);
+        out += '\n';
+    }
+    return out;
+}
+
+// The first byte two dumps disagree at, or npos.
+std::size_t shadowPlanDifference(const std::string& a, const std::string& b) {
+    const std::size_t common = std::min(a.size(), b.size());
+    for (std::size_t i = 0; i < common; ++i) if (a[i] != b[i]) return i;
+    return a.size() == b.size() ? std::string::npos : common;
+}
+
+// A window of a dump as hex, so a difference reads the same in a report as in a terminal.
+std::string shadowPlanWindow(const std::string& dump, std::size_t from) {
+    std::string out;
+    char hex[3];
+    for (std::size_t i = from; i < std::min(dump.size(), from + 96); ++i) {
+        std::snprintf(hex, sizeof hex, "%02x", static_cast<unsigned>(static_cast<unsigned char>(dump[i])));
+        out += hex;
+    }
+    return out;
+}
+
+void virtualShadowPageJobs() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    std::array<ShadowPageArm, 2> arms;
+    for (ShadowPageArm& arm : arms) setupShadowPageArm(arm, context, false);
+    // Twenty identical edits on both arms: the camera and the tracked caster move, so every frame rebuilds its
+    // pages and the plan is never a repeat of the last.
+    for (int frame = 0; frame < 20; ++frame) {
+        for (ShadowPageArm& arm : arms) {
+            arm.camera.position.set(0.25 * frame, 10, 4);
+            arm.camera.lookAt(0, 0, 0);
+            arm.camera.updateProjectionMatrix();
+            for (Mesh* mover : arm.movers) mover->position.x = -3.0 + 0.3 * frame;
+            arm.renderer->cutVirtualShadows();
+        }
+        JobPool::resetShared(0);
+        const uint64_t callerRuns = JobPool::runs();
+        arms[0].database.render(*arms[0].renderer, arms[0].scene, arms[0].camera);
+        const bool callerStayed = JobPool::runs() == callerRuns;  // a pool with no workers selects on the caller
+        JobPool::resetShared(3);
+        const uint64_t pooledRuns = JobPool::runs();
+        arms[1].database.render(*arms[1].renderer, arms[1].scene, arms[1].camera);
+        const bool dispatched = JobPool::runs() > pooledRuns;
+        for (ShadowPageArm& arm : arms) registerShadowPageDraws(arm);
+        const std::string serial = shadowPlanDump(*arms[0].renderer, arms[0]);
+        const std::string pooled = shadowPlanDump(*arms[1].renderer, arms[1]);
+        const std::size_t difference = shadowPlanDifference(serial, pooled);
+        std::printf("page jobs: frame %d, %zu items, %d shadow draws, %zu planned bytes, dispatch %s, plan %s\n", frame,
+                    arms[0].database.drawn().size(), arms[0].renderer->lastFrame().shadowDraws, serial.size(),
+                    dispatched ? "yes" : "no", difference == std::string::npos ? "identical" : "DIFFER");
+        if (difference != std::string::npos) {
+            const std::size_t line = std::size_t(std::count(serial.begin(), serial.begin() + std::min(difference, serial.size()), '\n'));
+            const std::size_t from = difference > 48 ? difference - 48 : 0;
+            std::printf("page jobs: first difference at byte %zu of line %zu\npage jobs: serial %s\npage jobs: pooled %s\n",
+                        difference, line, shadowPlanWindow(serial, from).c_str(), shadowPlanWindow(pooled, from).c_str());
+        }
+        CHECK(!serial.empty());
+        CHECK(callerStayed);
+        CHECK(dispatched);
+        CHECK(difference == std::string::npos);
+    }
+    // A small scene stays on the caller: a page or two of a handful of casters is no split.
+    {
+        Scene scene;
+        PerspectiveCamera camera(50, 1, 0.1, 100);
+        camera.position.set(0, 6, 8);
+        camera.lookAt(0, 0, 0);
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 8, 2);
+        sun.setCastShadow(true);
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {16};
+        atlas.mapSize = 256;
+        atlas.pageTexels = 64;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        scene.add(sun);
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        std::vector<std::shared_ptr<Mesh>> meshes;
+        for (int i = 0; i < 3; ++i) {
+            auto mesh = std::make_shared<Mesh>(makeBoxGeometry(), material);
+            mesh->position.set(double(i) - 1, 0.5, 0);
+            mesh->setCastShadow(true);
+            scene.add(*mesh);
+            meshes.push_back(mesh);
+        }
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(64, 64);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        database.batching = false;
+        JobPool::resetShared(3);
+        const uint64_t before = JobPool::runs();
+        database.render(renderer, scene, camera);
+        std::printf("page jobs: small scene, %zu draws, %d shadow draws, dispatch %s\n", renderer.shadowPlan().size(),
+                    renderer.lastFrame().shadowDraws, JobPool::runs() > before ? "yes" : "no");
+        CHECK(renderer.lastFrame().shadowDraws > 0);
+        CHECK(JobPool::runs() == before);
+    }
+    // A malformed caster stops the frame on the caller, with the pooled selection in flight rather than a
+    // terminated worker. Its node graph and alpha hash are what the shadow pass refuses.
+    {
+        ShadowPageArm malformed;
+        setupShadowPageArm(malformed, context, true);
+        JobPool::resetShared(3);
+        const uint64_t before = JobPool::runs();
+        std::string thrown;
+        try {
+            malformed.database.render(*malformed.renderer, malformed.scene, malformed.camera);
+        } catch (const std::runtime_error& error) {
+            thrown = error.what();
+        }
+        std::printf("page jobs: malformed caster threw `%s`, dispatched %s\n", thrown.c_str(),
+                    JobPool::runs() > before ? "yes" : "no");
+        CHECK(thrown.rfind("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED", 0) == 0);
+        CHECK(JobPool::runs() > before);
+    }
+    JobPool::resetShared(0);
+}
+
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
