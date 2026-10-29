@@ -169,6 +169,10 @@ struct DirectionalClipmapOptions {
     double minAspect = 1;
     /** Texels per edge of each level, finest first, the last standing in for the rest; empty: `pagesPerAxis`. */
     std::vector<int> levelPages;
+    /** A pan (`updateCenter(point, true)`) moves a window by whole multiples of this many texels, a
+     * physical page's width, so the atlas keeps the pages it still covers (UE 5.8.3 clipmap panning).
+     * The first placement and a cut keep the exact texel origin. 1 = any texel. */
+    int alignTexels = 1;
 };
 
 /** Inclusive integer page range an axis-aligned box covers on one level. */
@@ -201,7 +205,7 @@ class DirectionalClipmap {
     [[nodiscard]] LightSpacePoint project(const Vector3& worldPoint) const;
 
     /** Re-snaps every level's window around `worldPoint`; returns the current windows. */
-    const std::vector<ClipWindow>& updateCenter(const Vector3& worldPoint);
+    const std::vector<ClipWindow>& updateCenter(const Vector3& worldPoint, bool pan = false);
 
     void setRefreshStep(int level, double step) { refreshStep_.at(level) = step; }
 
@@ -233,6 +237,7 @@ class DirectionalClipmap {
 
     std::vector<double> clipExtents_;
     std::vector<int> pagesPerAxis_;
+    int alignTexels_ = 1;
     std::vector<double> refreshStep_;
     std::vector<double> selectionGuard_;
     int levelCount_ = 0;

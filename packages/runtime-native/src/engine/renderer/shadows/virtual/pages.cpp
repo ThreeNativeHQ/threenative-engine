@@ -237,6 +237,7 @@ std::optional<DirectionalClipmap> DirectionalClipmap::create(const DirectionalCl
     DirectionalClipmap clipmap;
     clipmap.clipExtents_ = options.clipExtents;
     clipmap.levelCount_ = static_cast<int>(options.clipExtents.size());
+    clipmap.alignTexels_ = std::max(1, options.alignTexels);
     for (int level = 0; level < clipmap.levelCount_; ++level)
         clipmap.pagesPerAxis_.push_back(options.levelPages.empty() ? options.pagesPerAxis
             : options.levelPages[std::min<std::size_t>(std::size_t(level), options.levelPages.size() - 1)]);
@@ -266,7 +267,7 @@ LightSpacePoint DirectionalClipmap::project(const Vector3& worldPoint) const {
     return {dot(worldPoint, basisU_), dot(worldPoint, basisV_) / vScale_, dot(worldPoint, basisW_)};
 }
 
-const std::vector<ClipWindow>& DirectionalClipmap::updateCenter(const Vector3& worldPoint) {
+const std::vector<ClipWindow>& DirectionalClipmap::updateCenter(const Vector3& worldPoint, bool pan) {
     const LightSpacePoint previousCenter = centerLight_;
     centerWorld_ = worldPoint;
     centerLight_ = project(worldPoint);
@@ -285,8 +286,15 @@ const std::vector<ClipWindow>& DirectionalClipmap::updateCenter(const Vector3& w
             step == 0 ? 1 : static_cast<int>(jsMax(1.0, jsRound((step * extent) / pageWorldSize) - 1.0));
         const ClipWindow* previousWindow =
             level < static_cast<int>(previous.size()) ? &previous[static_cast<std::size_t>(level)] : nullptr;
-        const int minX = static_cast<int>(std::floor(centerLight_.u / pageWorldSize)) - halfPages;
-        const int minY = static_cast<int>(std::floor(centerLight_.v / pageWorldSize)) - halfPages;
+        // A pan moves by the nearest whole number of pages: the window stays within half a page of
+        // centred and keeps its page grid, so unchanged pages keep their keys.
+        const auto snap = [&](double light, int previousOrigin) {
+            const int origin = static_cast<int>(std::floor(light / pageWorldSize)) - halfPages;
+            if (!pan || previousWindow == nullptr || alignTexels_ == 1) return origin;
+            return previousOrigin + alignTexels_ * static_cast<int>(std::floor((origin - previousOrigin) / double(alignTexels_) + 0.5));
+        };
+        const int minX = snap(centerLight_.u, previousWindow ? previousWindow->minX : 0);
+        const int minY = snap(centerLight_.v, previousWindow ? previousWindow->minY : 0);
         if (previousWindow != nullptr &&
             ((centerLight_.u == previousCenter.u && centerLight_.v == previousCenter.v) ||
              (jsMax(std::abs(minX - previousWindow->minX), std::abs(minY - previousWindow->minY)) < refreshPages &&

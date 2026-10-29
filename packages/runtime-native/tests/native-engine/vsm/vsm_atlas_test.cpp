@@ -610,4 +610,30 @@ void mapSizes() {
     CHECK(!PageAtlas::create(bad, error));
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+// A panned window keeps the pages it still covers, as Unreal's clipmap panning does: only the
+// pages that enter at the edge are drawn. A depth change or a dirty page still redraws.
+void panKeepsPages() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    const Vector3 sun(0, 1, 0);
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    std::size_t fine = 0, coarse = 0;
+    for (int frame = 0; frame < 3; ++frame)
+        for (const auto& page : atlas->update(Vector3(4.5, 0, 0), sun)) ++(page.level == 0 ? fine : coarse);
+    // The fine level (4 x 4 pages of 4 m) moved by one page column: four new pages, not sixteen.
+    CHECK(fine > 0 && fine < 16);
+    CHECK(coarse < 16);
+    // A dirty page inside the panned window still redraws.
+    Box3 changed;
+    changed.set(Vector3(4, 0, -1), Vector3(5, 1, 1));
+    atlas->invalidate(changed, true);
+    std::size_t dirty = 0;
+    for (const auto& page : atlas->update(Vector3(4.5, 0, 0), sun)) dirty += page.level == 0;
+    CHECK(dirty > 0 && dirty < 16);
+}
+
+TN_TEST_MAIN({"atlas", atlas}, {"pan_keeps_pages", panKeepsPages}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

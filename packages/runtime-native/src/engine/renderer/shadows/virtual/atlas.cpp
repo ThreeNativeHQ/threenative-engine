@@ -34,7 +34,7 @@ std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::str
         }
         guards.push_back(guard - step);
     }
-    out.clipmap_ = DirectionalClipmap::create({{0, 1, 0}, options.clipExtents, options.mapSize, guards, options.refreshStep, options.minWindowAspect, options.levelMapSizes}, error);
+    out.clipmap_ = DirectionalClipmap::create({{0, 1, 0}, options.clipExtents, options.mapSize, guards, options.refreshStep, options.minWindowAspect, options.levelMapSizes, options.pageTexels}, error);
     if (!out.clipmap_) return std::nullopt;
     const int count = out.pageCount();
     if (count > 4096) { error = "TN_VIRTUAL_SHADOW_INVALID: page capacity"; return std::nullopt; }
@@ -110,7 +110,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         std::string error;
         std::vector<double> guards;
         for (int i = 0; i < int(levels_.size()); ++i) guards.push_back(at(options_.selectionGuard, i) - at(options_.refreshStep, i));
-        clipmap_ = DirectionalClipmap::create({direction, options_.clipExtents, options_.mapSize, guards, options_.refreshStep, options_.minWindowAspect, options_.levelMapSizes}, error);
+        clipmap_ = DirectionalClipmap::create({direction, options_.clipExtents, options_.mapSize, guards, options_.refreshStep, options_.minWindowAspect, options_.levelMapSizes, options_.pageTexels}, error);
         // The renderer validates the direction before entering this CPU plan.
         if (!clipmap_) return {};
         pool_ = PhysicalPagePool::create(pageCount(), error);
@@ -124,7 +124,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
     if (std::isfinite(deltaSeconds) && deltaSeconds > 0) frameSeconds_ = deltaSeconds;
     now_ += frameSeconds_;
     for (int l = 0; l < int(levels_.size()); ++l) clipmap_->setRefreshStep(l, refreshStep(l));
-    const auto& windows = clipmap_->updateCenter(eye);
+    const auto& windows = clipmap_->updateCenter(eye, !changed && !cameraCut);
     const auto center = clipmap_->project(eye);
     ++frame_;
     std::vector<AtlasPage> pages;
@@ -152,6 +152,12 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             protectedKeys.erase(makePageKey(l, level.window.minX + x * options_.pageTexels, level.window.minY + y * options_.pageTexels));
         const Matrix4 oldMatrix = level.matrix;
         bool partial = !moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
+        // A pan keeps the pages the window still covers (UE 5.8.3 clipmap panning): a page key names a
+        // fixed world rect, so its slot stays valid while the depth mapping and page size hold.
+        const bool panning = moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
+        const double oldDepthOrigin = level.centerW + level.eye, oldNear = level.near, oldFar = level.far;
+        const double oldPageWorldSize = level.window.pageWorldSize;
+        const std::set<int> oldSlots(level.slots.begin(), level.slots.end());
         level.window = window;
         level.centerW = center.w;
         const double cu = (window.minX + mapSize(l) / 2.0) * window.pageWorldSize;
@@ -202,6 +208,8 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         level.matrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 1, 0, 0, 0, 0, 1);
         level.matrix.multiply(projection).multiply(level.view);
         partial = partial && oldMatrix.elements == level.matrix.elements;
+        const bool pan = panning && level.centerW + level.eye == oldDepthOrigin && level.near == oldNear &&
+                         level.far == oldFar && window.pageWorldSize == oldPageWorldSize;
         level.slots.clear();
         level.pages.clear();
         for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x) {
@@ -224,7 +232,8 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             page.lowU = cameraU + left - pad; page.highU = cameraU + left + options_.pageTexels * texel + pad;
             page.lowV = cameraV + bottom - padV; page.highV = cameraV + bottom + options_.pageTexels * texelV + padV;
             level.pages.push_back(page);
-            if (!partial || level.dirtySlots.count(page.slot)) pages.push_back(page);
+            const bool kept = partial || (pan && allocation->reused && oldSlots.count(page.slot));
+            if (!kept || level.dirtySlots.count(page.slot)) pages.push_back(page);
         }
         level.mapped = true;
         level.dirty = false;
