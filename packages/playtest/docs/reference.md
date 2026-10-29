@@ -322,7 +322,9 @@ the web back end's `childrenReads`, `walkVisits` and `hierarchyMoves`, the engin
 `share`, `shareHits`, `shareMints`, `contentClassOf`, `contentVersionKeys`, `classify`, `buffers` and
 `textures`, and every name a module adds to `globalThis.__tnEngineCost` (core's `cullRigRebuilds` and
 `cullRigWalks`, physics' `physicsTransformReads` and `physicsForceResets`). `counters.bridgeCrossings`
-joins as `bridgeCrossings`. `maxPerFrame` bounds a window's mean and `maxInFrame` its largest frame.
+joins as `bridgeCrossings`. A name that multiplies with content — one per asset URL, one per bridged
+property (`bridge:…`) — is deliberately not a per-frame series, so it cannot be bounded here: the
+`TN_DEBUG_REPORT` ranks the largest ten of the run's totals under `contentScaled` instead. `maxPerFrame` bounds a window's mean and `maxInFrame` its largest frame.
 `skipWindows` (default 0) leaves the first windows, the boot, unbounded. Every later window must hold
 every top-level bound; `still: { windows, maxPerFrame }` bounds only the first `windows` of them, which
 the scenario keeps still, and `moving: { maxPerFrame?, maxInFrame? }` only the

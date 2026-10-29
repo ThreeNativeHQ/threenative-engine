@@ -13,6 +13,22 @@ interface IDebugHost {
   __THREENATIVE_DEBUG__?: unknown;
   __tnEngineCost?: Record<string, number>;
   __tnDebugSources?: Record<string, IDebugSource>;
+  /** The web back end's running totals by name, the same bag `createEngineCounterReader` differences. */
+  __tnEngineCounters?: () => Readonly<Record<string, number>>;
+}
+
+/** The biggest content-scaled names one report lists; a series for each would never stop growing. */
+const CONTENT_SCALED_LIMIT = 10;
+
+/**
+ * Counters whose name multiplies with the content: one per asset URL (`assetDispatch.<url>Ms`,
+ * `textureDecode.<url>WallMs`, `assetLoad.<url>WallMs`) and one per bridged property
+ * (`bridge:get DirectionalLight.intensity`). A scene with 500 textures makes 500 names, so a
+ * per-frame series for each is an unbounded map; the reader skips them and the report ranks the
+ * largest {@link CONTENT_SCALED_LIMIT} of the run instead.
+ */
+export function isContentScaled(name: string): boolean {
+  return name.startsWith("bridge:") || /^(?:assetDispatch|assetLoad|textureDecode)\./u.test(name);
 }
 
 /** Read at installation, using the same launch seams as spansRequested(). */
@@ -182,17 +198,6 @@ export function formatDebugReport(window: IFrameBudgetWindow): string {
         source,
         source.unit === "estimated-ms" ? "estimated-getter-equivalent" : "measured",
       );
-    if (
-      name.startsWith("bridge:") &&
-      !name.startsWith("bridge:widen") &&
-      (engine.bridgeCrossings?.mean ?? 0) > 0
-    )
-      add(
-        name,
-        series.mean * ((engine.bridgeCrossingMs?.mean ?? 0) / (engine.bridgeCrossings?.mean ?? 1)),
-        source,
-        "estimated-getter-equivalent",
-      );
   }
   for (const [name, series] of Object.entries(window.phases))
     add(
@@ -243,10 +248,7 @@ export function formatDebugReport(window: IFrameBudgetWindow): string {
       ...(lever === undefined ? {} : { lever }),
     });
   };
-  ratio("temporal-missing-velocity", "velocitySkippedDraws", "velocityEligibleDraws", 0);
   ratio("temporal-missing-velocity", "velocitySkipped", "velocityCandidates", 0);
-  ratio("temporal-history-unavailable", "temporalInvalidHistoryFrames", "temporalActiveFrames", 0);
-  ratio("temporal-history-unavailable", "temporalHistoryInvalidFrames", "temporalActiveFrames", 0);
   ratio("temporal-history-unavailable", "temporalInvalidFrames", "temporalActiveFrames", 0);
   const activity = (code: string, counter: string): void => {
     const value = engine[counter]?.mean;
@@ -267,7 +269,20 @@ export function formatDebugReport(window: IFrameBudgetWindow): string {
   activity("gate-completion-age-decline", "gateDeclinedAge");
   ratio("bridge-typed-array-widening", "bridgeTypedEncodedBytes", "bridgeTypedSourceBytes", 1);
   // Memory/population changes are observations until measured cost or a lifetime invariant fails.
-  return `TN_DEBUG_REPORT:${JSON.stringify({ window: window.window, frames: window.frames, durationMs: durationMs ?? null, intervalMs: interval ?? null, offenders, findings, observations, longTasks: window.longTasks, gpu: window.gpu, passes: window.passes })}`;
+  // One name per asset URL and per bridged property cannot be a series, so the run's own totals are
+  // ranked here: a slow decode or a hot crossing is named without a per-frame map growing with them.
+  const host = globalThis as IDebugHost;
+  const contentScaled = Object.entries({ ...host.__tnEngineCounters?.(), ...host.__tnEngineCost })
+    .filter(([name, total]) => {
+      if (!isContentScaled(name)) return false;
+      if (!Number.isFinite(total) || total < 0)
+        throw new Error(`TN_DEBUG: invalid ${name} counter.`);
+      return total > 0;
+    })
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, CONTENT_SCALED_LIMIT)
+    .map(([name, total]) => ({ name, total, ...sourceOf(name) }));
+  return `TN_DEBUG_REPORT:${JSON.stringify({ window: window.window, frames: window.frames, durationMs: durationMs ?? null, intervalMs: interval ?? null, offenders, findings, observations, contentScaled: { basis: "run-total", top: contentScaled }, longTasks: window.longTasks, gpu: window.gpu, passes: window.passes })}`;
 }
 
 /** A single slow named callback exceeds the interval the loop actually observed. Debug-only. */

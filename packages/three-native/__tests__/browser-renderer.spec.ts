@@ -1373,7 +1373,7 @@ describe("debug renderer observations", () => {
     expect(counters().gpuTimestampUnrequestedSamples).toBe(0);
   });
 
-  it("records temporal history and counted pixels once through shared totals", async () => {
+  it("leaves the temporal totals the native renderer counts to it, adding only the pixel sizes it alone knows", async () => {
     vi.stubEnv("TN_DEBUG", "1");
     const fields: Record<number, number> = {
       13: 1,
@@ -1396,15 +1396,18 @@ describe("debug renderer observations", () => {
     renderer.render(scene, camera);
     fields[15] = 1;
     renderer.render(scene, camera);
-    expect(debugTelemetry(module)?.totals).toMatchObject({
-      temporalActiveFrames: 2,
-      temporalHistoryInvalidFrames: 1,
-      temporalMeasuredPixels: 100,
-      temporalRejectedPixels: 30,
-      temporalClampedPixels: 20,
-      temporalInputPixels: 200,
-      temporalOutputPixels: 800,
-    });
+    const totals = debugTelemetry(module)?.totals ?? {};
+    expect(totals).toMatchObject({ temporalInputPixels: 200, temporalOutputPixels: 800 });
+    // The native renderer exports these under these exact names (foundation/waste_counters.h), so a
+    // JS copy double-counts nothing it overwrites and silently keeps a stale value when it does not.
+    for (const name of [
+      "temporalActiveFrames",
+      "temporalHistoryInvalidFrames",
+      "temporalMeasuredPixels",
+      "temporalRejectedPixels",
+      "temporalClampedPixels",
+    ])
+      expect(totals).not.toHaveProperty(name);
   });
 
   it("adds no host calls or allocations with debug off", async () => {

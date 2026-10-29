@@ -317,7 +317,6 @@ export function defineWebRenderer(
     #gpuSamples = 0;
     #holdsSlot = true;
     #timestampFrames: number[] = [];
-    #countedTemporalFrame = -1;
 
     constructor(parameters: Record<string, unknown> = {}) {
       if (claimed)
@@ -621,16 +620,12 @@ export function defineWebRenderer(
       temporal.outputWidth = module._tnw_web_frame(38);
       temporal.outputHeight = module._tnw_web_frame(39);
       if (debug !== undefined && temporal.active) {
-        debug.add("temporalActiveFrames", 1, "temporal", "WebGPURenderer.render");
-        debug.add("temporalHistoryInvalidFrames", temporal.historyValid ? 0 : 1, "temporal");
+        // The native renderer counts the active/history/rejected/clamped pixel totals under these
+        // exact names (foundation/waste_counters.h, renderer.cpp); a JS series beside them would be
+        // overwritten by `counters()` where the names collide and silently stale where they do not.
+        // Only the input and output sizes have no native producer.
         debug.add("temporalInputPixels", temporal.inputWidth * temporal.inputHeight, "temporal");
         debug.add("temporalOutputPixels", temporal.outputWidth * temporal.outputHeight, "temporal");
-        if (temporal.pixels > 0 && temporal.countedFrame !== this.#countedTemporalFrame) {
-          this.#countedTemporalFrame = temporal.countedFrame;
-          debug.add("temporalMeasuredPixels", temporal.pixels, "temporal");
-          debug.add("temporalRejectedPixels", temporal.rejected, "temporal");
-          debug.add("temporalClampedPixels", temporal.clamped, "temporal");
-        }
       }
       engine.samples = module._tnw_web_frame(18);
       const passes = engine.passes;

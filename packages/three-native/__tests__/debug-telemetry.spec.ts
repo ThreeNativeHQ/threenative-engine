@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WARMUP_FRAMES, WINDOW_FRAMES, createBridgeMeter } from "../src/bridge-meter.js";
+import {
+  BRIDGE_CENSUS_MARKER,
+  WARMUP_FRAMES,
+  WINDOW_FRAMES,
+  createBridgeMeter,
+} from "../src/bridge-meter.js";
 import { DebugTelemetry, debugRequested } from "../src/debug-telemetry.js";
 
 afterEach(() => {
@@ -23,8 +28,15 @@ describe("web engine debug telemetry", () => {
     expect(debugRequested()).toBe(true);
   });
 
-  it("flags 995 distinct crossings even with no redundant reads and debug off", () => {
-    vi.stubEnv("TN_DEBUG", "0");
+  /**
+   * 995 distinct crossings a frame and not one repeated read: the shooter's RTS-shaped `army.sync`
+   * census, which no fix can shrink below one crossing per object. `debug` picks the arm that sees
+   * it — the always-on rule every game runs, or the census only a debug run prints.
+   */
+  function distinctCrossings(debug: boolean) {
+    vi.stubEnv("TN_DEBUG", debug ? "1" : "0");
+    vi.stubGlobal("location", { search: "" });
+    vi.stubGlobal("__THREENATIVE_DEBUG__", false);
     let now = 0;
     const lines: string[] = [];
     const stack = vi.fn(
@@ -48,13 +60,40 @@ describe("web engine debug telemetry", () => {
         );
       now += 16;
     }
-    const warning = lines.find((line) => line.startsWith("TN_BRIDGE_WARNING:"));
-    expect(warning).toBeDefined();
+    return { lines, stack };
+  }
+
+  it("leaves the always-on warning to a read the game repeated, never to 995 distinct crossings", () => {
+    const { lines, stack } = distinctCrossings(false);
+    expect(lines).toEqual([]);
     expect(stack).not.toHaveBeenCalled();
-    expect(JSON.parse((warning ?? "").slice("TN_BRIDGE_WARNING:".length))).toMatchObject({
+  });
+
+  it("prices all 995 crossings on the debug path, where a report can rank the cost", () => {
+    const { lines } = distinctCrossings(true);
+    expect(lines.filter((line) => line.startsWith("TN_BRIDGE_WARNING:"))).toEqual([]);
+    const census = JSON.parse(
+      String(lines.find((line) => line.startsWith(BRIDGE_CENSUS_MARKER))).slice(
+        BRIDGE_CENSUS_MARKER.length + 1,
+      ),
+    ) as {
+      crossings: number;
+      redundantReads: number;
+      crossingMs: number;
+      share: number;
+      top: unknown[];
+    };
+    expect(census).toMatchObject({
       crossings: 995,
       redundantReads: 0,
-      top: [{ name: "call InstancedMesh.setMatrixAt", caller: "unknown" }, expect.anything()],
+      crossingUs: 1,
+      crossingMs: 0.995,
+      share: 0.062,
+    });
+    expect(census.top[0]).toMatchObject({
+      name: "call InstancedMesh.setMatrixAt",
+      perFrame: 787,
+      caller: expect.stringContaining("game/army.ts:42"),
     });
   });
 

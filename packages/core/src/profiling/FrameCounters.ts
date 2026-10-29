@@ -1,4 +1,4 @@
-import { countDebug, debugRequested } from "./debug-telemetry.js";
+import { countDebug, debugRequested, isContentScaled } from "./debug-telemetry.js";
 
 /**
  * Host-boundary counters, default-off, on the frame budget's own record.
@@ -340,6 +340,9 @@ export function createEngineCounterReader(
     for (const [name, total] of Object.entries(totals)) {
       if (!Number.isFinite(total) || total < 0)
         throw new Error(`TN_DEBUG: invalid ${name} counter.`);
+      // One name per asset URL or bridged property would add a ring per item the scene loads; the
+      // report ranks the run's largest ten of them instead (`isContentScaled`).
+      if (isContentScaled(name)) continue;
       frame[name] =
         debug && host.__tnDebugSources?.[name]?.unit === "gauge"
           ? total

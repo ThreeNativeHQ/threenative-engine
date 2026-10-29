@@ -6,7 +6,7 @@ import { defineGame } from "../src/game.js";
 import { createEngineCounterReader } from "../src/profiling/FrameCounters.js";
 import { spansRequested } from "../src/profiling/Spans.js";
 import { SPANS, SpanRecorder } from "../src/profiling/Spans.js";
-import { observeDebugGc } from "../src/profiling/debug-telemetry.js";
+import { countDebug, observeDebugGc } from "../src/profiling/debug-telemetry.js";
 import { Scene } from "../src/scene.js";
 import { connectUiBridge } from "../src/ui-bridge.js";
 import { publishUiState } from "../src/ui-state.js";
@@ -156,7 +156,7 @@ describe("one engine debug switch", () => {
     });
     const lines: string[] = [];
     const budget = new FrameBudget({ reportEvery: 2, report: (line) => lines.push(line) });
-    drive(budget, { uniformSyncMs: 2, temporalHistoryInvalidFrames: 1, temporalActiveFrames: 2 });
+    drive(budget, { uniformSyncMs: 2, temporalInvalidFrames: 1, temporalActiveFrames: 2 });
     const report = JSON.parse(
       String(lines.find((line) => line.startsWith("TN_DEBUG_REPORT:"))).slice(
         "TN_DEBUG_REPORT:".length,
@@ -457,8 +457,8 @@ describe("one engine debug switch", () => {
     const lines: string[] = [];
     const budget = new FrameBudget({ reportEvery: 2, report: (line) => lines.push(line) });
     drive(budget, {
-      velocityEligibleDraws: 24,
-      velocitySkippedDraws: 24,
+      velocityCandidates: 24,
+      velocitySkipped: 24,
       gpuTimestampRequests: 1,
       gpuTimestampResolves: 8,
       gpuTimestampSamplesDelivered: 2,
@@ -476,6 +476,78 @@ describe("one engine debug switch", () => {
       expect.objectContaining({ code: "timestamp-oversampling", perFrame: 7 }),
     );
     expect(report.findings.some((f: { code: string }) => f.code.includes("delivery"))).toBe(false);
+    budget.dispose();
+  });
+
+  it("keeps 500 per-URL counters out of the frame series and ranks ten of them in the report", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const totals: Record<string, number> = { "bridge:get InstancedMesh.count": 9000 };
+    vi.stubGlobal("__tnEngineCost", totals);
+    vi.stubGlobal("__tnDebugSources", {});
+    const read = createEngineCounterReader();
+    for (let index = 0; index < 500; index += 1)
+      countDebug(
+        `textureDecode.url-${index}.pngDispatchMs`,
+        1,
+        "loading",
+        `url-${index}.png`,
+        "ms",
+      );
+    read(); // the run's baseline, not a frame
+    for (let index = 0; index < 500; index += 1)
+      totals[`textureDecode.url-${index}.pngDispatchMs`] += index;
+    const frame = read() ?? {};
+    // One ring per name would grow with the content, so the per-frame series keep none of them.
+    expect(
+      Object.keys(frame).filter((name) => name.startsWith("bridge:") || name.includes(".url")),
+    ).toEqual([]);
+    const lines: string[] = [];
+    const budget = new FrameBudget({ reportEvery: 1, report: (line) => lines.push(line) });
+    drive(budget, frame);
+    const report = JSON.parse(
+      String(lines.find((line) => line.startsWith("TN_DEBUG_REPORT:"))).slice(
+        "TN_DEBUG_REPORT:".length,
+      ),
+    );
+    expect(report.observations).toEqual({});
+    expect(report.contentScaled.basis).toBe("run-total");
+    expect(report.contentScaled.top).toHaveLength(10);
+    expect(report.contentScaled.top[0]).toMatchObject({
+      name: "bridge:get InstancedMesh.count",
+      total: 9000,
+      area: "bridge",
+    });
+    expect(report.contentScaled.top[1]).toMatchObject({
+      name: "textureDecode.url-499.pngDispatchMs",
+      total: 500,
+      unit: "ms",
+      caller: "url-499.png",
+    });
+    budget.dispose();
+  });
+
+  it("derives temporal findings only from the counters a producer writes", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const lines: string[] = [];
+    const budget = new FrameBudget({ reportEvery: 2, report: (line) => lines.push(line) });
+    // The web renderer used to add `temporalHistoryInvalidFrames` beside the C++ renderer's
+    // `temporalInvalidFrames`, and nothing writes the two `*Draws` names at all. A rule on a name no
+    // producer writes is dead: it can only fire on a hand-built window.
+    drive(budget, {
+      velocityEligibleDraws: 24,
+      velocitySkippedDraws: 24,
+      temporalInvalidHistoryFrames: 1,
+      temporalHistoryInvalidFrames: 1,
+      temporalActiveFrames: 2,
+    });
+    const report = JSON.parse(
+      String(lines.find((line) => line.startsWith("TN_DEBUG_REPORT:"))).slice(
+        "TN_DEBUG_REPORT:".length,
+      ),
+    );
+    expect(
+      report.findings.filter((finding: { code: string }) => finding.code.startsWith("temporal-")),
+    ).toEqual([]);
     budget.dispose();
   });
 

@@ -13,7 +13,10 @@ runtime-native owns the C++ producers.
 - `TN_FRAME_BUDGET.counters.engine` is the numeric consumer surface; core emits one
   `TN_DEBUG_REPORT` per window. Keep counts and byte totals in their own units. A calibrated
   crossing estimate is getter-equivalent time, not a measured duration for each invoke or write.
-  `TN_BRIDGE_WARNING` prices all crossings against the observed interval, not only repeated reads.
+  `TN_BRIDGE_WARNING` stays on reads a game repeated in one frame, the only crossing waste a game
+  can fix; what all crossings cost rides the census and the debug report, never the always-on line.
+  A name that multiplies with content (one per asset URL, one per bridged property) is not a
+  per-frame series: the report ranks the largest ten of the run under `contentScaled`.
 - GPU resolves arrive asynchronously. Preserve requested, resolved and delivered sample identity;
   a callback delivery delay is not GPU execution time. Missing timing stays absent.
 - Register public C++ counter names and ABI members in `api/native-registry.json` alongside their

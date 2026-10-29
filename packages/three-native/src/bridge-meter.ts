@@ -9,10 +9,15 @@
  * a redundant read, nothing changed it in between that the game could not have kept. The census frame
  * also takes one stack for each name read redundantly, so the verdict names the caller.
  *
- * **The rule is derived, never a constant an author revisits.** It fires when all crossings,
+ * **The rule is derived, never a constant an author revisits.** It fires when the redundant reads,
  * at this host's own measured cost per crossing, take more than `REDUNDANT_SHARE` of the frame's
  * median interval: the frame's own length, so the guard holds on Xvfb and on a loaded host. The line
  * is `TN_BRIDGE_WARNING`, which a playtest fails on (`packages/playtest` perf warnings).
+ *
+ * What *all* crossings cost is an observation, not a defect: a game that reads 995 distinct
+ * properties once each has nothing to batch, so no fix exists and a warning about it is noise every
+ * game pays. It rides the census a debug run or a playtest already asked for, and the debug report
+ * ranks it (`bridgeCrossingMs`); the always-on line stays on repeated reads.
  */
 
 import { debugRequested } from "./debug-telemetry.js";
@@ -36,7 +41,7 @@ export const PLAYTEST_OBSERVING_GLOBAL = "__tnPlaytestObserving";
 export const WARMUP_FRAMES = 120;
 /** One census frame in each window, so the census costs a frame in this many. */
 export const WINDOW_FRAMES = 120;
-/** The share of the frame that bridge crossings may take; past it the waste is worth a named fix. */
+/** The share of the frame that redundant reads may take; past it the waste is worth a named fix. */
 export const REDUNDANT_SHARE = 1 / 50;
 
 interface ICensus {
@@ -108,9 +113,24 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
   let window = 0;
   const finish = (done: ICensus): void => {
     window += 1;
-    let crossed = 0;
-    for (const count of done.byName.values()) crossed += count;
+    const round = (value: number) => Math.round(value * 1000) / 1000;
+    // What one crossing costs on this host, asked once. A debug-off frame that repeated no read
+    // never pays for the calibration.
+    const costMicros = (): number => {
+      micros ??= host.crossingMicros();
+      if (!Number.isFinite(micros) || micros < 0)
+        throw new Error("TN_BRIDGE_WARNING: invalid crossing calibration.");
+      return micros;
+    };
+    const medianFrameMs = (): number => {
+      const sorted = [...intervals].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)] as number;
+    };
+    let redundant = 0;
+    for (const count of done.redundantByName.values()) redundant += count;
     if (done.printed) {
+      let crossed = 0;
+      for (const count of done.byName.values()) crossed += count;
       const top = [...done.byName]
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
@@ -119,41 +139,51 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
           perFrame,
           caller: done.callers.get(name) ?? "unknown",
         }));
-      host.report(`${BRIDGE_CENSUS_MARKER}:${JSON.stringify({ window, crossings: crossed, top })}`);
+      // The debug path's own observation: what every crossing of the frame cost, at this host's
+      // calibration. It is not a warning — a game with no repeated read has nothing to fix — so it
+      // rides the census a debug run or a playtest bound already asks for.
+      const frameMs = intervals.length === 0 ? undefined : medianFrameMs();
+      const crossingMs = crossed === 0 ? undefined : (crossed * costMicros()) / 1000;
+      host.report(
+        `${BRIDGE_CENSUS_MARKER}:${JSON.stringify({
+          window,
+          crossings: crossed,
+          ...(frameMs === undefined || crossingMs === undefined
+            ? {}
+            : {
+                crossingUs: round(costMicros()),
+                crossingMs: round(crossingMs),
+                share: round(crossingMs / frameMs),
+              }),
+          redundantReads: redundant,
+          top,
+        })}`,
+      );
     }
-    let redundant = 0;
-    for (const count of done.redundantByName.values()) redundant += count;
-    if (crossed === 0 || intervals.length === 0) return;
-    micros ??= host.crossingMicros();
-    if (!Number.isFinite(micros) || micros < 0)
-      throw new Error("TN_BRIDGE_WARNING: invalid crossing calibration.");
-    const sorted = [...intervals].sort((a, b) => a - b);
-    const frameMs = sorted[Math.floor(sorted.length / 2)] as number;
-    const redundantMs = (redundant * micros) / 1000;
-    const crossingMs = (crossed * micros) / 1000;
-    if (!(crossingMs > frameMs * REDUNDANT_SHARE)) return;
-    const top = [...done.byName]
+    if (redundant === 0 || intervals.length === 0) return;
+    const frameMs = medianFrameMs();
+    const crossingUs = costMicros();
+    const redundantMs = (redundant * crossingUs) / 1000;
+    if (!(redundantMs > frameMs * REDUNDANT_SHARE)) return;
+    const top = [...done.redundantByName]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, count]) => ({
         name,
         perFrame: done.byName.get(name) ?? count,
-        redundant: done.redundantByName.get(name) ?? 0,
+        redundant: count,
         caller: done.callers.get(name) ?? "unknown",
       }));
-    const round = (value: number) => Math.round(value * 1000) / 1000;
     host.report(
       `${BRIDGE_WARNING_MARKER}:${JSON.stringify({
         window,
         frameMs: round(frameMs),
-        crossingUs: round(micros),
-        crossings: crossed,
-        crossingMs: round(crossingMs),
+        crossingUs: round(crossingUs),
         redundantReads: redundant,
         redundantMs: round(redundantMs),
-        share: round(crossingMs / frameMs),
+        share: round(redundantMs / frameMs),
         top,
-        fix: `${top[0]?.name ?? "a crossing"} from ${top[0]?.caller ?? "unknown"}: batch writes, keep stable reads, or move work out of the per-frame callback.`,
+        fix: `${top[0]?.name ?? "a property"} is read again in one frame from ${top[0]?.caller ?? "unknown"}: read it once per frame into a local and pass that, or move the check out of the per-frame callback.`,
       })}`,
     );
   };
