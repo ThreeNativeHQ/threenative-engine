@@ -111,6 +111,23 @@ the desktop proof uses that engine.
   not adopted as a package, a template asset or a replacement for any shipped system. Its LEAN
   roughness, glints and caustics B-spline fix stay out of this PRD. File them separately when
   wanted.
+- 2026-10-29 (João): the PR screenshots show a "squared ocean". Cause: the sea tinted the heightmap's
+  flat 4.1 m shelf inside the 512 m bake and a constant 28 m outside it, joined over 4 m, and the
+  breakers ran full height to the bake's edge. Fix: the drawn floor falls away from the coast
+  (`SHORE.shelfSlope`, offshore distance from the bake's travel time) and continues past the edge;
+  the breakers hand over to the swell past a quarter wavelength of depth.
+- 2026-10-29 (João): "it streams really slowly, see if worker threads are being used properly".
+  Diagnosis: terrain tiles build on the main thread under the 2 ms admission budget, and the
+  only worker merges and stitches blocks. Each tile sampled a 2 m heightmap at 0.5 m (16x the
+  work), and the build order ignored the camera. Fixed here, in `packages/core`: the default
+  `tileResolution` follows the heightmap spacing with LOD levels no coarser than the old default's
+  (a coarser far level shrank silhouettes; the visual judge caught it), and the tiles in view build
+  first. On the above pose the view settled at ~8 s (was ~18 s) in a quiet run. The coastal kit
+  now holds startup until its terrain is resident, so a game with a loading screen never shows a
+  hole. Tried and reverted: Unreal's 5 ms streaming slice (`s.AsyncLoadingTimeLimit`) and a
+  wall-time share for slow frames. Paired runs on a host whose GPU another session held at 100%
+  showed no gain, so neither ships unproven. Open, for its own PRD: tile construction in a Worker,
+  measured on a quiet host.
 
 ## Execution Phases
 
