@@ -34,7 +34,9 @@ function mirror(source, target) {
   for (const entry of readdirSync(source, { withFileTypes: true })) {
     if (
       source === join(here, "src/world") &&
-      !/\.(?:placements\.bin|world\.json|layers\.json|splat\.rgba8)$/u.test(entry.name)
+      !/\.(?:placements\.bin|world\.json|layers\.json|splat\.rgba8)$|^(?:baked|horizon|alpine|desert|tundra)\.json$/u.test(
+        entry.name,
+      )
     )
       continue;
     const from = join(source, entry.name);

@@ -1,22 +1,33 @@
 import { Heightfield } from "@threenative/core/world";
 import { BufferGeometry, Float32BufferAttribute } from "three";
-import distant from "../world/horizon.json";
 import type { IBakedWorld } from "./terrain.js";
 
-// Each world keeps its own same-site USGS surroundings in the installed Heightfield query.
-const continuationFields = Object.fromEntries(
-  Object.entries(distant).map(([name, source]) => [
-    name,
-    new Heightfield({
-      rows: source.resolution,
-      columns: source.resolution,
-      width: source.size,
-      depth: source.size,
-      origin: { x: 0, z: 0 },
-      heights: new Float32Array(source.heights),
-    }),
-  ]),
-);
+/** `world/horizon.json`: each world's same-site USGS surroundings, as `scripts/bake.mjs` writes them. */
+export type HorizonSurroundings = Record<
+  string,
+  { resolution: number; size: number; heights: number[] }
+>;
+
+// Each world keeps its own surroundings in the installed Heightfield query. They are fetched, not
+// imported: as a module the 7 MB file took about 3 s to compile before the first frame.
+let continuationFields: Record<string, Heightfield> = {};
+
+/** Installs the surroundings `createHorizonGeometry` reads; call once before building terrain. */
+export function setHorizonSurroundings(distant: HorizonSurroundings): void {
+  continuationFields = Object.fromEntries(
+    Object.entries(distant).map(([name, source]) => [
+      name,
+      new Heightfield({
+        rows: source.resolution,
+        columns: source.resolution,
+        width: source.size,
+        depth: source.size,
+        origin: { x: 0, z: 0 },
+        heights: new Float32Array(source.heights),
+      }),
+    ]),
+  );
+}
 /** Decorative land beyond the collider; the inner ring uses the bake's exact edge vertices. */
 export function createHorizonGeometry(
   data: IBakedWorld,

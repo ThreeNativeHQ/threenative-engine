@@ -1,4 +1,5 @@
 import {
+  type IAssetLoader,
   type ICtx,
   type IGamePluginRuntime,
   Scene,
@@ -30,10 +31,11 @@ import {
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import { createGroundSampler } from "./render/groundSampler.js";
+import { type HorizonSurroundings, setHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
-import { loadPlacements } from "./render/placements.js";
+import { fetchBakedFile, loadPlacements } from "./render/placements.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
 import {
@@ -57,7 +59,6 @@ import {
   medianOfGrowingSamples as median,
   retainViewWindow,
 } from "./viewStatistics.js";
-import baked from "./world/baked.json";
 import {
   type ForestStageWorld,
   addForestStage,
@@ -113,11 +114,22 @@ const renderedFrames: Record<WorldName, number> = {
   desert: 0,
   tundra: 0,
 };
-const worldLoads = {
-  alpine: () => import("./world/alpine.json"),
-  desert: () => import("./world/desert.json"),
-  tundra: () => import("./world/tundra.json"),
-};
+/**
+ * The baked terrain arrays, fetched rather than imported: as JSON modules the 7–12 MB files cost
+ * about 3 s each to compile before the first frame. Forest and coastal share `baked.json`.
+ */
+async function loadBakedWorld(
+  assets: Pick<IAssetLoader, "resolve">,
+  world: WorldName,
+): Promise<IBakedWorld> {
+  const shared = world === "forest" || world === "coastal";
+  const response = await fetchBakedFile(assets, `world/${shared ? "baked" : world}.json`);
+  const json = await response.json();
+  return shared
+    ? (json as Record<"forest" | "coastal", IBakedWorld>)[world]
+    : (json as IBakedWorld);
+}
+let horizonLoad: Promise<void> | undefined;
 
 const initialState = {
   elevationMin: 0,
@@ -227,10 +239,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #stage: ForestStageWorld | undefined;
     #stageLoad = 0;
     override async load(ctx: TerrainCtx): Promise<void> {
-      this.#data =
-        world === "forest" || world === "coastal"
-          ? baked[world]
-          : (await worldLoads[world]()).default;
+      this.#data = await loadBakedWorld(ctx.assets, world);
       this.#biome = measureBiome(BIOMES[world], this.#data.heights);
       // `?stage=before|after` replaces this world's terrain, water, colliders and props with one
       // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
@@ -245,7 +254,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         }
         return;
       }
-      this.#scatter = await loadPlacements(ctx.assets, world);
+      horizonLoad ??= fetchBakedFile(ctx.assets, "world/horizon.json")
+        .then((response) => response.json())
+        .then((distant) => setHorizonSurroundings(distant as HorizonSurroundings));
+      [this.#scatter] = await Promise.all([loadPlacements(ctx.assets, world), horizonLoad]);
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
       this.#sky = createOutdoorSky(ctx.camera, this.#biome);
