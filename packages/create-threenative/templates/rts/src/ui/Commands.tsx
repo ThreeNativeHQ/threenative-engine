@@ -120,7 +120,7 @@ export function Commands() {
         testid: "order-move",
       },
       { icon: "hold", intent: "hold", key: "H", label: "Hold", testid: "order-hold" },
-      { icon: "stop", intent: "stop", key: "X", label: "Stop", testid: "order-stop" },
+      { icon: "stop", intent: "stop", key: "S", label: "Stop", testid: "order-stop" },
       ...base,
     ];
     if (state.selectionTypes.includes("ranger"))

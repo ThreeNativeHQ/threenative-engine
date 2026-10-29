@@ -398,6 +398,9 @@ export class Play extends Scene<GameState, undefined> {
     if (ctx.input.justPressed("moveOrder")) this.#mode = "move";
     if (ctx.input.justPressed("hold")) sim.command(this.#selection, "hold");
     if (ctx.input.justPressed("stopOrder")) sim.command(this.#selection, "stop");
+    // The two the quick bar prints a key for, through the same door the buttons use.
+    if (ctx.input.justPressed("retreat")) this.#intent("retreat");
+    if (ctx.input.justPressed("idle")) this.#intent("idle");
   }
 
   /** A release: the armed order if there is one, otherwise the band the press opened. */
@@ -468,7 +471,19 @@ export class Play extends Scene<GameState, undefined> {
     if (this.#selection.length === 0) return;
     const ground = groundAt(camera, at.x, at.y, ctx.viewport.size);
     if (ground === null) return;
-    const hit = pickEntity(sim, camera, view, ctx.viewport.size, at.x, at.y);
+    this.#orderGround(ground, append, pickEntity(sim, camera, view, ctx.viewport.size, at.x, at.y));
+  }
+
+  /**
+   * An order at a ground point, with whatever the cursor could have hit.
+   *
+   * The right-click on the battlefield and the right-click on the overview land here: the overview
+   * has no entity under the mouse (the panel is not the scene), so it passes no hit and the order
+   * is the same `#contextual` answer a click on bare ground gives.
+   */
+  #orderGround(ground: IPoint, append: boolean, hit?: PickTarget): void {
+    const sim = this.#sim;
+    if (sim === undefined || this.#selection.length === 0) return;
     const choice = this.#contextual(sim, ground, hit);
     const result = sim.command(this.#selection, choice.kind, choice.target, 0, append);
     if (!result.ok) {
@@ -537,6 +552,17 @@ export class Play extends Scene<GameState, undefined> {
       case "order":
         this.#mode = value;
         break;
+      case "focus": {
+        const point = readPoint(payload);
+        if (point !== undefined && this.#view !== undefined) focusRts(this.#view, point.x, point.z);
+        break;
+      }
+      case "orderAt": {
+        // The overview's right-click: an order at a ground point, with nothing under the cursor.
+        const point = readPoint(payload);
+        if (point !== undefined) this.#orderGround(point, false);
+        break;
+      }
       case "place":
         this.#mode = `build:${value}`;
         break;
@@ -916,6 +942,15 @@ function nodeNear(sim: Game, x: number, z: number): IResourceNode | undefined {
     if (dist(node, { x, z }) < node.r + 3.5) return node;
   }
   return undefined;
+}
+
+/** A `{ x, z }` world point out of an intent payload, or nothing if it is not one. */
+function readPoint(payload: unknown): IPoint | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const { x, z } = payload as { x?: unknown; z?: unknown };
+  return typeof x === "number" && Number.isFinite(x) && typeof z === "number" && Number.isFinite(z)
+    ? { x, z }
+    : undefined;
 }
 
 function cellIndex(sim: Game, x: number, z: number): number {

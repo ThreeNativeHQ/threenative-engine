@@ -177,7 +177,7 @@ function TopBar() {
                   <br />
                   <kbd>A</kbd> Attack-move · <kbd>M</kbd> Move
                   <br />
-                  <kbd>H</kbd> Hold · <kbd>X</kbd> Stop
+                  <kbd>H</kbd> Hold · <kbd>S</kbd> Stop
                   <br />
                   <kbd>F2</kbd> Select all combat units
                 </p>
@@ -370,7 +370,7 @@ function QuickBar() {
         data-tn-interactive
         data-testid="idle"
         onClick={() => send("idle")}
-        title="Select idle Surveyors"
+        title="Select idle Surveyors [F4]"
         type="button"
       >
         IDLE <span id="idle-count">{state.idleWorkers}</span>
@@ -380,10 +380,10 @@ function QuickBar() {
         data-tn-interactive
         data-testid="order-retreat"
         onClick={() => send("retreat")}
-        title="Retreat the selection to base"
+        title="Retreat the selection to base [V]"
         type="button"
       >
-        RETREAT
+        RETREAT <kbd>V</kbd>
       </button>
       <div className="groups">
         {state.groups.map((count, index) => {
