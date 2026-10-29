@@ -1012,7 +1012,16 @@ export function defineBrowserClasses(
         });
       });
       skip.add("x").add("y").add("z").add("w");
-      // three syncs an Object3D's rotation from its quaternion; the engine does it in C++.
+      // three syncs an Object3D's rotation from its quaternion. Physics interpolation sets every body's
+      // quaternion every frame, so a call per sync cost 1,732 crossings a frame on the stress lab. This is
+      // Euler::setFromQuaternion with update off (Euler.cpp), written into the rotation's lanes: the same
+      // formulas, and Math is V8's fdlibm, which the engine's ieee754 functions are, so the bits match.
+      const eulerFields = registry.classes.Euler?.fields;
+      const angles = ["x", "y", "z"].map((key) => eulerFields?.[key]?.[0]);
+      const orderAt = eulerFields?.__order?.[0];
+      const local =
+        peek !== undefined && orderAt !== undefined && angles.every((at) => at !== undefined);
+      const [ax, ay, az] = angles as [number, number, number];
       Object.defineProperty(accessors, "_onChangeCallback", {
         configurable: true,
         writable: true,
@@ -1021,11 +1030,26 @@ export function defineBrowserClasses(
             | { rotation?: object & { _order?: string } }
             | undefined;
           if (owner?.rotation === undefined) return;
-          // The rotation's own order; the engine refuses a missing one on this call.
-          runtime.invoke(refOf(owner.rotation), "setFromQuaternion", [
-            refOf(this),
-            owner.rotation._order ?? "XYZ",
-          ]);
+          if (!local) {
+            // The rotation's own order; the engine refuses a missing one on this call.
+            runtime.invoke(refOf(owner.rotation), "setFromQuaternion", [
+              refOf(this),
+              owner.rotation._order ?? "XYZ",
+            ]);
+            return;
+          }
+          const q = addressOf(this);
+          const e = addressOf(owner.rotation);
+          const [ex, ey, ez] = eulerFromQuaternion(
+            lane(q + (offsets[0] as number)),
+            lane(q + (offsets[1] as number)),
+            lane(q + (offsets[2] as number)),
+            lane(q + (offsets[3] as number)),
+            eulerOrders[(peek as (address: number) => number)(e + (orderAt as number))] ?? "XYZ",
+          );
+          write(e + ax, ex);
+          write(e + ay, ey);
+          write(e + az, ez);
         },
       });
       return;
@@ -3178,4 +3202,66 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         check(status, diag, `set ${name}`);
       }),
   };
+}
+
+/**
+ * three's `Euler.setFromQuaternion` (and the engine's Euler.cpp, whose ieee754 functions are V8's fdlibm, so the
+ * bits match): the rotation matrix of a unit quaternion, then the angles of the given order.
+ */
+export function eulerFromQuaternion(
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+  order: string,
+): [number, number, number] {
+  const x2 = x + x;
+  const y2 = y + y;
+  const z2 = z + z;
+  const xx = x * x2;
+  const xy = x * y2;
+  const xz = x * z2;
+  const yy = y * y2;
+  const yz = y * z2;
+  const zz = z * z2;
+  const wx = w * x2;
+  const wy = w * y2;
+  const wz = w * z2;
+  const m11 = 1 - (yy + zz);
+  const m12 = xy - wz;
+  const m13 = xz + wy;
+  const m21 = xy + wz;
+  const m22 = 1 - (xx + zz);
+  const m23 = yz - wx;
+  const m31 = xz - wy;
+  const m32 = yz + wx;
+  const m33 = 1 - (xx + yy);
+  const asin = (value: number): number => Math.asin(Math.max(-1, Math.min(1, value)));
+  const free = (value: number): boolean => Math.abs(value) < 0.9999999;
+  switch (order) {
+    case "YXZ":
+      return free(m23)
+        ? [-asin(m23), Math.atan2(m13, m33), Math.atan2(m21, m22)]
+        : [-asin(m23), Math.atan2(-m31, m11), 0];
+    case "ZXY":
+      return free(m32)
+        ? [asin(m32), Math.atan2(-m31, m33), Math.atan2(-m12, m22)]
+        : [asin(m32), 0, Math.atan2(m21, m11)];
+    case "ZYX":
+      return free(m31)
+        ? [Math.atan2(m32, m33), -asin(m31), Math.atan2(m21, m11)]
+        : [0, -asin(m31), Math.atan2(-m12, m22)];
+    case "YZX":
+      return free(m21)
+        ? [Math.atan2(-m23, m22), Math.atan2(-m31, m11), asin(m21)]
+        : [0, Math.atan2(m13, m33), asin(m21)];
+    case "XZY":
+      return free(m12)
+        ? [Math.atan2(m32, m22), Math.atan2(m13, m11), -asin(m12)]
+        : [Math.atan2(-m23, m33), 0, -asin(m12)];
+    default:
+      return free(m13)
+        ? [Math.atan2(-m23, m33), asin(m13), Math.atan2(-m12, m11)]
+        : [Math.atan2(m32, m22), asin(m13), 0];
+  }
 }

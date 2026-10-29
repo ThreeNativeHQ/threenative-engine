@@ -9,6 +9,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { Euler, Quaternion } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -18,6 +19,7 @@ import {
   type TnAbiModule,
   createWasmRuntime,
   defineBrowserClasses,
+  eulerFromQuaternion,
 } from "../src/browser-backend.js";
 
 afterEach(() => {
@@ -124,6 +126,65 @@ describe("transform writes on the browser back end", () => {
     }
     expect(heap[(base + 64) / 8 + 2]).toBe(4);
     expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toHaveLength(crossingsBefore);
+  });
+});
+
+describe("an Object3D's rotation follows its quaternion on the browser back end", () => {
+  it("syncs without a crossing, bit for bit as three's Euler.setFromQuaternion", () => {
+    const { runtime, calls, heap, addresses } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Object3D = classes.Object3D as new () => {
+      quaternion: { set(x: number, y: number, z: number, w: number): unknown };
+      rotation: object;
+    };
+    const object = new Object3D();
+    const { quaternion, rotation } = object;
+    const at = addresses.get(engineKey(rotation)) as number;
+    const lanes = ["x", "y", "z"].map(
+      (key) => (registry.classes.Euler?.fields?.[key]?.[0] ?? 0) / 8,
+    );
+    const expected = new Euler();
+    for (let step = 0; step < 200; step += 1) {
+      const q = new Quaternion(
+        Math.sin(step),
+        Math.cos(step * 0.7),
+        step % 5,
+        1 + step,
+      ).normalize();
+      quaternion.set(q.x, q.y, q.z, q.w);
+      expected.setFromQuaternion(q, "XYZ");
+      expect(lanes.map((lane) => heap[at / 8 + lane])).toEqual([
+        expected.x,
+        expected.y,
+        expected.z,
+      ]);
+    }
+    expect(calls.filter((call) => call === "invoke setFromQuaternion")).toHaveLength(0);
+  });
+
+  it("matches three in every order, the gimbal-locked branch included", () => {
+    const orders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
+    const quaternions = [
+      ...Array.from({ length: 50 }, (_, i) =>
+        new Quaternion(Math.sin(i * 1.3), Math.cos(i), Math.sin(i * 0.4), 0.5).normalize(),
+      ),
+      ...orders.map((order) =>
+        new Quaternion().setFromEuler(new Euler(Math.PI / 2, Math.PI / 2, 0.3, order)),
+      ),
+      new Quaternion(Math.SQRT1_2, 0, 0, Math.SQRT1_2),
+      new Quaternion(0, Math.SQRT1_2, 0, Math.SQRT1_2),
+      new Quaternion(0, 0, Math.SQRT1_2, Math.SQRT1_2),
+    ];
+    const expected = new Euler();
+    for (const order of orders)
+      for (const q of quaternions) {
+        expected.setFromQuaternion(q, order);
+        expect(eulerFromQuaternion(q.x, q.y, q.z, q.w, order)).toEqual([
+          expected.x,
+          expected.y,
+          expected.z,
+        ]);
+      }
   });
 });
 
