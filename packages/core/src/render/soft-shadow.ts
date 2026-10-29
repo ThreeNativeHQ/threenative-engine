@@ -21,6 +21,7 @@ import {
   min,
   positionWorld,
   reference,
+  renderGroup,
   sqrt,
   step,
   type texture,
@@ -30,6 +31,16 @@ import {
   vec3,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+
+/**
+ * A shadow input in the render group. The patched renderer skips object-group uploads for a settled static
+ * receiver, so a shadow camera's near, far, frustum or map size there froze at the value it settled with
+ * (`virtual-shadow.ts` `rendered` keeps its own receiver inputs here for the same reason).
+ */
+function shadowInput<T>(node: T): T {
+  // quality-allow: three's ReferenceNode has setGroup at runtime; its declaration omits it
+  return (node as unknown as { setGroup(group: typeof renderGroup): T }).setGroup(renderGroup);
+}
 
 /** tan(5 degrees): Unreal's `r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle`, the sun's least source on a leaf. */
 export const LEAF_MIN_SOURCE_TANGENT = Math.tan((5 * Math.PI) / 180);
@@ -206,13 +217,17 @@ export function sourceAngleShadowFilter({
     )
       throw new RangeError("source-angle shadows require a comparison depth texture, not VSM");
     const reversed = depthTexture.compareFunction === GreaterEqualCompare;
-    const size = reference("mapSize", "vec2", shadow);
-    const near = reference("near", "float", camera);
-    const range = reference("far", "float", camera).sub(near);
+    const size = shadowInput(reference("mapSize", "vec2", shadow));
+    const near = shadowInput(reference("near", "float", camera));
+    const range = shadowInput(reference("far", "float", camera)).sub(near);
     const span = vec2(
-      reference("right", "float", camera).sub(reference("left", "float", camera)),
-      reference("top", "float", camera).sub(reference("bottom", "float", camera)),
-    ).div(reference("zoom", "float", camera));
+      shadowInput(reference("right", "float", camera)).sub(
+        shadowInput(reference("left", "float", camera)),
+      ),
+      shadowInput(reference("top", "float", camera)).sub(
+        shadowInput(reference("bottom", "float", camera)),
+      ),
+    ).div(shadowInput(reference("zoom", "float", camera)));
     const texel = vec2(1).div(size);
     const isArray = "isArrayTexture" in depthTexture && depthTexture.isArrayTexture === true;
     const withLayer = (sample: ReturnType<typeof texture>) =>
@@ -398,9 +413,9 @@ export function sourceRadiusShadowFilter({
       );
     if (depthTexture.compareFunction !== LessEqualCompare)
       throw new RangeError("source-radius shadows require a forward-depth comparison texture");
-    const near = reference("near", "float", camera);
-    const far = reference("far", "float", camera);
-    const size = reference("mapSize", "vec2", shadow).x;
+    const near = shadowInput(reference("near", "float", camera));
+    const far = shadowInput(reference("far", "float", camera));
+    const size = shadowInput(reference("mapSize", "vec2", shadow)).x;
     // A [0, 1] perspective depth and its view depth.
     const distanceOf = (depth: Node<"float">) =>
       near.mul(far).div(far.sub(depth.mul(far.sub(near))));
@@ -530,9 +545,9 @@ export function sourceRadiusShadowFilter({
         return visibility;
       })();
     }
-    const tanHalf = uniform(1).onRenderUpdate(
-      () => Math.tan((camera.fov * Math.PI) / 360) / camera.zoom,
-    );
+    const tanHalf = uniform(1)
+      .setGroup(renderGroup)
+      .onRenderUpdate(() => Math.tan((camera.fov * Math.PI) / 360) / camera.zoom);
     const uvPerTangent = float(0.5).div(tanHalf);
     const sizes = vec2(size);
     const load = (uv: Node<"vec2">) =>
