@@ -262,6 +262,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 6,
+      "at": "2026-10-29T20:47:02.611Z",
+      "commit": "core@0.3.7",
+      "label": "animation reads are engine fields",
+      "decision": "keep",
+      "notes": "09598f35a: census 3696->1400 crossings/frame (plainShadow); threaded engine on (3)",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 98.45,
+      "windows": 6,
+      "metrics": {
+        "presentedP50Ms": 149.99,
+        "presentedP95Ms": 749.97,
+        "fps": 4.18,
+        "gpuP50Ms": 62.72,
+        "gpuP95Ms": 205.46,
+        "renderP50Ms": 50.5,
+        "updateP50Ms": 16.38,
+        "frameP50Ms": 73.79,
+        "frameP95Ms": 196.33,
+        "mainDraws": 1836,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 1871,
+        "loadMs": 2748,
+        "bridgeCrossingsP50": 3742,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
