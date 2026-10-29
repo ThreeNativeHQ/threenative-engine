@@ -314,6 +314,10 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     }
     if (view) wgpuTextureViewRelease(view);
     if (frame.texture) wgpuTextureRelease(frame.texture);
+    // A render target draw batches its submit until the next one that does not batch, so a target drawn last would
+    // leave the frame's serial off the queue: no work-done ever arrives, the gate declines every later frame, and
+    // nothing submits again (a timestamp readback each frame used to flush it). The frame's work goes now.
+    GpuResources::flushSubmits();
     frameGate.submitted(renderer->gpu().submittedSerial(), emscripten_get_now());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
