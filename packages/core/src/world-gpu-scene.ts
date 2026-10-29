@@ -2627,15 +2627,12 @@ export class WorldGpuScene {
       // into the previous frame's pyramid. Measured only, so the write below happens either way and
       // the indirect counts are develop's.
       const hidden = float(0).toVar();
-      if (this.#occlusion !== "off" && this.#pyramid.levels > 0)
+      if (this.#occlusion !== "off" && this.#pyramid.levels > 0) {
+        this.#occlusionView ??= uniform(this.#occlusionMatrix);
         hidden.assign(
-          this.#pyramid.occluded(
-            centre.xyz,
-            radius,
-            (this.#occlusionView ??= uniform(this.#occlusionMatrix)),
-            this.#occlusionCut,
-          ),
+          this.#pyramid.occluded(centre.xyz, radius, this.#occlusionView, this.#occlusionCut),
         );
+      }
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
         const key = keys.element(keyIndex);
