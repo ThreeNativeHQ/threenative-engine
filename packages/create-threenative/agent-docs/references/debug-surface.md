@@ -54,6 +54,9 @@ On web this global does not exist — do not probe for it in portable code.
 `TN_OPACITY_TRANSPARENT`: scene-entry console warning; the engine turned `transparent` on for visible materials with `opacity < 1` so the authored opacity takes effect. Override on the material: `alphaHash: true`, or `opacity: 1` for an opaque surface.
 `TN_OPACITY_IGNORED`: printed by a direct `renderTrapAudit(scene)` call for a material that still ignores its opacity.
 
+Markers print at the Verbose (`console.debug`) level in the browser console, so DevTools hides them
+by default; harnesses still receive them. Open the page with `?tnLog=1` to print them normally.
+
 ## Runner-side markers
 
 Two further globals are set by tooling, not the game, and are named here so a stray

@@ -317,6 +317,10 @@ tn_native_engine_test(tn-native-engine-tsl-material-accessors-test tests/native-
     native_engine_tsl_material_accessors_listed=every_accessor_is_listed)
 target_link_libraries(tn-native-engine-tsl-material-accessors-test PRIVATE tn_engine_abi)
 
+tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame_gate_test.cpp
+    native_engine_frame_gate_late_signal=late_signal_draws_every_frame
+    native_engine_frame_gate_gpu_behind=gpu_behind_is_declined
+    native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)

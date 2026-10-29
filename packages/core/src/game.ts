@@ -73,6 +73,7 @@ import {
   unlitFoliageWarning,
 } from "./profiling/unlit-foliage-warning.js";
 import { formatProjectionWindow } from "./projection-marker.js";
+import { installQuietMarkers, uninstallQuietMarkers } from "./quiet-markers.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
@@ -1088,6 +1089,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#started) return Promise.resolve();
     if (this.#pendingStart !== undefined) return this.#pendingStart;
     this.#aborted = false;
+    installQuietMarkers();
     const pendingStart = this.#boot().catch((error: unknown) => {
       this.#disconnectUi();
       throw error;
@@ -2550,6 +2552,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#aborted = true;
     this.#geometryCapture?.cancel("TN_GEOMETRY_CAPTURE_STOPPED: the game stopped mid-capture.");
     this.#teardown();
+    uninstallQuietMarkers();
   }
 
   #disposePlugin(plugin: IGamePluginHooks<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): void {
