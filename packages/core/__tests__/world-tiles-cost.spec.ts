@@ -6,6 +6,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   Object3D,
+  PerspectiveCamera,
   Vector3,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -758,6 +759,37 @@ describe("TerrainTiles validation", () => {
     } finally {
       unvalidated.dispose();
       validated.dispose();
+    }
+  });
+});
+
+describe("TerrainTiles build order", () => {
+  it("builds the tiles the camera faces before the ones behind it", () => {
+    const tiles = new TerrainTiles({
+      mergeTiles: false,
+      residentByteBudget: 100_000_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 9,
+      tileSize: 64,
+    });
+    // Looking down +x: the x = -1 column is wholly behind the camera.
+    const camera = new PerspectiveCamera();
+    camera.lookAt(1, 0, 0);
+    camera.updateMatrixWorld();
+    const view = { camera, viewportHeight: 720, maxPixelError: 1, hysteresis: 0.15 };
+    const order: string[] = [];
+    try {
+      for (let frame = 0; frame < 2000 && order.length < 9; frame += 1) {
+        tiles.follow({ x: 0, z: 0 }, { admit: () => false }, view);
+        for (const key of tiles.residentKeys) if (!order.includes(key)) order.push(key);
+      }
+      expect(order).toHaveLength(9);
+      expect(order.slice(-3).sort()).toEqual(["-1:-1", "-1:0", "-1:1"]);
+    } finally {
+      tiles.dispose();
     }
   });
 });

@@ -2622,6 +2622,22 @@ describe("WorldCells", () => {
     }
   });
 
+  it("samples a terrain tile at the heightmap's own spacing, not finer", async () => {
+    stubFixtureFetch();
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(0, 0),
+      loadModel: controlledLoader().load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    // 2 m data under 64 m tiles holds 32 segments; a 129-sample tile would interpolate 16x the work.
+    expect(manifest.terrain.spacing).toBe(2);
+    expect(terrainOf(world).tileResolution).toBe(manifest.cellSize / manifest.terrain.spacing + 1);
+    world.dispose();
+  });
+
   it("keeps terrain resident at its own radius while the cell ring stays at the ring", async () => {
     stubFixtureFetch();
     const follow = followAt(0, 0);

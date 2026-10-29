@@ -110,6 +110,16 @@ import {
 const PLACEMENT_RECORD_BYTES = 32;
 const PLACEMENT_RECORD_FLOATS = 8;
 const DEFAULT_TILE_RESOLUTION = 129;
+
+/**
+ * A terrain tile samples the heightmap at the heightmap's own spacing, no finer: a 0.5 m mesh over
+ * 2 m data interpolates sixteen times the work into the same ground. Rounded up to 2^n + 1 so every
+ * LOD factor divides it, never below 17 samples, and never above the fine default.
+ */
+function tileResolutionFor(tileSize: number, spacing: number): number {
+  const segments = 2 ** Math.ceil(Math.log2(Math.max(1, tileSize / spacing)));
+  return Math.min(DEFAULT_TILE_RESOLUTION, Math.max(17, segments + 1));
+}
 const CHUNK_NAME = "world-chunk";
 /**
  * Bytes one merged chunk group may hold: 4 MiB, which is where a single first-draw upload stops
@@ -370,6 +380,7 @@ export interface IWorldCellsBudget {
 /** Terrain options forwarded to the composed `TerrainTiles`; `tileSize` defaults to `cellSize`. */
 export interface IWorldCellsTerrainOptions {
   readonly tileSize?: number;
+  /** Samples per tile edge. Defaults to the heightmap's own spacing, rounded up to 2^n + 1, at most 129. */
   readonly tileResolution?: number;
   readonly lodFactors?: readonly number[];
   readonly lodDistances?: readonly number[];
@@ -4800,7 +4811,9 @@ export class WorldCells extends Group implements IComputeDriven {
       ),
       streamRadius,
       surface: init.surface,
-      tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
+      tileResolution:
+        init.terrain?.tileResolution ??
+        tileResolutionFor(init.terrain?.tileSize ?? this.#cellSize, init.manifest.terrain.spacing),
       tileSize: init.terrain?.tileSize ?? this.#cellSize,
     });
     this.#stream(this.#terrain);

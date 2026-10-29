@@ -2220,6 +2220,37 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#released;
   }
 
+  /**
+   * Tiles the camera faces are built before the ones wholly behind it, each side still nearest
+   * first, so what is on screen fills in before what is not. The tile under construction keeps its
+   * place. A camera looking straight down has nothing behind it and changes nothing.
+   */
+  #buildFacingFirst(missing: Array<{ tileX: number; tileZ: number }>): void {
+    const camera = this.#lodView?.camera;
+    if (camera === undefined || missing.length < 2) return;
+    const m = camera.matrixWorld.elements;
+    // A camera looks down its local -z; elements 8 and 10 are that axis in world x and z.
+    const forwardX = -(m[8] as number);
+    const forwardZ = -(m[10] as number);
+    const length = Math.hypot(forwardX, forwardZ);
+    if (length < 1e-3) return;
+    const eyeX = m[12] as number;
+    const eyeZ = m[14] as number;
+    // Half a tile's diagonal: a centre further behind than this puts the whole tile behind.
+    const reach = (this.tileSize * Math.SQRT2) / 2;
+    const behind = (candidate: { tileX: number; tileZ: number }): boolean =>
+      ((candidate.tileX * this.tileSize - eyeX) * forwardX +
+        (candidate.tileZ * this.tileSize - eyeZ) * forwardZ) /
+        length <
+      -reach;
+    const first = missing[0];
+    const keep =
+      first !== undefined && keyFor(first.tileX, first.tileZ) === this.#construction?.key ? 1 : 0;
+    const rest = missing.splice(keep);
+    for (const candidate of rest) if (!behind(candidate)) missing.push(candidate);
+    for (const candidate of rest) if (behind(candidate)) missing.push(candidate);
+  }
+
   get residentTileCount(): number {
     return this.#resident.size;
   }
@@ -2436,6 +2467,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         missing.unshift(candidate);
       else missing.push(candidate);
     }
+    this.#buildFacingFirst(missing);
     // Even an already-spent allowance advances one chunk of pending work, starting nearest first.
     // The progress floor closes the ring without forcing an entire tile through one frame.
     let built = 0;
