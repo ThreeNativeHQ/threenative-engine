@@ -2780,7 +2780,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 (item.positionNode || item.nodes.positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             Box3 bounds;
-            if (item.positions->scalar() == Scalar::F32) {
+            // A rig's box comes from its bones (O(bones)); skinning each vertex on the CPU here cost the
+            // stress lab's 120-rig crowd about 760 ms a frame.
+            const auto* rig = item.boneMatrices && !item.morphGeometry && item.shadowObject && item.shadowObject->type() == "SkinnedMesh"
+                ? static_cast<const SkinnedMesh*>(item.shadowObject) : nullptr;
+            if (rig && rig->boneReachBounds(bounds)) {
+            } else if (item.positions->scalar() == Scalar::F32) {
                 for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
                     float p[3]; item.positions->read(idx * 4, p, sizeof(p));
                     Vector3 vertex(p[0], p[1], p[2]);
