@@ -125,6 +125,33 @@ bodies, fires and a virtual shadow map at the same time. Every row is in `docs/s
 - Insight: `renderPrepared` runs about 25 times a frame here; per-call checkpoints with a per-call threshold hid a
   70 ms total. Keep running totals and difference them per frame.
 
+### 2026-10-29 — A quaternion write syncs its object's rotation in JS — KEEP
+- Where: three-native `eulerFromQuaternion` (`browser-backend.ts`), `d679189ff`.
+- Cause: three's `Quaternion._onChangeCallback` called `Euler.setFromQuaternion` in the engine, one crossing per body
+  per frame; physics interpolation writes every body's quaternion (census: 1,732 a frame).
+- Fix: the bridge runs Euler.cpp's formulas and writes the lanes. The engine's `ieee754.h` is V8's fdlibm, so
+  `Math.asin`/`Math.atan2` give the same bits; the spec checks all six orders and gimbal lock against three.
+- Result: census 1,732 -> 0 a frame. Frame time not resolved: host load about 22 while a Codex lane linked.
+
+### 2026-10-29 — Animation reads are engine fields — KEEP
+- Where: `registerAnimationAction`/`registerAnimationMixer` `b.fields` (`bindings_scene.cpp`), `09598f35a`.
+- Cause: `AnimationPlayer.update` reads `action.timeScale`, `action.paused` and `mixer.timeScale` every frame; each
+  was a crossing (445 + 330 + 360 a frame).
+- Fix: declare them as fields; the generic `fastGetter` reads Wasm memory. Count offsets from the first member of a
+  pointer-free block (`&time`): the registry is dumped by a 64-bit build and read by wasm32. A `static_assert`
+  pins the block.
+- Result: census 3,696 -> 1,400 crossings a frame (plainShadow). Next on the list: `Mesh.updateMatrix` 300,
+  `SkinnedMesh.__tnVisibleInWorld` 240, `setEffectiveTimeScale` 174, `Group.getWorldPosition` 120.
+
+### 2026-10-29 — Worker threads forced on, web and native — KEEP (contract); no frame win yet
+- Where: `web-engine.ts` (`4de07760e`), `job_pool.cpp` (`9634ebf03`). Owner order: "just force all to use worker
+  threads".
+- Web pages load only `tn-native-engine-web-threads`; no isolation or no worker throws `TN_WEB_THREADS_OFF`, a missing
+  module `TN_WASM_THREADS_MISSING`. Native: `TN_JOB_WORKERS=0` throws `TN_JOB_WORKERS_OFF`; the default is 1-3 workers.
+- Insight: the pool runs one job only, the world-matrix walk (`object3d.cpp`). Threads on does not move the frame
+  until the hot CPU loops (VSM pages, shadow build, per-pass culling) run on `JobPool::shared().forEach`. Lift the
+  3-worker cap only after that work exists and an A/B shows it pays.
+
 ## 2026-10-28 RTS kit probe (Chrome DevTools trace, web Wasm engine, real display)
 
 ### 2026-10-28 — RTS HUD panels re-render only when a shown value changes — KEEP
