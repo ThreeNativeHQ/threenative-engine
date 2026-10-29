@@ -147,6 +147,7 @@ export class Play extends Scene<GameState, undefined> {
   #found: number[] = [];
   #kinds = new Uint8Array(ORDER_KINDS.length);
   #mode = "";
+  #edgeScroll = true;
   #pointerSeen = false;
   #accumulator = 0;
   /** The engine tick the rules clock is fed in, and the camera position before the latest one. */
@@ -363,8 +364,14 @@ export class Play extends Scene<GameState, undefined> {
     const at = raw.pointer.position;
     if (at.x !== 0 || at.y !== 0) this.#pointerSeen = true;
     // Edge scroll: the cursor within `EDGE` pixels of the frame pans, but never while it is
-    // pressing something — a drag that reached the edge was a drag, not a scroll.
-    if (this.#pointerSeen && raw.pointer.buttons === 0 && this.#drag === undefined) {
+    // pressing something — a drag that reached the edge was a drag, not a scroll — and never once
+    // the top bar's toggle has turned it off, which is what the button is for.
+    if (
+      this.#edgeScroll &&
+      this.#pointerSeen &&
+      raw.pointer.buttons === 0 &&
+      this.#drag === undefined
+    ) {
       if (at.x < EDGE) panRts(view, -speed, 0);
       else if (at.x > size.width - EDGE) panRts(view, speed, 0);
       else if (at.y < EDGE) panRts(view, 0, -speed);
@@ -548,6 +555,10 @@ export class Play extends Scene<GameState, undefined> {
         break;
       case "base":
         this.#focusBase(sim);
+        break;
+      case "edge":
+        this.#edgeScroll = !this.#edgeScroll;
+        this.#notice = this.#edgeScroll ? "Edge scrolling enabled." : "Edge scrolling disabled.";
         break;
       case "order":
         this.#mode = value;
@@ -744,6 +755,7 @@ export class Play extends Scene<GameState, undefined> {
     patch.gathered = sim.gathered;
     patch.gas = Math.floor(sim.resources.gas);
     patch.kills = sim.kills;
+    patch.edgeScroll = this.#edgeScroll;
     patch.mode = this.#mode;
     patch.ore = Math.floor(sim.resources.ore);
     patch.primaryBuilt = primary?.built ?? true;

@@ -75,6 +75,7 @@ function TopBar() {
     s.supplyCap,
     Math.floor(s.simTime / 20),
     s.paused,
+    s.edgeScroll,
   ]);
   const send = useUiIntent();
   const [help, setHelp] = useState(false);
@@ -128,6 +129,18 @@ function TopBar() {
           </Resource>
         </div>
         <div className="top-actions">
+          <button
+            aria-label={state.edgeScroll ? "Disable edge scrolling" : "Enable edge scrolling"}
+            aria-pressed={state.edgeScroll}
+            className={`tiny-button text-button ${state.edgeScroll ? "active" : ""}`}
+            data-tn-interactive
+            data-testid="edge-scroll"
+            onClick={() => send("edge")}
+            title="Toggle edge scrolling"
+            type="button"
+          >
+            ↔
+          </button>
           <button
             aria-label="Open the field manual"
             className="tiny-button"

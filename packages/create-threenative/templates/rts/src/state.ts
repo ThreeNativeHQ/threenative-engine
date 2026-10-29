@@ -68,6 +68,8 @@ export type GameState = {
   dragCount: number;
   /** Set from the UI's pause and resume intents, and read back by the menu. */
   paused: boolean;
+  /** Whether a cursor at the frame's edge pans the camera; the top bar's `↔` toggles it. */
+  edgeScroll: boolean;
   /** True once the UI layer has rendered and published its interactive rectangles. */
   uiReady: boolean;
   /** The selection card: summed health, how many fly, distinct types, and the roster tiles. */
@@ -109,6 +111,7 @@ export const INITIAL_STATE: GameState = {
   cameraZ: 0,
   dragBox: null,
   dragCount: 0,
+  edgeScroll: true,
   gathered: 0,
   gas: 0,
   kills: 0,
