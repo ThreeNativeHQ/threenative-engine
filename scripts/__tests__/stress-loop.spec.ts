@@ -89,6 +89,7 @@ describe("stress-loop", () => {
     expect(html).toContain("Stress lab");
     for (const goal of GOALS as { label: string }[]) expect(html).toContain(goal.label);
     expect(html).toContain("JS↔Wasm crossings");
+    expect(html).toContain(`http-equiv="refresh"`);
     expect(html).toContain("1390 /frame");
     expect(html).toContain("stress &quot;max&quot; &amp; &lt;real&gt;");
     expect(html).toContain("<svg");

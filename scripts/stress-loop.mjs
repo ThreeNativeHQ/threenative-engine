@@ -232,7 +232,7 @@ export function renderHtml(ledger, now = new Date()) {
       ? PENDING
       : `Latest iteration #${latest.id} of ${rows.length}: ${latest.preset} on ${latest.adapter} at ${latest.viewport}.`;
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="15"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Stress lab</title>
 <style>
 :root{--bg:#fafaf7;--fg:#1d1d1b;--dim:#6b6b66;--card:#fff;--line:#d9d9d2;--accent:#2f6fed;--ok:#1a8f4c;--miss:#c4452d;--goal:#b7791f}
