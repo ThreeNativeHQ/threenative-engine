@@ -259,6 +259,31 @@ describe("bridge reads the back end keeps", () => {
     expect(count("call AnimationAction.isScheduled")).toBe(3);
   });
 
+  it("reads an action's timeScale, paused, time and weight and the mixer's timeScale in place, no crossing", () => {
+    const { Group, Mixer, count } = scene();
+    const mixer = new Mixer(new Group()) as unknown as {
+      timeScale: number;
+      clipAction(clip: string): object;
+    };
+    const action = mixer.clipAction("walk") as {
+      timeScale: number;
+      paused: boolean;
+      time: number;
+      weight: number;
+    };
+    // An AnimationPlayer reads these on every action every frame.
+    for (let frame = 0; frame < 200; frame++) {
+      void action.timeScale;
+      void action.paused;
+      void action.time;
+      void action.weight;
+      void mixer.timeScale;
+    }
+    for (const property of ["timeScale", "paused", "time", "weight"])
+      expect(count(`get AnimationAction.${property}`)).toBe(0);
+    expect(count("get AnimationMixer.timeScale")).toBe(0);
+  });
+
   it("keeps the labels through a transform-only method, a setter of another property and a same-value write", () => {
     const { Light, Group, count } = scene();
     const key = new Light(0xffffff, 3) as ILight & {

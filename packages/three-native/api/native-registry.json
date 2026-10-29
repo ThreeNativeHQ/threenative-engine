@@ -201,6 +201,7 @@
         "warp"
       ],
       "getters": [
+        "__address",
         "clampWhenFinished",
         "enabled",
         "loop",
@@ -228,7 +229,13 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {}
+      "fields": {
+        "enabled": [33, 0],
+        "paused": [32, 0],
+        "time": [0, 1],
+        "timeScale": [8, 1],
+        "weight": [16, 1]
+      }
     },
     "AnimationClip": {
       "constructor": true,
@@ -264,7 +271,7 @@
       "callbacks": [],
       "events": ["finished", "loop"],
       "fixedMembers": [],
-      "fields": { "time": [0, 1] }
+      "fields": { "time": [0, 1], "timeScale": [8, 1] }
     },
     "BatchedMesh": {
       "constructor": true,
