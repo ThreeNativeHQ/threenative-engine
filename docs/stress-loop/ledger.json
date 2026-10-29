@@ -748,6 +748,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 15,
+      "at": "2026-10-29T23:41:32.957Z",
+      "commit": "core@0.3.7",
+      "label": "F3+F8 caster bounds on pool + bone hash set (rejected)",
+      "decision": "reject",
+      "notes": "perf/stress-fix-c; paired with develop 22.77 fps, same JS: 21.98 fps, render p50 27.6 vs 26.8. F8 removed the 61M-comparison loop, but pooled bounds give no gain (the fixture ran 0 units on workers)",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 60.67,
+      "windows": 12,
+      "metrics": {
+        "presentedP50Ms": 33.35,
+        "presentedP95Ms": 83.33,
+        "fps": 21.98,
+        "gpuP50Ms": 5.9,
+        "gpuP95Ms": 61.01,
+        "renderP50Ms": 27.57,
+        "updateP50Ms": 7.49,
+        "frameP50Ms": 36.88,
+        "frameP95Ms": 77.63,
+        "mainDraws": 1782,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 3159,
+        "loadMs": 1756,
+        "bridgeCrossingsP50": 1300,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
