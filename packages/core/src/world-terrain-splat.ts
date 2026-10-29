@@ -300,13 +300,22 @@ function stackUncompressed(
     return undefined;
   const size = gpuSize(maps[0] as Texture);
   if (size === undefined) return undefined;
+  const first = maps[0] as Texture;
+  // A copy needs copy-compatible formats: a layer a dev server already cooked to a compressed
+  // codec cannot land in an uncompressed array, and WebGPU rejects the whole command buffer.
   const sameSize = maps.every((map) => {
     const other = gpuSize(map);
-    return other !== undefined && other.width === size.width && other.height === size.height;
+    return (
+      other !== undefined &&
+      other.width === size.width &&
+      other.height === size.height &&
+      (map as CompressedTexture).isCompressedTexture !== true &&
+      map.format === first.format &&
+      map.type === first.type
+    );
   });
   if (!sameSize) return undefined;
 
-  const first = maps[0] as Texture;
   const array = new DataArrayTexture(
     new Uint8Array(size.width * size.height * 4 * maps.length),
     size.width,

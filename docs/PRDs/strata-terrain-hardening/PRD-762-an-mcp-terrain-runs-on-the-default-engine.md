@@ -32,6 +32,7 @@ spec.
 
 - [x] mat4 uniform: `WorldGpuScene` builds its occlusion-view uniform on first kernel use, not in a class field. proof: `world-gpu-scene-engine-uniforms.spec.ts` fails without the change and passes with it; `world-gpu-scene.spec.ts` plus the new spec: 106/106 pass; core `tsc` 0 errors.
 - [ ] Array textures: the terrain splat and its stacked layers draw on the Wasm engine. proof: a three-native spec, then the sandbox past `loadTerrainSplat`
+- [x] Splat stacking refuses a layer set that mixes a cooked (BC7) layer with a raw one, instead of a copy WebGPU rejects (seen on the sandbox in dev). proof: new `world-terrain-splat.spec.ts` case red without the fix (1 failed), green with it (46/46).
 - [ ] Every later refusal on this path, each with its own box as it is found. proof: the sandbox log names the next refusal, or none
 - [ ] The sandbox game starts on the default engine from the MCP snippet, with no game edit. proof: headed WebGPU, adapter checked, `TN_STARTUP_READY`.
 

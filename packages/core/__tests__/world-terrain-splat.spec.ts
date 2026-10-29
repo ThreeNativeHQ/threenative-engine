@@ -1100,4 +1100,17 @@ describe("stackLayers", () => {
     expect(stackLayers([bitmap(4, 4), bitmap(8, 8)], copyingRenderer() as never)).toBeUndefined();
     expect(stackLayers([bitmap(4, 4), bitmap(4, 4)])).toBeUndefined();
   });
+
+  it("refuses an uncompressed first layer with a compressed one after it, copying nothing", () => {
+    // A dev server cooks some layers to KTX2 before others: WebGPU rejects a BC7 -> RGBA8 copy.
+    const renderer = copyingRenderer();
+    const compressed = new CompressedTexture(
+      [{ data: new Uint8Array(16), height: 4, width: 4 }] as never,
+      4,
+      4,
+      1023 as never,
+    );
+    expect(stackLayers([bitmap(4, 4), compressed], renderer as never)).toBeUndefined();
+    expect(renderer.layers).toEqual([]);
+  });
 });
