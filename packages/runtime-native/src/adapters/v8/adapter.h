@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <memory>
 #include <set>
 #include <string>
@@ -36,6 +37,7 @@ public:
      * value passed to a native call is copied across. Call before install; off by default. install throws
      * std::runtime_error when the build embeds no math script.
      */
+    void enableGcTelemetry();
     void setJsMath(bool on) { jsMath_ = on; }
     bool jsMath() const { return jsMath_; }
     /** The JS math bridge, or null while JS math is off. */
@@ -95,6 +97,10 @@ private:
     void strong(Wrapper* wrapper);
     void weak(Wrapper* wrapper);
     static void promote(v8::Isolate* isolate, v8::GCType type, v8::GCCallbackFlags flags, void* data);
+    static void gcStarted(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data);
+    static void gcFinished(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data);
+    bool gcTelemetry_ = false;
+    std::chrono::steady_clock::time_point gcStarted_{};
     static tn_status_t invokeCallback(void* context, const tn_value_t* args, uint32_t count, char* error,
                                       uint32_t capacity);
     static void setCallback(const v8::FunctionCallbackInfo<v8::Value>& info);

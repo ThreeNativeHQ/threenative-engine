@@ -187,6 +187,8 @@ afterEach(() => {
   host.__THREENATIVE_BRIDGE_CACHE__ = undefined;
   host[ENGINE_COST_KNOB as "__THREENATIVE_ENGINE_COST__"] = undefined;
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("bridge reads the back end keeps", () => {
@@ -455,6 +457,8 @@ describe("the engine cost totals", () => {
         clock.ms += 16;
       }
       vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
       return lines.filter((line) => line.startsWith(BRIDGE_CENSUS_MARKER));
     };
     expect(run(false)).toEqual([]);
@@ -466,5 +470,79 @@ describe("the engine cost totals", () => {
     expect(census.crossings).toBe(2);
     expect(census.top[0]).toMatchObject({ name: "get DirectionalLight.intensity", perFrame: 2 });
     expect(census.top[0]?.caller).toContain("readTwice");
+  });
+});
+
+describe("debug hierarchy counter producer", () => {
+  it("converts native elapsed microseconds to monotonic milliseconds across a low-word rollover", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const engine = sceneRuntime({ ms: 0 });
+    const get = engine.runtime.get;
+    engine.runtime.get = (self, property) =>
+      property === "__engineCounters" ? "pipelineCompileMicros@80" : get(self, property);
+    const browser = defineBrowserClasses(registry, engine.runtime, catalog);
+    const Group = browser.classes.Group as new () => object;
+    new Group();
+    engine.words[20] = 0xffffffff;
+    const before = browser.counters().pipelineCompileMs;
+    engine.words[20] = 1;
+    engine.words[21] = 1;
+    expect(browser.counters().pipelineCompileMs).toBeCloseTo((before ?? 0) + 0.002, 6);
+    expect(browser.counters()).not.toHaveProperty("pipelineCompileMicros");
+  });
+
+  it("reads full debug byte totals coherently when the high word changes during a read", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const engine = sceneRuntime({ ms: 0 });
+    const get = engine.runtime.get;
+    engine.runtime.get = (self, property) =>
+      property === "__engineCounters" ? "bufferUploadBytes@80" : get(self, property);
+    let highReads = 0;
+    const readWord = engine.runtime.readWord;
+    engine.runtime.readWord = (address) => {
+      if (address === 84) return highReads++ === 0 ? 0 : 1;
+      if (address === 80) return highReads === 1 ? 0xffffffff : 1;
+      return readWord?.(address) ?? 0;
+    };
+    const browser = defineBrowserClasses(registry, engine.runtime, catalog);
+    const Group = browser.classes.Group as new () => object;
+    new Group();
+    expect(browser.counters().bufferUploadBytes).toBe(0x100000001);
+    expect(highReads).toBe(4);
+  });
+
+  it("keeps off counter reads on the original low-word census", () => {
+    vi.stubEnv("TN_DEBUG", "0");
+    const engine = sceneRuntime({ ms: 0 });
+    const read = vi.spyOn(engine.runtime, "readWord");
+    const browser = defineBrowserClasses(registry, engine.runtime, catalog);
+    const Group = browser.classes.Group as new () => object;
+    new Group();
+    read.mockClear();
+    browser.counters();
+    expect(read.mock.calls).toEqual([[HIERARCHY], [COMPOSES]]);
+  });
+
+  it("enables native totals once and retains repeated hierarchy reads and wrapper population", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const graph = scene();
+    const root = new graph.Group();
+    const child = new graph.Group();
+    root.add(child);
+    const first = root.children;
+    expect(root.children).toBe(first);
+    root.traverse(() => {});
+    root.traverse(() => {});
+    const totals = graph.counters();
+    expect(graph.count("set Group.__debugTelemetry")).toBe(1);
+    expect(totals).toMatchObject({
+      childrenReads: 2,
+      walkVisits: 2,
+      bridgeWrappersCreated: 2,
+      bridgeLiveWrappers: 2,
+      hierarchyMoves: 1,
+    });
+    expect(totals.bridgeWrapRequests).toBeGreaterThan(0);
+    expect(totals.bridgeGetCrossings).toBeGreaterThan(0);
   });
 });

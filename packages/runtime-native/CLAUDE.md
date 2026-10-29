@@ -112,6 +112,20 @@ remain open.
 
 ## Gates and evidence
 
+`TN_DEBUG=1` before host boot enables the shared C++ debug counters and forwards the debug request
+to game JavaScript. Browser boot uses `?tnDebug=1` or `globalThis.__THREENATIVE_DEBUG__ = true`.
+`foundation/waste_counters.h` owns the cumulative producer totals; Wasm and native JS expose the
+same names to core's `TN_FRAME_BUDGET.counters.engine` reader. Counts/bytes carry no inferred CPU
+cost. Queue/gate declines, asynchronous timestamp resolves and completion delivery retain their
+own semantics; completion delivery delay is not GPU time. Keep debug-off census behavior intact.
+Counter unit tests or a shared snapshot alone establish no desktop/Android execution claim.
+The owned-renderer adapters currently reject Android/iOS; keep that parity gap explicit rather
+than reporting zero C++ counters from the legacy renderer. Created/freed resource bytes count
+activity since debug activation, not the inventory of allocations made before it.
+Native V8 debug activation installs GC pause callbacks and removes them at shutdown; expose
+`gcPauses` and `gcPauseMs` only where measured. Keep diagnostic GC callbacks and clocks out of
+debug-off execution.
+
 `docs/G1-desktop-host.md` … `G5-profiling.md` are the evidence record. Update the affected
 file whenever a native run changes a gate — a gate result that lives only in a commit message
 does not exist.

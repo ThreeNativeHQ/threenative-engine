@@ -9,6 +9,7 @@
 
 import type { IGamePlatformSource } from "./game.js";
 import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
+import { countDebug, debugRequested } from "./profiling/debug-telemetry.js";
 import { markerLogRequested } from "./quiet-markers.js";
 import { GAME_STATE_MESSAGE } from "./ui-bridge.js";
 import { createRemoteAudioContext, serveRemoteAudio } from "./worker-audio.js";
@@ -137,6 +138,53 @@ function isStateFrame(frame: unknown): frame is string {
   return typeof frame === "string" && frame.startsWith(STATE_FRAME_PREFIX);
 }
 
+/** Shallow primitive payload estimate only: excludes clone headers, nested objects and transfers. */
+function debugWorkerMessage(name: string, payload: unknown): void {
+  let bytes = 0;
+  let unmeasured = 0;
+  const primitive = (value: unknown): void => {
+    if (typeof value === "string") bytes += value.length * 2;
+    else if (typeof value === "number") bytes += 8;
+    else if (typeof value === "boolean") bytes += 1;
+    else if (value !== undefined && value !== null) unmeasured++;
+  };
+  if (typeof payload === "object" && payload !== null) {
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(payload))) {
+      bytes += key.length * 2;
+      if ("value" in descriptor) primitive(descriptor.value);
+      else unmeasured++; // Observing traffic must not invoke a payload's getter.
+    }
+  } else primitive(payload);
+  const area = name.startsWith("workerUi") ? "ui" : "worker";
+  const caller = `worker.ts:${name} (shallow primitive payload; nested/transfer bytes unavailable)`;
+  countDebug(`${name}Messages`, 1, area, caller);
+  countDebug(`${name}EstimatedBytes`, bytes, area, caller, "estimated-bytes");
+  countDebug(`${name}UnmeasuredFields`, unmeasured, area, caller);
+  countDebug(`${name}UnmeasuredMessages`, unmeasured > 0 ? 1 : 0, area, caller);
+}
+
+/** Times the synchronous postMessage call, including clone/enqueue, not delivery or receiver work. */
+function debugWorkerPost(
+  name: string,
+  target: { postMessage(data: unknown): void },
+  payload: unknown,
+): void {
+  const started = performance.now();
+  try {
+    target.postMessage(payload);
+  } finally {
+    const elapsed = performance.now() - started;
+    debugWorkerMessage(name, payload); // Counts attempted dispatches, even a refused clone.
+    countDebug(
+      `${name}DispatchMs`,
+      elapsed,
+      name.startsWith("workerUi") ? "ui" : "worker",
+      `worker.ts:${name}.postMessage (synchronous attempt)`,
+      "ms",
+    );
+  }
+}
+
 /**
  * The game end of the UI bridge, live before the page's port arrives.
  *
@@ -148,14 +196,20 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
   const existing = scope.__tnWorkerUi as { attach(port: MessagePort): void } | undefined;
   if (existing !== undefined) return existing;
   let port: MessagePort | undefined;
+  let debug = debugRequested();
   const outbound: unknown[] = [];
   const inbound: unknown[] = [];
   let snapshot: string | undefined;
   let snapshotPending = false;
+  const post = (frame: unknown): void => {
+    if (port === undefined) return;
+    if (debug) debugWorkerPost("workerUiPost", port, frame);
+    else port.postMessage(frame);
+  };
   const flushSnapshot = (): void => {
     if (port === undefined || snapshotPending || snapshot === undefined) return;
     snapshotPending = true;
-    port.postMessage(snapshot);
+    post(snapshot);
     snapshot = undefined;
   };
   let receive = scope.__tnUiGameReceive as ((frame: unknown) => void) | undefined;
@@ -172,13 +226,15 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
       snapshot = frame;
       flushSnapshot();
     } else if (port === undefined) outbound.push(frame);
-    else port.postMessage(frame);
+    else post(frame);
   };
   scope.__tnUiOverlayAttached = () => true;
   const held = {
     attach(next: MessagePort): void {
       port = next;
+      debug = debugRequested();
       next.onmessage = (event: MessageEvent) => {
+        if (debug) debugWorkerMessage("workerUiReceived", event.data);
         if (event.data?.type === "tn-worker-ui-ack") {
           snapshotPending = false;
           flushSnapshot();
@@ -187,7 +243,7 @@ function holdUiBridge(scope: Record<string, unknown>): { attach(port: MessagePor
         if (typeof receive === "function") receive(event.data);
         else inbound.push(event.data);
       };
-      for (const frame of outbound.splice(0)) next.postMessage(frame);
+      for (const frame of outbound.splice(0)) post(frame);
       flushSnapshot();
     },
   };
@@ -219,8 +275,12 @@ export function serveWorkerGame(
   const size = { dpr: 1, height: 1, width: 1 };
   let canvas: OffscreenCanvas | undefined;
   let gamepads: (WorkerGamepad | null)[] = [];
+  let debug = debugRequested();
 
-  const post = (message: WorkerOutbound): void => scope.postMessage(message);
+  const post = (message: WorkerOutbound): void => {
+    if (debug) debugWorkerPost("workerPost", scope, message);
+    else scope.postMessage(message);
+  };
   const ui = holdUiBridge(scope);
 
   const initialise = async (message: IWorkerInitMessage): Promise<void> => {
@@ -375,6 +435,9 @@ export function serveWorkerGame(
 
   const onMessage = (event: Event): void => {
     const message = (event as MessageEvent).data as WorkerInbound;
+    if (message.type === "tn-worker-init" && message.globals.__THREENATIVE_DEBUG__ === true)
+      debug = true;
+    if (debug) debugWorkerMessage("workerReceived", message);
     switch (message.type) {
       case "tn-worker-init":
         void initialise(message);
@@ -630,6 +693,7 @@ export function startWorkerGame(
     }
     // The worker's own URL carries no `?tnLog`, so the page's answer travels as the global.
     if (markerLogRequested()) globals.__THREENATIVE_LOG__ = true;
+    if (debugRequested()) globals.__THREENATIVE_DEBUG__ = true;
     return globals;
   };
 
