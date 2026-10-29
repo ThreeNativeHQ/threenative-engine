@@ -168,6 +168,9 @@ const low: IWorldEnvironmentOptions = {
   finalGatherMethod: "none",
   localExposureEnabled: false,
   renderChainTier: "low",
+  // Single-sample, as medium: an unset count inherits the renderer's 4x MSAA, and the cheapest tier
+  // cost more than medium on a forest (Iris Xe 125 -> 158 ms at the switch, PRD-762).
+  samples: 0,
 };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };

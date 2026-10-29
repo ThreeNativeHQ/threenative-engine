@@ -147,6 +147,14 @@ it("gathers contact occlusion at half resolution on medium only, as Unreal's Med
   expect(qualityPreset("high").gtaoResolutionScale).toBeUndefined();
 });
 
+it("never multisamples the world on a cheaper tier than the one above it", () => {
+  // An unset count inherits the renderer's 4x MSAA. The adaptive loop stepped a forest from medium
+  // (single-sample) to low and the frame cost rose 125 -> 158 ms on an Iris Xe (PRD-762).
+  const samples = (tier: string) => qualityPreset(tier).samples ?? 4;
+  expect(samples("low")).toBeLessThanOrEqual(samples("medium"));
+  expect(samples("medium")).toBeLessThanOrEqual(samples("high"));
+});
+
 it("does not let an undefined option cancel the preset", () => {
   const { requested, target } = renderer("webgpu", { library: { addToneMapping() {} } });
   apply({ gtaoEnabled: undefined }, target);
