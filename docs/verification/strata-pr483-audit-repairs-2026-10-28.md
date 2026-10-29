@@ -155,3 +155,16 @@ F02's byte contract is green with the cap unchanged (`starter-kit.spec.ts`, fore
 4. **F10 — two pre-existing reds at this head**, unrelated to this pass and reproduced with the pass
    stashed: `world-cells-view-distance.spec.ts` ("moves the bodies with the follow point", 42 < 49
    bodies) and `world-impostor-surface.spec.ts` ("shadow cutout uses the view sampled alpha").
+
+## Forest stage hang and load time (2026-10-29)
+
+Measured in Chrome DevTools on `?world=forest&stage=after`, dev server, RTX 2080, 1880x880.
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Loader stuck at 50% | ✅ fixed | `AutoBatch` merged the `TerrainTiles` blocks and hid them, so the stage contact ray found no ground and threw every step. `TerrainTiles` sets `userData.batch = "off"`; `auto-batch.spec.ts` red (2 draws) then green (6). The stage contact ray now uses the kit ground's layer 1. |
+| Spawn ready time | ✅ 9.0 s -> 5.6 s | The baked JSON is fetched, not imported: `import()` of `horizon.json` took 2937 ms against 484 ms for fetch plus `JSON.parse`. The world package is now requested at 1.15 s, not 4.17 s. |
+| Standing at spawn | ✅ 60 FPS | GPU about 11 ms, CPU render about 2.8 ms, quiet GPU. |
+| Walking | ❌ open | 15 s holding W: p50 33.3 ms, p95 50 ms, max 433 ms. CPU render stays about 4 ms; GPU goes from 11 ms to 33-45 ms. |
+| GPU time grows after a walk | ❌ open, root cause unknown | Teleported back to the spawn after the walk: same 13 draws and 46k counted triangles, GPU 44.6 ms against 11 ms fresh. The frame counter misses the instanced bundles: the scene census at a fresh spawn shows about 35 M visible instanced triangles (fir bundles 18 M). Next: find what keeps GPU work after the player leaves (bundle instance counts, LOD selection, indirect draws). |
+| `scripts/check-temperate.mts` | ⚠️ red before this pass | Fails at `scatter.placements.map((one) => one.id)` on HEAD without these edits. |
