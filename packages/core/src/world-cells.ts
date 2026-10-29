@@ -110,6 +110,35 @@ import {
 const PLACEMENT_RECORD_BYTES = 32;
 const PLACEMENT_RECORD_FLOATS = 8;
 const DEFAULT_TILE_RESOLUTION = 129;
+
+/**
+ * A terrain tile samples the heightmap at the heightmap's own spacing, no finer: a 0.5 m mesh over
+ * 2 m data interpolates sixteen times the work into the same ground. Rounded up to 2^n + 1 so every
+ * LOD factor divides it, never below 17 samples, and never above the fine default.
+ */
+function tileResolutionFor(tileSize: number, spacing: number): number {
+  const segments = 2 ** Math.ceil(Math.log2(Math.max(1, tileSize / spacing)));
+  return Math.min(DEFAULT_TILE_RESOLUTION, Math.max(17, segments + 1));
+}
+
+/**
+ * The terrain LOD chain at that resolution. Each level keeps the fine default's spacing (129 samples
+ * at factors 1, 2, 4, switching at two and four tiles) as its floor: a level coarser than that would
+ * shrink far silhouettes, and levels that land on the same spacing are one level.
+ */
+function terrainLodFor(tileSize: number, spacing: number) {
+  const tileResolution = tileResolutionFor(tileSize, spacing);
+  const ratio = (tileResolution - 1) / (DEFAULT_TILE_RESOLUTION - 1);
+  const lodFactors: number[] = [];
+  const lodDistances: number[] = [];
+  [1, 2, 4].forEach((factor, index) => {
+    const scaled = Math.max(1, Math.round(factor * ratio));
+    if (scaled === lodFactors.at(-1)) return;
+    if (index > 0) lodDistances.push(tileSize * 2 ** index);
+    lodFactors.push(scaled);
+  });
+  return { lodDistances, lodFactors, tileResolution };
+}
 const CHUNK_NAME = "world-chunk";
 /**
  * Bytes one merged chunk group may hold: 4 MiB, which is where a single first-draw upload stops
@@ -370,6 +399,10 @@ export interface IWorldCellsBudget {
 /** Terrain options forwarded to the composed `TerrainTiles`; `tileSize` defaults to `cellSize`. */
 export interface IWorldCellsTerrainOptions {
   readonly tileSize?: number;
+  /**
+   * Samples per tile edge. Defaults to the heightmap's own spacing, rounded up to 2^n + 1, at most
+   * 129, with LOD levels no coarser than the fine default's; setting it or a LOD option keeps 129.
+   */
   readonly tileResolution?: number;
   readonly lodFactors?: readonly number[];
   readonly lodDistances?: readonly number[];
@@ -4777,15 +4810,28 @@ export class WorldCells extends Group implements IComputeDriven {
       "terrain.colliderRadius",
     );
     const tileCount = (2 * streamRadius + 1) ** 2;
+    const tileSize = init.terrain?.tileSize ?? this.#cellSize;
+    // A game that sets any of the three keeps the fine default for the rest.
+    const lod =
+      init.terrain?.tileResolution === undefined &&
+      init.terrain?.lodFactors === undefined &&
+      init.terrain?.lodDistances === undefined
+        ? terrainLodFor(tileSize, init.manifest.terrain.spacing)
+        : {
+            ...(init.terrain?.lodDistances === undefined
+              ? {}
+              : { lodDistances: init.terrain.lodDistances }),
+            ...(init.terrain?.lodFactors === undefined
+              ? {}
+              : { lodFactors: init.terrain.lodFactors }),
+            tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
+          };
     this.#terrain = new TerrainTiles({
       ...(init.createCollider === undefined
         ? {}
         : { colliderRadius, createCollider: init.createCollider }),
       receiveShadow: init.shadows?.receive === true,
-      ...(init.terrain?.lodDistances === undefined
-        ? {}
-        : { lodDistances: init.terrain.lodDistances }),
-      ...(init.terrain?.lodFactors === undefined ? {} : { lodFactors: init.terrain.lodFactors }),
+      ...lod,
       ...(init.terrain?.skirtDepth === undefined ? {} : { skirtDepth: init.terrain.skirtDepth }),
       // Sized from the terrain stream radius: the wanted square fits the tile budget. ponytail: no
       // terrain byte cap (a tile's bytes are deterministic from the radius, and the cells own the
@@ -4800,8 +4846,7 @@ export class WorldCells extends Group implements IComputeDriven {
       ),
       streamRadius,
       surface: init.surface,
-      tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
-      tileSize: init.terrain?.tileSize ?? this.#cellSize,
+      tileSize,
     });
     this.#stream(this.#terrain);
   }

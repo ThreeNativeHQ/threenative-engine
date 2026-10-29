@@ -673,6 +673,21 @@ export class AutoExposureNode extends TempNode<"float"> { … }
 const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
 ```
 
+### `bakeShoreWaves`
+
+`function` — Measure how a swell breaks along a coast: travel time from open water, front direction, shoaling and breaking crest height, from the bathymetry a terrain bake already has.
+
+```ts
+export function bakeShoreWaves( heights: ArrayLike<number>, resolution: number, size: number, level: number, options: IShoreWaveOptions, ): IShoreWaveField { … }
+```
+
+- **Use when:** make waves break on a beach · draw surf and breakers that refract around a headland · slow, bunch and steepen wave fronts as the water shallows toward the shore · find where a swell reaches and where a sea bar cuts it off · shade a shore by wave travel time instead of distance to land
+- **Constraints:** pure CPU and synchronous; it decides no colour, foam, period or wave shape · a front only arrives from the open-sea rim, so a closed lagoon has no breakers · travel is Infinity where no front arrives; mask by it, never by depth · the crest stops at 0.42 of the water depth under it, so a heightfield cannot fold
+
+```ts
+const shore = bakeShoreWaves(heights, columns, 512, seaLevel, { incidentHeight: 1.2 });
+```
+
 ### `baseGeometryOf`
 
 `function` — The full-detail geometry of a mesh the loader gave an automatic LOD chain. Selection swaps `mesh.geometry`, so a ray test or a collision body built from the current geometry would change with the camera. Framework picking and gameplay collide against this instead: the authored LOD0, which never changes as the camera moves.

@@ -134,6 +134,7 @@ filed for the gaps this map found (PRD-660 to PRD-683).
 | 5 | PRD-662 | Sky light stops at walls with GI off (DFAO on the BVH) | L6 | 6 | 2 | 0/6 | PRD-644 | Low-tier look |
 | 5 | PRD-663 | Local fog volumes | L3 | 4 | 1 | 0/6 | — | No fresh Unreal project places one |
 | 5 | PRD-667 | Lens flare and FFT bloom on request | L9 | 4 | 1 | 0/7 | PRD-636 | Off in a fresh Unreal project |
+| 5 | PRD-766 | Waves break on the shore; the camera sees from under the water (Water plugin depth fade and underwater view) | Look | 4 | 2 | 0/8 | — | Unreal only fades waves with depth; breakers come from Ultra-Water |
 | 5 | PRD-VQ-13 | Cinematic stage: depth of field | Look | 6 est. | 1 | 0/8 | — | Owns DOF; lacks the Unreal lens model |
 | 5 | PRD-664 | Smoke and explosions as lit volumes | VFX | 6 | 1 | 0/7 | — | Off at Unreal low and medium tiers |
 | 5 | PRD-660 | Many shadowed lamps, one fixed budget (MegaLights) | Perf | 8 | 1 | 0/8 | PRD-650 | Off in a fresh Unreal project |
