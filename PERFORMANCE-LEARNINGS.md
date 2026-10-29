@@ -598,3 +598,42 @@ no COOP/COEP); that lane is open.
   widened to 401 KB of doubles per refresh, timestamp readbacks every frame. Fixes on `fix/wasm-update-crossings`.
 - Insight: the existing bridge guard flags only redundant reads; writes and distinct reads passed silently
   (telemetry lane `feat/web-engine-debug-telemetry`).
+
+### 2026-10-29 — Stress lab: virtual shadow pages pick their casters on the job pool (F2) — KEEP
+- Where: `packages/runtime-native/src/engine/renderer/renderer.cpp` (`selectFace`), `128419fb5`.
+- Result: `sandbox/stress-lab` `main.html?stress` (4000 trees, 6000 rocks, 120 rigs, 300 bodies, 18000 particles,
+  16 lights), threaded Wasm, RTX 2080: 12.62 -> 16.33 fps on a loaded host, presented p95 150 -> 100 ms. Visual judge
+  NEUTRAL. Serial and pooled shadow plans are byte-identical over 20 frames (`native_engine_virtual_shadow_page_jobs`).
+- Insight: per-page caster filtering is read-only on the atlas (`isMover`, `drawsStatic`, `casterGate`, `overlaps` are
+  `const`), so each page filters into its own output and the caller merges in page order. Split only when
+  `passCount * opaque >= 16384` and never inside a job (`JobPool::inJob()`).
+- Revisit when: `kMaxWorkers` (3) rises; the page job is the first to scale with it.
+
+### 2026-10-29 — Stress lab: 660 bridge crossings a frame cut (hierarchy, visibility, matrix restores) — KEEP
+- Where: `packages/three-native/src/browser-backend.ts`, `packages/core/src/render-camera-cull.ts`,
+  `packages/core/src/interpolation.ts`, `object3d.h` flag block; `d9bfd2aa4`.
+- Result: same scene, develop core: 13.45 -> 14.03 fps, crossings p50 2520 -> 1838, frame p50 48.0 -> 45.4 ms. Judge
+  NEUTRAL.
+- Insight: three cuts: `__hierarchyRevision` is answered from the kept hierarchy (its only writer is `markHierarchy`);
+  the camera cull walks visibility in JS instead of one `visibleInWorld()` call per object; the interpolation restore
+  writes the `matrixWorldNeedsUpdate` byte in place instead of `updateMatrix()` through the bridge.
+- Revisit when: `setEffectiveTimeScale` (174 crossings) gets an engine "no interpolant" answer, and `getWorldPosition`
+  (120) has a field that is not one frame stale.
+
+### 2026-10-29 — Stress lab: most of the "12 fps" was host load, not the engine — KEEP (method)
+- Result: develop f3215f431 read 12-16 fps while the host load average was 10-75 (a full `vitest run` in another lane,
+  two fixer C++ builds, a stray capture tab). After a reboot, at load 2.2 on 16 threads, the same build read
+  **25.54 fps** (frame p50 31.1, render p50 24.0, update p50 6.5, GPU p50 5.8 ms).
+- Insight: the stress frame is CPU-bound on the main thread, so every busy core costs frame time. Measure only below a
+  1-minute load of about 8, with one stress page open, and compare arms back to back. `nice -n 19` on lane builds.
+- Revisit when: the frame becomes GPU-bound; then GPU sharing matters more than CPU load.
+
+### 2026-10-29 — Stress lab: shadow bounds on the job pool (F3) — REJECT, then root-caused
+- Where: `perf/stress-fix-c` 5b5991370, `renderer.cpp` virtual caster bounds per ownership unit.
+- Result: paired, same JS, only the Wasm differs, load 2.3: 25.54 -> 9.50 and 9.44 fps, render p50 24 -> 80 ms. The
+  pool itself ran in 1.5 ms. The cause (hunter H4): bone discovery ran `std::find` over the growing bone list for each
+  of 15,600 bone references (120 rigs x 65 bones, main and shadow copies): 60.84 million comparisons, 57-59 ms a frame.
+- Insight: a byte-identical red-green test proves output, not cost. A lever that adds per-frame bookkeeping over every
+  bone or object needs a work-count assertion (comparisons or visits per frame) that fails when the work scales with
+  the square of the scene. Fix (F8): an `unordered_set` beside the ordered vector.
+- Revisit when: F8 lands; measure F3+F8 against develop before F3 is kept.
