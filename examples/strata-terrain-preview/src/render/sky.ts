@@ -44,9 +44,9 @@ import { BIOMES, type IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
 import { installWaterProof, waterProofEnabled, waterProofMode } from "./waterProof.js";
 
-const omitted = new Set(
-  new URLSearchParams(globalThis.location?.search ?? "").get("off")?.split(",") ?? [],
-);
+const query = new URLSearchParams(globalThis.location?.search ?? "");
+const omitted = new Set(query.get("off")?.split(",") ?? []);
+const added = new Set(query.get("on")?.split(",") ?? []);
 
 /**
  * The sun, in the same units the `L` key swings it: a position, not a direction, so the toggle and
@@ -249,10 +249,10 @@ export function installOutdoorOcclusion(
   scene.fogNode = null;
   scene.fog = null;
   // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
-  // TRAA is the forest's anti-aliasing: sub-pixel blades and needles dither under coverage alone.
-  // It copies this pass's depth, which a multisampled target refuses. Other worlds keep MSAA until
-  // their own captures are judged.
-  const temporal = look.world === "forest" && !omitted.has("traa");
+  // 4x MSAA is the anti-aliasing: TRAA left every still pixel jittering (frame-to-frame change 20x
+  // MSAA's on a still camera). `?on=traa` is the opt-in; it needs a single-sample pass, since TRAA
+  // copies this pass's depth and a multisampled target refuses that.
+  const temporal = look.world === "forest" && added.has("traa");
   const world = pass(scene, camera, temporal ? { samples: 0 } : undefined);
   // Proof opt-in, coastal only: keep the 4x MSAA pass and add one resolved RGBA16F diagnostic
   // attachment. The forest's TRAA single-sample path is untouched.
