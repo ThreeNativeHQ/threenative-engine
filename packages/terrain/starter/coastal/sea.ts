@@ -91,6 +91,12 @@ export const SHORE = {
    * bake, so a four-metre shelf keeps its swell instead of fading it out over dry sand.
    */
   swellFadeDepth: undefined as number | undefined,
+  /**
+   * How fast the drawn sea floor falls away offshore, in metres per metre. A heightmap has no
+   * bathymetry past its flat shelf, so this is the look's own: it sets how wide the shallow tint
+   * runs before the open sea's colour, and where the breakers hand over to the swell.
+   */
+  shelfSlope: 0.08,
 } as const;
 
 /**
@@ -220,12 +226,8 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   const swell = vec2(swellX / swellLength, swellZ / swellLength);
   // Unreal's depth fade, at the depth this sea states: the modelled swell fades out where the
   // breakers take over. Land is dry, and the curve is only ever a fade, so a negative depth is clamped.
-  const swellFadeDepth =
-    SHORE.swellFadeDepth ??
-    Math.max(
-      2,
-      data.heights.reduce((deepest, height) => Math.max(deepest, level - height), 0),
-    );
+  const deepest = data.heights.reduce((deepest, height) => Math.max(deepest, level - height), 0);
+  const swellFadeDepth = SHORE.swellFadeDepth ?? Math.max(2, deepest);
   const shallower = (depth: Node<"float">): Node<"float"> =>
     float(1).sub(
       depth
@@ -238,6 +240,29 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   // edge from reading as a raised wall standing in the water.
   const edge = (x: Node<"float">, z: Node<"float">): Node<"float"> =>
     float(1).sub(smoothstep(data.size / 2 - 40, data.size / 2 - 2, x.abs().max(z.abs())));
+  // A heightmap holds no bathymetry, so its sea floor is a flat shelf out to the world's edge, and a
+  // tint read from it alone ends in a square where the open sea begins. The floor drawn here falls away
+  // from the coast at `SHORE.shelfSlope`, offshore distance measured by the bake's travel time (exact
+  // on the flat shelf), and keeps falling past the bake's edge, so the shelf ends along the coastline.
+  const shelfCelerity = Math.sqrt(SEA.gravity * Math.max(deepest, 0.25));
+  const floorDepth = (
+    x: Node<"float">,
+    z: Node<"float">,
+    surface: Node<"float">,
+    offshore = true,
+  ): Node<"float"> => {
+    const ground = texture(heightTexture, shoreUV(x, z));
+    const beyond = x
+      .abs()
+      .max(z.abs())
+      .sub(data.size / 2)
+      .max(0);
+    // Past the edge the ground the bake clamps to is the rim; dry rim still has sea beyond it.
+    const here = surface.sub(ground.r);
+    const rim = mix(here, here.max(0), smoothstep(0, 1, beyond));
+    const away = offshore ? ground.g.mul(shelfCelerity).add(beyond) : beyond;
+    return rim.add(away.mul(SHORE.shelfSlope));
+  };
 
   /**
    * The breakers at a world point, read from the bake's front fields. One front, two trains on it: the
@@ -260,7 +285,12 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
       .mul(0.4)
       .add(0.7);
     const offset = mx_noise_float(vec3(x.mul(0.0042), z.mul(0.0042), 0)).mul(5);
-    const crest = front.b.mul(ground.b).mul(local).mul(exposure).mul(group);
+    // A front feels the floor from about a quarter wavelength in; past that the simulated swell is the
+    // sea, so the breakers hand over offshore instead of marching on to the bake's edge.
+    const feelsFloor = float(1).sub(
+      smoothstep(SHORE.wavelength / 8, SHORE.wavelength / 4, floorDepth(x, z, seaLevel)),
+    );
+    const crest = front.b.mul(ground.b).mul(local).mul(feelsFloor).mul(exposure).mul(group);
     // The celerity the crest's *shape* uses is floored at a depth the mesh can draw: a swarm of
     // two-metre crests on a two-metre mesh is a scalloped smear, not a wave. The bake's own physics
     // still decides where a front reaches and how tall it stands; only the shape is band-limited.
@@ -355,11 +385,9 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   // it at the displaced position double-exposes the foam and smears the face. One varying, both stages.
   const shorePoint = varying(positionLocal.xz, "vShorePoint");
   const vertexFront = breakers(shorePoint.x, shorePoint.y);
-  const vertexDepth = mix(
-    float(28),
-    seaLevel.sub(texture(heightTexture, shoreUV(positionLocal.x, positionLocal.z)).r),
-    inside(positionLocal.x, positionLocal.z),
-  );
+  // The swell fades on the bathymetry itself, so a trough never dips below a sandbar; only past the
+  // bake's edge, where there is none, does it read the drawn floor.
+  const vertexDepth = floorDepth(positionLocal.x, positionLocal.z, seaLevel, false);
   const vertexDistance = positionLocal.xz.sub(cameraPosition.xz).length();
   const swellFade = float(1).sub(smoothstep(240, 1600, vertexDistance));
   material.positionNode = positionLocal.add(
@@ -392,7 +420,7 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   );
   const ground = texture(heightTexture, shoreUV(positionWorld.x, positionWorld.z));
   const local = inside(positionWorld.x, positionWorld.z);
-  const depth = mix(float(28), positionWorld.y.sub(ground.r), local);
+  const depth = floorDepth(positionWorld.x, positionWorld.z, positionWorld.y);
   // The breakers this pixel is part of, drawn by the same field the vertex stage was displaced by.
   const front = breakers(shorePoint.x, shorePoint.y);
   const damp = smoothstep(0.1, 2.5, depth);
