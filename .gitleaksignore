@@ -1,0 +1,39 @@
+# Fingerprints gitleaks reports on generated benchmark evidence, verified by hand as false
+# positives. A fingerprint is commit:file:rule:line, so each line suppresses exactly one
+# historical finding and nothing else — a real secret in the same file still fails the scan.
+#
+# All three are the `generic-api-key` heuristic firing on high-entropy prose, not on a credential:
+#
+#   Area3D-*.d.ts       a rolled-up `export { Area3D as A, rapier as B, ... }` alias list
+#   DELTA-2026-08-05.md a JSON evidence row quoting a sweep artifact path
+#
+# Verified 2026-09-02 by reading each flagged line at its recorded commit.
+60b06a2403f1219fb601783d7f0e5f7f886507b0:docs/benchmark/sweeps/open-world-2026-08-09-3/framework-types/@threenative/physics/Area3D-B8LJ2C4S.d.ts:generic-api-key:403
+faf3f79b6d01e193e89fed532c0e539deb75de71:docs/benchmark/sweeps/exploration-2026-08-09/framework-types/@threenative/physics/Area3D-D0KKdmM2.d.ts:generic-api-key:272
+f9c62d2c7ee0b8ec0f88977afc11113bc79434a1:docs/benchmark/DELTA-2026-08-05.md:generic-api-key:379
+
+# Verified 2026-09-05 at the recorded commit: recook-fixture-v1 is a literal custom-pass
+# cache version in the receipt regression test, not a credential. Scope to this finding only.
+57b76a66f82ee829d5e0c0c9f79fb09c0ae0fbe4:packages/assets/__tests__/bake-receipt.spec.ts:generic-api-key:107
+
+# Verified 2026-09-06 at the recorded commit: 0123456789abcdef is the synthetic
+# shared-image cache key in the concurrent-write regression fixture, not a credential.
+# Scope to this historical finding; other keys and future edits remain scanned.
+f66af22303112d84174d7031cf6a2b28502d3095:packages/assets/__tests__/shared-images.spec.ts:generic-api-key:154
+
+# Verified 2026-09-07 at the recorded commit: warm-up-default-test-v1 is the synthetic
+# persistent warm-up cache revision in a core integration test, not a credential. The fixture
+# now uses a lower-entropy value too; scope this exception to the already-published finding.
+e2e871f1feac6fa0f7dc4d372f30d3cb586a8f72:packages/core/__tests__/warmup-default.spec.ts:generic-api-key:115
+
+# Verified 2026-10-11: PRD-595's slash-separated CellPrewarm counter names are prose, not a credential.
+0c2f9e4b57382d980ef98424f6ac03b86e1d785b:docs/PRDs/strata-terrain-hardening/PRD-595-world-cells-splits-by-seam-and-survives-a-race-fuzz.md:generic-api-key:63
+# Verified 2026-10-27: PRD-750 scripts/kit-loop.mjs line 45 is a KPI field id string (k2ScenarioPct), not a credential. The commit is on #575's branch; the full-history scan reads every fetched ref.
+f799f51aba375ce12df5eb43db2a7c69b65d96ae:scripts/kit-loop.mjs:generic-api-key:45
+# Verified 2026-10-27: line 31 of the commit below is the earlier wording of the comment above (it quoted the same field id), not a credential.
+0fd2f4d574d82305373434bc8cf1c00600b3a36e:.gitleaksignore:generic-api-key:31
+# Verified 2026-10-27: the same KPI field id line of scripts/kit-loop.mjs, on #574's branch (pr563-followup).
+4e74eea0908f871c2f42c112e82c31952d9cdd89:scripts/kit-loop.mjs:generic-api-key:45
+# Verified 2026-10-28: the #574 squash brings scripts/kit-loop.mjs to develop in a merge-group commit whose
+# SHA does not exist until the queue builds it, so line 45 (the KPI field id k2ScenarioPct) carries an inline
+# `gitleaks:allow` instead of a fingerprint here. It suppresses that one line only.

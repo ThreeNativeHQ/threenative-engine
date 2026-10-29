@@ -1,0 +1,113 @@
+{
+  // Keep VS Code out of the build output. `packages/runtime-native` alone is ~6.1 GB across
+  // ~1,860 directories of gitignored artifacts, downloaded deps and Gradle/CMake output that
+  // churns on every native build (measured: ~1,100 files rewritten per hour). Git itself is
+  // fast here — `git status` is ~40 ms over 7,258 tracked files — but every one of those
+  // writes reaches the watcher, and the watcher is what drives the Source Control refresh and
+  // the TypeScript project reload. Excluding the churn is what makes the editor stable; none
+  // of these paths is tracked, so nothing here hides real work.
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.pnpm-store/**": true,
+    "**/dist/**": true,
+    "**/dist-native/**": true,
+    "**/.threenative/**": true,
+    "**/coverage/**": true,
+    "**/test-results/**": true,
+    "**/playwright-report/**": true,
+    "**/.linchpin/**": true,
+    "**/.gauntlet/**": true,
+    "**/.worktrees/**": true,
+    "**/artifacts/**": true,
+    "**/.vite/**": true,
+    "packages/runtime-native/third_party/**": true,
+    "packages/runtime-native/build/**": true,
+    "packages/runtime-native/build-*/**": true,
+    "packages/runtime-native/artifacts/**": true,
+    "packages/runtime-native/.runtime/**": true,
+    "packages/runtime-native/native/*/target/**": true,
+    "packages/runtime-native/android/.gradle/**": true,
+    "packages/runtime-native/android/.cxx/**": true,
+    "packages/runtime-native/android/app/build/**": true,
+    "packages/runtime-native/android/app/.cxx/**": true,
+    "**/CMakeFiles/**": true,
+    "**/.godot/**": true
+  },
+
+  // Search already honours .gitignore via search.useIgnoreFiles, but these are the paths that
+  // are expensive to walk even once — the .linchpin logs alone are 719 MB, one of them 129 MB.
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.pnpm-store": true,
+    "**/dist": true,
+    "**/dist-native": true,
+    "**/coverage": true,
+    "**/test-results": true,
+    "**/playwright-report": true,
+    "**/.linchpin": true,
+    "**/.gauntlet": true,
+    "**/.worktrees": true,
+    "**/artifacts": true,
+    "**/pnpm-lock.yaml": true,
+    "packages/runtime-native/third_party": true,
+    "packages/runtime-native/build": true,
+    "packages/runtime-native/artifacts": true,
+    "packages/runtime-native/.runtime": true,
+    "packages/runtime-native/native/*/target": true,
+    "packages/runtime-native/android/.gradle": true,
+    "packages/runtime-native/android/.cxx": true,
+    "packages/runtime-native/android/app/build": true,
+    "docs/benchmark/sweeps/*/vendor": true,
+    "docs/benchmark/sweeps/*/assets": true
+  },
+  "search.followSymlinks": false,
+
+  // Hidden from the explorer only: agent scratch that AGENTS.md says is never to be read from
+  // this tree. Build output stays visible — it is sometimes worth opening deliberately.
+  "files.exclude": {
+    "**/.linchpin": true,
+    "**/.gauntlet": true,
+    "**/.worktrees": true
+  },
+
+  // The TypeScript server was the single largest watcher: 16,389 inotify watches and 715 MB
+  // resident on a repo of 6,796 directories, because nothing told it to skip the vendored C++
+  // and the Android build tree. excludeDirectories keeps it inside the source.
+  "typescript.tsserver.watchOptions": {
+    "watchFile": "useFsEventsOnParentDirectory",
+    "watchDirectory": "useFsEvents",
+    "fallbackPolling": "dynamicPriority",
+    "excludeDirectories": [
+      "**/node_modules",
+      "**/dist",
+      "**/dist-native",
+      "**/coverage",
+      "**/.linchpin",
+      "**/.gauntlet",
+      "**/.worktrees",
+      "**/artifacts",
+      "packages/runtime-native/third_party",
+      "packages/runtime-native/build",
+      "packages/runtime-native/native",
+      "packages/runtime-native/android",
+      "packages/runtime-native/.runtime"
+    ]
+  },
+  "typescript.tsc.autoDetect": "off",
+  "typescript.surveys.enabled": false,
+
+  // Source Control: the repo has ~100 refs, which costs 2 ms to enumerate and is not a problem.
+  // These only stop the git extension doing work nothing here needs — there are zero nested
+  // repositories in this tree, so scanning subfolders for them is pure cost.
+  "git.autoRepositoryDetection": "openEditors",
+  "git.repositoryScanMaxDepth": 1,
+  "git.autofetch": false,
+  "git.ignoreLimitWarning": true,
+  "npm.autoDetect": "off",
+
+  // Biome owns formatting (AGENTS.md); do not let another formatter fight it.
+  "files.trimTrailingWhitespace": false,
+  "editor.formatOnSave": false
+}

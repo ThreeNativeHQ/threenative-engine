@@ -1,0 +1,4 @@
+interface:
+  display_name: "Native Performance Loop"
+  short_description: "Optimize native games and Tempest with measured keep/reject loops"
+  default_prompt: "Use $native-performance-loop to improve native game performance, choose representative workloads, keep verified gains, and maintain an HTML benchmark dashboard."

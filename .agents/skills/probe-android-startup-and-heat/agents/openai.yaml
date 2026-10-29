@@ -1,0 +1,3 @@
+interface:
+  display_name: "Probe Android Startup and Heat"
+  short_description: "Help with Probe Android Startup and Heat tasks"

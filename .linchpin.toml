@@ -1,0 +1,6 @@
+reviewer = "sol"
+reviewer_effort = "medium"
+worker = "luna"
+worker_effort = "max"
+auditor = "astra"
+auditor_effort = "medium"

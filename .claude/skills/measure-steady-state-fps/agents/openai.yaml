@@ -1,0 +1,4 @@
+interface:
+  display_name: "Measure Steady-State FPS"
+  short_description: "Measure game FPS after startup settles"
+  default_prompt: "Use $measure-steady-state-fps to verify this game opens cleanly and measure fair steady-state performance."

@@ -1,0 +1,6 @@
+# These paths remain tracked, cited and budgeted; this file only changes ripgrep's default walk.
+# `rg --no-ignore <pattern>` or naming the directory reaches them. Git, `fs` and Node do not read it.
+docs/PRDs/done/
+
+# Claude Code reads these tracked generated mirrors; `scripts/sync-agent-docs.ts` reaches them through `fs`.
+CLAUDE.md

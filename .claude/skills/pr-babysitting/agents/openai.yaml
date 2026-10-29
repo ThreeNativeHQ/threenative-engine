@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR-babysitting"
+  short_description: "Order, batch, fix, and merge PRs with less CI churn"
+  default_prompt: "Use $pr-babysitting to determine the dependency order of the selected PRs, batch related work where it saves CI, fix issues, and merge as soon as checks and reviews are satisfied."
