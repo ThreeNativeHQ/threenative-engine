@@ -481,6 +481,10 @@ void registerObject3D(ClassBinding& b) {
     b.fields["visible"] = {flags.visible, 0};
     b.fields["castShadow"] = {flags.castShadow, 0};
     b.fields["receiveShadow"] = {flags.receiveShadow, 0};
+    // The world-matrix dirty flag: core's physics interpolation restores a body's solved pose after the draw
+    // and needs the next walk to compose it again (one crossing a body a frame on the stress lab: 300). A
+    // store is the whole of it — no revision, no deferred transform — so the Wasm back end also writes it here.
+    b.fields["matrixWorldNeedsUpdate"] = {flags.matrixWorldNeedsUpdate, 0};
     // The flags sit after pointers, so they count from the first flag: the registry is dumped by a
     // 64-bit build and read by the 32-bit Wasm one.
     b.getters["__address"] = [](void* self) { return Value::of(double(reinterpret_cast<uintptr_t>(as<Object3D>(self)->flags()))); };

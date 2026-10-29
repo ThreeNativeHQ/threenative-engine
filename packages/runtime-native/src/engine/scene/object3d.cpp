@@ -318,7 +318,8 @@ Object3D::FlagOffsets Object3D::flagOffsets() {
     const auto at = [](const bool& flag) {
         return uint32_t(reinterpret_cast<const char*>(&flag) - reinterpret_cast<const char*>(probe.flags()));
     };
-    return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_)};
+    return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_),
+            at(probe.matrixWorldNeedsUpdate)};
 }
 
 void Object3D::setCastShadow(bool value) {

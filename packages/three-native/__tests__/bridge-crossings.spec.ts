@@ -188,6 +188,58 @@ describe("an Object3D's rotation follows its quaternion on the browser back end"
   });
 });
 
+describe("the world-matrix dirty flag", () => {
+  it("is armed in place, one byte, no crossing, as the engine's own walks write it", () => {
+    const bytes = new Uint8Array(256);
+    const calls: string[] = [];
+    const runtime: IBrowserRuntime = {
+      typeId: (name) => (name === "Mesh" ? 1 : 2),
+      construct: (name) => ({ key: `${name}:1`, type: 1 }),
+      invoke(_self, method) {
+        calls.push(`invoke ${method}`);
+        return null;
+      },
+      get(_self, property) {
+        // The flags block the class exposes as its `__address`.
+        if (property === "__address") return 64;
+        calls.push(`get ${property}`);
+        return property === "name" ? "" : 1;
+      },
+      set(_self, property) {
+        calls.push(`set ${property}`);
+      },
+      release: () => undefined,
+      setCallback: () => undefined,
+      readDoubles: (_address, count) => (count === 1 ? 0 : [0]),
+      writeDouble: () => undefined,
+      readByte: (address) => bytes[address] ?? 0,
+      writeByte: (address, value) => {
+        bytes[address] = value;
+      },
+    };
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Mesh = classes.Mesh as new () => {
+      matrixWorldNeedsUpdate: boolean;
+      matrixAutoUpdate: boolean;
+    };
+    const offset = registry.classes.Mesh?.fields?.matrixWorldNeedsUpdate?.[0] as number;
+    const mesh = new Mesh();
+    // What core's physics interpolation does to every body after the draw, once a frame.
+    mesh.matrixWorldNeedsUpdate = true;
+    expect(calls).toEqual([]);
+    expect(mesh.matrixWorldNeedsUpdate).toBe(true);
+    expect(calls).toEqual([]);
+    expect(bytes[64 + offset]).toBe(1);
+    // A write of the value the flag holds changes nothing, and a clear is the same one store.
+    mesh.matrixWorldNeedsUpdate = true;
+    mesh.matrixWorldNeedsUpdate = false;
+    expect(bytes[64 + offset]).toBe(0);
+    // The renderer's own flags keep their call: those setters bump render revisions.
+    mesh.matrixAutoUpdate = false;
+    expect(calls).toEqual(["set matrixAutoUpdate"]);
+  });
+});
+
 function engineKey(object: object): string {
   const ref = (object as Record<symbol, IEngineRef>)[
     Object.getOwnPropertySymbols(object)[0] as symbol

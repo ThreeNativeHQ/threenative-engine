@@ -89,6 +89,8 @@ export interface IBrowserRuntime {
   readWord?(address: number): number;
   /** Writes one double at `address` in the engine's memory; Wasm only. */
   writeDouble?(address: number, value: number): void;
+  /** Writes the byte at `address` in the engine's memory (a flag field); Wasm only. */
+  writeByte?(address: number, value: number): void;
   /**
    * A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it.
    * With `offset`/`count`, a copy of that scalar subrange only (a per-vertex setter syncs one item).
@@ -1867,6 +1869,13 @@ export function defineBrowserClasses(
         flagField !== undefined && flagField[1] === 0 && peek !== undefined
           ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
           : undefined;
+      // One flag is a plain store in the engine: `matrixWorldNeedsUpdate` has no revision and no deferred
+      // transform behind its setter, and core's physics interpolation arms it on every body after the draw
+      // (stress lab: 300 crossings a frame). It is written in place, as the engine's own walks write it. The
+      // render flags keep their call: `visible`, `castShadow` and `receiveShadow` bump render revisions.
+      const store = runtime.writeByte;
+      const inPlace =
+        property === "matrixWorldNeedsUpdate" && store !== undefined ? flagField : undefined;
       // A geometry's bounds, once present, are one engine object the engine recomputes in place
       // (BufferGeometry::computeBoundingSphere); only its setter, copy() or another method replaces it.
       const bounds = geometryClass && (property === "boundingSphere" || property === "boundingBox");
@@ -1924,7 +1933,13 @@ export function defineBrowserClasses(
                 return stats;
               }
             : undefined) ??
-          ((property === "children" || property === "parent") &&
+          // `children`, `parent` and an object's hierarchy revision are the kept hierarchy answers: every
+          // add, remove and attach moves the engine's counter, and nothing else changes who is under whom or
+          // when a subtree last did (`Object3D::subtreeVersion`, stamped from that same counter). Core's camera
+          // pass reads each rate root's revision every frame to keep its rig index (stress lab: 120 a frame).
+          ((property === "children" ||
+            property === "parent" ||
+            property === "__hierarchyRevision") &&
           binding.getters.includes("__hierarchy")
             ? function (this: object) {
                 if (glueCounting) propertyReads += 1;
@@ -1977,6 +1992,13 @@ export function defineBrowserClasses(
                   // writes `visible` on hundreds of nodes a frame, so those stay out of the bridge.
                   if (flag !== undefined && typeof value === "boolean" && flag(this) === value)
                     return;
+                  if (inPlace !== undefined && typeof value === "boolean") {
+                    (store as (address: number, byte: number) => void)(
+                      addressOf(this) + (inPlace[0] ?? 0),
+                      value ? 1 : 0,
+                    );
+                    return;
+                  }
                   if (caching && (mirrored(binding, property, setters) || bounds)) {
                     // A mirrored property's setter writes only that property: the others stay kept,
                     // and a write of the primitive the mirror holds changes nothing in the engine.
@@ -3110,6 +3132,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     readWord: (address) => view().getUint32(address, true),
     writeDouble: (address, value) => {
       abi.HEAPF64[address / 8] = value;
+    },
+    writeByte: (address, value) => {
+      abi.HEAPU8[address] = value;
     },
     heapF64: () => abi.HEAPF64,
     readDoubles: (address, count) => {

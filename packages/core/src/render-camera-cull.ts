@@ -227,12 +227,6 @@ function countEngineCost(name: string): void {
   host.__tnEngineCost[name] = (host.__tnEngineCost[name] ?? 0) + 1;
 }
 
-/** The native engine's one-call answer to "is it and every parent visible" (bindings_scene.cpp). */
-function visibleInWorld(object: unknown): boolean | undefined {
-  const host = (object as { __tnVisibleInWorld?: () => boolean }).__tnVisibleInWorld;
-  return typeof host === "function" ? host.call(object) : undefined;
-}
-
 function engineCullRoot(root: unknown): IEngineCullRoot | undefined {
   const candidate = root as Partial<IEngineCullRoot> | null;
   return typeof candidate?.__cullProjected === "function" &&
@@ -410,7 +404,7 @@ export class RenderCameraCull {
     if (!this.#prepareAnimated()) return;
     // Start at each rig and each stand-in that observes one, never at the scene: the walk then visits
     // the same objects a scene walk would have acted on, and nothing else.
-    const rootShown = visibleInWorld(root) === true;
+    const rootShown = this.#isVisibleInWorld(root as Object3D);
     for (const ref of animationRateRoots) {
       const rig = ref.deref();
       if (rig !== undefined && this.#reaches(rig, root)) this.#visitRig(rig, rootShown);
@@ -432,9 +426,13 @@ export class RenderCameraCull {
 
   /**
    * The rig's visible walk, as `traverseVisible` would make it. Only its renderables act, so on the
-   * native engine, with the walk's root shown, each kept part asks once whether it is shown, rather
+   * native engine, with the walk's root shown, each kept part asks whether it is shown, rather
    * than the walk wrapping every bone across the boundary. A rig that reaches a shown root is itself
    * shown, so a part shown in the world is exactly a part its rig's walk reaches.
+   *
+   * The answer is this file's own walk, not the engine's `__tnVisibleInWorld`: that call was one
+   * crossing per kept part (240 a frame on the stress lab's crowd), while `visible` is an engine
+   * field and `parent` a kept hierarchy answer, so the same walk in JS crosses nothing.
    */
   #visitRig(rig: Object3D, rootShown: boolean): void {
     const parts = rootShown ? this.#rigParts.get(rig) : undefined;
@@ -446,7 +444,7 @@ export class RenderCameraCull {
       rig.traverseVisible(this.#animationVisitor);
       return;
     }
-    for (const part of parts) if (visibleInWorld(part) === true) this.#visitAnimation(part);
+    for (const part of parts) if (this.#isVisibleInWorld(part)) this.#visitAnimation(part);
   }
 
   /**
