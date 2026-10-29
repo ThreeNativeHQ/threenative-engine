@@ -339,7 +339,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   racing: "388bbe65ed8214dac991be61b1462c07486327280b7718c9fc77c9ee16ab2c0c",
   rain: "6640d55336c2e52899b7b8fee270be13de8693e360a292f1b8377c736a16cad3",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
-  rts: "67425c7c3df34029e3285bc16079ff81ba5b8c74186e16e6e35899a96153d615",
+  // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD.
+  rts: "65fe5c2953218c0dfc92cc224e5e940124540125ec13bebf3a5ca26642dd32ed",
   runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "f1d59f24bf3e0d8e5565a4854753cd09c21cdc63cb30ca9cf795e6bd6fd09021",
