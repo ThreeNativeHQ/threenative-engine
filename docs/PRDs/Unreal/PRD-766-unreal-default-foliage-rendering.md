@@ -87,9 +87,15 @@ captures taken and left for the coordinator.
 
 Wildwood, 1880x880, WebGPU (NVIDIA RTX 2080), walking pose after a 3.5 s W; each arm is one page
 load, `renderer.gpuFrameMs()` median over 3 s plus the engine's own `TN_FRAME_BUDGET` windows. The
-machine's GPU was saturated by other agents' runs throughout (100 % utilisation, 150-196 W), so the
+machines's GPU was saturated by other agents' runs throughout (100 % utilisation, 150-196 W), so the
 absolute milliseconds are inflated and drifted between runs; the pair below is the two closest in
 time (`before-b`/`before-c` then `after-a`/`after-b`).
+
+Every arm was measured against a `packages/core/dist` rebuilt for that arm from the sources under
+test — the dev server serves `dist`, never `src` — and fingerprinted afterwards: the before pair was
+built at 13:38 with the fix stashed (`grep -c impostorFar dist/world.js` = 0), the after pair at
+13:44 with it applied (12 matches). Two earlier runs measured before that rebuild and are discarded
+as stale-dist.
 
 | Run | `tn-far:` groups | Far instance capacity | Far bytes | Pose GPU ms | Hide-far GPU ms | Presented p95 ms | Main draws |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -100,7 +106,7 @@ time (`before-b`/`before-c` then `after-a`/`after-b`).
 
 - [x] AC-1: an asset whose `maxDistance` ends inside the near ring builds no `tn-far:` mesh. proof: `pnpm exec vitest run packages/core/__tests__/world-impostors.spec.ts` — Evidence: PASS 49/49, red first; three new cases (skip, `impostorFar: "always"` override + its report line, and no load at all for a species placed only outside the ring).
 - [x] Phase 1 in the browser: 17 far aggregates became 8 (grass-a/b, fern-a/b, fern-group, nettle, bush, pine-young, pine-young-b gone), far instance capacity 1,629,200 -> 38,200 (-97.7 %, -108 MB of instance buffers, plus the ~25 MB of atlases and their source loads never taken), main-pass draws 64 -> 47. Frame cost of the removed species is 1-3 ms, as this PRD predicted (`before pose - hide-far` 27.1/21.7 ms is dominated by the tree impostors), so AC-4's 33 ms depends on phase 3, not here. proof: Chrome DevTools-protocol walk (`artifacts/prd766/measure.mjs`, 2 runs per arm), `TN_WORLD_IMPOSTOR_FAR` lines and `renderer.gpuFrameMs()`.
-- [ ] Phase 1 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: captures at `artifacts/prd766/before-pose-run{1,2}.png` and `artifacts/prd766/after-pose-run{1,2}.png`; JUDGE NEEDED.
+- [x] Phase 1 visual judge NEUTRAL or IMPROVEMENT at the walking pose. proof: fresh judge subagent, 2 runs per arm — Evidence: **NEUTRAL** on both after runs; the judge found no thinning and no hard ring edge, and the BEFORE runs differ from each other as much as from AFTER. Captures: `artifacts/prd766/before-pose-run{1,2}.png`, `artifacts/prd766/after-pose-run{1,2}.png`.
 
 #### Phase 2: Masked depth prepass on desktop
 **Status:** NOT STARTED
