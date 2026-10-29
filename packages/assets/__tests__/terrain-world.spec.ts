@@ -62,6 +62,7 @@ import { stackLayers } from "../../core/src/world-terrain-splat.js";
 import { createGltfReader, readGltfDocument } from "../src/gltf-io.js";
 import { primitiveTriangleCount } from "../src/lod/eligibility.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
+import { DEFAULT_LOD_MIN_TRIANGLES } from "../src/lod/generate.js";
 import { decodeImageBytes } from "../src/passes/decode-image.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
 import { cookTerrainWorld } from "../src/world/terrain-world.js";
@@ -394,6 +395,37 @@ describe("cookTerrainWorld", () => {
     }
   });
 
+  it("labels a PNG map by its own bytes when the caller names no MIME", async () => {
+    // A 1x1 PNG with the real signature: once shipped as `image/jpeg` in the GLB's image entry.
+    const diff = new Uint8Array(PNG.sync.write(new PNG({ width: 1, height: 1 })));
+    const nrm = new Uint8Array(PNG.sync.write(new PNG({ width: 2, height: 1 })));
+    expect([...diff.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    // One map skips `normalizeKind`; two maps of the same signature skip it too.
+    for (const count of [1, 2]) {
+      const cooked = await cookTerrainWorld({
+        state: new Terrain({ resolution: 17, size: 64 }).evaluate(),
+        species: {},
+        out: path.join(dir, `world-${String(count)}`),
+        materials: {
+          layers: Array.from({ length: count }, (_, index) => ({
+            id: `layer${String(index)}`,
+            diffBytes: diff,
+            nrmBytes: nrm,
+          })),
+        },
+      });
+      const glb = cooked.worldGlb;
+      const jsonLength = new DataView(glb.buffer, glb.byteOffset).getUint32(12, true);
+      const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength))) as {
+        images?: { mimeType?: string }[];
+      };
+      expect(
+        json.images?.map((entry) => entry.mimeType),
+        `${String(count)} layer map`,
+      ).toEqual(["image/png", "image/png"]);
+    }
+  });
+
   it("normalizes map dimensions losslessly while preserving already-sized source bytes", async () => {
     const sharp = (await import("sharp")).default;
     const noise = { type: "gaussian", mean: 128, sigma: 40 } as const;
@@ -492,8 +524,8 @@ describe("cookTerrainWorld", () => {
       string,
       {
         near: string;
-        mid: string;
-        midDistance: number;
+        mid?: string;
+        midDistance?: number;
         bounds: { min: [number, number, number]; max: [number, number, number] };
         maxDistance: number;
       }
@@ -505,7 +537,12 @@ describe("cookTerrainWorld", () => {
           glb: path.join(assets, spec.near),
           bounds: spec.bounds,
           maxDistance: spec.maxDistance,
-          lods: [{ glb: path.join(assets, spec.mid), distance: spec.midDistance }],
+          // A species with no authored mid gets a derived level from the cooker itself.
+          ...(spec.mid === undefined
+            ? {}
+            : {
+                lods: [{ glb: path.join(assets, spec.mid), distance: spec.midDistance ?? 40 }],
+              }),
         },
       ]),
     );
@@ -648,12 +685,17 @@ describe("cookTerrainWorld", () => {
         geometry.computeBoundingBox();
         assert.ok(geometry.boundingBox);
         const size = geometry.boundingBox.getSize(new Vector3());
-        // The simplifier's scale is the largest decoded extent, including the source node scale.
-        expect(chain?.getErrorScale(), `${id} transformed error scale`).toBeCloseTo(
-          Math.max(size.x, size.y, size.z),
-          4,
-        );
-        expect(chain?.getSharedVertexBuffers()).toBe(true);
+        if (counts[0] !== undefined && counts[0] < DEFAULT_LOD_MIN_TRIANGLES) {
+          // Under the cooker's own floor: an 80-triangle fern has no level worth shipping.
+          expect(chain, `${id} index-only chain`).toBeNull();
+        } else {
+          // The simplifier's scale is the largest decoded extent, including the source node scale.
+          expect(chain?.getErrorScale(), `${id} transformed error scale`).toBeCloseTo(
+            Math.max(size.x, size.y, size.z),
+            4,
+          );
+          expect(chain?.getSharedVertexBuffers()).toBe(true);
+        }
         geometry.computeBoundingSphere();
         assert.ok(geometry.boundingSphere);
         for (let i = 0; i < translations.getCount(); i++) {
@@ -697,17 +739,19 @@ describe("cookTerrainWorld", () => {
         species: rows,
       }),
     );
-    expect(Object.keys(rows).sort()).toEqual(["boulder", "fir", "fir-c"]);
+    // Every species the kit places, and no other: the census is the kit's own species table.
+    expect(Object.keys(rows).sort()).toEqual(Object.keys(table).sort());
     for (const node of document.getRoot().getDefaultScene()?.listChildren() ?? []) {
       if (!node.getName().endsWith("_instances")) continue;
-      expect(
-        node
-          .getMesh()
-          ?.listPrimitives()
-          .every((p) => p.getExtension(TN_DISCRETE_LOD) !== null),
-      ).toBe(true);
+      for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
+        const chain = primitive.getExtension(TN_DISCRETE_LOD);
+        if (primitiveTriangleCount(primitive) < DEFAULT_LOD_MIN_TRIANGLES)
+          expect(chain, `${node.getName()} chain under the floor`).toBeNull();
+        else expect(chain, `${node.getName()} upper levels`).not.toBeNull();
+      }
     }
-    expect(base + terrain).toBe(505_387_464);
+    // Forest kit with its ground cover: ferns and pebbles add 2,507,200 base triangles.
+    expect(base + terrain).toBe(507_894_664);
     expect(submitted).toBeLessThan(base);
   }, 120_000);
 

@@ -14,7 +14,7 @@ water. It is game source: once copied, every file is yours to edit.
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
 | `sea.ts` | The sea: the installed spectral simulation drives a lit water surface at the level the bake wrote. |
 
-Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
+Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
 
 ## Substitution
 

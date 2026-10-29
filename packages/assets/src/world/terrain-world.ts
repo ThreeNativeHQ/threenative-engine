@@ -30,6 +30,7 @@ import { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } from "@three
 import type { IPlacement, ITerrainState } from "@threenative/terrain";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { sniffImageMime } from "../health.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../lod/extension.js";
 import {
   LOD_ERROR_TARGETS,
@@ -589,6 +590,19 @@ function addInstancedSpeciesNode(
 export interface IPreparedTerrainWorldOptions {
   readonly preparedWorld: Record<string, unknown>;
 }
+/**
+ * The MIME a streamed terrain map carries when the caller names none: its own container. A missing
+ * label used to mean `image/jpeg`, so a PNG map shipped as a JPEG the loader then refused.
+ */
+function authoredMime(bytes: Uint8Array, layer: string, channel: string): string {
+  const mime = sniffImageMime(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  if (mime === undefined)
+    throw new Error(
+      `cookTerrainWorld: layer '${layer}' ${channel} map is neither a readable JPEG nor a PNG; pass ${channel}MimeType to name its codec.`,
+    );
+  return mime;
+}
+
 export function cookTerrainWorld(
   options: IPreparedTerrainWorldOptions,
 ): Promise<{ worldGlb: Uint8Array }>;
@@ -839,7 +853,9 @@ export async function cookTerrainWorld(
       const texture = doc
         .createTexture(channel === "diff" ? "TerrainBaseDiff" : "TerrainBaseNrm")
         .setImage(bytes)
-        .setMimeType(mimeType ?? layer[`${channel}MimeType`] ?? "image/jpeg");
+        .setMimeType(
+          mimeType ?? layer[`${channel}MimeType`] ?? authoredMime(bytes, layer.id, channel),
+        );
       if (channel === "diff") terrainMaterial.setBaseColorTexture(texture);
       else terrainMaterial.setNormalTexture(texture);
     }

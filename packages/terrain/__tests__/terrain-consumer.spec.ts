@@ -14,7 +14,7 @@ import {
 import { toGeometry } from "@threenative/terrain/three";
 import { BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { finiteTree } from "../src/core/validation.js";
+import { finiteTree, validateDocument } from "../src/core/validation.js";
 
 describe("public terrain consumer", () => {
   it("returns measured erosion transport, respects masks and isolates cached arrays", () => {
@@ -277,6 +277,17 @@ it("rejects a scatter layer without asset", () => {
       asset: undefined,
     }),
   ).toThrow(/asset/);
+});
+it("names the missing asset in a recipe saved while scatter asset was optional", () => {
+  // A pre-PR document carried no scatter `asset` and used to default to 'pine'.
+  const saved = {
+    version: 1,
+    config: { size: 512, resolution: 129, seed: 7 },
+    layers: [{ id: "trees", type: "scatter", params: { count: 200 } }],
+  };
+  expect(() =>
+    validateDocument(saved as unknown as Parameters<typeof validateDocument>[0]),
+  ).toThrow(/scatter requires an asset identifier[\s\S]*"asset": "pine"/u);
 });
 
 describe("finiteTree validation fast-path and edge guards", () => {

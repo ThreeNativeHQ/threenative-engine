@@ -405,7 +405,7 @@ export function encodeGLB(input: IBakedMesh | readonly IBakedMesh[]) {
   }
   const binary = join(chunks);
   const doc = {
-    asset: { version: "2.0", generator: "@threenative/terrain 0.1.2" },
+    asset: { version: "2.0", generator: "@threenative/terrain 0.1.3" },
     scene: 0,
     scenes: [{ nodes: meshes.map((_, i) => i) }],
     nodes: meshes.map((m, i) => ({ mesh: i, name: m.name ?? `Terrain ${i}` })),

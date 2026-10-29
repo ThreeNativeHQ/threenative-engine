@@ -13,7 +13,7 @@ source: once copied, every file is yours to edit.
 | `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the boulders near the player, and the sky as the props' light. |
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
 
-Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
+Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
 
 ## Placeholder
 

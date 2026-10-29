@@ -14,7 +14,7 @@ erratics. It is game source: once copied, every file is yours to edit.
 | `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. It also lights the lakes' mirror. |
 | `water.ts` | The kettle lakes and meltwater rivers, drawn with a pale ice tint on the lakes. |
 
-Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
+Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
 
 ## Status
 
