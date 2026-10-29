@@ -149,11 +149,7 @@ async function imageBytes(pack, spec, normal = false) {
     return found;
   };
   const resized = sharp(path(normal ? spec.normal : spec.albedo))
-    .resize(
-      pack === "conifer-bushes-saplings-1" ? 1024 : 2048,
-      pack === "conifer-bushes-saplings-1" ? 1024 : 2048,
-      { fit: "inside", withoutEnlargement: true },
-    )
+    .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
     .removeAlpha();
   let result = await resized.png().toBuffer();
   if (!normal && spec.mask) {
@@ -267,17 +263,10 @@ async function prepare(source, pack, logical) {
       for (const primitive of mesh.listPrimitives())
         if (primitive.getMaterial()?.getName() === "ScotsPine_01_Branches_2_Mat")
           primitive.setMaterial(bark);
-    for (const material of document.getRoot().listMaterials())
-      if (material.getAlphaMode() === "MASK")
-        material.setNormalTexture(null).setMetallicRoughnessTexture(null);
     for (const image of document.getRoot().listTextures()) {
       image.setImage(
         await sharp(image.getImage())
-          .resize(
-            image.getName() === "ScotsPine_01_Atlas_Tex" ? 2048 : 1024,
-            image.getName() === "ScotsPine_01_Atlas_Tex" ? 2048 : 1024,
-            { fit: "inside", withoutEnlargement: true },
-          )
+          .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
           .png()
           .toBuffer(),
       );
@@ -288,7 +277,7 @@ async function prepare(source, pack, logical) {
     for (const image of document.getRoot().listTextures()) {
       image.setImage(
         await sharp(image.getImage())
-          .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+          .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
           .png()
           .toBuffer(),
       );
@@ -364,7 +353,7 @@ await compileAssets({
   source: ".",
   output: cooked,
   cwd: STAGE,
-  config: { models: { textures: { maxSize: 1024 }, virtual: "none" }, textures: { maxSize: 1024 } },
+  config: { models: { textures: { maxSize: 2048 }, virtual: "none" }, textures: { maxSize: 2048 } },
 });
 const manifest = JSON.parse(readFileSync(join(cooked, "assets.manifest.json"), "utf8"));
 if (incremental) cpSync(cooked, OUT, { recursive: true });
