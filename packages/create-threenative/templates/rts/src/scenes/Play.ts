@@ -1,4 +1,11 @@
-import { type ICtx, Scene, type SceneFrame, getPlatform, isMobile } from "@threenative/core";
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  getPlatform,
+  isMobile,
+  lodPixelScale,
+} from "@threenative/core";
 import { Object3D, type OrthographicCamera, type Texture, type Vector2 } from "three";
 import { onSceneIntent } from "../orders.js";
 import { createArmy } from "../render/army.js";
@@ -229,7 +236,14 @@ export class Play extends Scene<GameState, undefined> {
       this.#prune(sim);
       applyRtsCamera(camera, view, frameCtx.viewport.size, dt);
       sun.follow(view.target.x, view.target.z);
-      this.#army?.sync(sim, this.#selected, sim.time, dt, camera, frameCtx.viewport.size.height);
+      this.#army?.sync(
+        sim,
+        this.#selected,
+        sim.time,
+        dt,
+        camera,
+        lodPixelScale(camera, frameCtx.viewport.size.height, 1),
+      );
       if (this.#minimapDirty) {
         this.#minimapDirty = false;
         this.#terrain?.updateFog(sim);

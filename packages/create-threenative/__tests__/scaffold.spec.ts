@@ -338,7 +338,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   puzzle: "70e9e60a2400e8dcec79f69a882370c2169d07eb6deed3828816c4d94c397465",
   racing: "388bbe65ed8214dac991be61b1462c07486327280b7718c9fc77c9ee16ab2c0c",
   rain: "6640d55336c2e52899b7b8fee270be13de8693e360a292f1b8377c736a16cad3",
-  rts: "a5468ae4cdde6bb335edf38d6e248bb7cbbe73e27286fae64aa83c4c09a440cb",
+  rts: "4a887a611c7c9d67645b8c04325034c724f4326daa0be1be0791f655fcaa5240",
   runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "f1d59f24bf3e0d8e5565a4854753cd09c21cdc63cb30ca9cf795e6bd6fd09021",
