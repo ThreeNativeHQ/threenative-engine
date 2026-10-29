@@ -32,11 +32,42 @@ skipping until separately measured; removing map rebuilds and per-read pair allo
 bounded outcome. Web remains the semantic oracle, with native CPU savings reported separately.
 Apply [the batch execution contract](README.md#execution-contract).
 
+## Validation scene — Trigger warehouse
+
+**Proposed fixture:** extend `examples/native-smoke/src/physics.ts` with a scripted conveyor
+warehouse and add `examples/native-smoke/playtests/perf-sensor-membership.playtest.json` plus
+a desktop variant. Use actual Area3D nodes, physics bodies, native plugin reads and enter/exit
+callbacks. Fixed overhead camera and cheap crate visuals stay identical between arms. Linux
+native is the performance subject; browser runs the same replay as a semantic oracle only.
+
+| Variant | Population and action | Purpose |
+| --- | --- | --- |
+| Benefit | 10,000 residents, 100 sensors, fixed sparse overlap count; repeat at 1,000/10 | Prove retained indices/storage reduce complete native frame work |
+| Dense | Same residents/sensors, sensors covering many crates | Expose pair-storage growth and callback/membership cost |
+| No sensor | 10,000 bodies, zero sensors | Charge retained collider-index overhead even when unused |
+| Small/churn | 100 bodies and 10 sensors; remove/recreate bodies and sensors every 60 ticks | Expose mutation, filter and handle-reuse costs |
+
+Script conveyor motion through known sensors, stop crates until asleep, move sensors over the
+sleepers, change masks, teleport crates and remove/re-add a body. Assert sorted observed
+memberships and ordered enter/exit transitions against expected scripted state and the web
+oracle, including no duplicate events. Compare dense overlap as its own variant with fixed
+expected membership; do not change overlaps between baseline/candidate to reduce work. Pre-grow
+capacity identically, then test a separate growth event. Run ten full warehouse dispose/recreate
+cycles to expose stale handles and retained allocations.
+
+**Net gain:** meet [the scene gate](README.md#validation-scenes-and-net-gain-gate) using complete
+native CPU frame work on the sparse benefit variant, including map mutation, overlap queries,
+pair copying, JS event dispatch and rendering. Report refresh CPU, map rebuilds, allocations,
+pair capacities, retained memory and frame/presentation p50/p95. Dense, zero-sensor and small/churn
+variants must pass overhead limits. Zero steady allocations alone cannot establish a speedup.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: Area3D begin/end membership matches the existing contract after sensor movement, sleeping-body overlap, filter edits, removal and reused handles. proof: `pnpm exec vitest run packages/physics/__tests__/area.spec.ts packages/physics/__tests__/native-contract.spec.ts packages/physics/__tests__/plugin-buffer.spec.ts` with lifecycle/resize cases. Evidence: pending.
 - [ ] AC-2 [local]: Once capacity is established, steady native membership reads rebuild no collider map and allocate no new pair storage for an unchanged bounded overlap population. proof: extended Rust area tests with allocation/capacity assertions, plus three matched sensor-refresh CPU pairs at Phase 3's populations. Evidence: pending.
 - [ ] AC-3 [local]: Linux native Area3D enter/exit events and IDs match the web backend through the real plugin. proof: extended native area parity fixture, `cargo test --manifest-path packages/runtime-native/native/physics/Cargo.toml --lib` and `pnpm --filter @threenative/runtime-native native:physics:parity`. Evidence: pending.
+
+- [ ] AC-4 [local]: Trigger warehouse demonstrates a net whole-frame native CPU gain for sparse membership while dense, zero-sensor and small/churn controls pass the scene gate. proof: proposed `perf-sensor-membership` desktop playtests, three matched timing pairs per variant, observed Area3D transitions and lifecycle/resource checks; web supplies the semantic oracle. Evidence: pending.
 
 ## Integration Ledger
 
@@ -71,4 +102,4 @@ retain the current validated FFI output contract.
 explicit enter/exit observations; reuse the physics desktop runner.
 **Implementation:** Measure 1,000/10,000 bodies against 10/100 sensors, both sparse and dense
 overlap; hold overlap counts stable for allocation assertions and include a growth transition.
-- [ ] The Area3D playtest emits correct transitions and meets AC-2 plus the batch native-CPU/frame-p95 adoption bar. proof: AC-3 parity command, desktop physics playtest and three matched sensor-refresh timing pairs; web provides the semantic control. Evidence: pending.
+- [ ] Trigger warehouse proves AC-2 and AC-4 with correct Area3D transitions and bounded retained storage. proof: proposed sensor-membership desktop playtest, AC-3 parity and matched whole-frame/control timings; browser supplies the semantic control. Evidence: pending.

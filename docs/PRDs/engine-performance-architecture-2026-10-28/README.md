@@ -57,6 +57,62 @@ claiming that a historical bottleneck still exists.
    CI is shared evidence, triggered by the implementing agent's authorized push, and must identify
    its actual run/job. No mobile, macOS or Windows result is inferred from Linux or browser proof.
 
+## Validation scenes and net-gain gate
+
+Every PRD in this batch must propose a concrete validation scene **before implementation**.
+The scene exercises the real consumer, names its load and scripted actions, measures the complete
+frame including added bookkeeping, and supplies both a benefit workload and an overhead control.
+The scenarios named in each PRD are proposed implementation outputs, not files or results that
+already exist. Reuse native-smoke, the sailing kit and current playtest/profiling harnesses.
+Install the identical frozen scene/replay on both engine revisions; its addition cannot differ
+between arms. Compare one optimization at a time, including all landed prerequisites in both.
+
+| PRD | Proposed scene | Net-gain subject | Overhead control |
+| --- | --- | --- | --- |
+| 762 | Debris actuation yard | Sparse forces across 10,000 dynamic bodies | All bodies forced; small raw-access world |
+| 763 | Sleeping warehouse | 10,000 residents with 1% changing poses | All residents moving; small world |
+| 764 | Hitscan obstacle course | 32 rays across 10,000 mostly irrelevant meshes | Zero rays; mostly moving meshes with narrow explicit targets |
+| 765 | Mixed-rate motion hall | 10,000 interpolated participants at 120 Hz presentation | Interpolation disabled; small population at 60 Hz |
+| 766 | Reflector harbor | Sailing with one and three water reflectors at 1080p | Same harbor with zero reflectors |
+| 767 | Trigger warehouse | 10,000 bodies and 100 sensors through the native plugin | Zero sensors; small, frequently rebuilt world |
+| 768 | Live-uniform post gallery | Ten prepared passes with mostly disjoint uniform ownership | One pass; all uniforms shared; graph churn |
+
+For temporal work, existing PRD-756 remains the owner: its validation subject is the existing
+Hop Garden medium route at the 0.72 input tier and 1920×1080 output on Iris Xe, paired with the
+shooter route; exercise emissive/HDR, transparency, camera motion and disocclusion using its
+current temporal fixtures. Retain its ≥1.5 ms total-GPU goal and visual acceptance. Count packed
+history, alpha preservation and precision/fallback costs together. No copy-removal or downsample
+claim substitutes for those scene results, and this batch does not amend its active lane.
+
+**Measurement:** pin the scene seed, camera/input replay, quality overrides, output/input sizes,
+simulation steps, visible population, render cadence and query counts. Disable adaptive quality
+for the comparison through its existing named overrides and report them. Warm each arm for
+10 seconds after loading/compilation, then capture 30 seconds of steady state per variant and
+target; alternate B/C and C/B order across at least three matched pairs. Separate lifecycle spikes
+from steady windows and compare both. Collect operation counters in separate diagnostic runs
+when their instrumentation perturbs timing. Include new index maintenance, dirty detection,
+fallbacks, allocation/GC, callback dispatch and extra passes in the timed candidate.
+
+**Pass/fail:** add AC-4 in each new PRD and link it from the final phase. Fewer resets, rows,
+crossings or scans prove the mechanism, not a net gain. The declared benefit variant must improve
+whole-frame critical-path work p50 by **more than max(5%, observed baseline run-to-run spread)**
+on its stated target. Compute spread as `(max baseline p50 − min baseline p50) / median baseline
+p50` for the matched baseline runs. For CPU slices, measure the complete game-thread frame work,
+not only the optimized function; verify the scene is CPU-limited before calling it a throughput
+win. For the reflector slice measure **total frame GPU time**, not just the deleted output pass.
+Also report presented-frame p50/p95; use an uncapped run through the existing runner when
+possible to establish throughput, holding logical work per rendered frame equal. If display
+pacing masks FPS changes, report a frame-budget gain only, not a demonstrated FPS gain.
+
+All variants must keep complete CPU-work p95, total-GPU p95 and presented-frame p95 within 5% of baseline, keep
+gameplay/visual checks green, and avoid unexplained draw/triangle/quality reductions. The small,
+inactive and worst-case controls must keep whole-frame work p50 within 5% of baseline; a guard's
+fallback overhead counts. Record retained memory and allocation/GC cost, including after ten
+create/run/dispose cycles: bounded added storage is acceptable, cumulative retained growth is
+not. A target below timing resolution is **inconclusive**; extend sampling or defer it. Do not
+tick AC-4, close the performance PRD, or claim a win from a synthetic counter reduction alone.
+Record per-target tables and visual verdicts on the owning PRD/PR, not separate evidence files.
+
 Scope stays at three phases and at most eight boxes per new PRD. Each phase's outcome is verified before
 its box is ticked; acceptance consumes that evidence. No mandatory human acceptance is introduced.
 Use laptop offload for jobs over five minutes when capacity permits. Keep results in the owning

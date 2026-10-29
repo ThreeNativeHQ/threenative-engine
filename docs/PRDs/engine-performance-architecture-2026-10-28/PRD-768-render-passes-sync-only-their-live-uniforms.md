@@ -37,11 +37,45 @@ Reuse weak-reference lifetime handling and unchanged-write suppression. No per-g
 uniform-owner registration and no new shader graph format.
 Apply [the batch execution contract](README.md#execution-contract).
 
+## Validation scene — Live-uniform post gallery
+
+**Proposed fixture:** extend the existing native-smoke game with a post gallery using the shipped
+pass/material/uniform APIs; add `examples/native-smoke/playtests/perf-pass-uniforms.playtest.json`
+and a desktop variant. Reuse auto-exposure/post-chain fixtures for realistic target swaps and
+sailing's nested-reflection camera behavior. The gallery renders colored/moving reference panels
+through ten real prepared render-target passes; do not benchmark `sync()` without drawing.
+Use 1,000 live vector/color uniforms partitioned evenly across passes, fixed 640×360 output and
+cheap shaders so GPU shading does not hide the CPU question. Verify the actual limiting stage.
+
+| Variant | Population and action | Purpose |
+| --- | --- | --- |
+| Benefit | Ten passes; each owns a disjoint 10% of uniforms, all live values edited in place | Prove extraction savings survive complete frame CPU |
+| Single pass | All 1,000 uniforms owned by one pass | Charge ownership machinery where global scanning was sufficient |
+| Shared | Ten passes, every uniform shared by every pass | Expose worst-case owner lookup/dedup overhead |
+| Churn/mixed | Rebuild/dispose one pass every 60 ticks; share 20% of nodes; include compute and a nested camera | Preserve lifetime, fallback and camera/dispatch semantics |
+
+Replay in-place vector/color edits, FRAME/RENDER callbacks, ping-pong target swaps and camera
+changes. Observe callback count/order/side effects and rendered/readback panel values through
+the real render loop. Compare with the incumbent implementation in separate correctness runs.
+Include a reachable unsupported/unprepared graph to charge the compatibility fallback. Time
+pass rebuilds separately, and dispose/recreate the gallery ten times; count live owners and
+retained memory to catch ownership leaks. Keep pass count, shader output and draws identical
+between arms; removing output work to reduce uniform visits invalidates the comparison.
+
+**Net gain:** meet [the scene gate](README.md#validation-scenes-and-net-gain-gate) using whole
+CPU frame work on the disjoint-owner variant, including owner preparation/lookup, callbacks,
+value extraction, native submission, graph maintenance and rendering. Report actual writes and
+crossings separately from scans; retain GPU/presentation timings to detect shifted work. Single,
+shared and churn/mixed variants must pass overhead controls. Require a fresh visual judge for
+the gallery and real post-chain scenes. If savings remain below noise, defer this slice.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: Public uniform callbacks and in-place values reach the correct pass with incumbent frame/render frequency, side effects and camera context. proof: `pnpm exec vitest run packages/three-native/__tests__/tsl-uniforms.spec.ts packages/three-native/__tests__/pass-node.spec.ts` extended through render preparation. Evidence: pending.
 - [ ] AC-2 [local]: In ten prepared passes with 10% disjoint uniform ownership per pass, eligible value-extraction visits fall at least 80% versus global scanning; callback work and fallback cost are reported separately. proof: extended uniform cost cases and three matched real post-chain CPU profiling pairs; batch frame-p95 bar applies. Evidence: pending.
 - [ ] AC-3 [local]: Linux owned-engine post rendering preserves live uniform changes, target swaps and reflection-camera values. proof: extend `packages/runtime-native/tests/native-engine/material_uniforms_test.cpp`, run focused `native_engine_material_uniforms` CTests and the real native post-chain playtest in Phase 3. Evidence: pending.
+
+- [ ] AC-4 [local]: Live-uniform post gallery demonstrates a net whole-frame CPU gain for disjoint ownership while single-pass, shared and churn/fallback controls pass the scene gate. proof: proposed `perf-pass-uniforms` playtests on browser and Linux desktop, three matched timing pairs per variant, real callback/readback assertions, resource checks and visual verdicts. Evidence: pending.
 
 ## Integration Ledger
 
@@ -76,4 +110,4 @@ and remove disposed owners. Keep validation and visible fallback accounting.
 **Status:** NOT STARTED
 **Files:** Extend existing post-chain/auto-exposure conformance scenes and playtest scenarios;
 reuse sailing for nested reflection-camera coverage rather than inventing another renderer demo.
-- [ ] Live post chains meet AC-2 and preserve appearance with NEUTRAL or IMPROVEMENT verdicts across in-place edits, target swaps and nested cameras. proof: browser/Linux desktop post-chain playtests, three matched CPU pairs and two headed capture runs per arm under the batch visual contract. Evidence: pending.
+- [ ] Live-uniform post gallery proves AC-2 and AC-4, with real post chains preserving in-place edits, target swaps and nested-camera appearance. proof: proposed gallery/post-chain playtests, matched whole-frame/control measurements and NEUTRAL or IMPROVEMENT visual verdicts on browser and Linux desktop. Evidence: pending.

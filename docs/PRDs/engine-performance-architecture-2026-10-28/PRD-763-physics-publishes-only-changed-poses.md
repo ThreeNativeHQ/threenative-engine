@@ -34,11 +34,44 @@ pose caching. A backend scan may remain; measure scanned bodies separately from 
 The new seam is the prerequisite for 765, not a second physics framework.
 Apply [the batch execution contract](README.md#execution-contract).
 
+## Validation scene — Sleeping warehouse
+
+**Proposed fixture:** extend `examples/native-smoke/src/physics.ts` with a warehouse of fixed
+shelves, sleeping dynamic crates, kinematic carts and characters. Add
+`examples/native-smoke/playtests/perf-pose-publication.playtest.json` with a desktop variant.
+Use real plugin registration/step/application and visible Object3D transforms, not a direct
+serializer benchmark. Freeze camera, cheap geometry/materials, 60 Hz physics and 60 Hz render
+cadence; use the same resident/visible population in both arms. Browser and Linux desktop are
+separate measured targets.
+
+| Variant | Population and action | Purpose |
+| --- | --- | --- |
+| Benefit | 10,000 residents; 1% change poses each tick; repeat at 1,000 | Prove publication savings survive total frame work |
+| Fully resting | Same residents after initial publication; no moving poses | Expose residual dirty detection/scan cost |
+| Fully active | Same residents, 100% moving; include a 10% intermediate case | Bound delta bookkeeping overhead at high change rates |
+| Small/churn | 100 bodies; register, teleport, reparent and remove a fixed subset every 60 ticks | Expose index lifecycle and discontinuity overhead |
+
+The replay moves carts/characters, wakes 20 crates, teleports 10, edits 10 sleeping visuals and
+returns them to physics authority, then removes/re-adds bodies. Assert actual visible poses
+against the full-snapshot oracle after each transition; read a complete diagnostic snapshot
+outside the timing window to prove compatibility. Run a forced small-buffer/retry case outside
+steady-state timing and verify no lost pose. Offscreen residents retain the same simulation
+activity in both arms. Compare role visits, backend scans, reads, rows/bytes and sync CPU without
+claiming that the entire backend became proportional to changes.
+
+**Net gain:** meet [the scene gate](README.md#validation-scenes-and-net-gain-gate) on the 1%
+variant using whole-frame CPU, including backend detection, transport, authoritative visual
+correction, interpolation and rendering. Fully active and small/churn variants are overhead
+controls. Match final poses and require the batch visual judge; fewer published bytes alone
+cannot pass. Report browser and Linux desktop gains independently.
+
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: Registered visuals receive every authoritative transition without stale sleeping edits, lost resize retries or lifecycle leaks; full snapshot callers still receive all valid bodies. proof: `pnpm exec vitest run packages/physics/__tests__/transform-sync-cost.spec.ts packages/physics/__tests__/crossings.spec.ts packages/physics/__tests__/plugin-buffer.spec.ts packages/physics/__tests__/interpolation.spec.ts` with transition cases. Evidence: pending.
 - [ ] AC-2 [local]: After initial publication, 10,000 residents with 1% pose changes publish at most the changed rows plus explicitly counted discontinuities, removing at least 90% of full-snapshot publication bytes. proof: extended `transform-sync-cost.spec.ts` and Phase 3 profiling; backend scans reported separately. Evidence: pending.
 - [ ] AC-3 [local]: Linux native changed-stream transitions preserve the full-snapshot and plugin contract. proof: extend `packages/physics/__tests__/native-contract.spec.ts`, native parity cases and `pnpm --filter @threenative/runtime-native native:physics:parity`. Evidence: pending.
+
+- [ ] AC-4 [local]: Sleeping warehouse demonstrates a net whole-frame CPU gain for 1% changing residents while resting, fully active and small/churn controls pass the scene gate. proof: proposed `perf-pose-publication` playtests on browser and Linux desktop, with three matched timing pairs per variant, pose-oracle checks, resource checks and a visual verdict. Evidence: pending.
 
 ## Integration Ledger
 
@@ -72,4 +105,4 @@ silently change full snapshots. Preserve synchronization and interpolation reset
 **Files:** Existing native-smoke physics fixtures/scenarios; extend the existing cost observations.
 **Implementation:** Exercise 0%, 1%, 10%, 100% moving residents at 1,000 and 10,000 bodies,
 including teleports, wake/sleep, visual edits and disposal; preserve render work.
-- [ ] The real plugin playtest preserves all transitions and meets AC-2 plus the batch synchronization-CPU/frame-p95 bar, with NEUTRAL or IMPROVEMENT visual judging. proof: physics playtests through the existing CLI on browser and Linux desktop, three matched timing pairs, two visual runs per arm. Evidence: pending.
+- [ ] Sleeping warehouse proves AC-2 and AC-4 while preserving pose transitions and appearance. proof: proposed `perf-pose-publication` playtests through the existing CLI on browser and Linux desktop, matched scene timings and NEUTRAL or IMPROVEMENT visual judging. Evidence: pending.
