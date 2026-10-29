@@ -1008,6 +1008,12 @@ export class WorldCells extends Group implements IComputeDriven {
       // A tile that still cannot fit is caught in `update` and reported as pressure.
       residentByteBudget: Number.MAX_SAFE_INTEGER,
       residentTileBudget: tileCount,
+      extent: {
+        maxX: init.manifest.extent.minX + init.manifest.extent.sizeX,
+        maxZ: init.manifest.extent.minZ + init.manifest.extent.sizeZ,
+        minX: init.manifest.extent.minX,
+        minZ: init.manifest.extent.minZ,
+      },
       sampleHeight: heightSamplerFromHeightmap(
         init.manifest.terrain,
         init.manifest.extent,
