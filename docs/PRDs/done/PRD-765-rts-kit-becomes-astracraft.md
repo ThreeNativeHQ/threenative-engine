@@ -51,10 +51,10 @@ disc, not reflective).
 
 ### Phase 3 — performance and kit contracts
 
-- [ ] 60 fps steady at 1920x913 on the default engine after boot. proof: `TN_FRAME_BUDGET` from a headed WebGPU run
-  Open: 2026-10-28 RTX 2080 run read 48-55 fps (6 windows after boot), CPU frame p50 8 ms, GPU 5-6 ms, `hostGap` share 55%; the host was loaded (load 12-16, other WebGPU pages in the same browser). The AstraCraft reference read 38 fps in the same browser that minute. Remeasure on a quiet host.
-- [ ] Contracts green: rts hash re-pinned with a dated comment, `TN_TEMPLATE_ONLY=rts pnpm test:templates`, `pnpm sync:agents`, `pnpm check:docs`, typecheck, lint. proof: those commands
-  Open: 2026-10-28 desktop `TN_TEMPLATE_ONLY=rts pnpm test:templates` did not reach a scenario: the pack failed with `TN_PACK_WEB_ENGINE_STALE` because this lane's `build/web` Wasm came from another tree. Rerun after `node scripts/build-wasm.mjs`.
+- [x] 60 fps steady at 1920x913 on the default engine after boot. proof: `TN_FRAME_BUDGET` from a headed WebGPU run
+  2026-10-29: headed Brave, production builds, quiet GPU (median 41%): Wasm r3/r4 60.0 fps, rAF p95 16.68/16.72 ms, 0 intervals over 20 ms; AstraCraft in the same browser 57.9-59.0 fps with 3-9. Headless real GPU on the owner's 5460 game with the develop engine e7a2fa743: 60 fps, p95 16.7 ms, 1-2 intervals over 20 ms per 20 s. Under 87-100% external GPU load both engines drop (Wasm 55.9 fps): an engine WebGPU command-overhead item, not this kit.
+- [x] Contracts green: rts hash re-pinned with a dated comment, `TN_TEMPLATE_ONLY=rts pnpm test:templates`, `pnpm sync:agents`, `pnpm check:docs`, typecheck, lint. proof: those commands
+  2026-10-29 on fix/rts-template-reds (UI final pass + red fixes + develop a8e7c48f1): `TN_TEMPLATE_ONLY=rts pnpm test:templates` exit 0, every scenario pass, kit contract ok/opt-out with 0 failures, tone pass; `pnpm sync:agents --check` 0, `pnpm check:docs` 0, `pnpm typecheck` 0, `pnpm lint` 0; scaffold.spec 78/78 with the rts hash re-pinned. The first run on 8b4e73d06 found 4 reds (palette import, rts-attack start cameraX, rts-build dark probe under the approved lit fog, one HUD separator under 3:1), each fixed in the kit with its cause in the commit.
 
 ### Phase 4 — owner feel and look report (2026-10-28: judder, yellowish tone, thick moving bars)
 

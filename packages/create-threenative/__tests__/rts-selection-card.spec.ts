@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { TYPES } from "../templates/rts/src/sim/types.js";
 import {
   type ISelectionCard,
   selectionDamage,
   selectionDamageIsHealing,
   selectionStatus,
 } from "../templates/rts/src/ui/labels.js";
-import { TYPES } from "../templates/rts/src/sim/types.js";
 
 /**
  * The selection card's sentences.

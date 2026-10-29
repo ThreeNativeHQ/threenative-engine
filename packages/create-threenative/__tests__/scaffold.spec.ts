@@ -350,8 +350,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Then judge rounds 2-3: AstraCraft crystals, thin selection rings, a one-texel shadow kernel, its (-66, 57) start and bar colours made before the first draw.
   // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
-  // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts.
-  rts: "38e4f41d1c2007d81c659fc7d4e55179ce8310b42155f5eb1881b9fa0add2689",
+  // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
+  rts: "d36c0f57c332464ee325c1280a6430ef97a957592a3fbdc93927d96464d5ecdf",
   runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "254c4b4b535d5d89b9640c27fa829c2392e7a68ecda5fb58596835452ec7d265",

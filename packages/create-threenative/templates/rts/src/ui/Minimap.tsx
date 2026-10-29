@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import { useUiIntent } from "@threenative/ui";
+import { useEffect, useRef } from "react";
 import { HALF, STARTS, WORLD } from "../sim/terrain.js";
 import { useUiStateShown } from "./Hud.js";
 import { minimapWorld } from "./minimapPoint.js";

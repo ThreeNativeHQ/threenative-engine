@@ -1,11 +1,11 @@
 import { OrthographicCamera } from "three";
 import { describe, expect, it } from "vitest";
-import { DRAG_SLOP, dragBoxRect, unitsInBox } from "../templates/rts/src/render/picking.js";
 import {
+  type IRtsView,
   applyRtsCamera,
   createRtsView,
-  type IRtsView,
 } from "../templates/rts/src/render/camera.js";
+import { DRAG_SLOP, dragBoxRect, unitsInBox } from "../templates/rts/src/render/picking.js";
 import { Game } from "../templates/rts/src/sim/game.js";
 
 /**
@@ -34,6 +34,16 @@ function view(): IRtsView {
   return createRtsView(0, 0);
 }
 
+/** A drag past the slop: a band, never the `null` a click returns. */
+function rect(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): [number, number, number, number] {
+  const band = dragBoxRect(from, to);
+  if (band === null) throw new Error("a drag past the slop draws a band");
+  return band;
+}
+
 function camera(): OrthographicCamera {
   return new OrthographicCamera(-1, 1, 1, -1, 1, 600);
 }
@@ -47,12 +57,9 @@ describe("rts drag box", () => {
       [-80, -60],
     ];
     for (const [dx, dy] of corners) {
-      const [, , width, height] = dragBoxRect({ x: 200, y: 300 }, { x: 200 + dx, y: 300 + dy });
+      const [left, top, width, height] = rect({ x: 200, y: 300 }, { x: 200 + dx, y: 300 + dy });
       expect([width, height], `a drag of ${dx} x ${dy}`).toEqual([Math.abs(dx), Math.abs(dy)]);
-      expect(dragBoxRect({ x: 200, y: 300 }, { x: 200 + dx, y: 300 + dy }).slice(0, 2)).toEqual([
-        Math.min(200, 200 + dx),
-        Math.min(300, 300 + dy),
-      ]);
+      expect([left, top]).toEqual([Math.min(200, 200 + dx), Math.min(300, 300 + dy)]);
     }
   });
 
@@ -81,7 +88,7 @@ describe("rts drag box", () => {
     expect(preview.length).toBe(own.length);
     expect(release).toEqual(preview);
     // The band the HUD draws is the band the count is taken over: both corners of the drag.
-    const [, , width, height] = dragBoxRect(from, to);
+    const [, , width, height] = rect(from, to);
     expect([width, height]).toEqual([SIZE.width, SIZE.height]);
   });
 

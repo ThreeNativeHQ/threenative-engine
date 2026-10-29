@@ -26,7 +26,6 @@ import { type IEnvironmentSample, sampleEnvironment } from "../render/environmen
 import { type ISun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
-import { unloadGarrison } from "../sim/combat.js";
 import { createUnitModels } from "../render/models.js";
 import {
   DRAG_SLOP,
@@ -40,6 +39,7 @@ import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/qual
 import { createResources } from "../render/resources.js";
 import { setupSky } from "../render/sky.js";
 import { createTerrain } from "../render/terrain.js";
+import { unloadGarrison } from "../sim/combat.js";
 import { Game } from "../sim/game.js";
 import { HALF, WORLD, terrainHeight } from "../sim/terrain.js";
 import {
