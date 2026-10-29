@@ -4,6 +4,7 @@ import path from "node:path";
 import { OrthographicCamera, Scene, Texture, Vector2 } from "three";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+import { lodPixelScale } from "../../core/src/index.js";
 import type { createArmy as createArmyRef } from "../templates/rts/src/render/army.js";
 import type { createUnitModels as createUnitModelsRef } from "../templates/rts/src/render/models.js";
 import type { createResources as createResourcesRef } from "../templates/rts/src/render/resources.js";
@@ -589,7 +590,7 @@ describe("rts kit ordinary-frame runtime cost", () => {
     const sync = (): void => {
       terrain.updateFog(game);
       resources.sync(game);
-      army.sync(game, selected, time, DT, camera, 720);
+      army.sync(game, selected, time, DT, camera, lodPixelScale(camera, 1080, 1));
     };
     const frame = (): void => {
       time += DT;

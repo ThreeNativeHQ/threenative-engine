@@ -54,3 +54,8 @@ disc, not reflective).
 - [ ] 60 fps steady at 1920x913 on the default engine after boot. proof: `TN_FRAME_BUDGET` from a headed WebGPU run
   Open: 2026-10-28 RTX 2080 run read 48-55 fps (6 windows after boot), CPU frame p50 8 ms, GPU 5-6 ms, `hostGap` share 55%; the host was loaded (load 12-16, other WebGPU pages in the same browser). The AstraCraft reference read 38 fps in the same browser that minute. Remeasure on a quiet host.
 - [ ] Contracts green: rts hash re-pinned with a dated comment, `TN_TEMPLATE_ONLY=rts pnpm test:templates`, `pnpm sync:agents`, `pnpm check:docs`, typecheck, lint. proof: those commands
+  Open: 2026-10-28 desktop `TN_TEMPLATE_ONLY=rts pnpm test:templates` did not reach a scenario: the pack failed with `TN_PACK_WEB_ENGINE_STALE` because this lane's `build/web` Wasm came from another tree. Rerun after `node scripts/build-wasm.mjs`.
+
+## Open engine issues (layer: engine, not fixed in this kit)
+
+- TSL `pow` through `material.outputNode` (the `output` node) fails on the Wasm engine: `TN_START_FAILED: TN_ABI_1: TSL pow: TN_ABI_ARGUMENT expected a TSL node or number`. It works on `engine: "threejs"`. The kit's fog-of-war blend uses `colorNode` plus `emissiveNode` instead.
