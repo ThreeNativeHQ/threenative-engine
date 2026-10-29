@@ -30,6 +30,7 @@ import {
 } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
+import { CPU_STAGE_FIELDS } from "./gpu-stages.js";
 import { withMathUtilsExtras } from "./math-utils.js";
 import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
 import { type PassDraw, definePass } from "./pass-node.js";
@@ -156,8 +157,16 @@ export async function bindWebEngine(
   // Engine crossings so far, for a bench page's per-frame bridgeCalls (the pair's crossing budget).
   (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount = crossings;
   // The engine's running work totals by name, which core puts per frame into TN_FRAME_BUDGET.counters.engine.
+  // The renderer's CPU stage totals ride beside them, so a slow frame names its costly stage.
   (globalThis as { __tnEngineCounters?: () => Record<string, number> }).__tnEngineCounters =
-    counters;
+    isWebHostModule(module)
+      ? () => {
+          const totals = { ...counters() };
+          for (const [name, field] of Object.entries(CPU_STAGE_FIELDS))
+            totals[name] = module._tnw_web_frame(field);
+          return totals;
+        }
+      : counters;
   defineTypeFlags(classes);
   // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
   // buffers with the object, so the call has nothing to release (core's projection mirror makes it).

@@ -2650,10 +2650,21 @@ std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::sp
     return compilation;
 }
 
+void Renderer::addCpuStage(CpuStage stage, double started) {
+    cpuStageMs_[stage].store(cpuStageMs_[stage].load(std::memory_order_relaxed) + meterMs() - started, std::memory_order_relaxed);
+}
+
+Renderer::CpuStageMeter::CpuStageMeter(std::atomic<double>& total) : total(total), started(meterMs()) {}
+
+Renderer::CpuStageMeter::~CpuStageMeter() {
+    total.store(total.load(std::memory_order_relaxed) + meterMs() - started, std::memory_order_relaxed);
+}
+
 uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& inputCamera,
                                   const LightState& lights, std::array<double, 4> clear,
                                   std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
                                   WGPUTextureFormat outputFormat, bool defer) {
+    const double prepareStarted = meterMs();
     FrameGpuTimer::Scope timerScope(compilation ? nullptr : passTimer_.get());
     // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
     if (!compilation && (pendingEncode_ || encoding_))
@@ -2760,6 +2771,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     const auto opaque = sortDraws(items, camera, stablePasses_ && stableRows_);
 
+    double stageStarted = meterMs();
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
@@ -2869,6 +2881,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     if (!compilation) virtualCut_ = false;
 
+    addCpuStage(CpuVirtualPages, stageStarted);
     // PRD-650: a lamp's map is as fine as the finest pixel footprint over the visible receivers it
     // lights (shadows/lamp_resolution.h). A shadow.mapSize other than three's 512² is the game's override.
     std::map<std::size_t, uint32_t> lampSizes;
@@ -3217,6 +3230,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return h;
     };
 
+    stageStarted = meterMs();
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
@@ -3472,6 +3486,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             slot = uniformSlots_.erase(slot);
         }
 
+    addCpuStage(CpuPlan, stageStarted);
+    stageStarted = meterMs();
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
@@ -3683,6 +3699,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
     }
 
+    addCpuStage(CpuShadowBuild, stageStarted);
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
     // Transparent draws replayed into the motion target, appended once their bind groups are chosen.
@@ -4643,12 +4660,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.presentTarget = presentTarget;
     job.presentFormat = presentFormat;
     pendingEncode_ = true;
+    addCpuStage(CpuPrepare, prepareStarted);
     if (defer) return id;
     encodePending();
     return id;
 }
 
 void Renderer::encodeFrame(FrameJob& job) {
+    const CpuStageMeter encodeMeter(cpuStageMs_[CpuEncode]);
     FrameGpuTimer::Scope timerScope(passTimer_.get());
     // The encode half (PRD-613): records and submits what renderPrepared planned. It reads the job,
     // the renderer's own GPU state and the geometry cache's resolved handles, and nothing the game writes.

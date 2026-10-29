@@ -662,6 +662,11 @@ public:
      * GPU time of the most recent frame whose timestamps came back, summed over every render
      * and compute pass, including offscreen targets, in milliseconds; negative until one has, and always on a device without timestamp-query.
      */
+    /** Running CPU ms (thread CPU where the platform has it, else wall) of renderPrepared's costly stages, every
+     *  render summed, so a caller turns them into per-frame time by difference: the virtual shadow pages and caster
+     *  bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, and the encode half. */
+    enum CpuStage : std::size_t { CpuVirtualPages, CpuPlan, CpuShadowBuild, CpuPrepare, CpuEncode, kCpuStageCount };
+    double cpuStageMs(CpuStage stage) const { return cpuStageMs_[stage].load(std::memory_order_relaxed); }
     double lastGpuMs() const { return timing_->lastMs; }
     /**
      * Whether frames are timed on the GPU: off by default, since a timed frame resolves its query
@@ -1176,6 +1181,15 @@ private:
     uint32_t inputWidth_ = 0, inputHeight_ = 0;
     float renderScale_ = 1;
     uint64_t renderId_ = 0;
+    std::array<std::atomic<double>, kCpuStageCount> cpuStageMs_{};
+    /** Adds the ms since `started` to a stage; the encode half adds its own from the render thread. */
+    void addCpuStage(CpuStage stage, double started);
+    struct CpuStageMeter {
+        std::atomic<double>& total;
+        double started;
+        explicit CpuStageMeter(std::atomic<double>& total);
+        ~CpuStageMeter();
+    };
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null

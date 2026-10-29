@@ -768,6 +768,9 @@ extern "C" double tnw_web_frame(int field) {
         case 63: return renderer->lastFrame().recordMs;
         case 64: return renderer->lastFrame().shadowEncodeMs;
         case 65: return double(renderer->lastFrame().shadowRecorded);  // the shadow passes' draws recorded into bundles
+        // 66 to 70: running CPU ms of the renderer's costly stages, every render summed (Renderer::CpuStage): the virtual
+        // shadow pages and caster bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, the encode half.
+        case 66: case 67: case 68: case 69: case 70: return renderer->cpuStageMs(Renderer::CpuStage(field - 66));
         // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
         // 41: the bytes of per-draw uniforms it uploaded.
         case 40: return double(renderer->lastFrame().keptShadowMaps);

@@ -27,3 +27,16 @@ export const SHADOW_STAGE = "Shadow";
 
 /** `tnw_web_frame` field of the shadow passes' segment (web_host.cpp). */
 export const SHADOW_SEGMENT_FIELD = 19;
+
+/**
+ * The renderer's CPU stages by `tnw_web_frame` field (web_host.cpp 66 to 70): running ms of every render, which
+ * core turns into per-frame time in `TN_FRAME_BUDGET.counters.engine`. The virtual shadow pages and caster bounds,
+ * the draw plan, the shadow passes' draw lists, the whole prepare half, and the encode half.
+ */
+export const CPU_STAGE_FIELDS = {
+  cpuVirtualPagesMs: 66,
+  cpuPlanMs: 67,
+  cpuShadowBuildMs: 68,
+  cpuPrepareMs: 69,
+  cpuEncodeMs: 70,
+} as const;
