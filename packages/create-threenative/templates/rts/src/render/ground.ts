@@ -83,19 +83,20 @@ const SIZE = 2048;
 const SCALE = SIZE / WORLD;
 const px = (metres: number): number => (metres + HALF) * SCALE;
 
-/** A painter over one RGBA float buffer: every stroke is source-over in sRGB, like a 2D canvas. */
+/** A painter over the texture's own RGBA bytes: every stroke is source-over in sRGB, like a 2D canvas. */
 class Canvas {
-  readonly rgb = new Float32Array(SIZE * SIZE * 3);
+  readonly rgba = new Uint8ClampedArray(SIZE * SIZE * 4);
+  /** Per-texel distance to the road being stroked, reset only where a road touched it. */
+  readonly #distance = new Float32Array(SIZE * SIZE).fill(Number.POSITIVE_INFINITY);
 
   blend(index: number, c: Paint, coverage = 1): void {
     const a = c[3] * coverage;
     if (a <= 0) return;
-    const rgb = this.rgb;
-    for (let channel = 0; channel < 3; channel++) {
-      const k = index * 3 + channel;
-      const was = rgb[k] ?? 0;
-      rgb[k] = was + ((c[channel] ?? 0) - was) * a;
-    }
+    const rgba = this.rgba;
+    const k = index * 4;
+    rgba[k] = (rgba[k] ?? 0) + (c[0] - (rgba[k] ?? 0)) * a;
+    rgba[k + 1] = (rgba[k + 1] ?? 0) + (c[1] - (rgba[k + 1] ?? 0)) * a;
+    rgba[k + 2] = (rgba[k + 2] ?? 0) + (c[2] - (rgba[k + 2] ?? 0)) * a;
   }
 
   /** Visit every texel centre inside a pixel-space box, clamped to the map. */
@@ -114,26 +115,44 @@ class Canvas {
       for (let x = ax; x <= bx; x++) visit(x + 0.5, y + 0.5, y * SIZE + x);
   }
 
-  /** A polyline stroked at `width` pixels with round joins and caps, drawn once like one path. */
+  /**
+   * One road: each stroke `[width, paint]` drawn over the whole polyline as one path, with round
+   * joins and caps. Distances are measured once, only near each segment, then every stroke reads them.
+   */
+  road(
+    points: readonly (readonly [number, number])[],
+    strokes: readonly (readonly [number, Paint])[],
+  ): void {
+    const reach = Math.max(...strokes.map(([width]) => width)) / 2 + 1;
+    const distance = this.#distance;
+    const touched: number[] = [];
+    for (let s = 1; s < points.length; s++) {
+      const a = points[s - 1];
+      const b = points[s];
+      if (a === undefined || b === undefined) continue;
+      this.each(
+        Math.min(a[0], b[0]) - reach,
+        Math.min(a[1], b[1]) - reach,
+        Math.max(a[0], b[0]) + reach,
+        Math.max(a[1], b[1]) + reach,
+        (x, y, i) => {
+          const d = segmentDistance(x, y, a, b);
+          if (d >= reach) return;
+          const was = distance[i] ?? Number.POSITIVE_INFINITY;
+          if (was === Number.POSITIVE_INFINITY) touched.push(i);
+          if (d < was) distance[i] = d;
+        },
+      );
+    }
+    for (const [width, paint] of strokes)
+      for (const i of touched)
+        this.blend(i, paint, Math.max(0, Math.min(1, width / 2 - (distance[i] ?? 0) + 0.5)));
+    for (const i of touched) distance[i] = Number.POSITIVE_INFINITY;
+  }
+
+  /** A short polyline stroked at `width` pixels; fine for a few small marks. */
   polyline(points: readonly (readonly [number, number])[], width: number, c: Paint): void {
-    const half = width / 2;
-    const xs = points.map((p) => p[0]);
-    const ys = points.map((p) => p[1]);
-    this.each(
-      Math.min(...xs) - half - 1,
-      Math.min(...ys) - half - 1,
-      Math.max(...xs) + half + 1,
-      Math.max(...ys) + half + 1,
-      (x, y, i) => {
-        let d = Number.POSITIVE_INFINITY;
-        for (let s = 1; s < points.length; s++) {
-          const a = points[s - 1];
-          const b = points[s];
-          if (a !== undefined && b !== undefined) d = Math.min(d, segmentDistance(x, y, a, b));
-        }
-        this.blend(i, c, Math.max(0, Math.min(1, half - d + 0.5)));
-      },
-    );
+    this.road(points, [[width, c]]);
   }
 
   /** A straight dashed line, the dash restarting at `a` the way a canvas `moveTo` restarts it. */
@@ -251,8 +270,9 @@ function baseNoise(canvas: Canvas): void {
         const b =
           (small[(y1 * half + x0) * 3 + c] ?? 0) * (1 - fx) +
           (small[(y1 * half + x1) * 3 + c] ?? 0) * fx;
-        canvas.rgb[(y * SIZE + x) * 3 + c] = a * (1 - fy) + b * fy;
+        canvas.rgba[(y * SIZE + x) * 4 + c] = a * (1 - fy) + b * fy;
       }
+      canvas.rgba[(y * SIZE + x) * 4 + 3] = 255;
     }
   }
 }
@@ -260,9 +280,11 @@ function baseNoise(canvas: Canvas): void {
 function roads(canvas: Canvas): void {
   for (const road of ROAD_PATHS) {
     const path = road.map(([x, z]) => [px(x), px(z)] as const);
-    canvas.polyline(path, 9 * SCALE, [149, 136, 105, 0.18]);
-    canvas.polyline(path, 5.9 * SCALE, [142, 130, 99, 0.35]);
-    canvas.polyline(path, 4.8 * SCALE, [92, 88, 72, 0.3]);
+    canvas.road(path, [
+      [9 * SCALE, [149, 136, 105, 0.18]],
+      [5.9 * SCALE, [142, 130, 99, 0.35]],
+      [4.8 * SCALE, [92, 88, 72, 0.3]],
+    ]);
     for (let i = 1; i < road.length; i++) {
       const a = road[i - 1];
       const b = road[i];
@@ -416,14 +438,7 @@ export function paintGround(): DataTexture {
   aprons(canvas, rng);
   expansions(canvas);
   fissures(canvas, rng);
-  const bytes = new Uint8Array(SIZE * SIZE * 4);
-  for (let i = 0; i < SIZE * SIZE; i++) {
-    bytes[i * 4] = canvas.rgb[i * 3] ?? 0;
-    bytes[i * 4 + 1] = canvas.rgb[i * 3 + 1] ?? 0;
-    bytes[i * 4 + 2] = canvas.rgb[i * 3 + 2] ?? 0;
-    bytes[i * 4 + 3] = 255;
-  }
-  const texture = new DataTexture(bytes, SIZE, SIZE);
+  const texture = new DataTexture(new Uint8Array(canvas.rgba.buffer), SIZE, SIZE);
   texture.colorSpace = SRGBColorSpace;
   texture.generateMipmaps = true;
   texture.minFilter = LinearMipmapLinearFilter;
