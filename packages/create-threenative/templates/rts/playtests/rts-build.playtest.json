@@ -74,11 +74,11 @@
       {
         "region": {
           "x": 1098,
-          "y": 274,
+          "y": 292,
           "width": 24,
           "height": 24,
-          "maxLuminance": 0.2,
-          "minDarkPixelRatio": 0.98
+          "maxLuminance": 0.1,
+          "maxDarkPixelRatio": 0.05
         }
       }
     ],
