@@ -22,6 +22,7 @@ import {
 import {
   copyToDocument,
   createDefaultPropertyResolver,
+  meshopt,
   transformMesh,
 } from "@gltf-transform/functions";
 import {
@@ -33,6 +34,7 @@ import {
   decodeRAW16,
   sampleHeight,
 } from "@threenative/terrain";
+import { MeshoptEncoder } from "meshoptimizer";
 import { PNG } from "pngjs";
 import {
   BufferAttribute,
@@ -214,6 +216,15 @@ async function simpleSpecies(): Promise<Uint8Array> {
     .addPrimitive(triangle(doc, buffer, doc.createMaterial("rock")));
   scene.addChild(doc.createNode("rockNode").setMesh(mesh));
   return io().writeBinary(doc);
+}
+
+/** {@link simpleSpecies} Meshopt-compressed, as an imported Unreal pack or a previous compile writes it. */
+async function meshoptSpecies(): Promise<Uint8Array> {
+  await MeshoptEncoder.ready;
+  const writer = io().registerDependencies({ "meshopt.encoder": MeshoptEncoder });
+  const doc = await writer.readBinary(await simpleSpecies());
+  await doc.transform(meshopt({ encoder: MeshoptEncoder }));
+  return writer.writeBinary(doc);
 }
 
 /** One triangle whose normals are KHR_mesh_quantization snorm16, as a quantized cooked model stores them. */
@@ -789,6 +800,16 @@ describe("cookTerrainWorld", () => {
     ]) {
       expect((await stat(path.join(dir, file))).size).toBeGreaterThan(0);
     }
+  });
+
+  it("cooks a Meshopt-compressed species, which keeps its extension through every write", async () => {
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb: await meshoptSpecies() } },
+      out: dir,
+    });
+    expect(result.worldGlb.byteLength).toBeGreaterThan(0);
+    expect((await stat(path.join(dir, "models/fir.glb"))).size).toBeGreaterThan(0);
   });
 
   it("writes the splat and placement files exactly as bakeWorldPackage bakes them", async () => {

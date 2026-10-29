@@ -10,7 +10,7 @@ import {
 } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { KHR_DF_MODEL_ASTC, read as readKTX2 } from "ktx-parse";
-import { MeshoptDecoder } from "meshoptimizer";
+import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import { TNDiscreteLod } from "./lod/extension.js";
 import { TNVirtualGeometry } from "./virtual/extension.js";
 
@@ -146,6 +146,18 @@ export async function createGltfReader(input: Buffer): Promise<NodeIO> {
     io = io.registerDependencies({ "draco3d.decoder": await createDecoderModule() });
   }
   return io;
+}
+
+/**
+ * The writer for a document a reader from {@link createGltfReader} opened. A Meshopt-compressed
+ * source keeps `EXT_meshopt_compression` on its document, and a bare `NodeIO` cannot write that
+ * back: an imported Unreal pack (every Landscape Pro mesh) failed the world cook at its first write.
+ */
+export async function createGltfWriter(): Promise<NodeIO> {
+  await MeshoptEncoder.ready;
+  return new NodeIO()
+    .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
+    .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
 }
 
 /**

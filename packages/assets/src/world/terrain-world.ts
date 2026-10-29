@@ -29,7 +29,7 @@ import {
 import { bakeTerrain, bakeWorldPackage, decodeRAW16, sampleHeight } from "@threenative/terrain";
 import type { IPlacement, ITerrainState } from "@threenative/terrain";
 import { MeshoptSimplifier } from "meshoptimizer";
-import { createGltfReader, readGltfDocument } from "../gltf-io.js";
+import { createGltfReader, createGltfWriter, readGltfDocument } from "../gltf-io.js";
 import { sniffImageMime } from "../health.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../lod/extension.js";
 import {
@@ -349,7 +349,7 @@ async function deriveFarLevels(
     if (triangles <= 0 || triangles > (1 - LOD_MIN_SAVING) * previous) continue;
     const distance = coarsest.distance * Math.sqrt(anchor / triangles);
     if (maxDistance !== undefined && distance >= maxDistance) break;
-    const writer = new NodeIO().registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod]);
+    const writer = await createGltfWriter();
     levels.push({
       distance: Math.round(distance * 10) / 10,
       glb: await writer.writeBinary(doc),
@@ -411,9 +411,7 @@ async function optimizeStreamedJpegs(
   try {
     return originals.size === 0
       ? bytes
-      : await new NodeIO()
-          .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
-          .writeBinary(loadedDocument);
+      : await (await createGltfWriter()).writeBinary(loadedDocument);
   } finally {
     for (const [texture, image] of originals) texture.setImage(image);
   }
@@ -462,9 +460,7 @@ async function assembleSpeciesFile(
   await doc.transform(dedup({ propertyTypes: [PropertyType.TEXTURE] }));
   await optimizeStreamedImages(doc, `${speciesId}.glb`);
   return {
-    bytes: await new NodeIO()
-      .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
-      .writeBinary(doc),
+    bytes: await (await createGltfWriter()).writeBinary(doc),
     scenes,
   };
 }
@@ -1011,7 +1007,7 @@ export async function cookTerrainWorld(
   // Store byte-identical textures once. Each material keeps its own sampler and UV transform.
   await doc.transform(dedup({ propertyTypes: [PropertyType.TEXTURE] }));
 
-  const writer = new NodeIO().registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod]);
+  const writer = await createGltfWriter();
   const worldGlb = await writer.writeBinary(doc);
 
   // Collect in the original write order so even overlapping species filenames keep last-write wins.
