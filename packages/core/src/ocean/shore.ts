@@ -1,5 +1,5 @@
-// Shore waves: when a swell that left open water reaches a cell, which way its front runs there, and
-// how tall it stands by then. Ported from [Ultra-Water](https://github.com/Humpalumps/Ultra-Water)
+// Shore waves: when a swell reaches a cell from the beach outward, which way its front runs there,
+// and how tall it stands by then. Ported from [Ultra-Water](https://github.com/Humpalumps/Ultra-Water)
 // (MIT, `ce9248f`, `src/water/shoreMap.js`), rewritten as TypeScript over the heightfield a bake
 // already has. The method is Ultra-Water's: a fast-sweeping eikonal solve of |grad tau| = 1/c with
 // c = sqrt(g depth), fronts read off grad tau, ray-tube convergence read off the front curvature,
@@ -9,6 +9,11 @@
 // Green's law is the deepest water in the field, and the ray-tube window is a fraction of the
 // domain. A cell the swell cannot reach — behind a bar that breaks the surface, in a lagoon, a
 // puddle — gets no front at all, and that is the whole of the old "exposed shore" rule.
+//
+// The solve is seeded at the coastline of the open sea, not at the domain border: travel time is
+// zero where water meets land and grows offshore, so fronts are iso-lines of the coast and refract
+// around it. Seeding at the border instead draws iso-lines of the rectangle the bake covers, which
+// reads as regular corrugation parallel to an invisible box on a straight shelf.
 //
 // It decides no look. Foam, colour, wave period, how the crest leans and how wide a surf zone reads
 // are the game's, from the fields below.
@@ -46,14 +51,14 @@ export interface IShoreWaveField {
   /** Metres between cell centres. */
   readonly cellSize: number;
   /**
-   * Seconds a front needs to travel from open water to this cell.
+   * Seconds a front needs to reach this cell from the beach it is running at: zero on the waterline,
+   * growing offshore, so the front itself travels down the gradient.
    *
-   * `Infinity` where no front arrives: land, and any water the swell cannot reach without crossing
-   * a bar that stands above the waterline (a lagoon, a pond behind a spit). Consumers must mask by
-   * this rather than by depth.
+   * `Infinity` where no front arrives: land, and any water the swell cannot reach — a lagoon behind
+   * a spit, a pond, a puddle. Consumers must mask by this rather than by depth.
    */
   readonly travel: Float32Array;
-  /** Unit direction the front runs, in world x/z: shoreward. Zero where `travel` is not finite. */
+  /** Unit direction the front runs, in world x/z: down the travel-time gradient, at the beach. */
   readonly directionX: Float32Array;
   readonly directionZ: Float32Array;
   /**
@@ -137,20 +142,79 @@ function cellTimes(
 }
 
 /**
- * Seeds the solve at the open-sea rim: every water cell on the domain border starts at zero travel
- * time. `travel` is padded by one cell on every side so the sweep needs no edge tests; the padding
- * stays `Infinity` and acts as a wall.
+ * The open sea: the water a swell can arrive in, flooded from the water cells on the domain border.
+ *
+ * A pond behind a bar, a lagoon inside a spit, a puddle on the sand — none of them is connected to
+ * open water, so none of them carries a front. That is the sheltered-water rule, measured instead
+ * of assumed, and it is the only reason a domain needs a border: the sea has to touch it somewhere.
  */
-function seedRim(travel: Float64Array, depth: Float32Array, resolution: number): void {
+function openSea(depth: Float32Array, resolution: number): Uint8Array {
+  const open = new Uint8Array(depth.length);
+  const stack: number[] = [];
+  const push = (cell: number): void => {
+    if (open[cell] === 1 || (depth[cell] as number) <= 0) return;
+    open[cell] = 1;
+    stack.push(cell);
+  };
+  for (let index = 0; index < resolution; index += 1) {
+    push(index);
+    push((resolution - 1) * resolution + index);
+    push(index * resolution);
+    push(index * resolution + resolution - 1);
+  }
+  // Iterative flood fill: a recursive one blows the stack on a 1025-cell bake.
+  while (stack.length > 0) {
+    const cell = stack.pop() as number;
+    const row = Math.floor(cell / resolution);
+    const column = cell % resolution;
+    if (column > 0) push(cell - 1);
+    if (column < resolution - 1) push(cell + 1);
+    if (row > 0) push(cell - resolution);
+    if (row < resolution - 1) push(cell + resolution);
+  }
+  return open;
+}
+
+/**
+ * Seeds the solve at the coastline of that open sea, not at the domain border.
+ *
+ * This is the difference between fronts that follow the water and fronts that follow the rectangle
+ * the bake happens to cover: a rim-seeded solve draws iso-lines of the border, so a straight shelf
+ * becomes regular corrugation parallel to an invisible box. Seeding where water meets land and
+ * letting travel time grow offshore gives iso-lines of the *coast*, so a headland bends them, a bay
+ * spreads them and the shelf bunches them as it shallows.
+ *
+ * `travel` is padded by one cell on every side so the sweep needs no edge tests; the padding stays
+ * `Infinity` and acts as a wall.
+ */
+function seedCoast(
+  travel: Float64Array,
+  depth: Float32Array,
+  open: Uint8Array,
+  resolution: number,
+): number {
   const width = resolution + 2;
+  // Outside the bake is the open sea continuing, not a shore: only land, and water closed off from
+  // the open sea, stops a front.
+  const blocks = (row: number, column: number): boolean => {
+    if (row < 0 || column < 0 || row >= resolution || column >= resolution) return false;
+    return open[row * resolution + column] !== 1;
+  };
+  let seeds = 0;
   for (let row = 0; row < resolution; row += 1) {
     for (let column = 0; column < resolution; column += 1) {
-      if ((depth[row * resolution + column] as number) <= 0) continue;
-      if (row !== 0 && column !== 0 && row !== resolution - 1 && column !== resolution - 1)
-        continue;
+      if (open[row * resolution + column] !== 1) continue;
+      const shoreward =
+        blocks(row - 1, column) ||
+        blocks(row + 1, column) ||
+        blocks(row, column - 1) ||
+        blocks(row, column + 1);
+      if (!shoreward) continue;
       travel[(row + 1) * width + column + 1] = 0;
+      seeds += 1;
     }
   }
+  return seeds;
 }
 
 /**
@@ -268,9 +332,10 @@ function frontDirections(
       );
       const gradient = Math.hypot(gradientX, gradientZ);
       if (!(gradient > 1e-9)) continue;
+      // Travel time grows offshore, so the front runs *down* the gradient: toward the beach.
       const cell = row * resolution + column;
-      directionX[cell] = gradientX / gradient;
-      directionZ[cell] = gradientZ / gradient;
+      directionX[cell] = -gradientX / gradient;
+      directionZ[cell] = -gradientZ / gradient;
       const coherent = Math.min(1, Math.max(0, (gradient * (speed[cell] as number) - 0.7) / 0.25));
       fade[cell] = coherent * coherent * (3 - 2 * coherent);
     }
@@ -409,7 +474,8 @@ function rayTubes(
  * The travel time, direction, shoaling and breaking height of a swell arriving on a coast.
  *
  * `heights` are the bake's cell heights in metres, row-major by Z then X, `resolution` cells per
- * side over a square `size` metres. Cells at or above `level` are land: they block a front.
+ * side over a square `size` metres. Cells at or above `level` are land: they block a front, and the
+ * water line they draw is where every front starts. Water the open sea cannot reach carries none.
  *
  * Pure and synchronous: a 257-cell bake takes a few tens of milliseconds and needs no GPU. Throws
  * on a non-finite level or height, a resolution below 2, a heights length that does not match, or a
@@ -425,19 +491,15 @@ export function bakeShoreWaves(
   checkInput(heights, resolution, size, level, options);
   const cellSize = size / (resolution - 1);
   const depth = depthsUnder(heights, level);
-  const wet = new Uint8Array(depth.length);
+  const open = openSea(depth, resolution);
   let deepest = 0;
-  for (let cell = 0; cell < depth.length; cell += 1) {
-    const water = depth[cell] as number;
-    if (water <= 0) continue;
-    wet[cell] = 1;
-    if (water > deepest) deepest = water;
-  }
+  for (let cell = 0; cell < depth.length; cell += 1)
+    if (open[cell] === 1) deepest = Math.max(deepest, depth[cell] as number);
   const { speed, slow } = cellTimes(depth, cellSize);
   const width = resolution + 2;
   const padded = new Float64Array(width * width).fill(Number.POSITIVE_INFINITY);
-  seedRim(padded, depth, resolution);
-  solve(padded, slow, wet, resolution);
+  seedCoast(padded, depth, open, resolution);
+  solve(padded, slow, open, resolution);
 
   const travel = new Float32Array(depth.length);
   const directionX = new Float32Array(depth.length);

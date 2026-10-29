@@ -1,10 +1,14 @@
 // PRD-766 P1.1: the shore-wave bake against an answer worked out on paper.
 //
 // A plane beach is the one bathymetry with a closed form: water depth grows linearly with distance
-// offshore, so a first-order shallow-water front takes tau(x) = 2/sqrt(g s) * (sqrt(shore) -
-// sqrt(shore - x)) seconds to reach x, its height follows Green's law as depth^-1/4, and it stops
-// growing at 0.42 of the water under it. A bar that breaks the surface is the case with no answer
-// on paper and one on the water: no front at all behind it.
+// offshore, so a first-order shallow-water front takes tau(x) = integral of dx/sqrt(g h) from the
+// waterline to x, its height follows Green's law as depth^-1/4, and it stops growing at 0.42 of the
+// water under it. A bar that breaks the surface is the case with no answer on paper and one on the
+// water: no front at all behind it.
+//
+// The integral uses the same depth floor the solver uses (0.25 m). That floor is part of the model
+// — a shallow-water wave stops propagating before it stops having depth — so comparing against the
+// unfloored integral would test the floor, not the solve.
 import { describe, expect, it } from "vitest";
 import { bakeShoreWaves } from "../src/ocean/shore.js";
 
@@ -13,32 +17,44 @@ const RESOLUTION = 257;
 const SIZE = 512;
 const CELL = SIZE / (RESOLUTION - 1);
 const LEVEL = 0;
+/** The bake's own depth floor; the paper answer has to use it too. */
+const FLOOR_DEPTH = 0.25;
 /** 5% beach: 20 m of water at the open-sea rim, dry land at column 200. */
 const SLOPE = 0.05;
 const SHORE_COLUMN = 200;
 const INCIDENT = 1;
 
 /**
- * A plane beach: water shallowing east from 20 m at the western rim to the waterline, dry land east
- * of it, and land along the north and south edges so the only way in is from open water to the west.
+ * A plane beach: water shallowing east from 20 m at the western edge to the waterline at
+ * `SHORE_COLUMN`, dry land east of it. The depth is the same at every row, so a front can only
+ * arrive from the coast and the answer depends on the column alone.
  */
 function planeBeach(): Float32Array {
   const heights = new Float32Array(RESOLUTION * RESOLUTION);
-  for (let row = 0; row < RESOLUTION; row += 1) {
-    const wall = row === 0 || row === RESOLUTION - 1;
+  for (let row = 0; row < RESOLUTION; row += 1)
     for (let column = 0; column < RESOLUTION; column += 1) {
       const depth = column < SHORE_COLUMN ? SLOPE * (SHORE_COLUMN - column) * CELL : 0;
-      heights[row * RESOLUTION + column] = wall ? 5 : LEVEL - depth;
+      heights[row * RESOLUTION + column] = LEVEL - depth;
     }
-  }
   return heights;
 }
 
-/** tau at column `column` on that beach, worked out by integrating dx/sqrt(g h) from the rim. */
+/** Depth the solver works with: floored, as its own wave speed is. */
+function flooredDepth(column: number): number {
+  return Math.max(column < SHORE_COLUMN ? SLOPE * (SHORE_COLUMN - column) * CELL : 0, FLOOR_DEPTH);
+}
+
+/** tau at a column: `integral of dx/sqrt(g h)` from the waterline, on the same floored depth. */
 function analyticTravel(column: number): number {
-  const shore = SHORE_COLUMN * CELL;
-  const distance = column * CELL;
-  return (2 / Math.sqrt(GRAVITY * SLOPE)) * (Math.sqrt(shore) - Math.sqrt(shore - distance));
+  const steps = 20_000;
+  const from = SHORE_COLUMN * CELL;
+  const to = column * CELL;
+  let total = 0;
+  for (let step = 0; step < steps; step += 1) {
+    const at = from + ((to - from) * (step + 0.5)) / steps;
+    total += (to - from) / steps / Math.sqrt(GRAVITY * flooredDepth(at / CELL));
+  }
+  return total;
 }
 
 function depthAt(column: number): number {
@@ -70,7 +86,7 @@ describe("bakeShoreWaves", () => {
   const at = (column: number): number => middle * RESOLUTION + column;
 
   it("arrives when the shallow-water integral says it does", () => {
-    for (const column of [50, 100, 150]) {
+    for (const column of [50, 100, 150, 190]) {
       const mine = field.travel[at(column)] as number;
       const analytic = analyticTravel(column);
       expect(
@@ -78,8 +94,23 @@ describe("bakeShoreWaves", () => {
         `column ${column}: ${mine.toFixed(3)} s against ${analytic.toFixed(3)} s`,
       ).toBeLessThan(0.02);
     }
-    // The rim is open water, so a front is already there.
-    expect(field.travel[at(0)]).toBe(0);
+    // Travel time starts at the waterline and grows offshore.
+    expect(field.travel[at(SHORE_COLUMN - 1)] as number).toBeLessThan(0.5);
+    expect(field.travel[at(50)] as number).toBeGreaterThan(field.travel[at(150)] as number);
+  });
+
+  it("follows the coast, not the rectangle the bake covers", () => {
+    // The regression this bake was re-seeded for: seeding at the domain border made tau depend on
+    // where the border was, so a straight shelf drew fronts parallel to an invisible box. On a
+    // coast whose depth varies only with distance from the shore, two columns far apart on the same
+    // contour must carry the same travel time.
+    for (const column of [60, 120, 180]) {
+      const near = field.travel[at(column)] as number;
+      for (const row of [0, 64, RESOLUTION - 1]) {
+        const other = field.travel[row * RESOLUTION + column] as number;
+        expect(Math.abs(other - near), `column ${column}, row ${row}`).toBeLessThan(1e-3);
+      }
+    }
   });
 
   it("runs the front at the shore, not out to sea", () => {
