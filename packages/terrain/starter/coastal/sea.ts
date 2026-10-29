@@ -420,7 +420,10 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   );
   const ground = texture(heightTexture, shoreUV(positionWorld.x, positionWorld.z));
   const local = inside(positionWorld.x, positionWorld.z);
-  const depth = floorDepth(positionWorld.x, positionWorld.z, positionWorld.y);
+  // The water's own depth decides where it is wet, clear and foaming at the sand; only its tint reads
+  // the shelf the look draws, so the waterline is the bathymetry's and the open sea is the shelf's.
+  const depth = floorDepth(positionWorld.x, positionWorld.z, positionWorld.y, false);
+  const shelf = floorDepth(positionWorld.x, positionWorld.z, positionWorld.y);
   // The breakers this pixel is part of, drawn by the same field the vertex stage was displaced by.
   const front = breakers(shorePoint.x, shorePoint.y);
   const damp = smoothstep(0.1, 2.5, depth);
@@ -460,7 +463,7 @@ function createSeaMesh(ocean: SpectralOcean, data: ICoastalSeaData): Mesh {
   const bounced = view.negate().reflect(normal);
   // The standard material supplies Fresnel and the sun's specular lobe; the sky supplies the radiance.
   material.envNode = mix(color(0xb6cbd5), color(0x568fbd), clamp(bounced.y, 0, 1)).mul(1.15);
-  const water = mix(OCEAN_LOOK.shallow, OCEAN_LOOK.deep, smoothstep(0.4, 9, depth));
+  const water = mix(OCEAN_LOOK.shallow, OCEAN_LOOK.deep, smoothstep(0.4, 9, shelf));
   // A wave's white water rides its own crest; the last few centimetres of water are white whatever the
   // trains are doing, which is what leaves a wet line on the sand.
   const contact = float(1)
