@@ -131,6 +131,28 @@ describe("stress-loop", () => {
     expect(html).toContain("850 ms");
   });
 
+  it("compares only plain ?stress rows, so a variant run does not replace an engine's column", () => {
+    const plain = appendRow(
+      readLedger(ledgerPath()),
+      measureReport(report({ adapter: "plain gpu" })),
+      {
+        label: "stress",
+      },
+    );
+    const both = appendRow(plain, measureReport(report({ adapter: "variant gpu" })), {
+      label: "plainShadow",
+      decision: "measure",
+      variant: "plainShadow",
+    });
+    expect(both.iterations[0].variant).toBe("stress");
+    expect(both.iterations[1].variant).toBe("plainShadow");
+    const html = renderHtml(both, new Date(0));
+    const table = html.slice(html.indexOf("Engine comparison"), html.indexOf("<h2>Iterations"));
+    expect(table).toContain("plain gpu");
+    expect(table).not.toContain("variant gpu");
+    expect(html).toContain("plainShadow");
+  });
+
   it("renders an empty ledger as pending", () => {
     expect(renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0))).toContain("pending");
   });

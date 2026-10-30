@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The stress lab loop's measure step.
 //
-//   pnpm stress:loop record <report.json> --label "<text>" [--decision baseline|keep|reject|measure] [--engine <arm>] [--notes "<text>"]
+//   pnpm stress:loop record <report.json> --label "<text>" [--decision baseline|keep|reject|measure] [--engine <arm>] [--variant <url flags>] [--notes "<text>"]
 //   pnpm stress:loop show
 //   pnpm dashboard   # the Stress lab tab renders docs/stress-loop/ledger.json on each load
 import { readFileSync } from "node:fs";
@@ -170,7 +170,14 @@ export function measureReport(report) {
 export function appendRow(
   ledger,
   row,
-  { label, notes = "", decision, engine = ENGINES[0].key, at = new Date() } = {},
+  {
+    label,
+    notes = "",
+    decision,
+    engine = ENGINES[0].key,
+    variant = "stress",
+    at = new Date(),
+  } = {},
 ) {
   if (typeof label !== "string" || label === "") throw new Error("record needs --label");
   const chosen = decision ?? (ledger.iterations.length === 0 ? "baseline" : "keep");
@@ -178,6 +185,8 @@ export function appendRow(
     throw new Error(`decision must be one of ${DECISIONS.join(", ")}`);
   if (!ENGINES.some((item) => item.key === engine))
     throw new Error(`engine must be one of ${ENGINES.map((item) => item.key).join(", ")}`);
+  if (typeof variant !== "string" || variant === "")
+    throw new Error("variant must be a non-empty string");
   const id = ledger.iterations.reduce((top, item) => Math.max(top, item.id), 0) + 1;
   const next = {
     id,
@@ -186,6 +195,7 @@ export function appendRow(
     label,
     decision: chosen,
     engine,
+    variant,
     notes,
     preset: row.preset,
     layers: row.layers,
@@ -220,6 +230,8 @@ const MORE = [
 ];
 const ALL = [...GOALS, ...MORE, ...TRACKED];
 const engineOf = (row) => row.engine ?? ENGINES[0].key;
+/** The URL flags beyond `?stress` (for example `plainShadow`); the comparison reads only plain `stress` rows. */
+const variantOf = (row) => row.variant ?? "stress";
 
 const fmt = (value, unit = "") =>
   value === null || value === undefined
@@ -251,7 +263,7 @@ export function renderHtml(ledger, now = new Date()) {
   const charts = GOALS.map((goal) => lineChart(goal, rows)).join("");
   const arms = ENGINES.map((engine) => ({
     ...engine,
-    row: rows.findLast((row) => engineOf(row) === engine.key),
+    row: rows.findLast((row) => engineOf(row) === engine.key && variantOf(row) === "stress"),
   }));
   const comparison = `<div class="scroll"><table><thead><tr><th>Metric</th>${arms
     .map(
@@ -265,7 +277,7 @@ export function renderHtml(ledger, now = new Date()) {
   const history = rows
     .map(
       (row) =>
-        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(engineOf(row))}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${[...GOALS, ...MORE].map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}${TRACKED.map((item) => `<td class="n">${esc(fmt(row.metrics[item.key], item.unit))}</td>`).join("")}</tr>`,
+        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(engineOf(row))}${variantOf(row) === "stress" ? "" : ` <span class="dim">${esc(variantOf(row))}</span>`}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${[...GOALS, ...MORE].map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}${TRACKED.map((item) => `<td class="n">${esc(fmt(row.metrics[item.key], item.unit))}</td>`).join("")}</tr>`,
     )
     .join("");
   const header =
@@ -335,6 +347,7 @@ function main(argv) {
       notes: get("--notes") ?? "",
       decision: get("--decision"),
       engine: get("--engine"),
+      variant: get("--variant"),
     });
     writeAtomic(LEDGER, `${JSON.stringify(next, null, 2)}\n`);
     return console.log(`stress-loop row #${next.iterations.at(-1).id} recorded in ${LEDGER}`);
@@ -358,7 +371,7 @@ function main(argv) {
     return;
   }
   console.error(
-    "usage: stress-loop.mjs record <report.json> --label <text> [--decision baseline|keep|reject|measure] [--engine threenative-wasm|threenative-threejs|three-vanilla|unreal] [--notes <text>] | show",
+    "usage: stress-loop.mjs record <report.json> --label <text> [--decision baseline|keep|reject|measure] [--engine threenative-wasm|threenative-threejs|three-vanilla|unreal] [--variant <url flags>] [--notes <text>] | show",
   );
   process.exit(2);
 }

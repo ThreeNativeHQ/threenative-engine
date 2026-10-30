@@ -315,7 +315,8 @@
         "bodies": 300,
         "particles": 18000,
         "lights": 16
-      }
+      },
+      "variant": "plainShadow"
     },
     {
       "id": 7,
@@ -369,7 +370,8 @@
         "bodies": 300,
         "particles": 18000,
         "lights": 16
-      }
+      },
+      "variant": "plainShadow"
     },
     {
       "id": 8,
@@ -1728,7 +1730,8 @@
         "bodies": 300,
         "particles": 18000,
         "lights": 16
-      }
+      },
+      "variant": "plainShadow"
     },
     {
       "id": 33,
@@ -1783,7 +1786,8 @@
         "bodies": 300,
         "particles": 18000,
         "lights": 16
-      }
+      },
+      "variant": "plainShadow"
     },
     {
       "id": 34,
@@ -1838,7 +1842,8 @@
         "bodies": 300,
         "particles": 18000,
         "lights": 16
-      }
+      },
+      "variant": "plainShadow"
     },
     {
       "id": 35,
@@ -1880,6 +1885,62 @@
         "longTasks": 228,
         "loadMs": 2027,
         "bridgeCrossingsP50": 737,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      },
+      "variant": "plainShadow"
+    },
+    {
+      "id": 36,
+      "at": "2026-10-30T03:33:05.513Z",
+      "commit": "core@0.3.7",
+      "label": "ThreeNative on engine threejs (upstream three WebGPURenderer), same stress scene",
+      "decision": "measure",
+      "engine": "threenative-threejs",
+      "notes": "comparison arm 2, coordinator browser 1280x720, host load 3",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 65.09,
+      "windows": 13,
+      "metrics": {
+        "presentedP50Ms": 33.3,
+        "presentedP95Ms": 33.5,
+        "fps": 31.9,
+        "gpuP50Ms": 13.04,
+        "gpuP95Ms": 14.42,
+        "renderP50Ms": 26.1,
+        "updateP50Ms": 3.1,
+        "frameP50Ms": 30.1,
+        "frameP95Ms": 33.4,
+        "mainDraws": 1,
+        "shadowDraws": 18,
+        "mainTrianglesM": 0,
+        "hitchesPerMin": 0,
+        "longTasks": 131,
+        "loadMs": 186,
+        "bridgeCrossingsP50": null,
         "hostCallsP50": null,
         "gpuUploadKbP50": null,
         "jsAllocKbP50": null
