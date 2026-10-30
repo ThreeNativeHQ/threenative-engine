@@ -1126,6 +1126,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 22,
+      "at": "2026-10-30T01:48:49.383Z",
+      "commit": "core@0.3.7",
+      "label": "FU4 one engine call per rig step (updateAndSample + scheduled field)",
+      "decision": "reject",
+      "notes": "3 runs per arm alternating vs develop 5aeee6e89: 25.15/24.47/25.27 vs 24.83/26.82/26.32 fps; crossings 994-1002 vs 1276-1296 (-22%) but update p50 7.42 vs 7.36 ms: the crossing count is not the cost",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 61.33,
+      "windows": 12,
+      "metrics": {
+        "presentedP50Ms": 33.33,
+        "presentedP95Ms": 66.72,
+        "fps": 25.27,
+        "gpuP50Ms": 6.09,
+        "gpuP95Ms": 62.52,
+        "renderP50Ms": 22.98,
+        "updateP50Ms": 7.46,
+        "frameP50Ms": 31.73,
+        "frameP95Ms": 67.79,
+        "mainDraws": 1782,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 2089,
+        "loadMs": 1808,
+        "bridgeCrossingsP50": 997,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
