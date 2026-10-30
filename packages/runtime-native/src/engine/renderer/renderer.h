@@ -83,6 +83,13 @@ using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 bool& perDrawProbes();
 
 /**
+ * Diagnostic switch (TN_SHADOW_PAGE_SCAN=flat, or set by a test before a frame): each shadow page selects its
+ * casters from the whole draw list again, as before FS9, so the two arms' shadow plans can be compared. False
+ * by default: the pages select from a per-page index built once per granted level.
+ */
+bool& flatShadowSelection();
+
+/**
  * Per-draw resolved GPU state, reused by the renderer while the draw's program variant and pipeline
  * target are unchanged. The render database owns one per record (a record rebuild clears it), and
  * DrawItem::cache points at it; a synthesized (batched) draw carries none and resolves afresh. The
@@ -201,6 +208,11 @@ struct DrawItem {
     uint32_t gpuJointRig = 0;
     std::vector<uint32_t> gpuJointRigs; // Batch instance order; singleton draws use gpuJointRig.
     uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
+    /** A virtual shadow page's grouped caster (FM8): one instanced row draws every caster the page selected
+     *  for this geometry and material, and the vertex stage reads each one's own placement from the frame's
+     *  `instances` storage and its own bone base and bind pair from `shadowSkin`, so one palette per rig per
+     *  frame serves every page that draws it. */
+    bool shadowGroup = false;
     /** three's flipSided: mirrored authored meshes reverse the front-face winding. */
     [[nodiscard]] WGPUFrontFace frontFace() const {
         Matrix4 world;
@@ -677,6 +689,9 @@ public:
          *  draws are neither encoded nor uploaded. And the bytes of per-draw uniforms the frame uploaded. */
         uint32_t keptShadowMaps = 0;
         uint64_t uniformBytes = 0;
+        /** The skinned palettes the frame copied into its `boneMatrices` storage, and the GPU-joint rigs it placed:
+         *  one per rig however many shadow pages draw it (FM8). */
+        uint32_t paletteWrites = 0;
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -700,6 +715,14 @@ public:
         uint32_t instanceCount = 0;
         double instanceBase = 0;
         std::array<double, 16> matrixWorld{};
+        /** The casters this row draws, in instance order. A row that draws one caster names it; a row that draws a
+         *  page's group of casters names every member, so a test can prove the grouped plan draws exactly the
+         *  casters, with the matrices, the per-caster plan drew. */
+        struct Member {
+            uint64_t key = 0;
+            std::array<double, 16> matrixWorld{};
+        };
+        std::vector<Member> members;
         uint32_t vertexOffset = 0, fragmentOffset = 0, vertexBytes = 0, fragmentBytes = 0;
     };
     /** The shadow draws the last planned frame kept, in pass order, and one row per draw in draw order. */

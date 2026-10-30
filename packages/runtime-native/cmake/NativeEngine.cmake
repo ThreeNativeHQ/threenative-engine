@@ -284,6 +284,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
         native_engine_virtual_shadow_page_jobs=virtual_shadow_page_jobs
+        native_engine_virtual_shadow_pages_instance_skinned_casters=virtual_shadow_pages_instance_skinned_casters
         native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_gpu_joint_production=gpu_joint_production

@@ -274,6 +274,20 @@ uint64_t instanceStepMask(const shader::StageModule& vertex, const DrawItem& ite
     return mask;
 }
 
+// A grouped shadow row's per-instance bytes live in the frame's `instances` storage, so this store only marks
+// the draw instanced: no buffer is read through it (FM8).
+BufferStore& shadowGroupInstances() {
+    static BufferStore store(Scalar::F32, 0);
+    return store;
+}
+
+// FM8's lever: TN_SHADOW_INSTANCE_GROUPS=0 plans one row per caster per page again. Read per frame, not once,
+// so a test and the stress lab's paired runs plan both arms in one process.
+bool shadowGroupsEnabled() {
+    const char* flag = std::getenv("TN_SHADOW_INSTANCE_GROUPS");
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
+}
+
 // A viewport texture binding: the frame's colour or depth as drawn before this draw.
 bool viewportBinding(std::string_view name) {
     return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||
@@ -456,6 +470,17 @@ bool& perDrawProbes() {
     return perDraw;
 }
 
+// FS9: a page selects its casters from a per-page index of the casters whose bounds can reach it, built once per
+// granted level, instead of scanning the whole draw list once per page. TN_SHADOW_PAGE_SCAN=flat scans the whole
+// list again (diagnostic): a test renders both arms and compares the shadow plans draw for draw.
+bool& flatShadowSelection() {
+    static bool flat = [] {
+        const char* flag = std::getenv("TN_SHADOW_PAGE_SCAN");
+        return flag && std::strcmp(flag, "flat") == 0;
+    }();
+    return flat;
+}
+
 Renderer::DrawProbes Renderer::probesOf(const Program& program) {
     if (!perDrawProbes()) return program.probes;
     return {perDrawFragment(program.fragment), perDrawVertex(program.vertex), readsViewport(program.fragment),
@@ -473,6 +498,10 @@ struct Renderer::Planned {
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     uint64_t slot = 0;  // a main draw's uniform slot (PRD-754), 0 when its blocks were appended
+    // A shadow row that draws several casters in one instanced draw names them, in instance order (FM8);
+    // empty for a row that draws the one caster it points at.
+    const DrawItem* const* members = nullptr;
+    uint32_t memberCount = 0;
 };
 
 /**
@@ -574,7 +603,12 @@ struct Renderer::FrameJob {
     std::vector<ShadowPass> shadowPasses;
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
     uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan
+    uint32_t paletteWrites = 0;  // FrameStats::paletteWrites, counted by the plan
     std::deque<DrawItem> shadowLodItems;
+    // FM8: a page's grouped casters as rows (one per page and group) and each row's member list. Both are
+    // deques: a plan's row points at its members' array until the frame is encoded.
+    std::deque<DrawItem> shadowGroupItems;
+    std::deque<std::vector<const DrawItem*>> shadowGroups;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
     WGPUCommandEncoder encoder = nullptr;
@@ -1505,6 +1539,10 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
         } else if (b.kind == shader::BindingKind::Storage && storages_.count(b.name.substr(2))) {
             const FrameStorage& storage = storages_.at(b.name.substr(2)); // "s_<name>"
             e.buffer = gpu_.buffer(storage.buffer);
+            // A storage a program names before the frame's upload pass has allocated it (a new one, such as
+            // `shadowSkin` on its first grouped page) has no buffer yet: the pass allocates it and rebuildGroups
+            // follows before the draw is encoded, so never build a group around a null buffer.
+            if (e.buffer == nullptr) return nullptr;
             e.size = storage.capacity;
         } else if (sourceScene_ && &stage != &outputFragment_ && &stage != &blitFragment_ &&
                    (b.name == "t_scene" || b.name == "smp_scene" || b.name == "t_depth" ||
@@ -2555,7 +2593,8 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
     const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0);
-    if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
+    if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program: " +
+        (vertex.wgsl.errors.empty() ? std::string("no reason") : vertex.wgsl.errors.front()));
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
     if (kind.alphaHash) {
@@ -2714,6 +2753,18 @@ std::vector<Renderer::ShadowPlanRow> Renderer::shadowPlan() const {
             row.vertexOffset = draw.vertexOffset; row.fragmentOffset = draw.fragmentOffset;
             row.vertexBytes = uint32_t(aligned(draw.program->vertex.uniformBlockSize));
             row.fragmentBytes = draw.fragmentOffset ? uint32_t(aligned(draw.program->fragment.uniformBlockSize)) : 0;
+            if (draw.members != nullptr) {
+                row.members.reserve(draw.memberCount);
+                for (uint32_t m = 0; m < draw.memberCount; ++m) {
+                    ShadowPlanRow::Member member;
+                    member.key = draw.members[m]->key;
+                    std::copy(std::begin(draw.members[m]->matrixWorld), std::end(draw.members[m]->matrixWorld),
+                              member.matrixWorld.begin());
+                    row.members.push_back(member);
+                }
+            } else {
+                row.members.push_back({row.key, row.matrixWorld});
+            }
             rows.push_back(std::move(row));
         }
     }
@@ -3177,6 +3228,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
+    // FrameStats::paletteWrites: the palettes copied above, one per rig, whatever the number of pages that draw it.
+    uint32_t paletteWrites = 0;
     std::unordered_map<const DrawItem*, Deform> deforms;
     std::vector<uint32_t> jointOutputs(jointPrefix ? gpuJoints_->rigs.size() : 0, UINT32_MAX);
     uint32_t jointWritten = 0;
@@ -3195,9 +3248,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 };
                 if (drawn->gpuJointRigs.empty()) place(drawn->gpuJointRig);
                 else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
+                paletteWrites += drawn->gpuJointRigs.empty() ? 1u : uint32_t(drawn->gpuJointRigs.size());
             } else {
                 d.boneBase = double(jointPrefix / 64 + bones.size() / 16);
                 bones.insert(bones.end(), drawn->boneMatrices->begin(), drawn->boneMatrices->end());
+                ++paletteWrites;  // one copy per skinned draw, whatever the number of shadow pages that draw it
             }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {
@@ -3269,6 +3324,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.instanceStorage = v.instanced;
         v.skinned = item.boneMatrices != nullptr;
         v.skinnedPalette = item.boneStride != 0;
+        v.skinInstanceValues = item.shadowGroup && item.boneMatrices != nullptr;
         if (item.morphGeometry) {
             v.morphTargets = static_cast<uint8_t>(item.morphGeometry->morphPositions.size());
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
@@ -3327,7 +3383,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
-    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0;
+    job.shadowGroupItems.clear(); job.shadowGroups.clear();
+    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -3615,41 +3672,114 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // pages are independent: each one collects its own list, and a light worth splitting hands the pages to
         // the pool. Only the selection moves — the programs, pipelines, LOD copies and uniform slices below stay
         // on the caller, in page and render-list order.
+        //
+        // FS9: that reducer is the same for every page of a level, so a granted level is indexed once — a caster's
+        // bounds project to a range of that level's page cells (PageAtlas::pageRange) and it is appended to each of
+        // them in draw-list order. A page then reads its own few casters instead of the whole list: on a granting
+        // frame in the stress lab the scan judged 259 pages x 1316 casters and 0.47% of them became a draw.
+        const auto mayCast = [&](const DrawItem* drawn) {
+            if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) return false;
+            if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) return false;
+            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving there
+            // neither costs a draw nor invalidates the lamp's cached map (PRD-650).
+            if (!lamp || shadow.far <= 0 || !drawn->shadowObject || drawn->positionNode || drawn->nodes->positionNode ||
+                drawn->boneMatrices || drawn->morphGeometry) return true;
+            const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
+                ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
+                : drawn->shadowObject->type() == "Mesh" && static_cast<const Mesh*>(drawn->shadowObject)->geometry
+                    ? static_cast<const Mesh*>(drawn->shadowObject)->geometry->boundingSphere.get() : nullptr;
+            if (!local) return true;
+            Sphere world = *local;
+            Matrix4 model; model.elements = drawn->matrixWorld;
+            world.applyMatrix4(model);
+            const auto& at = lights.direct[i].position;
+            return !(world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far);
+        };
+        // A caster whose bounds move with its node graph, its skin or its morph targets is on every page, as the
+        // scan admitted it: there is no rectangle to index it by.
+        const auto bounded = [](const DrawItem* const drawn) {
+            return !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry;
+        };
+        struct LevelPages {
+            int level = 0;
+            std::vector<std::vector<const DrawItem*>> cell;  // tiles(level)^2 lists, each in draw-list order
+        };
+        const bool pageIndex = virtualMap && !compilation && passCount > 0 && !flatShadowSelection();
+        std::vector<LevelPages> levelPages;
+        std::vector<const DrawItem*> moverCasters;
+        std::map<int, std::size_t> levelSlot;
+        if (pageIndex) {
+            const auto& atlas = virtualIt->second.atlas;
+            bool anyMover = false;
+            for (const shadows::AtlasPage& page : virtualPages[i]) {
+                if (page.mover) { anyMover = true; continue; }
+                if (!levelSlot.emplace(page.level, levelPages.size()).second) continue;
+                const std::size_t side = std::size_t(atlas.tiles(page.level));
+                levelPages.push_back({page.level, std::vector<std::vector<const DrawItem*>>(side * side)});
+            }
+            // A mover page draws every moving caster wherever it is (the scan tests no bounds for it), and a caster
+            // settling between moving and still is on the static pages and the mover page at once.
+            if (anyMover)
+                for (const auto& [depthKey, drawn] : opaque)
+                    if (mayCast(drawn) && atlas.isMover(drawn->key)) moverCasters.push_back(drawn);
+            for (LevelPages& level : levelPages) {
+                const std::size_t side = std::size_t(atlas.tiles(level.level));
+                const double gate = atlas.casterGate(level.level);
+                for (const auto& [depthKey, drawn] : opaque) {
+                    if (!mayCast(drawn) || !atlas.drawsStatic(drawn->key)) continue;
+                    // The gate the scan applied to a caster with fixed bounds, and then the bounds themselves: a
+                    // GPU-displaced one has none to index by, so it stays on every page.
+                    if (bounded(drawn)) {
+                        if (casterDiameters.at(i).at(drawn->key) < gate) continue;
+                        if (drawn->gpuJoints) {
+                            for (auto& cell : level.cell) cell.push_back(drawn);
+                            continue;
+                        }
+                        int x0, x1, y0, y1;
+                        atlas.pageRange(level.level, casterBounds.at(i).at(drawn->key), x0, x1, y0, y1);
+                        for (int y = y0; y <= y1; ++y)
+                            for (int x = x0; x <= x1; ++x)
+                                level.cell[std::size_t(y) * side + std::size_t(x)].push_back(drawn);
+                        continue;
+                    }
+                    for (auto& cell : level.cell) cell.push_back(drawn);
+                }
+            }
+        }
         std::vector<std::vector<const DrawItem*>> selectedCasters(static_cast<std::size_t>(passCount));
         std::vector<std::exception_ptr> failedFace(selectedCasters.size());
         const auto selectFace = [&](std::size_t face) {
             try {
                 const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
                 std::vector<const DrawItem*>& selected = selectedCasters[face];
-                for (const auto& [depthKey, drawn] : opaque) {
-                    if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) continue;
-                    if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
-                    // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving
-                    // there neither costs a draw nor invalidates the lamp's cached map (PRD-650).
-                    if (lamp && shadow.far > 0 && drawn->shadowObject && !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
-                        const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
-                            ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
-                            : drawn->shadowObject->type() == "Mesh" && static_cast<const Mesh*>(drawn->shadowObject)->geometry
-                                ? static_cast<const Mesh*>(drawn->shadowObject)->geometry->boundingSphere.get() : nullptr;
-                        if (local) {
-                            Sphere world = *local;
-                            Matrix4 model; model.elements = drawn->matrixWorld;
-                            world.applyMatrix4(model);
-                            const auto& at = lights.direct[i].position;
-                            if (world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far) continue;
-                        }
+                const std::vector<const DrawItem*>* candidates = nullptr;
+                if (pageIndex) {
+                    const auto& atlas = virtualIt->second.atlas;
+                    candidates = page->mover ? &moverCasters
+                        : &levelPages[levelSlot.at(page->level)].cell[std::size_t(page->y) * std::size_t(atlas.tiles(page->level)) + std::size_t(page->x)];
+                    // The index is conservative, so the bounds test still decides — as it did for every caster of
+                    // the flat scan — and a caster on a page's edge is on every cell it reaches.
+                    for (const DrawItem* drawn : *candidates) {
+                        if (!page->mover && bounded(drawn) && !drawn->gpuJoints &&
+                            !atlas.overlaps(*page, casterBounds.at(i).at(drawn->key))) continue;
+                        selected.push_back(drawn);
                     }
-                    if (page) {
-                        const auto& atlas = virtualIt->second.atlas;
-                        if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
-                        if (!page->mover && !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
-                            if (casterDiameters.at(i).at(drawn->key) < atlas.casterGate(page->level)) continue;
+                } else {
+                    const auto& atlas = virtualIt->second.atlas;
+                    for (const auto& [depthKey, drawn] : opaque) {
+                        if (!mayCast(drawn)) continue;
+                        if (page) {
+                            if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
+                            if (!page->mover && bounded(drawn) &&
+                                casterDiameters.at(i).at(drawn->key) < atlas.casterGate(page->level)) continue;
+                            if (!page->mover && bounded(drawn) && !drawn->gpuJoints &&
+                                !atlas.overlaps(*page, casterBounds.at(i).at(drawn->key))) continue;
                         }
+                        selected.push_back(drawn);
                     }
-                    if (page && !page->mover && !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry &&
-                        !drawn->gpuJoints && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(drawn->key))) continue;
-                    selected.push_back(drawn);
                 }
+                waste::debugAdd(waste::counters().shadowPageSelectionProbes,
+                                candidates ? candidates->size() : opaque.size());
             } catch (...) {
                 failedFace[face] = std::current_exception();  // rethrown on the caller, in page order
             }
@@ -3682,6 +3812,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const double lodBudget = page && !page->mover
             ? (page->highU - page->lowU) / double(virtualIt->second.atlas.options().pageTexels + 2 * virtualIt->second.atlas.options().border) *
                   virtualIt->second.atlas.options().shadowLodTexels : 0;
+        // FM8: the page's casters as this loop resolves them, before they become rows.
+        struct PageCaster {
+            const DrawItem* item = nullptr;
+            Program* program = nullptr;
+            WGPURenderPipeline pipeline = nullptr;
+            double instanceBase = 0;
+        };
+        std::vector<PageCaster> pageCasters;
+        pageCasters.reserve(selectedCasters[std::size_t(face)].size());
         for (const DrawItem* drawn : selectedCasters[std::size_t(face)]) {
             const DrawItem* selected = drawn;
             if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
@@ -3753,8 +3892,159 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
-            pass.draws.push_back({&item, &program, pipeline, 0, 0,
-                                  item.instanceMatrices ? instanceBases.at(drawn) : 0.0});  // packed below, after the lamp cache decides
+            // packed below, after the lamp cache decides which passes run
+            pageCasters.push_back({&item, &program, pipeline, item.instanceMatrices ? instanceBases.at(drawn) : 0.0});
+        }
+        // FM8: a page drew one row per caster, so a crowd's 240 casters cost 720 rows under a three-level sun.
+        // The casters this page selected that share a depth program, a material and their vertex buffers draw
+        // as one instanced row. The members are exactly this page's selection — never a superset, because a
+        // caster whose bounds miss the page's window must not write depth into it. A page that selects one
+        // caster, or a caster a row cannot reproduce (a morph target, a node-graph position, a GPU-deformed
+        // rig, a mirrored winding, an already instanced draw), keeps the plain row it had: no work is added.
+        struct CasterGroup {
+            Program* program = nullptr;
+            WGPURenderPipeline pipeline = nullptr;
+            const void* positions = nullptr; const void* indices = nullptr; const void* uvs = nullptr;
+            const void* normals = nullptr; const void* colors = nullptr;
+            const void* skinIndices = nullptr; const void* skinWeights = nullptr;
+            const std::vector<DrawItem::CustomAttribute>* attributes = nullptr;
+            // What a depth stage reads of the material: a masked or hashed caster's cut, its opacity and its
+            // map's transform. The record copies the material, so two casters' pointers never match.
+            const void* map = nullptr;
+            float alphaTest = 0, opacity = 1, color[3] = {1, 1, 1};
+            uint8_t side = 0, shadowSide = 255;
+            bool skinned = false;
+            std::vector<const DrawItem*> members;
+        };
+        // The other attributes a program reads are the record's, one list per object: equal contents mean the
+        // same vertex sources (a caster with its own TSL attribute keeps its own row).
+        const auto sameAttributes = [](const std::vector<DrawItem::CustomAttribute>& a,
+                                       const std::vector<DrawItem::CustomAttribute>& b) {
+            if (a.size() != b.size()) return false;
+            for (std::size_t i = 0; i < a.size(); ++i)
+                if (a[i].name != b[i].name || a[i].store != b[i].store || a[i].perInstance != b[i].perInstance)
+                    return false;
+            return true;
+        };
+        constexpr std::size_t kNoGroup = std::size_t(-1);
+        std::vector<CasterGroup> groups;
+        std::vector<std::size_t> groupOf(pageCasters.size(), kNoGroup);
+        if (page != nullptr && pageCasters.size() > 1 && shadowGroupsEnabled()) {
+            // ponytail: a page with more groups than this is not a crowd, and the search below is linear in
+            // them; past the bound every caster keeps its own row (no regression, bounded work).
+            constexpr std::size_t kMaxGroupsPerPage = 64;
+            const auto reproducible = [&](const PageCaster& caster) {
+                const DrawItem& item = *caster.item;
+                if (item.morphGeometry || item.morphInfluences || item.positionNode) return false;
+                if (item.nodes->positionNode || item.nodes->vertexNode) return false;
+                if (item.instanceMatrices || item.gpuJoints || item.sprite || item.background) return false;
+                if (item.nodeTextures || item.nodeStorages || item.reflectorView) return false;
+                if (item.boneStride || item.positions == nullptr) return false;
+                if (item.boneMatrices && (item.skinnedRig == nullptr || item.skinnedRig->skeleton == nullptr ||
+                                          item.skinnedRig->skeleton->bones.empty())) return false;
+                // A rig with no palette this frame (an AutoLOD rung's copy) keeps its own row.
+                if (item.boneMatrices && deforms.find(&item) == deforms.end()) return false;
+                // A mirrored caster's front face is its own row's pipeline state, not its instance's.
+                return item.frontFace() == WGPUFrontFace_CCW;
+            };
+            for (std::size_t c = 0; c < pageCasters.size(); ++c) {
+                const PageCaster& caster = pageCasters[c];
+                if (groups.size() >= kMaxGroupsPerPage || !reproducible(caster)) continue;
+                const DrawItem& item = *caster.item;
+                std::size_t at = kNoGroup;
+                for (std::size_t g = 0; g < groups.size() && at == kNoGroup; ++g) {
+                    const CasterGroup& group = groups[g];
+                    if (group.program == caster.program && group.pipeline == caster.pipeline &&
+                        group.positions == item.positions && group.indices == item.indices && group.uvs == item.uvs &&
+                        group.normals == item.normals && group.colors == item.colors &&
+                        group.skinIndices == item.skinIndices && group.skinWeights == item.skinWeights &&
+                        sameAttributes(*group.attributes, *item.attributes) && group.map == item.map &&
+                        group.alphaTest == item.material->alphaTest && group.opacity == item.material->opacity &&
+                        group.color[0] == item.material->color[0] && group.color[1] == item.material->color[1] &&
+                        group.color[2] == item.material->color[2] && group.side == item.side &&
+                        group.shadowSide == item.shadowSide && group.skinned == (item.boneMatrices != nullptr)) at = g;
+                }
+                if (at == kNoGroup) {
+                    at = groups.size();
+                    CasterGroup group;
+                    group.program = caster.program; group.pipeline = caster.pipeline;
+                    group.positions = item.positions; group.indices = item.indices; group.uvs = item.uvs;
+                    group.normals = item.normals; group.colors = item.colors;
+                    group.skinIndices = item.skinIndices; group.skinWeights = item.skinWeights;
+                    group.attributes = item.attributes; group.map = item.map;
+                    group.alphaTest = item.material->alphaTest; group.opacity = item.material->opacity;
+                    for (int k = 0; k < 3; ++k) group.color[k] = item.material->color[k];
+                    group.side = item.side; group.shadowSide = item.shadowSide;
+                    group.skinned = item.boneMatrices != nullptr;
+                    groups.push_back(std::move(group));
+                }
+                groups[at].members.push_back(caster.item);
+                groupOf[c] = at;
+            }
+            // A group of one adds a row and saves none.
+            for (std::size_t c = 0; c < pageCasters.size(); ++c)
+                if (groupOf[c] != kNoGroup && groups[groupOf[c]].members.size() < 2) groupOf[c] = kNoGroup;
+        }
+        std::vector<bool> emitted(groups.size(), false);
+        for (std::size_t c = 0; c < pageCasters.size(); ++c) {
+            const PageCaster& caster = pageCasters[c];
+            if (groupOf[c] == kNoGroup) {
+                pass.draws.push_back({caster.item, caster.program, caster.pipeline, 0, 0, caster.instanceBase});
+                continue;
+            }
+            const std::size_t at = groupOf[c];
+            if (emitted[at]) continue;
+            emitted[at] = true;
+            // One instanced row draws the group: the members' placements in the frame's `instances` storage,
+            // and, for a skinned group, each member's own palette base and bind pair in `shadowSkin`. The
+            // frame's bone palette holds one copy per rig, so every page that draws that rig reads it rather
+            // than writing it again.
+            std::vector<const DrawItem*>& recorded = job.shadowGroups.emplace_back(groups[at].members);
+            DrawItem& row = job.shadowGroupItems.emplace_back(*recorded.front());
+            row.matrixWorld = Matrix4{}.elements;
+            row.shadowGroup = true;
+            row.instanceColors = nullptr;
+            row.instanceCount = uint32_t(recorded.size());
+            row.instanceMatrices = &shadowGroupInstances();
+            row.bindMatrix = row.bindMatrixInverse = Matrix4{}.elements;
+            row.boneStride = 0;
+            const double instanceBase = double(instances.size() / 4);  // the storage indexes in vec4s
+            if (row.boneMatrices) {
+                std::vector<float>& skin = storages_["shadowSkin"].data;
+                const double skinBase = double(skin.size() / 4);
+                for (const DrawItem* member : recorded) {
+                    const auto deform = deforms.find(member);
+                    if (deform == deforms.end())
+                        throw std::runtime_error("TN_SHADOW_GROUP_PALETTE: a grouped caster has no palette this frame");
+                    skin.insert(skin.end(), {float(deform->second.boneBase), 0.0f, 0.0f, 0.0f});
+                    for (double e : member->bindMatrix) skin.push_back(float(e));
+                    for (double e : member->bindMatrixInverse) skin.push_back(float(e));
+                }
+                deforms[&row].boneBase = skinBase;
+            }
+            for (const DrawItem* member : recorded) {
+                for (double e : member->matrixWorld) instances.push_back(float(e));
+                instances.insert(instances.end(), {1.0f, 1.0f, 1.0f, 0.0f});  // no instance colour: a depth pass reads none
+            }
+            const bool masked = row.material->alphaTest > 0;
+            const shader::VertexVariant variant = variantOf(row);
+            Program& program = depthProgram(variant, masked);
+            const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &program.fragment : nullptr;
+            const uint8_t derivedFaces = row.side == 2 ? 2 : row.side == 1 || virtualMap ? 0 : 1;
+            const uint8_t faces = row.shadowSide != 255 ? row.shadowSide : derivedFaces;
+            const WGPUCullMode cull =
+                faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
+            PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
+            target.layout = program.pipelineLayout;
+            target.frontFace = row.frontFace();
+            target.skinIndex = skinIndexFormat(row);
+            target.instanceStepMask = instanceStepMask(program.vertex, row);
+            if (lampMap && faces == 1) target.depthBias = -kLampBackFaceBias;
+            WGPURenderPipeline pipeline = pipelines_->get(program.vertex, depthFragment, target);
+            if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+            Planned& planned = pass.draws.emplace_back(Planned{&row, &program, pipeline, 0, 0, instanceBase});
+            planned.members = recorded.data();
+            planned.memberCount = uint32_t(recorded.size());
         }
         }
         // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
@@ -4943,7 +5233,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (item.boneMatrices && tally != Tally::Extra) {
             auto& stats = counted ? lastFrame_.mainSkinned : lastFrame_.shadowSkinned;
             ++stats.draws;
-            if (item.boneStride) {
+            if (item.boneStride || item.shadowGroup) {
                 ++stats.batches;
                 stats.instances += item.instanceCount;
             } else {
@@ -5489,6 +5779,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         std::lock_guard lock(frameMailMutex_);
         lastFrame_.keptShadowMaps = job.keptShadowMaps;
         lastFrame_.uniformBytes = job.uniformBytes;
+        lastFrame_.paletteWrites = job.paletteWrites;
         waste::debugAdd(waste::counters().renderFrames);
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
         waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);

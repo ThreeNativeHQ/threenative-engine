@@ -82,6 +82,14 @@ struct Counters {
      * frame_slab_is_per_program fails on.
      */
     std::atomic<uint64_t> uniformFrameConstantEvaluations{0};
+    /**
+     * Candidates a shadow page's caster selection visited: one per (page, draw) pair the selection had to
+     * judge before it decided. The selection used to read the whole draw list once per page — pages x casters
+     * pairs per light per frame — and only 0.47% of them produced a draw; a per-page index of the casters whose
+     * bounds can reach the page must keep this at the casters per level plus their rows, never pages x casters,
+     * which is what tests/native-engine/render_database_test.cpp's virtual_shadow_page_jobs fails on.
+     */
+    std::atomic<uint64_t> shadowPageSelectionProbes{0};
 };
 
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "the web back end reads the counters' bytes in place");

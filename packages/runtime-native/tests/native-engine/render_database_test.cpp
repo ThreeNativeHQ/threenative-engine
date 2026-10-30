@@ -37,6 +37,7 @@
 #include <cmath>
 #include <cstdio>
 #include <numeric>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -6963,6 +6964,315 @@ void virtualShadowRigsBatchInMainPass() {
     }
 }
 
+// FM8: a virtual shadow page drew one row per caster per page, so the crowd's 240 casters cost 720 rows
+// under a three-level sun. The casters a page selects that share one depth program and one material now
+// draw as one instanced row per (page, group). The page's depth must not move: that row draws the same
+// casters with the same matrices, so this case plans the same scene with the lever off and on and compares
+// the rows, the casters each row draws and the frame's pixels.
+struct ShadowInstanceArm {
+    Scene scene;
+    PerspectiveCamera camera{50, 4.0 / 3, 0.1, 200};
+    DirectionalLight sun{Color(1, 1, 1), 3};
+    EventQueue events;
+    std::unique_ptr<Renderer> renderer;
+    RenderDatabase database;
+    std::vector<std::shared_ptr<Object3D>> keep;
+    std::vector<Bone*> bones;
+};
+
+// One planned frame: its shadow rows, its stats, its pixels, and each row expanded into the (page, caster)
+// pairs it draws — the multiset two arms must agree on, in a form a sorted compare can hold.
+struct ShadowPlanCapture {
+    std::vector<Renderer::ShadowPlanRow> rows;
+    Renderer::FrameStats stats;
+    std::size_t uniformBytes = 0;  // the frame's per-draw uniform arena: a grouped page packs fewer rows
+    std::vector<uint8_t> pixels;
+    std::vector<std::string> casters;  // "<page> <matrixWorld as hex>" per caster drawn
+    struct Page {
+        std::string name;
+        std::size_t rows = 0, casters = 0;
+        bool operator==(const Page&) const = default;
+        bool operator<(const Page& o) const { return name < o.name; }
+    };
+    std::vector<Page> pages;
+    std::size_t pageCount = 0, groups = 0;
+    // The pages' names and the casters each drew: the page set and the per-page work, without the row counts
+    // a collapsed page no longer has.
+    std::vector<std::string> pageNames() const {
+        std::vector<std::string> names;
+        for (const Page& page : pages) if (page.casters != 0) names.push_back(page.name);
+        return names;
+    }
+    std::vector<std::pair<std::string, std::size_t>> castersPerPage() const {
+        std::vector<std::pair<std::string, std::size_t>> work;
+        for (const Page& page : pages) if (page.casters != 0) work.emplace_back(page.name, page.casters);
+        return work;
+    }
+};
+
+ShadowPlanCapture captureShadowPlan(Renderer& renderer, EventQueue& events) {
+    ShadowPlanCapture out;
+    out.rows = renderer.shadowPlan();
+    out.stats = renderer.lastFrame();
+    out.uniformBytes = renderer.frameUniformBytes().size();
+    out.pixels = read(renderer, events);
+    const auto pageName = [](const Renderer::ShadowPlanRow& row) {
+        return std::to_string(row.pass) + ' ' + std::to_string(row.x) + ',' + std::to_string(row.y) +
+               (row.mover ? "mover" : "static");
+    };
+    const auto hex = [](double value) {
+        char text[17];
+        std::snprintf(text, sizeof text, "%016llx", static_cast<unsigned long long>(std::bit_cast<uint64_t>(value)));
+        return std::string(text);
+    };
+    for (const Renderer::ShadowPlanRow& row : out.rows) {
+        const std::string name = pageName(row);
+        auto page = std::find_if(out.pages.begin(), out.pages.end(), [&](const ShadowPlanCapture::Page& p) { return p.name == name; });
+        if (page == out.pages.end()) page = out.pages.emplace(out.pages.end(), ShadowPlanCapture::Page{name});
+        ++page->rows;
+        page->casters += row.members.size();
+        for (const Renderer::ShadowPlanRow::Member& member : row.members) {
+            std::string line = name;
+            for (double value : member.matrixWorld) line += ' ' + hex(value);
+            out.casters.push_back(std::move(line));
+        }
+    }
+    std::sort(out.casters.begin(), out.casters.end());
+    std::sort(out.pages.begin(), out.pages.end());
+    for (const ShadowPlanCapture::Page& page : out.pages) if (page.casters != 0) ++out.pageCount;
+    for (std::size_t i = 0; i < out.rows.size(); ++i) {  // distinct casters' geometries: an upper bound on groups
+        bool seen = false;
+        for (std::size_t j = 0; j < i && !seen; ++j) seen = out.rows[j].indices == out.rows[i].indices;
+        if (!seen) ++out.groups;
+    }
+    return out;
+}
+
+// The two lever settings, so one process plans both arms: the flag is read per frame.
+void setShadowInstanceLever(bool on) {
+    if (on) unsetenv("TN_SHADOW_INSTANCE_GROUPS");
+    else setenv("TN_SHADOW_INSTANCE_GROUPS", "0", 1);
+}
+
+void buildSkinnedShadowInstanceArm(ShadowInstanceArm& arm, mystral::webgpu::Context& context) {
+    arm.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), arm.events);
+    arm.renderer->setSize(192, 192);
+    arm.scene.enableTrackedTransform();
+    arm.camera.position.set(0, 20, 0.001);
+    arm.camera.lookAt(0, 0, 0);
+    arm.camera.updateProjectionMatrix();
+    arm.database.shadowMapEnabled = true;
+    arm.sun.position.set(6, 12, 4);
+    arm.sun.setCastShadow(true);
+    // One page per clip level, each covering its whole window: a mover page per level holds every rig, so a
+    // frame plans three pages and the rigs' rows are the page work this case counts.
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {16, 48, 160};
+    atlas.mapSize = 128;
+    atlas.pageTexels = 128;
+    atlas.adaptiveRefresh = false;
+    atlas.adaptiveCasterGate = false;
+    atlas.lightDistance = 80;
+    atlas.depthRange = 160;
+    arm.sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+    arm.scene.add(arm.sun);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    // The receiving ground: the page's depth reaches the frame only as these shadows.
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(40, 0.2, 40), material);
+    ground->position.y = -0.1;
+    ground->setReceiveShadow(true);
+    arm.scene.add(*ground);
+    arm.keep.push_back(ground);
+    // Two primitives a rig, sharing one geometry per primitive and one material, as a crowd's body and head do.
+    const auto skinnable = [](std::shared_ptr<BufferGeometry> geometry) {
+        const auto vertices = geometry->attributes.at("position")->count();
+        geometry->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+        std::vector<double> weights(vertices * 4, 0);
+        for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+        geometry->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+        return geometry;
+    };
+    auto body = skinnable(makeBoxGeometry(0.5, 1.1, 0.5));
+    auto head = skinnable(makeBoxGeometry(0.45, 0.45, 0.45));
+    for (int i = 0; i < 8; ++i) {
+        auto root = std::make_shared<Object3D>();
+        auto bone = std::make_shared<Bone>();
+        root->enableTrackedTransform();
+        bone->enableTrackedTransform();
+        root->position.set(-3.5 + i, 0, 0);
+        arm.scene.add(*root);
+        auto skeleton = std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{bone});
+        root->add(*bone);
+        std::vector<std::shared_ptr<SkinnedMesh>> rigs;
+        for (const auto& [geometry, height] : {std::pair{body, 0.55}, std::pair{head, 1.4}}) {
+            auto rig = std::make_shared<SkinnedMesh>(geometry, material);
+            rig->frustumCulled = false;
+            rig->setCastShadow(true);
+            rig->position.y = height;
+            rig->enableTrackedTransform();
+            root->add(*rig);
+            arm.keep.push_back(rig);
+            rigs.push_back(rig);
+        }
+        root->updateMatrixWorld(true);
+        for (const auto& rig : rigs) rig->bind(skeleton);
+        arm.keep.insert(arm.keep.end(), {root, bone});
+        arm.bones.push_back(bone.get());
+    }
+}
+
+void buildStaticShadowInstanceArm(ShadowInstanceArm& arm, mystral::webgpu::Context& context) {
+    arm.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), arm.events);
+    arm.renderer->setSize(192, 192);
+    arm.camera.position.set(0, 14, 0.001);
+    arm.camera.fov = 60;
+    arm.camera.lookAt(0, 0, 0);
+    arm.camera.updateProjectionMatrix();
+    arm.database.shadowMapEnabled = true;
+    arm.sun.position.set(6, 14, 4);
+    arm.sun.setCastShadow(true);
+    // Four pages over a 32 m window, so one wide caster straddles two of them and one page holds one caster.
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {16};
+    atlas.mapSize = 256;
+    atlas.pageTexels = 128;
+    atlas.adaptiveRefresh = false;
+    atlas.adaptiveCasterGate = false;
+    atlas.lightDistance = 60;
+    atlas.depthRange = 120;
+    arm.sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+    arm.scene.add(arm.sun);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto ground = std::make_shared<Mesh>(makeBoxGeometry(48, 0.2, 48), material);
+    ground->position.y = -0.1;
+    ground->setReceiveShadow(true);
+    arm.scene.add(*ground);
+    arm.keep.push_back(ground);
+    auto small = makeBoxGeometry(6, 0.6, 0.6), wide = makeBoxGeometry(40, 0.6, 0.6);
+    const auto caster = [&](std::shared_ptr<BufferGeometry> geometry, double x, double z) {
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(x, 0.9, z);
+        mesh->setCastShadow(true);
+        arm.scene.add(*mesh);
+        arm.keep.push_back(mesh);
+    };
+    caster(wide, 0, -8);   // straddles the two pages of the window's lower half
+    caster(small, -11, -8);
+    caster(small, -4, -8);
+    caster(small, 4, -8);
+    caster(small, 11, -8);
+    caster(small, 12, 12);  // alone in its page
+}
+
+void shadowPagesInstanceSkinnedCasters() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    // The skinned arm: 8 rigs x 2 primitives, all inside every level's window and animated a frame apart.
+    std::array<ShadowInstanceArm, 2> arms;
+    std::array<ShadowPlanCapture, 2> capture;
+    for (int arm = 0; arm < 2; ++arm) buildSkinnedShadowInstanceArm(arms[arm], context);
+    for (int arm = 0; arm < 2; ++arm) {
+        setShadowInstanceLever(arm == 1);  // 0: one row per caster (the lever off), 1: one row per (page, group)
+        for (int frame = 0; frame < 6; ++frame) {
+            for (std::size_t b = 0; b < arms[arm].bones.size(); ++b)
+                arms[arm].bones[b]->rotation.z = 0.15 * std::sin(0.4 * (frame + 3.0 * double(b)));
+            arms[arm].scene.updateMatrixWorld(true);
+            arms[arm].database.render(*arms[arm].renderer, arms[arm].scene, arms[arm].camera);
+        }
+        capture[arm] = captureShadowPlan(*arms[arm].renderer, arms[arm].events);
+    }
+    setShadowInstanceLever(true);
+    for (int arm = 0; arm < 2; ++arm) {
+        std::size_t instances = 0;
+        for (const Renderer::ShadowPlanRow& row : capture[arm].rows) instances += row.instanceCount;
+        std::printf("page groups, arm %s: %zu rows over %zu pages, %zu instances, %zu casters, %u shadow draws, "
+                    "%u palette writes, %u skinned batches, %u exact, %zu uniform bytes\n", arm == 0 ? "off" : "on",
+                    capture[arm].rows.size(), capture[arm].pageCount, instances, capture[arm].casters.size(),
+                    capture[arm].stats.shadowDraws, capture[arm].stats.paletteWrites,
+                    capture[arm].stats.shadowSkinned.batches, capture[arm].stats.shadowSkinned.exactDraws,
+                    capture[arm].uniformBytes);
+        CHECK(instances == capture[arm].casters.size());
+        CHECK(capture[arm].stats.shadowDraws == capture[arm].rows.size());
+        CHECK(!capture[arm].pixels.empty());  // a readback that never landed would compare two empty buffers
+    }
+    // (a) work: 8 rigs x 2 primitives x 3 levels before, one row per (page, material group) after — and the row
+    // count can never grow with the square of the scene: it is bounded by the pages times the groups.
+    CHECK(capture[0].rows.size() == 48);
+    CHECK(capture[0].pageCount == 3);
+    CHECK(capture[1].rows.size() <= 6);
+    CHECK(capture[1].rows.size() * 1 < capture[0].rows.size());
+    CHECK(capture[1].groups >= 2);
+    // The rows a page can plan never exceed its casters' groups: this bound is independent of the caster
+    // count, so a page cannot grow rows with the square of the scene the way F3's comparison loop did.
+    CHECK(capture[1].stats.shadowDraws <= capture[1].pageCount * capture[1].groups);
+    CHECK(capture[1].stats.shadowDraws < capture[0].stats.shadowDraws);
+    // The per-draw uniform arena the frame uploads packs that many fewer rows: the crowd's ~1 MB of row
+    // slabs per frame is the same multiplication.
+    CHECK(capture[1].uniformBytes < capture[0].uniformBytes);
+    // (b) identity: the pages, and every (page, caster, matrix) triple, are the same in both arms.
+    CHECK(capture[0].casters == capture[1].casters);
+    CHECK(capture[0].pageNames() == capture[1].pageNames());
+    CHECK(capture[0].castersPerPage() == capture[1].castersPerPage());
+    // (c) pixels: the page depth reaches the frame only through these shadows, so the buffers are equal.
+    CHECK(!capture[0].pixels.empty() && capture[0].pixels == capture[1].pixels);
+    if (!capture[0].pixels.empty()) {
+        std::size_t covered = 0, differ = 0;
+        int low = 255, high = 0;
+        for (std::size_t p = 0; p + 3 < capture[0].pixels.size(); ++p) {
+            differ += capture[0].pixels[p] != capture[1].pixels[p];
+            if (p % 4 != 0) continue;
+            low = std::min(low, int(capture[0].pixels[p]));
+            high = std::max(high, int(capture[0].pixels[p]));
+        }
+        for (std::size_t p = 0; p + 3 < capture[0].pixels.size(); p += 4)
+            covered += capture[0].pixels[p] + capture[0].pixels[p + 1] + capture[0].pixels[p + 2] > 0;
+        std::printf("page groups: %zu covered pixels, %zu bytes differ, red %d..%d\n", covered, differ, low, high);
+        CHECK(covered > 10000 && differ == 0);
+        CHECK(high > 32 && low < high / 2);  // a lit floor and the rigs' shadows on it, not a blank frame
+    }
+    // (d) set once: the palette is written once per rig per frame, not once per page, and a grouped row is a batch.
+    CHECK(capture[0].stats.paletteWrites == capture[1].stats.paletteWrites);
+    CHECK(capture[0].stats.paletteWrites > 0 && capture[0].stats.paletteWrites < 48);
+    CHECK(capture[0].stats.shadowSkinned.exactDraws == 48 && capture[0].stats.shadowSkinned.batches == 0);
+    CHECK(capture[1].stats.shadowSkinned.exactDraws == 0 && capture[1].stats.shadowSkinned.batches == capture[1].rows.size());
+    // (e) the static arm: a caster that straddles two pages groups inside each page, a page that selects one
+    // caster keeps its plain row, and the pixels do not move.
+    std::array<ShadowInstanceArm, 2> still;
+    std::array<ShadowPlanCapture, 2> stillCapture;
+    for (int arm = 0; arm < 2; ++arm) buildStaticShadowInstanceArm(still[arm], context);
+    for (int arm = 0; arm < 2; ++arm) {
+        setShadowInstanceLever(arm == 1);
+        // The level's static pages are drawn on the frame its window is granted: capture that frame.
+        still[arm].database.render(*still[arm].renderer, still[arm].scene, still[arm].camera);
+        stillCapture[arm] = captureShadowPlan(*still[arm].renderer, still[arm].events);
+    }
+    setShadowInstanceLever(true);
+    std::printf("page groups, static arm: %zu rows off, %zu on over %zu pages\n", stillCapture[0].rows.size(),
+                stillCapture[1].rows.size(), stillCapture[0].pageCount);
+    for (const auto& [name, casters] : stillCapture[0].castersPerPage())
+        std::printf("page groups: static page %s drew %zu casters\n", name.c_str(), casters);
+    // The wide caster straddles two pages and groups inside each; the page that selects one caster keeps one row.
+    CHECK(stillCapture[0].rows.size() > stillCapture[1].rows.size());
+    CHECK(stillCapture[0].pageNames() == stillCapture[1].pageNames());
+    CHECK(stillCapture[0].castersPerPage() == stillCapture[1].castersPerPage());
+    CHECK(stillCapture[0].casters == stillCapture[1].casters);
+    CHECK(!stillCapture[0].pixels.empty() && stillCapture[0].pixels == stillCapture[1].pixels);
+    // the page that selects one caster: one row before and after, carrying that caster alone — no work added
+    for (const auto& page : stillCapture[1].pages)
+        if (page.casters == 1) {
+            std::size_t rows = 0, instances = 0;
+            for (const Renderer::ShadowPlanRow& row : stillCapture[1].rows) {
+                if (row.mover) continue;
+                if (std::to_string(row.pass) + ' ' + std::to_string(row.x) + ',' + std::to_string(row.y) + "static" != page.name) continue;
+                ++rows;
+                instances += row.instanceCount;
+            }
+            std::printf("page groups: the single-caster page %s draws %zu row(s), %zu instance(s)\n", page.name.c_str(),
+                        rows, instances);
+            CHECK(rows == 1 && instances == 1);
+        }
+}
+
 // Virtual shadow bounds fit a rig from its bones (UE 5.8.3 fits skinned bounds to bones), not by
 // skinning every vertex on the CPU each frame: the box must still hold every posed vertex.
 void boneReachBoundsHoldPosedVertices() {
@@ -7308,13 +7618,88 @@ std::string shadowPlanWindow(const std::string& dump, std::size_t from) {
     return out;
 }
 
+// FS9: `pageRange` is the inverse of `overlaps`, and the per-page index reads it. It must never miss a page the
+// scan would take — that is a missing shadow — so every page `overlaps` accepts has to lie inside the range: a
+// caster on a page edge lands in both cells, and one wholly outside the window reaches none.
+void shadowPageRangeCoversEveryOverlappingPage() {
+    shadows::AtlasOptions options;
+    options.clipExtents = {16};
+    options.mapSize = 256;
+    options.pageTexels = 64;  // 4 x 4 pages of 8 m
+    std::string error;
+    auto atlas = shadows::PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    const std::vector<shadows::AtlasPage> pages =
+        atlas->update(Vector3(0, 10, 4), Vector3(0.35, 0.9, 0.2), true, {}, 1.0 / 60);
+    CHECK(!pages.empty());
+    // The cell grid's origin page, and its neighbour across one cell edge.
+    const shadows::AtlasPage* corner = nullptr;
+    const shadows::AtlasPage* right = nullptr;
+    for (const shadows::AtlasPage& page : pages) {
+        if (page.x == 0 && page.y == 0) corner = &page;
+        if (page.x == 1 && page.y == 0) right = &page;
+    }
+    CHECK(corner != nullptr && right != nullptr);
+    if (!corner || !right) return;
+    // The two rects overlap by the border texels, so the midpoint of their facing edges is the cell edge.
+    const double edgeU = (corner->highU + right->lowU) / 2;
+    const double middleV = (corner->lowV + corner->highV) / 2;
+    // A world point of the light-space (u, v) plane: a page's axes are the light view's orthonormal x and y.
+    const auto point = [&](double u, double v) {
+        Vector3 out = corner->axisU;
+        out.multiplyScalar(u);
+        out.addScaledVector(corner->axisV, v);
+        return out;
+    };
+    const auto cube = [](const Vector3& centre, double size) {
+        Box3 box;
+        box.setFromCenterAndSize(centre, Vector3(size, size, size));
+        return box;
+    };
+    int x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+    // A 2.5 m caster centred on the edge straddles both cells.
+    const Box3 straddler = cube(point(edgeU, middleV), 2.5);
+    atlas->pageRange(0, straddler, x0, x1, y0, y1);
+    std::printf("page range: straddler x %d..%d y %d..%d of %d\n", x0, x1, y0, y1, atlas->tiles(0));
+    CHECK(x0 <= 0 && x1 >= 1 && y0 <= 0 && y1 >= 0);
+    CHECK(atlas->overlaps(*corner, straddler) && atlas->overlaps(*right, straddler));
+    // Every page the scan keeps is inside the range, for boxes of every size and placement.
+    const std::array<Box3, 6> boxes{straddler, cube(point(edgeU, middleV), 0.5),
+        cube(point((corner->lowU + corner->highU) / 2, middleV), 20), cube(point(corner->lowU, corner->lowV), 2.5),
+        cube(point(edgeU, corner->highV), 1.5),
+        cube(point(right->highU, (right->lowV + right->highV) / 2), 2.5)};
+    std::size_t overlapping = 0;
+    for (const Box3& box : boxes) {
+        int a0, a1, b0, b1;
+        atlas->pageRange(0, box, a0, a1, b0, b1);
+        for (const shadows::AtlasPage& page : pages) {
+            if (!atlas->overlaps(page, box)) continue;  // the scan would keep this page
+            ++overlapping;
+            CHECK(page.x >= a0 && page.x <= a1 && page.y >= b0 && page.y <= b1);
+        }
+    }
+    std::printf("page range: %zu page(s) the scan keeps, all inside the range\n", overlapping);
+    CHECK(overlapping > 0);
+    // A caster wholly outside the window reaches none of its pages.
+    const Box3 outside = cube(point(corner->lowU - 40, middleV), 2.5);
+    atlas->pageRange(0, outside, x0, x1, y0, y1);
+    std::printf("page range: outside box x %d..%d y %d..%d\n", x0, x1, y0, y1);
+    CHECK(x1 < x0 && y1 < y0);
+    for (const shadows::AtlasPage& page : pages) CHECK(!atlas->overlaps(page, outside));
+    // A level the atlas has not mapped, or does not have, has no page to reach.
+    atlas->pageRange(1, boxes[1], x0, x1, y0, y1);
+    CHECK(x1 < x0 && y1 < y0);
+}
+
 void virtualShadowPageJobs() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     std::array<ShadowPageArm, 2> arms;
     for (ShadowPageArm& arm : arms) setupShadowPageArm(arm, context, false);
     // Twenty identical edits on both arms: the camera and the tracked caster move, so every frame rebuilds its
-    // pages and the plan is never a repeat of the last.
+    // pages and the plan is never a repeat of the last. Arm 0 selects each page's casters from the whole draw list
+    // (FS9's flat scan), arm 1 from the per-page index, so one dump comparison covers both arms of both levers.
     for (int frame = 0; frame < 20; ++frame) {
         for (ShadowPageArm& arm : arms) {
             arm.camera.position.set(0.25 * frame, 10, 4);
@@ -7323,21 +7708,45 @@ void virtualShadowPageJobs() {
             for (Mesh* mover : arm.movers) mover->position.x = -3.0 + 0.3 * frame;
             arm.renderer->cutVirtualShadows();
         }
+        waste::setDebugEnabled(true);
+        flatShadowSelection() = true;
+        const uint64_t flatBefore = waste::counters().shadowPageSelectionProbes.load();
         JobPool::resetShared(0);
         const uint64_t callerRuns = JobPool::runs();
         arms[0].database.render(*arms[0].renderer, arms[0].scene, arms[0].camera);
         const bool callerStayed = JobPool::runs() == callerRuns;  // a pool with no workers selects on the caller
+        const uint64_t flatProbes = waste::counters().shadowPageSelectionProbes.load() - flatBefore;
+        flatShadowSelection() = false;
+        const uint64_t indexedBefore = waste::counters().shadowPageSelectionProbes.load();
         JobPool::resetShared(3);
         const uint64_t pooledRuns = JobPool::runs();
         arms[1].database.render(*arms[1].renderer, arms[1].scene, arms[1].camera);
         const bool dispatched = JobPool::runs() > pooledRuns;
+        const uint64_t indexedProbes = waste::counters().shadowPageSelectionProbes.load() - indexedBefore;
+        waste::setDebugEnabled(false);
         for (ShadowPageArm& arm : arms) registerShadowPageDraws(arm);
         const std::string serial = shadowPlanDump(*arms[0].renderer, arms[0]);
         const std::string pooled = shadowPlanDump(*arms[1].renderer, arms[1]);
         const std::size_t difference = shadowPlanDifference(serial, pooled);
-        std::printf("page jobs: frame %d, %zu items, %d shadow draws, %zu planned bytes, dispatch %s, plan %s\n", frame,
+        // The plan's own account of the work: the rows it kept, and the levels its granted pages belong to. A
+        // selection that reads the whole draw list per page pays pages x casters probes; the index pays one entry
+        // per caster per granted level plus the cells a caster straddles, which the selected casters already count:
+        // a grouped row (FM8) draws its members as instances, so it counts each member a page selected.
+        std::size_t rows = 0;
+        std::set<int> grantedLevels;
+        for (const Renderer::ShadowPlanRow& row : arms[1].renderer->shadowPlan()) {
+            rows += std::max<std::size_t>(row.members.size(), 1);
+            if (row.virtualLevel >= 0) grantedLevels.insert(row.virtualLevel);
+        }
+        const uint64_t draws = arms[0].database.drawn().size();
+        const uint64_t bound =
+            draws * std::max<std::size_t>(grantedLevels.size(), 1) + rows;  // never draws x pages
+        std::printf("page jobs: frame %d, %zu items, %d shadow draws, %zu planned bytes, dispatch %s, plan %s, "
+                    "probes flat %llu indexed %llu (bound %llu, %zu row(s), %zu level(s))\n", frame,
                     arms[0].database.drawn().size(), arms[0].renderer->lastFrame().shadowDraws, serial.size(),
-                    dispatched ? "yes" : "no", difference == std::string::npos ? "identical" : "DIFFER");
+                    dispatched ? "yes" : "no", difference == std::string::npos ? "identical" : "DIFFER",
+                    (unsigned long long)flatProbes, (unsigned long long)indexedProbes,
+                    (unsigned long long)bound, rows, grantedLevels.size());
         if (difference != std::string::npos) {
             const std::size_t line = std::size_t(std::count(serial.begin(), serial.begin() + std::min(difference, serial.size()), '\n'));
             const std::size_t from = difference > 48 ? difference - 48 : 0;
@@ -7348,6 +7757,9 @@ void virtualShadowPageJobs() {
         CHECK(callerStayed);
         CHECK(dispatched);
         CHECK(difference == std::string::npos);
+        CHECK(flatProbes > 0 && indexedProbes > 0);
+        CHECK(flatProbes > indexedProbes);  // the index is the flat scan's work minus the pairs no page can take
+        CHECK(indexedProbes <= bound);      // and it never grows with the page count, which flatProbes does
     }
     // A small scene stays on the caller: a page or two of a handful of casters is no split.
     {
@@ -7405,6 +7817,7 @@ void virtualShadowPageJobs() {
         CHECK(thrown.rfind("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED", 0) == 0);
         CHECK(JobPool::runs() > before);
     }
+    shadowPageRangeCoversEveryOverlappingPage();
     JobPool::resetShared(0);
 }
 
@@ -7572,7 +7985,7 @@ void drawRefreshGuardHoles() {
     }
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

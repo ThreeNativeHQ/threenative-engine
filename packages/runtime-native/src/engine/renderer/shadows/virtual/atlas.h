@@ -120,6 +120,13 @@ public:
     int edge() const { return slotsPerAxis_ * stride(); }
     std::pair<int, int> origin(int slot) const { return {slot % slotsPerAxis_ * stride(), slot / slotsPerAxis_ * stride()}; }
     bool overlaps(const AtlasPage& page, const Box3& bounds) const;
+    /**
+     * The inverse of `overlaps`: the pages of `level` a caster's bounds can reach, as inclusive page indices,
+     * clamped to the level's `tiles() - 1`. A page the scan would take is always in the range (the page rects
+     * overlap by the border texels, and the range is padded), so indexing by it drops no shadow. An empty range
+     * (`high < low`) means no page of the level: the box is outside its window, or the level is not mapped.
+     */
+    void pageRange(int level, const Box3& bounds, int& x0, int& x1, int& y0, int& y1) const;
 
 private:
     struct Level {
