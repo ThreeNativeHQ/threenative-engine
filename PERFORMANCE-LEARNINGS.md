@@ -713,3 +713,30 @@ no COOP/COEP); that lane is open.
   per-frame `isScheduled()` cache was dropped in review: six paths start or stop actions, and only two cleared it.
 - Revisit when: FU3 (skip the lerp for a body physics left unmoved) gets its own profile run; it is logic-safe and
   about 0.3 ms, below what fps can show.
+
+### 2026-10-30 — Stress lab: shadow caster records indexed per draw + numeric page ids (FS11+FS12) — KEEP
+- Where: `renderer.cpp`/`renderer.h` (`casterRecords_`, one vector per light, indexed by draw position, replaces the
+  per-light `std::map`s keyed by `item.key`), `shadows/virtual/pages.{h,cpp}` (`pageId(level,x,y)` replaces string
+  page keys), `atlas.cpp` (`protectedIds` as an `unordered_set<uint64_t>`).
+- Result: two clean lock windows, alternating arms, 1280x720, RTX 2080: 34.6 / 34.4 / 35.1 / 35.9 fps -> 46.0 / 45.5 /
+  44.6 / 45.4 fps (+30%). GPU p95 62 -> 34 ms, frame p95 51 -> 28 ms, presented p95 50-59 -> 33 ms, long tasks 800-1100
+  -> 72-96, main draws 150 -> 60 at equal triangles (7.07 M). Native tests 115/116 (material_props fails the same way
+  on develop: `tsx` missing in a worktree). Visual judge NEUTRAL: shadow outliers 0 of 4 per arm over 8 alternating
+  captures; the first review's 2 outliers (one per arm) were both slow runs, a flake that already existed.
+- Insight: the fixer's profile estimate was 0.9 ms of CPU; the gain is ten times that. Read-only trace (verdict LEGIT): on the web build a batched draw group keeps its first member's
+  id as its key (`render_database.cpp:1432-1436`), so a casting group and its non-casting main-pass twin share one
+  key. The old `lightCasterBounds.count(item.key)` rule made the twin a caster state too, the two states alternated
+  under one key, `Motion::moving` never settled, and every mapped level got a mover page every frame
+  (`atlas.cpp:290-345`). 87 of the 147 counted draws were those shadow redraws: the web host reports main plus
+  shadow draws as `info.render.drawCalls` (`web_host.cpp:787-789`). `DrawItem::key` is not unique on the web build,
+  so any map keyed by it can merge two draws. A lever that
+  removes a per-frame string or map key can also fix what the key was wrong about: measure the whole frame, not only
+  the function the profile named.
+
+### 2026-10-30 — Stress lab: FS13 (plain-shadow lever) — REJECT; FP2 (one pass per re-encoded level) — PARKED
+- Result: FS13 on `?stress&plainShadow` 59.59 / 59.81 vs develop 59.81 / 56.4 fps; render p50 11.65 / 11.71 vs 10.46 /
+  12.5 ms: no paired gain, the arm already sits on vsync. FP2 37.4 / 37.4 vs develop 35.1 / 35.9 fps (+5%) but GPU p95
+  60.4 ms, unchanged: it does not touch the camera-motion burst it was written for.
+- Insight: a lever for the camera-motion shadow burst must show GPU p95 falling, not only fps. FP2's worktree mixed two
+  workers' changes after the arm wrapper restarted a stopped worker: stop a lane by its wrapper, not its child.
+- Revisit when: FP2 is split into its two changes and each is measured on top of FS11+FS12.
