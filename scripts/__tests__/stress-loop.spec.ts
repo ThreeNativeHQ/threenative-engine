@@ -43,6 +43,29 @@ const report = (overrides: Record<string, unknown> = {}) => ({
 
 const ledgerPath = () => path.join(makeTempDirSync("stress-loop"), "ledger.json");
 
+/** A ledger with one measured row per engine, each with its own metric values. */
+const armLedger = (arms: Record<string, Record<string, number>>) =>
+  Object.entries(arms).reduce(
+    (ledger, [engine, metrics]) =>
+      appendRow(ledger, measureReport(report({ metrics: { ...report().metrics, ...metrics } })), {
+        label: engine,
+        engine,
+        decision: "measure",
+      }),
+    readLedger(ledgerPath()),
+  );
+
+/** The cells of one comparison row, one per engine in table order. */
+const cellsOf = (html: string, metric: string) => {
+  const table = html.slice(html.indexOf("Engine comparison"), html.indexOf("<h2>Iterations"));
+  const row = table.split("<tr>").find((tr) => tr.startsWith(`<td>${metric}</td>`)) ?? "";
+  return row.match(/<td class="n[^>]*>.*?<\/td>/gu) ?? [];
+};
+
+const WASM = "threenative-wasm";
+const THREEJS = "threenative-threejs";
+const VANILLA = "three-vanilla";
+
 describe("stress-loop", () => {
   it("records the first row as the baseline and the second as keep", () => {
     const file = ledgerPath();
@@ -151,6 +174,108 @@ describe("stress-loop", () => {
     expect(table).toContain("plain gpu");
     expect(table).not.toContain("variant gpu");
     expect(html).toContain("plainShadow");
+  });
+
+  it("marks the highest FPS best and the lowest worst, and marks nothing for one arm", () => {
+    const html = renderHtml(
+      armLedger({
+        [WASM]: { fps: 45.39 },
+        [THREEJS]: { fps: 31.9 },
+        [VANILLA]: { fps: 41.86 },
+      }),
+      new Date(0),
+    );
+    const fps = cellsOf(html, "FPS");
+    expect(fps).toHaveLength(4);
+    expect(fps[0]).toContain("✅");
+    expect(fps[1]).toContain("❌");
+    expect(fps[2]).not.toMatch(/✅|❌/u);
+    expect(fps[3]).toContain('class="n dim"');
+    expect(fps[3]).toContain("pending");
+    const lone = cellsOf(renderHtml(armLedger({ [WASM]: { fps: 45.39 } }), new Date(0)), "FPS");
+    expect(lone.join("")).not.toMatch(/✅|❌/u);
+  });
+
+  it("marks the lowest cell best on a lower-better row", () => {
+    const html = renderHtml(
+      armLedger({
+        [WASM]: { gpuP95Ms: 34.21 },
+        [THREEJS]: { gpuP95Ms: 14.42 },
+        [VANILLA]: { gpuP95Ms: 3.09 },
+      }),
+      new Date(0),
+    );
+    const gpu = cellsOf(html, "GPU p95");
+    expect(gpu[2]).toContain("✅");
+    expect(gpu[0]).toContain("❌");
+    expect(gpu[1]).not.toMatch(/✅|❌/u);
+  });
+
+  it("marks no best or worst when the arms differ by less than rounding", () => {
+    const html = renderHtml(
+      armLedger({
+        [WASM]: { presentedP95Ms: 33.36 },
+        [THREEJS]: { presentedP95Ms: 33.5 },
+        [VANILLA]: { presentedP95Ms: 33.4 },
+      }),
+      new Date(0),
+    );
+    const cells = cellsOf(html, "Presented p95");
+    expect(cells.join("")).not.toMatch(/✅|❌/u);
+    expect(cells[1]).toContain("same");
+  });
+
+  it("shows each cell's difference against the Wasm arm, with an arrow by better or worse", () => {
+    const html = renderHtml(
+      armLedger({
+        [WASM]: { fps: 45.39, gpuP95Ms: 34.21 },
+        [THREEJS]: { fps: 31.9, gpuP95Ms: 14.42 },
+        [VANILLA]: { fps: 41.86, gpuP95Ms: 3.09 },
+      }),
+      new Date(0),
+    );
+    const gpu = cellsOf(html, "GPU p95");
+    expect(gpu[2]).toContain("▲ 11× lower");
+    expect(gpu[1]).toContain("▲ 2.4× lower");
+    const fps = cellsOf(html, "FPS");
+    expect(fps[1]).toContain("▼ 30% lower");
+    expect(fps[2]).toContain("▼ 8% lower");
+    expect(gpu[0]).not.toMatch(/▲|▼/u);
+  });
+
+  it("keeps Triangles unranked and flags a count that is off or broken", () => {
+    const html = renderHtml(
+      armLedger({
+        [WASM]: { mainTrianglesM: 7.07, mainDraws: 60 },
+        [THREEJS]: { mainTrianglesM: 0, mainDraws: 1 },
+        [VANILLA]: { mainTrianglesM: 2.11, mainDraws: 1391 },
+      }),
+      new Date(0),
+    );
+    const triangles = cellsOf(html, "Triangles");
+    expect(triangles.join("")).not.toMatch(/✅|❌/u);
+    expect(triangles[2]).toContain("⚠️");
+    expect(triangles[2]).toContain("count basis differs");
+    expect(triangles[1]).toContain("counter broken");
+    const draws = cellsOf(html, "Main draws");
+    expect(draws[1]).toContain("⚠️");
+    expect(draws[1]).not.toMatch(/✅|▲/u);
+    expect(draws[0]).toContain("✅");
+    expect(draws[2]).toContain("❌");
+    const close = cellsOf(
+      renderHtml(
+        armLedger({ [WASM]: { mainTrianglesM: 7.07 }, [VANILLA]: { mainTrianglesM: 7.5 } }),
+        new Date(0),
+      ),
+      "Triangles",
+    );
+    expect(close[2]).not.toContain("⚠️");
+  });
+
+  it("defines the comparison colors for the light and the dark theme", () => {
+    const html = renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0));
+    expect(html).toMatch(/:root\{[^}]*--ok-bg:/u);
+    expect(html).toMatch(/prefers-color-scheme:dark[^\n]*--ok-bg:/u);
   });
 
   it("renders an empty ledger as pending", () => {

@@ -224,7 +224,7 @@ const MORE = [
   { key: "frameP50Ms", short: "CPU frame p50", unit: "ms" },
   { key: "updateP50Ms", short: "Update p50", unit: "ms" },
   { key: "shadowDraws", short: "Shadow draws", unit: "draws" },
-  { key: "mainTrianglesM", short: "Triangles", unit: "M" },
+  { key: "mainTrianglesM", short: "Triangles", unit: "M", workload: true },
   { key: "longTasks", short: "Long tasks", unit: "" },
   { key: "loadMs", short: "Load", unit: "ms" },
 ];
@@ -242,6 +242,88 @@ const delta = (baseline, current, unit) =>
   typeof baseline !== "number" || typeof current !== "number"
     ? "n/a"
     : `${current - baseline >= 0 ? "+" : ""}${Math.round((current - baseline) * 10) / 10} ${unit}`.trim();
+
+const BASIS_NOTE =
+  "count basis differs (Wasm counts main + shadow passes, web_host.cpp:787-790) or the scene differs";
+
+/** A counter that reads near zero while the arm renders frames. The comparison flags it and never ranks it. */
+const brokenCounter = (item, value, fps) =>
+  fps > 0 &&
+  ((item.key === "mainTrianglesM" && value === 0) || (item.key === "mainDraws" && value <= 1));
+
+/** The raw difference against the Wasm cell in words: "11× lower", "30% higher", "3 /min higher" or "same". */
+function differsBy(item, value, base) {
+  if (value === base) return "same";
+  const word = value > base ? "higher" : "lower";
+  if (value === 0 || base === 0)
+    return `${fmt(Math.round(Math.abs(value - base) * 100) / 100, item.unit)} ${word}`;
+  const factor = Math.max(value / base, base / value);
+  if (factor >= 2) return `${factor < 9.95 ? factor.toFixed(1) : Math.round(factor)}× ${word}`;
+  const percent = Math.round(Math.abs(value / base - 1) * 100);
+  return percent === 0 ? "same" : `${percent}% ${word}`;
+}
+
+/**
+ * One comparison row, one cell per engine arm (the Wasm arm comes first and is the delta base).
+ * The best cell gets ✅ and the worst ❌, among the ranked cells: FPS wins high, every other row wins low.
+ * A workload row (Triangles) ranks nothing. A broken counter gets ⚠️ and is never ranked.
+ */
+function comparisonRow(item, arms) {
+  const higherWins = item.better === "higher";
+  const cells = arms.map((arm) => {
+    const value = arm.row?.metrics[item.key];
+    const fps = arm.row?.metrics.fps;
+    return {
+      arm,
+      value,
+      fps,
+      broken: typeof value === "number" && brokenCounter(item, value, fps),
+    };
+  });
+  const ranked = item.workload
+    ? []
+    : cells
+        .filter((cell) => typeof cell.value === "number" && !cell.broken)
+        .map((cell) => cell.value);
+  const best = higherWins ? Math.max(...ranked) : Math.min(...ranked);
+  const worst = higherWins ? Math.min(...ranked) : Math.max(...ranked);
+  const marked = ranked.length >= 2 && differsBy(item, worst, best) !== "same";
+  const base = typeof cells[0].value === "number" && !cells[0].broken ? cells[0].value : undefined;
+  /** Class, symbol and tooltip of one numeric cell. */
+  const flagOf = (cell, index) => {
+    if (cell.broken)
+      return [
+        " warn",
+        "⚠️ ",
+        `counter broken: the arm renders ${cell.fps} fps but reports ${fmt(cell.value, item.unit)}. Not ranked.`,
+      ];
+    if (marked && cell.value === best) return [" best", "✅ ", ""];
+    if (marked && cell.value === worst) return [" worst", "❌ ", ""];
+    if (
+      item.workload &&
+      index > 0 &&
+      base !== undefined &&
+      Math.abs(cell.value - base) > 0.1 * base
+    )
+      return [" warn", "⚠️ ", BASIS_NOTE];
+    return ["", "", ""];
+  };
+  /** The delta line under a numeric cell. Only the arms after the Wasm base get one. */
+  const noteOf = (cell, index) => {
+    if (index === 0 || base === undefined || cell.broken) return "";
+    const words = differsBy(item, cell.value, base);
+    const better = cell.value > base === higherWins;
+    const verdict = words === "same" || item.workload ? "" : better ? "good" : "bad";
+    return `<span class="d ${verdict}">${{ good: "▲ ", bad: "▼ ", "": "" }[verdict]}${esc(words)}</span>`;
+  };
+  const tds = cells.map((cell, index) => {
+    if (cell.arm.row === undefined) return `<td class="n dim">pending</td>`;
+    if (typeof cell.value !== "number") return `<td class="n dim">${esc(fmt(cell.value))}</td>`;
+    const [cls, symbol, title] = flagOf(cell, index);
+    return `<td class="n${cls}"${title === "" ? "" : ` title="${esc(title)}"`}>${symbol}${esc(fmt(cell.value, item.unit))}${noteOf(cell, index)}</td>`;
+  });
+  return `<tr><td>${esc(item.short)}</td>${tds.join("")}</tr>`;
+}
 
 export function renderHtml(ledger, now = new Date()) {
   const rows = ledger.iterations;
@@ -265,15 +347,14 @@ export function renderHtml(ledger, now = new Date()) {
     ...engine,
     row: rows.findLast((row) => engineOf(row) === engine.key && variantOf(row) === "stress"),
   }));
-  const comparison = `<div class="scroll"><table><thead><tr><th>Metric</th>${arms
+  const comparison = `<div class="scroll"><table class="cmp"><thead><tr><th>Metric</th>${arms
     .map(
       (arm) =>
         `<th class="n">${esc(arm.short)}<br><span class="dim">${arm.row === undefined ? "pending" : esc(`#${arm.row.id} · ${arm.row.adapter} · ${arm.row.viewport}`)}</span></th>`,
     )
-    .join("")}</tr></thead><tbody>${ALL.map(
-    (item) =>
-      `<tr><td>${esc(item.short)}</td>${arms.map((arm) => `<td class="n">${arm.row === undefined ? "pending" : esc(fmt(arm.row.metrics[item.key], item.unit))}</td>`).join("")}</tr>`,
-  ).join("")}</tbody></table></div>`;
+    .join(
+      "",
+    )}</tr></thead><tbody>${ALL.map((item) => comparisonRow(item, arms)).join("")}</tbody></table></div>`;
   const history = rows
     .map(
       (row) =>
@@ -288,8 +369,8 @@ export function renderHtml(ledger, now = new Date()) {
 <html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="15"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Stress lab</title>
 <style>
-:root{--bg:#fafaf7;--fg:#1d1d1b;--dim:#6b6b66;--card:#fff;--line:#d9d9d2;--accent:#2f6fed;--ok:#1a8f4c;--miss:#c4452d;--goal:#b7791f}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#161615;--fg:#ececE6;--dim:#9b9b94;--card:#1f1f1d;--line:#34342f;--accent:#6c9bff;--ok:#4cc380;--miss:#ef7a63;--goal:#e2b04a}}
+:root{--bg:#fafaf7;--fg:#1d1d1b;--dim:#6b6b66;--card:#fff;--line:#d9d9d2;--accent:#2f6fed;--ok:#1a8f4c;--miss:#c4452d;--goal:#b7791f;--ok-bg:#e4f4ea;--ok-ink:#11693a;--miss-bg:#fbe9e5;--miss-ink:#a63220;--warn-bg:#fbf1dc}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#161615;--fg:#ececE6;--dim:#9b9b94;--card:#1f1f1d;--line:#34342f;--accent:#6c9bff;--ok:#4cc380;--miss:#ef7a63;--goal:#e2b04a;--ok-bg:#1c3326;--ok-ink:#7fdca6;--miss-bg:#3a2420;--miss-ink:#ff9c88;--warn-bg:#3a3019}}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
 main{max-width:1180px;margin:0 auto;padding:20px 16px 48px}
 h1{margin:0 0 4px;font-size:24px}h2{margin:32px 0 10px;font-size:17px}h3{margin:0 0 4px;font-size:14px}
@@ -298,6 +379,9 @@ table{width:100%;border-collapse:collapse;background:var(--card);border:1px soli
 th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{font-weight:600;color:var(--dim)}
 .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .scroll{overflow-x:auto}
+.cmp td:first-child,.cmp th:first-child{position:sticky;white-space:nowrap;left:0;background:var(--card);box-shadow:1px 0 0 var(--line)}
+.cmp .best{background:var(--ok-bg);color:var(--ok-ink);font-weight:600}.cmp .worst{background:var(--miss-bg);color:var(--miss-ink);font-weight:600}.cmp .warn{background:var(--warn-bg)}
+.cmp .d{display:block;font-size:12px;font-weight:400;color:var(--dim)}.cmp .d.good{color:var(--ok-ink)}.cmp .d.bad{color:var(--miss-ink)}
 .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
 .card{margin:0;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .card p{margin:2px 0}
@@ -316,6 +400,7 @@ svg{width:100%;height:auto}
 <h2>Trend per iteration</h2>
 <div class="grid3">${charts}</div>
 <h2>Engine comparison (same scene, latest row per engine)</h2>
+<p class="dim">✅ best and ❌ worst in the row. Under each other cell: ▲ better or ▼ worse than ThreeNative (Wasm). A higher FPS wins. For every other metric, lower wins. Triangles is a workload, so it has no best or worst. ⚠️ marks a count that looks wrong. Hover for the reason.</p>
 ${comparison}
 <h2>Iterations</h2>
 <div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Engine</th><th>Preset</th><th>Adapter</th>${ALL.map((item) => `<th class="n">${esc(item.short)}</th>`).join("")}</tr></thead><tbody>${history || `<tr><td colspan="${8 + ALL.length}" class="dim">pending</td></tr>`}</tbody></table></div>
