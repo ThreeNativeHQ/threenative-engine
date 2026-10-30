@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -134,12 +134,30 @@ describe("stress-fair (PRD-770)", () => {
     });
     const runs = [run("aaaaaaaaaaaa", 0), run("bbbbbbbbbbbb", 1)];
     const options = { outDir, tag: "t" };
-    runs.forEach((entry, index) => saveRun(options, "vsync", index, entry));
+    for (const entry of runs) saveRun(options, "vsync", entry);
     // The pool refuses (two builds under one URL) after the evidence is on disk.
     expect(() => poolRuns(runs)).toThrow(/different builds/u);
     for (const index of [0, 1])
       expect(
         existsSync(join(outDir, fileName("t", "vsync", `${runs[0].engine} ${runs[0].url}`, index))),
       ).toBe(true);
+  });
+
+  it("writes 4 files for 4 runs of 2 arms: an arm's second run does not overwrite its first", () => {
+    const outDir = mkdtempSync(join(tmpdir(), "tn-fair-spec-"));
+    const arms = ["5740", "5742"].map((port) =>
+      parseArm(`threenative-wasm=http://127.0.0.1:${port}/main.html?stress&arm=${port}`),
+    );
+    const order = abba(arms);
+    const options = { outDir, tag: "t" };
+    for (const arm of order)
+      saveRun(options, "uncapped", {
+        engine: arm.engine,
+        url: arm.url,
+        load: [3],
+        build: { kind: "wasm", sha256: "aaaaaaaaaaaa", commit: "c" },
+        report: { metrics: { fps: 60 }, counts: {} },
+      });
+    expect(readdirSync(outDir)).toHaveLength(4);
   });
 });

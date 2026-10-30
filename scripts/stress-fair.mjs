@@ -410,11 +410,12 @@ export const fileName = (tag, pass, key, index) =>
   `fair-${tag}-${pass}-${index === undefined ? "" : `run${index}-`}${key.replace(/^(\S+) https?:\/\//u, "$1 ").replace(/\W+/gu, "-")}.json`;
 
 /** Writes one run as soon as it ends, before any pooling check can throw: a refused window still leaves its evidence. */
-export function saveRun(options, pass, index, run) {
-  writeFileSync(
-    join(options.outDir, fileName(options.tag, pass, `${run.engine} ${run.url}`, index)),
-    JSON.stringify(run),
-  );
+export function saveRun(options, pass, run) {
+  // The arm's next free run number: ABBA measures an arm twice, and a second run must not overwrite the first.
+  let index = 0;
+  const key = `${run.engine} ${run.url}`;
+  while (existsSync(join(options.outDir, fileName(options.tag, pass, key, index)))) index += 1;
+  writeFileSync(join(options.outDir, fileName(options.tag, pass, key, index)), JSON.stringify(run));
 }
 
 /** One pass in one fresh browser: every arm in ABBA order, pooled per arm into a wrapper file. */
@@ -439,7 +440,7 @@ async function measurePass(pass, options, order, { open, log }) {
       log(
         `${pass} ${arm.engine} ${arm.variant}: fps ${fps} frame p50 ${frameP50Ms} gpu p95 ${gpuP95Ms} load peak ${peak}${peak > LOAD_VOID ? " VOID" : ""}`,
       );
-      saveRun(options, pass, order.indexOf(arm), run);
+      saveRun(options, pass, run);
       // By URL: two arms of one engine and the same flag keys are still two arms.
       runs.set(arm.url, [...(runs.get(arm.url) ?? []), run]);
     }
