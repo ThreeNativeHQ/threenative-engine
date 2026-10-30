@@ -14,6 +14,7 @@ import {
  * point is that a nested render shares the aggregate, so attribution has to subtract the children.
  */
 interface IFakeScene {
+  readonly isQuadMesh?: boolean;
   readonly name: string;
   readonly nested?: readonly IFakeScene[];
   readonly submissions: { readonly draws: number; readonly triangles: number };
@@ -112,6 +113,41 @@ describe("render pass budget", () => {
     expect(byKind.shadow).toMatchObject({ draws: 4, triangles: 40 });
     expect(byKind.reflection).toMatchObject({ draws: 6, triangles: 60 });
     expect(passes.reduce((sum, pass) => sum + pass.draws, 0)).toBe(20);
+  });
+
+  it("should name the camera pass main when the frame is drawn through a post pipeline's quad", () => {
+    // three's `RenderPipeline.render()` submits one full-screen quad and makes the world pass a
+    // nested `renderer.render(scene, camera)` from `PassNode`, so a depth rule named the composite
+    // `main` and reported 1 draw / 1 triangle for a frame that drew the world. The quad is the only
+    // call three flags `isQuadMesh`; the first non-quad call is the camera pass.
+    const raw = fakeRenderer();
+    const budget = RenderPassBudget.install(raw) as RenderPassBudget;
+    budget.beginFrame();
+    raw.render(
+      {
+        ...MAIN,
+        isQuadMesh: true,
+        submissions: { draws: 1, triangles: 1 },
+        nested: [{ ...MAIN, submissions: { draws: 10, triangles: 100 }, nested: [SHADOW] }],
+      },
+      {},
+    );
+    const byKind = Object.fromEntries(passesOf(budget).map((pass) => [pass.kind, pass]));
+    expect(byKind.main).toMatchObject({ draws: 10, triangles: 100 });
+    expect(byKind.nested).toMatchObject({ draws: 1, triangles: 1 });
+    expect(byKind.shadow).toMatchObject({ draws: 4, triangles: 40 });
+    // The composite quad is still counted, so the kinds still sum to the frame's own submissions.
+    expect(passesOf(budget).reduce((sum, pass) => sum + pass.draws, 0)).toBe(15);
+
+    // The plain path — no output pipeline, so no quad — is unchanged: the top-level call is main.
+    const plain = fakeRenderer();
+    const plainBudget = RenderPassBudget.install(plain) as RenderPassBudget;
+    plainBudget.beginFrame();
+    plain.render({ ...MAIN, submissions: { draws: 10, triangles: 100 }, nested: [SHADOW] }, {});
+    const plainKinds = Object.fromEntries(passesOf(plainBudget).map((pass) => [pass.kind, pass]));
+    expect(plainKinds.main).toMatchObject({ draws: 10, triangles: 100 });
+    expect(plainKinds.shadow).toMatchObject({ draws: 4, triangles: 40 });
+    expect(plainKinds.nested).toBeUndefined();
   });
 
   it("files the owned engine's shadow draws as a shadow pass, not as main (PRD-770)", () => {
