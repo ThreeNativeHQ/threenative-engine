@@ -637,3 +637,31 @@ no COOP/COEP); that lane is open.
   bone or object needs a work-count assertion (comparisons or visits per frame) that fails when the work scales with
   the square of the scene. Fix (F8): an `unordered_set` beside the ordered vector.
 - Revisit when: F8 lands; measure F3+F8 against develop before F3 is kept.
+
+### 2026-10-29 — Stress lab: the virtual shadow LOD sync skips its scene walk while nothing it reads moved (FS1) — KEEP
+- Where: `packages/three-native/src/shadow-node.ts` (`walkStillCurrent`), `browser-backend.ts` geometry setter,
+  `packages/core/src/model-lod.ts` (`bumpChains`); `0465c88e7`.
+- Result: three paired runs, same Wasm: 22.43 -> 26.98 fps (+20%), render p50 26.3 -> 20.7 ms. Judge NEUTRAL.
+- Insight: `syncVirtualShadowLods` ran from every `[DRAW_TARGET]` (each post stage re-enters the world draw), so one
+  JS scene walk cost 3.6-4 ms a frame through `accessor.get`. A per-frame JS walk is cheap to skip when its answer has
+  a small set of inputs: here the hierarchy revision, the chain registration count and the geometry assignment count.
+  The hunter's skip missed the third input (a `mesh.geometry` swap moves no hierarchy); list every writer of the
+  answer before you cache it.
+- Revisit when: a fourth writer of a mesh's LOD chain appears (an engine-side geometry swap).
+
+### 2026-10-29 — Stress lab: F3 bounds on the pool + F8 bone hash set — REJECT; FS2 one caster record — REJECT
+- Result: F3+F8 paired with develop: 21.98 against 22.77 fps. FS2 (`unordered_map` caster record per light) alone:
+  21.65 against 22.43; with FS1: 24.44 against FS1 alone 26.98.
+- Insight: F8 did remove the 61M-comparison bone dedupe, but pooled bounds still gave no gain on this scene. FS2 builds
+  its container every frame, and an `unordered_map` build (buckets plus one node per caster) costs more than the two
+  `std::map` lookups it saves, mostly on workers already. A per-frame container needs reuse or a flat array indexed by
+  draw ordinal before its lookups pay.
+- Revisit when: the caster record lives in a flat array that survives frames.
+
+### 2026-10-29 — Stress lab: the first frame waits for shadows and exposure (F1+F5) — KEEP
+- Where: web host ABI 8 `tnw_web_set_presentation_hold`, `packages/core/src/startup-readiness.ts`; `60de162f0`.
+- Result: first revealed frame mean 106-110 with cast shadows, against 140-143 without shadows, a 1 s gap, then a dark
+  frame. Steady state unchanged (17.24 against 17.02 fps, paired on a loaded host). Judge IMPROVEMENT 4/4.
+- Insight: a held frame does every pass (shadows, post, temporal history, the exposure meter) but takes no canvas
+  texture, so the engine warms itself up without presenting. Bound every such wait: 3 s from the frame window or from
+  any later cold picture, with one `TN_STARTUP_IMAGE_TIMEOUT` line naming the cold input.
