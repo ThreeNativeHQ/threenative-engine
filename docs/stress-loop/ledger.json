@@ -1180,6 +1180,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 23,
+      "at": "2026-10-30T02:11:06.449Z",
+      "commit": "core@0.3.7",
+      "label": "FM8+FS9 shadow page instancing + caster page index",
+      "decision": "keep",
+      "notes": "04722134d; vs FM8 alone same window 31.19/31.00 vs 29.33/28.21 fps, long tasks 1071/1135 vs 2484/2372; vs develop earlier window ~27.3 fps; judges NEUTRAL",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 60.67,
+      "windows": 12,
+      "metrics": {
+        "presentedP50Ms": 33.33,
+        "presentedP95Ms": 66.66,
+        "fps": 31.19,
+        "gpuP50Ms": 6.09,
+        "gpuP95Ms": 61.67,
+        "renderP50Ms": 19.15,
+        "updateP50Ms": 5.86,
+        "frameP50Ms": 26.44,
+        "frameP95Ms": 57.97,
+        "mainDraws": 150,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 1071,
+        "loadMs": 1877,
+        "bridgeCrossingsP50": 1262,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }

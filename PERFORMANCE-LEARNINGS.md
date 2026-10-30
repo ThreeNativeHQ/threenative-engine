@@ -676,6 +676,23 @@ no COOP/COEP); that lane is open.
   `TN_JOB_WORKERS_START_FAILED` instead of running on one thread.
 - Revisit when: a second pooled job lands, or the page job's items grow past about 8 x 0.2 ms.
 
+### 2026-10-30 — Stress lab: shadow page instancing (FM8) + caster page index (FS9) — KEEP
+- Where: `renderer.cpp` virtual shadow selection and row planning, `atlas.cpp` `PageAtlas::pageRange`,
+  `standard.cpp` per-instance skin values; `04722134d`.
+- Result: develop ~27.3 fps -> 31.1 fps (+14%) in alternating windows; FS9 alone halves long tasks (2469/1704 ->
+  1166/1200) and cuts frame p95 by ~3 ms, FM8 alone cuts render p50 21.5 -> 19.5 ms. Judges NEUTRAL.
+- Insight: on a shadow page, one row per caster was the cost, not the duplication across pages (FS7 measured
+  dedupe at 0.17 ms) and not the casters outside a mover page's window (FS8: the safe x/y test costs what the draw
+  costs). Group a page's selection into instanced rows and index the selection by page range; never widen a group
+  past the page's own selection. A crowd's shadow skin can reuse the main pass palette per instance.
+
+### 2026-10-30 — Stress lab: FU4 one engine call per rig step — REJECT
+- Where: `AnimationMixer.updateAndSample` plus a `scheduled` field on `AnimationAction` (worktree only).
+- Result: crossings 1276-1296 -> 994-1002 (-22%) but fps 25.99 -> 24.96 and update p50 7.36 -> 7.42 ms over 3
+  runs per arm. Insight: the crossing count is not the cost; a returned list allocates per call, and the profiled
+  "glue" self time did not turn into frame time. FS3 (protected-page set built on grant frames only) measured inside
+  the noise in its own runs and is parked.
+
 ### 2026-10-30 — Stress lab: main-pass plan cuts FM1+FM2+FM3 — KEEP
 - Where: `render_database.cpp` (`refresh` guard, `convertedInputs`), `renderer.cpp` (per-program frame slab,
   dirty-block upload, `program.probes`); `07703efaf`.
