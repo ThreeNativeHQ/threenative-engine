@@ -111,6 +111,9 @@ struct DrawCache {
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
     std::pair<Box3, double> shadowBounds;
+    // FG1: an instanced draw's world box per instance, built with `shadowBounds` under the same key; empty for any
+    // other draw. A virtual shadow page draws only the instances whose box can reach it.
+    std::vector<Box3> shadowInstanceBoxes;
     using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
                                       const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix>;
     std::optional<ShadowBoundsKey> shadowBoundsKey;
@@ -478,6 +481,7 @@ public:
         Box3 bounds;
         double diameter = 0;
         bool casts = false;
+        const std::vector<Box3>* instances = nullptr;  // FG1: the draw cache's per-instance boxes, one per instance
     };
     [[nodiscard]] const std::map<std::size_t, std::vector<CasterRecord>>& casterRecords() const { return casterRecords_; }
     void cutVirtualShadows() { virtualCut_ = true; }

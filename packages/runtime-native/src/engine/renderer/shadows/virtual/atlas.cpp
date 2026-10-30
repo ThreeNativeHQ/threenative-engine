@@ -1,5 +1,7 @@
 #include "atlas.h"
 
+#include "engine/foundation/waste_counters.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -246,10 +248,15 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
                          level.far == oldFar && window.pageWorldSize == oldPageWorldSize;
         level.slots.clear();
         level.pages.clear();
+        auto& counts = waste::counters();
+        waste::debugAdd(counts.shadowRefreshes);
+        waste::debugAdd(!moved ? counts.shadowRefreshInvalidation : pan ? counts.shadowRefreshPan : counts.shadowRefreshRebuild);
+        const std::size_t pagesBefore = pages.size();
         for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x) {
             const uint64_t id = pageId(l, window.minX + x * options_.pageTexels, window.minY + y * options_.pageTexels);
             const auto allocation = pool_->allocate(id, frame_, false, protectedIds);
             if (!allocation) { level.mapped = false; writeTable(); return {}; }
+            if (allocation->hasEvicted) waste::debugAdd(counts.shadowPageEvictions);
             protectedIds.insert(id);
             level.slots.push_back(allocation->entry.slot);
             const double texel = window.pageWorldSize, pad = options_.border * texel;
@@ -269,6 +276,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             const bool kept = partial || (pan && allocation->reused && oldSlots.count(page.slot));
             if (!kept || level.dirtySlots.count(page.slot)) pages.push_back(page);
         }
+        waste::debugAdd(counts.shadowPagesRefreshed, pages.size() - pagesBefore);
         level.mapped = true;
         level.dirty = false;
         level.dirtyAll = false; level.dirtySlots.clear();

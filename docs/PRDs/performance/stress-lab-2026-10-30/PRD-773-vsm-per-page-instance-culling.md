@@ -49,14 +49,14 @@ The lane FG1 (`.worktrees/stress-fix-fg1`, uncommitted) ports that rule on the C
 
 ### Phase 1 — land the port
 
-- [ ] FG1's change merges onto develop. The render database, VSM atlas, VSM and renderer suites pass. proof: `tn-native-engine-render-database-test`, `-vsm-atlas-test`, `-vsm-test`, `-renderer-test`
-- [ ] The subsystem is mapped in `docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html` (`SYS` and `F` rows). proof: `pnpm unreal:status`, `pnpm check:docs`
+- [x] FG1's change merges onto develop. The render database, VSM atlas, VSM and renderer suites pass. proof: `tn-native-engine-render-database-test`, `-vsm-atlas-test`, `-vsm-test`, `-renderer-test` Done 2026-10-30 on perf/stress-lab-120 (FB1 + PRD-770 + FG1 merged, `TN_ENGINE_ONLY=ON` Release): every registered case passes, render-database 97 (incl. `virtual_shadow_page_draws_only_its_instances`), renderer 52, vsm-atlas 10 (incl. `refresh_reasons`), vsm 3. RED on develop renderer: 176 page rows draw 180,224 instances; GREEN: 124 rows, 1,118 instances, byte-identical pixels.
+- [x] The subsystem is mapped in `docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html` (`SYS` and `F` rows). proof: `pnpm unreal:status`, `pnpm check:docs` Done 2026-10-30: `SYS.vsm` "Per-page draw commands" row (partial, cites `VirtualShadowMapBuildPerPageDrawCommands.usf:299-309`) and the `F` row; `pnpm unreal:status` refreshed, `pnpm check:docs` 3636 links OK.
 
 ### Phase 2 — prove it in the browser
 
 - [ ] Paired A/B against develop: GPU p95 on `?stress` at 16.7 ms or less, and CPU frame p50 within 3% of develop on `?stress&still`. proof: ledger rows from the PRD-770 window
-- [ ] Visual judge NEUTRAL or IMPROVEMENT on the shadow frames, 2 runs per arm. proof: judge JSON
-- [ ] Each shadow refresh publishes its reason (clipmap pan, invalidation, eviction), dirty pages, instances drawn per page and its GPU time in `TN_FRAME_BUDGET`, so every remaining p95 frame names its cause. proof: a report from one window
+- [x] Visual judge NEUTRAL or IMPROVEMENT on the shadow frames, 2 runs per arm. proof: judge JSON Done 2026-10-30: fresh Opus judge round 2 NEUTRAL on `?stress&freezeAt=12`, 2 BEFORE + 3 AFTER frames (BEFORE vs AFTER 173-310 px vs 331 px BEFORE vs BEFORE, no shadow loss, seams or leaks). Round 1 was INCONCLUSIVE on one AFTER frame that the round-2 judge traced to a different camera pose at capture.
+- [ ] Each shadow refresh publishes its reason (clipmap pan, invalidation, eviction), dirty pages, instances drawn per page and its GPU time in `TN_FRAME_BUDGET`, so every remaining p95 frame names its cause. proof: a report from one window Open 2026-10-30: reason, pages, page rows, instances and draws are published (`shadowRefreshes` 0.17/frame, 0.16 rebuild vs 0.01 pan; `shadowPagesRefreshed` p95 256; `shadowPageInstances` p95 1,759), but no per-refresh GPU time yet.
 
 ### Phase 3 — only if GPU p95 stays above 16.7 ms
 

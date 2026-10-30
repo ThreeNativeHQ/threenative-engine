@@ -289,6 +289,13 @@ bool shadowGroupsEnabled() {
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
+// FG1's lever: TN_SHADOW_INSTANCE_CULL=0 draws every instance of an instanced caster on each page its union box reaches
+// again. Read per frame, not once, so a test and the stress lab's paired runs plan both arms in one process.
+bool shadowInstanceCullEnabled() {
+    const char* flag = std::getenv("TN_SHADOW_INSTANCE_CULL");
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
+}
+
 // A viewport texture binding: the frame's colour or depth as drawn before this draw.
 bool viewportBinding(std::string_view name) {
     return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||
@@ -643,6 +650,7 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
     if (cacheable && shadowBoundsKey == key && !shadowPositionsOwner.expired() &&
         (!instances || !shadowInstancesOwner.expired())) return shadowBounds;
     ++shadowBoundsBuilds;
+    shadowInstanceBoxes.clear();
     Box3 bounds;
     // A rig's box comes from its bones (O(bones)); skinning each vertex on the CPU here cost the
     // stress lab's 120-rig crowd about 760 ms a frame.
@@ -667,6 +675,9 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         Box3 instances;
         diameter = 0;
         const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
+        // FG1: a geometry with no vertices has no box to place an instance by; the draw keeps one box for all.
+        const bool perInstance = !bounds.isEmpty();
+        if (perInstance) shadowInstanceBoxes.reserve(item.instanceCount);
         for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
             Matrix4 transform;
             for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
@@ -674,6 +685,7 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
             instances.unionWith(box);
             transform.premultiply(model);
             diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
+            if (perInstance) shadowInstanceBoxes.push_back(Box3(bounds).applyMatrix4(transform));
         }
         bounds = instances;
     }
@@ -2971,8 +2983,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 (item.positionNode || item.nodes->positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
-            if (item.castShadow)
-                record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true};
+            if (item.castShadow)  // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep
+                record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true,
+                    item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr};
             depthCasters.push_back(bounds);
             if (item.receiveShadow) receivers.push_back(bounds);
         }
@@ -3705,9 +3718,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto bounded = [](const DrawItem* const drawn) {
             return !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry;
         };
+        // FG1: an instanced caster's instances by page cell of one level, counting-sorted: cell c is reached by the
+        // instances list[first[c] .. first[c + 1]), ascending.
+        struct InstanceCells {
+            std::vector<uint32_t> first, list;
+        };
         struct LevelPages {
             int level = 0;
             std::vector<std::vector<const DrawItem*>> cell;  // tiles(level)^2 lists, each in draw-list order
+            std::unordered_map<const DrawItem*, InstanceCells> instances;
         };
         const bool pageIndex = virtualMap && !compilation && passCount > 0 && !flatShadowSelection();
         // FS11: a draw's position in the frame's frozen list is its caster record. `opaque` holds pointers into the
@@ -3717,6 +3736,55 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const std::size_t index = std::size_t(drawn - items.data());
             assert(record != nullptr && index < items.size() && drawn == &items[index]);
             return (*record)[index];
+        };
+        // FG1: Unreal culls a virtual shadow page's instances one by one (UE 5.8.3: Engine/Shaders/Private/
+        // VirtualShadowMaps/VirtualShadowMapBuildPerPageDrawCommands.usf:206-215 reads each instance's own bounds, :307
+        // turns them into a rect of pages, :350-352 adds the instance to every page of that rect; dispatched by
+        // Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp:3765 FCullPerPageDrawCommandsCs),
+        // where one InstancedMesh row spans the union of its instances and so reached every page of a level. An
+        // instanced caster with a box per instance is placed instance by instance: a page draws only the instances
+        // whose own box can reach it. The same product of the same float32 values reaches the vertex stage, so the
+        // depth a page writes is unchanged and only the instances its scissor clipped are gone.
+        const bool cullInstances = virtualMap && shadowInstanceCullEnabled();
+        const auto instanceBoxes = [&](const DrawItem* drawn) -> const std::vector<Box3>* {
+            if (!cullInstances || !drawn->instanceMatrices || !bounded(drawn) || drawn->gpuJoints) return nullptr;
+            return casterOf(drawn).instances;
+        };
+        // The cells a box reaches. A box with no finite extent (a NaN matrix) cannot be placed: it reaches every cell,
+        // as the whole-caster row did.
+        const auto instanceRange = [](const shadows::PageAtlas& atlas, int level, const Box3& box,
+                                      int& x0, int& x1, int& y0, int& y1) {
+            if (std::isfinite(box.min.x + box.min.y + box.min.z + box.max.x + box.max.y + box.max.z)) {
+                atlas.pageRange(level, box, x0, x1, y0, y1);
+            } else {
+                x0 = y0 = 0;
+                x1 = y1 = atlas.tiles(level) - 1;
+            }
+        };
+        // Once per granted level: O(instances x cells an instance reaches), never instances x pages. The caster joins
+        // the cells some instance reaches, in draw-list order like any other.
+        const auto indexInstances = [&](LevelPages& level, const shadows::PageAtlas& atlas, const DrawItem* drawn,
+                                        const std::vector<Box3>& boxes) {
+            const std::size_t side = std::size_t(atlas.tiles(level.level));
+            InstanceCells& cells = level.instances[drawn];
+            cells.first.assign(side * side + 1, 0);
+            std::vector<std::array<int, 4>> reach(boxes.size());
+            for (std::size_t j = 0; j < boxes.size(); ++j) {
+                auto& [x0, x1, y0, y1] = reach[j];
+                instanceRange(atlas, level.level, boxes[j], x0, x1, y0, y1);
+                for (int y = y0; y <= y1; ++y)
+                    for (int x = x0; x <= x1; ++x) ++cells.first[std::size_t(y) * side + std::size_t(x) + 1];
+            }
+            for (std::size_t c = 0; c < side * side; ++c) cells.first[c + 1] += cells.first[c];
+            cells.list.resize(cells.first.back());
+            std::vector<uint32_t> next(cells.first.begin(), cells.first.end() - 1);
+            for (std::size_t j = 0; j < boxes.size(); ++j) {
+                const auto& [x0, x1, y0, y1] = reach[j];
+                for (int y = y0; y <= y1; ++y)
+                    for (int x = x0; x <= x1; ++x) cells.list[next[std::size_t(y) * side + std::size_t(x)]++] = uint32_t(j);
+            }
+            for (std::size_t c = 0; c < side * side; ++c)
+                if (cells.first[c + 1] > cells.first[c]) level.cell[c].push_back(drawn);
         };
         std::vector<LevelPages> levelPages;
         std::vector<const DrawItem*> moverCasters;
@@ -3728,7 +3796,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (page.mover) { anyMover = true; continue; }
                 if (!levelSlot.emplace(page.level, levelPages.size()).second) continue;
                 const std::size_t side = std::size_t(atlas.tiles(page.level));
-                levelPages.push_back({page.level, std::vector<std::vector<const DrawItem*>>(side * side)});
+                LevelPages& added = levelPages.emplace_back();
+                added.level = page.level;
+                added.cell.resize(side * side);
             }
             // A mover page draws every moving caster wherever it is (the scan tests no bounds for it), and a caster
             // settling between moving and still is on the static pages and the mover page at once.
@@ -3746,6 +3816,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         if (casterOf(drawn).diameter < gate) continue;
                         if (drawn->gpuJoints) {
                             for (auto& cell : level.cell) cell.push_back(drawn);
+                            continue;
+                        }
+                        if (const std::vector<Box3>* boxes = instanceBoxes(drawn)) {
+                            indexInstances(level, atlas, drawn, *boxes);
                             continue;
                         }
                         int x0, x1, y0, y1;
@@ -3834,8 +3908,38 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         };
         std::vector<PageCaster> pageCasters;
         pageCasters.reserve(selectedCasters[std::size_t(face)].size());
+        std::vector<uint32_t> flatInstances;  // FG1: the flat scan's instances of one caster on this page
         for (const DrawItem* drawn : selectedCasters[std::size_t(face)]) {
             const DrawItem* selected = drawn;
+            // FG1: an instanced caster draws, on a static page, only the instances that can reach it: the page's cell
+            // of the level index, or - in the diagnostic flat scan, which keeps no index - the same range test run
+            // over every instance. A caster none of whose instances reaches the page has no row.
+            std::span<const uint32_t> pageInstances;
+            bool trimmed = false;  // pageInstances names this caster's instances on the page
+            if (page && !page->mover && instanceBoxes(drawn) != nullptr) {
+                const auto& atlas = virtualIt->second.atlas;
+                if (pageIndex) {
+                    const LevelPages& level = levelPages[levelSlot.at(page->level)];
+                    const auto cells = level.instances.find(drawn);
+                    if (cells != level.instances.end()) {
+                        const std::size_t cell = std::size_t(page->y) * std::size_t(atlas.tiles(page->level)) + std::size_t(page->x);
+                        pageInstances = std::span<const uint32_t>(cells->second.list).subspan(
+                            cells->second.first[cell], cells->second.first[cell + 1] - cells->second.first[cell]);
+                        trimmed = true;
+                    }
+                } else {
+                    flatInstances.clear();
+                    const std::vector<Box3>& boxes = *instanceBoxes(drawn);
+                    for (std::size_t j = 0; j < boxes.size(); ++j) {
+                        int x0, x1, y0, y1;
+                        instanceRange(atlas, page->level, boxes[j], x0, x1, y0, y1);
+                        if (page->x >= x0 && page->x <= x1 && page->y >= y0 && page->y <= y1) flatInstances.push_back(uint32_t(j));
+                    }
+                    pageInstances = flatInstances;
+                    trimmed = true;
+                }
+                if (trimmed && pageInstances.empty()) continue;
+            }
             if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
                 const auto& lods = virtualIt->second.atlas.options().control->lods;
                 const auto lod = lods.find(drawn->shadowObject->id());
@@ -3906,7 +4010,26 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
             // packed below, after the lamp cache decides which passes run
-            pageCasters.push_back({&item, &program, pipeline, item.instanceMatrices ? instanceBases.at(drawn) : 0.0});
+            const DrawItem* rowItem = &item;
+            double rowBase = item.instanceMatrices ? instanceBases.at(drawn) : 0.0;
+            if (trimmed && pageInstances.size() < item.instanceCount) {
+                // FG1: the page's instances as a compacted copy of their 20 floats each at the end of the frame's
+                // instance storage (as FM8's grouped rows put theirs), drawn by a row of that many instances. The
+                // matrix, the colour and the item's own world matrix are the bytes the whole-caster row read.
+                DrawItem& cut = job.shadowGroupItems.emplace_back(item);
+                cut.instanceCount = uint32_t(pageInstances.size());
+                const std::size_t from = std::size_t(rowBase) * 4, at = instances.size();
+                rowBase = double(at / 4);
+                instances.resize(at + pageInstances.size() * 20);
+                for (std::size_t n = 0; n < pageInstances.size(); ++n)
+                    std::memcpy(&instances[at + n * 20], &instances[from + std::size_t(pageInstances[n]) * 20], 20 * sizeof(float));
+                rowItem = &cut;
+            }
+            if (page && !page->mover) {
+                waste::debugAdd(waste::counters().shadowPageRows);
+                waste::debugAdd(waste::counters().shadowPageInstances, rowItem->instanceMatrices ? rowItem->instanceCount : 0);
+            }
+            pageCasters.push_back({rowItem, &program, pipeline, rowBase});
         }
         // FM8: a page drew one row per caster, so a crowd's 240 casters cost 720 rows under a three-level sun.
         // The casters this page selected that share a depth program, a material and their vertex buffers draw

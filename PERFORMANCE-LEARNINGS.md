@@ -752,3 +752,20 @@ no COOP/COEP); that lane is open.
   profiled pairs read -5.5% and -23%; the second was voided (a stray stress page shared the GPU 07:30-09:20Z), which is
   why the decision rests on the fair window.
 - Revisit when: the engine stops allocating per frame on worker threads, or Emscripten changes its default allocator.
+
+### 2026-10-30 — Stress lab: a virtual shadow page draws only the instances that reach it (FG1, PRD-773) — KEEP
+- Where: `renderer.cpp`/`renderer.h` (`DrawCache::shadowInstanceBoxes`, per-level instance index by page cell, compacted
+  row per static page), `atlas.cpp` + `waste_counters.h` (refresh-reason counters), lever `TN_SHADOW_INSTANCE_CULL=0`.
+- Result: two clean pairs on `?stress`, 1280x720, RTX 2080, alternating arms: GPU p95 34.03 / 33.98 -> 7.54 / 7.33 ms
+  (-78%), frame p50 14.02 / 14.63 -> 14.09 / 14.86 (+0.5% / +1.6%, noise), presented p95 16.72 both. `?stress&still`
+  frame p50 13.12 / 13.17 -> 13.32 (+1.1 to +1.5%, inside the 3% gate). Native: the new case draws 1,118 instances over
+  124 pages instead of 180,224 over 176 on develop, pixels byte-identical.
+- Insight: the tail was the instanced static set, drawn whole on every refilled page (14,000 instances x up to 256
+  pages). Counting pages or passes was the closed lever (FP2); culling the instances against the pages by their own
+  boxes (Unreal `VirtualShadowMapBuildPerPageDrawCommands.usf:299-309`) removes the work itself and costs nothing on a
+  still frame. After it, the remaining p95 frames are rebuild grants (0.16 per frame against 0.01 pans), 256 pages each:
+  a window that moves while its depth fit changes keeps no page.
+- Judge: two Opus rounds; round 2 NEUTRAL (3 AFTER frames inside BEFORE-vs-BEFORE variation). A single odd frame was a
+  different camera pose at capture: take 3+ frames per arm before you read a shadow outlier as a cull defect.
+- Revisit when: GPU p95 on `?stress` rises above 16.7 ms again, or a game keeps casters that are not instanced (they
+  still draw whole on a rebuild); then FG2 (fixed depth band with a pan anchor).

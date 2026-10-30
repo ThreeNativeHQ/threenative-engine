@@ -676,6 +676,72 @@ void panKeepsPages() {
     CHECK(atlas->update(Vector3(1e6, 0, 0), sun).empty());
 }
 
+// PRD-773: every refresh names its cause. A level's grant is a rebuild (first map, camera cut), a pan that kept its
+// pages, or an invalidation under a window that stayed put, and the pages it drew are counted, so a slow shadow frame
+// in TN_FRAME_BUDGET.counters.engine says which of the three it was.
+void refreshReasons() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    const Vector3 sun(0, 1, 0);
+    waste::setDebugEnabled(true);
+    auto& w = waste::counters();
+    struct Tally { uint64_t all, pan, rebuild, invalidation, pages, evictions; };
+    const auto read = [&] {
+        return Tally{w.shadowRefreshes.load(), w.shadowRefreshPan.load(), w.shadowRefreshRebuild.load(),
+                     w.shadowRefreshInvalidation.load(), w.shadowPagesRefreshed.load(), w.shadowPageEvictions.load()};
+    };
+    const auto show = [](const char* what, const Tally& a, const Tally& b) {
+        std::printf("refresh %s: grants %llu (pan %llu, rebuild %llu, invalidation %llu), pages %llu, evictions %llu\n", what,
+                    (unsigned long long)(b.all - a.all), (unsigned long long)(b.pan - a.pan),
+                    (unsigned long long)(b.rebuild - a.rebuild), (unsigned long long)(b.invalidation - a.invalidation),
+                    (unsigned long long)(b.pages - a.pages), (unsigned long long)(b.evictions - a.evictions));
+    };
+    Tally before = read();
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    Tally after = read();
+    show("cold start", before, after);
+    CHECK(after.all - before.all == 2 && after.rebuild - before.rebuild == 2);  // one grant per level, both rebuilds
+    CHECK(after.pan == before.pan && after.invalidation == before.invalidation);
+    CHECK(after.pages - before.pages == 32);  // 2 levels x 4 x 4 pages
+
+    before = after;
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    after = read();
+    CHECK(after.all == before.all && after.pages == before.pages);  // a steady frame refreshes nothing
+
+    before = after;
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(4.5, 0, 0), sun);
+    after = read();
+    show("pan", before, after);
+    CHECK(after.pan > before.pan && after.rebuild == before.rebuild && after.invalidation == before.invalidation);
+    CHECK(after.pages - before.pages < 16 * (after.all - before.all));  // a pan draws the entering pages only
+
+    before = after;
+    Box3 changed;
+    changed.set(Vector3(4, 0, -1), Vector3(5, 1, 1));
+    atlas->invalidate(changed, true);
+    const std::size_t dirty = atlas->update(Vector3(4.5, 0, 0), sun).size();
+    after = read();
+    show("invalidation", before, after);
+    CHECK(after.invalidation > before.invalidation && after.pan == before.pan && after.rebuild == before.rebuild);
+    CHECK(dirty > 0 && after.pages - before.pages == dirty);  // the counter is the pages the grant returned
+
+    before = after;
+    atlas->update(Vector3(40, 0, 0), sun, true);
+    atlas->update(Vector3(40, 0, 0), sun, true);
+    after = read();
+    show("camera cut", before, after);
+    CHECK(after.rebuild > before.rebuild && after.pan == before.pan);  // a cut to a far eye rebuilds, it keeps no page
+
+    waste::setDebugEnabled(false);
+    before = read();
+    atlas->update(Vector3(-80, 0, 0), sun, true);
+    CHECK(read().all == before.all);  // counters are opt-in: nothing counts while tnDebug is off
+}
+
 // The readiness evidence a startup frame waits on: a level's window is granted one per update (the clipmap cuts
 // finest first), so `initialized()` is the mapped levels themselves, never a draw count. A sun that moved is a new
 // shadow provider: every level is unmapped and the atlas is initialized again only once each one is granted.
@@ -704,4 +770,4 @@ void initialized() {
     CHECK(atlas->initialized());
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
