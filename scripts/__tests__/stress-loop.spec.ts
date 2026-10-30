@@ -326,6 +326,16 @@ describe("stress-loop", () => {
     expect(html).toContain("#3 ·");
   });
 
+  it("puts the apples-to-apples plain sun map table before the virtual shadow table", () => {
+    const ledger = ["plainShadow&arm=stack", "arm=stack"].reduce(
+      (acc, variant) => recordRun(acc, run(), { label: variant, variant, decision: "keep" }),
+      readLedger(ledgerPath()),
+    );
+    const html = renderHtml(ledger, new Date(0));
+    expect(html.indexOf("Apples to apples")).toBeGreaterThan(-1);
+    expect(html.indexOf("Apples to apples")).toBeLessThan(html.indexOf("Virtual shadow maps"));
+  });
+
   it("defines the comparison colors for the light and the dark theme", () => {
     const html = renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0));
     expect(html).toMatch(/:root\{[^}]*--ok-bg:/u);
@@ -509,7 +519,7 @@ describe("stress-loop record (PRD-770)", () => {
     ledger = entry(ledger, WASM, "plainShadow", 12);
     ledger = entry(ledger, VANILLA, "stress", 3);
     const html = renderHtml(ledger, new Date(0));
-    const plain = html.slice(html.indexOf("Plain sun map"), html.indexOf("<h2>Iterations"));
+    const plain = html.slice(html.indexOf("Apples to apples"), html.indexOf("Virtual shadow maps"));
     const gpu =
       (plain.split("<tr>").find((tr) => tr.startsWith("<td>GPU p95</td>")) ?? "").match(
         /<td class="n[^>]*>.*?<\/td>/gu,

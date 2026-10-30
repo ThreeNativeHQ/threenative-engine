@@ -512,7 +512,7 @@ export function renderHtml(ledger, now = new Date()) {
   const plainComparison =
     plainAnchor === undefined
       ? ""
-      : `<h3>Plain sun map (<code>?stress&amp;plainShadow</code>): the like-for-like arm for vanilla three.js</h3>${comparisonTable(comparisonArms(rows, "plainShadow"))}`;
+      : `<h3>Apples to apples: one plain sun map on every engine (<code>?stress&amp;plainShadow</code>)</h3>${comparisonTable(comparisonArms(rows, "plainShadow"))}`;
   const history = rows
     .map(
       (row) =>
@@ -559,8 +559,9 @@ svg{width:100%;height:auto}
 <div class="grid3">${charts}</div>
 <h2>Engine comparison (same scene, latest row per engine)</h2>
 <p class="dim">Only arms with the same counts and shadow mode as ThreeNative (Wasm) are ranked; any other gets ⚠️ and is left out of best and worst. ✅ best and ❌ worst in the row. Under each other cell: ▲ better or ▼ worse than ThreeNative (Wasm). A higher FPS wins. For every other metric, lower wins. Triangles is a workload, so it has no best or worst. ⚠️ marks a count that looks wrong. Hover for the reason.</p>
-${comparison}
 ${plainComparison}
+<h3>Virtual shadow maps (<code>?stress</code>): ThreeNative only, vanilla three.js has no equivalent</h3>
+${comparison}
 <h2>Iterations</h2>
 <div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Engine</th><th>Preset</th><th>Adapter</th>${ALL.map((item) => `<th class="n">${esc(item.short)}</th>`).join("")}</tr></thead><tbody>${history || `<tr><td colspan="${8 + ALL.length}" class="dim">pending</td></tr>`}</tbody></table></div>
 </main></body></html>
