@@ -2,13 +2,13 @@
 // TRAANode's setup writes its own pair bound to that node, so the originals are the slots as they
 // stand before the first setup — a recompile must never capture them again as the originals.
 import type { Matrix4 } from "three";
-import type { NodeMaterial, RenderTarget, Renderer, TextureNode } from "three/webgpu";
+import type { Node, NodeMaterial, RenderTarget, Renderer, TextureNode } from "three/webgpu";
 import type { ITemporalResolvePinned } from "./temporalResolveDepth.js";
 
 export interface ITemporalAANode extends ITemporalResolvePinned {
   _resolveMaterial: NodeMaterial;
   _needsPostProcessingSync: boolean;
-  _historyValidUniform: { value: number };
+  _historyValidUniform: Node<"float"> & { value: number };
   _originalProjectionMatrix: Matrix4;
   _velocityNode: {
     projectionMatrix: Matrix4 | null;

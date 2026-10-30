@@ -6,6 +6,7 @@ import {
   MeshBasicNodeMaterial,
   type Node,
   RenderTarget,
+  type TextureNode,
   WGSLNodeBuilder,
   WebGPURenderer,
 } from "three/webgpu";
@@ -25,7 +26,7 @@ describe("actual finite current WGSL", () => {
     vi.spyOn(r, "hasFeature").mockReturnValue(false);
     const camera = new PerspectiveCamera();
     const raw = pass(new Scene(), camera, { samples: 4 }) as ReturnType<typeof pass> & {
-      getRawTextureNode(name?: string): ReturnType<typeof texture>;
+      getRawTextureNode(name?: string): TextureNode;
     };
     const centre = pass(raw.scene, camera);
     raw.setSize(426, 240);
@@ -102,7 +103,7 @@ describe("actual finite current WGSL", () => {
     vi.spyOn(r, "hasFeature").mockReturnValue(false);
     const camera = new PerspectiveCamera();
     const beauty = pass(new Scene(), camera, { samples: 4 }) as ReturnType<typeof pass> & {
-      getRawTextureNode(name?: string): ReturnType<typeof texture>;
+      getRawTextureNode(name?: string): TextureNode;
     };
     beauty.setSize(426, 240);
     const packet = new RenderTarget(426, 240, { type: FloatType, depthBuffer: false });

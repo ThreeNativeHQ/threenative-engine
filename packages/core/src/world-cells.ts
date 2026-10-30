@@ -6066,7 +6066,7 @@ export class WorldCells extends Group implements IComputeDriven {
     };
   }
 
-  dispose(): void {
+  override dispose(): void {
     if (this.#released) return;
     this.#released = true;
     for (const [mesh, entry] of [...this.#awaited]) {
@@ -6107,6 +6107,9 @@ export class WorldCells extends Group implements IComputeDriven {
     drainMeshPool();
     this.#terrain?.dispose();
     this.removeFromParent();
+    // r186's Object3D.dispose() dispatches the dispose event the renderer frees this object's
+    // render objects on, so an override must reach it.
+    super.dispose();
   }
 
   #updateResidency(followCell: { x: number; z: number }, x: number, z: number): void {

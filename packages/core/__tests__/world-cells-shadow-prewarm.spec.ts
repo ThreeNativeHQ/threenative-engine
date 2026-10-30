@@ -21,8 +21,12 @@ import RenderObject from "three/src/renderers/common/RenderObject.js";
 import RenderObjects from "three/src/renderers/common/RenderObjects.js";
 // @ts-expect-error Three's private node manager has no public declaration.
 import NodeManager from "three/src/renderers/common/nodes/NodeManager.js";
-import { getShadowMaterial } from "three/tsl";
-import { type NodeBuilder, type NodeFrame, NodeMaterialObserver } from "three/webgpu";
+import {
+  type NodeBuilder,
+  type NodeFrame,
+  type NodeMaterial,
+  NodeMaterialObserver,
+} from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
@@ -278,11 +282,14 @@ describe("a streamed world's caster prewarm", () => {
     const submitted = new Set<InstancedMesh>();
     const coverage = new Map<InstancedMesh, Set<unknown>>();
     shadowDraws(node, scene, tally, (mesh, index) => {
-      const levelLight = (
-        [...node.levelNodes, ...node.moverNodes][index] as unknown as { light: DirectionalLight }
-      ).light;
-      if (levelLight === undefined) throw new Error("missing submitted shadow light");
-      const override = getShadowMaterial(levelLight);
+      // r187 keeps the per-light shadow material on the node that owns the light, not on `three/tsl`.
+      const levelNode = [...node.levelNodes, ...node.moverNodes][index] as unknown as {
+        getShadowMaterial(): NodeMaterial;
+        light: DirectionalLight;
+      };
+      if (levelNode === undefined) throw new Error("missing submitted shadow light");
+      const levelLight = levelNode.light;
+      const override = levelNode.getShadowMaterial();
       override.side = (mesh.material as MeshBasicMaterial).side === 0 ? 1 : 0;
       render._currentSourceMaterial = mesh.material;
       const object = objects.get(

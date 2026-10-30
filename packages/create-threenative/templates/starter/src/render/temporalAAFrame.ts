@@ -37,7 +37,8 @@ export function createTemporalAAFrame(
   rejection: () => TemporalDepthRejection | undefined,
   publishCurrentDepth?: (renderer: Renderer) => void,
 ) {
-  const quadMesh = new QuadMesh();
+  // Three 0.187's QuadMesh takes a material in the constructor; the draw replaces it before rendering.
+  const quadMesh = new QuadMesh(internals._resolveMaterial);
   quadMesh.name = "Temporal AA";
   const display = new Vector2();
   let previousDepth: DepthTexture | null = null;

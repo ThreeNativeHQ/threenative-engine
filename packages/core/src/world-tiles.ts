@@ -2678,7 +2678,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.dispose();
   }
 
-  dispose(): void {
+  override dispose(): void {
     if (this.#released) return;
     this.#released = true;
     this.#renderer = undefined;
@@ -2690,6 +2690,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const tile of [...this.#resident.values()]) this.#evict(tile);
     this.#resident.clear();
     this.removeFromParent();
+    // r186's Object3D.dispose() dispatches the dispose event the renderer frees this object's
+    // render objects on, so an override must reach it.
+    super.dispose();
   }
 
   *#createField(origin: IHeightfieldOrigin, chunked: boolean): Generator<void, Heightfield> {

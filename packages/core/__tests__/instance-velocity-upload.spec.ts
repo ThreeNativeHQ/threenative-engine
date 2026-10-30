@@ -18,7 +18,8 @@ import { VelocityTracker } from "../src/render/velocity.js";
 /** Three's runtime builder methods are not included in its published declarations. */
 interface IInstanceBuilder extends WGSLNodeBuilder {
   setShaderStage(stage: string): void;
-  flowStagesNode(node: Node, output: string): void;
+  /** Three's declarations omit this method, and declare `instance()` void though it builds and returns a node. */
+  flowStagesNode(node: unknown, output: string): void;
   buildUpdateNodes(): void;
   nodes: Node[];
   updateBeforeNodes: Node[];

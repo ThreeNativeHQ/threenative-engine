@@ -28,7 +28,6 @@ import {
   dFdx,
   dFdy,
   float,
-  getShadowMaterial,
   length,
   lightShadowMatrix,
   max,
@@ -2612,7 +2611,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (this.options.autoMapSize) this.#measureMapSizes(builder);
     const source = this.light as DirectionalLight;
     source.addEventListener("removed", this.#onLightRemoved);
-    let shadowColor: ReturnType<typeof getShadowMaterial>["colorNode"] = null;
+    let shadowColor: ReturnType<ShadowBaseNode["getShadowMaterial"]>["colorNode"] = null;
     this.options.clipExtents.forEach((extent, index) => {
       const levelShadow = source.shadow.clone();
       syncShadowSettings(source.shadow, levelShadow);
@@ -2746,7 +2745,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       }
       // Stock shadow colours are identical, but their node identities split the shader cache.
       // Share only that constant; each level keeps its material, camera and render bindings.
-      const material = getShadowMaterial(node.light);
+      // r187 made the per-light shadow material a method on the shadow node that owns the light.
+      const material = node.getShadowMaterial();
       shadowColor ??= material.colorNode;
       material.colorNode = shadowColor;
       const entry: ILevel = {

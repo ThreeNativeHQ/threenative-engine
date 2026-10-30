@@ -23,13 +23,12 @@ import {
   reference,
   sqrt,
   step,
-  type texture,
   textureLoad,
   uniform,
   vec2,
   vec3,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 
 /** tan(5 degrees): Unreal's `r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle`, the sun's least source on a leaf. */
 export const LEAF_MIN_SOURCE_TANGENT = Math.tan((5 * Math.PI) / 180);
@@ -215,8 +214,7 @@ export function sourceAngleShadowFilter({
     ).div(reference("zoom", "float", camera));
     const texel = vec2(1).div(size);
     const isArray = "isArrayTexture" in depthTexture && depthTexture.isArrayTexture === true;
-    const withLayer = (sample: ReturnType<typeof texture>) =>
-      isArray ? sample.depth(float(depthLayer)) : sample;
+    const withLayer = (sample: TextureNode) => (isArray ? sample.depth(float(depthLayer)) : sample);
     const linearDepth = (depth: Node<"float">) => (reversed ? depth.oneMinus() : depth);
     return Fn(
       (_inputs: unknown, builder: { readonly material?: Parameters<typeof isLeafReceiver>[0] }) => {

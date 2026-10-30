@@ -61,7 +61,7 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #seed = uniform(0);
   readonly #enabled = uniform(false);
   readonly #bias = uniform(0);
-  readonly #quad = new QuadMesh();
+  readonly #quad: QuadMesh;
   readonly #meterMaterial = new NodeMaterial();
   readonly #reduceMaterial = new NodeMaterial();
   readonly #tilesMaterial = new NodeMaterial();
@@ -117,6 +117,8 @@ export class AutoExposureNode extends TempNode<"float"> {
       decode,
       this.#bias,
     );
+    // Three 0.187's QuadMesh takes its material in the constructor; each pass replaces it before drawing.
+    this.#quad = new QuadMesh(this.#meterMaterial);
   }
 
   override setup(builder: NodeBuilder): Node<"float"> {
