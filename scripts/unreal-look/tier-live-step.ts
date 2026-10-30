@@ -54,7 +54,7 @@ try {
     await mkdir(out, { recursive: true });
     const visit = async (tier: string) => {
       await page.goto(
-        `${origin}?tnRef=L5&tier=${tier}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=penumbra-lab`,
+        `${origin}main.html?tnRef=L5&tier=${tier}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=penumbra-lab`,
         { waitUntil: "domcontentloaded" },
       );
       await page.addStyleTag({ content: HIDE_UI });

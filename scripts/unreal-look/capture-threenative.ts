@@ -392,8 +392,9 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           );
           if (wanted.length === 0) continue;
           const started = Date.now();
+          // main.html runs the game on the page thread: index.html's worker cannot read the page's query.
           await page.goto(
-            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+            `${origin}main.html?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
             {
               waitUntil: "domcontentloaded",
             },
