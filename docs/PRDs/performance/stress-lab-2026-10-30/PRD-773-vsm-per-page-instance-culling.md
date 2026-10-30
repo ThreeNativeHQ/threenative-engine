@@ -54,7 +54,7 @@ The lane FG1 (`.worktrees/stress-fix-fg1`, uncommitted) ports that rule on the C
 
 ### Phase 2 — prove it in the browser
 
-- [ ] Paired A/B against develop: GPU p95 on `?stress` at 16.7 ms or less, and CPU frame p50 within 3% of develop on `?stress&still`. proof: ledger rows from the PRD-770 window
+- [x] Paired A/B against develop: GPU p95 on `?stress` at 16.7 ms or less, and CPU frame p50 within 3% of develop on `?stress&still`. proof: ledger rows from the PRD-770 window Done 2026-10-30: fair window fg1f (ABBA, load peak 2.99), ledger rows #67-#70: vsync GPU p95 33.73 / 33.85 -> 7.67 / 7.62 ms, CPU frame p50 13.20 / 13.21 -> 13.27 / 13.38 (+0.5% / +1.3%); uncapped GPU p95 develop 33.95 / 6.75 (bimodal) vs FG1 7.46 / 7.43. `?stress&still` frame p50 +1.5% / +1.1% (hunt pairs `still-dev-1`, `r-still-dev-2`, `r-still-fix-1`).
 - [x] Visual judge NEUTRAL or IMPROVEMENT on the shadow frames, 2 runs per arm. proof: judge JSON Done 2026-10-30: fresh Opus judge round 2 NEUTRAL on `?stress&freezeAt=12`, 2 BEFORE + 3 AFTER frames (BEFORE vs AFTER 173-310 px vs 331 px BEFORE vs BEFORE, no shadow loss, seams or leaks). Round 1 was INCONCLUSIVE on one AFTER frame that the round-2 judge traced to a different camera pose at capture.
 - [ ] Each shadow refresh publishes its reason (clipmap pan, invalidation, eviction), dirty pages, instances drawn per page and its GPU time in `TN_FRAME_BUDGET`, so every remaining p95 frame names its cause. proof: a report from one window Open 2026-10-30: reason, pages, page rows, instances and draws are published (`shadowRefreshes` 0.17/frame, 0.16 rebuild vs 0.01 pan; `shadowPagesRefreshed` p95 256; `shadowPageInstances` p95 1,759), but no per-refresh GPU time yet.
 
