@@ -189,7 +189,13 @@ export function createEditorSelection({
       message(`Saved ${next.revision.slice(0, 8)} · one landform transaction`);
     } catch (error) {
       message(`${String(error)} · landform draft retained; apply again to rebase explicitly.`);
-      snapshot = await controller.snapshot();
+      // Same recovery as the placement save: a failed commit followed by a failed snapshot must
+      // not escape the mouse-up handler, and the draft stays until the next explicit apply.
+      try {
+        snapshot = await controller.snapshot();
+      } catch {
+        message("Connection interrupted · landform draft retained.");
+      }
     } finally {
       saving = false;
       setSaving(false);

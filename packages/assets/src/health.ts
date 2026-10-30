@@ -81,7 +81,13 @@ function marksCollider(name: string): boolean {
   return /collider/iu.test(name) || /(?:^|[-_. ])col(?:only|convcolonly|convcol)?$/iu.test(name);
 }
 
-function sniffImageMime(bytes: Buffer): "image/jpeg" | "image/png" | undefined {
+/**
+ * The container a JPEG or PNG carries, from its own signature and header.
+ * @situation label a texture whose bytes arrive without a declared MIME
+ * @constraint bytes that are neither a readable JPEG nor a checksum-clean PNG return undefined
+ * @example const mime = sniffImageMime(bytes) ?? "image/jpeg";
+ */
+export function sniffImageMime(bytes: Buffer): "image/jpeg" | "image/png" | undefined {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     return "image/jpeg";
   }

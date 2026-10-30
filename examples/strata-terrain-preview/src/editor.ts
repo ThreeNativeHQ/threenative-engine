@@ -1,10 +1,14 @@
 import { mountTerrainEditor } from "@threenative/terrain/editor";
 import { createEditorView } from "./render/editorView.js";
+import { type HorizonSurroundings, setHorizonSurroundings } from "./render/horizon.js";
 import { terrainPalette } from "./render/palette.js";
 
 let view: Awaited<ReturnType<typeof createEditorView>>;
 void mountTerrainEditor({
   createView: async (host, controller) => {
+    const surroundings = await fetch("/world/horizon.json");
+    if (!surroundings.ok) throw new Error("Missing baked world file: world/horizon.json");
+    setHorizonSurroundings((await surroundings.json()) as HorizonSurroundings);
     view = await createEditorView(host, controller);
     return view;
   },

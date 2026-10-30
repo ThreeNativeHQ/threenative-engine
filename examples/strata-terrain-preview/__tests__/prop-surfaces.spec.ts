@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { IAssetLoader } from "@threenative/core";
 import { DataTexture, LinearMipmapLinearFilter, RepeatWrapping, type Texture } from "three";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
@@ -10,6 +11,7 @@ import {
   elevationBand,
   measureBiome,
 } from "../src/render/biomes.js";
+import { setHorizonSurroundings } from "../src/render/horizon.js";
 import { loadPack } from "../src/render/pack.js";
 import { createPropSurfaces, createRockGround } from "../src/render/propMaterials.js";
 import { createTerrain } from "../src/render/terrain.js";
@@ -257,6 +259,9 @@ describe("procedural foliage lighting", () => {
 });
 
 it("continues tundra terrain normals through the first horizon collar ring", () => {
+  setHorizonSurroundings(
+    JSON.parse(readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8")),
+  );
   const resolution = 9;
   const { mesh } = createTerrain(
     {

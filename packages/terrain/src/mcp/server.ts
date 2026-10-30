@@ -48,6 +48,7 @@ async function callTool(name: string, args: unknown): Promise<ReturnType<typeof 
       const out = await resolveOutput(
         projectRoot,
         input.out ?? relative(projectRoot, join(assetSource, "worlds", input.kit)),
+        assetSource,
       );
       const child = await runIsolated({
         command: process.execPath,

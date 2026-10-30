@@ -22,6 +22,7 @@ import {
 import {
   copyToDocument,
   createDefaultPropertyResolver,
+  meshopt,
   transformMesh,
 } from "@gltf-transform/functions";
 import {
@@ -33,6 +34,7 @@ import {
   decodeRAW16,
   sampleHeight,
 } from "@threenative/terrain";
+import { MeshoptEncoder } from "meshoptimizer";
 import { PNG } from "pngjs";
 import {
   BufferAttribute,
@@ -62,6 +64,7 @@ import { stackLayers } from "../../core/src/world-terrain-splat.js";
 import { createGltfReader, readGltfDocument } from "../src/gltf-io.js";
 import { primitiveTriangleCount } from "../src/lod/eligibility.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
+import { DEFAULT_LOD_MIN_TRIANGLES } from "../src/lod/generate.js";
 import { decodeImageBytes } from "../src/passes/decode-image.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
 import { cookTerrainWorld } from "../src/world/terrain-world.js";
@@ -213,6 +216,15 @@ async function simpleSpecies(): Promise<Uint8Array> {
     .addPrimitive(triangle(doc, buffer, doc.createMaterial("rock")));
   scene.addChild(doc.createNode("rockNode").setMesh(mesh));
   return io().writeBinary(doc);
+}
+
+/** {@link simpleSpecies} Meshopt-compressed, as an imported Unreal pack or a previous compile writes it. */
+async function meshoptSpecies(): Promise<Uint8Array> {
+  await MeshoptEncoder.ready;
+  const writer = io().registerDependencies({ "meshopt.encoder": MeshoptEncoder });
+  const doc = await writer.readBinary(await simpleSpecies());
+  await doc.transform(meshopt({ encoder: MeshoptEncoder }));
+  return writer.writeBinary(doc);
 }
 
 /** One triangle whose normals are KHR_mesh_quantization snorm16, as a quantized cooked model stores them. */
@@ -394,6 +406,37 @@ describe("cookTerrainWorld", () => {
     }
   });
 
+  it("labels a PNG map by its own bytes when the caller names no MIME", async () => {
+    // A 1x1 PNG with the real signature: once shipped as `image/jpeg` in the GLB's image entry.
+    const diff = new Uint8Array(PNG.sync.write(new PNG({ width: 1, height: 1 })));
+    const nrm = new Uint8Array(PNG.sync.write(new PNG({ width: 2, height: 1 })));
+    expect([...diff.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    // One map skips `normalizeKind`; two maps of the same signature skip it too.
+    for (const count of [1, 2]) {
+      const cooked = await cookTerrainWorld({
+        state: new Terrain({ resolution: 17, size: 64 }).evaluate(),
+        species: {},
+        out: path.join(dir, `world-${String(count)}`),
+        materials: {
+          layers: Array.from({ length: count }, (_, index) => ({
+            id: `layer${String(index)}`,
+            diffBytes: diff,
+            nrmBytes: nrm,
+          })),
+        },
+      });
+      const glb = cooked.worldGlb;
+      const jsonLength = new DataView(glb.buffer, glb.byteOffset).getUint32(12, true);
+      const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength))) as {
+        images?: { mimeType?: string }[];
+      };
+      expect(
+        json.images?.map((entry) => entry.mimeType),
+        `${String(count)} layer map`,
+      ).toEqual(["image/png", "image/png"]);
+    }
+  });
+
   it("normalizes map dimensions losslessly while preserving already-sized source bytes", async () => {
     const sharp = (await import("sharp")).default;
     const noise = { type: "gaussian", mean: 128, sigma: 40 } as const;
@@ -492,8 +535,8 @@ describe("cookTerrainWorld", () => {
       string,
       {
         near: string;
-        mid: string;
-        midDistance: number;
+        mid?: string;
+        midDistance?: number;
         bounds: { min: [number, number, number]; max: [number, number, number] };
         maxDistance: number;
       }
@@ -505,7 +548,12 @@ describe("cookTerrainWorld", () => {
           glb: path.join(assets, spec.near),
           bounds: spec.bounds,
           maxDistance: spec.maxDistance,
-          lods: [{ glb: path.join(assets, spec.mid), distance: spec.midDistance }],
+          // A species with no authored mid gets a derived level from the cooker itself.
+          ...(spec.mid === undefined
+            ? {}
+            : {
+                lods: [{ glb: path.join(assets, spec.mid), distance: spec.midDistance ?? 40 }],
+              }),
         },
       ]),
     );
@@ -648,12 +696,17 @@ describe("cookTerrainWorld", () => {
         geometry.computeBoundingBox();
         assert.ok(geometry.boundingBox);
         const size = geometry.boundingBox.getSize(new Vector3());
-        // The simplifier's scale is the largest decoded extent, including the source node scale.
-        expect(chain?.getErrorScale(), `${id} transformed error scale`).toBeCloseTo(
-          Math.max(size.x, size.y, size.z),
-          4,
-        );
-        expect(chain?.getSharedVertexBuffers()).toBe(true);
+        if (counts[0] !== undefined && counts[0] < DEFAULT_LOD_MIN_TRIANGLES) {
+          // Under the cooker's own floor: an 80-triangle fern has no level worth shipping.
+          expect(chain, `${id} index-only chain`).toBeNull();
+        } else {
+          // The simplifier's scale is the largest decoded extent, including the source node scale.
+          expect(chain?.getErrorScale(), `${id} transformed error scale`).toBeCloseTo(
+            Math.max(size.x, size.y, size.z),
+            4,
+          );
+          expect(chain?.getSharedVertexBuffers()).toBe(true);
+        }
         geometry.computeBoundingSphere();
         assert.ok(geometry.boundingSphere);
         for (let i = 0; i < translations.getCount(); i++) {
@@ -697,17 +750,19 @@ describe("cookTerrainWorld", () => {
         species: rows,
       }),
     );
-    expect(Object.keys(rows).sort()).toEqual(["boulder", "fir", "fir-c"]);
+    // Every species the kit places, and no other: the census is the kit's own species table.
+    expect(Object.keys(rows).sort()).toEqual(Object.keys(table).sort());
     for (const node of document.getRoot().getDefaultScene()?.listChildren() ?? []) {
       if (!node.getName().endsWith("_instances")) continue;
-      expect(
-        node
-          .getMesh()
-          ?.listPrimitives()
-          .every((p) => p.getExtension(TN_DISCRETE_LOD) !== null),
-      ).toBe(true);
+      for (const primitive of node.getMesh()?.listPrimitives() ?? []) {
+        const chain = primitive.getExtension(TN_DISCRETE_LOD);
+        if (primitiveTriangleCount(primitive) < DEFAULT_LOD_MIN_TRIANGLES)
+          expect(chain, `${node.getName()} chain under the floor`).toBeNull();
+        else expect(chain, `${node.getName()} upper levels`).not.toBeNull();
+      }
     }
-    expect(base + terrain).toBe(505_387_464);
+    // Forest kit with its ground cover: ferns and pebbles add 2,507,200 base triangles.
+    expect(base + terrain).toBe(507_894_664);
     expect(submitted).toBeLessThan(base);
   }, 120_000);
 
@@ -745,6 +800,16 @@ describe("cookTerrainWorld", () => {
     ]) {
       expect((await stat(path.join(dir, file))).size).toBeGreaterThan(0);
     }
+  });
+
+  it("cooks a Meshopt-compressed species, which keeps its extension through every write", async () => {
+    const result = await cookTerrainWorld({
+      state: evaluatedTerrain(),
+      species: { fir: { glb: await meshoptSpecies() } },
+      out: dir,
+    });
+    expect(result.worldGlb.byteLength).toBeGreaterThan(0);
+    expect((await stat(path.join(dir, "models/fir.glb"))).size).toBeGreaterThan(0);
   });
 
   it("writes the splat and placement files exactly as bakeWorldPackage bakes them", async () => {
@@ -1097,26 +1162,29 @@ describe("cookTerrainWorld", () => {
       species: { fir: { glb, lods: [{ distance: 45, glb }] } },
       out: dir,
     });
-    for (const name of ["fir.glb", "fir_lod1.glb"]) {
-      const bytes = await readFile(path.join(dir, "models", name));
-      expect(bytes.length).toBeLessThan(glb.length);
-      const output = await io().readBinary(bytes);
-      const image = output.getRoot().listTextures()[0]?.getImage();
-      assert.ok(image);
-      expect(image.length).toBeLessThan(jpeg.length);
-      expect(await sharp(image).ensureAlpha().raw().toBuffer()).toEqual(
-        await sharp(jpeg).ensureAlpha().raw().toBuffer(),
-      );
-      const { size: originalSize, ...originalMetadata } = await sharp(jpeg).metadata();
-      const { size: optimizedSize, ...optimizedMetadata } = await sharp(image).metadata();
-      expect(optimizedSize).toBeLessThan(originalSize ?? jpeg.length);
-      expect(optimizedMetadata).toEqual(originalMetadata);
-      const before = await io().writeJSON(doc);
-      const after = await io().writeJSON(output);
-      expect(after.json).toEqual(before.json);
-      assert.ok(before.resources["buffer.bin"]);
-      expect(after.resources["buffer.bin"]).toEqual(before.resources["buffer.bin"]);
-    }
+    // Both levels live in one file, so it is smaller than two authored copies of the same model.
+    const bytes = await readFile(path.join(dir, "models", "fir.glb"));
+    expect(bytes.length).toBeLessThan(glb.length * 2);
+    const output = await io().readBinary(bytes);
+    expect(
+      output
+        .getRoot()
+        .listScenes()
+        .map((scene) => scene.getName()),
+    ).toEqual(["fir", "fir_lod1"]);
+    // One texture set for both levels, entropy-optimized without changing a pixel or its metadata.
+    const images = output.getRoot().listTextures();
+    expect(images).toHaveLength(1);
+    const image = images[0]?.getImage();
+    assert.ok(image);
+    expect(image.length).toBeLessThan(jpeg.length);
+    expect(await sharp(image).ensureAlpha().raw().toBuffer()).toEqual(
+      await sharp(jpeg).ensureAlpha().raw().toBuffer(),
+    );
+    const { size: originalSize, ...originalMetadata } = await sharp(jpeg).metadata();
+    const { size: optimizedSize, ...optimizedMetadata } = await sharp(image).metadata();
+    expect(optimizedSize).toBeLessThan(originalSize ?? jpeg.length);
+    expect(optimizedMetadata).toEqual(originalMetadata);
     const combined = await io().readBinary(cooked.worldGlb);
     const combinedJpegs = combined
       .getRoot()
@@ -1140,8 +1208,10 @@ describe("cookTerrainWorld", () => {
       species: { fir: { glb, lods: [{ distance: 45, glb }] } },
       out: dir,
     });
-    for (const name of ["fir.glb", "fir_lod1.glb"])
-      expect(new Uint8Array(await readFile(path.join(dir, "models", name)))).toEqual(glb);
+    const streamed = await io().readBinary(await readFile(path.join(dir, "models", "fir.glb")));
+    const images = streamed.getRoot().listTextures();
+    expect(images).toHaveLength(1);
+    expect(images[0]?.getImage()).toEqual(new Uint8Array(jpeg));
   });
 
   it("fails with asset context for malformed streamed JPEGs before writing", async () => {
@@ -1166,7 +1236,7 @@ describe("cookTerrainWorld", () => {
     await expect(stat(path.join(dir, "world.glb"))).rejects.toThrow();
   });
 
-  it("writes explicit LOD files and authored bounds without changing them", async () => {
+  it("writes one species file holding every level, with authored bounds and distances", async () => {
     const near = await simpleSpecies();
     const lod = await simpleSpecies();
     const result = await cookTerrainWorld({
@@ -1184,10 +1254,34 @@ describe("cookTerrainWorld", () => {
     expect(result.manifest.assets.fir).toMatchObject({
       glb: "models/fir.glb",
       bounds: { min: [-1, 0, -1], max: [1, 2, 1] },
-      lods: [{ distance: 45, glb: "models/fir_lod1.glb" }],
+      lods: [{ distance: 45, glb: "models/fir.glb", scene: "fir_lod1" }],
     });
-    expect(new Uint8Array(await readFile(path.join(dir, "models", "fir.glb")))).toEqual(near);
-    expect(new Uint8Array(await readFile(path.join(dir, "models", "fir_lod1.glb")))).toEqual(lod);
+    const streamed = await io().readBinary(await readFile(path.join(dir, "models", "fir.glb")));
+    expect(
+      streamed
+        .getRoot()
+        .listScenes()
+        .map((scene) => scene.getName()),
+    ).toEqual(["fir", "fir_lod1"]);
+    // Both scenes draw the authored triangle unchanged: the level is a scene, not a re-simplification.
+    for (const scene of streamed.getRoot().listScenes()) {
+      const positions: number[] = [];
+      for (const node of scene.listChildren()) {
+        const mesh = node.getMesh();
+        if (mesh === null) continue;
+        for (const primitive of mesh.listPrimitives())
+          positions.push(...((primitive.getAttribute("POSITION")?.getArray() ?? []) as number[]));
+      }
+      const authored = await io().readBinary(near);
+      const expected = authored
+        .getRoot()
+        .listMeshes()
+        .flatMap((mesh) => mesh.listPrimitives())
+        .flatMap((primitive) => [
+          ...((primitive.getAttribute("POSITION")?.getArray() ?? []) as number[]),
+        ]);
+      expect(positions).toEqual(expected);
+    }
   });
 
   it("fails before writing when a placement names a species that is not in the map", async () => {
@@ -1274,18 +1368,25 @@ describe("cookTerrainWorld", () => {
       out: dir,
     });
     const lods = result.manifest.assets.fir?.lods ?? [];
-    expect(lods[0]).toEqual({ distance: 45, glb: "models/fir_lod1.glb" });
+    expect(lods[0]).toEqual({ distance: 45, glb: "models/fir.glb", scene: "fir_lod1" });
     expect(lods.length).toBeGreaterThanOrEqual(3);
     const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-    const triangles = async (glb: string): Promise<number> => {
+    const triangles = async (level: { glb: string; scene?: string }): Promise<number> => {
       let total = 0;
-      const doc = await io.read(path.join(dir, glb));
-      for (const mesh of doc.getRoot().listMeshes())
+      const doc = await io.read(path.join(dir, level.glb));
+      const scene = doc
+        .getRoot()
+        .listScenes()
+        .find((entry) => entry.getName() === level.scene);
+      for (const node of scene?.listChildren() ?? []) {
+        const mesh = node.getMesh();
+        if (mesh === null) continue;
         for (const primitive of mesh.listPrimitives())
           total += (primitive.getIndices()?.getCount() ?? 0) / 3;
+      }
       return total;
     };
-    const counts = await Promise.all(lods.map((level) => triangles(level.glb)));
+    const counts = await Promise.all(lods.map((level) => triangles(level)));
     for (let level = 1; level < lods.length; level += 1) {
       expect(counts[level]).toBeLessThan(0.8 * (counts[level - 1] as number));
       expect(lods[level]?.distance).toBeGreaterThan(lods[level - 1]?.distance as number);
@@ -1309,11 +1410,25 @@ describe("cookTerrainWorld", () => {
     });
 
     expect(result.manifest.assets.fir?.lods).toHaveLength(1);
-    expect(result.manifest.assets.fir?.lods?.[0]?.glb).toBe("models/fir_lod1.glb");
-    // The written level is the sibling's bytes, not a simplification of the near model.
-    expect(new Uint8Array(await readFile(path.join(dir, "models", "fir_lod1.glb")))).toEqual(
-      new Uint8Array(mid.glb),
-    );
+    expect(result.manifest.assets.fir?.lods?.[0]).toEqual({
+      distance: 40,
+      glb: "models/fir.glb",
+      scene: "fir_lod1",
+    });
+    // The level is the sibling's two-mesh model and its texture, not a simplification of the near one.
+    const streamed = await io().readBinary(await readFile(path.join(dir, "models", "fir.glb")));
+    const lod1 = streamed
+      .getRoot()
+      .listScenes()
+      .find((scene) => scene.getName() === "fir_lod1");
+    assert.ok(lod1);
+    expect(lod1.listChildren().flatMap((node) => node.getMesh() ?? [])).toHaveLength(2);
+    expect(
+      streamed
+        .getRoot()
+        .listTextures()
+        .map((texture) => new Uint8Array(texture.getImage() ?? [])),
+    ).toContainEqual(new Uint8Array(mid.png));
   });
 
   it("propagates a real IO error from a sibling probe instead of treating it as absent", async () => {

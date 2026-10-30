@@ -1767,6 +1767,20 @@ describe("WorldCells far impostor residency", () => {
     return roots;
   }
 
+  /**
+   * Bake every species the map places and settle the far half: one bake extent per asset, one view
+   * per update, then one idle acquisition per frame for the species no resident run asks for.
+   */
+  async function bakeEvery(world: WorldCells, rounds = 8, idle = 32): Promise<void> {
+    const stub = rendererStub();
+    await flushed(world);
+    for (let round = 0; round < rounds; round += 1) {
+      runBake(world, stub);
+      await flushed(world);
+    }
+    for (let pass = 0; pass < idle; pass += 1) world.update(stub);
+  }
+
   async function loadPineEverywhere(
     follow: {
       position: { x: number; z: number };
@@ -1822,6 +1836,80 @@ describe("WorldCells far impostor residency", () => {
     expect(stats.far.nearOwned).toBe(536);
     expect(stats.far.bytes).toBe(799 * 68);
     expect(stats.far.uploads).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("builds no far aggregate for an asset whose authored cull ends inside the near ring", async () => {
+    // The committed package: `ground_cover` authors maxDistance 30 (a 26.25 m cull) and `cellSize` is
+    // 64, so a ring of 1 guarantees every one of its cells is resident within 64 m — the far half
+    // owns only runs further away than its own cull, and could never draw one of them.
+    stubManifestFetch(manifest);
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(treeLoader(), { follow });
+    await bakeEvery(world);
+
+    const names = farMeshes(world).map((mesh) => mesh.name);
+    expect(names).not.toContain("tn-far:ground_cover");
+    // The species whose own distance reaches past the ring keep theirs: pine authors no maxDistance.
+    expect(names).toContain("tn-far:pine");
+    expect(world.stats().impostor.far.aggregates).toBe(names.length);
+    // The short-range asset still draws in the ring, through its own levels.
+    expect(partsOf(world, "ground_cover", 0, 0).length).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("keeps that aggregate when `impostorFar: 'always'` overrides the ring rule, and reports it", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    stubManifestFetch(manifest);
+    const follow = { position: { x: -32, z: -32 } };
+    const world = await loadPine(treeLoader(), { follow, impostorFar: "always" });
+    await bakeEvery(world);
+
+    expect(farMeshes(world).map((mesh) => mesh.name)).toContain("tn-far:ground_cover");
+    const lines = info.mock.calls.map((call) => String(call[0]));
+    expect(
+      lines.filter(
+        (line) =>
+          line.startsWith("TN_WORLD_IMPOSTOR_FAR") &&
+          line.includes("asset=ground_cover") &&
+          line.includes("override=impostorFar") &&
+          line.includes("cull=26.25") &&
+          line.includes("nearRingRadius=64"),
+      ).length,
+    ).toBe(1);
+    world.dispose();
+  });
+
+  it("never loads a species the map places only outside the ring when its cull ends inside it", async () => {
+    const pine = manifest.assets.pine;
+    const cover = manifest.assets.ground_cover;
+    if (pine === undefined || cover === undefined)
+      throw new Error("the committed package lost its pine or ground_cover asset.");
+    const loader = treeLoader();
+    const loaded: string[] = [];
+    const counting: ITreeLoader = {
+      geometryFor: loader.geometryFor,
+      load: (url) => {
+        loaded.push(url);
+        return loader.load(url);
+      },
+    };
+    // The cover sits in cell (3, 3), three cells outside the ring the follow point at (-32, -32)
+    // holds, so no resident run ever asks for it: its aggregate is the only reason to load it at all.
+    stubManifestFetch({
+      ...manifest,
+      assets: { ground_cover: cover, pine },
+      cells: [
+        { chunks: [], runs: [{ asset: "pine", count: 1, offset: 0 }], x: 1, z: 1 },
+        { chunks: [], runs: [{ asset: "ground_cover", count: 1, offset: 0 }], x: 3, z: 3 },
+      ],
+    });
+    const world = await loadPine(counting, { follow: { position: { x: -32, z: -32 } } });
+    // The far pump adopts a species at most one per idle frame; give it more than the map holds.
+    await bakeEvery(world, 16, 64);
+
+    expect(loaded.some((url) => url.includes("ground_cover"))).toBe(false);
+    expect(farMeshes(world).map((mesh) => mesh.name)).toEqual(["tn-far:pine"]);
     world.dispose();
   });
 

@@ -1,4 +1,5 @@
 import {
+  type IAssetLoader,
   type ICtx,
   type IGamePluginRuntime,
   Scene,
@@ -30,10 +31,11 @@ import {
 import { BENCHMARK, type ViewName } from "./render/benchmark.js";
 import { BIOMES, type IWorldBiome, type WorldName, measureBiome } from "./render/biomes.js";
 import { createGroundSampler } from "./render/groundSampler.js";
+import { type HorizonSurroundings, setHorizonSurroundings } from "./render/horizon.js";
 import { createLoadingScreen } from "./render/loading.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { type ICanopyComparison, loadPack, loadSkyLight } from "./render/pack.js";
-import { loadPlacements } from "./render/placements.js";
+import { fetchBakedFile, loadPlacements } from "./render/placements.js";
 import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
 import {
@@ -57,7 +59,6 @@ import {
   medianOfGrowingSamples as median,
   retainViewWindow,
 } from "./viewStatistics.js";
-import baked from "./world/baked.json";
 import {
   type ForestStageWorld,
   addForestStage,
@@ -113,11 +114,22 @@ const renderedFrames: Record<WorldName, number> = {
   desert: 0,
   tundra: 0,
 };
-const worldLoads = {
-  alpine: () => import("./world/alpine.json"),
-  desert: () => import("./world/desert.json"),
-  tundra: () => import("./world/tundra.json"),
-};
+/**
+ * The baked terrain arrays, fetched rather than imported: as JSON modules the 7–12 MB files cost
+ * about 3 s each to compile before the first frame. Forest and coastal share `baked.json`.
+ */
+async function loadBakedWorld(
+  assets: Pick<IAssetLoader, "resolve">,
+  world: WorldName,
+): Promise<IBakedWorld> {
+  const shared = world === "forest" || world === "coastal";
+  const response = await fetchBakedFile(assets, `world/${shared ? "baked" : world}.json`);
+  const json = await response.json();
+  return shared
+    ? (json as Record<"forest" | "coastal", IBakedWorld>)[world]
+    : (json as IBakedWorld);
+}
+let horizonLoad: Promise<void> | undefined;
 
 const initialState = {
   elevationMin: 0,
@@ -227,10 +239,7 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
     #stage: ForestStageWorld | undefined;
     #stageLoad = 0;
     override async load(ctx: TerrainCtx): Promise<void> {
-      this.#data =
-        world === "forest" || world === "coastal"
-          ? baked[world]
-          : (await worldLoads[world]()).default;
+      this.#data = await loadBakedWorld(ctx.assets, world);
       this.#biome = measureBiome(BIOMES[world], this.#data.heights);
       // `?stage=before|after` replaces this world's terrain, water, colliders and props with one
       // baked forest kit copy, streamed by the kit's own `addForest`; the sky, camera and views stay.
@@ -245,7 +254,10 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         }
         return;
       }
-      this.#scatter = await loadPlacements(ctx.assets, world);
+      horizonLoad ??= fetchBakedFile(ctx.assets, "world/horizon.json")
+        .then((response) => response.json())
+        .then((distant) => setHorizonSurroundings(distant as HorizonSurroundings));
+      [this.#scatter] = await Promise.all([loadPlacements(ctx.assets, world), horizonLoad]);
       // Prepare scenery while the scene loads; enter only attaches it.
       this.#terrain = createTerrain(this.#data, ctx.assets, this.#biome);
       this.#sky = createOutdoorSky(ctx.camera, this.#biome);
@@ -1133,7 +1145,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
         // An oblique traversal crosses cells; exact vertical edge/corner probes remain above. A
         // staged world admits no terrain tile before its first update, which the loop's settle
         // steps precede, so its contact is observed once its spawn region is ready.
-        if (!stage || spawnReady) {
+        // A staged world streams around the camera, so a benchmark view far from the player has no
+        // ground under it; the player is held there (see `update`) and its contact is not asked for.
+        if (!stage || (spawnReady && ctx.state.getState().view === "player")) {
           const terrainTargets = stage ? forestStageTerrainTargets(stage.world) : mesh;
           const visual =
             terrainTargets &&
@@ -1142,10 +1156,15 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
               direction: new Vector3(1, -400, 1).normalize(),
               targets: terrainTargets,
             });
+          // The same line as the visual ray, started a metre above the feet: from 300 m, a stage
+          // tree the player stands against is the first body under it, not the ground.
+          const start = stage ? actor.position.y + 1 : 300;
+          const lead = (300 - start) / 400;
           const physical = ctx.physics.directSpaceState.intersectRay({
-            from: { x: actor.position.x, y: 300, z: actor.position.z },
+            from: { x: actor.position.x + lead, y: start, z: actor.position.z + lead },
             to: { x: actor.position.x + 1, y: -100, z: actor.position.z + 1 },
-            collisionMask: 4,
+            // The kit's ground keeps the default layer, like the player's mask above.
+            collisionMask: stage ? 1 : 4,
           });
           if (!visual || !physical || (stage && physical.body.id !== stage.ground.body.id))
             throw new Error(
@@ -1463,7 +1482,9 @@ export function terrainScene(world: WorldName): new () => Scene<TerrainState, IP
       player.velocity.x = move.x * 9;
       player.velocity.z = move.y * 9;
       if (playable && ctx.input.justPressed("jump") && player.grounded) player.velocity.y = 5;
-      player.moveAndSlide(dt);
+      // A staged world streams its ground around the camera: in a benchmark view the player's
+      // ground streams out, so the hidden player is held instead of falling through the map.
+      if (!this.#stage || ctx.state.getState().view === "player") player.moveAndSlide(dt);
       if (!playable) return;
       for (const name of Object.keys(BIOMES) as WorldName[])
         if (name !== world && ctx.input.justPressed(name)) {

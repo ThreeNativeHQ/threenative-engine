@@ -8,7 +8,12 @@ export interface IWorldPackageAsset {
     readonly min: readonly [number, number, number];
     readonly max: readonly [number, number, number];
   };
-  readonly lods?: readonly { readonly glb: string; readonly distance: number }[];
+  readonly lods?: readonly {
+    readonly glb: string;
+    readonly distance: number;
+    /** Scene inside `glb`; a cooked species keeps every level in one file and selects by scene. */
+    readonly scene?: string;
+  }[];
   readonly maxDistance?: number;
 }
 

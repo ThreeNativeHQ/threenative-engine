@@ -783,7 +783,7 @@
         "authors": "Rob Tuytel, Rico Cilliers",
         "license": "CC0",
         "url": "https://polyhaven.com/a/rock_moss_set_01",
-        "note": "rock01 and rock04, both levels. Shaded by the starter's own mossy_rock set, triplanar."
+        "note": "rock01 and rock04, both levels. Shaded by the starter's own mossy_rock set, triplanar. pebble-a and pebble-b: the rock01 and rock04 mid levels with a flat grey material, by packages/terrain/scripts/bake-ground-cover.py."
       },
       {
         "asset": "Boulder 01",
@@ -798,6 +798,13 @@
         "license": "CC0",
         "url": "https://polyhaven.com/a/boulder_01",
         "note": "Authored LOD1 (33,060 tris) and LOD2 (16,530 tris) with base, normal and roughness maps, exported by examples/strata-terrain-preview/scripts/prep-polyhaven-rock.py; the forest starter kit's boulder."
+      },
+      {
+        "asset": "Fern 02",
+        "authors": "Rob Tuytel, Rico Cilliers",
+        "license": "CC0",
+        "url": "https://polyhaven.com/a/fern_02",
+        "note": "fern-a and fern-b: crossed-arch alpha cards cut from the fern_02 alpha and diffuse maps, built by packages/terrain/scripts/bake-ground-cover.py."
       }
     ],
     "firedCoverage": {

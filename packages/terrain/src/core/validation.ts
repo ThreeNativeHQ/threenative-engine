@@ -523,7 +523,9 @@ export function validateLayer(layer: Layer): void {
   if (params.name !== undefined) identifier(params.name, "name");
   if (params.asset !== undefined) identifier(params.asset, "asset");
   if (layer.type === "scatter" && typeof params.asset !== "string")
-    fail("scatter requires an asset identifier");
+    fail(
+      'scatter requires an asset identifier; a document saved before `asset` was mandatory defaulted it to "pine", so add "asset": "pine" (or the asset it should place) to this layer',
+    );
   if (["heightmap", "paste"].includes(layer.type) && !params.data)
     fail(`${layer.type} requires heightmap data`);
   const data = params.data as

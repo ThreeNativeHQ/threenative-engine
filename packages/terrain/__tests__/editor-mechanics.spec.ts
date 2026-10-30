@@ -130,6 +130,7 @@ describe("injected editor selection mechanics", () => {
     const commit = vi.fn<Parameters<typeof createEditorSelection>[0]["controller"]["commit"]>(
       async () => ({ ...snapshot, revision: "next" }),
     );
+    const readSnapshot = vi.fn(async () => snapshot);
     const previewPlacement = vi.fn();
     const setNavigation = vi.fn();
     const message = vi.fn();
@@ -142,7 +143,7 @@ describe("injected editor selection mechanics", () => {
     const selection = createEditorSelection({
       gizmo,
       proxy,
-      controller: { commit, snapshot: async () => snapshot },
+      controller: { commit, snapshot: readSnapshot },
       grounding: () => true,
       surface: () => 7,
       defaultFootprintSize: 120,
@@ -172,6 +173,7 @@ describe("injected editor selection mechanics", () => {
     return {
       selection,
       snapshot,
+      readSnapshot,
       gizmo,
       proxy,
       commit,
@@ -251,6 +253,25 @@ describe("injected editor selection mechanics", () => {
     expect(f.message).toHaveBeenLastCalledWith(
       "Undo conflict: another actor changed this placement; their edit is retained.",
     );
+    f.selection.dispose();
+  });
+
+  it("reports a failed recovery snapshot instead of rejecting the landform save", async () => {
+    const f = setup();
+    const layer: Layer = {
+      id: "hill",
+      type: "stamp",
+      params: { at: [10, 20], offset: 3, radius: 8, amplitude: 40 },
+    };
+    f.snapshot.document.recipe.layers.push(layer);
+    f.selection.selectLayer("hill");
+    f.commit.mockRejectedValueOnce(new Error("stale revision"));
+    // The commit failed, then the snapshot that rebases the retained draft failed too.
+    f.readSnapshot.mockRejectedValueOnce(new Error("socket closed"));
+    f.selection.applyFields([12, 5, 22, 0, 0, 0, 6, 2, 7], true);
+    await vi.waitFor(() => expect(f.selection.saving).toBe(false));
+    expect(f.message).toHaveBeenLastCalledWith("Connection interrupted · landform draft retained.");
+    expect(f.selection.layerDraft?.id).toBe("hill");
     f.selection.dispose();
   });
 

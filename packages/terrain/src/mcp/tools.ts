@@ -31,7 +31,11 @@ export const TERRAIN_TOOLS = [
         request: { type: "string", minLength: 1 },
         sizeMeters: { type: "number", exclusiveMinimum: 0 },
         seed: { type: "integer" },
-        out: { type: "string", description: "Relative directory that must not exist yet." },
+        out: {
+          type: "string",
+          description:
+            "Relative directory under the project's assets.source that must not exist yet; the default is assets.source/worlds/<kit>.",
+        },
       },
       anyOf: [{ required: ["request"] }, { required: ["kit"] }],
       additionalProperties: false,
@@ -126,8 +130,14 @@ export function parseGenerateInput(input: unknown): IGenerateInput {
  * Resolves `out` under `root` and fails closed unless the real path stays inside the real root.
  * The deepest existing ancestor is resolved through `realpath`, so a symlinked `out` or a symlinked
  * ancestor that leaves the root is rejected, as is a dangling link. Returns the verified real path.
+ * With `assetSource`, the same guard requires `out` under it: the cook writes a manifest the build
+ * reads, and a directory outside `assets.source` never reaches that manifest.
  */
-export async function resolveOutput(root: string, out: string): Promise<string> {
+export async function resolveOutput(
+  root: string,
+  out: string,
+  assetSource?: string,
+): Promise<string> {
   const realRoot = await realpath(root);
   let existing = resolve(realRoot, out);
   const tail: string[] = [];
@@ -154,6 +164,13 @@ export async function resolveOutput(root: string, out: string): Promise<string> 
   const inside = relative(realRoot, real);
   if (inside === "" || inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
     throw new Error(`terrain_generate: out '${out}' resolves outside the project.`);
+  }
+  if (assetSource !== undefined) {
+    const under = relative(assetSource, real);
+    if (under === "" || under === ".." || under.startsWith(`..${sep}`) || isAbsolute(under))
+      throw new Error(
+        `terrain_generate: out '${out}' must be under assets.source ('${relative(realRoot, assetSource)}') so the build lists the world in its manifest.`,
+      );
   }
   await assertOutputFree(real);
   return real;

@@ -464,6 +464,13 @@ export class CellRender {
 
   #compileBusy = false;
 
+  /**
+   * The patched renderer's count of PMREM swaps, as of the last flush. A record holds the bind
+   * groups it was made with and a replay never refreshes them, so a sky that finishes after the
+   * first record would leave every recorded draw sampling the placeholder until a walk re-records.
+   */
+  #pmremSwaps = 0;
+
   readonly #recordedWhileBusy = new Set<BundleGroup>();
 
   /**
@@ -2631,6 +2638,14 @@ export class CellRender {
     };
   }
 
+  #rerecordOnPmremSwap(raw: unknown): void {
+    const swaps = typeof raw === "object" && raw !== null ? Reflect.get(raw, "_tnPmremSwaps") : 0;
+    if (typeof swaps !== "number" || swaps === this.#pmremSwaps) return;
+    this.#pmremSwaps = swaps;
+    for (const group of this.#bundles.values()) this.bumpBundle(group);
+    for (const { group } of this.#chunkBundles.values()) this.bumpBundle(group);
+  }
+
   flushCompiles(renderer: IRendererLike | undefined): void {
     // A bundle recorded while a compile was in flight left out every draw whose pipeline was not
     // ready, and the replay never re-checks; re-record those shards now that it has settled. Set
@@ -2639,6 +2654,7 @@ export class CellRender {
     const busy = renderer?.compiling === true || compiles !== this.#compileSeen;
     this.#compileSeen = compiles;
     this.#compileBusy = busy;
+    this.#rerecordOnPmremSwap(renderer?.raw);
     if (!busy && this.#recordedWhileBusy.size > 0) {
       const recorded = [...this.#recordedWhileBusy];
       this.#recordedWhileBusy.clear();

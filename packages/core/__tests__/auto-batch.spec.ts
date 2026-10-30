@@ -15,6 +15,7 @@ import { Registry } from "../src/entities.js";
 import { ScenePicker } from "../src/picking.js";
 import { type IViewportSize, Viewport } from "../src/viewport.js";
 import { warmUpScene } from "../src/warmup.js";
+import { TerrainTiles } from "../src/world-tiles.js";
 
 /** Meshes the renderer would walk: every visible mesh still in the graph. */
 function draws(scene: Scene): number {
@@ -109,6 +110,24 @@ describe("AutoBatch", () => {
     const batch = new AutoBatch(scene, { settleFrames: 3 });
     run(batch, 8);
     expect(draws(scene)).toBe(2 + 6);
+    expect(batch.census.optedOut).toBe(6);
+  });
+
+  it("leaves streamed terrain to its own block merge, so its ground stays visible to ray walks", () => {
+    const scene = new Scene();
+    const tiles = new TerrainTiles({
+      residentByteBudget: 1,
+      residentTileBudget: 1,
+      sampleHeight: () => 0,
+      surface: grey,
+      tileResolution: 5,
+      tileSize: 64,
+    });
+    scene.add(tiles);
+    town(6, tiles);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    expect(draws(scene)).toBe(6);
     expect(batch.census.optedOut).toBe(6);
   });
 

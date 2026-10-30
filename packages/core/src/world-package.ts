@@ -45,6 +45,11 @@ export interface IWorldTerrain {
 export interface IWorldAssetLod {
   readonly glb: string;
   readonly distance: number;
+  /**
+   * Scene to draw from `glb`. A cooked species stores every level of one model in one file with
+   * its textures, so its levels name the same `glb` and select a scene instead of a file.
+   */
+  readonly scene?: string;
 }
 
 export interface IWorldAssetBounds {
@@ -328,6 +333,8 @@ export function validateWorldPackage(
             }
             text(lod.glb, `${lodPath}.glb`);
             finite(lod.distance, `${lodPath}.distance`);
+            if (lod.scene !== undefined && (typeof lod.scene !== "string" || lod.scene === ""))
+              malformed(`${lodPath}.scene`, `${lodPath}.scene must be a nonempty string.`);
             if (
               typeof value.impostorDistance === "number" &&
               typeof lod.distance === "number" &&

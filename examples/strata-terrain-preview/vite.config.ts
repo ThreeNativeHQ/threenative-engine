@@ -91,13 +91,18 @@ function preparedAssets(): Plugin {
     configureServer: serve,
     configurePreviewServer: serve,
     generateBundle() {
+      // The baked terrain JSON is fetched, never imported: a 7–12 MB JSON module cost about 3 s to
+      // compile in dev, where fetch and JSON.parse take a sixth of that.
+      const files = ["baked.json", "horizon.json", "alpine.json", "desert.json", "tundra.json"];
       for (const world of ["forest", "coastal", "alpine", "desert", "tundra"])
         for (const suffix of ["placements.bin", "world.json", "layers.json", "splat.rgba8"])
-          this.emitFile({
-            type: "asset",
-            fileName: `world/${world}.${suffix}`,
-            source: readFileSync(new URL(`./src/world/${world}.${suffix}`, import.meta.url)),
-          });
+          files.push(`${world}.${suffix}`);
+      for (const file of files)
+        this.emitFile({
+          type: "asset",
+          fileName: `world/${file}`,
+          source: readFileSync(new URL(`./src/world/${file}`, import.meta.url)),
+        });
     },
   };
 }

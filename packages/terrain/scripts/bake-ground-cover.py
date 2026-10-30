@@ -1,8 +1,9 @@
-"""Bakes the forest kit's fern clumps: crossed-arch alpha cards cut from Poly Haven's CC0 `fern_02`.
+"""Bakes the forest kit's ground cover: fern clumps (crossed-arch alpha cards cut from Poly Haven's CC0 `fern_02`) and pebbles.
 
-Run from packages/terrain: python3 scripts/bake-fern-clump.py
+Run from packages/terrain: python3 scripts/bake-ground-cover.py
 Writes starter-assets/fern_02/fern-a.glb and fern-b.glb (two seeds, one species each) and prints
-each file's Y-up bounds for starter/forest/assets.json. Geometry follows the frond layout of
+each file's Y-up bounds for starter/forest/assets.json. Also writes rock_moss_set_01/pebble-a.glb and pebble-b.glb: the
+mid levels of rock01 and rock04 with their flat white stone darkened to a forest-floor grey. Geometry follows the frond layout of
 examples/strata-terrain-preview/src/render/cover.ts `fernClump`; the look stays in the texture.
 """
 
@@ -16,6 +17,7 @@ from pathlib import Path
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent.parent / "starter-assets" / "fern_02"
+PEBBLES = HERE.parent / "rock_moss_set_01"
 # [u0, v0, u1, v1], stalk at v0, v up (measured on the 512 px alpha).
 FROND_RECTS = [(0.082, 0.045, 0.293, 0.895), (0.277, 0.23, 0.494, 0.982), (0.502, 0.494, 0.691, 0.98), (0.7, 0.05, 0.844, 0.898)]
 FRONDS, LENGTH, WIDTH, RISE, SEGMENTS = (7, 10), (0.55, 1.0), 0.3, 0.55, 4
@@ -107,7 +109,7 @@ def glb(seed, png):
     lo = [min(p[k] for p in pos) for k in range(3)]
     hi = [max(p[k] for p in pos) for k in range(3)]
     gltf = {
-        "asset": {"version": "2.0", "generator": "bake-fern-clump.py"},
+        "asset": {"version": "2.0", "generator": "bake-ground-cover.py"},
         "scene": 0,
         "scenes": [{"nodes": [0]}],
         "nodes": [{"name": f"fern_{seed}", "mesh": 0}],
@@ -133,7 +135,25 @@ def glb(seed, png):
     return data, lo, hi, len(idx) // 3
 
 
+PEBBLE_GREY = [0.3, 0.31, 0.32, 1.0]
+
+
+def pebble(source):
+    """Same mesh, a darker flat material: unlit by the game's own dressing, white 0.8 reads as chalk."""
+    data = (HERE.parent / "rocks" / source).read_bytes()
+    size = struct.unpack("<I", data[12:16])[0]
+    gltf = json.loads(data[20 : 20 + size])
+    for material in gltf["materials"]:
+        material["pbrMetallicRoughness"].update(baseColorFactor=PEBBLE_GREY, roughnessFactor=0.9)
+    text = json.dumps(gltf, separators=(",", ":")).encode()
+    text += b" " * ((-len(text)) % 4)
+    rest = data[20 + size :]
+    return struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(text) + len(rest)) + struct.pack("<II", len(text), 0x4E4F534A) + text + rest
+
+
 if __name__ == "__main__":
+    for name, source in (("pebble-a", "rock01-mid.glb"), ("pebble-b", "rock04-mid.glb")):
+        (PEBBLES / f"{name}.glb").write_bytes(pebble(source))
     png = texture()
     for name, seed in (("fern-a", 11), ("fern-b", 29)):
         data, lo, hi, tris = glb(seed, png)

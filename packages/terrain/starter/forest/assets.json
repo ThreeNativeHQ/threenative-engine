@@ -45,16 +45,16 @@
       "max": [0.655, 0.687, 0.643]
     }
   },
-  "stone-a": {
-    "near": "rocks/rock01-mid.glb",
+  "boulder-small-a": {
+    "near": "rock_moss_set_01/pebble-a.glb",
     "maxDistance": 80,
     "bounds": {
       "min": [-1.029, 0, -1.712],
       "max": [1.137, 1.462, 1.683]
     }
   },
-  "stone-b": {
-    "near": "rocks/rock04-mid.glb",
+  "boulder-small-b": {
+    "near": "rock_moss_set_01/pebble-b.glb",
     "maxDistance": 80,
     "bounds": {
       "min": [-0.955, 0, -0.784],

@@ -14,6 +14,7 @@ import { float } from "three/tsl";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import { BIOMES } from "../src/render/biomes.js";
+import { setHorizonSurroundings } from "../src/render/horizon.js";
 import { createGroundMaterial, createTerrain } from "../src/render/terrain.js";
 import { GROUND_MAPS, GROUND_TILE } from "../src/world/terrainAssets.js";
 
@@ -130,12 +131,19 @@ it("delivers flat descriptors, tables, raw masks and placements through Vite and
       path.join(root, "local-assets/landscape-pro/basis/basis_transcoder.wasm"),
       "later-wasm",
     );
-    const files = ["forest", "coastal", "alpine", "desert", "tundra"].flatMap((world) =>
-      ["world.json", "layers.json", "splat.rgba8", "placements.bin"].map(
-        (suffix) => `${world}.${suffix}`,
+    const files = [
+      "baked.json",
+      "horizon.json",
+      "alpine.json",
+      "desert.json",
+      "tundra.json",
+      ...["forest", "coastal", "alpine", "desert", "tundra"].flatMap((world) =>
+        ["world.json", "layers.json", "splat.rgba8", "placements.bin"].map(
+          (suffix) => `${world}.${suffix}`,
+        ),
       ),
-    );
-    for (const name of [...files, "baked.json", ".bake-stamp"])
+    ];
+    for (const name of [...files, ".bake-stamp"])
       writeFileSync(path.join(root, "src/world", name), name);
     const execute = async (relative: string) => {
       const source = readFileSync(new URL(relative, base), "utf8").replaceAll(
@@ -241,6 +249,9 @@ it.each(["fallback", "licensed", "cancelled"])(
         colors: Array.from({ length: 17 * 17 * 3 }, () => 0.5),
         waterLevel: null,
       };
+      setHorizonSurroundings(
+        JSON.parse(readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8")),
+      );
       if (mode === "cancelled") {
         const { mesh } = createTerrain(data, assets, BIOMES.forest);
         const placeholder = mesh.material;

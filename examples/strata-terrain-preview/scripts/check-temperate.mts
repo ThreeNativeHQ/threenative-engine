@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
 import { Vector3 } from "three";
-import { createHorizonGeometry } from "../src/render/horizon.js";
+import { createHorizonGeometry, setHorizonSurroundings } from "../src/render/horizon.js";
 import { createStreamedProps } from "../src/render/propStreaming.js";
 import { buildPropVariants, flatPropMaterials, variantFor } from "../src/render/props.js";
 import { grassWeight, scatterProps, slopeDegrees } from "../src/render/scatter.js";
@@ -20,6 +20,9 @@ const field = new Heightfield({
   heights: Float32Array.from(data.heights),
 });
 // Decorative continuation must retain the exact collider seam and finite geometry.
+setHorizonSurroundings(
+  JSON.parse(readFileSync(new URL("../src/world/horizon.json", import.meta.url), "utf8")),
+);
 const horizon = createHorizonGeometry(data);
 const horizonPositions = horizon.getAttribute("position");
 for (let i = 0; i < (data.resolution - 1) * 4; i++) {

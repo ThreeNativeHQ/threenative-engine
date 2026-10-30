@@ -145,6 +145,13 @@ export interface IWorldTilesOptions {
   readonly residentByteBudget: number;
   readonly residentTileBudget: number;
   readonly sampleHeight: IHeightfieldSamplerOptions["sampleHeight"];
+  /** The ground's footprint in tile-local metres: a tile wholly outside it is never meshed (it only repeats the edge sample). */
+  readonly extent?: {
+    readonly maxX: number;
+    readonly maxZ: number;
+    readonly minX: number;
+    readonly minZ: number;
+  };
   /** How deep each edge skirt extends below its surface. Defaults to one tile width. */
   readonly skirtDepth?: number;
   /** Square tile neighborhood to consider around the followed point. Defaults to 1. */
@@ -1513,6 +1520,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   readonly #surface: MeshSurface;
   readonly #sampleHeight: IWorldTilesOptions["sampleHeight"];
   readonly #streamRadius: number;
+  readonly #extent: IWorldTilesOptions["extent"];
   /** Diagnostics outlive construction; their canonical field is never used by resident tiles. */
   #topology:
     | (Pick<Heightfield, "columns" | "depth" | "origin" | "rows" | "width"> & {
@@ -1615,6 +1623,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.residentByteBudget = integerAtLeast(options.residentByteBudget, 1, "residentByteBudget");
     this.skirtDepth = positive(options.skirtDepth ?? this.tileSize, "skirtDepth");
     this.#streamRadius = integerAtLeast(options.streamRadius ?? 1, 0, "streamRadius");
+    this.#extent = options.extent;
     this.#receiveShadow = options.receiveShadow === true;
     this.#colliderRadius = integerAtLeast(
       options.colliderRadius ?? this.#streamRadius,
@@ -1626,6 +1635,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       throw new Error("TerrainTiles surface is required and must be game-owned.");
     this.#validate = options.validate ?? terrainValidationRequested();
     this.#mergeTiles = options.mergeTiles ?? !terrainMergeOptedOut();
+    // Streamed ground batches itself into blocks; `AutoBatch` merging those again hid the live
+    // terrain from every ray walk of this subtree and re-merged on each stream step.
+    this.userData.batch = "off";
     this.#sampleHeight = options.sampleHeight;
     if (typeof options.sampleHeight !== "function")
       throw new Error("TerrainTiles sampleHeight is required.");
@@ -1911,6 +1923,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         tileX <= centerX + this.#streamRadius;
         tileX += 1
       ) {
+        if (!this.#touchesExtent(tileX, tileZ)) continue;
         const tileCenterX = tileX * this.tileSize;
         const tileCenterZ = tileZ * this.tileSize;
         wanted.push({
@@ -2100,11 +2113,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const wanted: Array<{ x: number; z: number; distance: number }> = [];
     for (let z = centerZ - this.#streamRadius; z <= centerZ + this.#streamRadius; z++)
       for (let x = centerX - this.#streamRadius; x <= centerX + this.#streamRadius; x++)
-        wanted.push({
-          x,
-          z,
-          distance: Math.hypot(focus.x - x * this.tileSize, focus.z - z * this.tileSize),
-        });
+        if (this.#touchesExtent(x, z))
+          wanted.push({
+            x,
+            z,
+            distance: Math.hypot(focus.x - x * this.tileSize, focus.z - z * this.tileSize),
+          });
     wanted.sort((a, b) => a.distance - b.distance || a.z - b.z || a.x - b.x);
     const bounds = new Box3();
     let required = 0;
@@ -2522,6 +2536,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   #selectLod(tile: IResidentTile, distance: number, countTransition = true): void {
     this.#setLodLevel(tile, this.#targetLod(tile, distance), countTransition);
+  }
+
+  /** Whether the tile's square overlaps the ground at all; always true when no extent was given. */
+  #touchesExtent(tileX: number, tileZ: number): boolean {
+    const extent = this.#extent;
+    if (extent === undefined) return true;
+    const half = this.tileSize / 2;
+    return (
+      tileX * this.tileSize + half > extent.minX &&
+      tileX * this.tileSize - half < extent.maxX &&
+      tileZ * this.tileSize + half > extent.minZ &&
+      tileZ * this.tileSize - half < extent.maxZ
+    );
   }
 
   #setLodView(view: IWorldTilesLodView | undefined): void {

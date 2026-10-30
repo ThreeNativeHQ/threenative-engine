@@ -105,6 +105,16 @@ const LOD_RANGE_RECORD_BYTES = 8;
 export { bundleSafeMaterial } from "./world-bundle-safety.js";
 
 const DEFAULT_TILE_RESOLUTION = 129;
+
+/**
+ * One tile vertex per heightmap sample, rounded up so every default lod factor (1, 2, 4) divides it
+ * and capped at the old fixed 129. A finer tile only interpolates the same samples: 129 over a 2 m
+ * heightmap drew 3.01M terrain triangles, 25 ms on an Iris Xe (PRD-762).
+ */
+function tileResolutionFor(tileSize: number, spacing: number): number {
+  const cells = Math.ceil(tileSize / spacing / 4) * 4;
+  return Math.min(DEFAULT_TILE_RESOLUTION, Math.max(9, cells + 1));
+}
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
 const DEFAULT_ADMISSION_BUDGET_MS = 2;
 /**
@@ -346,6 +356,16 @@ function mainGpuShare(option: number | undefined): number {
 }
 
 /**
+ * Whether an asset whose cull ends inside the near ring keeps a far aggregate: `"ring"` unless the
+ * caller names the `"always"` override. A misspelled value throws rather than silently picking one.
+ */
+function impostorFarOption(value: "ring" | "always" | undefined): "ring" | "always" {
+  if (value === undefined) return "ring";
+  if (value === "ring" || value === "always") return value;
+  throw new Error('WorldCells impostorFar must be "ring" or "always".');
+}
+
+/**
  * Stream a Blender-authored world package by cell and keep it resident around a followed point.
  *
  * The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per
@@ -375,7 +395,7 @@ function mainGpuShare(option: number | undefined): number {
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
  * @constraint a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with nonempty authored `lods` never consults it; explicit empty lists enroll only unchanged static geometry/material parts
  * @constraint eligible static sources can use cooked HLOD (chunk-only alongside GPU scatter, whole-cell on CPU) after compilation and an observed main-context backend submission; projected-error hysteresis requires actual source triangle reduction and no extra material draws, unsupported or shared source stays resident, and collision/shadow paths retain source representations; stats().hlod counts lifecycle and charged resources, not GPU timing or physical allocation
- * @override `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
+ * @override `hlod: false` keeps source rendering; ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance; `impostorFar: "always"` keeps the far aggregate the near ring's guaranteed radius made unnecessary
  * @constraint `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number
  * @constraint every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers
  * @constraint two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct
@@ -445,6 +465,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #runMax = new Map<string, number>();
   /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
   readonly #castShadowLevels: number;
+  /** Whether a short-range asset keeps a whole-map far aggregate; see the load option. */
+  readonly #impostorFar: "ring" | "always";
   readonly #receiveShadow: boolean;
   /** Asset bounds height under which a wide caster goes on the finest level's layer only. */
   readonly #smallCasterMetres: number;
@@ -739,6 +761,7 @@ export class WorldCells extends Group implements IComputeDriven {
         ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
         : 0;
     this.#receiveShadow = init.shadows?.receive === true;
+    this.#impostorFar = impostorFarOption(init.impostorFar);
     this.#smallCasterMetres = positiveMetres(
       init.shadows?.smallCasterMetres ?? SMALL_CASTER_METRES,
       "shadows.smallCasterMetres",
@@ -887,6 +910,10 @@ export class WorldCells extends Group implements IComputeDriven {
         autoLodPixelsPerUnit: this.#autoLodPixelsPerUnit,
         castShadowLevels: this.#castShadowLevels,
         budgets: this.#budgets,
+        impostorFar: this.#impostorFar,
+        // The ring guarantees every cell this close is resident, so a far record past it is always
+        // further than the asset's own cull; see `CellImpostors.#farReaches`.
+        nearRingRadius: this.#ring * this.#cellSize,
       },
       {
         released: () => this.#released,
@@ -998,6 +1025,12 @@ export class WorldCells extends Group implements IComputeDriven {
       // A tile that still cannot fit is caught in `update` and reported as pressure.
       residentByteBudget: Number.MAX_SAFE_INTEGER,
       residentTileBudget: tileCount,
+      extent: {
+        maxX: init.manifest.extent.minX + init.manifest.extent.sizeX,
+        maxZ: init.manifest.extent.minZ + init.manifest.extent.sizeZ,
+        minX: init.manifest.extent.minX,
+        minZ: init.manifest.extent.minZ,
+      },
       sampleHeight: heightSamplerFromHeightmap(
         init.manifest.terrain,
         init.manifest.extent,
@@ -1005,7 +1038,14 @@ export class WorldCells extends Group implements IComputeDriven {
       ),
       streamRadius,
       surface: init.surface,
-      tileResolution: init.terrain?.tileResolution ?? DEFAULT_TILE_RESOLUTION,
+      tileResolution:
+        init.terrain?.tileResolution ??
+        (init.terrain?.lodFactors === undefined
+          ? tileResolutionFor(
+              init.terrain?.tileSize ?? this.#cellSize,
+              init.manifest.terrain.spacing,
+            )
+          : DEFAULT_TILE_RESOLUTION),
       tileSize: init.terrain?.tileSize ?? this.#cellSize,
     });
     this.#stream(this.#terrain);

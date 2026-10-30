@@ -179,6 +179,19 @@ describe("terrain_generate output containment", () => {
     );
   });
 
+  it("rejects an output outside assets.source before a cook could start", async () => {
+    await mkdir(join(root, "assets"));
+    const source = join(root, "assets");
+    expect(await resolveOutput(root, "assets/worlds/forest", source)).toBe(
+      join(source, "worlds", "forest"),
+    );
+    await expect(resolveOutput(root, "public/worlds/forest", source)).rejects.toThrow(
+      /must be under assets\.source \('assets'\) so the build lists the world in its manifest/u,
+    );
+    // The source root itself is not a world directory.
+    await expect(resolveOutput(root, "assets", source)).rejects.toThrow(/assets\.source/u);
+  });
+
   it("rejects an output that is itself a symlink leaving the root", async () => {
     await symlink(outside, join(root, "link"));
     await expect(resolveOutput(root, "link")).rejects.toThrow();

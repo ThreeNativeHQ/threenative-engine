@@ -143,7 +143,16 @@ export async function loadPlacements(
   assets: Pick<IAssetLoader, "resolve">,
   world: string,
 ): Promise<ReturnType<typeof decodePlacements>> {
-  const path = `world/${world}.placements.bin`;
+  const response = await fetchBakedFile(assets, `world/${world}.placements.bin`, "placement table");
+  return decodePlacements(await response.arrayBuffer());
+}
+
+/** One baked file under `world/`, from the first root the asset loader resolves that serves it. */
+export async function fetchBakedFile(
+  assets: Pick<IAssetLoader, "resolve">,
+  path: string,
+  what = "world file",
+): Promise<Response> {
   for (const url of await assets.resolve(path)) {
     let response: Response;
     try {
@@ -151,7 +160,7 @@ export async function loadPlacements(
     } catch {
       continue;
     }
-    if (response.ok) return decodePlacements(await response.arrayBuffer());
+    if (response.ok) return response;
   }
-  throw new Error(`Missing baked placement table: ${path}`);
+  throw new Error(`Missing baked ${what}: ${path}`);
 }

@@ -37,6 +37,7 @@ vi.mock("../src/assets.js", async (importOriginal) => {
 
 import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
 import type { IRendererLike } from "../src/renderer.js";
+import { loadModelWith } from "../src/world-cell-models.js";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
 /**
@@ -2594,6 +2595,26 @@ describe("WorldCells", () => {
     }
   });
 
+  it("meshes terrain tiles at the heightmap's own sample spacing by default", async () => {
+    // 64 m tiles over a 2 m heightmap: 33 vertices a side. The fixed 129 interpolated the same
+    // samples at 0.5 m and drew 3.01M terrain triangles, 25 ms on an Iris Xe (PRD-762).
+    stubFixtureFetch();
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow: followAt(0, 0),
+      loadModel: async () => new Group(),
+      ring: 0,
+      surface,
+      gpuScene: false,
+      url: "/world/world.json",
+    });
+    try {
+      expect(terrainOf(world).tileResolution).toBe(33);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("passes the resolved props pixel policy and current raster view to settled terrain", async () => {
     stubFixtureFetch();
     const world = await loadWorld({
@@ -2670,7 +2691,9 @@ describe("WorldCells", () => {
     expect(ring.stats().residentCells).toBe(16);
     expect(terrainOf(ring).residentTileCount).toBe(25);
 
-    // Terrain to the horizon, props at the ring: 81 tiles under the same ring 2.
+    // Terrain to the horizon, props at the ring: radius 4 asks for 81 tiles, and the 4 x 4 cell world
+    // touches 25 of them. A tile wholly off the map only repeats the edge sample (PRD-762: the MCP
+    // snippet's 13 x 13 ring drew 169 tiles over an 8 x 8 tile map).
     const wide = await loadWorld({
       budgets: largeBudgets,
       follow,
@@ -2683,11 +2706,11 @@ describe("WorldCells", () => {
     wide.update();
     const terrain = terrainOf(wide);
     expect(wide.stats().residentCells).toBe(16);
-    expect(terrain.residentTileCount).toBe(81);
+    expect(terrain.residentTileCount).toBe(25);
     // The default `lodDistances` are tile-size multiples, so a wider ring puts its far tiles on the
     // coarse levels instead of drawing 81 tiles at full resolution.
     expect(terrain.getTile("0:0")?.lodLevel).toBe(0);
-    expect(terrain.getTile("4:4")?.lodLevel).toBe(2);
+    expect(terrain.getTile("2:2")?.lodLevel).toBeGreaterThan(0);
     ring.dispose();
     wide.dispose();
   });
@@ -2727,5 +2750,28 @@ describe("WorldCells", () => {
     expect(created).toContain("1:0");
     expect(disposed).toContain("0:0");
     world.dispose();
+  });
+});
+
+describe("loadModelWith", () => {
+  it("selects the named scene when one file carries every level", async () => {
+    const near = new Group();
+    near.name = "pine";
+    const far = new Group();
+    far.name = "pine_lod1";
+    const model = vi.fn(async () => ({ scene: near, scenes: [near, far] }));
+    const loader = {
+      model,
+      resolve: vi.fn(async () => []),
+    } as unknown as IAssetLoader;
+    // A package that stores one level per file names no scene and gets the default one.
+    expect(await loadModelWith(loader, "models/pine.glb")).toBe(near);
+    // A cooked species stores every level in one file; each level selects its own scene.
+    expect(await loadModelWith(loader, "models/pine.glb", "pine_lod1")).toBe(far);
+    await expect(loadModelWith(loader, "models/pine.glb", "pine_lod9")).rejects.toThrow(
+      /'models\/pine\.glb' has no scene 'pine_lod9'/u,
+    );
+    // Both levels come from the one cached parse: the file is fetched and decoded once.
+    expect(model).toHaveBeenCalledTimes(3);
   });
 });

@@ -13,7 +13,7 @@ stands, young firs and boulder fields. It is game source: once copied, every fil
 | `water.ts` | `addForestWater(ctx, water, field)`: the lake's surface (`WaterSurface3D`) and the river's ribbon, from `water.json`. |
 | `sky.ts` | `forestDaylight(follow)`: sun, sky, fill, haze, exposure and tone curve. |
 
-Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-assets/credits.json`.
+Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
 
 ## Three steps
 

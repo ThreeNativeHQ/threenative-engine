@@ -51,7 +51,7 @@ describe("canopy comparison scene lifetime", () => {
         ts.transpileModule(
           `export class Probe extends Scene {
           static initialState = initialState;
-          #elapsed = 0; #surfaces; #ocean; #river; #lake; #sky;
+          #elapsed = 0; #surfaces; #ocean; #river; #lake; #sky; #stage;
           #player = { velocity: { x: 0, y: 0, z: 0 }, moveAndSlide() {}, grounded: false };
           ${update}
         }`,
@@ -127,6 +127,7 @@ describe("canopy comparison startup", () => {
     const imports: Record<string, unknown> = {
       "./game.js": { __esModule: true, default: game },
       "./launchFailure.js": { showLaunchFailures: () => ({ ready: () => undefined }) },
+      "@threenative/core": { exposeDebug: vi.fn() },
       "./render/biomes.js": { BIOMES: { forest: {}, coastal: {} } },
       "./render/pack.js": pack,
     };

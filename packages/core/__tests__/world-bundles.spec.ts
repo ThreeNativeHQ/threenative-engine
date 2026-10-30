@@ -1453,6 +1453,33 @@ describe("the main pass's draw bundles", () => {
     cells.dispose();
   });
 
+  it("re-records every shard once when a sampled environment map is swapped under it", async () => {
+    // A record holds the bind groups it was made with, and a replay never refreshes them: a sky
+    // PMREM that finishes after the first record left the forest's crowns sampling the black
+    // placeholder until the first walk re-recorded them. The patched renderer counts each swap.
+    const { renderer, world: cells } = await world({ bundles: true, gpuScene: false });
+    cells.update(renderer, playerCamera([0, 1]));
+    await flushed(cells, renderer, playerCamera([0, 1]));
+    const raw = { _tnPmremSwaps: 0 };
+    const swapping: IRendererLike = Object.assign(Object.create(renderer) as IRendererLike, {
+      raw,
+    });
+    cells.update(swapping, playerCamera([0, 1]));
+    const groups = mainBundleGroups(cells);
+    expect(groups.length).toBeGreaterThan(0);
+    const before = new Map(groups.map((group) => [group, group.version]));
+
+    raw._tnPmremSwaps = 1;
+    cells.update(swapping, playerCamera([0, 1]));
+    for (const group of groups) expect(group.version).toBeGreaterThan(before.get(group) as number);
+
+    // Once per swap, not every frame.
+    const after = new Map(groups.map((group) => [group, group.version]));
+    for (let index = 0; index < 5; index += 1) cells.update(swapping, playerCamera([0, 1]));
+    for (const group of groups) expect(group.version).toBe(after.get(group));
+    cells.dispose();
+  });
+
   it("records by default, and the marker says the run asked for nothing else", async () => {
     // Phase 2 box 2: the default follows the measurement. AC-2 measured the walking `draw` span at
     // -5.0 ms against develop over 3 interleaved runs with bundles on, so a world that says nothing
