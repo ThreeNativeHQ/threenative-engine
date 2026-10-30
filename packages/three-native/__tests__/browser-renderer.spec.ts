@@ -13,6 +13,7 @@ import {
   type IRegistryDump,
   TSL_NODE,
   defineBrowserClasses,
+  engineRef,
 } from "../src/browser-backend.js";
 import {
   PIPELINE_POST,
@@ -103,6 +104,86 @@ async function drawn(parameters: Record<string, unknown>) {
   renderer.render(scene, camera);
   return { samples: renderer.samples, handed: state.mock.calls.at(-1)?.[5] };
 }
+
+describe("the owned engine's CPU stage totals (PRD-771)", () => {
+  const fieldsOf = (calls: number[]) => (field: number) => {
+    calls.push(field);
+    return field === 78 ? 64 : 0;
+  };
+
+  it("reads them in place from the host's array, so a steady frame pays no host call for them", async () => {
+    const asked: number[] = [];
+    const { Renderer, canvas, scene, camera, module } = host(fieldsOf(asked));
+    const heap = new Float64Array(32);
+    Reflect.set(module, "HEAPF64", heap);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      info: { engine: { cpuMs: Record<string, number> } };
+    };
+    await renderer.init();
+    // Fifteen doubles at address 64, in the order of CPU_STAGE_FIELDS: pages, plan, shadow lists, prepare, encode, post,
+    // then the scene half and the host's render, compute, submit, poll and tail, then `Renderer::render` itself, the whole database call and the render targets.
+    heap.set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 8);
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.cpuMs).toEqual({
+      cpuVirtualPagesMs: 1,
+      cpuPlanMs: 2,
+      cpuShadowBuildMs: 3,
+      cpuPrepareMs: 4,
+      cpuEncodeMs: 5,
+      cpuPostMs: 6,
+      cpuSceneMs: 7,
+      hostRenderMs: 8,
+      hostComputeMs: 9,
+      hostSubmitMs: 10,
+      hostPollMs: 11,
+      hostTailMs: 12,
+      rendererMs: 13,
+      hostDatabaseMs: 14,
+      hostTargetMs: 15,
+    });
+    // 71-72 are startup reads and 85 the per-frame shadow split (PRD-770); none is a stage total.
+    expect(
+      asked.filter((field) => field >= 66 && field !== 71 && field !== 72 && field !== 85),
+    ).toEqual([78]);
+  });
+
+  it("publishes no totals on a module without the array, so core reads them as unmeasured", async () => {
+    const { Renderer, canvas, scene, camera } = host(() => 0);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      info: { engine: { cpuMs?: unknown; work?: unknown } };
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.cpuMs).toBeUndefined();
+    expect(renderer.info.engine.work).toBeUndefined();
+  });
+
+  it("stops reading them, and tells the engine, when the meters are turned off", async () => {
+    const asked: number[] = [];
+    const { Renderer, canvas, scene, camera, module } = host(fieldsOf(asked));
+    const heap = new Float64Array(32).fill(5);
+    Reflect.set(module, "HEAPF64", heap);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      setStageMeters(enabled: boolean): void;
+      info: { engine: { cpuMs: Record<string, number> } };
+    };
+    await renderer.init();
+    renderer.setStageMeters(false);
+    renderer.render(scene, camera);
+    expect(asked).toContain(-4);
+    expect(renderer.info.engine.cpuMs.cpuSceneMs).toBe(0);
+    renderer.setStageMeters(true);
+    renderer.render(scene, camera);
+    expect(asked).toContain(-3);
+    expect(renderer.info.engine.cpuMs.cpuSceneMs).toBe(5);
+  });
+});
 
 describe("the owned engine's temporal render scale", () => {
   it("sends input scale while keeping the display-sized canvas", async () => {
@@ -691,52 +772,229 @@ describe("the Wasm engine's frame gate", () => {
   });
 });
 
-describe("the Wasm engine's environment preparation", () => {
-  it("draws the held scene until a render is neither gated nor skipped for an unbaked environment", async () => {
-    // Pending for two drawn renders, then gated once while two frames are on the GPU, then baked.
-    const pending = [1, 1, 0];
-    let gateOnce = false;
-    let drawn = 0;
-    const { Renderer, canvas, scene, camera } = host(
-      (field) => {
-        if (field === 11 && gateOnce) {
-          gateOnce = false;
-          return 1;
-        }
-        return field === 12 ? (pending[drawn - 1] ?? 0) : 0;
-      },
-      () => {
-        drawn += 1;
-        if (drawn === 2) gateOnce = true;
-        return 0;
-      },
-    );
+describe("the Wasm engine's startup presentation hold", () => {
+  it("startup presentation hold does not skip ordinary warm renders", async () => {
+    // A host in miniature: field 71 counts the world frames that reached it, field 72 says the shadows are
+    // mapped, and an overlay is the one draw that is not one of them (web_host.cpp tnw_web_render).
+    const fields: Record<number, number> = {};
+    const hold: number[] = [];
+    const render = vi.fn((...args: number[]) => {
+      if (args[6] !== 1) {
+        fields[71] = (fields[71] ?? 0) + 1;
+        fields[72] = 1;
+      }
+      return 0;
+    });
+    const { Renderer, canvas, scene, camera, module } = host((field) => fields[field] ?? 0, render);
+    Reflect.set(module, "_tnw_web_set_presentation_hold", (held: number) => hold.push(held));
     const renderer = new Renderer({ canvas }) as {
-      info: { engine: { frameGateSkips: number } };
+      readonly info: {
+        engine: { startup: { shadowInputsReady: boolean; worldSubmissions: number } };
+      };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      renderOverlay(scene: unknown, camera: unknown): void;
+      setPresentationHeld(held: boolean): void;
+      dispose(): void;
+    };
+    await renderer.init();
+    const startup = (): unknown => renderer.info.engine.startup;
+    expect(startup()).toEqual({ shadowInputsReady: false, worldSubmissions: 0 });
+
+    renderer.setPresentationHeld(true);
+    expect(hold).toEqual([1]);
+    // The hold defers the surface texture, never the passes. The covered draw is the frame that maps the shadow
+    // pages and feeds the meter, so skipping it would hold the cover waiting for work nothing else starts.
+    renderer.render(scene, camera);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(startup()).toEqual({ shadowInputsReady: true, worldSubmissions: 1 });
+
+    // A frame the gate declined never reached the engine, and the loading cover's overlay is not a world
+    // frame: neither may read as the startup's first one.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fields[11] = 1;
+    renderer.render(scene, camera);
+    expect(render).toHaveBeenCalledTimes(1);
+    fields[11] = 0;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.renderOverlay(scene, camera);
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(render.mock.calls[1]?.[6]).toBe(1);
+    expect(startup()).toEqual({ shadowInputsReady: true, worldSubmissions: 1 });
+
+    // Engaging the same hold twice does not stack, and only this renderer's own dispose releases it.
+    renderer.setPresentationHeld(true);
+    expect(hold).toEqual([1]);
+    renderer.dispose();
+    expect(hold).toEqual([1, 0]);
+  });
+});
+
+describe("the Wasm engine's environment preparation", () => {
+  it("prepares one step per task until the engine reports the environment baked", async () => {
+    // Pending for two steps, then baked. A step per macrotask, because the work-done callbacks that
+    // advance the bake arrive between tasks; the loop stops at the first baked answer.
+    const statuses = [0, 0, 1, 0];
+    const prepare = vi.fn((..._args: number[]) => statuses.shift() ?? 0);
+    const render = vi.fn((..._args: number[]) => 0);
+    const { Renderer, canvas, scene, camera, module } = host(() => 0, render);
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
+    const renderer = new Renderer({ canvas }) as {
       init(): Promise<unknown>;
       prepareEnvironmentAsync(scene: unknown, camera: unknown): Promise<boolean>;
     };
     await renderer.init();
     expect(await renderer.prepareEnvironmentAsync(scene, camera)).toBe(true);
-    expect(drawn).toBe(3);
-    expect(renderer.info.engine.frameGateSkips).toBe(1);
+    expect(prepare).toHaveBeenCalledTimes(3);
+    expect(statuses).toEqual([0]); // the step after the baked answer is never asked for
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("never presents its final bake frame", async () => {
+    // The bake reached the canvas through render(), so its last draw was the first picture the browser
+    // presented: bright, without the next frame's cast shadows, held 0.7-1.6 s (VSM and plain shadow).
+    const render = vi.fn((..._args: number[]) => 0);
+    const statuses = [0, 0, 1];
+    const prepare = vi.fn((..._args: number[]) => statuses.shift() ?? 1);
+    const { Renderer, canvas, scene, camera, module } = host(() => 0, render);
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
+    const sky = { version: 1 };
+    Object.defineProperty(scene, "environment", { value: sky, configurable: true });
+    const renderer = new Renderer({ canvas }) as {
+      info: { frame: number; engine: { environmentBake: boolean } };
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(scene: unknown, camera: unknown): Promise<boolean>;
+    };
+    await renderer.init();
+    const frame = renderer.info.frame;
+    expect(await renderer.prepareEnvironmentAsync(scene, camera)).toBe(true);
+    // Preparation is not a draw: no surface submission, no frame counted.
+    expect(render).not.toHaveBeenCalled();
+    expect(renderer.info.frame).toBe(frame);
+    expect(prepare).toHaveBeenCalledTimes(3);
+    const [sceneHandle, cameraHandle] = prepare.mock.calls[0] as [number, number];
+    expect(
+      prepare.mock.calls.every(([at, view]) => at === sceneHandle && view === cameraHandle),
+    ).toBe(true);
+    expect(cameraHandle).toBe(sceneHandle + 12);
+    const view = new DataView(module.HEAPU8.buffer);
+    const packed = (at: number) => [
+      view.getUint16(at, true),
+      view.getUint16(at + 2, true),
+      view.getUint32(at + 4, true),
+      view.getUint32(at + 8, true),
+    ];
+    const ref = (object: object) => (engineRef(object)?.key ?? "").split(":").map(Number);
+    expect(packed(sceneHandle)).toEqual(ref(scene));
+    expect(packed(cameraHandle)).toEqual(ref(camera));
+    expect(renderer.info.engine.environmentBake).toBe(false);
+  });
+
+  it("prepares the held scene on every step after the cover painted between them", async () => {
+    // The cover paints through render(), which rewrites the handle slots the preparer reads.
+    const statuses = [0, 0, 1];
+    const { Renderer, canvas, scene, camera, module } = host(() => 0);
+    const view = new DataView(module.HEAPU8.buffer);
+    const packed = (at: number) => [
+      view.getUint16(at, true),
+      view.getUint16(at + 2, true),
+      view.getUint32(at + 4, true),
+      view.getUint32(at + 8, true),
+    ];
+    const seen: number[][][] = [];
+    let slots = 0;
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = (at: number, cameraAt: number) => {
+      slots = at;
+      seen.push([packed(at), packed(cameraAt)]);
+      return statuses.shift() ?? 1;
+    };
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs?: number,
+        afterDraw?: () => void,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    const cover = () => module.HEAPU8.fill(0, slots, slots + 24);
+    expect(
+      await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, cover),
+    ).toBe(true);
+    const ref = (object: object) => (engineRef(object)?.key ?? "").split(":").map(Number);
+    expect(seen).toEqual([0, 1, 2].map(() => [ref(scene), ref(camera)]));
+  });
+
+  it("gives up at its deadline on a bake that still pends, presenting nothing", async () => {
+    const render = vi.fn((..._args: number[]) => 0);
+    const prepare = vi.fn((..._args: number[]) => 0);
+    const { Renderer, canvas, scene, camera, module } = host(() => 0, render);
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { environmentBake: boolean } };
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 20)).toBe(
+      false,
+    );
+    expect(prepare.mock.calls.length).toBeGreaterThan(0);
+    expect(render).not.toHaveBeenCalled();
+    expect(renderer.info.engine.environmentBake).toBe(false);
+  });
+
+  it("refuses a refused bake by the host's diagnostic, preparing no further step", async () => {
+    const prepare = vi.fn((..._args: number[]) => -1);
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
+    engine.UTF8ToString = () => "TN_WASM_PREPARE: the environment source is gone";
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { environmentBake: boolean } };
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(scene: unknown, camera: unknown): Promise<boolean>;
+    };
+    await renderer.init();
+    await expect(renderer.prepareEnvironmentAsync(scene, camera)).rejects.toThrow(
+      "TN_WASM_PREPARE: the environment source is gone",
+    );
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(renderer.info.engine.environmentBake).toBe(false);
   });
 });
 
 describe("the Wasm engine's environment preparation across a restart", () => {
-  it("waits on no draw for an environment a draw already baked, even while the gate declines", async () => {
-    // A restart re-enters the same sky. The engine kept its bake (keyed by the texture), but every
-    // frame was gated on SwiftShader, so the loop saw no draw and held the restart for its whole
-    // 15 s budget: shooter debug-restart's one advance took 28 s against a 20.25 s bound.
-    let gated = false;
-    let drawn = 0;
-    const { Renderer, canvas, scene, camera } = host(
-      (field) => (field === 11 ? (gated ? 1 : 0) : field === 12 ? (drawn < 2 ? 1 : 0) : 0),
-      () => {
-        drawn += 1;
-        return 0;
-      },
-    );
+  it("waits on no step for an environment an earlier preparation already baked", async () => {
+    // A restart re-enters the same sky. The engine kept its bake (keyed by the texture), so the
+    // restart must not step it again: on SwiftShader shooter debug-restart's one advance took 28 s
+    // against a 20.25 s bound.
+    let pending = false;
+    const prepare = vi.fn((..._args: number[]) => (pending ? 0 : 1));
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
     // An own property shadows the engine-backed accessor, which this stub runtime cannot answer.
     const disposed: Array<() => void> = [];
     const sky = {
@@ -756,15 +1014,15 @@ describe("the Wasm engine's environment preparation across a restart", () => {
     expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
       true,
     );
-    const before = drawn;
-    gated = true;
+    const before = prepare.mock.calls.length;
     const started = performance.now();
     expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
       true,
     );
     expect(performance.now() - started).toBeLessThan(500);
-    expect(drawn).toBe(before);
+    expect(prepare.mock.calls.length).toBe(before);
     // A new version, or a disposed sky, is a new bake: back to the bounded wait.
+    pending = true;
     sky.version = 2;
     expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 20)).toBe(
       false,
@@ -778,18 +1036,17 @@ describe("the Wasm engine's environment preparation across a restart", () => {
 });
 
 describe("the Wasm engine's environment preparation after its deadline", () => {
-  it("learns the bake finished from a later frame, so the restart after it waits on no draw", async () => {
+  it("learns the bake finished from a later frame, so the restart after it waits on no step", async () => {
     // SwiftShader's first boot gives the bake up at the deadline; play then draws the baked sky.
-    let gated = false;
     let pending = 1;
-    let drawn = 0;
-    const { Renderer, canvas, scene, camera } = host(
-      (field) => (field === 11 ? (gated ? 1 : 0) : field === 12 ? pending : 0),
-      () => {
-        drawn += 1;
-        return 0;
-      },
+    const prepare = vi.fn((..._args: number[]) => (pending ? 0 : 1));
+    const { Renderer, canvas, scene, camera, module } = host((field) =>
+      field === 12 ? pending : 0,
     );
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
     const sky = { version: 1 };
     Object.defineProperty(scene, "environment", { value: sky, configurable: true });
     const renderer = new Renderer({ canvas }) as {
@@ -807,22 +1064,19 @@ describe("the Wasm engine's environment preparation after its deadline", () => {
     );
     // A restart before any frame found it done: the boot already waited its budget for this bake,
     // which keeps running, so the restart does not wait it again.
-    gated = true;
     const started = performance.now();
     expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
       false,
     );
     expect(performance.now() - started).toBeLessThan(500);
-    gated = false;
     pending = 0;
     await new Promise((resolve) => setTimeout(resolve, 0));
     renderer.render(scene, camera);
-    gated = true;
-    const before = drawn;
+    const before = prepare.mock.calls.length;
     expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 1000)).toBe(
       true,
     );
-    expect(drawn).toBe(before);
+    expect(prepare.mock.calls.length).toBe(before);
   });
 });
 
@@ -830,7 +1084,11 @@ describe("the Wasm engine's environment preparation in flight", () => {
   it("does not start a second wait for a bake an earlier preparation is still waiting on", async () => {
     // Shooter on SwiftShader: the boot's 45 s hold warm-up was still waiting on the sky when the
     // restart prepared the same sky, and the restart waited its own 15 s budget beside it.
-    const { Renderer, canvas, scene, camera } = host((field) => (field === 12 ? 1 : 0));
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = () => 0;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
     const sky = { version: 1 };
     Object.defineProperty(scene, "environment", { value: sky, configurable: true });
     const renderer = new Renderer({ canvas }) as {
@@ -854,24 +1112,21 @@ describe("the Wasm engine's environment preparation in flight", () => {
 });
 
 describe("the Wasm engine's environment preparation presents", () => {
-  it("lets the caller paint its cover straight after every draw, in the same task", async () => {
-    // Each draw is a timer task the browser presents alone, so an unbaked environment presents black:
-    // the cover has to follow every draw before the task ends.
-    const pending = [1, 1, 0];
+  it("lets the caller paint its cover in every step's task, presenting no world frame", async () => {
+    // A step presents nothing, so the cover over the frame last presented is the only thing to keep
+    // painting while the bake runs: it has to follow every step before the task ends.
+    const statuses = [0, 0, 1];
     const order: string[] = [];
-    let drawn = 0;
-    // The cover is a draw too, so the engine's "skipped for an unbaked environment" flag reads 0
-    // after it: the loop has to read the flag before the cover paints, or it stops at once.
-    let coverIsLastDraw = false;
-    const { Renderer, canvas, scene, camera } = host(
-      (field) => (field === 12 && !coverIsLastDraw ? (pending[drawn - 1] ?? 0) : 0),
-      () => {
-        drawn += 1;
-        coverIsLastDraw = false;
-        order.push("draw");
-        return 0;
-      },
-    );
+    const prepare = vi.fn((..._args: number[]) => {
+      const status = statuses.shift() ?? 1;
+      order.push(status === 0 ? "step" : "baked");
+      return status;
+    });
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
     const renderer = new Renderer({ canvas }) as {
       info: { engine: { environmentBake: boolean } };
       init(): Promise<unknown>;
@@ -885,12 +1140,11 @@ describe("the Wasm engine's environment preparation presents", () => {
     await renderer.init();
     const bakeStates: boolean[] = [];
     await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, () => {
-      coverIsLastDraw = true;
       bakeStates.push(renderer.info.engine.environmentBake);
       order.push("cover");
     });
-    expect(order).toEqual(["draw", "cover", "draw", "cover", "draw", "cover"]);
-    // The bake draws (and the cover repaint in the same task) are not presented world frames.
+    expect(order).toEqual(["step", "cover", "step", "cover", "baked", "cover"]);
+    // The cover repaint in the same task is not a presented world frame, but the bake flag holds for it.
     expect(bakeStates).toEqual([true, true, true]);
     expect(renderer.info.engine.environmentBake).toBe(false);
   });
@@ -898,24 +1152,26 @@ describe("the Wasm engine's environment preparation presents", () => {
 
 describe("the Wasm engine's cover repaint under the frame gate", () => {
   it("is not refused by the gate that refuses a second draw while frames are still on the GPU", async () => {
-    // The host counts a frame on the GPU for every draw, so the repaint straight after a draw meets the
-    // gate. A refused repaint presents the draw's black frame instead of the cover.
-    const pending = [1, 1, 0];
-    let worldDraws = 0;
+    // The host counts a frame on the GPU for every draw. The bake presents nothing, so the cover
+    // repaint in each step's task is that task's only draw: a refused one leaves the unfinished sky
+    // on screen instead of the cover.
+    const statuses = [0, 0, 1];
     let coverDraws = 0;
-    let inCover = false;
     let onGpu = 0;
-    const { Renderer, canvas, scene, camera } = host(
-      (field) =>
-        field === 11 ? (onGpu >= 1 ? 1 : 0) : field === 12 ? (pending[worldDraws - 1] ?? 0) : 0,
-      () => {
-        if (inCover) coverDraws += 1;
-        else worldDraws += 1;
+    const { Renderer, canvas, scene, camera, module } = host(
+      (field) => (field === 11 ? (onGpu >= 1 ? 1 : 0) : 0),
+      (...args) => {
+        if (args[6] === 1) coverDraws += 1;
         onGpu += 1;
         return 0;
       },
     );
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = () => statuses.shift() ?? 1;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
     const renderer = new Renderer({ canvas }) as {
+      info: { engine: { frameGateSkips: number } };
       init(): Promise<unknown>;
       prepareEnvironmentAsync(
         scene: unknown,
@@ -923,17 +1179,15 @@ describe("the Wasm engine's cover repaint under the frame gate", () => {
         deadlineMs: number,
         afterDraw: () => void,
       ): Promise<boolean>;
-      render(scene: unknown, camera: unknown): void;
+      renderOverlay(scene: unknown, camera: unknown): void;
     };
     await renderer.init();
     await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, () => {
-      inCover = true;
-      renderer.render(scene, camera);
-      inCover = false;
+      renderer.renderOverlay(scene, camera);
       onGpu = 0; // the GPU finishes before the next timer task
     });
-    expect(worldDraws).toBe(3);
     expect(coverDraws).toBe(3);
+    expect(renderer.info.engine.frameGateSkips).toBe(0);
   });
 
   it("holds back a frame, not a draw: the overlay over a drawn world draws, the next frame waits", async () => {
@@ -966,15 +1220,13 @@ describe("the Wasm engine's cover repaint under the frame gate", () => {
 });
 
 describe("the Wasm engine's environment preparation deadline", () => {
-  it("gives up at the caller's deadline instead of drawing an unbaked environment forever", async () => {
-    let drawn = 0;
-    const { Renderer, canvas, scene, camera } = host(
-      (field) => (field === 12 ? 1 : 0),
-      () => {
-        drawn += 1;
-        return 0;
-      },
-    );
+  it("gives up at the caller's deadline instead of preparing an unbaked environment forever", async () => {
+    const prepare = vi.fn((..._args: number[]) => 0);
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_prepare_environment = prepare;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 1;
     const renderer = new Renderer({ canvas }) as {
       init(): Promise<unknown>;
       prepareEnvironmentAsync(
@@ -987,9 +1239,9 @@ describe("the Wasm engine's environment preparation deadline", () => {
     expect(await renderer.prepareEnvironmentAsync(scene, camera, performance.now() + 20)).toBe(
       false,
     );
-    const after = drawn;
+    const after = prepare.mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(drawn).toBe(after);
+    expect(prepare.mock.calls.length).toBe(after);
   });
 });
 
@@ -1245,6 +1497,10 @@ describe("the Wasm engine's compileAsync", () => {
       return 7;
     };
     engine._tnw_web_compile_status = () => 1;
+    engine._tnw_web_prepare_environment = () => {
+      order.push("prepare");
+      return 1;
+    };
     const render = engine._tnw_web_render as (...args: unknown[]) => number;
     engine._tnw_web_render = (...args: unknown[]) => {
       order.push("draw");
@@ -1260,8 +1516,9 @@ describe("the Wasm engine's compileAsync", () => {
     renderer[PIPELINE_POST] = () => order.push("post");
     await renderer.compileAsync(scene, camera);
     await renderer.prepareEnvironmentAsync(scene, camera);
-    // The bake compiles the scene off the queue before the draw that would compile it synchronously.
-    expect(order).toEqual(["post", "compile", "post", "post", "compile", "draw"]);
+    // The bake compiles the scene off the queue before the frame that would compile it synchronously.
+    expect(order).toEqual(["post", "compile", "post", "post", "compile", "prepare"]);
+    expect(order).not.toContain("draw");
   });
 
   it("still bakes inside its deadline when the scene compile never settles", async () => {
@@ -1269,11 +1526,10 @@ describe("the Wasm engine's compileAsync", () => {
     const engine = module as unknown as Record<string, unknown>;
     engine._tnw_web_compile_async = () => 7;
     engine._tnw_web_compile_status = () => 0;
-    let draws = 0;
-    const render = engine._tnw_web_render as (...args: unknown[]) => number;
-    engine._tnw_web_render = (...args: unknown[]) => {
-      draws += 1;
-      return render(...args);
+    let steps = 0;
+    engine._tnw_web_prepare_environment = () => {
+      steps += 1;
+      return 1;
     };
     const renderer = new Renderer({ canvas }) as {
       init(): Promise<unknown>;
@@ -1286,7 +1542,7 @@ describe("the Wasm engine's compileAsync", () => {
     await renderer.init();
     const started = performance.now();
     expect(await renderer.prepareEnvironmentAsync(scene, camera, started + 400)).toBe(true);
-    expect(draws).toBe(1);
+    expect(steps).toBe(1);
     // The compile waits half the time left at most: the bake drew near 200 ms, not at its deadline.
     expect(performance.now() - started).toBeLessThan(320);
   });
@@ -1414,19 +1670,37 @@ describe("debug renderer observations", () => {
     vi.stubEnv("TN_DEBUG", "0");
     const frame = vi.fn(() => 0);
     const { Renderer, canvas, scene, camera, module } = host(frame);
+    Reflect.set(module, "_tnw_web_set_presentation_hold", () => undefined);
     const malloc = vi.spyOn(module, "_malloc");
     const renderer = new Renderer({ canvas }) as {
       init(): Promise<unknown>;
       render(scene: object, camera: object): void;
+      setPresentationHeld(held: boolean): void;
     };
     await renderer.init();
     frame.mockClear();
     malloc.mockClear();
     renderer.render(scene, camera);
-    // Existing renderer ABI census; debug reads existing observations only.
-    expect(frame.mock.calls).toHaveLength(37);
+    // Existing renderer ABI census; debug reads existing observations only. The startup's own submission
+    // count and shadow-input answer (fields 71, 72) are a held startup's, so a steady frame pays for neither.
+    // Field 85 (the shadow passes' triangles) is the one PRD-770 call that splits main from shadow.
+    expect(frame.mock.calls).toHaveLength(38);
+    // 73-84 are PRD-771's stage totals; the split read must not reuse one of them.
+    expect((frame.mock.calls as unknown as number[][]).map(([field]) => field)).toContain(85);
     expect(malloc).toHaveBeenCalledTimes(1); // existing state-string allocation
     expect(debugTelemetry(module)).toBeUndefined();
+
+    // Only a cover that is waiting reads them: two more host calls while held, and none again after.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.setPresentationHeld(true);
+    frame.mockClear();
+    renderer.render(scene, camera);
+    expect(frame.mock.calls).toHaveLength(40);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.setPresentationHeld(false);
+    frame.mockClear();
+    renderer.render(scene, camera);
+    expect(frame.mock.calls).toHaveLength(38);
   });
 });
 

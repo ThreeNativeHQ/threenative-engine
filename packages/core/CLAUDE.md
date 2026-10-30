@@ -139,6 +139,13 @@ particular, Godot-borrowed node names stay unchanged.
   absent observations stay absent. `TN_HOT_CALL` names a measured system exceeding the observed
   frame interval; playtest fails that warning, while `TN_DEBUG_REPORT` remains informational.
   Keep GPU sample identities and parent/child CPU spans separate when interpreting the ranking.
+- Each `TN_FRAME_BUDGET` window carries `stages` (PRD-771): the callback's frame split into the render phase's stages
+  (`jsBefore`, `engineJs`, `wasmScene`, `wasmPlan`, `wasmCompute`, `wasmEncode`, `wasmPost`, `wasmSubmit`, `wasmPoll`,
+  `wasmTail`, `wasmRendererGap`, `wasmDatabaseGap`, `wasmTargets`, `wasmOther`, `jsAfter`) plus the `update`, `overlay`, `ui` and `residual` phases, and `stageSum`, their per-frame sum. `wasmOther`,
+  `wasmRendererGap`, `wasmDatabaseGap` and `engineJs` are subtractions, so unlocated time is a number. `stagesAtP95` is each
+  stage's mean over the window's slowest frames, so the p95 frame has a cause. Pieces of `wasmPlan` ride beside it and stay out of the sum.
+  On by default for one clock read per boundary; `?tnStages=0`, `TN_STAGES=0` or `globalThis.__tnStages = false` turns
+  the meters off in core and in the engine, for the paired A/B of their own cost.
 - In a browser page, `start()` routes each `console.log` / `console.info` line that starts with `TN_` to
   `console.debug` (DevTools "Verbose", still read by Playwright); `stop()` restores the console. `warn`,
   `error`, other lines and native hosts are untouched. `TN_LOG=1`, `?tnLog=1` or

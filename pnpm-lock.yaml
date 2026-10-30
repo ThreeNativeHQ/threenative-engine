@@ -1166,6 +1166,9 @@ importers:
 
   packages/core:
     dependencies:
+      chrome-devtools-mcp:
+        specifier: 1.11.0
+        version: 1.11.0
       three:
         specifier: 'catalog:'
         version: 0.185.1(patch_hash=ad73bb2ac7c2e2e52c29685d6ed605b7931006be6a5488bcf6160e647ff43a9f)
@@ -3297,6 +3300,19 @@ packages:
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
     engines: {node: '>= 14.16.0'}
+
+  chrome-devtools-mcp@1.11.0:
+    resolution: {integrity: sha512-CytJ/5tnzrS+J/74be2P5aCOsS/mmGRHys/Si+IYC4ucrbnWAmES/dYdxGJjeUCECRcoFUilZAysdjlwqUjXIA==}
+    engines: {node: ^20.19.0 || ^22.12.0 || >=23}
+    hasBin: true
+    peerDependencies:
+      '@blackwell-systems/gcf': ^2.2.2
+      '@toon-format/toon': ^4.1.0
+    peerDependenciesMeta:
+      '@blackwell-systems/gcf':
+        optional: true
+      '@toon-format/toon':
+        optional: true
 
   codec-parser@2.5.0:
     resolution: {integrity: sha512-Ru9t80fV8B0ZiixQl8xhMTLru+dzuis/KQld32/x5T/+3LwZb0/YvQdSKytX9JqCnRdiupvAvyYJINKrXieziQ==}
@@ -6000,6 +6016,8 @@ snapshots:
   chokidar@4.0.3:
     dependencies:
       readdirp: 4.1.2
+
+  chrome-devtools-mcp@1.11.0: {}
 
   codec-parser@2.5.0: {}
 

@@ -120,6 +120,8 @@ function sceneRuntime(clock: { ms: number }) {
       calls.push(`get ${names.get(self.type)}.${property}`);
       if (property === "children") return [...(children.get(self.key) ?? [])];
       if (property === "parent") return parents.get(self.key) ?? null;
+      // Object3D::subtreeVersion: the process counter at the last add, remove or attach at or under it.
+      if (property === "__hierarchyRevision") return words[HIERARCHY / 4] ?? 0;
       if (property === "boundingSphere") return values.get(self.key)?.get(property) ?? null;
       if (property === "layers") {
         const layers = make("Layers");
@@ -140,6 +142,10 @@ function sceneRuntime(clock: { ms: number }) {
   const count = (call: string) => calls.filter((c) => c === call).length;
   return { runtime, calls, count, words };
 }
+
+/** Object3D's engine-internal subtree version, read as core's camera pass reads it. */
+const revisionOf = (object: object): number | undefined =>
+  (object as { __hierarchyRevision?: number }).__hierarchyRevision;
 
 interface ILight {
   intensity: number;
@@ -239,6 +245,24 @@ describe("bridge reads the back end keeps", () => {
     expect(seen).toEqual([other, key]);
   });
 
+  it("keeps a hierarchy revision until the engine's hierarchy counter moves", () => {
+    const { Light, Group, count } = scene();
+    const root = new Group();
+    const key = new Light(0xffffff, 1);
+    root.add(key);
+    // Core's camera pass reads this for every rate root every frame to decide whether its rig index
+    // still describes the engine's graph (stress lab: 120 crossings a frame).
+    const first = revisionOf(root);
+    for (let read = 0; read < 100; read++) expect(revisionOf(root)).toBe(first);
+    expect(count("get Group.__hierarchyRevision")).toBe(1);
+    // Its only writer stamps the same process-wide counter every add, remove and attach moves.
+    const other = new Group();
+    other.add(key);
+    expect(revisionOf(root)).not.toBe(first);
+    expect(revisionOf(other)).toBe(revisionOf(root));
+    expect(count("get Group.__hierarchyRevision")).toBe(3);
+  });
+
   it("asks an action whether it is scheduled once, until its own play/stop or a mixer-wide call", () => {
     const { Group, Mixer, count } = scene();
     const mixer = new Mixer(new Group());
@@ -257,6 +281,31 @@ describe("bridge reads the back end keeps", () => {
     mixer.stopAllAction();
     action.isScheduled();
     expect(count("call AnimationAction.isScheduled")).toBe(3);
+  });
+
+  it("reads an action's timeScale, paused, time and weight and the mixer's timeScale in place, no crossing", () => {
+    const { Group, Mixer, count } = scene();
+    const mixer = new Mixer(new Group()) as unknown as {
+      timeScale: number;
+      clipAction(clip: string): object;
+    };
+    const action = mixer.clipAction("walk") as {
+      timeScale: number;
+      paused: boolean;
+      time: number;
+      weight: number;
+    };
+    // An AnimationPlayer reads these on every action every frame.
+    for (let frame = 0; frame < 200; frame++) {
+      void action.timeScale;
+      void action.paused;
+      void action.time;
+      void action.weight;
+      void mixer.timeScale;
+    }
+    for (const property of ["timeScale", "paused", "time", "weight"])
+      expect(count(`get AnimationAction.${property}`)).toBe(0);
+    expect(count("get AnimationMixer.timeScale")).toBe(0);
   });
 
   it("keeps the labels through a transform-only method, a setter of another property and a same-value write", () => {

@@ -1071,7 +1071,8 @@ describe("template contracts", () => {
       ),
       "utf8",
     );
-    expect(skill.split(/\s+/u).filter(Boolean).length).toBeLessThan(260);
+    // 285 (was 260): the slow-game order — playtest trace, then the `threenative-devtools` MCP.
+    expect(skill.split(/\s+/u).filter(Boolean).length).toBeLessThan(285);
     expect(skill).toContain(
       "node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance",
     );

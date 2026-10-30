@@ -1,6 +1,6 @@
 ---
 name: threenative-performance
-description: Measure ThreeNative frame budgets and report platform evidence without guessing. Use when a frame budget, FPS floor, or platform performance claim is in question, when reading `TN_FRAME_BUDGET`, or when writing a bounded performance assertion.
+description: Measure ThreeNative frame budgets and report platform evidence without guessing. Use when the game is slow, when a frame budget, FPS floor, or platform performance claim is in question, when reading `TN_FRAME_BUDGET`, or when writing a bounded performance assertion.
 ---
 
 # ThreeNative performance evidence
@@ -16,6 +16,12 @@ the display period: move draws and objects, not settings. `npx threenative docto
 `DEV_MODE=true` repeat it; `TN_FRAME_SPANS=1` splits that phase.
 Largest static win: three skips binding updates when nothing changed; not writing a transform saved 7.35 ms on 1,561 objects, `markStatic(root)` 0.009 ms.
 An uncaught per-frame walk or poll? Fix it, then `file-engine-bug`.
+
+## Slow or stuttering game
+
+`npx @threenative/playtest trace --url <url> --text` names the hot function (`--cpu-prof <file>`
+writes a `.cpuprofile`). Then use the `threenative-devtools` MCP: quote its GPU, heap and network, not its
+inflated CPU times.
 
 ## Use the shipped defaults
 
@@ -51,6 +57,3 @@ per-pass split.
 
 Android: budget a ~500 MiB driver floor before textures; a dual-use equirectangular
 environment adds ~48 MiB: `node_modules/create-threenative/agent-docs/references/mobile-memory-budget.md`.
-
-Name the hot function: `--cpu-prof <file>` (native, or a browser/desktop playtest) writes a
-DevTools `.cpuprofile`.

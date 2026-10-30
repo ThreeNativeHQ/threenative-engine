@@ -253,9 +253,14 @@ const MCP_SAFE_TOOLS: Readonly<Record<string, string>> = {
   "threenative-animation": "animation_inspect",
   "threenative-assets": "asset_search_sources",
   "threenative-blender": "blender_status",
+  "threenative-devtools": "performance_start_trace",
   "threenative-engine": "engine_search_capabilities",
   "threenative-sculpt": "sculpt_grimoire",
 };
+
+/** Servers checked by `initialize` and `tools/list` alone. Every Chrome DevTools tool starts a
+ * headed Chrome, which a registry lane has no display for, so the advertised tool is the proof. */
+const MCP_LIST_ONLY: ReadonlySet<string> = new Set(["threenative-devtools"]);
 
 function safeOperation(
   serverName: string,
@@ -297,8 +302,9 @@ export function mcpRequests(
     },
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { id: 2, jsonrpc: "2.0", method: "tools/list", params: {} },
-    { id: 3, jsonrpc: "2.0", method: "tools/call", params: operation },
   ];
+  if (!MCP_LIST_ONLY.has(serverName))
+    requests.push({ id: 3, jsonrpc: "2.0", method: "tools/call", params: operation });
   if (serverName === "threenative-blender" && operation.name === "blender_convert") {
     const argumentsValue = operation.arguments as Record<string, unknown>;
     argumentsValue.source = fixture.source;
@@ -415,6 +421,7 @@ function assertMcpHandshake(serverName: string, output: string, expectedTool: st
   );
   if (!names.includes(expectedTool))
     throw new Error(`MCP server '${serverName}' tools/list does not advertise '${expectedTool}'.`);
+  if (MCP_LIST_ONLY.has(serverName)) return { messages, operation: {} };
   const operation = requireMcpResponse(messages, serverName, 3);
   return { messages, operation };
 }
@@ -1151,6 +1158,10 @@ function mcpStep(project: string, runner: McpRunner): string {
         ),
         MCP_SAFE_TOOLS[name] as string,
       );
+      if (MCP_LIST_ONLY.has(name)) {
+        results.push(`${name}: initialize and tools/list ok`);
+        continue;
+      }
       const payload = parseToolPayload(first.operation, name);
       const record = objectRecord(payload);
       if (name === "threenative-assets") {

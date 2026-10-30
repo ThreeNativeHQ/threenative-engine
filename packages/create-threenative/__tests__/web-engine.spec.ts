@@ -42,10 +42,11 @@ async function project(withWasm: boolean): Promise<string> {
   await writeFile(path.join(runtime, "package.json"), '{"name":"@threenative/runtime-native"}');
   if (withWasm) {
     await mkdir(path.dirname(path.join(runtime, WASM_ENGINE_ENTRY)), { recursive: true });
-    await writeFile(
-      path.join(runtime, WASM_ENGINE_ENTRY),
-      "export default async function createModule() { return {}; }\n",
-    );
+    for (const entry of [WASM_ENGINE_ENTRY, WASM_THREADS_ENTRY])
+      await writeFile(
+        path.join(runtime, entry),
+        "export default async function createModule() { return {}; }\n",
+      );
   }
   await writeFile(path.join(root, "package.json"), '{"name":"game","type":"module"}');
   await writeFile(
@@ -199,7 +200,7 @@ describe("createWebEnginePlugin", () => {
     const root = await project(true);
     const plugin = createWebEnginePlugin({ engine: "threenative" });
     plugin.configResolved({ root });
-    expect(await plugin.load(WEB_ENGINE_ID)).toContain(WASM_ENGINE_ENTRY);
+    expect(await plugin.load(WEB_ENGINE_ID)).toContain(WASM_THREADS_ENTRY);
   });
 
   it("emits valid browser exports from Node's CommonJS interop namespace", async () => {
@@ -209,20 +210,21 @@ describe("createWebEnginePlugin", () => {
     await expect(transform(source ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
   });
 
-  it("loads the threaded engine on a cross-origin-isolated page and the single-thread one elsewhere", async () => {
+  it("loads only the threaded engine, and refuses a page or a pool without worker threads", async () => {
     const root = await project(false);
     const wasm = path.join(root, "engine/tn-native-engine-web.mjs");
     await mkdir(path.dirname(wasm), { recursive: true });
     await writeFile(wasm, "export default async function createModule() { return {}; }\n");
     const plugin = () => createWebEnginePlugin({ root, engine: "threenative", wasm });
-    // No threaded build beside it: the page loads the single-thread engine whatever its isolation.
-    expect(await plugin().load(WEB_ENGINE_ID)).not.toContain("crossOriginIsolated");
+    // No threaded build beside it: the build refuses, it never falls back to the single-thread engine.
+    await expect(plugin().load(WEB_ENGINE_ID)).rejects.toThrow("TN_WASM_THREADS_MISSING");
     const threads = path.join(root, "engine/tn-native-engine-web-threads.mjs");
     await writeFile(threads, "export default async function createModule() { return {}; }\n");
     const loaded = (await plugin().load(WEB_ENGINE_ID)) ?? "";
-    expect(loaded).toContain(
-      `globalThis.crossOriginIsolated === true ? await import(${JSON.stringify(threads)}) : await import(${JSON.stringify(wasm)})`,
-    );
+    expect(loaded).toContain(`await import(${JSON.stringify(threads)})`);
+    expect(loaded).not.toContain(`import(${JSON.stringify(wasm)})`);
+    expect(loaded).toContain("globalThis.crossOriginIsolated !== true");
+    expect(loaded).toContain("TN_WEB_THREADS_OFF: the engine's job pool started no worker thread");
   });
 
   it("loads the Wasm engine from an explicit module path when one is given", async () => {
@@ -230,10 +232,14 @@ describe("createWebEnginePlugin", () => {
     const wasm = path.join(root, "engine/tn-native-engine-web.mjs");
     await mkdir(path.dirname(wasm), { recursive: true });
     await writeFile(wasm, "export default async function createModule() { return {}; }\n");
+    await writeFile(
+      path.join(root, "engine/tn-native-engine-web-threads.mjs"),
+      "export default async function createModule() { return {}; }\n",
+    );
     const loaded = await createWebEnginePlugin({ root, engine: "threenative", wasm }).load(
       WEB_ENGINE_ID,
     );
-    expect(loaded).toContain(JSON.stringify(wasm));
+    expect(loaded).toContain(JSON.stringify(wasm.replace(".mjs", "-threads.mjs")));
     await expect(
       createWebEnginePlugin({ root, engine: "threenative", wasm: `${wasm}.missing` }).load(
         WEB_ENGINE_ID,

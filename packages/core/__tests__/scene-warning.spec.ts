@@ -148,6 +148,46 @@ describe("sceneWarning", () => {
     expect(warning?.dominantTerm).toBe("shadowDraws");
   });
 
+  it("describes dominant object and draw counts with their own units", () => {
+    const window = midwayWindow();
+    const warning = sceneWarning(window, describeSceneShape(window, MIDWAY_CULL), 60);
+    const text = describeSceneWarning(warning as NonNullable<typeof warning>);
+
+    // 1,680 is the census's object count; 1,815 is triangles per draw. Printing the second as the
+    // first is how a reader came to believe one scene held 52,298 JS objects.
+    expect(text).toContain("objectsConsidered is the largest count");
+    expect(text).toContain("1680 objects");
+    expect(text).toContain("1815 triangles per draw");
+    expect(text).not.toContain("1815 objects");
+    expect(text).not.toMatch(/largest count: 1815/u);
+
+    const shadowWindow = midwayWindow({
+      passes: {
+        main: { draws: summary(20), frames: 300, triangles: summary(40_000) },
+        shadow: { draws: summary(900), frames: 300, triangles: summary(900_000) },
+      },
+    });
+    const shadowWarning = sceneWarning(
+      shadowWindow,
+      describeSceneShape(shadowWindow, { ...MIDWAY_CULL, considered: 120 }),
+      60,
+    );
+    const shadowText = describeSceneWarning(shadowWarning as NonNullable<typeof shadowWarning>);
+    expect(shadowText).toContain("shadowDraws is the largest count");
+    expect(shadowText).toContain("900 draws");
+    expect(shadowText).not.toContain("900 triangles");
+
+    // A term this engine never measured says so instead of borrowing the triangles figure.
+    const unknown = {
+      ...(warning as NonNullable<typeof warning>),
+      dominantTerm: "mysteryTerm",
+    };
+    const unknownText = describeSceneWarning(unknown);
+    expect(unknownText).toContain("mysteryTerm");
+    expect(unknownText).toContain("count unavailable");
+    expect(unknownText).not.toMatch(/largest count: \d/u);
+  });
+
   it("has no verdict without a pass census, rather than one about a scene nobody measured", () => {
     const { passes: _passes, ...rest } = midwayWindow();
     const window = rest as IFrameBudgetWindow;

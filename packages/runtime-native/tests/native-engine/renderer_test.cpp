@@ -703,6 +703,38 @@ void outputScreenSize() {
             for (int c = 0; c < 3; ++c) CHECK(std::abs(int(pixels[texel * 4 + c]) - 128) <= 1);
 }
 
+// PRD-771: the post effects' and output pass's CPU is a stage of its own, nested in the encode half, and the meters'
+// switch stops every stage so the cost of the meters can be measured with them off.
+void postStageIsMetered() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    CameraState camera;
+    camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+        {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    renderer.setPostGraph(g::vec4({g::swizzle(g::texture("scene", g::uv()), "xyz"), g::float_(1)}));
+    const auto stages = [&] {
+        std::array<double, Renderer::kCpuStageCount> now{};
+        for (size_t i = 0; i < now.size(); ++i) now[i] = renderer.cpuStageMs(Renderer::CpuStage(i));
+        return now;
+    };
+    CHECK(Renderer::cpuMeters());
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    const auto metered = stages();
+    CHECK(metered[Renderer::CpuPost] > 0);
+    CHECK(metered[Renderer::CpuPost] <= metered[Renderer::CpuEncode]);
+    Renderer::setCpuMeters(false);
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    Renderer::setCpuMeters(true);
+    CHECK(stages() == metered);
+}
+
 // A static instance uses the same camera/object velocity as an ordinary rigid draw of the same surface.
 // Every pixel of the velocity target remains written (alpha 1), including the camera-filled background.
 void traaCameraVelocity() {
@@ -1015,12 +1047,14 @@ void traaDeformationVelocity() {
         renderer.setPostGraph(g::vec4({motion, g::swizzle(temporal, "x"), g::float_(0), g::float_(1)}));
         const auto offset = g::uniform("deformationOffset", shader::Type::f32(), {0});
         DrawItem item;
+        shader::MaterialNodes nodes;  // the draw points at a graph it does not own
+        item.nodes = &nodes;
         shader::StandardMaterial material;
         item.key = item.id = 1; item.kind = MaterialKind::Basic;
         item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
         item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         const auto deformation = timed ? g::mul(g::uniform("time", shader::Type::f32()), g::float_(0.5f)) : offset;
-        item.nodes.positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
+        item.nodes->positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
         BufferStore matrices(Scalar::F32, 16);
         std::array<float, 16> matrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         matrices.write(0, matrix.data(), sizeof matrix);
@@ -1936,13 +1970,16 @@ void siblingReadsTheLiveScene() {
     main.setOutput(OutputState{std::nullopt, 1, false});
     const auto board = plane(2, 2);  // fills the clip space under the identity camera
     shader::StandardMaterial paint, copy;
+    shader::MaterialNodes wallNodes, mirrorNodes;  // the draws point at graphs they do not own
     DrawItem wall;
     wall.key = wall.id = 1; wall.kind = MaterialKind::Basic;
+    wall.nodes = &wallNodes;
     wall.positions = &board->positions; wall.indices = &board->indices; wall.material = &paint;
     wall.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0.5, 1};
     DrawItem mirror = wall;
     mirror.key = mirror.id = 2; mirror.material = &copy;
-    mirror.nodes.fragmentNode = g::texture("scene", g::screenUV());
+    mirror.nodes = &mirrorNodes;
+    mirror.nodes->fragmentNode = g::texture("scene", g::screenUV());
     CameraState flat;
     flat.projectionMatrix = flat.matrixWorld = flat.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     const auto target = main.sibling();
@@ -3505,7 +3542,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_mover_over_dynamic_ground", traaMoverOverDynamicGround},
              {"traa_responsive_transparent", traaResponsiveTransparent},
              {"traa_fast_pan_edges", traaFastPanEdges},
-             {"output_screen_size", outputScreenSize},
+             {"output_screen_size", outputScreenSize}, {"post_stage_is_metered", postStageIsMetered},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_velocity_footprint", traaVelocityFootprint},
              {"traa_validation", traaValidation},

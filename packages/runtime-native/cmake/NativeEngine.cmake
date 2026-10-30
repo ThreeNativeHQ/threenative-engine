@@ -178,7 +178,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_responsive_transparent=traa_responsive_transparent
         native_engine_traa_fast_pan_edges=traa_fast_pan_edges
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
-        native_engine_renderer_output_screen_size=output_screen_size)
+        native_engine_renderer_output_screen_size=output_screen_size
+        native_engine_post_stage_is_metered=post_stage_is_metered)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
 
     # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
@@ -283,12 +284,22 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     set_tests_properties(native_engine_update_scaling PROPERTIES LABELS "tn-perf" TIMEOUT 300)
 
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
+        native_engine_virtual_shadow_page_jobs=virtual_shadow_page_jobs
+        native_engine_virtual_shadow_pages_instance_skinned_casters=virtual_shadow_pages_instance_skinned_casters
+        native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
+        native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_gpu_joint_production=gpu_joint_production
         native_engine_unchanged_frame_storage=unchanged_frame_storage
+        native_engine_instance_upload_is_stable_across_a_camera_turn=instance_upload_is_stable_across_a_camera_turn
+        native_engine_instance_places_survive_a_draw_leaving_the_view=instance_places_survive_a_draw_leaving_the_view
+        native_engine_static_instances_are_not_recopied=static_instances_are_not_recopied
+        native_engine_frame_slab_is_per_program=frame_slab_is_per_program
         native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups
         native_engine_renderer_scene_lit=lit_scene
+        native_engine_scene_stage_is_metered=scene_stage_is_metered
+        native_engine_overlay_leaves_stage_totals=overlay_leaves_stage_totals
         native_engine_renderer_present_direct=present_direct
         native_engine_renderer_invariant_scope=invariant_scope
         native_engine_renderer_instance_counts=instance_counts
@@ -303,6 +314,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shader_invalid=shader_invalid
         native_engine_renderer_time_uniform=time_uniform
         native_engine_renderer_steady_state=steady_state
+        native_engine_renderer_steady_state_draw_refresh_work=steady_state_draw_refresh_work
+        native_engine_renderer_draw_refresh_guard_holes=draw_refresh_guard_holes
         native_engine_renderer_normal_pass_is_not_tallied=normal_pass_is_not_tallied
         native_engine_renderer_gtao_screen_reach=gtao_screen_reach
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
@@ -370,7 +383,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_world_sphere_measured_once=world_sphere_measured_once
         native_engine_renderer_reflection_reuse=reflection_reuse
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
-        native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program)
+        native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
+        native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once)
     # The skinned cases drive the player's SkinnedCrowd scene.
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE

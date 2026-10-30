@@ -42,6 +42,10 @@ export interface IFrameCounters {
    * Absent on a host whose back end keeps no such count.
    */
   readonly bridgeCrossings?: number;
+  /** Transforms the game moved this frame (the owned engine's `markLocalTransformDirty` calls; PRD-771). */
+  readonly dirtyTransforms?: number;
+  /** Shadow casters the virtual atlas judged moving this frame, each one invalidating its pages (PRD-771). */
+  readonly castersMoving?: number;
   /**
    * This frame's engine work counts by name (`createEngineCounterReader`): the web back end's and the
    * engine's own totals, and `globalThis.__tnEngineCost`, differenced per frame. Absent unless a

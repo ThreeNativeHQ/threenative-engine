@@ -476,6 +476,30 @@ test("desktop driver gives the native host the clock the run asked for, and none
   }
 });
 
+test("desktop driver gives the native host the dev surfaces the run's warning evaluator reads", async () => {
+  // `TN_SCENE_WARNING` is printed only in a debug launch, and the run's own warning evaluator fails
+  // on that marker: a host spawned without the dev flag would fail a run silently instead.
+  const root = await makeTempDir("playtest-desktop-dev-mode-");
+  const saved = process.env.DEV_MODE;
+  // The shell's own value must not decide it: the driver hands a playtest the debug launch it needs.
+  process.env.DEV_MODE = "0";
+  const driver = new DesktopPlaytestDriver({
+    executable: process.execPath,
+    mailboxRoot: root,
+    args: ["-e", `require("node:fs").writeFileSync(process.env.TN_PLAYTEST_MAILBOX_ROOT + "/dev-mode.txt", process.env.DEV_MODE ?? "absent");`],
+  });
+  try {
+    await driver.prepare("unused");
+    await expect.poll(() => driver.isAlive()).toBe(false);
+    expect(await readFile(join(root, "dev-mode.txt"), "utf8")).toBe("1");
+  } finally {
+    if (saved === undefined) Reflect.deleteProperty(process.env, "DEV_MODE");
+    else process.env.DEV_MODE = saved;
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("desktop playtest reuses the device evaluator for positive and negative assertions", async () => {
   const passingRun = await runDesktopScenario(2);
   expect(passingRun.driver.stopped).toBe(true);

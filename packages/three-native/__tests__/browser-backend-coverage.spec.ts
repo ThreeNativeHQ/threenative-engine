@@ -333,6 +333,28 @@ describe("the browser-JS back end", () => {
     expect(writes.find(([name]) => name === "image.data")?.[1]).toBe(view);
   });
 
+  it("hands an image's Uint8ClampedArray pixels to construct unchanged, not as a boxed number list", () => {
+    const seen: (readonly EngineValue[])[] = [];
+    const runtime: IBrowserRuntime = {
+      ...surfaceOnly(),
+      typedArrays: true,
+      set: () => undefined,
+      construct: (name, args) => {
+        seen.push(args);
+        return { key: name, type: runtime.typeId(name) };
+      },
+    };
+    const { classes: bound } = defineBrowserClasses(registry, runtime);
+    const textures = withTextureSources(bound, runtime);
+    const Texture = textures.Texture as new (image: unknown) => object;
+    // What `getImageData` returns for a sky: 33 MB of clamped bytes that boxed into a list cost ~1.4 s.
+    const data = new Uint8ClampedArray(4 * 4 * 4);
+    void new Texture({ data, width: 4, height: 4 });
+    const handed = seen.find((args) => args.length === 3)?.[0];
+    expect(handed).toBe(data);
+    expect(Array.isArray(handed)).toBe(false);
+  });
+
   it("refuses to construct a class the registry gives no constructor", () => {
     for (const [name, binding] of Object.entries(registry.classes)) {
       if (binding.constructor) continue;

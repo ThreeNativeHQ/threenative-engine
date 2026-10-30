@@ -284,6 +284,40 @@ shader::StandardMaterial paramsOf(const Material& m) {
     return p;
 }
 
+// Every field refresh()'s material half copies, as one value. uniformHash is the batch path's signature: all of
+// it but the base colour, which travels per instance. These are the fields that signature leaves out and the
+// sampleability of each map (which decides whether a map is bound, and moves with no version bump at all).
+std::size_t materialSignature(const Material& m) {
+    std::size_t h = projection::detail::uniformHash(m);
+    const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x9e3779b1u; };
+    for (double v : {m.color.r, m.color.g, m.color.b, m.subsurfaceColor.r, m.subsurfaceColor.g, m.subsurfaceColor.b}) {
+        const auto bits = std::bit_cast<uint64_t>(v == 0 ? 0.0 : v);  // +0 and -0 draw the same
+        mix(bits ^ (bits >> 32));
+    }
+    mix(static_cast<uint64_t>(m.blending));
+    mix(m.shadowSide ? 1 + static_cast<uint64_t>(*m.shadowSide) : 0);
+    // Sorted by slot name (a std::map): a renamed slot moves uniformHash, so only the bit can change here.
+    for (const auto& entry : m.maps) mix(entry.second && entry.second->sampleable() ? 1 : 0);
+    return h;
+}
+
+// three draws geometry.instanceCount instances. Per-instance attributes cap it (WebGPU refuses a draw past a
+// vertex buffer); a geometry with none (core's projection-skinned reads a storage palette by instanceIndex)
+// draws instanceCount as set. ponytail: Infinity with none draws once.
+uint32_t instanceCountOf(const BufferGeometry& geometry) {
+    uint64_t held = std::numeric_limits<uint64_t>::max();
+    for (const auto& [name, attribute] : geometry.attributes) {
+        if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||
+            name == "skinIndex" || name == "skinWeight")
+            continue;
+        if (attribute->perInstance) held = std::min(held, attribute->count());
+    }
+    double count = geometry.instanceCount;
+    if (held != std::numeric_limits<uint64_t>::max()) count = std::min(count, double(held));
+    else if (!std::isfinite(count)) count = 1;
+    return static_cast<uint32_t>(std::min(count, double(std::numeric_limits<uint32_t>::max())));
+}
+
 BufferStore* store(const BufferGeometry& g, const char* name) {
     const auto it = g.attributes.find(name);
     return it == g.attributes.end() || !it->second ? nullptr : it->second->store.get();
@@ -315,23 +349,14 @@ void RenderDatabase::vertexColorsOf(const BufferGeometry& geometry, const Materi
 // InstancedBufferGeometry's instance count: instanceCount, at most what its per-instance attributes
 // hold, as three's WebGL backend clamps it (_maxInstanceCount).
 void RenderDatabase::geometryInputsOf(const BufferGeometry& geometry, DrawItem& d) {
-    d.attributes.clear();
-    uint64_t held = std::numeric_limits<uint64_t>::max();
+    d.attributes->clear();
     for (const auto& [name, attribute] : geometry.attributes) {
         if (!attribute || name == "position" || name == "normal" || name == "uv" || name == "color" ||
             name == "skinIndex" || name == "skinWeight")
             continue;
-        d.attributes.push_back({name, floatStore(geometry, name.c_str()), attribute->perInstance});
-        if (attribute->perInstance) held = std::min(held, attribute->count());
+        d.attributes->push_back({name, floatStore(geometry, name.c_str()), attribute->perInstance});
     }
-    if (!geometry.instanced) return;
-    // three draws geometry.instanceCount instances. Per-instance attributes cap it (WebGPU refuses a
-    // draw past a vertex buffer); a geometry with none (core's projection-skinned reads a storage
-    // palette by instanceIndex) draws instanceCount as set. ponytail: Infinity with none draws once.
-    double count = geometry.instanceCount;
-    if (held != std::numeric_limits<uint64_t>::max()) count = std::min(count, double(held));
-    else if (!std::isfinite(count)) count = 1;
-    d.instanceCount = static_cast<uint32_t>(std::min(count, double(std::numeric_limits<uint32_t>::max())));
+    if (geometry.instanced) d.instanceCount = instanceCountOf(geometry);
 }
 
 // three's polygonOffset as WebGPUPipelineUtils sets it: depthBias = units, slope scale = factor.
@@ -479,6 +504,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     r.materialized = true;
     DrawItem& d = r.draw->item;
     d.cache = &r.cache;
+    d.nodes = &r.draw->nodes;
+    d.attributes = &r.draw->attributes;
     d.key = d.id = mesh.id();
     d.positions = r.buffers[0];
     d.normals = r.buffers[1];
@@ -511,7 +538,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.colorWrite = material->colorWrite;
     d.materialKey = material;
     d.positionNode = material->positionNode;
-    d.nodes = material->nodes;
+    r.draw->nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
     d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
@@ -525,39 +552,68 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
 DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     auto& d = r.draw->item;
     d.cache = &r.cache;  // the record owns the cache; refresh the pointer in case the record moved
-    r.draw->params = paramsOf(*r.material);
-    d.material = &r.draw->params;
-    d.transparent = r.material->transparent;
-    d.forceSinglePass = r.material->forceSinglePass;
-    d.depthWrite = r.material->depthWrite;
-    d.depthTest = r.material->depthTest;
-    d.colorWrite = r.material->colorWrite;
-    d.side = static_cast<uint8_t>(r.material->side);
-    d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;
-    d.flatShading = r.material->flatShading;
-    d.twoSidedFoliage = r.material->twoSidedFoliage;
-    d.roughDiffuse = r.material->roughDiffuse;
-    d.blending = static_cast<uint8_t>(r.material->blending);
-    d.positionNode = r.material->positionNode;
-    d.nodes = r.material->nodes;
-    d.map = nullptr;
-    d.normalMap = nullptr;
-    d.pbrMaps = {};
-    if (d.uvs) {
-        const auto map = r.material->maps.find("map");
-        if (map != r.material->maps.end() && map->second && map->second->sampleable())
-            d.map = map->second.get();
-        const auto normal = r.material->maps.find("normalMap");
-        if (normal != r.material->maps.end() && normal->second && normal->second->sampleable())
-            d.normalMap = normal->second.get();
-        d.pbrMaps = pbrMapsOf(*r.material);
+    // The material half below is ~45 field writes, the uniform struct, the node graph and the attribute list:
+    // all of it the same until the material or the geometry moves. Guarded by the uniform signature, not the
+    // material's version: three lets `material.roughness = x` change without bumping one (see uniformHash's
+    // epoch), so the signature is the only honest guard. The geometry revision covers the attribute list and
+    // the vertex colours; the canonical geometry is the one the attributes are read from.
+    const uint64_t revision = r.canonical ? r.canonical->revision() : 0;
+    const std::size_t signature = materialSignature(*r.material);
+    if (!r.materialResolved || r.materialSignature != signature || r.refreshRevision != revision) {
+        r.materialResolved = true;
+        r.materialSignature = signature;
+        r.refreshRevision = revision;
+        ++projection::detail::materialRefreshCount();
+        r.draw->params = paramsOf(*r.material);
+        d.material = &r.draw->params;
+        d.transparent = r.material->transparent;
+        d.forceSinglePass = r.material->forceSinglePass;
+        d.depthWrite = r.material->depthWrite;
+        d.depthTest = r.material->depthTest;
+        d.colorWrite = r.material->colorWrite;
+        d.side = static_cast<uint8_t>(r.material->side);
+        d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;
+        d.flatShading = r.material->flatShading;
+        d.twoSidedFoliage = r.material->twoSidedFoliage;
+        d.roughDiffuse = r.material->roughDiffuse;
+        d.blending = static_cast<uint8_t>(r.material->blending);
+        d.positionNode = r.material->positionNode;
+        ++projection::detail::materialNodeCopyCount();
+        r.draw->nodes = r.material->nodes;
+        d.nodes = &r.draw->nodes;
+        d.map = nullptr;
+        d.normalMap = nullptr;
+        d.pbrMaps = {};
+        if (d.uvs) {
+            const auto map = r.material->maps.find("map");
+            if (map != r.material->maps.end() && map->second && map->second->sampleable())
+                d.map = map->second.get();
+            const auto normal = r.material->maps.find("normalMap");
+            if (normal != r.material->maps.end() && normal->second && normal->second->sampleable())
+                d.normalMap = normal->second.get();
+            d.pbrMaps = pbrMapsOf(*r.material);
+        }
+        d.aoMapIntensity = r.material->aoMapIntensity;
+        d.normalScaleX = r.material->normalScale.x;
+        d.normalScaleY = r.material->normalScale.y;
+        if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
+        depthBiasOf(*r.material, d);
+        if (r.canonical) geometryInputsOf(*r.canonical, d);
+        // A non-float colour or custom attribute reaches the draw as a converted copy that `needsUpdate` replaces
+        // without moving the geometry revision: such a record re-reads those inputs every frame, as before FM1.
+        r.convertedInputs = false;
+        if (r.canonical)
+            for (const auto& [name, attribute] : r.canonical->attributes)
+                if (attribute && name != "position" && name != "normal" && name != "uv" && name != "skinIndex" &&
+                    name != "skinWeight" && attribute->store->scalar() != Scalar::F32)
+                    r.convertedInputs = true;
+    } else if (r.convertedInputs) {
+        vertexColorsOf(*r.canonical, *r.material, d);
+        geometryInputsOf(*r.canonical, d);
     }
-    d.aoMapIntensity = r.material->aoMapIntensity;
-    d.normalScaleX = r.material->normalScale.x;
-    d.normalScaleY = r.material->normalScale.y;
-    if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
-    depthBiasOf(*r.material, d);
-    if (r.canonical) geometryInputsOf(*r.canonical, d);
+    // An InstancedBufferGeometry's instanceCount moves freely (a game counts its particles per frame), and a
+    // mesh's own count is read below, so a held material half still reads this one.
+    if (r.canonical && r.canonical->instanced) d.instanceCount = instanceCountOf(*r.canonical);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     d.shadowObject = &mesh;
@@ -759,17 +815,30 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
                     markSeen(*r);
             } else {
-                const bool compact = batching && !(virtualShadows_ && mesh.castShadow()) && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
+                const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                      !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                      !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                      !mesh.geometry->instanced &&
                                      (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
                                      mesh.matrixWorld.determinant() > 0;
-                Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
+                // A virtual shadow culls and detects movers per caster, so a caster keeps its own
+                // shadow-only item (own key, own bounds); its main-pass draw still joins the batch.
+                const bool pageCaster = compact && virtualShadows_ && shadowCaster;
+                Record& r = cached ? record(mesh, *cached, !compact || pageCaster) : record(mesh, !compact || pageCaster);
                 markSeen(r);
                 if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
-                    if (compact) {
+                    if (compact && !pageCaster) {
                         addBatchMesh(mesh, r, mainPass, shadowCaster);
+                    } else if (pageCaster) {
+                        if (mainPass) addBatchMesh(mesh, r, true, false);
+                        DrawItem& d = refresh(mesh, r);
+                        d.batchable = false;
+                        d.mainPass = false;
+                        d.castShadow = true;
+                        d.layers = Layers::bits(mesh.layers().mask);
+                        d.morphGeometry = nullptr;
+                        d.morphInfluences = nullptr;
+                        items.push_back(d);
                     } else {
                         DrawItem& d = refresh(mesh, r);
                         d.batchable = false;
@@ -841,6 +910,14 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             d.spriteRotation = mesh.material->rotation;
                             d.spriteSizeAttenuation = mesh.material->sizeAttenuation;
                             if (!mainPass) items.pop_back();
+                        }
+                        if (virtualShadows_ && mainPass && shadowCaster && !items.empty() && items.back().skinnedRig) {
+                            // Same split as a page caster above: the rig's main-pass copy joins the palette
+                            // batch, its shadow copy stays individual for the per-page cull.
+                            DrawItem shadow = items.back();
+                            shadow.mainPass = false;
+                            items.back().castShadow = false;
+                            items.push_back(shadow);
                         }
                         if (mesh.onBeforeRender && mainPass)
                             callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
@@ -1548,6 +1625,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         if (!(*callback)({&scene, &camera, p.mesh->geometry, p.mesh->material}, error))
             diagnostics_.push_back("TN_CALLBACK_FAILED onBeforeRender: " + error);
         p.record->draw->params = paramsOf(*p.record->material);
+        // The callback may have moved the material after refresh() signed it: the next frame refreshes in full.
+        p.record->materialResolved = false;
     }
     ranCallbacks_ = !callbacks_.empty();
     callbacks_.clear();
@@ -1593,8 +1672,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         const Material& source = *static_cast<const Material*>(item.materialKey);
         item.fog = world && source.fog ? world->fog.get() : nullptr;
         // three's scene.fogNode replaces scene.fog: the draw's program mixes the node's colour and factor instead.
-        item.nodes.fogNode = nullptr;
-        if (world && source.fog && world->fogNode) { item.nodes.fogNode = world->fogNode; item.fog = nullptr; }
+        // Written into the record's own graph, which the next refresh of that draw rewrites from its material.
+        item.nodes->fogNode = nullptr;
+        if (world && source.fog && world->fogNode) { item.nodes->fogNode = world->fogNode; item.fog = nullptr; }
         // three's materialEnvRotation: the scene's environmentRotation when the scene has an
         // environment and the material no envMap, else the material's envMapRotation (identity here).
         const GraphSources& sources = graphSources(source);
@@ -1665,7 +1745,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             backgroundNodeMaterial_.nodes.colorNode = world->backgroundNode;
             backgroundNodeMaterial_.needsUpdate();
         }
-        sky.nodes = backgroundNodeMaterial_.nodes;
+        sky.nodes = &backgroundNodeMaterial_.nodes;
         const auto& sources = graphSources(backgroundNodeMaterial_);
         sky.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
         sky.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
@@ -1718,6 +1798,11 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
     using Clock = std::chrono::steady_clock;
     const auto start = (cpuMs || profiling) ? Clock::now() : Clock::time_point{};
+    const bool metered = renderer.metered();
+    const auto sceneStart = metered ? Clock::now() : Clock::time_point{};
+    const auto chargeScene = [&] {
+        if (metered) sceneMs_ += std::chrono::duration<double, std::milli>(Clock::now() - sceneStart).count();
+    };
     const auto previousJoints = gpuJoints_;
     gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
     const auto jointsDone = profiling ? Clock::now() : Clock::time_point{};
@@ -1737,6 +1822,7 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     // advance one retained packet and skip the frame. No partial target is published and the covered
     // scene is not drawn. The native player and the WASM host both reach this through render().
     if (!renderer.prepareEnvironments(items_)) {
+        chargeScene();
         if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
         return 0;
     }
@@ -1754,13 +1840,16 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
+    chargeScene();
     uint64_t result;
+    const auto rendererStart = metered ? Clock::now() : Clock::time_point{};
     if (encodeJobs) {
         result = renderer.renderDeferred(items_, cameraState_, lights_, clear);
         encodeJobs->push_back([&renderer] { renderer.encodePending(); });
     } else {
         result = renderer.render(items_, cameraState_, lights_, clear);
     }
+    if (metered) rendererMs_ += std::chrono::duration<double, std::milli>(Clock::now() - rendererStart).count();
     if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
     if (drawUse && !reflecting_) {
         const auto eligible = gpuJoints_ ? gpuJoints_->rigs.size() : 0;

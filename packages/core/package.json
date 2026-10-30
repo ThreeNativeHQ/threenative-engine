@@ -89,6 +89,7 @@
     "test": "publint --strict"
   },
   "dependencies": {
+    "chrome-devtools-mcp": "1.11.0",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
     "threenative-asset-mcp": "0.15.0",

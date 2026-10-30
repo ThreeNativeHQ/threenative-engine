@@ -77,6 +77,81 @@ PRD's "Tried and rejected" or "Decisions" section, for example
   published state re-renders at the publish rate, not the rate of what it shows. `useUiState(selector)` compares
   the result by identity, so a selector that builds a new object or array renders as often as no selector.
 
+## 2026-10-29 Stress lab (web Wasm engine, Chrome DevTools MCP, RTX 2080)
+
+The sandbox scene `sandbox/stress-lab` (`?stress`, real preset) holds houses, a forest, a skinned crowd, physics
+bodies, fires and a virtual shadow map at the same time. Every row is in `docs/stress-loop/ledger.json` and on the
+`pnpm dashboard` Stress lab tab. FPS went 1.36 -> 8.27 (six-window medians); the goal is 120.
+
+### 2026-10-29 — Virtual-shadow casters batch in the main pass — KEEP
+- Where: `packages/runtime-native/src/engine/renderer/render_database.cpp`; `b4131e881`.
+- Result: main draws 2795 -> 1836 at the same FPS (1.36 -> 1.3); visual judge NEUTRAL. A caster's shadow copy stays an
+  individual draw, so the per-page shadow cull still sees it.
+- Insight: the draw count varied 1803-3168 between windows. A single-window draw claim is invalid; use medians.
+
+### 2026-10-29 — Rig shadow bounds come from bones, not CPU-skinned vertices — KEEP
+- Where: `SkinnedMesh::boneReachBounds` (`animation/skinning/skeleton.cpp`), used by the VSM bounds loop in
+  `renderer.cpp`; `b95f4c8ef`.
+- Result: 1.3 -> 4.8 FPS, GPU p95 125 ms, frame p95 223 ms. The crowd under VSM cost about 760 ms a frame because the
+  bounds loop skinned every vertex on the CPU. Now each bone has a reach radius measured once per geometry revision;
+  a call costs O(bones). Visual judge NEUTRAL on a close-up of a sunlit walker.
+- Insight: UE 5.8.3 fits skinned bounds to bones. A bounds pass that skins vertices costs as much as skinning itself.
+
+### 2026-10-29 — A VSM pan keeps the shadow pages the window still covers — KEEP
+- Where: `shadows/virtual/atlas.cpp`, `pages.cpp`; `8401791aa`.
+- Result: 4.8 -> 8.27 FPS, frame p95 223 -> 159 ms, GPU p95 125 -> 72 ms, presented p95 533 -> 283 ms. The clipmap
+  re-centred at texel precision, so a camera orbit redrew every page of every level each frame. A pan now moves the
+  window by whole pages from its last origin (the first placement and a cut keep the exact texel origin, so the GPU
+  reference renders still match). Visual judge NEUTRAL; the orbit was frozen at 12 s after a real pan path.
+- Insight: a world-grid snap broke the vsm-cut reference render (1.6% pixels). Snap relative to the previous origin
+  and only on a pan.
+
+### 2026-10-29 — Method: name web Wasm hot functions with `--profiling-funcs` — KEEP (method)
+- A trace of the release Wasm shows `wasm-function[N]`. A symbol map from a relink does not match it, because
+  indices move. Relink with `-DCMAKE_EXE_LINKER_FLAGS=--profiling-funcs` and install it; Chrome then names every
+  function. Clear the flag and relink afterwards (a clean relink is byte-identical to the release build).
+- Trap: any relink that changes the glue (`.mjs`) fails in the sandbox (`ASM_CONSTS[code] is not a function`,
+  `reading 'resolveQuerySet'`) until the Vite dev server restarts. Deleting `node_modules/.vite` is not enough: the
+  running server keeps the old prebundled glue in memory.
+- Trap: removing one system (crowd, bodies or fires) cut `mainPass` from 112 ms to 21-38 ms each, so the costs do not
+  add. Bisect with all arms, then profile; do not sum single-system deltas.
+
+### 2026-10-29 — Method: the renderer's CPU stages are engine counters — KEEP (telemetry)
+- Where: `Renderer::CpuStage` (`renderer.h`), `tnw_web_frame` 66-70, three-native `CPU_STAGE_FIELDS`; `5c6a695aa`.
+- Use: set `window.__THREENATIVE_ENGINE_COST__ = true` (or debug); `TN_FRAME_BUDGET.counters.engine` then carries
+  `cpuVirtualPagesMs`, `cpuPlanMs`, `cpuShadowBuildMs`, `cpuPrepareMs`, `cpuEncodeMs` per frame (p50/p95).
+- First reading, stress lab: virtual pages 11.3/64.4 ms, shadow build 1.9/89.1 ms, prepare 17/113 ms. The VSM
+  stages spike on page-redraw frames, so read p95, not p50.
+- Insight: `renderPrepared` runs about 25 times a frame here; per-call checkpoints with a per-call threshold hid a
+  70 ms total. Keep running totals and difference them per frame.
+
+### 2026-10-29 — A quaternion write syncs its object's rotation in JS — KEEP
+- Where: three-native `eulerFromQuaternion` (`browser-backend.ts`), `d679189ff`.
+- Cause: three's `Quaternion._onChangeCallback` called `Euler.setFromQuaternion` in the engine, one crossing per body
+  per frame; physics interpolation writes every body's quaternion (census: 1,732 a frame).
+- Fix: the bridge runs Euler.cpp's formulas and writes the lanes. The engine's `ieee754.h` is V8's fdlibm, so
+  `Math.asin`/`Math.atan2` give the same bits; the spec checks all six orders and gimbal lock against three.
+- Result: census 1,732 -> 0 a frame. Frame time not resolved: host load about 22 while a Codex lane linked.
+
+### 2026-10-29 — Animation reads are engine fields — KEEP
+- Where: `registerAnimationAction`/`registerAnimationMixer` `b.fields` (`bindings_scene.cpp`), `09598f35a`.
+- Cause: `AnimationPlayer.update` reads `action.timeScale`, `action.paused` and `mixer.timeScale` every frame; each
+  was a crossing (445 + 330 + 360 a frame).
+- Fix: declare them as fields; the generic `fastGetter` reads Wasm memory. Count offsets from the first member of a
+  pointer-free block (`&time`): the registry is dumped by a 64-bit build and read by wasm32. A `static_assert`
+  pins the block.
+- Result: census 3,696 -> 1,400 crossings a frame (plainShadow). Next on the list: `Mesh.updateMatrix` 300,
+  `SkinnedMesh.__tnVisibleInWorld` 240, `setEffectiveTimeScale` 174, `Group.getWorldPosition` 120.
+
+### 2026-10-29 — Worker threads forced on, web and native — KEEP (contract); no frame win yet
+- Where: `web-engine.ts` (`4de07760e`), `job_pool.cpp` (`9634ebf03`). Owner order: "just force all to use worker
+  threads".
+- Web pages load only `tn-native-engine-web-threads`; no isolation or no worker throws `TN_WEB_THREADS_OFF`, a missing
+  module `TN_WASM_THREADS_MISSING`. Native: `TN_JOB_WORKERS=0` throws `TN_JOB_WORKERS_OFF`; the default is 1-3 workers.
+- Insight: the pool runs one job only, the world-matrix walk (`object3d.cpp`). Threads on does not move the frame
+  until the hot CPU loops (VSM pages, shadow build, per-pass culling) run on `JobPool::shared().forEach`. Lift the
+  3-worker cap only after that work exists and an A/B shows it pays.
+
 ## 2026-10-28 RTS kit probe (Chrome DevTools trace, web Wasm engine, real display)
 
 ### 2026-10-28 — RTS HUD panels re-render only when a shown value changes — KEEP
@@ -523,3 +598,239 @@ no COOP/COEP); that lane is open.
   widened to 401 KB of doubles per refresh, timestamp readbacks every frame. Fixes on `fix/wasm-update-crossings`.
 - Insight: the existing bridge guard flags only redundant reads; writes and distinct reads passed silently
   (telemetry lane `feat/web-engine-debug-telemetry`).
+
+### 2026-10-29 — Stress lab: virtual shadow pages pick their casters on the job pool (F2) — KEEP
+- Where: `packages/runtime-native/src/engine/renderer/renderer.cpp` (`selectFace`), `128419fb5`.
+- Result: `sandbox/stress-lab` `main.html?stress` (4000 trees, 6000 rocks, 120 rigs, 300 bodies, 18000 particles,
+  16 lights), threaded Wasm, RTX 2080: 12.62 -> 16.33 fps on a loaded host, presented p95 150 -> 100 ms. Visual judge
+  NEUTRAL. Serial and pooled shadow plans are byte-identical over 20 frames (`native_engine_virtual_shadow_page_jobs`).
+- Insight: per-page caster filtering is read-only on the atlas (`isMover`, `drawsStatic`, `casterGate`, `overlaps` are
+  `const`), so each page filters into its own output and the caller merges in page order. Split only when
+  `passCount * opaque >= 16384` and never inside a job (`JobPool::inJob()`).
+- Revisit when: `kMaxWorkers` (3) rises; the page job is the first to scale with it.
+
+### 2026-10-29 — Stress lab: 660 bridge crossings a frame cut (hierarchy, visibility, matrix restores) — KEEP
+- Where: `packages/three-native/src/browser-backend.ts`, `packages/core/src/render-camera-cull.ts`,
+  `packages/core/src/interpolation.ts`, `object3d.h` flag block; `d9bfd2aa4`.
+- Result: same scene, develop core: 13.45 -> 14.03 fps, crossings p50 2520 -> 1838, frame p50 48.0 -> 45.4 ms. Judge
+  NEUTRAL.
+- Insight: three cuts: `__hierarchyRevision` is answered from the kept hierarchy (its only writer is `markHierarchy`);
+  the camera cull walks visibility in JS instead of one `visibleInWorld()` call per object; the interpolation restore
+  writes the `matrixWorldNeedsUpdate` byte in place instead of `updateMatrix()` through the bridge.
+- Revisit when: `setEffectiveTimeScale` (174 crossings) gets an engine "no interpolant" answer, and `getWorldPosition`
+  (120) has a field that is not one frame stale.
+
+### 2026-10-29 — Stress lab: most of the "12 fps" was host load, not the engine — KEEP (method)
+- Result: develop f3215f431 read 12-16 fps while the host load average was 10-75 (a full `vitest run` in another lane,
+  two fixer C++ builds, a stray capture tab). After a reboot, at load 2.2 on 16 threads, the same build read
+  **25.54 fps** (frame p50 31.1, render p50 24.0, update p50 6.5, GPU p50 5.8 ms).
+- Insight: the stress frame is CPU-bound on the main thread, so every busy core costs frame time. Measure only below a
+  1-minute load of about 8, with one stress page open, and compare arms back to back. `nice -n 19` on lane builds.
+- Revisit when: the frame becomes GPU-bound; then GPU sharing matters more than CPU load.
+
+### 2026-10-29 — Stress lab: shadow bounds on the job pool (F3) — REJECT, then root-caused
+- Where: `perf/stress-fix-c` 5b5991370, `renderer.cpp` virtual caster bounds per ownership unit.
+- Result: paired, same JS, only the Wasm differs, load 2.3: 25.54 -> 9.50 and 9.44 fps, render p50 24 -> 80 ms. The
+  pool itself ran in 1.5 ms. The cause (hunter H4): bone discovery ran `std::find` over the growing bone list for each
+  of 15,600 bone references (120 rigs x 65 bones, main and shadow copies): 60.84 million comparisons, 57-59 ms a frame.
+- Insight: a byte-identical red-green test proves output, not cost. A lever that adds per-frame bookkeeping over every
+  bone or object needs a work-count assertion (comparisons or visits per frame) that fails when the work scales with
+  the square of the scene. Fix (F8): an `unordered_set` beside the ordered vector.
+- Revisit when: F8 lands; measure F3+F8 against develop before F3 is kept.
+
+### 2026-10-29 — Stress lab: the virtual shadow LOD sync skips its scene walk while nothing it reads moved (FS1) — KEEP
+- Where: `packages/three-native/src/shadow-node.ts` (`walkStillCurrent`), `browser-backend.ts` geometry setter,
+  `packages/core/src/model-lod.ts` (`bumpChains`); `0465c88e7`.
+- Result: three paired runs, same Wasm: 22.43 -> 26.98 fps (+20%), render p50 26.3 -> 20.7 ms. Judge NEUTRAL.
+- Insight: `syncVirtualShadowLods` ran from every `[DRAW_TARGET]` (each post stage re-enters the world draw), so one
+  JS scene walk cost 3.6-4 ms a frame through `accessor.get`. A per-frame JS walk is cheap to skip when its answer has
+  a small set of inputs: here the hierarchy revision, the chain registration count and the geometry assignment count.
+  The hunter's skip missed the third input (a `mesh.geometry` swap moves no hierarchy); list every writer of the
+  answer before you cache it.
+- Revisit when: a fourth writer of a mesh's LOD chain appears (an engine-side geometry swap).
+
+### 2026-10-29 — Stress lab: F3 bounds on the pool + F8 bone hash set — REJECT; FS2 one caster record — REJECT
+- Result: F3+F8 paired with develop: 21.98 against 22.77 fps. FS2 (`unordered_map` caster record per light) alone:
+  21.65 against 22.43; with FS1: 24.44 against FS1 alone 26.98.
+- Insight: F8 did remove the 61M-comparison bone dedupe, but pooled bounds still gave no gain on this scene. FS2 builds
+  its container every frame, and an `unordered_map` build (buckets plus one node per caster) costs more than the two
+  `std::map` lookups it saves, mostly on workers already. A per-frame container needs reuse or a flat array indexed by
+  draw ordinal before its lookups pay.
+- Revisit when: the caster record lives in a flat array that survives frames.
+
+### 2026-10-29 — Stress lab: the first frame waits for shadows and exposure (F1+F5) — KEEP
+- Where: web host ABI 8 `tnw_web_set_presentation_hold`, `packages/core/src/startup-readiness.ts`; `60de162f0`.
+- Result: first revealed frame mean 106-110 with cast shadows, against 140-143 without shadows, a 1 s gap, then a dark
+  frame. Steady state unchanged (17.24 against 17.02 fps, paired on a loaded host). Judge IMPROVEMENT 4/4.
+- Insight: a held frame does every pass (shadows, post, temporal history, the exposure meter) but takes no canvas
+  texture, so the engine warms itself up without presenting. Bound every such wait: 3 s from the frame window or from
+  any later cold picture, with one `TN_STARTUP_IMAGE_TIMEOUT` line naming the cold input.
+
+### 2026-10-30 — Stress lab: the job pool takes up to 8 workers (FT2) — KEEP
+- Where: `packages/runtime-native/src/engine/foundation/job_pool.h` (`kMaxWorkers`), `job_pool.cpp`; `2ec6ed19d`.
+- Result: develop head JS, paired rounds: 27.40 -> 30.30 and 23.96 -> 26.20 fps (+9 to +11%), long tasks down.
+- Insight: a bench of the pooled job's shape (132 items x 0.165 ms) scales 3.89 lanes at 3 workers, 7.53 at 8, 8.76 at
+  15 and 8.50 at 23: past 8 the item count is the wall, not the cores. The web count is
+  `navigator.hardwareConcurrency - 1` capped at 8, and Brave reports a masked value (15 on a 24-thread host), so read
+  the reported count before you claim a worker number. A pool where no worker starts now throws
+  `TN_JOB_WORKERS_START_FAILED` instead of running on one thread.
+- Revisit when: a second pooled job lands, or the page job's items grow past about 8 x 0.2 ms.
+
+### 2026-10-30 — Stress lab: shadow page instancing (FM8) + caster page index (FS9) — KEEP
+- Where: `renderer.cpp` virtual shadow selection and row planning, `atlas.cpp` `PageAtlas::pageRange`,
+  `standard.cpp` per-instance skin values; `04722134d`.
+- Result: develop ~27.3 fps -> 31.1 fps (+14%) in alternating windows; FS9 alone halves long tasks (2469/1704 ->
+  1166/1200) and cuts frame p95 by ~3 ms, FM8 alone cuts render p50 21.5 -> 19.5 ms. Judges NEUTRAL.
+- Insight: on a shadow page, one row per caster was the cost, not the duplication across pages (FS7 measured
+  dedupe at 0.17 ms) and not the casters outside a mover page's window (FS8: the safe x/y test costs what the draw
+  costs). Group a page's selection into instanced rows and index the selection by page range; never widen a group
+  past the page's own selection. A crowd's shadow skin can reuse the main pass palette per instance.
+
+### 2026-10-30 — Stress lab: FU4 one engine call per rig step — REJECT
+- Where: `AnimationMixer.updateAndSample` plus a `scheduled` field on `AnimationAction` (worktree only).
+- Result: crossings 1276-1296 -> 994-1002 (-22%) but fps 25.99 -> 24.96 and update p50 7.36 -> 7.42 ms over 3
+  runs per arm. Insight: the crossing count is not the cost; a returned list allocates per call, and the profiled
+  "glue" self time did not turn into frame time. FS3 (protected-page set built on grant frames only) measured inside
+  the noise in its own runs and is parked.
+
+### 2026-10-30 — Stress lab: main-pass plan cuts FM1+FM2+FM3 — KEEP
+- Where: `render_database.cpp` (`refresh` guard, `convertedInputs`), `renderer.cpp` (per-program frame slab,
+  dirty-block upload, `program.probes`); `07703efaf`.
+- Result: stacked on develop with FT2, alternating arms in one lock window: 27.07 -> 27.96 fps mean (+3.3%), render p50
+  22.1 -> 21.4 ms. Judge NEUTRAL. Solo runs had read +6 to +8% each: that was noise between lock windows.
+- Insight: keep the material half of a draw on its record, guarded by the material's uniform signature plus the
+  geometry revision, and list every writer the guard misses before you trust it. The review found two: a converted
+  (non-float) attribute copy that `needsUpdate` replaces without a revision, and an `onBeforeRender` write after the
+  signature was taken. Both reproduced red in `draw_refresh_guard_holes`. Run-to-run noise on this frame is about +-7%
+  between sessions and +-3% inside one: compare render p50 across alternating arms, not fps across sessions, and
+  measure a lever under 1 ms by its function's self time in a profile.
+
+### 2026-10-30 — Stress lab: web shadow bundles (FM5), stride copy and unmoved-body skip (FU2+FU3) — REJECT
+- Result: FM5 25.23 and FU2a+FU3 24.35 against develop head 26.62 / 26.12 fps in one lock window.
+- Insight: FM5 turns PRD-754's recorded shadow bundles on for the web: +53 KB of Wasm and no gain on a moving camera,
+  as PRD-754 found for the shooter. FU2a replaced one `getWorldPosition` with `updateWorldMatrix(true, false)` plus a
+  matrix copy, and bridge crossings rose 1280 -> 1527: count crossings before you call a bridge read cheaper. FU2b's
+  per-frame `isScheduled()` cache was dropped in review: six paths start or stop actions, and only two cleared it.
+- Revisit when: FU3 (skip the lerp for a body physics left unmoved) gets its own profile run; it is logic-safe and
+  about 0.3 ms, below what fps can show.
+
+### 2026-10-30 — Stress lab: shadow caster records indexed per draw + numeric page ids (FS11+FS12) — KEEP
+- Where: `renderer.cpp`/`renderer.h` (`casterRecords_`, one vector per light, indexed by draw position, replaces the
+  per-light `std::map`s keyed by `item.key`), `shadows/virtual/pages.{h,cpp}` (`pageId(level,x,y)` replaces string
+  page keys), `atlas.cpp` (`protectedIds` as an `unordered_set<uint64_t>`).
+- Result: two clean lock windows, alternating arms, 1280x720, RTX 2080: 34.6 / 34.4 / 35.1 / 35.9 fps -> 46.0 / 45.5 /
+  44.6 / 45.4 fps (+30%). GPU p95 62 -> 34 ms, frame p95 51 -> 28 ms, presented p95 50-59 -> 33 ms, long tasks 800-1100
+  -> 72-96, main draws 150 -> 60 at equal triangles (7.07 M). Native tests 115/116 (material_props fails the same way
+  on develop: `tsx` missing in a worktree). Visual judge NEUTRAL: shadow outliers 0 of 4 per arm over 8 alternating
+  captures; the first review's 2 outliers (one per arm) were both slow runs, a flake that already existed.
+- Insight: the fixer's profile estimate was 0.9 ms of CPU; the gain is ten times that. Read-only trace (verdict LEGIT): on the web build a batched draw group keeps its first member's
+  id as its key (`render_database.cpp:1432-1436`), so a casting group and its non-casting main-pass twin share one
+  key. The old `lightCasterBounds.count(item.key)` rule made the twin a caster state too, the two states alternated
+  under one key, `Motion::moving` never settled, and every mapped level got a mover page every frame
+  (`atlas.cpp:290-345`). 87 of the 147 counted draws were those shadow redraws: the web host reports main plus
+  shadow draws as `info.render.drawCalls` (`web_host.cpp:787-789`). `DrawItem::key` is not unique on the web build,
+  so any map keyed by it can merge two draws. A lever that
+  removes a per-frame string or map key can also fix what the key was wrong about: measure the whole frame, not only
+  the function the profile named.
+
+### 2026-10-30 — Stress lab: FS13 (plain-shadow lever) — REJECT; FP2 (one pass per re-encoded level) — PARKED
+- Result: FS13 on `?stress&plainShadow` 59.59 / 59.81 vs develop 59.81 / 56.4 fps; render p50 11.65 / 11.71 vs 10.46 /
+  12.5 ms: no paired gain, the arm already sits on vsync. FP2 37.4 / 37.4 vs develop 35.1 / 35.9 fps (+5%) but GPU p95
+  60.4 ms, unchanged: it does not touch the camera-motion burst it was written for.
+- Insight: a lever for the camera-motion shadow burst must show GPU p95 falling, not only fps. FP2's worktree mixed two
+  workers' changes after the arm wrapper restarted a stopped worker: stop a lane by its wrapper, not its child.
+- Revisit when: FP2 is split into its two changes and each is measured on top of FS11+FS12.
+
+### 2026-10-30 — Stress lab: mimalloc on the threaded web engine (FB1) — KEEP
+- Where: `packages/runtime-native/cmake/NativeEngineCore.cmake`, the `TN_WEB_THREADS` link options (`-sMALLOC=mimalloc`);
+  lock: `packages/runtime-native/__tests__/web-threads-allocator.spec.ts`.
+- Result: two fair uncapped windows, ABBA, develop `0974fd3b8` vs the same tree plus mimalloc. Window fb1c (load peak
+  4.66): CPU frame p50 14.75 -> 13.76 and 14.65 -> 13.73 ms (-6.7%, -6.3%), fps 64.1 / 65.6 -> 70.7 / 70.7. Window fb1c2
+  (load peak 5.26, ledger rows #65-#66): 14.64 -> 13.60 and 14.18 -> 13.63 ms (-7.1%, -3.9%). Pixels cannot move.
+- Insight: Emscripten's default dlmalloc takes one global lock in a `-pthread` build, so the job pool's workers and the
+  main thread queue on every allocation. The single-thread build has no contention and keeps dlmalloc. Two earlier
+  profiled pairs read -5.5% and -23%; the second was voided (a stray stress page shared the GPU 07:30-09:20Z), which is
+  why the decision rests on the fair window.
+- Revisit when: the engine stops allocating per frame on worker threads, or Emscripten changes its default allocator.
+
+### 2026-10-30 — Stress lab: a virtual shadow page draws only the instances that reach it (FG1, PRD-773) — KEEP
+- Where: `renderer.cpp`/`renderer.h` (`DrawCache::shadowInstanceBoxes`, per-level instance index by page cell, compacted
+  row per static page), `atlas.cpp` + `waste_counters.h` (refresh-reason counters), lever `TN_SHADOW_INSTANCE_CULL=0`.
+- Result: two clean pairs on `?stress`, 1280x720, RTX 2080, alternating arms: GPU p95 34.03 / 33.98 -> 7.54 / 7.33 ms
+  (-78%), frame p50 14.02 / 14.63 -> 14.09 / 14.86 (+0.5% / +1.6%, noise), presented p95 16.72 both. `?stress&still`
+  frame p50 13.12 / 13.17 -> 13.32 (+1.1 to +1.5%, inside the 3% gate). Native: the new case draws 1,118 instances over
+  124 pages instead of 180,224 over 176 on develop, pixels byte-identical.
+- Insight: the tail was the instanced static set, drawn whole on every refilled page (14,000 instances x up to 256
+  pages). Counting pages or passes was the closed lever (FP2); culling the instances against the pages by their own
+  boxes (Unreal `VirtualShadowMapBuildPerPageDrawCommands.usf:299-309`) removes the work itself and costs nothing on a
+  still frame. After it, the remaining p95 frames are rebuild grants (0.16 per frame against 0.01 pans), 256 pages each:
+  a window that moves while its depth fit changes keeps no page.
+- Judge: two Opus rounds; round 2 NEUTRAL (3 AFTER frames inside BEFORE-vs-BEFORE variation). A single odd frame was a
+  different camera pose at capture: take 3+ frames per arm before you read a shadow outlier as a cull defect.
+- Cost: the fair windows show CPU frame p95 up about 1.3 ms on the granting frames (16.59 -> 17.85 ms vsync, 17.25 ->
+  18.64 uncapped, rows #67-#70): the per-level index build, counting sort and 80 B per (page, instance) copy run on the
+  main thread when pages are granted. A p50 gate hid it; gate a shadow lever on CPU p95 too.
+- Revisit when: GPU p95 on `?stress` rises above 16.7 ms again, or a game keeps casters that are not instanced (they
+  still draw whole on a rebuild); then FG2 (fixed depth band with a pan anchor).
+
+### 2026-10-30 — Method: the render phase splits into named stages on every window — KEEP (telemetry)
+- Where: `packages/core/src/profiling/FrameStages.ts`, `FrameBudget.addStages` and `stagesAtP95`, `Renderer::CpuStage` +
+  `RenderDatabase::sceneMs/rendererMs` + `web_host.cpp` stage totals (`tnw_web_frame` 78).
+- Use: every `TN_FRAME_BUDGET` window carries `stages`, `stageSum` and `stagesAtP95`; `?tnStages=0` turns the meters off
+  for the A/B of their own cost.
+- Result (stress lab, `?stress`, develop Wasm, fair window): frame p50 14.70 ms = plan 4.00 + scene 2.83 + JS before the
+  call 2.65 + update 2.26 + engineJs 0.81 + render targets 0.72 + remainders 0.80 + post 0.25 + encode 0.12; submit,
+  poll, compute 0. The p95 tail (+5.3 ms) is 71% shadow refresh (encode +1.4, VSM pages +1.4, shadow lists +1.0), 22%
+  crowd and JS. Meters on vs off: +0.05 ms (5 valid pairs).
+- Insight: publish the subtractions (`engineJs`, `wasmOther`, the gaps) as stages. A named remainder is a number to
+  chase; the first build had a 1.25 ms `wasmOther` that two extra meters split into 0.89 ms of render targets and a 0.39
+  ms remainder.
+- Insight: a meter that nobody reads is not free. Metering sibling renderers (render targets, reflections) cost 0.2 ms a
+  frame on Wasm (6 of 6 pairs); gate the meter to the renderer whose totals are published.
+- Insight: read engine totals in place from linear memory. The renderer ABI census is pinned, and ten extra host calls a
+  frame broke it.
+- Revisit when: a Chrome build with precise `performance.memory` runs the stress lab (`jsAllocKbP50` reads 0 under
+  Brave's bucketing).
+
+### 2026-10-30 — Stress lab: the sun map culls skinned casters by bone reach (add-on 5, PRD-770) — REJECT
+
+- Where: `RenderDatabase::skinnedShadowSphere` (patch kept in `~/.cache/tmp-tn/stress-loop/lanes/addon5.patch`).
+- Result: plain sun shadow triangles 2.06 → 1.29 M (equal to vanilla three), pixels unchanged (native red-green
+  `skinned_caster_shadow_culling`). CPU frame p50 on `?stress&plainShadow` 9.09 → 10.17 ms vsync and 9.09 → 10.05 ms
+  uncapped (+11%, both pairs), GPU p95 unchanged; `?stress` (VSM) unchanged. Rows #77-#84.
+- Insight: 120 posed bone-reach boxes a frame cost more CPU than the 0.77 M culled shadow triangles save on the GPU.
+  Price a cull by its per-frame test cost. The plain sun map's 6 ms GPU is not triangle-bound here.
+- Revisit when: the skin update already publishes a per-rig bound this frame, so the test reads it in O(1).
+
+### 2026-10-30 — Stress lab: keep the virtual-shadow instance index across frames (FG1b, PRD-773) — REJECT
+
+- Where: `DrawCache::shadowInstanceIndices`, lattice-keyed (`PageAtlas::lattice`, `pageRangeOnLattice`); patch kept in
+  `~/.cache/tmp-tn/stress-loop/lanes/fg1b-on-stack.patch`. Native red-green: a pan regrants the level and builds 0
+  indices (`virtual_shadow_page_draws_only_its_instances` section c); 197 native cases pass.
+- Result on the stack (rows #89-#92): CPU p95 17.79 → 18.04 ms vsync, 18.95 → 18.83 ms uncapped; p50 flat; GPU flat.
+- Insight: the mechanism works, but the index build was not FG1's CPU p95 cost. Look for that cost elsewhere in the
+  granting frames, and not in the per-level index.
+- Revisit when: a per-stage p95 split (PRD-771 meters at p95) names the granting-frame stage that grew with FG1.
+
+### 2026-10-30 — Stress lab: unchanged instanced draws skip the per-frame copy and compare (TR1 + TR1b, PRD-774) — KEEP
+
+- Where: `Renderer::renderPrepared` stable per-draw slots plus a stamp (store epoch, writes, version, count and a
+  never-reused `BufferStore::id()`); the stamp commits only after the upload returns Ok. Counter
+  `lastFrame().instanceCopies`.
+- Result on the stack (rows #85-#88): uncapped CPU frame p50 −4.9% and −7.6%, p95 18.13 → 17.64 ms, GPU p95
+  7.52 → 7.39 ms; vsync −2.5% and −3.7%. Upload bytes 3.32 → 2.10 MB a frame. Opus judge NEUTRAL.
+- Insight: the stress lab's 14,260 static instances are user `InstancedMesh` batches, not the auto-batcher, so the
+  copy sat in `renderPrepared`. TR1 alone (stable slots) moved bytes but not time; skipping the unchanged draw is
+  the part that pays.
+- Risk: a game that edits `instanceMatrix.array` without `needsUpdate` no longer sees the edit, which matches
+  three's own rule.
+
+### 2026-10-30 — Stress lab: image pixels cross into the engine as bytes, not boxed numbers (FL1, PRD-770) — KEEP
+
+- Where: `packages/three-native/src/browser-backend.ts` `toEngine`: a `Uint8ClampedArray` (an image's `getImageData`
+  pixels) now takes the typed-array fast path; `setImageBytes` in C++ already accepted it.
+- Result (rows #95-#96, vsync): stress-lab `loadMs` 1550 → 542 and 1490 → 501 ms (−65%, both pairs), below vanilla
+  three's 548.5 ms; CPU frame p50 +0.5% (inside noise). Red-green spec in `browser-backend-coverage.spec.ts`.
+- Insight: one 4096×2048 sky crossed as 33.5 M boxed numbers, written as 268 MB of float64: 1.56 s of a 1.98 s load
+  window. The rest of the scene built in 276 ms. Profile the load window before you suspect the scene build.
+- Next: FL2, the same image is read back twice through an `OffscreenCanvas` (about 180 ms).

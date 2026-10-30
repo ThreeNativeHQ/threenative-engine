@@ -102,7 +102,7 @@ void Object3D::enableTrackedTransform() {
 
 uint8_t* Object3D::ownTransformTracking() const { return transform_.page->tracking[transform_.index].data(); }
 
-void Object3D::markLocalTransformDirty() { waste::debugAdd(waste::counters().sceneDirtyMarks); transform_.page->tracking[transform_.index][1] = 1; }
+void Object3D::markLocalTransformDirty() { waste::debugAdd(waste::counters().sceneDirtyMarks); waste::meterAdd(waste::counters().dirtyTransforms); transform_.page->tracking[transform_.index][1] = 1; }
 
 uint8_t* Object3D::transformTrackingAddress(const void* address) {
     auto& pool = transforms();
@@ -318,7 +318,8 @@ Object3D::FlagOffsets Object3D::flagOffsets() {
     const auto at = [](const bool& flag) {
         return uint32_t(reinterpret_cast<const char*>(&flag) - reinterpret_cast<const char*>(probe.flags()));
     };
-    return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_)};
+    return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_),
+            at(probe.matrixWorldNeedsUpdate)};
 }
 
 void Object3D::setCastShadow(bool value) {

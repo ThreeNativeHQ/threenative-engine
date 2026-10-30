@@ -75,6 +75,7 @@ import {
   publishDirectRenderChainReport,
 } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
+import { STARTUP_EXPOSURE } from "../renderer.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
 import { UNREAL_AO_REACH_PX } from "./ao-reach.js";
 import { AutoExposureNode, applyExposure } from "./auto-exposure.js";
@@ -99,6 +100,11 @@ import { vignetteMask } from "./vignette.js";
 /** Lumen reflections stop at this roughness, fading to nothing over the length below it. */
 const REFLECTION_CUTOFF = 0.4;
 const REFLECTION_FADE = 0.1;
+/**
+ * How far the metre's applied exposure may sit from its target on a startup's first visible frame, in
+ * stops: 3%, well inside the 0.25-stop `settleStops` that alone permits about 19% of error.
+ */
+const STARTUP_EXPOSURE_TOLERANCE = Math.log2(1.03);
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
 
@@ -131,6 +137,41 @@ const TONEMAP: Record<TonemapMode, number> = {
   filmic: CustomToneMapping,
   neutral: NeutralToneMapping,
 };
+
+/**
+ * Publishes this install's exposure readiness for the startup's first visible frame
+ * (`rendererFirstWorldFrame`): measured, settled, and within 3% of the meter's own target.
+ *
+ * Scoped to the install that registered it. A replacement graph registers before the install it
+ * replaces is disposed, so the forget leaves a slot it no longer owns alone, and an old graph's
+ * asynchronous readback only ever moves its own observation, never the new graph's answer.
+ * Returns the forget call the install runs with its own disposal.
+ */
+function publishStartupExposure(raw: object, exposure: AutoExposureNode | undefined): () => void {
+  const probe = (): boolean => {
+    // No meter installed: there is nothing to wait for.
+    if (exposure === undefined) return true;
+    const observation = exposure.getObservation();
+    // Disabled after install: no metered target the player is waiting on either.
+    if (observation.applied === false) return true;
+    if (observation.measured !== true || observation.settled !== true) return false;
+    const stops = observation.exposureStops;
+    const target = observation.targetStops;
+    if (typeof stops !== "number" || typeof target !== "number") return false;
+    if (!Number.isFinite(stops) || !Number.isFinite(target)) return false;
+    return Math.abs(stops - target) <= STARTUP_EXPOSURE_TOLERANCE;
+  };
+  Object.defineProperty(raw, STARTUP_EXPOSURE, {
+    configurable: true,
+    enumerable: false,
+    value: probe,
+    writable: true,
+  });
+  return () => {
+    if ((raw as Record<symbol, unknown>)[STARTUP_EXPOSURE] !== probe) return;
+    Reflect.deleteProperty(raw, STARTUP_EXPOSURE);
+  };
+}
 
 export interface IWorldEnvironmentOptions {
   /** World-pass MSAA samples. Omit to inherit the renderer; 0 leaves post AA in charge. */
@@ -1041,6 +1082,8 @@ export class WorldEnvironment {
     const exposure = options.autoExposureEnabled
       ? new AutoExposureNode(colour, options.exposurePolicy, options.exposure)
       : undefined;
+    // The startup's first-frame seam reads this install's meter, and only while the install lives.
+    const forgetExposure = publishStartupExposure(raw as object, exposure);
     // Harness: Unreal's local exposure (ladder layer L9). It acts on the exposed frame, so with the meter
     // off it measures against the fixed exposure, as Unreal's does with r.DefaultFeature.AutoExposure 0.
     const localExposure = options.localExposureEnabled
@@ -1054,6 +1097,7 @@ export class WorldEnvironment {
     const releaseGraph = (): void => {
       if (released) return;
       released = true;
+      forgetExposure();
       exposure?.dispose();
       localExposure?.dispose();
       // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;

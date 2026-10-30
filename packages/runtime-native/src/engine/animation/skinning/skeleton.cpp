@@ -194,6 +194,84 @@ Vector3& SkinnedMesh::getVertexPosition(uint64_t index, Vector3& target) const {
     return applyBoneTransform(index, target);
 }
 
+bool SkinnedMesh::boneReachBounds(Box3& target) const {
+    if (!skeleton || !geometry || !geometry->attributes.count("position") || !geometry->attributes.count("skinIndex") ||
+        !geometry->attributes.count("skinWeight") || skeleton->boneInverses.size() < skeleton->bones.size())
+        return false;
+    const std::size_t bones = skeleton->bones.size();
+    if (boneReachGeometry_ != geometry.get() || boneReachRevision_ != geometry->revision() ||
+        boneReachSkeleton_ != skeleton.get() || boneReach_.size() != bones) {
+        boneReachGeometry_ = geometry.get();
+        boneReachRevision_ = geometry->revision();
+        boneReachSkeleton_ = skeleton.get();
+        boneReach_.assign(bones, -1);
+        boneReachHolds_ = true;
+        // Each bone's bind-pose position: the translation of its inverse bind matrix's inverse.
+        std::vector<Vector3> centers(bones);
+        for (std::size_t j = 0; j < bones; ++j) {
+            Matrix4 bind = skeleton->boneInverses[j];
+            centers[j].setFromMatrixPosition(bind.invert());
+        }
+        const auto indices = geometry->attributes.at("skinIndex");
+        const auto weights = geometry->attributes.at("skinWeight");
+        const uint64_t count = geometry->attributes.at("position")->count();
+        Vector3 vertex;
+        for (uint64_t index = 0; boneReachHolds_ && index < count; ++index) {
+            Mesh::getVertexPosition(index, vertex).applyMatrix4(bindMatrix);
+            double sum = 0;
+            for (int i = 0; i < 4; ++i) {
+                const double weight = weights->getComponent(index, i);
+                if (weight == 0) continue;
+                const double boneIndex = indices->getComponent(index, i);
+                if (!std::isfinite(boneIndex) || boneIndex < 0 || boneIndex != std::floor(boneIndex) || boneIndex >= double(bones)) {
+                    boneReachHolds_ = false;
+                    break;
+                }
+                sum += weight;
+                auto& reach = boneReach_[std::size_t(boneIndex)];
+                reach = std::max(reach, vertex.distanceTo(centers[std::size_t(boneIndex)]));
+            }
+            if (std::abs(sum - 1) > 1e-3) boneReachHolds_ = false;
+        }
+    }
+    if (!boneReachHolds_) return false;
+    // A skinned vertex is a weighted mean of its bones' rigid images, and each image lies within the
+    // bone's reach (times the bone's scale) of the bone's posed position: the spheres' box holds it.
+    // The largest stretch of a matrix's linear part: the longest axis when the axes are orthogonal,
+    // else the Frobenius norm (a sheared bone chain can stretch past its longest axis).
+    const auto stretch = [](const Matrix4& m) {
+        const auto& e = m.elements;
+        const double axes[3][3] = {{e[0], e[1], e[2]}, {e[4], e[5], e[6]}, {e[8], e[9], e[10]}};
+        double lengths[3], frobenius = 0;
+        for (int a = 0; a < 3; ++a) {
+            lengths[a] = std::sqrt(axes[a][0] * axes[a][0] + axes[a][1] * axes[a][1] + axes[a][2] * axes[a][2]);
+            frobenius += lengths[a] * lengths[a];
+        }
+        for (int a = 0; a < 3; ++a)
+            for (int b = a + 1; b < 3; ++b) {
+                const double dot = axes[a][0] * axes[b][0] + axes[a][1] * axes[b][1] + axes[a][2] * axes[b][2];
+                if (std::abs(dot) > 1e-6 * lengths[a] * lengths[b]) return std::sqrt(frobenius);
+            }
+        return std::max({lengths[0], lengths[1], lengths[2]});
+    };
+    target.makeEmpty();
+    const double meshScale = stretch(bindMatrixInverse);
+    Matrix4 matrix;
+    Vector3 center;
+    for (std::size_t j = 0; j < bones; ++j) {
+        if (boneReach_[j] < 0) continue;
+        Bone* bone = skeleton->bone(j);
+        if (!bone) return false;
+        bone->materializeWorldTransformIfPending();
+        matrix.multiplyMatrices(bone->matrixWorld, skeleton->boneInverses[j]);
+        center.setFromMatrixPosition(bone->matrixWorld).applyMatrix4(bindMatrixInverse);
+        const double radius = boneReach_[j] * stretch(matrix) * meshScale;
+        target.expandByPoint(Vector3(center.x - radius, center.y - radius, center.z - radius));
+        target.expandByPoint(Vector3(center.x + radius, center.y + radius, center.z + radius));
+    }
+    return !target.isEmpty();
+}
+
 Vector3& SkinnedMesh::applyBoneTransform(uint64_t index, Vector3& target) const {
     const auto indices = geometry->attributes.at("skinIndex");
     const auto weights = geometry->attributes.at("skinWeight");
