@@ -744,8 +744,9 @@ no COOP/COEP); that lane is open.
 ### 2026-10-30 — Stress lab: mimalloc on the threaded web engine (FB1) — KEEP
 - Where: `packages/runtime-native/cmake/NativeEngineCore.cmake`, the `TN_WEB_THREADS` link options (`-sMALLOC=mimalloc`);
   lock: `packages/runtime-native/__tests__/web-threads-allocator.spec.ts`.
-- Result: fair uncapped window, ABBA, develop `0974fd3b8` vs the same tree plus mimalloc, load peak 4.66: CPU frame p50
-  14.75 -> 13.76 and 14.65 -> 13.73 ms (-6.7%, -6.3%), fps 64.1 / 65.6 -> 70.7 / 70.7. Pixels cannot move.
+- Result: two fair uncapped windows, ABBA, develop `0974fd3b8` vs the same tree plus mimalloc. Window fb1c (load peak
+  4.66): CPU frame p50 14.75 -> 13.76 and 14.65 -> 13.73 ms (-6.7%, -6.3%), fps 64.1 / 65.6 -> 70.7 / 70.7. Window fb1c2
+  (load peak 5.26, ledger rows #65-#66): 14.64 -> 13.60 and 14.18 -> 13.63 ms (-7.1%, -3.9%). Pixels cannot move.
 - Insight: Emscripten's default dlmalloc takes one global lock in a `-pthread` build, so the job pool's workers and the
   main thread queue on every allocation. The single-thread build has no contention and keeps dlmalloc. Two earlier
   profiled pairs read -5.5% and -23%; the second was voided (a stray stress page shared the GPU 07:30-09:20Z), which is
