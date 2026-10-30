@@ -307,6 +307,25 @@ describe("stress-loop", () => {
     expect(near[0]).toContain("✅");
   });
 
+  it("anchors the Wasm column on the kept arm, never on an old row or a rejected arm", () => {
+    const row = (variant: string, decision: string, gpuP95Ms: number) =>
+      [
+        measureReport(report({ metrics: { ...report().metrics, gpuP95Ms } })),
+        { label: variant, variant, decision },
+      ] as const;
+    const ledger = [
+      row("stress", "measure", 34),
+      row("arm=stack&uncapped", "keep", 8),
+      row("arm=stack", "keep", 7.5),
+      row("arm=candidate", "measure", 7.2),
+      row("arm=rejected", "reject", 1),
+    ].reduce((acc, [r, o]) => appendRow(acc, r, o), readLedger(ledgerPath()));
+    const html = renderHtml(ledger, new Date(0));
+    // The kept vsync stack row (#3) wins over the old plain row (#1), the newer candidate (#4) and the rejected arm (#5).
+    expect(cellsOf(html, "GPU p95")[0]).toContain("7.5");
+    expect(html).toContain("#3 ·");
+  });
+
   it("defines the comparison colors for the light and the dark theme", () => {
     const html = renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0));
     expect(html).toMatch(/:root\{[^}]*--ok-bg:/u);

@@ -317,6 +317,12 @@ const ALL = [...GOALS, ...MORE, ...TRACKED];
 const engineOf = (row) => row.engine ?? ENGINES[0].key;
 /** The URL flags beyond `?stress` (for example `plainShadow`); the comparison reads only plain `stress` rows. */
 const variantOf = (row) => row.variant ?? "stress";
+/** The variant without its `arm=` tag: `plainShadow&arm=stack` is a `plainShadow` row of the `stack` arm. */
+const sceneOf = (row) =>
+  variantOf(row)
+    .split("&")
+    .filter((flag) => !flag.startsWith("arm="))
+    .join("&") || "stress";
 
 const fmt = (value, unit = "") =>
   value === null || value === undefined
@@ -441,8 +447,13 @@ function mismatchOf(row, anchor) {
  * or its plain `stress` row when that row has the anchor's shadow mode (vanilla three.js has one sun map).
  */
 function comparisonArms(rows, variant) {
-  const latest = (engine, wanted) =>
-    rows.findLast((row) => engineOf(row) === engine && variantOf(row) === wanted);
+  // A column shows the latest kept arm of the scene, else its latest row that was not rejected.
+  const latest = (engine, wanted) => {
+    const of = rows.filter(
+      (row) => engineOf(row) === engine && sceneOf(row) === wanted && row.decision !== "reject",
+    );
+    return of.findLast((row) => row.decision === "keep") ?? of.at(-1);
+  };
   const anchor = latest(ENGINES[0].key, variant);
   return ENGINES.map((engine, index) => {
     const own = latest(engine.key, variant);
@@ -467,7 +478,7 @@ function comparisonTable(arms) {
   return `<div class="scroll"><table class="cmp"><thead><tr><th>Metric</th>${arms
     .map(
       (arm) =>
-        `<th class="n">${esc(arm.short)}<br><span class="dim">${arm.row === undefined ? "pending" : esc(`#${arm.row.id} · ${arm.row.adapter} · ${arm.row.viewport}`)}</span></th>`,
+        `<th class="n">${esc(arm.short)}<br><span class="dim">${arm.row === undefined ? "pending" : esc(`#${arm.row.id} · ${variantOf(arm.row) === "stress" ? "" : `${variantOf(arm.row)} · `}${arm.row.build?.sha256 ?? arm.row.commit} · ${arm.row.adapter}`)}</span></th>`,
     )
     .join(
       "",
@@ -496,9 +507,7 @@ export function renderHtml(ledger, now = new Date()) {
   // PRD-770: with fair-window rows for ThreeNative's plain-shadow arm, the like-for-like table for vanilla three.js.
   const plainAnchor = rows.findLast(
     (row) =>
-      engineOf(row) === ENGINES[0].key &&
-      variantOf(row) === "plainShadow" &&
-      row.build !== undefined,
+      engineOf(row) === ENGINES[0].key && sceneOf(row) === "plainShadow" && row.build !== undefined,
   );
   const plainComparison =
     plainAnchor === undefined
