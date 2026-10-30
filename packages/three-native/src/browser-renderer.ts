@@ -213,7 +213,7 @@ export function defineWebRenderer(
         programs: 0,
         frameGateSkips: 0,
         // The last frame's draws and triangles with the shadow passes apart from the main pass (web_host.cpp fields 0, 1, 27
-        // and 73). `info.render` adds them, as three's does; core's pass recorder reads this to report `main` and `shadow`.
+        // and 85). `info.render` adds them, as three's does; core's pass recorder reads this to report `main` and `shadow`.
         frameSplit: { mainDraws: 0, mainTriangles: 0, shadowDraws: 0, shadowTriangles: 0 },
         // The startup's first real frame (web_host.cpp fields 71 and 72): the ordinary world submissions that encoded,
         // and whether the shadow inputs such a frame samples exist. Core holds presentation until both, and the
@@ -623,7 +623,7 @@ export function defineWebRenderer(
       this.info.engine.uniformBytes = module._tnw_web_frame(41);
       const split = this.info.engine.frameSplit;
       split.shadowDraws = shadows.shadowDraws;
-      split.shadowTriangles = module._tnw_web_frame(73);
+      split.shadowTriangles = module._tnw_web_frame(85);
       split.mainDraws = this.info.render.frameCalls - split.shadowDraws;
       split.mainTriangles = lastTriangles - split.shadowTriangles;
       const gpuSamples = module._tnw_web_frame(8);

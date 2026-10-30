@@ -937,9 +937,9 @@ extern "C" double tnw_web_frame(int field) {
         case 72: return shadowInputsReady ? 1 : 0;
         // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
         // 41: the bytes of per-draw uniforms it uploaded.
-        // 73 (PRD-770): the shadow passes' triangles, which field 1 adds in. With 27 (every shadow draw) it splits fields
+        // 85 (PRD-770): the shadow passes' triangles, which field 1 adds in. With 27 (every shadow draw) it splits fields
         // 0 and 1 into the main pass and the shadow passes, as three counts a nested shadow render apart from the main one.
-        case 73: return double(lastDrawn->lastFrame().shadowTriangles);
+        case 85: return double(lastDrawn->lastFrame().shadowTriangles);
         case 40: return double(renderer->lastFrame().keptShadowMaps);
         case 41: return double(renderer->lastFrame().uniformBytes);
         // PRD-771, 73 to 77: running ms, every render summed, like 66 to 70. 73 the post effects' and output pass's share of

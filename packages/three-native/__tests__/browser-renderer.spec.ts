@@ -143,8 +143,10 @@ describe("the owned engine's CPU stage totals (PRD-771)", () => {
       hostDatabaseMs: 14,
       hostTargetMs: 15,
     });
-    // 71-72 are startup reads and 73 the per-frame shadow split (PRD-770); none is a stage total.
-    expect(asked.filter((field) => field >= 66 && (field < 71 || field > 73))).toEqual([78]);
+    // 71-72 are startup reads and 85 the per-frame shadow split (PRD-770); none is a stage total.
+    expect(
+      asked.filter((field) => field >= 66 && field !== 71 && field !== 72 && field !== 85),
+    ).toEqual([78]);
   });
 
   it("publishes no totals on a module without the array, so core reads them as unmeasured", async () => {
@@ -1681,8 +1683,10 @@ describe("debug renderer observations", () => {
     renderer.render(scene, camera);
     // Existing renderer ABI census; debug reads existing observations only. The startup's own submission
     // count and shadow-input answer (fields 71, 72) are a held startup's, so a steady frame pays for neither.
-    // Field 73 (the shadow passes' triangles) is the one PRD-770 call that splits main from shadow.
+    // Field 85 (the shadow passes' triangles) is the one PRD-770 call that splits main from shadow.
     expect(frame.mock.calls).toHaveLength(38);
+    // 73-84 are PRD-771's stage totals; the split read must not reuse one of them.
+    expect((frame.mock.calls as unknown as number[][]).map(([field]) => field)).toContain(85);
     expect(malloc).toHaveBeenCalledTimes(1); // existing state-string allocation
     expect(debugTelemetry(module)).toBeUndefined();
 
