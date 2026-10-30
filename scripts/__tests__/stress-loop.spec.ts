@@ -1,11 +1,19 @@
-import { writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
-const { GOALS, appendRow, measureReport, renderHtml, readLedger } = await import(
-  new URL("../stress-loop.mjs", import.meta.url).href
-);
+const {
+  GOALS,
+  appendRow,
+  checkedRun,
+  measureReport,
+  recordRun,
+  renderHtml,
+  readLedger,
+  writeLedger,
+} = await import(new URL("../stress-loop.mjs", import.meta.url).href);
 
 const report = (overrides: Record<string, unknown> = {}) => ({
   schema: "stress-lab-report/1",
@@ -47,11 +55,17 @@ const ledgerPath = () => path.join(makeTempDirSync("stress-loop"), "ledger.json"
 const armLedger = (arms: Record<string, Record<string, number>>) =>
   Object.entries(arms).reduce(
     (ledger, [engine, metrics]) =>
-      appendRow(ledger, measureReport(report({ metrics: { ...report().metrics, ...metrics } })), {
-        label: engine,
-        engine,
-        decision: "measure",
-      }),
+      appendRow(
+        ledger,
+        measureReport(report({ metrics: { ...report().metrics, ...metrics } }), {
+          counted: engine !== "unreal",
+        }),
+        {
+          label: engine,
+          engine,
+          decision: "measure",
+        },
+      ),
     readLedger(ledgerPath()),
   );
 
@@ -243,7 +257,7 @@ describe("stress-loop", () => {
     expect(gpu[0]).not.toMatch(/▲|▼/u);
   });
 
-  it("keeps Triangles unranked and flags a count that is off or broken", () => {
+  it("keeps Triangles unranked and shows an arm with other triangles as not comparable", () => {
     const html = renderHtml(
       armLedger({
         [WASM]: { mainTrianglesM: 7.07, mainDraws: 60 },
@@ -255,21 +269,61 @@ describe("stress-loop", () => {
     const triangles = cellsOf(html, "Triangles");
     expect(triangles.join("")).not.toMatch(/✅|❌/u);
     expect(triangles[2]).toContain("⚠️");
-    expect(triangles[2]).toContain("count basis differs");
+    expect(triangles[2]).toContain("not comparable: main triangles 2.11 M against 7.07 M");
     expect(triangles[1]).toContain("counter broken");
-    const draws = cellsOf(html, "Main draws");
-    expect(draws[1]).toContain("⚠️");
-    expect(draws[1]).not.toMatch(/✅|▲/u);
-    expect(draws[0]).toContain("✅");
-    expect(draws[2]).toContain("❌");
+    // No arm is comparable to the Wasm arm, so no draws cell is ranked.
+    expect(cellsOf(html, "Main draws").join("")).not.toMatch(/✅|❌|▲|▼/u);
     const close = cellsOf(
       renderHtml(
-        armLedger({ [WASM]: { mainTrianglesM: 7.07 }, [VANILLA]: { mainTrianglesM: 7.5 } }),
+        armLedger({ [WASM]: { mainTrianglesM: 7.07 }, [VANILLA]: { mainTrianglesM: 7.15 } }),
         new Date(0),
       ),
       "Triangles",
     );
     expect(close[2]).not.toContain("⚠️");
+  });
+
+  it("compares speed only between rows whose main and shadow triangles are within 2%", () => {
+    const tri = (main: number, shadow: number | null) => ({
+      mainTrianglesM: main,
+      shadowTrianglesM: shadow,
+      gpuP95Ms: 10,
+    });
+    const gpu = (vanilla: ReturnType<typeof tri>) =>
+      cellsOf(
+        renderHtml(
+          armLedger({ [WASM]: { ...tri(2.11, 2.06), gpuP95Ms: 6 }, [VANILLA]: vanilla }),
+          new Date(0),
+        ),
+        "GPU p95",
+      );
+    // Same main, shadow 38% lower: not comparable, with the reason.
+    const apart = gpu(tri(2.11, 1.28));
+    expect(apart[2]).toContain("not comparable: shadow triangles 1.28 M against 2.06 M");
+    expect(apart.join("")).not.toMatch(/✅|❌|▲|▼/u);
+    // Within 2% on both: ranked.
+    const near = gpu(tri(2.12, 2.07));
+    expect(near[2]).not.toContain("not comparable");
+    expect(near[0]).toContain("✅");
+  });
+
+  it("anchors the Wasm column on the kept arm, never on an old row or a rejected arm", () => {
+    const row = (variant: string, decision: string, gpuP95Ms: number) =>
+      [
+        measureReport(report({ metrics: { ...report().metrics, gpuP95Ms } })),
+        { label: variant, variant, decision },
+      ] as const;
+    const ledger = [
+      row("stress", "measure", 34),
+      row("arm=stack&uncapped", "keep", 8),
+      row("arm=stack", "keep", 7.5),
+      row("arm=candidate", "measure", 7.2),
+      row("arm=rejected", "reject", 1),
+    ].reduce((acc, [r, o]) => appendRow(acc, r, o), readLedger(ledgerPath()));
+    const html = renderHtml(ledger, new Date(0));
+    // The kept vsync stack row (#3) wins over the old plain row (#1), the newer candidate (#4) and the rejected arm (#5).
+    expect(cellsOf(html, "GPU p95")[0]).toContain("7.5");
+    expect(html).toContain("#3 ·");
   });
 
   it("defines the comparison colors for the light and the dark theme", () => {
@@ -280,5 +334,188 @@ describe("stress-loop", () => {
 
   it("renders an empty ledger as pending", () => {
     expect(renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0))).toContain("pending");
+  });
+});
+
+/** A fair-window run as `stress:loop fair` writes it. */
+const run = (
+  overrides: Record<string, unknown> = {},
+  reportOverrides: Record<string, unknown> = {},
+) => ({
+  url: "http://127.0.0.1:5740/main.html?stress",
+  dpr: 1,
+  pass: "vsync",
+  adapterInfo: "nvidia / turing",
+  build: { kind: "wasm", sha256: "4fb0aba5a921", commit: "0974fd3b8" },
+  load: [2.1, 3.4, 3.9],
+  report: report(reportOverrides),
+  ...overrides,
+});
+
+describe("stress-loop record (PRD-770)", () => {
+  it("refuses a bare report, a missing build identity and a Wasm arm that loaded no wasm", () => {
+    expect(() => recordRun(readLedger(ledgerPath()), report(), { label: "x" })).toThrow(
+      /fair-window run/u,
+    );
+    expect(() =>
+      recordRun(readLedger(ledgerPath()), run({ build: { kind: "wasm", commit: "0974fd3b8" } }), {
+        label: "x",
+      }),
+    ).toThrow(/build\.sha256/u);
+    expect(() =>
+      recordRun(
+        readLedger(ledgerPath()),
+        run({ build: { kind: "wasm", sha256: "4fb0aba5a921" } }),
+        { label: "x" },
+      ),
+    ).toThrow(/build\.commit/u);
+    expect(() =>
+      recordRun(
+        readLedger(ledgerPath()),
+        run({ build: { kind: "js", sha256: "4fb0aba5a921", commit: "a" } }),
+        {
+          label: "x",
+        },
+      ),
+    ).toThrow(/build\.kind/u);
+    const ok = recordRun(readLedger(ledgerPath()), run(), { label: "ok" });
+    expect(ok.iterations[0]).toMatchObject({
+      build: { sha256: "4fb0aba5a921" },
+      shadow: "virtual",
+      pass: "vsync",
+      load: { peak: 3.9 },
+    });
+  });
+
+  it("records an Unreal run without draw or triangle counts, and ranks it as not comparable", () => {
+    const uncounted = { mainDraws: null, mainTrianglesM: null };
+    const unreal = run(
+      {
+        url: "unreal://stress",
+        build: { kind: "unreal", sha256: "58210709abcd", commit: "UnrealEngine-5.8.3" },
+      },
+      { metrics: { ...report().metrics, ...uncounted } },
+    );
+    // Only Unreal cannot count: an owned-engine row without counts still fails closed.
+    expect(() =>
+      recordRun(
+        readLedger(ledgerPath()),
+        run({}, { metrics: { ...report().metrics, ...uncounted } }),
+        { label: "x" },
+      ),
+    ).toThrow(/mainDraws/u);
+    const ledger = recordRun(readLedger(ledgerPath()), unreal, { label: "u", engine: "unreal" });
+    expect(ledger.iterations[0].metrics).toMatchObject(uncounted);
+    // A row that measured no main triangles cannot prove equal work, so it is shown but not ranked.
+    const cells = cellsOf(
+      renderHtml(
+        armLedger({
+          [WASM]: { mainTrianglesM: 2.11, gpuP95Ms: 6 },
+          unreal: { mainTrianglesM: null, gpuP95Ms: 9 },
+        }),
+        new Date(0),
+      ),
+      "GPU p95",
+    );
+    expect(cells[3]).toContain("not comparable: main triangles not measured");
+  });
+
+  it("writes the ledger in the shape biome keeps, so the lint gate stays green", () => {
+    const file = ledgerPath();
+    const ledger = recordRun(readLedger(file), run(), { label: "format check" });
+    writeLedger(file, ledger);
+    const written = readFileSync(file, "utf8");
+    // `layers` is a short array: biome keeps it on one line, JSON.stringify would not.
+    expect(written).toContain('"layers": ["rain", "ripples"]');
+    const biome = path.resolve(import.meta.dirname, "../../node_modules/.bin/biome");
+    const formatted = execFileSync(
+      biome,
+      ["format", "--stdin-file-path=docs/stress-loop/ledger.json"],
+      {
+        cwd: path.resolve(import.meta.dirname, "../.."),
+        encoding: "utf8",
+        input: written,
+      },
+    );
+    expect(formatted).toBe(written);
+  });
+
+  it("takes the adapter from the browser when the report's is blank, and refuses a run with none", () => {
+    const blank = { adapter: " / " };
+    const row = recordRun(readLedger(ledgerPath()), run({}, blank), { label: "x" });
+    expect(row.iterations[0].adapter).toBe("nvidia / turing");
+    expect(() => checkedRun(run({ adapterInfo: "" }, blank), "threenative-wasm")).toThrow(
+      /adapter/u,
+    );
+  });
+
+  it("voids a run whose host load rose above 6", () => {
+    expect(() =>
+      recordRun(readLedger(ledgerPath()), run({ load: [3, 6.1] }), { label: "x" }),
+    ).toThrow(/run void: host load 6\.1/u);
+    expect(() => recordRun(readLedger(ledgerPath()), run({ load: [] }), { label: "x" })).toThrow(
+      /load/u,
+    );
+    expect(() =>
+      recordRun(readLedger(ledgerPath()), run({ load: [3, 6] }), { label: "x" }),
+    ).not.toThrow();
+  });
+
+  it("marks an arm with other counts or another shadow mode with a warning and ranks it nowhere", () => {
+    const fair = (
+      engine: string,
+      variant: string,
+      metrics: Record<string, number>,
+      counts?: object,
+    ) => [engine, variant, metrics, counts] as const;
+    const rows = [
+      fair(WASM, "stress", { gpuP95Ms: 30 }),
+      fair(THREEJS, "stress", { gpuP95Ms: 20 }, { trees: 10 }),
+      fair(VANILLA, "stress", { gpuP95Ms: 3 }),
+    ].reduce(
+      (ledger, [engine, variant, metrics, counts]) =>
+        recordRun(
+          ledger,
+          run(
+            {
+              build: { kind: engine === WASM ? "wasm" : "js", sha256: "4fb0aba5a921", commit: "a" },
+            },
+            { metrics: { ...report().metrics, ...metrics }, ...(counts ? { counts } : {}) },
+          ),
+          { label: engine, engine, variant, decision: "measure" },
+        ),
+      readLedger(ledgerPath()),
+    );
+    const gpu = cellsOf(renderHtml(rows, new Date(0)), "GPU p95").slice(0, 3);
+    // three.js engine: other counts. Vanilla: a plain sun map against virtual shadow maps.
+    expect(gpu[1]).toContain("counts differ");
+    expect(gpu[2]).toContain("shadow mode plain against virtual");
+    for (const cell of [gpu[1], gpu[2]]) expect(cell).toContain("⚠️");
+    expect(gpu.join("")).not.toMatch(/✅|❌|▲|▼/u);
+  });
+
+  it("compares vanilla to the plainShadow Wasm row in a second, like-for-like table", () => {
+    const entry = (ledger: unknown, engine: string, variant: string, gpuP95Ms: number) =>
+      recordRun(
+        ledger,
+        run(
+          { build: { kind: engine === WASM ? "wasm" : "js", sha256: "4fb0aba5a921", commit: "a" } },
+          { metrics: { ...report().metrics, gpuP95Ms } },
+        ),
+        { label: engine, engine, variant, decision: "measure" },
+      );
+    let ledger = readLedger(ledgerPath());
+    ledger = entry(ledger, WASM, "stress", 30);
+    ledger = entry(ledger, WASM, "plainShadow", 12);
+    ledger = entry(ledger, VANILLA, "stress", 3);
+    const html = renderHtml(ledger, new Date(0));
+    const plain = html.slice(html.indexOf("Plain sun map"), html.indexOf("<h2>Iterations"));
+    const gpu =
+      (plain.split("<tr>").find((tr) => tr.startsWith("<td>GPU p95</td>")) ?? "").match(
+        /<td class="n[^>]*>.*?<\/td>/gu,
+      ) ?? [];
+    expect(gpu[0]).toContain("12 ms");
+    expect(gpu[2]).toContain("✅");
+    expect(gpu[2]).not.toContain("⚠️");
   });
 });
