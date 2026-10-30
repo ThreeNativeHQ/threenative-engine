@@ -665,3 +665,31 @@ no COOP/COEP); that lane is open.
 - Insight: a held frame does every pass (shadows, post, temporal history, the exposure meter) but takes no canvas
   texture, so the engine warms itself up without presenting. Bound every such wait: 3 s from the frame window or from
   any later cold picture, with one `TN_STARTUP_IMAGE_TIMEOUT` line naming the cold input.
+
+### 2026-10-30 — Stress lab: the job pool takes up to 8 workers (FT2) — KEEP
+- Where: `packages/runtime-native/src/engine/foundation/job_pool.h` (`kMaxWorkers`), `job_pool.cpp`; `2ec6ed19d`.
+- Result: develop head JS, paired rounds: 27.40 -> 30.30 and 23.96 -> 26.20 fps (+9 to +11%), long tasks down.
+- Insight: a bench of the pooled job's shape (132 items x 0.165 ms) scales 3.89 lanes at 3 workers, 7.53 at 8, 8.76 at
+  15 and 8.50 at 23: past 8 the item count is the wall, not the cores. The web count is
+  `navigator.hardwareConcurrency - 1` capped at 8, and Brave reports a masked value (15 on a 24-thread host), so read
+  the reported count before you claim a worker number. A pool where no worker starts now throws
+  `TN_JOB_WORKERS_START_FAILED` instead of running on one thread.
+- Revisit when: a second pooled job lands, or the page job's items grow past about 8 x 0.2 ms.
+
+### 2026-10-30 — Stress lab: main-pass plan cuts FM1/FM2/FM3 measured faster, under review — PENDING
+- Result (develop head a8d10b971, 2 runs each, base 4-run mean 25.67 fps): FM3 per-program binding probes 27.7
+  (+8%), FM2 per-program light/camera slab plus dirty-range upload 27.4 (+7%), FM1 material half of `DrawItem` kept on
+  the record 27.2 (+6%). Reviews: FM2 SHIP, FM3 SHIP (its real saving is likely below the run noise), FM1 SHIP AFTER
+  FIXES (a non-F32 colour attribute's converted store and an `onBeforeRender` param change skip its guard).
+- Insight: run-to-run noise on this frame is about +-7% between sessions and +-3% inside one, so a lever under 1 ms needs
+  arms in alternating order inside one lock window, and a 0.3 ms lever cannot be shown in fps at all: measure its
+  function's self time in a profile instead.
+
+### 2026-10-30 — Stress lab: web shadow bundles (FM5), stride copy and unmoved-body skip (FU2+FU3) — REJECT
+- Result: FM5 25.23 and FU2a+FU3 24.35 against develop head 26.62 / 26.12 fps in one lock window.
+- Insight: FM5 turns PRD-754's recorded shadow bundles on for the web: +53 KB of Wasm and no gain on a moving camera,
+  as PRD-754 found for the shooter. FU2a replaced one `getWorldPosition` with `updateWorldMatrix(true, false)` plus a
+  matrix copy, and bridge crossings rose 1280 -> 1527: count crossings before you call a bridge read cheaper. FU2b's
+  per-frame `isScheduled()` cache was dropped in review: six paths start or stop actions, and only two cleared it.
+- Revisit when: FU3 (skip the lerp for a body physics left unmoved) gets its own profile run; it is logic-safe and
+  about 0.3 ms, below what fps can show.
