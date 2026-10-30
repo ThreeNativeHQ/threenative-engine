@@ -322,7 +322,9 @@ function classifyFile(lines, hunks) {
     else if (locate(lines, oldLines, hunk.oldStart - 1 + offset) !== undefined)
       states.push("stock");
     else states.push("unknown");
-    offset += newLines.length - oldLines.length;
+    // Classification reads the file as it is on disk, where only already-patched hunks moved the
+    // lines below them; a stock hunk has not been applied yet and shifts nothing.
+    if (states.at(-1) === "patched") offset += newLines.length - oldLines.length;
   }
   return states;
 }

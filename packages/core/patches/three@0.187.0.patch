@@ -6126,7 +6126,7 @@ index 7adc79bcf48ae56912c7597c5182d4a3a2a42421..d628adb0df0bf5fb9a2b9563bee33be5
  	const result = float( 1.0 ).toVar();
  
 diff --git a/src/nodes/lighting/ShadowFilterNode.js b/src/nodes/lighting/ShadowFilterNode.js
-index ad570dfdc60027d409cf3872700df5b58190e47a..dd931818381ec8c040801bd6f70fcbd544e512fd 100644
+index ad570dfdc60027d409cf3872700df5b58190e47a..ac1515bf34c5f8aa1527442fa9bbc7892a597b33 100644
 --- a/src/nodes/lighting/ShadowFilterNode.js
 +++ b/src/nodes/lighting/ShadowFilterNode.js
 @@ -3,6 +3,7 @@ import { reference } from '../accessors/ReferenceNode.js';
@@ -6169,11 +6169,6 @@ index ad570dfdc60027d409cf3872700df5b58190e47a..dd931818381ec8c040801bd6f70fcbd5
  		};
  
  		_shadowUniforms.set( shadow, uniforms );
-@@ -149,4 +164,3 @@ export const VSMShadowFilter = /*@__PURE__*/ Fn( ( { depthTexture, shadowCoord,
- 	return output;
- 
- } );
--
 diff --git a/src/nodes/pmrem/PMREMNode.js b/src/nodes/pmrem/PMREMNode.js
 index 8b82efb52830b1930020a0f7fb46e6d75546918f..43e06483bb4e906da25c1a6e85c77430167dd37a 100644
 --- a/src/nodes/pmrem/PMREMNode.js
