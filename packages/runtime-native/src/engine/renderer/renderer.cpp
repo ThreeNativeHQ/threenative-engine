@@ -29,6 +29,9 @@
 #include <type_traits>
 #include <typeinfo>
 #include <vector>
+#if defined(__wasm_simd128__)
+#include <wasm_simd128.h>
+#endif
 
 #include "engine/shader/dfg_lut.h"
 #include "engine/shader/sprite.h"
@@ -47,6 +50,22 @@
 namespace tn::engine {
 
 namespace {
+
+// TR1: are two byte runs equal? musl's memcmp is a word loop on Wasm (about 5 GB/s with the engine's flags); 64 bytes a
+// step with SIMD runs at about 15, and the storage upload scans every byte of a still `instances` array each plan.
+bool sameBytes(const uint8_t* a, const uint8_t* b, std::size_t n) {
+    std::size_t i = 0;
+#if defined(__wasm_simd128__)
+    for (; i + 64 <= n; i += 64) {
+        v128_t diff = wasm_v128_xor(wasm_v128_load(a + i), wasm_v128_load(b + i));
+        diff = wasm_v128_or(diff, wasm_v128_xor(wasm_v128_load(a + i + 16), wasm_v128_load(b + i + 16)));
+        diff = wasm_v128_or(diff, wasm_v128_xor(wasm_v128_load(a + i + 32), wasm_v128_load(b + i + 32)));
+        diff = wasm_v128_or(diff, wasm_v128_xor(wasm_v128_load(a + i + 48), wasm_v128_load(b + i + 48)));
+        if (wasm_v128_any_true(diff)) return false;
+    }
+#endif
+    return std::memcmp(a + i, b + i, n - i) == 0;
+}
 
 bool gpuJointAncestorEligible(const Object3D& ancestor, const SkinnedMesh& rig) {
     const auto* flags = ancestor.ownTransformTracking();
@@ -612,6 +631,7 @@ struct Renderer::FrameJob {
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
     uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan
     uint32_t paletteWrites = 0;  // FrameStats::paletteWrites, counted by the plan
+    uint32_t instanceCopies = 0;  // FrameStats::instanceCopies, counted by the plan
     std::deque<DrawItem> shadowLodItems;
     // FM8: a page's grouped casters as rows (one per page and group) and each row's member list. Both are
     // deques: a plan's row points at its members' array until the frame is encoded.
@@ -3235,18 +3255,51 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::vector<float>& morphInfluences = storages_["morphInfluences"].data;
     std::vector<float>& instances = storages_["instances"].data;
     std::unordered_map<const DrawItem*, double> instanceBases;
-    // Twenty floats per instance: its matrix, then its colour and a pad. The storage keeps its
-    // elements between frames, so a steady crowd overwrites memory it owns instead of zero-filling
-    // and appending; it is cut to what this frame wrote after the loop.
-    std::size_t written = 0;
+    // Twenty floats per instance: its matrix, then its colour and a pad. TR1: a draw keeps its place from plan to
+    // plan (instanceSlots_), so a depth reorder or a draw that leaves the view moves no other draw's bytes, and the
+    // upload below sends only the bytes that changed. The storage keeps its elements between plans, so a steady
+    // crowd overwrites memory it owns; the shadow rows append past instanceTop_ and the next plan cuts them off.
+    if (planSerial_ % 256 == 0) {  // a place unasked for in a long time goes; when the gaps outweigh the live places, start over
+        uint64_t live = 0;
+        for (auto slot = instanceSlots_.begin(); slot != instanceSlots_.end();) {
+            if (planSerial_ - slot->second.seen > kInstanceSlotPlans) slot = instanceSlots_.erase(slot);
+            else live += (slot++)->second.count;
+        }
+        if (instanceTop_ > 2 * live + 20 * 1024) { instanceSlots_.clear(); instanceTop_ = 0; }
+    }
+    instancePlanned_.clear();
+    instanceDirty_.clear();
+    uint32_t instanceCopies = 0;
     for (const auto& [depth, drawn] : opaque) {
         if (!drawn->instanceMatrices) continue;
-        instanceBases[drawn] = double(written / 4);
-        const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*drawn->instanceMatrices).data());
-        const auto* colors = drawn->instanceColors ? reinterpret_cast<const float*>(static_cast<const BufferStore&>(*drawn->instanceColors).data()) : nullptr;
-        const std::size_t end = written + std::size_t{drawn->instanceCount} * 20;
-        if (instances.size() < end) instances.resize(end);
-        float* out = instances.data() + written;
+        const uint64_t floats = uint64_t{drawn->instanceCount} * 20;
+        const BufferStore& matrixStore = *drawn->instanceMatrices;
+        const BufferStore* colorStore = drawn->instanceColors;
+        InstanceSlot& slot = instanceSlots_[{matrixStore.id(), colorStore ? colorStore->id() : 0}];
+        bool placed = false;
+        if (slot.count < floats) {  // new, or grown past its place: the last place grows in place, any other takes the end
+            if (slot.count != 0 && slot.offset + slot.count == instanceTop_) {
+                instanceTop_ += floats - slot.count;
+            } else {
+                slot.offset = instanceTop_;
+                instanceTop_ += floats;
+            }
+            slot.count = floats;
+            placed = true;
+        }
+        slot.seen = planSerial_;
+        instanceBases[drawn] = double(slot.offset / 4);
+        // Three's rule: a store whose epoch, write count and version did not move has the bytes it had. A place that
+        // moved or grew has nothing on the GPU yet, so it copies whatever its stamp says.
+        const InstanceStamp stamp{matrixStore.epoch(), matrixStore.writes(), matrixStore.version(),
+                                  colorStore ? colorStore->epoch() : 0, colorStore ? colorStore->writes() : 0,
+                                  colorStore ? colorStore->version() : 0, drawn->instanceCount};
+        instancePlanned_.emplace_back(&slot, stamp);
+        if (!placed && slot.stamped && slot.stamp == stamp) continue;
+        const auto* matrices = reinterpret_cast<const float*>(matrixStore.data());
+        const auto* colors = colorStore ? reinterpret_cast<const float*>(colorStore->data()) : nullptr;
+        if (instances.size() < instanceTop_) instances.resize(instanceTop_);
+        float* out = instances.data() + slot.offset;
         for (uint32_t i = 0; i < drawn->instanceCount; ++i, out += 20) {
             std::memcpy(out, matrices + i * 16, 16 * sizeof(float));
             out[16] = colors ? colors[i * 3] : 1;
@@ -3254,9 +3307,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             out[18] = colors ? colors[i * 3 + 2] : 1;
             out[19] = 0;
         }
-        written = end;
+        slot.stamped = false;  // until the upload below has gone through
+        ++instanceCopies;
+        instanceDirty_.emplace_back(slot.offset, floats);
     }
-    instances.resize(written);
+    instances.resize(instanceTop_);
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
@@ -3416,7 +3471,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
-    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites;
+    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -4622,6 +4677,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     job.uniformBytes = frameUniforms_.size();
     bool jointBufferMoved = false;
+    bool instancesUploaded = false;
     for (auto& [name, storage] : storages_) {
         const uint64_t prefix = name == "boneMatrices" ? jointPrefix : 0;
         if (prefix + storage.data.size() * 4 > storage.capacity) {
@@ -4641,16 +4697,76 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                 storage.uploadedBuffer.context == target.context &&
                                 storage.uploadedBuffer.index == target.index &&
                                 storage.uploadedBuffer.generation == target.generation;
-        if (sameBuffer && storage.uploadedPrefix == prefix && storage.uploaded.size() == bytes &&
-            std::memcmp(storage.uploaded.data(), source, bytes) == 0)
+        // TR1: of the bytes the GPU already holds at this offset only the blocks that differ cross to it, and the bytes
+        // past the old end are new; a buffer or offset that moved starts over with all of it. A draw whose bytes did not
+        // change (a still crowd, a draw that kept its place in `instances`) sends nothing, whatever its neighbours do.
+        const uint64_t held = sameBuffer && storage.uploadedPrefix == prefix ? std::min<uint64_t>(storage.uploaded.size(), bytes) : 0;
+        constexpr uint64_t kStorageBlock = 256;  // a multiple of 4: writeBuffer takes whole words
+        constexpr std::size_t kMaxWrites = 32;
+        auto& ranges = uniformDirtyRanges_;  // the uniform upload above is done with it
+        ranges.clear();
+        const auto dirty = [&](uint64_t at, uint64_t end) {
+            if (!ranges.empty() && ranges.back().first + ranges.back().second == at) ranges.back().second = end - ranges.back().first;
+            else ranges.emplace_back(at, end - at);
+        };
+        if (name != "instances") {  // the palettes change whole each frame: one compare that stops at the first difference, one write
+            if (held == bytes && storage.uploaded.size() == bytes && std::memcmp(storage.uploaded.data(), source, bytes) == 0) continue;
+            if (gpu_.writeBuffer(target, prefix, source, bytes) == GpuStatus::Ok) {
+                storage.uploaded.assign(source, source + bytes);
+                storage.uploadedBuffer = target;
+                storage.uploadedPrefix = prefix;
+            }
             continue;
-        if (gpu_.writeBuffer(target, prefix, storage.data.data(), bytes) == GpuStatus::Ok) {
-            storage.uploaded.assign(source, source + bytes);
+        }
+        // `instances` scans only what this plan copied (a place whose stores did not move was left alone and already
+        // matches the GPU) and the shadow rows past the places.
+        auto& spans = instanceScan_;
+        spans.clear();
+        std::sort(instanceDirty_.begin(), instanceDirty_.end());
+        for (const auto& [offset, count] : instanceDirty_) {
+            const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
+            if (at >= end) continue;
+            if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
+            else spans.emplace_back(at, end);
+        }
+        const uint64_t tail = std::min(instanceTop_ * 4, held);
+        if (tail < held) spans.emplace_back(tail, held);
+        for (const auto& [from, to] : spans) {
+            for (uint64_t at = from; at < to; at += kStorageBlock) {
+                const uint64_t end = std::min(at + kStorageBlock, to);
+                if (!sameBytes(source + at, storage.uploaded.data() + at, end - at)) dirty(at, end);
+            }
+        }
+        if (bytes > held) dirty(held, bytes);
+        if (ranges.empty()) {
+            storage.uploaded.resize(bytes);  // it shrank: the bytes that remain are the ones the GPU holds
+            instancesUploaded = true;
+            continue;
+        }
+        const uint64_t first = ranges.front().first, last = ranges.back().first + ranges.back().second;
+        uint64_t dirtyBytes = 0;
+        for (const auto& range : ranges) dirtyBytes += range.second;
+        if (ranges.size() > kMaxWrites || dirtyBytes * 2 >= last - first) {  // mostly dirty, or many runs: one write over them all
+            ranges.assign(1, {first, last - first});
+        }
+        storage.uploaded.resize(bytes);
+        bool written = true;
+        for (const auto& [offset, length] : ranges) {
+            if (gpu_.writeBuffer(target, prefix + offset, source + offset, length) != GpuStatus::Ok) { written = false; break; }
+            std::memcpy(storage.uploaded.data() + offset, source + offset, length);
+        }
+        if (written) {
             storage.uploadedBuffer = target;
             storage.uploadedPrefix = prefix;
+            instancesUploaded = true;
+        } else {  // the copy no longer says what the GPU holds: the next frame sends all of it
+            storage.uploaded.clear();
+            storage.uploadedBuffer = Handle{};
         }
     }
 
+    if (instancesUploaded)  // the GPU holds what these places hold: the next plan may leave a place with this stamp alone
+        for (auto& [slot, stamp] : instancePlanned_) slot->stamp = stamp, slot->stamped = true;
     if (jointPrefix && !compilation) {
         if (jointBufferMoved && !bindGpuJoints(gpuJoints_)) throw std::runtime_error("TN_GPU_JOINTS: output resize refused");
         // Culled rigs keep disjoint trailing slots; no Bone data is inspected or repacked.
@@ -5932,6 +6048,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.keptShadowMaps = job.keptShadowMaps;
         lastFrame_.uniformBytes = job.uniformBytes;
         lastFrame_.paletteWrites = job.paletteWrites;
+        lastFrame_.instanceCopies = job.instanceCopies;
         waste::debugAdd(waste::counters().renderFrames);
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
         waste::debugAdd(waste::counters().shadowDraws, lastFrame_.shadowDraws);

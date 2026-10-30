@@ -801,3 +801,26 @@ no COOP/COEP); that lane is open.
 - Insight: 120 posed bone-reach boxes a frame cost more CPU than the 0.77 M culled shadow triangles save on the GPU.
   Price a cull by its per-frame test cost. The plain sun map's 6 ms GPU is not triangle-bound here.
 - Revisit when: the skin update already publishes a per-rig bound this frame, so the test reads it in O(1).
+
+### 2026-10-30 — Stress lab: keep the virtual-shadow instance index across frames (FG1b, PRD-773) — REJECT
+
+- Where: `DrawCache::shadowInstanceIndices`, lattice-keyed (`PageAtlas::lattice`, `pageRangeOnLattice`); patch kept in
+  `~/.cache/tmp-tn/stress-loop/lanes/fg1b-on-stack.patch`. Native red-green: a pan regrants the level and builds 0
+  indices (`virtual_shadow_page_draws_only_its_instances` section c); 197 native cases pass.
+- Result on the stack (rows #89-#92): CPU p95 17.79 → 18.04 ms vsync, 18.95 → 18.83 ms uncapped; p50 flat; GPU flat.
+- Insight: the mechanism works, but the index build was not FG1's CPU p95 cost. Look for that cost elsewhere in the
+  granting frames, and not in the per-level index.
+- Revisit when: a per-stage p95 split (PRD-771 meters at p95) names the granting-frame stage that grew with FG1.
+
+### 2026-10-30 — Stress lab: unchanged instanced draws skip the per-frame copy and compare (TR1 + TR1b, PRD-774) — KEEP
+
+- Where: `Renderer::renderPrepared` stable per-draw slots plus a stamp (store epoch, writes, version, count and a
+  never-reused `BufferStore::id()`); the stamp commits only after the upload returns Ok. Counter
+  `lastFrame().instanceCopies`.
+- Result on the stack (rows #85-#88): uncapped CPU frame p50 −4.9% and −7.6%, p95 18.13 → 17.64 ms, GPU p95
+  7.52 → 7.39 ms; vsync −2.5% and −3.7%. Upload bytes 3.32 → 2.10 MB a frame. Opus judge NEUTRAL.
+- Insight: the stress lab's 14,260 static instances are user `InstancedMesh` batches, not the auto-batcher, so the
+  copy sat in `renderPrepared`. TR1 alone (stable slots) moved bytes but not time; skipping the unchanged draw is
+  the part that pays.
+- Risk: a game that edits `instanceMatrix.array` without `needsUpdate` no longer sees the edit, which matches
+  three's own rule.

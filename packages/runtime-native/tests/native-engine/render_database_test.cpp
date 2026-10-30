@@ -1073,7 +1073,8 @@ void instanceCounts() {
 
 // Packed frame storage is uploaded once for the bytes it holds: a frame that repeats the same
 // instance matrices on the same buffer copies nothing, and a frame that moves one instance copies
-// the whole packed block once. Count and layout stay fixed, so only the bytes decide.
+// the 256-byte block that holds it once (TR1: it used to copy the whole packed array). Count and
+// layout stay fixed, so only the bytes decide.
 void unchangedFrameStorage() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -1154,12 +1155,149 @@ void unchangedFrameStorage() {
                 static_cast<unsigned long long>(packed), static_cast<unsigned long long>(grown),
                 static_cast<unsigned long long>(grownPacked), static_cast<unsigned long long>(palette),
                 static_cast<unsigned long long>(paletteBytes));
-    CHECK(changed == unchanged + packed);
+    CHECK(changed == unchanged + std::min<uint64_t>(256, packed));  // instance 0 sits in the first block
     CHECK(steadyMoved == unchanged);
     // PRD-754's main-pass rows (off by default) would also rewrite their indirect records, five words per draw.
     CHECK(grown == steadyMoved + grownPacked);
     CHECK(steadyGrown == unchanged);
     CHECK(palette == steadyGrown + paletteBytes);
+}
+
+// TR1: the `instances` storage kept each draw's instances in depth order, so a camera turn that swapped two
+// draws moved both draws' bytes and the frame re-sent the whole array. A draw now keeps its place, and only the
+// bytes that changed cross to the GPU. Two instanced draws, one at each side of the origin: the camera stands on
+// one side (A nearer), steps a little (the control: the order holds), then crosses to the other side (B nearer).
+// Every pose change rewrites the uniform arena alike, so the cross must send what the control sent.
+void instanceUploadIsStableAcrossACameraTurn() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    constexpr uint32_t countA = 300, countB = 200;
+    const auto instanced = [&](uint32_t count, double roughness, double x) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->roughness = roughness;
+        auto mesh = std::make_shared<InstancedMesh>(makeBoxGeometry(), material, count);
+        mesh->count = count;
+        mesh->frustumCulled = false;  // both draws stay in the frame whichever way the camera looks
+        mesh->position.set(x, 0, 0);
+        for (uint32_t i = 0; i < count; ++i) {
+            Matrix4 placement;
+            placement.makeTranslation(double(i % 20) * 0.2, double(i / 20) * 0.2, 0);
+            mesh->setMatrixAt(i, placement);
+        }
+        mesh->instanceMatrix->setNeedsUpdate();
+        scene.add(*mesh);
+        return mesh;
+    };
+    const auto a = instanced(countA, 0.6, -4);
+    const auto b = instanced(countB, 0.3, 4);
+    DirectionalLight light{Color().setHex(0xffffff), 3};  // no shadows: two plain instanced draws
+    light.position.set(3, 5, 8);
+    scene.add(light);
+    RenderDatabase database;
+    const auto pose = [&](double x) {
+        camera.position.set(x, 0, 12);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+    };
+    const auto frameUpload = [&](double x) {
+        pose(x);
+        const uint64_t before = renderer.gpu().queueWriteBytes();
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        const uint64_t sent = renderer.gpu().queueWriteBytes() - before;
+        renderer.poll();
+        events.drain();
+        return sent;
+    };
+    for (int warm = 0; warm < 4; ++warm) frameUpload(-12);  // capacity, storage buffers and pipelines ready
+    const uint64_t still = frameUpload(-12);
+    const uint64_t control = frameUpload(-12.5);  // a step: A stays nearer
+    const uint64_t cross = frameUpload(12);       // B is nearer now: the order of the two draws swapped
+    const uint64_t back = frameUpload(-12);       // and back
+    const uint64_t packed = uint64_t{countA + countB} * 20 * sizeof(float);
+    std::printf("instance upload over a camera turn: still %llu, control %llu, cross %llu, back %llu (both draws %llu)\n",
+                static_cast<unsigned long long>(still), static_cast<unsigned long long>(control),
+                static_cast<unsigned long long>(cross), static_cast<unsigned long long>(back),
+                static_cast<unsigned long long>(packed));
+    CHECK(still < control);  // a pose step does rewrite the uniform arena, so the control is a fair baseline
+    CHECK(cross == control);
+    CHECK(back == control);
+    // Work bound: ten more swaps send what one step sends, so no slot or byte accumulates with frames.
+    uint64_t total = 0;
+    for (int turn = 0; turn < 10; ++turn) total += frameUpload(turn % 2 == 0 ? 12 : -12);
+    CHECK(total == 10 * control);
+    (void)a;
+    (void)b;
+}
+
+// TR1: a draw that leaves the view keeps its place in the `instances` storage, so the draws that stay do not move and
+// the draw costs nothing to come back. Two instanced draws, A nearer: B sits after A in the storage. A hidden, the old
+// layout packed B to the front and re-sent it; A shown again, it re-sent both.
+void instancePlacesSurviveADrawLeavingTheView() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    constexpr uint32_t countA = 300, countB = 200;
+    const auto instanced = [&](uint32_t count, double roughness, double x) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->roughness = roughness;
+        auto mesh = std::make_shared<InstancedMesh>(makeBoxGeometry(), material, count);
+        mesh->count = count;
+        mesh->frustumCulled = false;
+        mesh->position.set(x, 0, 0);
+        for (uint32_t i = 0; i < count; ++i) {
+            Matrix4 placement;
+            placement.makeTranslation(double(i % 20) * 0.2, double(i / 20) * 0.2, 0);
+            mesh->setMatrixAt(i, placement);
+        }
+        mesh->instanceMatrix->setNeedsUpdate();
+        scene.add(*mesh);
+        return mesh;
+    };
+    const auto a = instanced(countA, 0.6, -4);
+    const auto b = instanced(countB, 0.3, 4);
+    DirectionalLight light{Color().setHex(0xffffff), 3};
+    light.position.set(3, 5, 8);
+    scene.add(light);
+    RenderDatabase database;
+    const auto frameUpload = [&](double x) {  // x < 0: A is nearer, so A is drawn first and B follows it
+        camera.position.set(x, 0, 12);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        const uint64_t before = renderer.gpu().queueWriteBytes();
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        const uint64_t sent = renderer.gpu().queueWriteBytes() - before;
+        renderer.poll();
+        events.drain();
+        return sent;
+    };
+    for (int warm = 0; warm < 4; ++warm) frameUpload(-12);
+    const uint64_t control = frameUpload(-12.5);
+    a->setVisible(false);
+    const uint64_t hidden = frameUpload(-12);
+    const uint64_t hiddenStill = frameUpload(-12.5);
+    a->setVisible(true);
+    const uint64_t shown = frameUpload(-12);
+    const uint64_t packedA = uint64_t{countA} * 20 * sizeof(float), packedB = uint64_t{countB} * 20 * sizeof(float);
+    std::printf("instance upload over a draw leaving the view: control %llu, hidden %llu, hidden still %llu, shown %llu (A %llu, B %llu)\n",
+                static_cast<unsigned long long>(control), static_cast<unsigned long long>(hidden),
+                static_cast<unsigned long long>(hiddenStill), static_cast<unsigned long long>(shown),
+                static_cast<unsigned long long>(packedA), static_cast<unsigned long long>(packedB));
+    // The uniform arena shrinks and grows with the draw count, so allow it a few blocks; B's instances are 16000 bytes.
+    CHECK(hidden < packedB);
+    CHECK(hiddenStill < packedB);
+    CHECK(shown < packedA);
+    (void)b;
 }
 
 // FM2: every draw's uniform block carries the frame's whole light and camera slab, so the plan used to
@@ -8272,7 +8410,87 @@ void drawRefreshGuardHoles() {
     }
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+// TR1b: an instanced draw whose stores did not move since the GPU got its bytes is left alone: the plan neither copies its
+// floats into `instances` nor compares them, so a static forest costs nothing per frame. Any write to its matrices or
+// colours, a change of count, or a new place for it, copies it again.
+void staticInstancesAreNotRecopied() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 72);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    Scene scene;
+    PerspectiveCamera camera(50, 96.0 / 72, 0.1, 100);
+    constexpr uint32_t countA = 300, countB = 200;
+    const auto instanced = [&](uint32_t count, double roughness, double x) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->roughness = roughness;
+        auto mesh = std::make_shared<InstancedMesh>(makeBoxGeometry(), material, count);
+        mesh->count = count;
+        mesh->frustumCulled = false;
+        mesh->position.set(x, 0, 0);
+        for (uint32_t i = 0; i < count; ++i) {
+            Matrix4 placement;
+            placement.makeTranslation(double(i % 20) * 0.2, double(i / 20) * 0.2, 0);
+            mesh->setMatrixAt(i, placement);
+        }
+        mesh->instanceMatrix->setNeedsUpdate();
+        scene.add(*mesh);
+        return mesh;
+    };
+    const auto a = instanced(countA, 0.6, -4);
+    const auto b = instanced(countB, 0.3, 4);
+    DirectionalLight light{Color().setHex(0xffffff), 3};
+    light.position.set(3, 5, 8);
+    scene.add(light);
+    RenderDatabase database;
+    struct Frame { uint32_t copies; uint64_t sent; };
+    const auto frame = [&](double x) {
+        camera.position.set(x, 0, 12);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        const uint64_t before = renderer.gpu().queueWriteBytes();
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        const Frame result{renderer.lastFrame().instanceCopies, renderer.gpu().queueWriteBytes() - before};
+        renderer.poll();
+        events.drain();
+        return result;
+    };
+    const Frame first = frame(-12);
+    for (int warm = 0; warm < 3; ++warm) frame(-12);
+    const Frame still = frame(-12);
+    const Frame turned = frame(12);  // the draws swap order; each keeps its place and its bytes
+    frame(-12);
+    std::printf("static instances: first copies %u, still copies %u (%llu B), turned copies %u (%llu B)\n", first.copies,
+                still.copies, static_cast<unsigned long long>(still.sent), turned.copies,
+                static_cast<unsigned long long>(turned.sent));
+    CHECK(first.copies == 2);
+    CHECK(still.copies == 0);
+    CHECK(turned.copies == 0);
+    // A matrix written and flagged copies that draw alone, and its new bytes reach the GPU.
+    Matrix4 moved;
+    moved.makeTranslation(9, 9, 0);
+    a->setMatrixAt(7, moved);
+    a->instanceMatrix->setNeedsUpdate();
+    const Frame edited = frame(-12);
+    CHECK(edited.copies == 1);
+    CHECK(edited.sent > still.sent);
+    CHECK(frame(-12).copies == 0);
+    // A colour write, a count change and a hidden-then-shown draw each copy exactly what they touched.
+    b->setColorAt(3, Color().setHex(0xff0000));
+    b->instanceColor->setNeedsUpdate();
+    CHECK(frame(-12).copies == 1);
+    CHECK(frame(-12).copies == 0);
+    a->count = 100;
+    CHECK(frame(-12).copies == 1);
+    CHECK(frame(-12).copies == 0);
+    a->count = countA;
+    CHECK(frame(-12).copies == 1);  // grown back: its stamp holds another count
+    CHECK(frame(-12).copies == 0);
+}
+
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

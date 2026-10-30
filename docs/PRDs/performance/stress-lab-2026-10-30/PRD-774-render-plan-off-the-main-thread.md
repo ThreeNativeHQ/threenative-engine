@@ -46,8 +46,8 @@ Lane state at 2026-10-30 06:00Z, all uncommitted:
 
 ### Phase 1 — TR1: upload only what changed
 
-- [ ] Per-draw slots and dirty-range uploads merge onto develop. A still scene uploads 0 instance bytes on its second frame. proof: native red-green case in `.worktrees/stress-fix-tr13`
-- [ ] Paired A/B: CPU frame p50 lower by more than 3%, and bytes uploaded per frame lower, with no visual change. proof: PRD-770 window rows
+- [x] Per-draw slots and dirty-range uploads merge onto develop. A still scene uploads 0 instance bytes on its second frame. proof: native red-green case in `.worktrees/stress-fix-tr13` — landed on perf/stress-lab-120 with TR1b (unchanged instanced draws skip the copy and compare): `static_instances_are_not_recopied` red with the skip off (copies 2 every frame), green with it (still 0, edit 1); renderer 53, render-database 113, vsm 3, vsm-atlas 10, pixel goldens render_vsm / render_vsm_open / render_instanced_geometry / vsm_reference_current pass (2026-10-30).
+- [x] Paired A/B: CPU frame p50 lower by more than 3%, and bytes uploaded per frame lower, with no visual change. proof: PRD-770 window rows — rows #85-#88 on top of the stack: uncapped CPU p50 13.55 -> 12.89 and 13.79 -> 12.74 (-4.9%, -7.6%), p95 18.13 -> 17.64, GPU p95 7.52 -> 7.39; vsync -2.5% / -3.7%. Upload 3.32 -> 2.10 MB/frame (TR1 audit). Opus judge NEUTRAL on the TR1b frames (visual/r5-*).
 
 ### Phase 2 — TR3: a pooled draw pack
 

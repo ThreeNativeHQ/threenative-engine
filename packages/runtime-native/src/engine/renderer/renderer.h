@@ -709,6 +709,9 @@ public:
         /** The skinned palettes the frame copied into its `boneMatrices` storage, and the GPU-joint rigs it placed:
          *  one per rig however many shadow pages draw it (FM8). */
         uint32_t paletteWrites = 0;
+        /** The instanced draws whose instance floats the plan copied into `instances`: a draw whose stores did not move
+         *  since the GPU got its bytes is left alone (TR1b), so a static forest costs nothing here. */
+        uint32_t instanceCopies = 0;
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -1383,6 +1386,21 @@ private:
     std::unordered_map<uint64_t, std::vector<uint64_t>> freeSlots_;  // freed offsets by block bytes
     std::unordered_map<uint64_t, uint32_t> slotUses_;  // this frame's occurrences per key
     uint64_t slotArena_ = 0, slotFrame_ = 0;
+    /** TR1: each instanced draw keeps its place in the `instances` storage, keyed by its matrix and colour stores, so a
+     *  reorder or a draw that leaves the view moves no other draw's bytes and the upload sends only what changed.
+     *  Offsets and counts are in floats (twenty per instance). A place unasked for in kInstanceSlotPlans plans is
+     *  dropped, and the storage starts over when the gaps outweigh the live places. */
+    /** `stamp` is what the draw's stores read (epoch, writes, version of the matrices and of the colours, instance count)
+     *  when the GPU last received this place; the same stamp next plan means the place's bytes are already in `instances`
+     *  and on the GPU, so the copy and the compare both skip it. It is committed only after the upload went through. */
+    using InstanceStamp = std::array<uint64_t, 7>;
+    struct InstanceSlot { uint64_t offset, count, seen; InstanceStamp stamp{}; bool stamped = false; };
+    std::map<std::pair<uint64_t, uint64_t>, InstanceSlot> instanceSlots_;  // keyed by the matrix and colour store ids
+    std::vector<std::pair<InstanceSlot*, InstanceStamp>> instancePlanned_;  // this plan's places, stamped once uploaded
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDirty_;  // float runs this plan copied: the only ones the upload scans
+    std::vector<std::pair<uint64_t, uint64_t>> instanceScan_;  // byte spans the upload compares
+    uint64_t instanceTop_ = 0;
+    static constexpr uint64_t kInstanceSlotPlans = 4096;
     /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
     uint64_t planSerial_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
