@@ -824,3 +824,13 @@ no COOP/COEP); that lane is open.
   the part that pays.
 - Risk: a game that edits `instanceMatrix.array` without `needsUpdate` no longer sees the edit, which matches
   three's own rule.
+
+### 2026-10-30 — Stress lab: image pixels cross into the engine as bytes, not boxed numbers (FL1, PRD-770) — KEEP
+
+- Where: `packages/three-native/src/browser-backend.ts` `toEngine`: a `Uint8ClampedArray` (an image's `getImageData`
+  pixels) now takes the typed-array fast path; `setImageBytes` in C++ already accepted it.
+- Result (rows #95-#96, vsync): stress-lab `loadMs` 1550 → 542 and 1490 → 501 ms (−65%, both pairs), below vanilla
+  three's 548.5 ms; CPU frame p50 +0.5% (inside noise). Red-green spec in `browser-backend-coverage.spec.ts`.
+- Insight: one 4096×2048 sky crossed as 33.5 M boxed numbers, written as 268 MB of float64: 1.56 s of a 1.98 s load
+  window. The rest of the scene built in 276 ms. Profile the load window before you suspect the scene build.
+- Next: FL2, the same image is read back twice through an `OffscreenCanvas` (about 180 ms).

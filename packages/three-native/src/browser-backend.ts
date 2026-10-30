@@ -1343,7 +1343,11 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-      if (runtime.typedArrays === true && SCALARS.some((scalar) => value instanceof scalar))
+      // An image's `getImageData` pixels are a Uint8ClampedArray: boxed into a list, a 4096x2048 sky took 1.4 s.
+      if (
+        runtime.typedArrays === true &&
+        (value instanceof Uint8ClampedArray || SCALARS.some((scalar) => value instanceof scalar))
+      )
         return value as TypedArray;
       // quality-allow: a typed-array view read as its numeric index signature, which ArrayBufferView does not declare.
       const list = Array.from(value as unknown as ArrayLike<number>);
