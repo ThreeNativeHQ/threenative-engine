@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The stress lab loop's measure step.
 //
-//   pnpm stress:loop record <report.json> --label "<text>" [--decision baseline|keep|reject] [--notes "<text>"]
+//   pnpm stress:loop record <report.json> --label "<text>" [--decision baseline|keep|reject|measure] [--engine <arm>] [--notes "<text>"]
 //   pnpm stress:loop show
 //   pnpm dashboard   # the Stress lab tab renders docs/stress-loop/ledger.json on each load
 import { readFileSync } from "node:fs";
@@ -18,7 +18,14 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = resolve(ROOT, "docs/stress-loop/ledger.json");
-const DECISIONS = ["baseline", "keep", "reject"];
+const DECISIONS = ["baseline", "keep", "reject", "measure"];
+/** The arms of the engine comparison: the same scene, the same report schema. */
+export const ENGINES = [
+  { key: "threenative-wasm", short: "ThreeNative (Wasm)" },
+  { key: "threenative-threejs", short: "ThreeNative (three.js engine)" },
+  { key: "three-vanilla", short: "Vanilla three.js" },
+  { key: "unreal", short: "Unreal 5.8.3" },
+];
 const PENDING =
   "pending: no stress-lab iterations yet. Run the stress-lab sandbox scene, then `pnpm stress:loop record <report.json> --label ...`";
 
@@ -160,11 +167,17 @@ export function measureReport(report) {
 }
 
 /** Append one measured row. Returns a new ledger; the input is not changed. */
-export function appendRow(ledger, row, { label, notes = "", decision, at = new Date() } = {}) {
+export function appendRow(
+  ledger,
+  row,
+  { label, notes = "", decision, engine = ENGINES[0].key, at = new Date() } = {},
+) {
   if (typeof label !== "string" || label === "") throw new Error("record needs --label");
   const chosen = decision ?? (ledger.iterations.length === 0 ? "baseline" : "keep");
   if (!DECISIONS.includes(chosen))
     throw new Error(`decision must be one of ${DECISIONS.join(", ")}`);
+  if (!ENGINES.some((item) => item.key === engine))
+    throw new Error(`engine must be one of ${ENGINES.map((item) => item.key).join(", ")}`);
   const id = ledger.iterations.reduce((top, item) => Math.max(top, item.id), 0) + 1;
   const next = {
     id,
@@ -172,6 +185,7 @@ export function appendRow(ledger, row, { label, notes = "", decision, at = new D
     commit: row.commit,
     label,
     decision: chosen,
+    engine,
     notes,
     preset: row.preset,
     layers: row.layers,
@@ -192,6 +206,20 @@ export const TRACKED = [
   { key: "gpuUploadKbP50", short: "GPU upload", unit: "KB/frame" },
   { key: "jsAllocKbP50", short: "JS alloc", unit: "KB/frame" },
 ];
+
+/** The report's other metrics: shown in the history and the engine comparison, no goal. */
+const MORE = [
+  { key: "gpuP50Ms", short: "GPU p50", unit: "ms" },
+  { key: "presentedP50Ms", short: "Presented p50", unit: "ms" },
+  { key: "frameP50Ms", short: "CPU frame p50", unit: "ms" },
+  { key: "updateP50Ms", short: "Update p50", unit: "ms" },
+  { key: "shadowDraws", short: "Shadow draws", unit: "draws" },
+  { key: "mainTrianglesM", short: "Triangles", unit: "M" },
+  { key: "longTasks", short: "Long tasks", unit: "" },
+  { key: "loadMs", short: "Load", unit: "ms" },
+];
+const ALL = [...GOALS, ...MORE, ...TRACKED];
+const engineOf = (row) => row.engine ?? ENGINES[0].key;
 
 const fmt = (value, unit = "") =>
   value === null || value === undefined
@@ -221,10 +249,23 @@ export function renderHtml(ledger, now = new Date()) {
       return `<div class="card"><h3>${esc(item.short)}</h3><p><b>${esc(fmt(current, item.unit))}</b> <span class="dim">p50, lower is better</span></p><p class="dim">baseline ${esc(fmt(base, item.unit))} · delta ${esc(delta(base, current, item.unit))}</p><span class="pill">tracked</span></div>`;
     }).join("");
   const charts = GOALS.map((goal) => lineChart(goal, rows)).join("");
+  const arms = ENGINES.map((engine) => ({
+    ...engine,
+    row: rows.findLast((row) => engineOf(row) === engine.key),
+  }));
+  const comparison = `<div class="scroll"><table><thead><tr><th>Metric</th>${arms
+    .map(
+      (arm) =>
+        `<th class="n">${esc(arm.short)}<br><span class="dim">${arm.row === undefined ? "pending" : esc(`#${arm.row.id} · ${arm.row.adapter} · ${arm.row.viewport}`)}</span></th>`,
+    )
+    .join("")}</tr></thead><tbody>${ALL.map(
+    (item) =>
+      `<tr><td>${esc(item.short)}</td>${arms.map((arm) => `<td class="n">${arm.row === undefined ? "pending" : esc(fmt(arm.row.metrics[item.key], item.unit))}</td>`).join("")}</tr>`,
+  ).join("")}</tbody></table></div>`;
   const history = rows
     .map(
       (row) =>
-        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${GOALS.map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}<td class="n">${esc(fmt(row.metrics.gpuP50Ms, "ms"))}</td>${TRACKED.map((item) => `<td class="n">${esc(fmt(row.metrics[item.key], item.unit))}</td>`).join("")}</tr>`,
+        `<tr><td>#${esc(row.id)}</td><td>${esc(row.at.slice(0, 10))}</td><td>${esc(row.commit)}</td><td>${esc(row.label)}</td><td>${esc(row.decision)}</td><td>${esc(engineOf(row))}</td><td>${esc(row.preset)}</td><td>${esc(row.adapter)}</td>${[...GOALS, ...MORE].map((goal) => `<td class="n">${esc(fmt(row.metrics[goal.key], goal.unit))}</td>`).join("")}${TRACKED.map((item) => `<td class="n">${esc(fmt(row.metrics[item.key], item.unit))}</td>`).join("")}</tr>`,
     )
     .join("");
   const header =
@@ -262,8 +303,10 @@ svg{width:100%;height:auto}
 <div class="grid3">${cards}</div>
 <h2>Trend per iteration</h2>
 <div class="grid3">${charts}</div>
+<h2>Engine comparison (same scene, latest row per engine)</h2>
+${comparison}
 <h2>Iterations</h2>
-<div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Preset</th><th>Adapter</th>${GOALS.map((goal) => `<th class="n">${esc(goal.short)}</th>`).join("")}<th class="n">GPU p50</th>${TRACKED.map((item) => `<th class="n">${esc(item.short)}</th>`).join("")}</tr></thead><tbody>${history || `<tr><td colspan="${7 + GOALS.length + 1 + TRACKED.length}" class="dim">pending</td></tr>`}</tbody></table></div>
+<div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Label</th><th>Decision</th><th>Engine</th><th>Preset</th><th>Adapter</th>${ALL.map((item) => `<th class="n">${esc(item.short)}</th>`).join("")}</tr></thead><tbody>${history || `<tr><td colspan="${8 + ALL.length}" class="dim">pending</td></tr>`}</tbody></table></div>
 </main></body></html>
 `;
 }
@@ -291,6 +334,7 @@ function main(argv) {
       label: get("--label"),
       notes: get("--notes") ?? "",
       decision: get("--decision"),
+      engine: get("--engine"),
     });
     writeAtomic(LEDGER, `${JSON.stringify(next, null, 2)}\n`);
     return console.log(`stress-loop row #${next.iterations.at(-1).id} recorded in ${LEDGER}`);
@@ -314,7 +358,7 @@ function main(argv) {
     return;
   }
   console.error(
-    "usage: stress-loop.mjs record <report.json> --label <text> [--decision baseline|keep|reject] [--notes <text>] | show",
+    "usage: stress-loop.mjs record <report.json> --label <text> [--decision baseline|keep|reject|measure] [--engine threenative-wasm|threenative-threejs|three-vanilla|unreal] [--notes <text>] | show",
   );
   process.exit(2);
 }

@@ -96,6 +96,41 @@ describe("stress-loop", () => {
     expect(html).toContain("#2");
   });
 
+  it("records the engine arm and compares every metric across engines", () => {
+    const wasm = appendRow(readLedger(ledgerPath()), measureReport(report()), { label: "wasm" });
+    expect(wasm.iterations[0].engine).toBe("threenative-wasm");
+    const both = appendRow(wasm, measureReport(report({ adapter: "unreal rtx" })), {
+      label: "unreal arm",
+      decision: "measure",
+      engine: "unreal",
+    });
+    expect(both.iterations[1]).toMatchObject({ engine: "unreal", decision: "measure" });
+    expect(() => appendRow(wasm, measureReport(report()), { label: "x", engine: "godot" })).toThrow(
+      /engine must be one of/,
+    );
+    const html = renderHtml(both, new Date(0));
+    expect(html).toContain("Engine comparison");
+    for (const name of [
+      "ThreeNative (Wasm)",
+      "ThreeNative (three.js engine)",
+      "Vanilla three.js",
+      "Unreal 5.8.3",
+    ])
+      expect(html).toContain(name);
+    for (const label of [
+      "Update p50",
+      "CPU frame p50",
+      "Presented p50",
+      "Shadow draws",
+      "Triangles",
+      "Long tasks",
+      "Load",
+    ])
+      expect(html).toContain(label);
+    expect(html).toContain("unreal rtx");
+    expect(html).toContain("850 ms");
+  });
+
   it("renders an empty ledger as pending", () => {
     expect(renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0))).toContain("pending");
   });
