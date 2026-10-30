@@ -3,15 +3,30 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
 #include "engine/abi/bindings.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/lights.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 using namespace tn::engine;
 using namespace tn::engine::shadows;
+
+namespace {
+// One number per page table, so a run before a change and a run after it compare in one line (`FNV-1a`).
+uint64_t tableDigest(const std::vector<float>& table) {
+    uint64_t hash = 0xcbf29ce484222325ull;
+    for (const float value : table) {
+        const uint32_t bits = std::bit_cast<uint32_t>(value);
+        for (int byte = 0; byte < 4; ++byte) { hash ^= (bits >> (8 * byte)) & 0xffu; hash *= 0x100000001b3ull; }
+    }
+    return hash;
+}
+} // namespace
 
 // The same registry setter is reached by the Wasm ABI and desktop V8 adapter.
 void binding() {
@@ -634,6 +649,31 @@ void panKeepsPages() {
     std::size_t dirty = 0;
     for (const auto& page : atlas->update(Vector3(4.5, 0, 0), sun)) dirty += page.level == 0;
     CHECK(dirty > 0 && dirty < 16);
+    // FS12: a page's identity is three integers. Twenty panning frames grant pages, evict pages and protect the
+    // deferred level's tiles on every one of them, and the table the shader reads stays byte-identical while no
+    // page key is formatted at all: the string set, its per-tile insert, its erase pass and the pool's string lookup
+    // are what the frame used to pay for.
+    waste::setDebugEnabled(true);
+    const uint64_t keysBefore = waste::counters().shadowPageKeyStrings.load();
+    uint64_t panDigest = 0xcbf29ce484222325ull;
+    std::size_t granted = 0;
+    for (int frame = 0; frame < 20; ++frame) {
+        granted += atlas->update(Vector3(4.5 + 0.5 * frame, 0, 0), sun).size();
+        const uint64_t digest = tableDigest(atlas->table());
+        if (frame == 0) std::printf("pan: frame digests");
+        std::printf(" %016llx", (unsigned long long)digest);
+        panDigest = (panDigest ^ digest) * 0x100000001b3ull;
+    }
+    const uint64_t keyStrings = waste::counters().shadowPageKeyStrings.load() - keysBefore;
+    waste::setDebugEnabled(false);
+    std::printf("\npan: %zu page(s) granted over 20 panning frames, table digest %016llx, page keys formatted %llu\n",
+                granted, (unsigned long long)panDigest, (unsigned long long)keyStrings);
+    CHECK(granted > 0);
+    CHECK(keyStrings == 0);  // no string per tile, per granted page or per pool lookup
+    // A window whose page coordinates do not fit a page's numeric identity (24 signed bits per axis) grants nothing:
+    // an aliased id would protect one tile and evict another. Guards the refusal `pageId`'s packing needs. (At a
+    // level's 0.0625 m page unit, 1e6 m is 1.6e7 pages: past the limit, and still an exact int.)
+    CHECK(atlas->update(Vector3(1e6, 0, 0), sun).empty());
 }
 
 // The readiness evidence a startup frame waits on: a level's window is granted one per update (the clipmap cuts

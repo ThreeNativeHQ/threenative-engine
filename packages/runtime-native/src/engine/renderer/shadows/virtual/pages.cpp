@@ -1,6 +1,7 @@
 #include "engine/renderer/shadows/virtual/pages.h"
 
 #include "engine/foundation/math/MathUtils.h"
+#include "engine/foundation/waste_counters.h"
 
 #include <algorithm>
 #include <array>
@@ -68,7 +69,19 @@ bool parseInteger(std::string_view text, int& value) {
 } // namespace
 
 std::string makePageKey(int level, int x, int y) {
+    // The counter is the work itself: a page's identity is three integers, so nothing on the atlas' own path may
+    // come here. vsm_atlas_test.cpp's pan_keeps_pages fails on a frame that formats one.
+    waste::debugAdd(waste::counters().shadowPageKeyStrings);
     return std::to_string(level) + ":" + std::to_string(x) + ":" + std::to_string(y);
+}
+
+std::string pageKeyOf(uint64_t id) {
+    // The inverse of `pageId`: 24 signed bits per axis, the level above them.
+    const auto axis = [](uint64_t bits) {
+        bits &= 0xFFFFFFu;
+        return int(int32_t(bits & 0x800000u ? bits | ~0xFFFFFFull : bits));
+    };
+    return makePageKey(int((id >> 48) & 0xFFFFu), axis(id >> 24), axis(id));
 }
 
 bool parsePageKey(std::string_view key, PageAddress& out) {
@@ -112,39 +125,40 @@ std::optional<PhysicalPagePool> PhysicalPagePool::create(int capacity, std::stri
     return pool;
 }
 
-const PhysicalPageEntry* PhysicalPagePool::get(const std::string& key) const {
-    const auto found = resident_.find(key);
+const PhysicalPageEntry* PhysicalPagePool::get(uint64_t id) const {
+    const auto found = resident_.find(id);
     return found == resident_.end() ? nullptr : &found->second;
 }
 
 std::vector<PhysicalPageEntry> PhysicalPagePool::entries() const {
     std::vector<PhysicalPageEntry> result;
     result.reserve(resident_.size());
-    for (const auto& [key, entry] : resident_)
+    for (const auto& [id, entry] : resident_)
         result.push_back(entry);
     std::sort(result.begin(), result.end(),
               [](const PhysicalPageEntry& a, const PhysicalPageEntry& b) { return a.slot < b.slot; });
     return result;
 }
 
-std::optional<PhysicalPageAllocation> PhysicalPagePool::allocate(const std::string& key, double frame, bool pinned,
-                                                                 const std::set<std::string>& protectedKeys) {
-    const auto resident = resident_.find(key);
+std::optional<PhysicalPageAllocation> PhysicalPagePool::allocate(uint64_t id, double frame, bool pinned,
+                                                                const std::unordered_set<uint64_t>& protectedIds) {
+    const auto resident = resident_.find(id);
     if (resident != resident_.end()) {
         resident->second.lastUsedFrame = frame;
         resident->second.pinned = resident->second.pinned || pinned;
-        return PhysicalPageAllocation{resident->second, true, false, {}};
+        return PhysicalPageAllocation{resident->second, true, false, 0};
     }
 
     int slot = 0;
-    std::string evictedKey;
+    uint64_t evictedId = 0;
     bool hasEvicted = false;
     if (freeSlots_.empty()) {
         // The least recently used unpinned, unprotected page; a slot tie breaks toward the lower
         // slot, exactly as the reference's `(lastUsedFrame, slot)` sort does.
         const PhysicalPageEntry* candidate = nullptr;
-        for (const auto& [key, entry] : resident_) {
-            if (entry.pinned || protectedKeys.count(entry.key) != 0)
+        for (const auto& [residentId, entry] : resident_) {
+            waste::debugAdd(waste::counters().shadowPageEvictionCandidates);
+            if (entry.pinned || protectedIds.count(entry.id) != 0)
                 continue;
             if (candidate == nullptr || entry.lastUsedFrame < candidate->lastUsedFrame ||
                 (entry.lastUsedFrame == candidate->lastUsedFrame && entry.slot < candidate->slot))
@@ -155,9 +169,9 @@ std::optional<PhysicalPageAllocation> PhysicalPagePool::allocate(const std::stri
             return std::nullopt;
         }
         slot = candidate->slot;
-        evictedKey = candidate->key;
+        evictedId = candidate->id;
         hasEvicted = true;
-        resident_.erase(candidate->key);
+        resident_.erase(evictedId);
         evictions_ += 1;
     } else {
         slot = freeSlots_.front();
@@ -165,9 +179,9 @@ std::optional<PhysicalPageAllocation> PhysicalPagePool::allocate(const std::stri
     }
 
     generation_ += 1;
-    const PhysicalPageEntry entry{key, slot, pinned, true, generation_, frame};
-    resident_[key] = entry;
-    return PhysicalPageAllocation{entry, false, hasEvicted, evictedKey};
+    const PhysicalPageEntry entry{id, slot, pinned, true, generation_, frame};
+    resident_[id] = entry;
+    return PhysicalPageAllocation{entry, false, hasEvicted, evictedId};
 }
 
 // -------------------------------------------------------------------------------------------

@@ -468,6 +468,18 @@ public:
         const auto it = virtualShadows_.find(light);
         return it == virtualShadows_.end() ? nullptr : &it->second.atlas;
     }
+    /**
+     * FS11: one record per light, one entry per position in the frame's frozen draw list. The frame's caster
+     * bookkeeping (bounds, diameter, whether the draw casts into this light) is a flat index, not two maps keyed by
+     * `DrawItem::key`, so a frame neither allocates a node per caster nor descends a tree per probe. The vector is
+     * reused between frames: an unchanged draw list keeps its storage.
+     */
+    struct CasterRecord {
+        Box3 bounds;
+        double diameter = 0;
+        bool casts = false;
+    };
+    [[nodiscard]] const std::map<std::size_t, std::vector<CasterRecord>>& casterRecords() const { return casterRecords_; }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
@@ -1120,6 +1132,8 @@ private:
         std::map<int, uint64_t> consumedCosts;
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
+    /** FS11: `virtualShadows_`' caster bookkeeping, indexed by the draw's position in `items`. */
+    std::map<std::size_t, std::vector<CasterRecord>> casterRecords_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
     std::map<std::size_t, uint64_t> mapSignatures_;
     /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */

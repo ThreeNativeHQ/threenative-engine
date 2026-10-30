@@ -90,6 +90,26 @@ struct Counters {
      * which is what tests/native-engine/render_database_test.cpp's virtual_shadow_page_jobs fails on.
      */
     std::atomic<uint64_t> shadowPageSelectionProbes{0};
+    /**
+     * Descents into a light's caster bookkeeping keyed by `DrawItem::key`: one per `count`/`at` of the two maps
+     * `renderPrepared` rebuilt every frame, in the state pass and in either page-selection path. FS11 made that
+     * bookkeeping a flat array indexed by the draw's position, so a frame owns no such container and adds none; a
+     * new per-draw map of casters must count itself here or
+     * tests/native-engine/render_database_test.cpp's virtual_shadow_page_jobs stops seeing it.
+     */
+    std::atomic<uint64_t> shadowCasterMapProbes{0};
+    /**
+     * Page keys formatted as strings (`makePageKey`) on the shadow atlas' own path: one per protected tile, per
+     * granted page and per page-pool lookup before FS12. A page's identity is three integers, so an atlas frame
+     * formats none; what tests/native-engine/vsm/vsm_atlas_test.cpp's pan_keeps_pages fails on.
+     */
+    std::atomic<uint64_t> shadowPageKeyStrings{0};
+    /**
+     * Resident entries the page pool's eviction scan visited: one per candidate it judged. A frame that evicts
+     * judges at most the pool's capacity, so a scan that grew past it (or one per page) is a regression the unit
+     * tests bound: tests/native-engine/vsm/vsm_pages_test.cpp's eviction_allocation.
+     */
+    std::atomic<uint64_t> shadowPageEvictionCandidates{0};
 };
 
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "the web back end reads the counters' bytes in place");

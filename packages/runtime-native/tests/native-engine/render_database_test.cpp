@@ -7618,6 +7618,13 @@ std::string shadowPlanWindow(const std::string& dump, std::size_t from) {
     return out;
 }
 
+// One number per plan, so a run before a change and a run after it compare in one line (`FNV-1a`).
+uint64_t shadowPlanDigest(const std::string& dump) {
+    uint64_t hash = 0xcbf29ce484222325ull;
+    for (const char byte : dump) { hash ^= static_cast<unsigned char>(byte); hash *= 0x100000001b3ull; }
+    return hash;
+}
+
 // FS9: `pageRange` is the inverse of `overlaps`, and the per-page index reads it. It must never miss a page the
 // scan would take — that is a missing shadow — so every page `overlaps` accepts has to lie inside the range: a
 // caster on a page edge lands in both cells, and one wholly outside the window reaches none.
@@ -7711,6 +7718,7 @@ void virtualShadowPageJobs() {
         waste::setDebugEnabled(true);
         flatShadowSelection() = true;
         const uint64_t flatBefore = waste::counters().shadowPageSelectionProbes.load();
+        const uint64_t casterMapsBefore = waste::counters().shadowCasterMapProbes.load();
         JobPool::resetShared(0);
         const uint64_t callerRuns = JobPool::runs();
         arms[0].database.render(*arms[0].renderer, arms[0].scene, arms[0].camera);
@@ -7723,6 +7731,12 @@ void virtualShadowPageJobs() {
         arms[1].database.render(*arms[1].renderer, arms[1].scene, arms[1].camera);
         const bool dispatched = JobPool::runs() > pooledRuns;
         const uint64_t indexedProbes = waste::counters().shadowPageSelectionProbes.load() - indexedBefore;
+        // FS11: the caster bookkeeping is a flat record indexed by the draw's position, so neither render descends a
+        // map of casters keyed by `DrawItem::key`. The two maps it replaced rebuilt from scratch every frame: two
+        // descents per draw to rebuild the states, twice per draw again to judge a page's candidates, an insert per
+        // caster into each tree. Both renders of the frame are inside this window, so any descent either path makes
+        // is counted here.
+        const uint64_t casterMapProbes = waste::counters().shadowCasterMapProbes.load() - casterMapsBefore;
         waste::setDebugEnabled(false);
         for (ShadowPageArm& arm : arms) registerShadowPageDraws(arm);
         const std::string serial = shadowPlanDump(*arms[0].renderer, arms[0]);
@@ -7741,12 +7755,14 @@ void virtualShadowPageJobs() {
         const uint64_t draws = arms[0].database.drawn().size();
         const uint64_t bound =
             draws * std::max<std::size_t>(grantedLevels.size(), 1) + rows;  // never draws x pages
-        std::printf("page jobs: frame %d, %zu items, %d shadow draws, %zu planned bytes, dispatch %s, plan %s, "
-                    "probes flat %llu indexed %llu (bound %llu, %zu row(s), %zu level(s))\n", frame,
+        std::printf("page jobs: frame %d, %zu items, %d shadow draws, %zu planned bytes, digest %016llx, dispatch %s, "
+                    "plan %s, probes flat %llu indexed %llu (bound %llu, %zu row(s), %zu level(s)), caster map probes "
+                    "%llu\n", frame,
                     arms[0].database.drawn().size(), arms[0].renderer->lastFrame().shadowDraws, serial.size(),
+                    (unsigned long long)shadowPlanDigest(serial),
                     dispatched ? "yes" : "no", difference == std::string::npos ? "identical" : "DIFFER",
                     (unsigned long long)flatProbes, (unsigned long long)indexedProbes,
-                    (unsigned long long)bound, rows, grantedLevels.size());
+                    (unsigned long long)bound, rows, grantedLevels.size(), (unsigned long long)casterMapProbes);
         if (difference != std::string::npos) {
             const std::size_t line = std::size_t(std::count(serial.begin(), serial.begin() + std::min(difference, serial.size()), '\n'));
             const std::size_t from = difference > 48 ? difference - 48 : 0;
@@ -7760,6 +7776,7 @@ void virtualShadowPageJobs() {
         CHECK(flatProbes > 0 && indexedProbes > 0);
         CHECK(flatProbes > indexedProbes);  // the index is the flat scan's work minus the pairs no page can take
         CHECK(indexedProbes <= bound);      // and it never grows with the page count, which flatProbes does
+        CHECK(casterMapProbes == 0);  // FS11: no map of casters is built, probed or scanned on a frame
     }
     // A small scene stays on the caller: a page or two of a handful of casters is no split.
     {
@@ -7818,6 +7835,49 @@ void virtualShadowPageJobs() {
         CHECK(JobPool::runs() > before);
     }
     shadowPageRangeCoversEveryOverlappingPage();
+    JobPool::resetShared(0);
+}
+
+// FS11: the caster record is one flat vector per light, one entry per position in the frame's frozen draw list. It
+// is reused between frames, so an unchanged draw list neither allocates nor moves it: the two maps it replaced were
+// rebuilt every frame, a tree node allocated and freed per caster, and probed twice per draw to rebuild the states.
+void casterRecordAllocatesPerFrame() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+    ShadowPageArm arm;
+    setupShadowPageArm(arm, context, false);
+    JobPool::resetShared(0);
+    arm.database.render(*arm.renderer, arm.scene, arm.camera);  // mints the group draws, and the record
+    registerShadowPageDraws(arm);
+    const std::size_t draws = arm.database.drawn().size();
+    const auto& records = arm.renderer->casterRecords();
+    std::printf("caster record: %zu recorded light(s), %zu draws\n", records.size(), draws);
+    CHECK(!records.empty());
+    if (records.empty()) return;
+    const std::vector<Renderer::CasterRecord>& record = records.begin()->second;
+    const Renderer::CasterRecord* const storage = record.data();
+    const std::size_t capacity = record.capacity();
+    std::size_t casters = 0;
+    for (const Renderer::CasterRecord& entry : record) casters += entry.casts;
+    CHECK(record.size() == draws);  // one entry per draw list position, and no others
+    CHECK(casters > 0 && casters <= draws);  // it tells a caster from a receiver with a bool, not a map probe
+    // The record assumes one key per caster: two draws sharing a key would have shared the two maps' last write.
+    std::set<uint64_t> casterKeys;
+    for (const DrawItem& item : arm.database.drawn()) if (item.castShadow) casterKeys.insert(item.key);
+    CHECK(casterKeys.size() == casters);
+    for (int frame = 0; frame < 3; ++frame) {
+        arm.database.render(*arm.renderer, arm.scene, arm.camera);
+        const auto& again = arm.renderer->casterRecords();
+        CHECK(again.size() == records.size());
+        const std::vector<Renderer::CasterRecord>& after = again.begin()->second;
+        // The same storage every frame, sized to the draw list: a vector reused, never rebuilt.
+        CHECK(after.size() == draws);
+        CHECK(after.capacity() == capacity);
+        CHECK(after.data() == storage);
+    }
+    std::printf("caster record: %zu draw(s), %zu caster(s), capacity %zu (%zu bytes), storage kept over 3 frames\n",
+                draws, casters, capacity, capacity * sizeof(Renderer::CasterRecord));
     JobPool::resetShared(0);
 }
 
@@ -7985,7 +8045,7 @@ void drawRefreshGuardHoles() {
     }
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

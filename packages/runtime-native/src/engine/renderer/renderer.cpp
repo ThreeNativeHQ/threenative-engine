@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cassert>
 #include <exception>
 #include <span>
 #include <deque>
@@ -2952,14 +2953,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
-    std::map<std::size_t, std::map<uint64_t, Box3>> casterBounds;
-    std::map<std::size_t, std::map<uint64_t, double>> casterDiameters;
     for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
         const uint32_t mask = lights.direct[i].shadow->layersMask;
-        auto& lightCasterBounds = casterBounds[i];
+        // FS11: one record per draw list position, sized to the frozen list and kept between frames. The two maps
+        // this replaced were rebuilt from scratch every frame: a tree node allocated per caster, an insert per
+        // caster into each, and two descents per draw to rebuild the states.
+        auto& record = casterRecords_[i];
+        record.assign(items.size(), {});
         std::vector<Box3> depthCasters, receivers;
         for (const DrawItem& item : items) {
             if ((!item.castShadow && !item.receiveShadow) || !item.positions || item.instanceCount == 0 || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
@@ -2968,7 +2971,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 (item.positionNode || item.nodes->positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
-            if (item.castShadow) { lightCasterBounds[item.key] = bounds; casterDiameters[i][item.key] = diameter; }
+            if (item.castShadow)
+                record[std::size_t(&item - items.data())] = CasterRecord{bounds, diameter, true};
             depthCasters.push_back(bounds);
             if (item.receiveShadow) receivers.push_back(bounds);
         }
@@ -2982,9 +2986,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
         std::vector<shadows::CasterState> states;
         for (const DrawItem& item : items) {
-            if (!lightCasterBounds.count(item.key)) continue;
+            const CasterRecord& caster = record[std::size_t(&item - items.data())];
+            if (!caster.casts) continue;
             shadows::CasterState state;
-            state.key = item.key; state.bounds = lightCasterBounds.at(item.key);
+            state.key = item.key; state.bounds = caster.bounds;
             state.world.elements = item.matrixWorld;
             state.signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
@@ -3705,6 +3710,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             std::vector<std::vector<const DrawItem*>> cell;  // tiles(level)^2 lists, each in draw-list order
         };
         const bool pageIndex = virtualMap && !compilation && passCount > 0 && !flatShadowSelection();
+        // FS11: a draw's position in the frame's frozen list is its caster record. `opaque` holds pointers into the
+        // same span (`sortDraws` pushes `&item`), so the subtraction is exact, not a lookup.
+        const std::vector<CasterRecord>* const record = virtualMap ? &casterRecords_[i] : nullptr;
+        const auto casterOf = [&](const DrawItem* drawn) -> const CasterRecord& {
+            const std::size_t index = std::size_t(drawn - items.data());
+            assert(record != nullptr && index < items.size() && drawn == &items[index]);
+            return (*record)[index];
+        };
         std::vector<LevelPages> levelPages;
         std::vector<const DrawItem*> moverCasters;
         std::map<int, std::size_t> levelSlot;
@@ -3730,13 +3743,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     // The gate the scan applied to a caster with fixed bounds, and then the bounds themselves: a
                     // GPU-displaced one has none to index by, so it stays on every page.
                     if (bounded(drawn)) {
-                        if (casterDiameters.at(i).at(drawn->key) < gate) continue;
+                        if (casterOf(drawn).diameter < gate) continue;
                         if (drawn->gpuJoints) {
                             for (auto& cell : level.cell) cell.push_back(drawn);
                             continue;
                         }
                         int x0, x1, y0, y1;
-                        atlas.pageRange(level.level, casterBounds.at(i).at(drawn->key), x0, x1, y0, y1);
+                        atlas.pageRange(level.level, casterOf(drawn).bounds, x0, x1, y0, y1);
                         for (int y = y0; y <= y1; ++y)
                             for (int x = x0; x <= x1; ++x)
                                 level.cell[std::size_t(y) * side + std::size_t(x)].push_back(drawn);
@@ -3761,7 +3774,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     // the flat scan — and a caster on a page's edge is on every cell it reaches.
                     for (const DrawItem* drawn : *candidates) {
                         if (!page->mover && bounded(drawn) && !drawn->gpuJoints &&
-                            !atlas.overlaps(*page, casterBounds.at(i).at(drawn->key))) continue;
+                            !atlas.overlaps(*page, casterOf(drawn).bounds)) continue;
                         selected.push_back(drawn);
                     }
                 } else {
@@ -3771,9 +3784,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         if (page) {
                             if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
                             if (!page->mover && bounded(drawn) &&
-                                casterDiameters.at(i).at(drawn->key) < atlas.casterGate(page->level)) continue;
+                                casterOf(drawn).diameter < atlas.casterGate(page->level)) continue;
                             if (!page->mover && bounded(drawn) && !drawn->gpuJoints &&
-                                !atlas.overlaps(*page, casterBounds.at(i).at(drawn->key))) continue;
+                                !atlas.overlaps(*page, casterOf(drawn).bounds)) continue;
                         }
                         selected.push_back(drawn);
                     }

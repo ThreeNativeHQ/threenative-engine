@@ -153,15 +153,21 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
     now_ += frameSeconds_;
     for (int l = 0; l < int(levels_.size()); ++l) clipmap_->setRefreshStep(l, refreshStep(l));
     const auto& windows = clipmap_->updateCenter(eye, !changed && !cameraCut);
+    // A page's identity packs 24 signed bits per axis (`pageId`); a window outside that range would give two
+    // pages one id, and a protected id then guards the wrong tile. Grant nothing instead (TN_VIRTUAL_SHADOW_INVALID
+    // reasons live in the caller): a level with no page draws no shadow, where an aliased id evicts one still in use.
+    for (const ClipWindow& window : windows)
+        if (window.minX < -kPageAxisLimit || window.maxX > kPageAxisLimit || window.minY < -kPageAxisLimit ||
+            window.maxY > kPageAxisLimit) return {};
     const auto center = clipmap_->project(eye);
     ++frame_;
     std::vector<AtlasPage> pages;
     // Protect all held levels until their own replacement has been rendered.
-    std::set<std::string> protectedKeys;
+    std::unordered_set<uint64_t> protectedIds;
     for (int l = 0; l < int(levels_.size()); ++l) if (levels_[l].mapped)
         for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
-            protectedKeys.insert(makePageKey(l, levels_[l].window.minX + x * options_.pageTexels,
-                                               levels_[l].window.minY + y * options_.pageTexels));
+            protectedIds.insert(pageId(l, levels_[l].window.minX + x * options_.pageTexels,
+                                       levels_[l].window.minY + y * options_.pageTexels));
     // The shipped TS node requests an entire granted clip window (its prototype's sparse
     // receiver-feedback path is not used by virtual-shadow.ts). Tile that same request into
     // physical pages; cached levels are neither cleared nor rendered.
@@ -177,7 +183,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         const bool matured = level.dirty && (level.urgent || now_ - level.lastRender >= std::max(at(options_.invalidationDelay, l), gpuDelay));
         if ((!moved && !matured) || (granted && !level.urgent)) continue;
         if (level.mapped) for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
-            protectedKeys.erase(makePageKey(l, level.window.minX + x * options_.pageTexels, level.window.minY + y * options_.pageTexels));
+            protectedIds.erase(pageId(l, level.window.minX + x * options_.pageTexels, level.window.minY + y * options_.pageTexels));
         const Matrix4 oldMatrix = level.matrix;
         bool partial = !moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
         // A pan keeps the pages the window still covers (UE 5.8.3 clipmap panning): a page key names a
@@ -241,10 +247,10 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         level.slots.clear();
         level.pages.clear();
         for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x) {
-            const std::string key = makePageKey(l, window.minX + x * options_.pageTexels, window.minY + y * options_.pageTexels);
-            const auto allocation = pool_->allocate(key, frame_, false, protectedKeys);
+            const uint64_t id = pageId(l, window.minX + x * options_.pageTexels, window.minY + y * options_.pageTexels);
+            const auto allocation = pool_->allocate(id, frame_, false, protectedIds);
             if (!allocation) { level.mapped = false; writeTable(); return {}; }
-            protectedKeys.insert(key);
+            protectedIds.insert(id);
             level.slots.push_back(allocation->entry.slot);
             const double texel = window.pageWorldSize, pad = options_.border * texel;
             const double texelV = texel * vScale, padV = options_.border * texelV;
