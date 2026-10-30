@@ -1,7 +1,7 @@
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const { abba, closeStrayPages, fileName, parseArm, poolRuns, saveRun, waitGpuIdle, waitQuiet } =
   await import(new URL("../stress-fair.mjs", import.meta.url).href);
@@ -123,7 +123,7 @@ describe("stress-fair (PRD-770)", () => {
   });
 
   it("writes every run to the out dir before pooling can refuse the window", () => {
-    const outDir = mkdtempSync(join(tmpdir(), "tn-fair-spec-"));
+    const outDir = makeTempDirSync("tn-fair-spec-");
     const run = (sha: string, index: number) => ({
       engine: "threenative-wasm",
       url: "http://127.0.0.1:5740/main.html?stress",
@@ -132,19 +132,22 @@ describe("stress-fair (PRD-770)", () => {
       report: { metrics: { fps: 60 }, counts: {} },
       index,
     });
-    const runs = [run("aaaaaaaaaaaa", 0), run("bbbbbbbbbbbb", 1)];
+    const firstRun = run("aaaaaaaaaaaa", 0);
+    const runs = [firstRun, run("bbbbbbbbbbbb", 1)];
     const options = { outDir, tag: "t" };
     for (const entry of runs) saveRun(options, "vsync", entry);
     // The pool refuses (two builds under one URL) after the evidence is on disk.
     expect(() => poolRuns(runs)).toThrow(/different builds/u);
     for (const index of [0, 1])
       expect(
-        existsSync(join(outDir, fileName("t", "vsync", `${runs[0].engine} ${runs[0].url}`, index))),
+        existsSync(
+          join(outDir, fileName("t", "vsync", `${firstRun.engine} ${firstRun.url}`, index)),
+        ),
       ).toBe(true);
   });
 
   it("writes 4 files for 4 runs of 2 arms: an arm's second run does not overwrite its first", () => {
-    const outDir = mkdtempSync(join(tmpdir(), "tn-fair-spec-"));
+    const outDir = makeTempDirSync("tn-fair-spec-");
     const arms = ["5740", "5742"].map((port) =>
       parseArm(`threenative-wasm=http://127.0.0.1:${port}/main.html?stress&arm=${port}`),
     );

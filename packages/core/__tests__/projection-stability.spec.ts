@@ -78,7 +78,9 @@ describe("a scene recorded again and again", () => {
     // Nor on a watched geometry: a buffer someone streamed into still fails it.
     stability.record(scene, scanProjection(scene, 4, workspace));
     expect(stability.holds(scene)).toBe(true);
-    geometry.attributes.position.needsUpdate = true;
+    const position = geometry.attributes.position;
+    if (position === undefined) throw new Error("box geometry lost its position");
+    position.needsUpdate = true;
     expect(stability.holds(scene)).toBe(false);
   });
 });

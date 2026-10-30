@@ -52,7 +52,7 @@ const report = (overrides: Record<string, unknown> = {}) => ({
 const ledgerPath = () => path.join(makeTempDirSync("stress-loop"), "ledger.json");
 
 /** A ledger with one measured row per engine, each with its own metric values. */
-const armLedger = (arms: Record<string, Record<string, number>>) =>
+const armLedger = (arms: Record<string, Record<string, number | null>>) =>
   Object.entries(arms).reduce(
     (ledger, [engine, metrics]) =>
       appendRow(
@@ -521,7 +521,7 @@ describe("stress-loop record (PRD-770)", () => {
     const html = renderHtml(ledger, new Date(0));
     const plain = html.slice(html.indexOf("Apples to apples"), html.indexOf("Virtual shadow maps"));
     const gpu =
-      (plain.split("<tr>").find((tr) => tr.startsWith("<td>GPU p95</td>")) ?? "").match(
+      (plain.split("<tr>").find((tr: string) => tr.startsWith("<td>GPU p95</td>")) ?? "").match(
         /<td class="n[^>]*>.*?<\/td>/gu,
       ) ?? [];
     expect(gpu[0]).toContain("12 ms");

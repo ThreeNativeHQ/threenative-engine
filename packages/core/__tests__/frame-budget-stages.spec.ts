@@ -93,7 +93,7 @@ describe("render-phase stages", () => {
     expect(stages.planVirtualPages).toBe(1.5);
     expect(stages.planDraws).toBe(0.5);
     expect(stages.planShadowLists).toBe(1);
-    const sum = RENDER_STAGES.reduce((total, name) => total + stages[name], 0);
+    const sum = RENDER_STAGES.reduce((total, name) => total + (stages[name] ?? Number.NaN), 0);
     expect(sum).toBeCloseTo(1.25 + 13.5 + 0.75, 10);
     for (const part of STAGE_PARTS) expect(RENDER_STAGES).not.toContain(part);
   });
