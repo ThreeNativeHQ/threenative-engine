@@ -1603,7 +1603,8 @@ describe("debug renderer observations", () => {
     renderer.render(scene, camera);
     // Existing renderer ABI census; debug reads existing observations only. The startup's own submission
     // count and shadow-input answer (fields 71, 72) are a held startup's, so a steady frame pays for neither.
-    expect(frame.mock.calls).toHaveLength(37);
+    // Field 73 (the shadow passes' triangles) is the one PRD-770 call that splits main from shadow.
+    expect(frame.mock.calls).toHaveLength(38);
     expect(malloc).toHaveBeenCalledTimes(1); // existing state-string allocation
     expect(debugTelemetry(module)).toBeUndefined();
 
@@ -1612,12 +1613,12 @@ describe("debug renderer observations", () => {
     renderer.setPresentationHeld(true);
     frame.mockClear();
     renderer.render(scene, camera);
-    expect(frame.mock.calls).toHaveLength(39);
+    expect(frame.mock.calls).toHaveLength(40);
     await new Promise((resolve) => setTimeout(resolve, 0));
     renderer.setPresentationHeld(false);
     frame.mockClear();
     renderer.render(scene, camera);
-    expect(frame.mock.calls).toHaveLength(37);
+    expect(frame.mock.calls).toHaveLength(38);
   });
 });
 

@@ -114,6 +114,37 @@ describe("render pass budget", () => {
     expect(passes.reduce((sum, pass) => sum + pass.draws, 0)).toBe(20);
   });
 
+  it("files the owned engine's shadow draws as a shadow pass, not as main (PRD-770)", () => {
+    // One render call whose info.render adds the shadow passes in, as web_host.cpp fields 0 and 1 do.
+    const raw = {
+      info: {
+        render: { calls: 0, drawCalls: 0, triangles: 0 },
+        engine: {
+          frameSplit: {
+            mainDraws: 174,
+            mainTriangles: 2_110_000,
+            shadowDraws: 60,
+            shadowTriangles: 4_960_000,
+          },
+        },
+      },
+      render(this: { info: { render: { drawCalls: number; triangles: number } } }) {
+        this.info.render.drawCalls += 234;
+        this.info.render.triangles += 7_070_000;
+      },
+    };
+    const budget = RenderPassBudget.install(
+      raw as unknown as Parameters<typeof RenderPassBudget.install>[0],
+    );
+    budget?.beginFrame();
+    raw.render();
+    const byKind = Object.fromEntries(
+      passesOf(budget as RenderPassBudget).map((pass) => [pass.kind, pass]),
+    );
+    expect(byKind.main).toMatchObject({ draws: 174, triangles: 2_110_000 });
+    expect(byKind.shadow).toMatchObject({ draws: 60, triangles: 4_960_000 });
+  });
+
   it("should read the WebGL2 fallback's calls counter", () => {
     // WebGL2 reports `calls` rather than WebGPU's `drawCalls`.
     const fallback = {

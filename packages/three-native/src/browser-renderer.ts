@@ -193,6 +193,9 @@ export function defineWebRenderer(
         graphKeys: 0,
         programs: 0,
         frameGateSkips: 0,
+        // The last frame's draws and triangles with the shadow passes apart from the main pass (web_host.cpp fields 0, 1, 27
+        // and 73). `info.render` adds them, as three's does; core's pass recorder reads this to report `main` and `shadow`.
+        frameSplit: { mainDraws: 0, mainTriangles: 0, shadowDraws: 0, shadowTriangles: 0 },
         // The startup's first real frame (web_host.cpp fields 71 and 72): the ordinary world submissions that encoded,
         // and whether the shadow inputs such a frame samples exist. Core holds presentation until both, and the
         // eye adaptation, say the world is ready; a bake step, an overlay, a declined draw or a failed one adds to
@@ -574,7 +577,8 @@ export function defineWebRenderer(
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
-      this.info.render.triangles += module._tnw_web_frame(1);
+      const lastTriangles = module._tnw_web_frame(1);
+      this.info.render.triangles += lastTriangles;
       const shadows = this.info.engine.shadows;
       shadows.lampRedraws = module._tnw_web_frame(25);
       shadows.lampDraws = module._tnw_web_frame(26);
@@ -583,6 +587,11 @@ export function defineWebRenderer(
       shadows.lampMapMax = module._tnw_web_frame(29);
       shadows.keptMaps = module._tnw_web_frame(40);
       this.info.engine.uniformBytes = module._tnw_web_frame(41);
+      const split = this.info.engine.frameSplit;
+      split.shadowDraws = shadows.shadowDraws;
+      split.shadowTriangles = module._tnw_web_frame(73);
+      split.mainDraws = this.info.render.frameCalls - split.shadowDraws;
+      split.mainTriangles = lastTriangles - split.shadowTriangles;
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         debug?.add(

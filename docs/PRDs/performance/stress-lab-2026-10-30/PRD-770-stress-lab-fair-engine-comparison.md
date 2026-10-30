@@ -27,21 +27,21 @@ Stress lab dashboard (`docs/stress-loop/ledger.json`, `scripts/stress-loop.mjs`)
 
 ### Phase 1 — pin and describe every arm
 
-- [ ] Every stress report carries the engine build identity (Wasm sha256 prefix and the package commit) and a non-empty `adapter`. `stress:loop record` refuses a row without them. proof: `pnpm exec vitest run scripts/__tests__/stress-loop.spec.ts`
-- [ ] Every arm reports main and shadow draws and triangles as separate fields: the Wasm host (`web_host.cpp:787-790`), vanilla (`extra`) and the three.js engine (TM1 counter fix). proof: three recorded rows with both fields
-- [ ] :5733 serves the develop Wasm, and the row's build identity matches `git -C .worktrees/<develop build> rev-parse HEAD`. proof: `sha256sum` of the served `tn-native-engine-web-threads.wasm` against the develop build
+- [x] Every stress report carries the engine build identity (Wasm sha256 prefix and the package commit) and a non-empty `adapter`. `stress:loop record` refuses a row without them. proof: `pnpm exec vitest run scripts/__tests__/stress-loop.spec.ts` Done 2026-10-30: `stress-loop.spec.ts` 5 new cases RED on develop, GREEN with `recordRun`; 90/90 with the stress-fair, render-pass-budget and browser-renderer specs.
+- [ ] Every arm reports main and shadow draws and triangles as separate fields: the Wasm host (`web_host.cpp:787-790`), vanilla (`extra`) and the three.js engine (TM1 counter fix). proof: three recorded rows with both fields Open 2026-10-30: Wasm and vanilla split (rows #59-#64: main 2.11 M on all arms; shadow 4.96 / 2.06 / 1.28 M); the three.js engine arm (TM1 counter) is not split yet.
+- [x] :5733 serves the develop Wasm, and the row's build identity matches `git -C .worktrees/<develop build> rev-parse HEAD`. proof: `sha256sum` of the served `tn-native-engine-web-threads.wasm` against the develop build Done 2026-10-30: served Wasm sha `4fb0aba5a921` = the fs1112 build (a15bf4fd1, engine sources identical to 0974fd3b8); rows carry `wasmSha`.
 
 ### Phase 2 — one fair window, as a repo command
 
-- [ ] `pnpm stress:loop fair <arms...>` runs the arms in ABBA order in one clean browser: no DevTools domains, no profiler, 1280x720 at DPR 1, 80 s per run. It promotes the scratch `~/.cache/tmp-tn/stress-loop/fair-window.sh` and `fair-measure.mjs`. proof: spec plus one recorded window
-- [ ] The window holds the measurement lock and the build lock, starts only after the 1-minute load stays under 4 for 60 s, and voids a run whose load rises above 6. proof: spec with a stubbed `/proc/loadavg`
-- [ ] Each window adds an uncapped throughput pass (`--disable-frame-rate-limit --disable-gpu-vsync`) beside the vsync pass, so FPS above 60 is visible. proof: a `?stress&plainShadow` row with fps > 60
-- [ ] The comparison shows only rows whose counts and shadow mode match the Wasm arm, and marks a mismatch ⚠️ outside best/worst. proof: spec
+- [x] `pnpm stress:loop fair <arms...>` runs the arms in ABBA order in one clean browser: no DevTools domains, no profiler, 1280x720 at DPR 1, 80 s per run. It promotes the scratch `~/.cache/tmp-tn/stress-loop/fair-window.sh` and `fair-measure.mjs`. proof: spec plus one recorded window Done 2026-10-30: `scripts/stress-fair.mjs`, window s770b 12/12 runs valid, ledger rows #59-#64; arms pooled by URL with flag values (`arm=develop` vs `arm=fb1`), each run saved before pooling (`stress-fair.spec.ts`).
+- [x] The window holds the measurement lock and the build lock, starts only after the 1-minute load stays under 4 for 60 s, and voids a run whose load rises above 6. proof: spec with a stubbed `/proc/loadavg` Done 2026-10-30: `stress-fair.spec.ts` stubbed load voids a run at 7.5; window s770 voided 3 of 6 uncapped runs at load 8.3-10.9. Added: stray-page close and GPU under 10% for 5 s before each run.
+- [x] Each window adds an uncapped throughput pass (`--disable-frame-rate-limit --disable-gpu-vsync`) beside the vsync pass, so FPS above 60 is visible. proof: a `?stress&plainShadow` row with fps > 60 Done 2026-10-30: row #63 `?stress&plainShadow` uncapped 99.9 fps (s770b).
+- [x] The comparison shows only rows whose counts and shadow mode match the Wasm arm, and marks a mismatch ⚠️ outside best/worst. proof: spec Done 2026-10-30: specs "marks an arm with other counts or another shadow mode" and "compares speed only between rows whose main and shadow triangles are within 2%".
 
 ### Phase 3 — the Unreal 5.8.3 arm
 
-- [ ] The Unreal scene matches: world sizes in metres, materials and colours from `Stress.ts` and `src/render/stress.ts`, and fires as sprites. A fresh visual judge reads CLOSE on a side-by-side at orbit second 10. proof: judge JSON in `sandbox/stress-lab-unreal/`
-- [ ] Stock and Lumen-off (`r.DynamicGlobalIlluminationMethod=0 r.ReflectionMethod=2`) rows are recorded from the CSV profiler at 1280x720 in a quiet window. proof: ledger rows with `--engine unreal`
+- [x] The Unreal scene matches: world sizes in metres, materials and colours from `Stress.ts` and `src/render/stress.ts`, and fires as sprites. A fresh visual judge reads CLOSE on a side-by-side at orbit second 10. proof: judge JSON in `sandbox/stress-lab-unreal/` Done 2026-10-30: fresh Opus judge reads CLOSE on `sandbox/stress-lab-unreal/judge/colors-side-by-side.png` and `side-by-side-run2.png` (geometry, materials, lights, fires CLOSE; shadows MATCH). Open nits: second-10 camera yaw, prop colours over-saturated (likely sRGB converted twice in `build_level_stress.py`).
+- [ ] Stock and Lumen-off (`r.DynamicGlobalIlluminationMethod=0 r.ReflectionMethod=2`) rows are recorded from the CSV profiler at 1280x720 in a quiet window. proof: ledger rows with `--engine unreal` Open 2026-10-30: the only Unreal timing (judge/unreal-run2.json, 15 s vsync, frame p50 13.97 / p95 15.64, GPU p95 12.82) is not a fair window; rows need an 80 s vsync + uncapped pair with the GPU idle guard.
 
 ## Blocked on
 

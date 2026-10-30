@@ -106,6 +106,23 @@ interface IRenderCounters {
  * cannot read a `userData` off is left unattributed rather than guessed at.
  */
 interface IInfoCounters {
+  /**
+   * The owned (Wasm) engine draws its shadow passes inside its one render call, so `info.render` adds them to the
+   * main camera's. It reports the two apart here, and the recorder files them as `main` and `shadow`, as three's nested
+   * shadow renders are.
+   */
+  readonly engine?:
+    | {
+        readonly frameSplit?:
+          | {
+              readonly mainDraws: number;
+              readonly mainTriangles: number;
+              readonly shadowDraws: number;
+              readonly shadowTriangles: number;
+            }
+          | undefined;
+      }
+    | undefined;
   readonly render?: IRenderCounters | undefined;
   update?(object: unknown, count: number, instanceCount: number): void;
 }
@@ -360,12 +377,19 @@ export class RenderPassBudget {
             parent.childTriangles += totalTriangles;
           }
           const drawsBySource = frame.unclassifiable === true ? undefined : frame.drawsBySource;
+          const split = frame.kind === "main" ? target.info?.engine?.frameSplit : undefined;
           this.#frame.push({
-            draws: Math.max(0, totalDraws - frame.childDraws),
+            draws: split?.mainDraws ?? Math.max(0, totalDraws - frame.childDraws),
             ...(drawsBySource === undefined ? {} : { drawsBySource }),
             kind: frame.kind,
-            triangles: Math.max(0, totalTriangles - frame.childTriangles),
+            triangles: split?.mainTriangles ?? Math.max(0, totalTriangles - frame.childTriangles),
           });
+          if (split !== undefined && split.shadowDraws > 0)
+            this.#frame.push({
+              draws: split.shadowDraws,
+              kind: "shadow",
+              triangles: split.shadowTriangles,
+            });
         }
         this.#attributeGpu(frame, offsets, allocatedBefore);
       }
