@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <cstdio>
 #include <cctype>
+#include <cstdlib>
 #include <cmath>
 #include <ctime>
 #include <unordered_map>
@@ -259,7 +260,7 @@ BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAttribute&
                           : a.name == "skinWeight"    ? item.skinWeights
                           : column                   ? item.instanceMatrices : nullptr;
     // Any other name is one of the geometry's own attributes (TSL attribute(name)).
-    for (const DrawItem::CustomAttribute& custom : item.attributes)
+    for (const DrawItem::CustomAttribute& custom : *item.attributes)
         if (!source && custom.name == a.name) source = custom.store;
     return source;
 }
@@ -268,7 +269,7 @@ BufferStore* vertexSourceOf(const DrawItem& item, const shader::VertexAttribute&
 uint64_t instanceStepMask(const shader::StageModule& vertex, const DrawItem& item) {
     uint64_t mask = 0;
     for (std::size_t i = 0; i < vertex.attributes.size() && i < 64; ++i)
-        for (const DrawItem::CustomAttribute& custom : item.attributes)
+        for (const DrawItem::CustomAttribute& custom : *item.attributes)
             if (custom.perInstance && custom.name == vertex.attributes[i].name) mask |= uint64_t(1) << i;
     return mask;
 }
@@ -280,16 +281,19 @@ bool viewportBinding(std::string_view name) {
 }
 
 bool readsPostTexture(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     return std::any_of(stage.bindings.begin(), stage.bindings.end(),
                        [](const shader::Binding& binding) { return postTextureBinding(binding.name); });
 }
 
 bool readsViewport(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     return std::any_of(stage.bindings.begin(), stage.bindings.end(),
                        [](const shader::Binding& binding) { return viewportBinding(binding.name); });
 }
 
 bool perDrawFragment(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     for (const shader::Binding& binding : stage.bindings)
         if (binding.name == "t_map" || binding.name == "t_normalMap" || binding.name == "t_env" ||
             binding.name == "t_reflector" || graphTextureBinding(binding.name) ||
@@ -300,6 +304,7 @@ bool perDrawFragment(const shader::StageModule& stage) {
 
 // A vertex stage that samples a graph texture (a positionNode's displacement map) binds it per draw.
 bool perDrawVertex(const shader::StageModule& stage) {
+    waste::debugAdd(waste::counters().programProbeScans);
     return std::any_of(stage.bindings.begin(), stage.bindings.end(),
                        [](const shader::Binding& binding) { return graphTextureBinding(binding.name); });
 }
@@ -439,6 +444,24 @@ fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3
 
 }  // namespace
 
+// FM3: the four probes above are pure functions of a program's stage modules, which never change once it
+// is built, so a draw reads the answer instead of scanning the bindings again every pass of every frame.
+// TN_PROGRAM_PROBES=per-draw resolves them on every call again (diagnostic): a test renders both arms and
+// compares the pixels.
+bool& perDrawProbes() {
+    static bool perDraw = [] {
+        const char* flag = std::getenv("TN_PROGRAM_PROBES");
+        return flag && std::strcmp(flag, "per-draw") == 0;
+    }();
+    return perDraw;
+}
+
+Renderer::DrawProbes Renderer::probesOf(const Program& program) {
+    if (!perDrawProbes()) return program.probes;
+    return {perDrawFragment(program.fragment), perDrawVertex(program.vertex), readsViewport(program.fragment),
+            readsPostTexture(program.fragment)};
+}
+
 // What a frame's plan holds for its encode half (PRD-613): everything renderPrepared resolved from
 // scene-owned data, so encodeFrame needs none of it. One job lives in the renderer and is reused.
 struct Renderer::Planned {
@@ -576,7 +599,7 @@ struct Renderer::FrameJob {
 };
 
 const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& item) {
-    const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints && !item.positionNode && !item.nodes.positionNode;
+    const bool cacheable = !item.boneMatrices && !item.morphGeometry && !item.gpuJoints && !item.positionNode && !item.nodes->positionNode;
     const BufferStore* instances = item.instanceMatrices;
     const ShadowBoundsKey key{item.positions, item.positions->version(), item.positions->epoch(), item.positions->writes(),
                              instances, instances ? instances->version() : 0, instances ? instances->epoch() : 0,
@@ -1679,16 +1702,22 @@ void Renderer::uploadMaterialTexture(WGPUTexture destination, const Texture& tex
 }
 
 const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& texture) {
-    // A render target's texture is that target's last render, borrowed from its own renderer.
-    if (const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock())) {
-        MaterialTexture& sampled = renderTargetTextures_[texture.ident.value()];
-        const WGPUTextureView view = renderTargetView(*this, *target);
-        if (sampled.view != view) {
-            if (sampled.view) dropMapGroups();  // a resized target's old view address may come back
-            sampled.view = view;
-            sampled.sampler = linearClampSampler();
+    // A render target's texture is that target's last render, borrowed from its own renderer; every other
+    // texture answers from its own record below. Ask the weak_ptr which one this is before locking it: a
+    // texture that never had a target holds no control block, and that is the shape most draws sample (FM3).
+    if (!texture.renderTarget.expired()) {
+        waste::debugAdd(waste::counters().textureTargetLocks);
+        const auto target = std::static_pointer_cast<RenderTarget>(texture.renderTarget.lock());
+        if (target) {
+            MaterialTexture& sampled = renderTargetTextures_[texture.ident.value()];
+            const WGPUTextureView view = renderTargetView(*this, *target);
+            if (sampled.view != view) {
+                if (sampled.view) dropMapGroups();  // a resized target's old view address may come back
+                sampled.view = view;
+                sampled.sampler = linearClampSampler();
+            }
+            return &sampled;
         }
-        return &sampled;
     }
     if (texture.storageTexture) (void)texture.storageFormat();
     // Match WebGPUTextureUtils: FloatType stays RGBA32Float, HalfFloatType RGBA16Float; sRGB byte
@@ -2357,6 +2386,11 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
         for (int field = 0; field < kLightFieldCount; ++field)
             if (f.name.compare(end, std::string::npos, kLightFieldNames[field]) == 0) program.lightSlots[index][field] = &f;
     }
+    // FM3: what the stage modules alone decide about a draw of this program, resolved once here beside the
+    // slots above. A program is immutable once built, so every draw of every pass of every frame reads these
+    // instead of scanning the bindings again (perDrawFragment and its siblings).
+    program.probes = {perDrawFragment(program.fragment), perDrawVertex(program.vertex), readsViewport(program.fragment),
+                      readsPostTexture(program.fragment)};
 }
 
 Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
@@ -2537,9 +2571,10 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     built->fragment = std::move(fragment);
     buildLayouts(*built, key);
     if (uniformCapacity_ != 0) {
+        const DrawProbes probes = probesOf(*built);
         for (int g = 0; g < 2; ++g) {
-            if (g == 1 && perDrawFragment(built->fragment)) continue;  // per-draw groups instead
-            if (g == 0 && perDrawVertex(built->vertex)) continue;
+            if (g == 1 && probes.fragmentPerDraw) continue;  // per-draw groups instead
+            if (g == 0 && probes.vertexPerDraw) continue;
             built->groups[g] = bindGroup(built->layouts[g], g == 0 ? built->vertex : built->fragment, uniformBuffer_,
                                          lutView_, lutSampler_);
         }
@@ -2555,9 +2590,10 @@ void Renderer::rebuildGroups() {
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program
+        const DrawProbes probes = probesOf(*program);
         for (int g = 0; g < 2; ++g) {
             if (program->groups[g]) wgpuBindGroupRelease(program->groups[g]);
-            program->groups[g] = (g == 1 && perDrawFragment(program->fragment)) || (g == 0 && perDrawVertex(program->vertex))
+            program->groups[g] = (g == 1 && probes.fragmentPerDraw) || (g == 0 && probes.vertexPerDraw)
                                      ? nullptr
                                      : bindGroup(program->layouts[g], g == 0 ? program->vertex : program->fragment,
                                                  uniformBuffer_, lutView_, lutSampler_);
@@ -2799,6 +2835,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                            traaCounts_->rejected, traaCounts_->clamped, traaCounts_->pixels, traaCounts_->frame};
     }
     const Matrix& view = camera.matrixWorldInverse;
+    ++planSerial_;  // FM2: a program's frame slab is one plan old at most
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
     // A sibling replaced or released a shared map texture: this renderer's groups may bind its old view.
@@ -2877,7 +2914,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if ((!item.castShadow && !item.receiveShadow) || !item.positions || item.instanceCount == 0 || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
             // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
             if (item.castShadow && shadow.atlas.options().autoDepth &&
-                (item.positionNode || item.nodes.positionNode || item.gpuJoints))
+                (item.positionNode || item.nodes->positionNode || item.gpuJoints))
                 throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item);
             if (item.castShadow) { lightCasterBounds[item.key] = bounds; casterDiameters[i][item.key] = diameter; }
@@ -2900,7 +2937,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             state.world.elements = item.matrixWorld;
             state.signature = std::to_string(item.positions->version());
             if (item.instanceMatrices) state.signature += ":" + std::to_string(item.instanceMatrices->version()) + ":" + std::to_string(item.instanceCount);
-            state.deforming = item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry;
+            state.deforming = item.positionNode || item.nodes->positionNode || item.boneMatrices || item.morphGeometry;
             state.tracked = (item.layers & (1u << 29)) != 0;
             state.automatic = (item.layers & 1u) != 0;
             const auto& control = *shadow.atlas.options().control;
@@ -3237,7 +3274,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             v.morphNormals = !item.morphGeometry->morphNormals.empty();
         }
         v.positionNode = item.positionNode;
-        v.nodes = item.nodes;
+        v.nodes = *item.nodes;
         v.environment = item.envMap != nullptr;
         v.map = item.map != nullptr;
         v.normalMap = item.normalMap != nullptr;
@@ -3339,7 +3376,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     } else {
         frameUniforms_.clear();
     }
-    const auto uniformBlocks = [&](uint64_t slotKey, uint64_t bytes) -> uint64_t {
+    const auto uniformBlocks = [&](uint64_t slotKey, uint64_t bytes, bool zero = true) -> uint64_t {
         const auto append = [&] {
             const uint64_t at = frameUniforms_.size();
             frameUniforms_.resize(at + bytes, 0);
@@ -3360,8 +3397,65 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             slot = uniformSlots_.find(slotKey);
         }
         slot->second.seen = slotFrame_;
-        std::memset(frameUniforms_.data() + slot->second.offset, 0, bytes);
+        if (zero) std::memset(frameUniforms_.data() + slot->second.offset, 0, bytes);
         return slot->second.offset;
+    };
+    // FM2: the fields every draw of a frame writes the same bytes for — the light slab, the camera slots, the
+    // shadow noise term, hemisphere and ambient — in a slot's own layout (v then f). A draw used to evaluate
+    // them into its own slot: roughly two thirds of a lit draw's slot writes, and the reason a whole arena was
+    // re-uploaded every frame. They are frame-constant, so this writes them where the caller says: once into a
+    // program's slab, and no longer once per draw. `fog` stays per draw: `item.fog` is the draw's own pointer, so a
+    // slab would need every draw of the program to share one.
+    const std::array<double, 3> cameraPosition{camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]};
+    const auto putFrameConstants = [&](std::vector<uint8_t>& block, uint64_t v, uint64_t f, Program& program) {
+        waste::count(waste::counters().uniformFrameConstantEvaluations);
+        const auto* vs = program.vertexSlots;
+        const auto* fs = program.fragmentSlots;
+        put(block, v, vs[kViewMatrix], view);
+        put(block, v, vs[kProjectionMatrix], camera.projectionMatrix);
+        put(block, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
+        for (const auto [base, slots] : {std::pair{v, vs}, std::pair{f, fs}}) {
+            put(block, base, slots[kCameraPosition], cameraPosition);  // TSL's camera accessors, either stage
+            put(block, base, slots[kCameraProjectionMatrix], camera.projectionMatrix);
+            put(block, base, slots[kCameraWorldMatrix], camera.matrixWorld);
+            put(block, base, slots[kCameraNear], std::array<double, 1>{camera.near});
+            put(block, base, slots[kCameraFar], std::array<double, 1>{camera.far});
+            put(block, base, slots[kScreenSize], std::array<double, 2>{double(inputWidth_), double(inputHeight_)});  // a vertex stage projects by hand
+        }
+        for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
+            const DirectLight& l = lights.direct[i];
+            const auto& slot = program.lightSlots[i];
+            put(block, f, slot[kLightColor], l.color);
+            put(block, f, slot[kLightDirection], rotate(view, l.direction));
+            put(block, f, slot[kLightAxis], rotate(view, l.direction));
+            put(block, f, slot[kLightPosition], transformPoint(view, l.position));
+            put(block, f, slot[kLightDistance], std::array<double, 1>{l.distance});
+            put(block, f, slot[kLightDecay], std::array<double, 1>{l.decay});
+            put(block, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
+            put(block, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
+            put(block, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
+            if (l.shadow) {
+                put(block, f, slot[kLightShadowMatrix], l.shadow->matrix);
+                put(block, f, slot[kLightShadowBias], std::array<double, 1>{l.shadow->bias});
+                put(block, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
+                put(block, f, slot[kLightShadowRadius], std::array<double, 1>{l.shadow->radius});
+                put(block, f, slot[kLightShadowMapSize],
+                    std::array<double, 2>{double(mapExtent(i)[0]), double(mapExtent(i)[1])});
+                put(block, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
+                put(block, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
+                put(block, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
+                if (const auto& soft = l.shadow->sourceRadiusFilter) {
+                    put(block, f, slot[kLightShadowSourceRadius],
+                        std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
+                    put(block, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
+                }
+            }
+        }
+        put(block, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
+        put(block, f, fs[kHemisphereSky], lights.hemisphereSky);
+        put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
+        put(block, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
+        put(block, f, fs[kAmbient], lights.ambient);
     };
     for (const auto& [depthKey, drawn] : opaque) {
         const DrawItem& item = *drawn;
@@ -3410,33 +3504,30 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const uint64_t slotKey = stablePasses_ && item.key && !item.transparent
                                      ? item.key * 0x9e3779b97f4a7c15ull + slotUses_[item.key]++
                                      : 0;
-        const uint64_t v = uniformBlocks(slotKey, aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize));
+        const uint64_t slotBytes = aligned(program.vertex.uniformBlockSize) + aligned(program.fragment.uniformBlockSize);
+        if (program.frameSlabSerial != planSerial_) {  // once per program per frame, not once per draw
+            program.frameSlab.assign(slotBytes, 0);
+            putFrameConstants(program.frameSlab, 0, aligned(program.vertex.uniformBlockSize), program);
+            program.frameSlabSerial = planSerial_;
+        }
+        const uint64_t v = uniformBlocks(slotKey, slotBytes, false);  // the copy below writes every byte
         const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
         const auto* vs = program.vertexSlots;
         const auto* fs = program.fragmentSlots;
+        std::memcpy(frameUniforms_.data() + v, program.frameSlab.data(), slotBytes);
         put(frameUniforms_, v, vs[kModelMatrix], item.matrixWorld);
         if (item.instanceMatrices) put(frameUniforms_, v, vs[kInstanceBase], std::array<double, 1>{instanceBases.at(&item)});
-        put(frameUniforms_, v, vs[kViewMatrix], view);
-        put(frameUniforms_, v, vs[kProjectionMatrix], camera.projectionMatrix);
         put(frameUniforms_, v, vs[kNormalMatrix], normalMatrix(multiply(view, item.matrixWorld)));
         putSkin(v, vs, item);
         const shader::StandardMaterial& m = *item.material;
         put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
-        put(frameUniforms_, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
         put(frameUniforms_, f, fs[kModelMatrix], item.matrixWorld);
-        // TSL's camera accessors, read by node graphs in either stage.
-        const std::array<double, 3> cameraPosition{camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]};
         // three's modelNormalMatrix (transformNormalToView), only for a program that reads it.
         const bool modelNormal = vs[kModelNormalMatrix] || fs[kModelNormalMatrix];
         const std::array<double, 9> modelNormalMatrix = modelNormal ? normalMatrix(item.matrixWorld) : std::array<double, 9>{};
-        for (const auto [base, slots] : {std::pair{v, vs}, std::pair{f, fs}}) {
-            if (modelNormal) put(frameUniforms_, base, slots[kModelNormalMatrix], modelNormalMatrix);
-            put(frameUniforms_, base, slots[kCameraPosition], cameraPosition);
-            put(frameUniforms_, base, slots[kCameraProjectionMatrix], camera.projectionMatrix);
-            put(frameUniforms_, base, slots[kCameraWorldMatrix], camera.matrixWorld);
-            put(frameUniforms_, base, slots[kCameraNear], std::array<double, 1>{camera.near});
-            put(frameUniforms_, base, slots[kCameraFar], std::array<double, 1>{camera.far});
-            put(frameUniforms_, base, slots[kScreenSize], std::array<double, 2>{double(inputWidth_), double(inputHeight_)});  // a vertex stage projects by hand
+        if (modelNormal) {
+            put(frameUniforms_, v, vs[kModelNormalMatrix], modelNormalMatrix);
+            put(frameUniforms_, f, fs[kModelNormalMatrix], modelNormalMatrix);
         }
         put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
         // NodeMaterial forces alpha to 1 only on an opaque NormalBlending material.
@@ -3487,48 +3578,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, f, fs[kPmremTexelHeight], std::array<double, 1>{pmrem.texelHeight});
             put(frameUniforms_, f, fs[kPmremMaxMip], std::array<double, 1>{pmrem.maxMip});
         }
-        for (std::size_t i = 0; i < lights.direct.size() && i < program.lightSlots.size(); ++i) {
-            const DirectLight& l = lights.direct[i];
-            const auto& slot = program.lightSlots[i];
-            put(frameUniforms_, f, slot[kLightColor], l.color);
-            put(frameUniforms_, f, slot[kLightDirection], rotate(view, l.direction));
-            put(frameUniforms_, f, slot[kLightAxis], rotate(view, l.direction));
-            put(frameUniforms_, f, slot[kLightPosition], transformPoint(view, l.position));
-            put(frameUniforms_, f, slot[kLightDistance], std::array<double, 1>{l.distance});
-            put(frameUniforms_, f, slot[kLightDecay], std::array<double, 1>{l.decay});
-            put(frameUniforms_, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
-            put(frameUniforms_, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
-            put(frameUniforms_, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
-            if (l.shadow) {
-                put(frameUniforms_, f, slot[kLightShadowMatrix], l.shadow->matrix);
-                put(frameUniforms_, f, slot[kLightShadowBias], std::array<double, 1>{l.shadow->bias});
-                put(frameUniforms_, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
-                put(frameUniforms_, f, slot[kLightShadowRadius], std::array<double, 1>{l.shadow->radius});
-                put(frameUniforms_, f, slot[kLightShadowMapSize],
-                    std::array<double, 2>{double(mapExtent(i)[0]), double(mapExtent(i)[1])});
-                put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
-                put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
-                put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
-                if (const auto& soft = l.shadow->sourceRadiusFilter) {
-                    put(frameUniforms_, f, slot[kLightShadowSourceRadius],
-                        std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
-                    put(frameUniforms_, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
-                }
-            }
-        }
-        put(frameUniforms_, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
-        put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
-        put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
-        put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
-        put(frameUniforms_, f, fs[kAmbient], lights.ambient);
         if (item.sprite) for (const auto& field : program.vertex.uniforms) {
             if (field.name == "spriteCenter") put(frameUniforms_, v, &field, item.spriteCenter);
             if (field.name == "spriteRotation") put(frameUniforms_, v, &field, std::array<double, 1>{item.spriteRotation});
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
-        putNodes(frameUniforms_, f, program.fragment, item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         plan.back().slot = slotKey;
     }
@@ -3569,7 +3626,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
                     // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving
                     // there neither costs a draw nor invalidates the lamp's cached map (PRD-650).
-                    if (lamp && shadow.far > 0 && drawn->shadowObject && !drawn->positionNode && !drawn->nodes.positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
+                    if (lamp && shadow.far > 0 && drawn->shadowObject && !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
                         const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
                             ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
                             : drawn->shadowObject->type() == "Mesh" && static_cast<const Mesh*>(drawn->shadowObject)->geometry
@@ -3585,11 +3642,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     if (page) {
                         const auto& atlas = virtualIt->second.atlas;
                         if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
-                        if (!page->mover && !drawn->positionNode && !drawn->nodes.positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
+                        if (!page->mover && !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry) {
                             if (casterDiameters.at(i).at(drawn->key) < atlas.casterGate(page->level)) continue;
                         }
                     }
-                    if (page && !page->mover && !drawn->positionNode && !drawn->nodes.positionNode && !drawn->boneMatrices && !drawn->morphGeometry &&
+                    if (page && !page->mover && !drawn->positionNode && !drawn->nodes->positionNode && !drawn->boneMatrices && !drawn->morphGeometry &&
                         !drawn->gpuJoints && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(drawn->key))) continue;
                     selected.push_back(drawn);
                 }
@@ -3650,7 +3707,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const DrawItem& item = *selected;
             shader::VertexVariant variant = variantOf(item);
             // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
-            if (variant.alphaHash && (item.nodes.colorNode || item.nodes.opacityNode || variant.vertexColors == 4))
+            if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
                 throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
             const bool masked = item.material->alphaTest > 0;
             DrawCache* cache = item.cache;
@@ -3724,7 +3781,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
                 for (const Planned& p : shadowPasses[k].draws) {
                     const DrawItem& item = *p.item;
-                    animated |= item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                    animated |= item.positionNode || item.nodes->positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
                     mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
                     mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
                     mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
@@ -3772,7 +3829,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
                 put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], kept.projection);
                 putSkin(v, program.vertexSlots, item);
-                putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
+                putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
                 planned.vertexOffset = static_cast<uint32_t>(v);
                 planned.fragmentOffset = static_cast<uint32_t>(fragmentBlock ? f : 0);
             }
@@ -3792,7 +3849,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             // Alpha-tested and alpha-hashed draws need no coverage test here: the equal depth test keeps only the
             // fragments the main pass kept (UE 5.8.3 writes velocity for masked materials).
             const bool unsupported = item.morphGeometry || item.sprite || item.background ||
-                item.positionNode || item.nodes.vertexNode || item.transparent;
+                item.positionNode || item.nodes->vertexNode || item.transparent;
             const auto skip = [&](const char* reason) {
                 if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
                 const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
@@ -3872,11 +3929,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     std::memcpy(frameUniforms_.data() + offset + field.offset,
                         frameUniforms_.data() + draw.vertexOffset + from->offset, field.size);
             }
-            putNodes(frameUniforms_, offset, velocity.vertex, item.nodes, frameTime_, frameDelta_, lights);
+            putNodes(frameUniforms_, offset, velocity.vertex, *item.nodes, frameTime_, frameDelta_, lights);
             const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
             const bool instancesMoved = item.instanceMatrices && (!previous || previous->instanceHash != current.instanceHash);
             const std::array<double, 1> dynamic{
-                previousModel != item.matrixWorld || item.nodes.positionNode || item.boneMatrices || instancesMoved ? 1.0 : 0.0};
+                previousModel != item.matrixWorld || item.nodes->positionNode || item.boneMatrices || instancesMoved ? 1.0 : 0.0};
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, previousModel);
@@ -3893,7 +3950,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     ? previous->uniforms.data() : frameUniforms_.data() + offset;
                 std::memcpy(frameUniforms_.data() + offset + field.offset, retained + from->offset, field.size);
             }
-            if (item.nodes.positionNode || item.boneMatrices || item.instanceMatrices)  // previous boneBase, instanceBase
+            if (item.nodes->positionNode || item.boneMatrices || item.instanceMatrices)  // previous boneBase, instanceBase
                 current.uniforms.assign(frameUniforms_.begin() + offset,
                     frameUniforms_.begin() + offset + velocity.vertex.uniformBlockSize);
             const bool changedBuffers = previous && previous->buffers != current.buffers;
@@ -3944,7 +4001,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // Standard and Physical programs lead their fragment block with metalness and roughness.
         // A material node that replaces either one has no such field: the draw writes no surface (alpha 0).
         const bool surface = (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical) &&
-                             !item.nodes.metalnessNode && !item.nodes.roughnessNode;
+                             !item.nodes->metalnessNode && !item.nodes->roughnessNode;
         auto& fragment = (surface ? surfaceFragments_ : normalFragments_)[item.flatShading ? 2 : size_t(item.side == 2)];
         if (fragment.wgsl.code.empty()) {
             shader::Program f{shader::Stage::Fragment};
@@ -3975,7 +4032,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
                 continue;
             }
-            if (normalPass && item.nodes.normalNode)
+            if (normalPass && item.nodes->normalNode)
                 throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
             const bool cut = item.material->alphaTest > 0 || item.material->alphaHash;
             const shader::StageModule* fragment =
@@ -4075,12 +4132,54 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (uniformCapacity_ != 0) gpu_.destroy(uniformBuffer_);
         uniformCapacity_ = std::max<uint64_t>(frameUniforms_.size() * 2, 64 * 1024);
         uniformBuffer_ = gpu_.createBuffer(uniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+        uploadedUniforms_.clear();  // a new buffer has nothing of the old arena in it
         rebuildGroups();
     } else if (shadowMapsChanged_) {
         rebuildGroups();
     }
     shadowMapsChanged_ = false;
-    if (!frameUniforms_.empty()) gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), frameUniforms_.size());
+    // FM2: only the bytes that changed since the last upload cross to the GPU, so a frame whose slots did not move —
+    // a still camera over still objects — sends nothing instead of the whole arena. A moving camera still rewrites
+    // every slot, because each draw's block carries the view and the view-space light slab: only a second binding
+    // for the frame's own slab takes that share out of every draw's block. The scan is per uniform block (a slot is
+    // 256-byte aligned, so a slot that moved re-sends whole), and a mostly-dirty arena still makes one write, so
+    // this never costs more calls than the single write it replaced.
+    const uint64_t uniformBytes = frameUniforms_.size();
+    if (uniformBytes != 0 && uploadedUniforms_.size() != uniformBytes) {
+        gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);  // a grown arena: all of it once
+        uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
+    } else if (uniformBytes != 0 && std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), uniformBytes) != 0) {
+        constexpr uint64_t kUniformBlock = kUniformAlign;  // one block's granularity
+        // Every block is kUniformAlign bytes, so a run's length is a multiple of 4, as writeBuffer requires.
+        static_assert(kUniformAlign % 4 == 0);
+        uniformDirtyRanges_.clear();
+        uint64_t runStart = 0, runEnd = 0;
+        const auto closeRun = [&] {
+            if (runEnd != runStart) uniformDirtyRanges_.emplace_back(runStart, runEnd - runStart);
+            runStart = runEnd = 0;
+        };
+        for (uint64_t at = 0; at < uniformBytes; at += kUniformBlock) {
+            const uint64_t end = std::min(at + kUniformBlock, uniformBytes);
+            if (std::memcmp(frameUniforms_.data() + at, uploadedUniforms_.data() + at, end - at) != 0) {
+                if (runEnd == runStart) runStart = at;
+                runEnd = end;
+            } else {
+                closeRun();
+            }
+        }
+        closeRun();
+        uint64_t dirty = 0;
+        for (const auto& range : uniformDirtyRanges_) dirty += range.second;
+        if (dirty * 2 >= uniformBytes) {  // mostly dirty: one write is cheaper than the calls
+            gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);
+            uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
+        } else {
+            for (const auto& [offset, length] : uniformDirtyRanges_) {
+                gpu_.writeBuffer(uniformBuffer_, offset, frameUniforms_.data() + offset, length);
+                std::memcpy(uploadedUniforms_.data() + offset, frameUniforms_.data() + offset, length);
+            }
+        }
+    }
     job.uniformBytes = frameUniforms_.size();
     bool jointBufferMoved = false;
     for (auto& [name, storage] : storages_) {
@@ -4141,7 +4240,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
     // draw, in the main pass and the shadow passes alike; `graphKey` names the draw's textures.
     const auto vertexGroupOf = [&](const Planned& p, const std::string& graphKey) -> WGPUBindGroup {
-        if (!perDrawVertex(p.program->vertex)) return nullptr;
+        if (!probesOf(*p.program).vertexPerDraw) return nullptr;
         const std::string vertexKey = "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKey;
         const auto found = mapGroups_.find(vertexKey);
         if (found != mapGroups_.end()) return found->second;
@@ -4237,8 +4336,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const GraphTextures* graphTextures = p.item->nodeTextures;
         std::string graphKey = graphKeyOf(*p.item);
         p.vertexGroup = vertexGroupOf(p, graphKey);
-        const bool viewport = readsViewport(p.program->fragment);
-        const bool postTexture = readsPostTexture(p.program->fragment);
+        const DrawProbes probes = probesOf(*p.program);
+        const bool viewport = probes.viewport;
+        const bool postTexture = probes.postTexture;
         if (!p.item->map && !p.item->envMap && !p.item->normalMap && !readsPbr && !p.item->pmremMap &&
             !p.item->reflectorView && !graphTextures && !viewport && !postTexture) continue;
         DrawCache* cache = p.item->cache;
@@ -4289,7 +4389,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // A masked caster's depth program samples the caster's map: its group binds that texture (PRD-651).
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) {
-            if (!draw.item->map || !perDrawFragment(draw.program->fragment)) continue;
+            if (!draw.item->map || !probesOf(*draw.program).fragmentPerDraw) continue;
             const MaterialTexture* map = materialTexture(*draw.item->map);
             const std::string key = "depth|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
                                     std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
@@ -4338,7 +4438,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
     const auto syncNamed = [&](const Planned& p) {
         const DrawItem& item = *p.item;
-        if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes.empty()) return;
+        if (!item.colors && !item.instanceMatrices && !item.instanceColors && item.attributes->empty()) return;
         for (const shader::VertexAttribute& a : p.program->vertex.attributes)
             if (BufferStore* source = vertexSourceOf(item, a)) geometry_->cache.sync(*source, WGPUBufferUsage_Vertex);
     };
@@ -4380,7 +4480,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (std::size_t k = 0; k < job.shadowKeys.size(); ++k) bundleKeyOf(shadowPasses[k].draws, job.shadowKeys[k]);
     job.auxKey.push_back(auxMask);
     job.bundleKey.push_back(static_cast<std::size_t>(
-        std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
+        std::find_if(plan.begin(), plan.end(), [&](const Planned& p) { return probesOf(*p.program).viewport; }) -
         plan.begin()));
     // PRD-754: a pass as retained rows (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/MeshDrawCommands.cpp keeps
     // cached draw commands across frames; only the visible set and instance counts change). A draw out of view keeps its
@@ -4956,7 +5056,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     // three's viewport textures copy the frame at the first draw that reads one: the main pass splits
     // there, the scene colour and depth are copied, and the rest draws in a second pass that loads them.
     const std::size_t viewportSplit = static_cast<std::size_t>(
-        std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
+        std::find_if(plan.begin(), plan.end(), [&](const Planned& p) { return probesOf(*p.program).viewport; }) -
         plan.begin());
     const std::vector<uint64_t>& bundleKey = job.bundleKey;
     // A pass's retained rows, recorded with each draw's counts read from its indirect record (firstInstance 0).

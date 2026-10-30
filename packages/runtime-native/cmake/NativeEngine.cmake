@@ -288,6 +288,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_gpu_joint_production=gpu_joint_production
         native_engine_unchanged_frame_storage=unchanged_frame_storage
+        native_engine_frame_slab_is_per_program=frame_slab_is_per_program
         native_engine_uniform_batch_preparation=uniform_batch_preparation
         native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups
@@ -306,6 +307,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shader_invalid=shader_invalid
         native_engine_renderer_time_uniform=time_uniform
         native_engine_renderer_steady_state=steady_state
+        native_engine_renderer_steady_state_draw_refresh_work=steady_state_draw_refresh_work
+        native_engine_renderer_draw_refresh_guard_holes=draw_refresh_guard_holes
         native_engine_renderer_normal_pass_is_not_tallied=normal_pass_is_not_tallied
         native_engine_renderer_gtao_screen_reach=gtao_screen_reach
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
@@ -373,7 +376,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_world_sphere_measured_once=world_sphere_measured_once
         native_engine_renderer_reflection_reuse=reflection_reuse
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
-        native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program)
+        native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
+        native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once)
     # The skinned cases drive the player's SkinnedCrowd scene.
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE

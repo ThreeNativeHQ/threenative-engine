@@ -76,6 +76,13 @@ enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 
 /**
+ * Diagnostic switch (TN_PROGRAM_PROBES=per-draw, or set by a test before a frame): a program's per-draw
+ * probes are resolved on every draw again, as before FM3, so the two arms' pixels can be compared. False
+ * by default: they are resolved once, when the program's layouts are built.
+ */
+bool& perDrawProbes();
+
+/**
  * Per-draw resolved GPU state, reused by the renderer while the draw's program variant and pipeline
  * target are unchanged. The render database owns one per record (a record rebuild clears it), and
  * DrawItem::cache points at it; a synthesized (batched) draw carries none and resolves afresh. The
@@ -121,13 +128,24 @@ struct DrawItem {
     int32_t depthBias = 0;
     float depthBiasSlopeScale = 0;
     /** The geometry's other attributes (TSL attribute(name) reads them), float, and whether each is an
-     *  InstancedBufferAttribute read once per instance. */
+     *  InstancedBufferAttribute read once per instance. Its record owns the list and the draw points at it,
+     *  as it points at its material: a per-frame copy allocated a vector per draw per frame for nothing. */
     struct CustomAttribute {
         std::string name;
         BufferStore* store = nullptr;
         bool perInstance = false;
     };
-    std::vector<CustomAttribute> attributes;
+    /** A draw pointed at no record (a test's, the background's own) reads this one: empty, and never written. */
+    static std::vector<CustomAttribute>& noAttributes() {
+        static std::vector<CustomAttribute> none;
+        return none;
+    }
+    /** A hand-built draw that reads no graph gets this one: empty, and never written. */
+    static shader::MaterialNodes& noNodes() {
+        static shader::MaterialNodes none;
+        return none;
+    }
+    std::vector<CustomAttribute>* attributes = &noAttributes();
     BufferStore* colors = nullptr;       // material.vertexColors: the `color` attribute as float32
     uint8_t colorSize = 0;               // its item size, 3 or 4; 0 without vertex colours
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
@@ -207,7 +225,9 @@ struct DrawItem {
     // Automatic batching (RenderDatabase): which material it draws, and whether it may share a draw.
     const void* materialKey = nullptr;
     bool batchable = false;
-    shader::MaterialNodes nodes;
+    /** The material's node graph (and the scene's fog node, which prepare writes into it): the record owns the
+     *  graph, the draw points at it. Copying the graph per draw per frame was 14 refcount bumps each. */
+    shader::MaterialNodes* nodes = &noNodes();
     std::shared_ptr<const shader::PositionNode> positionNode;  // the material's; null keeps positionLocal
     /** The record's resolved-state cache, or null for a synthesized draw (the renderer then resolves afresh). */
     DrawCache* cache = nullptr;
@@ -822,6 +842,13 @@ private:
     mutable std::mutex frameMailMutex_;
     FrameStats frameMail_, published_;
     bool publishes_ = false;
+    /** What a program's stage modules alone decide about a draw of it (renderer.cpp, `probesOf`). */
+    struct DrawProbes {
+        bool fragmentPerDraw = false;  // its fragment group binds the draw's own textures
+        bool vertexPerDraw = false;    // its vertex group does
+        bool viewport = false;         // it samples the frame's colour or depth as drawn before it
+        bool postTexture = false;      // it samples a post render-to-texture pass's output
+    };
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -833,6 +860,11 @@ private:
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
+        // FM2: this layout's share of the frame's light, camera and scene constants — one block, in a slot's
+        // own layout, filled once per frame and copied into every draw's slot. `frameSlabSerial` is the plan
+        // that filled it.
+        std::vector<uint8_t> frameSlab;
+        uint64_t frameSlabSerial = 0;
         // What the program was built from, so auxFragment() can build the same fragment again with more outputs.
         MaterialKind kind = MaterialKind::Standard;
         shader::VertexVariant variant;
@@ -840,7 +872,11 @@ private:
         bool softShadows = false;
         std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
         uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
+        /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
+        DrawProbes probes;
     };
+    /** A program's per-draw probes, resolved once in buildLayouts; read by every draw of every pass. */
+    DrawProbes probesOf(const Program& program);
     /** The post targets the scene can write besides its colour, in attachment order (PRD-740). */
     enum AuxTarget : uint8_t { kAuxNormal = 1, kAuxMaterial = 2, kAuxAlbedo = 4, kAuxEmissive = 8 };
     /**
@@ -1295,10 +1331,15 @@ private:
     std::unordered_map<uint64_t, std::vector<uint64_t>> freeSlots_;  // freed offsets by block bytes
     std::unordered_map<uint64_t, uint32_t> slotUses_;  // this frame's occurrences per key
     uint64_t slotArena_ = 0, slotFrame_ = 0;
+    /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
+    uint64_t planSerial_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
+    /** FM2: the arena's bytes as the GPU last received them, and this frame's changed ranges in it. */
+    std::vector<uint8_t> uploadedUniforms_;
+    std::vector<std::pair<uint64_t, uint64_t>> uniformDirtyRanges_;
     // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index
     // from their `boneBase`; grown (and the bind groups rebuilt) like the uniform buffer.
     // Per-frame storage the vertex variants read, by binding name: `boneMatrices` (skinning),

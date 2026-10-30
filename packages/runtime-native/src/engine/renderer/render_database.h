@@ -159,6 +159,12 @@ class RenderDatabase {
         uint64_t seen = 0; // the render it was last projected in
         uint32_t materialVersion = 0;
         bool drawable = false, materialized = false;
+        // What refresh()'s material half last wrote: its material's uniform signature and the geometry revision
+        // the attribute list was read at. Equal means the draw still reads the same material state (FM1).
+        std::size_t materialSignature = 0;
+        uint64_t refreshRevision = 0;
+        bool materialResolved = false;
+        bool convertedInputs = false;  // a colour or custom attribute is a converted (non-float) copy
         // Held, so neither is released while the record's item points into it, and a new one can
         // never take its address and pass for it. The mesh is known by its id, never reused.
         std::shared_ptr<const BufferGeometry> geometry;
@@ -172,6 +178,10 @@ class RenderDatabase {
         std::shared_ptr<BufferStore> zeroNormals;  // buffers[1] when the geometry has none (see record())
         struct Draw {
             shader::StandardMaterial params;
+            // Owned here, pointed at by the draw: a steady frame copies neither, and the record's own storage
+            // keeps its address while the record lives (its item points into it).
+            shader::MaterialNodes nodes;
+            std::vector<DrawItem::CustomAttribute> attributes;
             DrawItem item;
         };
         std::unique_ptr<Draw> draw; // materialize only actual draws, not every batched member

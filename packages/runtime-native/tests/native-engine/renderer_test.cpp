@@ -1015,12 +1015,14 @@ void traaDeformationVelocity() {
         renderer.setPostGraph(g::vec4({motion, g::swizzle(temporal, "x"), g::float_(0), g::float_(1)}));
         const auto offset = g::uniform("deformationOffset", shader::Type::f32(), {0});
         DrawItem item;
+        shader::MaterialNodes nodes;  // the draw points at a graph it does not own
+        item.nodes = &nodes;
         shader::StandardMaterial material;
         item.key = item.id = 1; item.kind = MaterialKind::Basic;
         item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
         item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         const auto deformation = timed ? g::mul(g::uniform("time", shader::Type::f32()), g::float_(0.5f)) : offset;
-        item.nodes.positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
+        item.nodes->positionNode = g::add(g::positionLocal(), g::vec3({deformation, g::float_(0), g::float_(0)}));
         BufferStore matrices(Scalar::F32, 16);
         std::array<float, 16> matrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         matrices.write(0, matrix.data(), sizeof matrix);
@@ -1936,13 +1938,16 @@ void siblingReadsTheLiveScene() {
     main.setOutput(OutputState{std::nullopt, 1, false});
     const auto board = plane(2, 2);  // fills the clip space under the identity camera
     shader::StandardMaterial paint, copy;
+    shader::MaterialNodes wallNodes, mirrorNodes;  // the draws point at graphs they do not own
     DrawItem wall;
     wall.key = wall.id = 1; wall.kind = MaterialKind::Basic;
+    wall.nodes = &wallNodes;
     wall.positions = &board->positions; wall.indices = &board->indices; wall.material = &paint;
     wall.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0.5, 1};
     DrawItem mirror = wall;
     mirror.key = mirror.id = 2; mirror.material = &copy;
-    mirror.nodes.fragmentNode = g::texture("scene", g::screenUV());
+    mirror.nodes = &mirrorNodes;
+    mirror.nodes->fragmentNode = g::texture("scene", g::screenUV());
     CameraState flat;
     flat.projectionMatrix = flat.matrixWorld = flat.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     const auto target = main.sibling();

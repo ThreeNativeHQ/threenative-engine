@@ -1102,6 +1102,167 @@ void unchangedFrameStorage() {
     CHECK(palette == steadyGrown + paletteBytes);
 }
 
+// FM2: every draw's uniform block carries the frame's whole light and camera slab, so the plan used to
+// evaluate those fields once per draw and the arena was re-uploaded in full every frame. The slab is now
+// one block per program per frame, copied into each draw's slot, and the upload carries only the bytes
+// that changed. Fixture: 8 boxes of one material under one sun and two point lights.
+// The frame's uniform arena, the hash of its bytes and the channels a one-light channel flip moves, as the
+// per-draw plan wrote them: recorded from the red run of this test, before the slab existed (FM2).
+constexpr uint64_t kFrameSlabArenaBytes = 6144, kFrameSlabArenaHash = 0x81822b8c72b318c0ull;
+constexpr int kFrameSlabLightFlipDiffers = 2037;
+void frameSlabIsPerProgram() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    Scene scene;
+    PerspectiveCamera camera(50, 1, 0.1, 100);
+    camera.position.set(0, 0, 12);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    auto geometry = makeBoxGeometry();
+    std::vector<std::shared_ptr<Mesh>> boxes;
+    for (int i = 0; i < 8; ++i) {
+        // A material of its own: a batch would collapse the eight draws into one, and its instance store
+        // would upload every frame beside the arena this test measures.
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->roughness = 0.3 + 0.05 * i;
+        auto box = std::make_shared<Mesh>(geometry, material);
+        box->position.set(double(i % 4) * 1.6 - 2.4, double(i / 4) * 1.6 - 0.8, 0);
+        scene.add(*box);
+        boxes.push_back(box);
+    }
+    DirectionalLight sun{Color().setHex(0xffffff), 2.5};
+    sun.position.set(3, 5, 8);
+    scene.add(sun);
+    PointLight lamp{Color().setHex(0xffd0a0), 30, 12};
+    lamp.position.set(-3, 2, 4);
+    scene.add(lamp);
+    PointLight fill{Color().setHex(0x90c0ff), 20, 10};
+    fill.position.set(3, -2, 4);
+    scene.add(fill);
+    RenderDatabase database;
+    struct Frame {
+        uint64_t upload = 0, evaluations = 0, uniforms = 0, hash = 0;
+        uint32_t draws = 0;
+    };
+    const auto hashOf = [](std::span<const uint8_t> bytes) {
+        uint64_t h = 0xcbf29ce484222325ull;  // FNV-1a: the arena's bytes, whatever wrote them
+        for (const uint8_t byte : bytes) h = (h ^ byte) * 0x100000001b3ull;
+        return h;
+    };
+    const auto frame = [&] {
+        const uint64_t bytes = renderer.gpu().queueWriteBytes();
+        const uint64_t evaluations = waste::counters().uniformFrameConstantEvaluations.load();
+        database.render(renderer, scene, camera, {0.05, 0.06, 0.08, 1});
+        const Frame out{renderer.gpu().queueWriteBytes() - bytes,
+                        waste::counters().uniformFrameConstantEvaluations.load() - evaluations,
+                        renderer.lastFrame().uniformBytes, hashOf(renderer.frameUniformBytes()),
+                        renderer.lastFrame().draws};
+        renderer.poll();
+        events.drain();
+        return out;
+    };
+    const auto pixels = [&] {
+        std::vector<uint8_t> out;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) out = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(out.size() == size_t{96} * 96 * 4);
+        return out;
+    };
+    const auto differing = [](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+        int count = 0;
+        for (std::size_t i = 0; i < a.size() && i < b.size(); ++i) count += a[i] != b[i];
+        return count;
+    };
+    const auto pose = [&](double x) {
+        camera.position.set(x, 0.2, 12);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+    };
+    for (int warm = 0; warm < 4; ++warm) frame();  // programs, pipelines and the arena's slots
+    // (a) a still frame with a moving camera: the arena is the one the per-draw plan wrote, byte for byte,
+    // and no larger. The red run of this test recorded both.
+    pose(0.4);
+    const Frame moved = frame();
+    std::printf("frame slab: arena %llu bytes %016llx, %u draws, %llu frame-constant evaluations "
+                "(%llu upload), still %llu upload\n",
+                static_cast<unsigned long long>(moved.uniforms), static_cast<unsigned long long>(moved.hash),
+                moved.draws, static_cast<unsigned long long>(moved.evaluations),
+                static_cast<unsigned long long>(moved.upload), static_cast<unsigned long long>(frame().upload));
+    CHECK(moved.draws > 1);
+    CHECK(moved.uniforms <= kFrameSlabArenaBytes);
+    CHECK(moved.hash == kFrameSlabArenaHash);
+    // (b) the light and camera fields are evaluated once per program, not once per draw: one draw and eight
+    // draws of the same program cost the same.
+    const Frame eight = frame();
+    for (std::size_t i = 1; i < boxes.size(); ++i) boxes[i]->setVisible(false);
+    const Frame one = frame();
+    std::printf("frame slab: %llu evaluations for %u draws, %llu for %u draw\n",
+                static_cast<unsigned long long>(eight.evaluations), eight.draws,
+                static_cast<unsigned long long>(one.evaluations), one.draws);
+    CHECK(one.draws < eight.draws);
+    CHECK(eight.evaluations > 0);
+    CHECK(eight.evaluations == one.evaluations);
+    // (c) a frame where neither the camera nor an object moved uploads nothing: the arena's bytes are the ones
+    // the GPU holds. A frame whose camera moved still rewrites every slot (the view is in each draw's block), so
+    // its upload stays the arena's size; the still frame is the arena's worth fewer than it.
+    const Frame still = frame();
+    const Frame stillAgain = frame();
+    std::printf("frame slab: still frames upload %llu and %llu bytes, a moved camera %llu of %llu\n",
+                static_cast<unsigned long long>(still.upload), static_cast<unsigned long long>(stillAgain.upload),
+                static_cast<unsigned long long>(moved.upload), static_cast<unsigned long long>(moved.uniforms));
+    CHECK(still.upload <= moved.upload - moved.uniforms);
+    CHECK(stillAgain.upload == still.upload);
+    CHECK(moved.upload <= moved.uniforms + still.upload);
+    // (d) the same pose reaches the same pixels however the frame got there, and a light's channel flip moves
+    // as many of them from a still arm as from a moved one: a stale slab would show here.
+    for (auto& box : boxes) box->setVisible(true);
+    pose(0.4);
+    frame();
+    frame();
+    const std::vector<uint8_t> stillPixels = pixels();
+    pose(-2.5);
+    frame();
+    pose(0.4);
+    frame();
+    frame();
+    const std::vector<uint8_t> arrived = pixels();
+    std::printf("frame slab: the same pose from two paths differs on %d channels\n",
+                differing(stillPixels, arrived));
+    CHECK(differing(stillPixels, arrived) == 0);
+    lamp.color.setRGB(0.2, 0.4, 1.0);
+    const Frame flipUpload = frame();  // one light's fields moved: the upload is their blocks, not the arena
+    const std::vector<uint8_t> stillFlip = pixels();
+    lamp.color.setHex(0xffd0a0);
+    pose(-2.5);
+    frame();
+    pose(0.4);
+    frame();
+    frame();
+    lamp.color.setRGB(0.2, 0.4, 1.0);
+    frame();
+    const std::vector<uint8_t> movedFlip = pixels();
+    const int stillDiffers = differing(stillPixels, stillFlip), movedDiffers = differing(arrived, movedFlip);
+    std::printf("frame slab: a one-light channel flip moves %d channels still, %d moved, and uploads %llu of "
+                "%llu arena bytes\n",
+                stillDiffers, movedDiffers, static_cast<unsigned long long>(flipUpload.upload),
+                static_cast<unsigned long long>(flipUpload.uniforms));
+    CHECK(stillDiffers > 0);
+    CHECK(stillDiffers == movedDiffers);
+    CHECK(stillDiffers == kFrameSlabLightFlipDiffers);
+}
+
 // The flat lane's compact fast path (RenderDatabase::projectCompact) must decide exactly what the
 // general project() decides. The same population, flat and then made non-flat by one parented
 // object, must give the same draws: hidden, other-layer, transparent, mirrored, callback and
@@ -1290,13 +1451,13 @@ void sceneFogNode() {
     scene.fogNode = shader::graph::vec4({shader::graph::uniform("hazeColor", shader::Type::vec(3), {0.1, 0.2, 0.3}), shader::graph::float_(0.5)});
     auto draws = database.prepare(scene, camera, lights);
     CHECK(draws.size() == 1); if (draws.size() != 1) return;
-    CHECK(draws[0].nodes.fogNode == scene.fogNode && !draws[0].fog);
+    CHECK(draws[0].nodes->fogNode == scene.fogNode && !draws[0].fog);
     material->fog = false;
     draws = database.prepare(scene, camera, lights);
-    CHECK(!draws[0].nodes.fogNode && !draws[0].fog);
+    CHECK(!draws[0].nodes->fogNode && !draws[0].fog);
     material->fog = true; scene.fogNode = nullptr;
     draws = database.prepare(scene, camera, lights);
-    CHECK(!draws[0].nodes.fogNode && draws[0].fog == scene.fog.get());
+    CHECK(!draws[0].nodes->fogNode && draws[0].fog == scene.fog.get());
 }
 
 // three draws a lit mesh whose geometry has no `normal` attribute: Normal.js supplies (0, 1, 0), and
@@ -2390,6 +2551,173 @@ void steadyState() {
     // A material hashes at most once per prepare, not once per member: five materials here.
     CHECK(projection::detail::uniformHashCount().load() - uHashes <= 60 * 5);
     CHECK(database.diagnostics().empty() && cleanDiag(renderer.diagnostics()));
+}
+
+// FM1: a steady frame must not rebuild a draw from its material. refresh() recopied ~45 material-derived
+// fields, the node graph and the attribute list into the record every frame, and project() then copied the
+// whole DrawItem into the frame list, so each draw allocated two containers and bumped three refcounts a
+// frame. None of that may happen while a material's uniforms and its geometry hold; a change three makes
+// without a version bump (base colour, roughness, a swapped map) must still reach the pixels; and two
+// independently built arms must draw identical bytes, the work assertion being a counter and not a clock.
+void steadyStateDrawRefreshWork() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    constexpr int kWidth = 96, kHeight = 72;
+    struct Arm {
+        std::unique_ptr<EventQueue> events;
+        std::unique_ptr<Renderer> renderer;
+        Scene scene;
+        PerspectiveCamera camera;
+        RenderDatabase database;
+        std::shared_ptr<BufferGeometry> geometry;
+        std::shared_ptr<DirectionalLight> light;
+        std::vector<std::shared_ptr<Material>> materials;
+        std::vector<std::shared_ptr<Mesh>> meshes;
+        std::shared_ptr<Material> moverMaterial;
+        std::shared_ptr<Mesh> mover;
+    };
+    std::array<Arm, 2> arms;
+    for (Arm& arm : arms) {
+        arm.events = std::make_unique<EventQueue>();
+        arm.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), *arm.events);
+        arm.renderer->setSize(kWidth, kHeight);
+        arm.camera.fov = 45;
+        arm.camera.aspect = double(kWidth) / kHeight;
+        arm.camera.near = 0.1;
+        arm.camera.far = 100;
+        arm.camera.position.set(0, 0, 12);
+        arm.camera.lookAt(0, 0, 0);
+        arm.camera.updateProjectionMatrix();
+        arm.geometry = makeBoxGeometry(0.7, 0.7, 0.7);
+        // Eight materials that differ in base colour alone: one uniform signature, so only a field that
+        // signature leaves out tells their draws apart.
+        for (int m = 0; m < 8; ++m) {
+            auto material = std::make_shared<Material>(MaterialType::Standard);
+            material->color.setRGB(0.15 + 0.09 * m, 0.2 + 0.07 * m, 0.72 - 0.07 * m);
+            material->roughness = 0.35;
+            material->metalness = 0.1;
+            arm.materials.push_back(material);
+        }
+        for (int i = 0; i < 64; ++i) {
+            auto mesh = std::make_shared<Mesh>(arm.geometry, arm.materials[std::size_t(i) % 8]);
+            mesh->position.set(-3.15 + 0.9 * (i % 8), -3.15 + 0.9 * (i / 8), 0);
+            arm.scene.add(*mesh);
+            arm.meshes.push_back(mesh);
+        }
+        // The one draw that moves every frame: its transform refreshes, its material half must hold.
+        arm.moverMaterial = std::make_shared<Material>(MaterialType::Standard);
+        arm.moverMaterial->color.setRGB(0.05, 0.85, 0.15);
+        arm.moverMaterial->roughness = 0.25;
+        arm.mover = std::make_shared<Mesh>(arm.geometry, arm.moverMaterial);
+        arm.mover->position.set(-3.0, -4.3, 1);
+        arm.scene.add(*arm.mover);
+        arm.light = std::make_shared<DirectionalLight>(Color().setHex(0xffffff), 3);
+        arm.light->position.set(1.5, 2.5, 6);
+        arm.scene.add(*arm.light);
+        arm.database.batching = false;  // one record per draw: the per-draw refresh is what is measured
+        arm.scene.updateMatrixWorld(true);
+    }
+    int step = 0;
+    const auto frame = [&](Arm& arm) {
+        arm.database.render(*arm.renderer, arm.scene, arm.camera, {0.02, 0.02, 0.03, 1});
+        arm.renderer->poll();
+        arm.events->drain();
+    };
+    const auto frameBoth = [&] {
+        for (Arm& arm : arms) {
+            arm.mover->position.x = -3.0 + 0.2 * step;  // the same frame on both arms
+            frame(arm);
+        }
+        ++step;
+    };
+    for (int i = 0; i < 3; ++i) frameBoth();  // warm: the first frame records every draw
+
+    // (a) work: a steady frame recopies no draw's material state, on either arm.
+    const uint64_t refreshes = projection::detail::materialRefreshCount().load();
+    const uint64_t copies = projection::detail::materialNodeCopyCount().load();
+    frameBoth();
+    frameBoth();
+    const uint64_t refreshed = projection::detail::materialRefreshCount().load() - refreshes;
+    const uint64_t copied = projection::detail::materialNodeCopyCount().load() - copies;
+    const std::size_t draws = arms[0].database.drawn().size();
+    std::printf("steady refresh: %llu material refreshes and %llu node copies over 2 frames of %zu draws\n",
+                (unsigned long long)refreshed, (unsigned long long)copied, draws);
+    CHECK(draws == 65);
+    CHECK(refreshed == 0);
+    CHECK(copied == 0);
+    CHECK(arms[0].database.diagnostics().empty());
+    // The frame-varying half still refreshes: the mover's draw carries this frame's transform.
+    const auto& drawn = arms[0].database.drawn();
+    const auto moverDraw = std::find_if(drawn.begin(), drawn.end(), [&](const DrawItem& d) {
+        return d.materialKey == arms[0].moverMaterial.get();
+    });
+    CHECK(moverDraw != drawn.end());
+    const double movedTo = arms[0].mover->matrixWorld.elements[12];
+    CHECK(movedTo > -3.0 && movedTo == -3.0 + 0.2 * (step - 1));
+    if (moverDraw != drawn.end()) CHECK(moverDraw->matrixWorld[12] == movedTo);
+
+    // (b) pixels: both arms draw byte-identical buffers.
+    const auto differing = [](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) n += a[i] != b[i];
+        return n + (a.size() == b.size() ? 0 : std::max(a.size(), b.size()));
+    };
+    const auto digest = [](const std::vector<uint8_t>& px) {
+        uint64_t h = 0xcbf29ce484222325ull;
+        for (uint8_t byte : px) { h ^= byte; h *= 0x100000001b3ull; }
+        return h;
+    };
+    std::array<std::vector<uint8_t>, 2> current, previous;
+    const auto readBoth = [&] {
+        for (std::size_t i = 0; i < arms.size(); ++i) current[i] = read(*arms[i].renderer, *arms[i].events);
+    };
+    readBoth();
+    CHECK(current[0].size() == std::size_t{kWidth} * kHeight * 4);
+    CHECK(current[1].size() == current[0].size());
+    std::printf("steady refresh: steady frame differs on %zu bytes, digest %016llx\n",
+                differing(current[0], current[1]), (unsigned long long)digest(current[0]));
+    CHECK(differing(current[0], current[1]) == 0);
+
+    // (c) change detection: a field three writes without a version bump still reaches the pixels, alike on
+    // both arms, so a held material half can never go stale.
+    const auto edit = [&](const char* what, const std::function<void(Arm&)>& change) {
+        previous = current;
+        for (Arm& arm : arms) change(arm);
+        frameBoth();
+        readBoth();
+        const std::size_t changed = differing(current[0], previous[0]);
+        std::printf("steady refresh: %s changed %zu bytes (other arm %zu), arms differ on %zu\n", what, changed,
+                    differing(current[1], previous[1]), differing(current[0], current[1]));
+        CHECK(changed > 0);
+        CHECK(differing(current[1], previous[1]) == changed);
+        CHECK(differing(current[0], current[1]) == 0);
+        CHECK(arms[0].database.diagnostics().empty());
+    };
+    const auto texture = [](uint8_t r, uint8_t g, uint8_t b) {
+        auto map = std::make_shared<Texture>();
+        map->width = map->height = 4;
+        for (int i = 0; i < 16; ++i) map->data.insert(map->data.end(), {r, g, b, 255});
+        map->needsUpdate();
+        return map;
+    };
+    edit("material.color", [](Arm& arm) { arm.materials[3]->color.setRGB(0.95, 0.15, 0.2); });
+    edit("material.roughness", [](Arm& arm) { arm.materials[3]->roughness = 0.02; });
+    edit("material.maps[map]", [&](Arm& arm) { arm.materials[3]->maps["map"] = texture(20, 80, 240); });
+    edit("material.maps[map] swapped", [&](Arm& arm) { arm.materials[3]->maps["map"] = texture(240, 200, 20); });
+
+    // The counters are wired, on the smallest case: the mover owns its material, so one edit between frames
+    // recopies exactly that one draw, and the 64 static draws beside it recopy nothing.
+    const uint64_t beforeEdit = projection::detail::materialRefreshCount().load();
+    const uint64_t beforeCopies = projection::detail::materialNodeCopyCount().load();
+    arms[0].moverMaterial->color.setRGB(0.9, 0.1, 0.6);
+    arms[0].mover->position.x = -3.0 + 0.2 * step;
+    frame(arms[0]);
+    ++step;
+    std::printf("steady refresh: one mover colour edit refreshed %llu draws, copied %llu node graphs\n",
+                (unsigned long long)(projection::detail::materialRefreshCount().load() - beforeEdit),
+                (unsigned long long)(projection::detail::materialNodeCopyCount().load() - beforeCopies));
+    CHECK(projection::detail::materialRefreshCount().load() - beforeEdit == 1);
+    CHECK(projection::detail::materialNodeCopyCount().load() - beforeCopies == 1);
 }
 
 // The steady-state cache must not hide a real change: a texture whose descriptor moves (anisotropy)
@@ -7080,7 +7408,171 @@ void virtualShadowPageJobs() {
     JobPool::resetShared(0);
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+// FM3: a draw's four probes (perDrawFragment, perDrawVertex, readsViewport, readsPostTexture) are pure
+// functions of its program's stage modules, and a texture resolves to the same GPU record until its
+// version (or, for a render target, its view) moves. Before FM3 every draw of every pass of every frame
+// rescanned the program's bindings and took a `renderTarget.lock()` per sampled texture; a steady frame
+// now does neither, and the pixels do not move.
+void programProbesAreResolvedOnce() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    OrthographicCamera camera(-3, 3, 3, -3, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    Scene scene;
+    DirectionalLight sun{Color(1, 1, 1), 1};
+    sun.position.set(1, 2, 3);
+    sun.setCastShadow(true);  // the shadow passes read their own programs' probes too
+    scene.add(sun);
+    const auto image = [](uint8_t red, uint8_t green, uint8_t blue) {
+        auto texture = std::make_shared<Texture>();
+        texture->width = texture->height = 2;
+        for (int i = 0; i < 4; ++i) texture->data.insert(texture->data.end(), {red, green, blue, 255});
+        texture->needsUpdate();
+        return texture;
+    };
+    // Twelve draws: four sampling a material `map`, four a TSL texture(object) node, four neither.
+    std::vector<std::shared_ptr<Texture>> textures;
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 4; ++col) {
+            std::shared_ptr<Material> material;
+            if (row == 0) {
+                material = std::make_shared<Material>(MaterialType::Standard);
+                textures.push_back(image(uint8_t(40 + col * 50), 120, 60));
+                material->maps["map"] = textures.back();
+            } else if (row == 1) {
+                material = std::make_shared<Material>(MaterialType::Basic, true);
+                material->rawNodeMaterial = true;
+                textures.push_back(image(200, uint8_t(40 + col * 50), 60));
+                // t_nodeMap<n>: a graph texture, so the vertex and fragment stages both bind per draw.
+                material->nodes.fragmentNode =
+                    g::objectTexture(textures.back(), "nodeMap" + std::to_string(row * 4 + col), g::uv());
+            } else {
+                material = std::make_shared<Material>(MaterialType::Standard);
+                material->color.setRGB(0.2, 0.3, 0.7);
+            }
+            auto plane = std::make_shared<Mesh>(makePlaneGeometry(1, 1), material);
+            plane->position.set((col - 1.5) * 1.2, (1 - row) * 1.2, 0);
+            scene.add(*plane);
+            meshes.push_back(plane);
+        }
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto frame = [&] {
+        database.render(renderer, scene, camera, {0, 0, 0, 1});
+        return read(renderer, events);
+    };
+    waste::setDebugEnabled(true);
+    const std::vector<uint8_t> first = frame();
+    CHECK(first.size() == 64 * 64 * 4);
+    CHECK(renderer.programCount() >= 3);  // the three kinds of draw built their own programs
+    const uint64_t probes = waste::counters().programProbeScans.load();
+    CHECK(probes > 0);  // the first frame resolved the programs' probes at least once
+    const uint64_t locks = waste::counters().textureTargetLocks.load();
+    const std::vector<uint8_t> second = frame();
+    const uint64_t scans = waste::counters().programProbeScans.load() - probes;
+    const uint64_t taken = waste::counters().textureTargetLocks.load() - locks;
+    std::printf("program probes: %llu to build the programs, %llu on a steady frame; render-target locks %llu, then %llu\n",
+                (unsigned long long)probes, (unsigned long long)scans, (unsigned long long)locks,
+                (unsigned long long)taken);
+    CHECK(scans == 0);   // a steady frame scans no bindings
+    CHECK(taken == 0);   // and takes no render-target lock
+    CHECK(renderer.diagnostics().empty());
+    // The per-draw arm resolves the same probes on every draw; its pixels must be byte-identical.
+    const std::vector<uint8_t> third = frame();
+    CHECK(second == third);  // steady: nothing temporal, so a frame repeats its bytes
+    perDrawProbes() = true;
+    const std::vector<uint8_t> perDraw = frame();
+    perDrawProbes() = false;
+    CHECK(perDraw.size() == first.size());
+    CHECK(perDraw == first);
+    // The branch the fast path skips stays live: a render target's texture is locked, and its view followed.
+    const auto target = RenderTarget::make(16, 16, kTextureHalfFloatType);
+    auto sampling = std::make_shared<Material>(MaterialType::Basic);
+    sampling->maps["map"] = target->texture;
+    auto sampled = std::make_shared<Mesh>(makePlaneGeometry(0.8, 0.8), sampling);
+    sampled->position.set(0, 0, 1);
+    scene.add(*sampled);
+    meshes.push_back(sampled);
+    scene.updateMatrixWorld(true);
+    const uint64_t beforeTarget = waste::counters().textureTargetLocks.load();
+    CHECK(frame().size() == first.size());
+    const uint64_t targetLocks = waste::counters().textureTargetLocks.load() - beforeTarget;
+    std::printf("program probes: %llu render-target locks for a texture that borrows a target's view\n",
+                (unsigned long long)targetLocks);
+    CHECK(targetLocks > 0);
+    CHECK(renderer.diagnostics().empty());
+    perDrawProbes() = false;
+    waste::setDebugEnabled(false);
+}
+
+// FM1 review: the material half of a draw is held while its signature and geometry revision hold, so two
+// writes that move neither must still reach the pixels. (1) A normalized byte colour attribute reaches the
+// draw as a converted float copy, and `setNeedsUpdate` replaces that copy without a geometry revision.
+// (2) An onBeforeRender callback writes the material after refresh() signed it, so a game that puts the
+// material back once the callback is gone matches the stale signature.
+void drawRefreshGuardHoles() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    const size_t center = (24 * 64 + 32) * 4;
+    {
+        LitScene s;
+        s.material->color.setRGB(1, 1, 1);
+        s.material->vertexColors = true;
+        const uint64_t count = s.geometry->attributes.at("position")->count();
+        std::vector<double> red;
+        for (uint64_t i = 0; i < count; ++i) red.insert(red.end(), {255, 0, 0});
+        s.geometry->setAttribute("color", BufferAttribute::fromDoubles(Scalar::U8, red, 3, true));
+        RenderDatabase database;
+        database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> before = read(renderer, events);
+        auto color = s.geometry->attributes.at("color");
+        for (uint64_t i = 0; i < count; ++i) {
+            color->setComponent(i, 0, 0);
+            color->setComponent(i, 2, 1);
+        }
+        color->setNeedsUpdate();
+        database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> after = read(renderer, events);
+        std::printf("converted colour: centre red %d -> %d, blue %d -> %d\n", before[center], after[center],
+                    before[center + 2], after[center + 2]);
+        CHECK(before.size() == 64 * 48 * 4 && after.size() == before.size());
+        CHECK(before[center] > 40 && before[center] > before[center + 2]);
+        CHECK(after[center] * 3 < before[center]);  // the repainted bytes reached the draw
+    }
+    {
+        LitScene s;
+        s.material->color.setRGB(0.9, 0.2, 0.1);
+        RenderDatabase database;
+        s.mesh.onBeforeRender = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+            [&](const RenderCallbackArgs&, std::string&) {
+                s.material->color.setRGB(0.1, 0.2, 0.9);
+                return true;
+            });
+        database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> blue = read(renderer, events);
+        s.mesh.onBeforeRender = nullptr;
+        s.material->color.setRGB(0.9, 0.2, 0.1);  // the signature refresh() took before the callback
+        database.render(renderer, s.scene, s.camera, {0, 0, 0, 1});
+        const std::vector<uint8_t> red = read(renderer, events);
+        std::printf("callback colour: centre r/b %d/%d -> %d/%d\n", blue[center], blue[center + 2], red[center],
+                    red[center + 2]);
+        CHECK(blue.size() == 64 * 48 * 4 && blue[center + 2] > blue[center]);
+        CHECK(red.size() == blue.size() && red[center] > red[center + 2]);  // the game's colour, not the callback's
+    }
+}
+
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -7089,7 +7581,7 @@ TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"virtual_shad
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce})
 
 
 

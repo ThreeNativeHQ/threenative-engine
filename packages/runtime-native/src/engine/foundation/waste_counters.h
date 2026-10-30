@@ -61,6 +61,27 @@ struct Counters {
      * time (#574); a spec bounds this so a name compare per field cannot come back.
      */
     std::atomic<uint64_t> uniformNameCompares{0};
+    /**
+     * A material program's per-draw probes (perDrawFragment, perDrawVertex, readsViewport,
+     * readsPostTexture) evaluated: one per draw per pass per frame before FM3, none on a steady frame
+     * after. They are pure functions of the program's stage modules, which never change once it is built,
+     * so a frame that draws a program it already built must add none.
+     */
+    std::atomic<uint64_t> programProbeScans{0};
+    /**
+     * `Texture::renderTarget` weak_ptr locks taken resolving a material texture: one per draw per frame
+     * before FM3, one per sampled texture that has a live render target after. A lock is an atomic
+     * acquire and release, and a texture without a target answers from its own record.
+     */
+    std::atomic<uint64_t> textureTargetLocks{0};
+    /**
+     * Evaluations of a draw's share of the frame's light, camera and scene uniforms: one per draw before
+     * FM2's per-program frame slab, one per program per frame after it. A frame that draws k slots from
+     * one program evaluates its light and camera fields once; a count that grows with the draws means the
+     * per-draw write came back, which is what tests/native-engine/render_database_test.cpp's
+     * frame_slab_is_per_program fails on.
+     */
+    std::atomic<uint64_t> uniformFrameConstantEvaluations{0};
 };
 
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "the web back end reads the counters' bytes in place");
