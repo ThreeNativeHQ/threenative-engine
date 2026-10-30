@@ -2347,6 +2347,62 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 44,
+      "at": "2026-10-30T04:05:08.274Z",
+      "commit": "core@0.3.7",
+      "label": "develop 0974fd3b8: FS11+FS12 landed",
+      "decision": "keep",
+      "engine": "threenative-wasm",
+      "variant": "stress",
+      "notes": "Same code as the FS11+FS12 arm of window 2 (row #42, run 2 of 2; run 1 = 44.64 fps). Judge NEUTRAL: shadow outliers 0 of 4 per arm. Native tests 115/116 (material_props env failure, same on develop).",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 60.05,
+      "windows": 12,
+      "metrics": {
+        "presentedP50Ms": 16.67,
+        "presentedP95Ms": 33.36,
+        "fps": 45.39,
+        "gpuP50Ms": 6.49,
+        "gpuP95Ms": 34.21,
+        "renderP50Ms": 16.18,
+        "updateP50Ms": 3.79,
+        "frameP50Ms": 20.73,
+        "frameP95Ms": 27.73,
+        "mainDraws": 60,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 84,
+        "loadMs": 1768,
+        "bridgeCrossingsP50": 739,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
