@@ -678,14 +678,17 @@ describe("template contracts", () => {
     expect(fox).toContain("this.#coyote = Math.max(0, this.#coyote - dt);");
   });
 
-  it("should make the sky photograph the background, the environment and the fog", async () => {
-    // PRD-470: the starter's authored gradient dome is gone — the sky is a Poly Haven
-    // equirectangular photograph, so the contract is the one that survives a sky swap: the same
-    // image is the background and the environment light, the fog colour is a palette role rather
-    // than a literal, and the fade is thin enough not to wash the playable middle distance.
+  it("should make one sky the background, the environment and the fog", async () => {
+    // PRD-633: the default sky is Unreal's atmosphere, and the same sky is the background and the
+    // environment light, and colours the height fog. PRD-470's photograph stays the named override:
+    // the same image is background and environment, the fog colour is a palette role rather than a
+    // literal, and the fade is thin enough not to wash the playable middle distance.
     const sky = await readFile(path.join(templateRoot, "starter/src/render/sky.ts"), "utf8");
-    expect(sky).toContain("scene.background = sky");
-    expect(sky).toContain("scene.environment = sky");
+    expect(sky).toContain('sky: "atmosphere"');
+    expect(sky).toContain("scene.background = environment");
+    expect(sky).toContain("scene.environment = environment");
+    expect(sky).toContain("scene.background = photo");
+    expect(sky).toContain("scene.environment = photo");
     expect(sky).toContain("scene.environmentIntensity");
     expect(sky).toContain('import { palette } from "./palette.js"');
     expect(sky, "the distance term is a FogExp2 coloured by a palette role").toMatch(
