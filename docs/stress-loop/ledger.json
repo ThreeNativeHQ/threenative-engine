@@ -3115,6 +3115,126 @@
       "dpr": 1,
       "pass": "uncapped",
       "shadow": "plain"
+    },
+    {
+      "id": 65,
+      "at": "2026-10-30T12:40:54.052Z",
+      "commit": "core@0.3.7",
+      "label": "FAIR window fb1c2 (arm=develop&uncapped)",
+      "decision": "measure",
+      "engine": "threenative-wasm",
+      "variant": "arm=develop&uncapped",
+      "notes": "fair window fb1c2: clean browser, 1280x720 DPR 1, 80 s, ABBA, uncapped pass, mean of 2 run(s) (0 void), load peak 5.26, runs /home/joao/.cache/tmp-tn/stress-loop/hunt/fair-fb1c2-uncapped-threenative-wasm-127-0-0-1-5740-main-html-stress-arm-develop.json",
+      "preset": "real",
+      "layers": ["trees", "rocks", "houses", "props", "crowd", "bodies", "fires", "lights"],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 65.27,
+      "windows": 13,
+      "metrics": {
+        "presentedP50Ms": 14.73,
+        "presentedP95Ms": 30.89,
+        "fps": 66.915,
+        "gpuP50Ms": 6.33,
+        "gpuP95Ms": 6.88,
+        "renderP50Ms": 11.71,
+        "updateP50Ms": 2.155,
+        "frameP50Ms": 14.41,
+        "frameP95Ms": 18.035,
+        "mainDraws": 60,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "shadowTrianglesM": null,
+        "hitchesPerMin": 0,
+        "longTasks": 76,
+        "loadMs": 1649,
+        "bridgeCrossingsP50": 733.5,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      },
+      "build": {
+        "kind": "wasm",
+        "sha256": "e635fef6413a",
+        "commit": "2413b8ea9"
+      },
+      "load": {
+        "peak": 5.26,
+        "samples": 20
+      },
+      "dpr": 1,
+      "pass": "uncapped",
+      "shadow": "virtual"
+    },
+    {
+      "id": 66,
+      "at": "2026-10-30T12:40:54.052Z",
+      "commit": "core@0.3.7",
+      "label": "FAIR window fb1c2 (arm=fb1&uncapped)",
+      "decision": "measure",
+      "engine": "threenative-wasm",
+      "variant": "arm=fb1&uncapped",
+      "notes": "fair window fb1c2: clean browser, 1280x720 DPR 1, 80 s, ABBA, uncapped pass, mean of 2 run(s) (0 void), load peak 4.6, runs /home/joao/.cache/tmp-tn/stress-loop/hunt/fair-fb1c2-uncapped-threenative-wasm-127-0-0-1-5742-main-html-stress-arm-fb1.json",
+      "preset": "real",
+      "layers": ["trees", "rocks", "houses", "props", "crowd", "bodies", "fires", "lights"],
+      "adapter": "nvidia / turing",
+      "viewport": "1280x720",
+      "seconds": 65.1,
+      "windows": 13,
+      "metrics": {
+        "presentedP50Ms": 13.865,
+        "presentedP95Ms": 18.175,
+        "fps": 71.125,
+        "gpuP50Ms": 6.32,
+        "gpuP95Ms": 20.37,
+        "renderP50Ms": 11.08,
+        "updateP50Ms": 2.015,
+        "frameP50Ms": 13.615,
+        "frameP95Ms": 16.945,
+        "mainDraws": 60,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "shadowTrianglesM": null,
+        "hitchesPerMin": 0,
+        "longTasks": 85.5,
+        "loadMs": 1518.5,
+        "bridgeCrossingsP50": 732.5,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      },
+      "build": {
+        "kind": "wasm",
+        "sha256": "4ebfd8d0492b",
+        "commit": "2413b8ea9"
+      },
+      "load": {
+        "peak": 4.6,
+        "samples": 20
+      },
+      "dpr": 1,
+      "pass": "uncapped",
+      "shadow": "virtual"
     }
   ]
 }
