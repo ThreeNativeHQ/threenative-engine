@@ -910,6 +910,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 18,
+      "at": "2026-10-30T00:22:25.105Z",
+      "commit": "core@0.3.7",
+      "label": "FT2 job pool cap 3 -> 8 workers",
+      "decision": "keep",
+      "notes": "2ec6ed19d; paired with develop head a8d10b971: 30.30 vs 27.40 and 26.20 vs 23.96 fps (+9 to +11%)",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 60.47,
+      "windows": 12,
+      "metrics": {
+        "presentedP50Ms": 33.33,
+        "presentedP95Ms": 66.66,
+        "fps": 30.3,
+        "gpuP50Ms": 5.77,
+        "gpuP95Ms": 60.49,
+        "renderP50Ms": 20.04,
+        "updateP50Ms": 5.66,
+        "frameP50Ms": 26.66,
+        "frameP95Ms": 58.71,
+        "mainDraws": 1761,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 1419,
+        "loadMs": 1735,
+        "bridgeCrossingsP50": 1271,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
