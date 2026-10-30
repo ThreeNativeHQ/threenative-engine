@@ -676,14 +676,17 @@ no COOP/COEP); that lane is open.
   `TN_JOB_WORKERS_START_FAILED` instead of running on one thread.
 - Revisit when: a second pooled job lands, or the page job's items grow past about 8 x 0.2 ms.
 
-### 2026-10-30 — Stress lab: main-pass plan cuts FM1/FM2/FM3 measured faster, under review — PENDING
-- Result (develop head a8d10b971, 2 runs each, base 4-run mean 25.67 fps): FM3 per-program binding probes 27.7
-  (+8%), FM2 per-program light/camera slab plus dirty-range upload 27.4 (+7%), FM1 material half of `DrawItem` kept on
-  the record 27.2 (+6%). Reviews: FM2 SHIP, FM3 SHIP (its real saving is likely below the run noise), FM1 SHIP AFTER
-  FIXES (a non-F32 colour attribute's converted store and an `onBeforeRender` param change skip its guard).
-- Insight: run-to-run noise on this frame is about +-7% between sessions and +-3% inside one, so a lever under 1 ms needs
-  arms in alternating order inside one lock window, and a 0.3 ms lever cannot be shown in fps at all: measure its
-  function's self time in a profile instead.
+### 2026-10-30 — Stress lab: main-pass plan cuts FM1+FM2+FM3 — KEEP
+- Where: `render_database.cpp` (`refresh` guard, `convertedInputs`), `renderer.cpp` (per-program frame slab,
+  dirty-block upload, `program.probes`); `07703efaf`.
+- Result: stacked on develop with FT2, alternating arms in one lock window: 27.07 -> 27.96 fps mean (+3.3%), render p50
+  22.1 -> 21.4 ms. Judge NEUTRAL. Solo runs had read +6 to +8% each: that was noise between lock windows.
+- Insight: keep the material half of a draw on its record, guarded by the material's uniform signature plus the
+  geometry revision, and list every writer the guard misses before you trust it. The review found two: a converted
+  (non-float) attribute copy that `needsUpdate` replaces without a revision, and an `onBeforeRender` write after the
+  signature was taken. Both reproduced red in `draw_refresh_guard_holes`. Run-to-run noise on this frame is about +-7%
+  between sessions and +-3% inside one: compare render p50 across alternating arms, not fps across sessions, and
+  measure a lever under 1 ms by its function's self time in a profile.
 
 ### 2026-10-30 — Stress lab: web shadow bundles (FM5), stride copy and unmoved-body skip (FU2+FU3) — REJECT
 - Result: FM5 25.23 and FU2a+FU3 24.35 against develop head 26.62 / 26.12 fps in one lock window.

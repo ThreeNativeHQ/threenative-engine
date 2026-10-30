@@ -1072,6 +1072,60 @@
         "particles": 18000,
         "lights": 16
       }
+    },
+    {
+      "id": 21,
+      "at": "2026-10-30T00:49:08.580Z",
+      "commit": "core@0.3.7",
+      "label": "FM1+FM2+FM3 main-pass plan cuts",
+      "decision": "keep",
+      "notes": "07703efaf; alternating with develop+FT2: 27.40/28.51 vs 27.51/26.62 fps (+3.3%), render p50 21.4 vs 22.1 ms; judge NEUTRAL",
+      "preset": "real",
+      "layers": [
+        "trees",
+        "rocks",
+        "houses",
+        "props",
+        "crowd",
+        "bodies",
+        "fires",
+        "lights"
+      ],
+      "adapter": "nvidia / turing",
+      "viewport": "913x881",
+      "seconds": 60.13,
+      "windows": 12,
+      "metrics": {
+        "presentedP50Ms": 33.33,
+        "presentedP95Ms": 66.67,
+        "fps": 27.4,
+        "gpuP50Ms": 5.96,
+        "gpuP95Ms": 62.52,
+        "renderP50Ms": 21.38,
+        "updateP50Ms": 7.33,
+        "frameP50Ms": 29.31,
+        "frameP95Ms": 62.79,
+        "mainDraws": 1770,
+        "shadowDraws": null,
+        "mainTrianglesM": 7.07,
+        "hitchesPerMin": 0,
+        "longTasks": 1802,
+        "loadMs": 1795,
+        "bridgeCrossingsP50": 1277,
+        "hostCallsP50": null,
+        "gpuUploadKbP50": null,
+        "jsAllocKbP50": null
+      },
+      "counts": {
+        "trees": 4000,
+        "rocks": 6000,
+        "houses": 120,
+        "props": 600,
+        "crowd": 120,
+        "bodies": 300,
+        "particles": 18000,
+        "lights": 16
+      }
     }
   ]
 }
