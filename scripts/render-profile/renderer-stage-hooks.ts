@@ -1,4 +1,4 @@
-export const EXPECTED_THREE_VERSION = "0.185.1";
+export const EXPECTED_THREE_VERSION = "0.187.0";
 
 export interface IRendererStageSample {
   readonly calls: number;

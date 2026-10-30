@@ -105,7 +105,7 @@
   "devDependencies": {
     "@dimforge/rapier3d-compat": "catalog:",
     "@threenative/playtest": "workspace:*",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "publint": "catalog:",
     "three": "catalog:",
     "vitest": "catalog:"

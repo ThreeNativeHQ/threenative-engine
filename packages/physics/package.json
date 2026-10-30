@@ -40,7 +40,7 @@
   },
   "peerDependencies": {
     "@threenative/core": ">=0.3.7 <0.4.0",
-    "three": ">=0.185.0 <0.186.0"
+    "three": ">=0.187.0 <0.188.0"
   },
   "scripts": {
     "build": "tsup --config tsup.config.ts && publint",
@@ -48,7 +48,7 @@
     "test": "publint --strict"
   },
   "devDependencies": {
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "@threenative/core": "workspace:*",
     "publint": "0.3.22",
     "three": "catalog:",

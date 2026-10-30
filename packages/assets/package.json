@@ -37,7 +37,7 @@
   "devDependencies": {
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "ooz-wasm": "2.0.0",
     "publint": "0.3.22",
     "threenative-blender-mcp": "workspace:*",

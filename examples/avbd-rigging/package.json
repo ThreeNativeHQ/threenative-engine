@@ -17,7 +17,7 @@
     "@threenative/playtest": "workspace:*"
   },
   "devDependencies": {
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "@webgpu/types": "0.1.74",
     "vite": "catalog:",
     "typescript": "catalog:",

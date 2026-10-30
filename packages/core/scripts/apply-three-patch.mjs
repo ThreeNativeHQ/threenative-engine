@@ -6,7 +6,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const THREE_VERSION = "0.185.1";
+const THREE_VERSION = "0.187.0";
 const PATCH_NAME = `three@${THREE_VERSION}.patch`;
 const UPGRADE_PATCH_NAME = `three@${THREE_VERSION}-prd269-upgrade.patch`;
 
