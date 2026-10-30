@@ -259,7 +259,7 @@ export async function captureGiThreeNative(options: {
                   },
                 ];
           for (const visit of visits) {
-            await page.goto(`${origin}?${visit.query}${extra}`, {
+            await page.goto(`${origin}main.html?${visit.query}${extra}`, {
               waitUntil: "domcontentloaded",
             });
             await page.addStyleTag({ content: HIDE_UI });
