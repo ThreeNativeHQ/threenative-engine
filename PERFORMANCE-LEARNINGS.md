@@ -791,3 +791,13 @@ no COOP/COEP); that lane is open.
   frame broke it.
 - Revisit when: a Chrome build with precise `performance.memory` runs the stress lab (`jsAllocKbP50` reads 0 under
   Brave's bucketing).
+
+### 2026-10-30 — Stress lab: the sun map culls skinned casters by bone reach (add-on 5, PRD-770) — REJECT
+
+- Where: `RenderDatabase::skinnedShadowSphere` (patch kept in `~/.cache/tmp-tn/stress-loop/lanes/addon5.patch`).
+- Result: plain sun shadow triangles 2.06 → 1.29 M (equal to vanilla three), pixels unchanged (native red-green
+  `skinned_caster_shadow_culling`). CPU frame p50 on `?stress&plainShadow` 9.09 → 10.17 ms vsync and 9.09 → 10.05 ms
+  uncapped (+11%, both pairs), GPU p95 unchanged; `?stress` (VSM) unchanged. Rows #77-#84.
+- Insight: 120 posed bone-reach boxes a frame cost more CPU than the 0.77 M culled shadow triangles save on the GPU.
+  Price a cull by its per-frame test cost. The plain sun map's 6 ms GPU is not triangle-bound here.
+- Revisit when: the skin update already publishes a per-rig bound this frame, so the test reads it in O(1).
