@@ -57,6 +57,7 @@ Lane state at 2026-10-30 06:00Z, all uncommitted:
 ### Phase 3 — TR2: the plan overlaps the next update
 
 - [ ] The JobPool async task (`submit`/`join`) merges, after review of the `CheckNoBlockingWaits` regex change. proof: `job_pool_test` cases, `native_engine_no_blocking_waits`
+  Review 2026-10-30: the regex change is safe. It adds only an optional `taskQueued_ ||` to the one reviewed worker park, and `join()` spins with `yield` like the `forEach` join, so the browser main thread never parks. Merge it in the same commit as its first caller (the box below), not alone: an API with no caller is dead code.
 - [ ] `renderPrepared` splits at the GPU phase. A guard keeps a frame with a lazy-creation miss serial, and a plan task joins at the first engine export. proof: native case where a mutation before the join is impossible
 - [ ] A named override `oneFrameThreadLag: false` restores the serial path and is reported when set. Paired A/B shows CPU frame p50 lower by more than 3%. proof: PRD-770 window rows
 
