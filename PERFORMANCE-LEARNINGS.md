@@ -767,6 +767,9 @@ no COOP/COEP); that lane is open.
   a window that moves while its depth fit changes keeps no page.
 - Judge: two Opus rounds; round 2 NEUTRAL (3 AFTER frames inside BEFORE-vs-BEFORE variation). A single odd frame was a
   different camera pose at capture: take 3+ frames per arm before you read a shadow outlier as a cull defect.
+- Cost: the fair windows show CPU frame p95 up about 1.3 ms on the granting frames (16.59 -> 17.85 ms vsync, 17.25 ->
+  18.64 uncapped, rows #67-#70): the per-level index build, counting sort and 80 B per (page, instance) copy run on the
+  main thread when pages are granted. A p50 gate hid it; gate a shadow lever on CPU p95 too.
 - Revisit when: GPU p95 on `?stress` rises above 16.7 ms again, or a game keeps casters that are not instanced (they
   still draw whole on a rebuild); then FG2 (fixed depth band with a pan anchor).
 
