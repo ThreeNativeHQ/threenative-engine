@@ -262,13 +262,19 @@ export interface IFrameBudgetPassSummary {
  * it were a player's — `threenative-playtest perf` refuses to (`TN_PERF_VIRTUAL_DISPLAY`).
  */
 export interface IFrameBudgetWindow {
-  /** Browser Long Tasks, independent of vsync/GPU waits. Unavailable on hosts without this API. */
+  /**
+   * Browser Long Tasks, independent of vsync/GPU waits. Unavailable on hosts without this API.
+   * `count` and `longestMs` describe this window; `afterFirstFrameMs` is the run's startup figure.
+   */
   readonly longTasks:
     | { readonly available: false }
     | {
         readonly available: true;
+        /** Long Tasks observed inside this window, not since the page started. */
         readonly count: number;
+        /** This window's longest Long Task; 0 when it saw none. */
         readonly longestMs: number;
+        /** The run's longest task after the first frame: a startup number, not this window's. */
         readonly afterFirstFrameMs: number;
       };
   /** 1 for the first reported window, incrementing thereafter. */
@@ -1615,6 +1621,8 @@ export class FrameBudget {
     this.#framesInWindow = 0;
     this.#windowStartTick = this.#simulation?.tick();
     this.#hitchesInWindow = 0;
+    this.#taskCount = 0;
+    this.#longestTaskMs = 0;
     this.#renderOverTarget = 0;
     this.#gpuOverTarget = 0;
     this.#presentsInWindow = 0;
