@@ -136,8 +136,11 @@ function metric(metrics, key, nullable = false) {
   return count(value, `metrics.${key}`);
 }
 
-/** One stress-lab report, validated fail-closed. Throws on any missing or invalid field. */
-export function measureReport(report) {
+/**
+ * One stress-lab report, validated fail-closed. Throws on any missing or invalid field.
+ * `counted: false` is for an engine that cannot count its own draws and triangles (Unreal): those two may be null.
+ */
+export function measureReport(report, { counted = true } = {}) {
   if (report === null || typeof report !== "object" || Array.isArray(report))
     throw new Error("report must be a JSON object");
   if (report.schema !== "stress-lab-report/1")
@@ -166,9 +169,9 @@ export function measureReport(report) {
       updateP50Ms: metric(metrics, "updateP50Ms"),
       frameP50Ms: metric(metrics, "frameP50Ms"),
       frameP95Ms: metric(metrics, "frameP95Ms"),
-      mainDraws: metric(metrics, "mainDraws"),
+      mainDraws: metric(metrics, "mainDraws", !counted),
       shadowDraws: metric(metrics, "shadowDraws", true),
-      mainTrianglesM: metric(metrics, "mainTrianglesM"),
+      mainTrianglesM: metric(metrics, "mainTrianglesM", !counted),
       // Absent on an arm that cannot split the shadow pass out; vanilla reports it under `extra`.
       shadowTrianglesM: metric(
         { shadowTrianglesM: metrics.shadowTrianglesM ?? report.extra?.shadowTrianglesM ?? null },
@@ -420,6 +423,7 @@ function mismatchOf(row, anchor) {
   if (row.shadow && anchor.shadow && row.shadow !== anchor.shadow)
     return `shadow mode ${row.shadow} against ${anchor.shadow}`;
   // Equal work, not equal draws: draws follow each engine's batching. Rows that lack a count are not judged.
+  if (typeof row.metrics.mainTrianglesM !== "number") return "main triangles not measured";
   for (const [key, name] of [
     ["mainTrianglesM", "main"],
     ["shadowTrianglesM", "shadow"],
@@ -575,7 +579,7 @@ export function recordRun(
   { engine = ENGINES[0].key, variant = "stress", ...options } = {},
 ) {
   const { report, extra } = checkedRun(raw, engine);
-  return appendRow(ledger, measureReport(report), {
+  return appendRow(ledger, measureReport(report, { counted: engine !== "unreal" }), {
     ...options,
     engine,
     variant,

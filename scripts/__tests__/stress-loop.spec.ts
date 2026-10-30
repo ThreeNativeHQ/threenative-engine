@@ -55,11 +55,17 @@ const ledgerPath = () => path.join(makeTempDirSync("stress-loop"), "ledger.json"
 const armLedger = (arms: Record<string, Record<string, number>>) =>
   Object.entries(arms).reduce(
     (ledger, [engine, metrics]) =>
-      appendRow(ledger, measureReport(report({ metrics: { ...report().metrics, ...metrics } })), {
-        label: engine,
-        engine,
-        decision: "measure",
-      }),
+      appendRow(
+        ledger,
+        measureReport(report({ metrics: { ...report().metrics, ...metrics } }), {
+          counted: engine !== "unreal",
+        }),
+        {
+          label: engine,
+          engine,
+          decision: "measure",
+        },
+      ),
     readLedger(ledgerPath()),
   );
 
@@ -360,6 +366,39 @@ describe("stress-loop record (PRD-770)", () => {
       pass: "vsync",
       load: { peak: 3.9 },
     });
+  });
+
+  it("records an Unreal run without draw or triangle counts, and ranks it as not comparable", () => {
+    const uncounted = { mainDraws: null, mainTrianglesM: null };
+    const unreal = run(
+      {
+        url: "unreal://stress",
+        build: { kind: "unreal", sha256: "58210709abcd", commit: "UnrealEngine-5.8.3" },
+      },
+      { metrics: { ...report().metrics, ...uncounted } },
+    );
+    // Only Unreal cannot count: an owned-engine row without counts still fails closed.
+    expect(() =>
+      recordRun(
+        readLedger(ledgerPath()),
+        run({}, { metrics: { ...report().metrics, ...uncounted } }),
+        { label: "x" },
+      ),
+    ).toThrow(/mainDraws/u);
+    const ledger = recordRun(readLedger(ledgerPath()), unreal, { label: "u", engine: "unreal" });
+    expect(ledger.iterations[0].metrics).toMatchObject(uncounted);
+    // A row that measured no main triangles cannot prove equal work, so it is shown but not ranked.
+    const cells = cellsOf(
+      renderHtml(
+        armLedger({
+          [WASM]: { mainTrianglesM: 2.11, gpuP95Ms: 6 },
+          unreal: { mainTrianglesM: null, gpuP95Ms: 9 },
+        }),
+        new Date(0),
+      ),
+      "GPU p95",
+    );
+    expect(cells[3]).toContain("not comparable: main triangles not measured");
   });
 
   it("writes the ledger in the shape biome keeps, so the lint gate stays green", () => {
