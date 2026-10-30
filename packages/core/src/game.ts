@@ -43,6 +43,11 @@ import {
   createEngineCounterReader,
 } from "./profiling/FrameCounters.js";
 import {
+  createStageReader,
+  createWorkReader,
+  stageMetersRequested,
+} from "./profiling/FrameStages.js";
+import {
   SPANS,
   SpanRecorder,
   addSpan,
@@ -1907,6 +1912,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const geometryCapture = new GeometryCapture();
     this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
+    // The stage meters split the render phase (PRD-771): three clock reads a frame and one difference of the
+    // engine's running totals. Decided once; `?tnStages=0` turns the whole path off, here and in the engine.
+    const stageMeters = frameBudget !== undefined && stageMetersRequested();
+    const readStages = stageMeters ? createStageReader(() => renderer.raw) : undefined;
+    const readWork = stageMeters ? createWorkReader(() => renderer.raw) : undefined;
+    if (!stageMeters)
+      (renderer.raw as { setStageMeters?: (enabled: boolean) => void }).setStageMeters?.(false);
+    let computeStageMs = 0;
     // The dev verdict is decided once per launch, and sent when it changes rather than on a timer:
     // a chip that re-sent an unchanged sentence four times a second would pay a JSON round trip to
     // say nothing new.
@@ -1979,6 +1992,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           (!startupCoverActive() || startupReadiness.compileSettled)
         ) {
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
+          computeStageMs = 0;
           beginSpan(SPANS.compute);
           try {
             // The render camera comes with it, because a render-cadence consumer that culls by the
@@ -1993,7 +2007,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           } finally {
             endSpan(SPANS.compute);
           }
-          frameBudget?.addRender(budgetNow() - computeStart);
+          computeStageMs = frameBudget === undefined ? 0 : budgetNow() - computeStart;
+          frameBudget?.addRender(computeStageMs);
         }
         const waitingForFirstUse =
           firstWorldPass &&
@@ -2154,7 +2169,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               if (scaler !== undefined)
                 renderer.setResolutionScale(scaler.scale, scaler.scaleSource);
             }
+            const engineStart = readStages === undefined ? 0 : budgetNow();
             renderer.render(renderRoot, camera);
+            const engineEnd = readStages === undefined ? 0 : budgetNow();
             renders += 1;
             // Count declined frames without treating them as drawn-frame render cost.
             const gateSkips = rendererFrameGateSkips(renderer.raw);
@@ -2175,7 +2192,17 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
             this.#projection?.commit();
             renderer.observeRenderChainFrame?.();
-            frameBudget?.addRender(budgetNow() - renderStart);
+            if (frameBudget !== undefined) {
+              const renderEnd = budgetNow();
+              frameBudget.addRender(renderEnd - renderStart);
+              const stages = readStages?.(
+                computeStageMs + (engineStart - renderStart),
+                engineEnd - engineStart,
+                renderEnd - engineEnd,
+              );
+              if (stages !== undefined) frameBudget.addStages(stages);
+            }
+            computeStageMs = 0;
             // Read the split before the overlay renders: the overlay is its own draw, not part of the
             // world pass, and the budget window already accounts for it in its own phase.
             worldPasses = renderPassBudget?.passes();
@@ -2298,7 +2325,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         const boundary = frameCounters?.read();
         const engine = engineCounters();
+        // The owned engine's work counts; a JS back end with its own queue counters (`boundary`) outranks them.
+        const work = readWork?.(crossings);
         frameBudget?.addCounters({
+          ...(work ?? {}),
           ...(boundary ?? {}),
           ...(crossings === undefined ? {} : { bridgeCrossings: crossings }),
           ...(engine === undefined ? {} : { engine }),

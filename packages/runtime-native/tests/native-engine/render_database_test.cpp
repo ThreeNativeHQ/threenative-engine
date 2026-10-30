@@ -719,6 +719,65 @@ struct LitScene {
     }
 };
 
+// PRD-771: the scene half of render() (joints, scene walk, shadow sync) is metered as its own stage, and the three
+// stages the page reads (scene, prepare, encode) never add up to more than the call took.
+void sceneStageIsMetered() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 240);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    LitScene s;
+    RenderDatabase database;
+    CHECK(database.sceneMs() == 0 && database.rendererMs() == 0);
+    const auto wall = std::chrono::steady_clock::now();
+    for (int frame = 0; frame < 3; ++frame) database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    const double callMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - wall).count();
+    const double scene = database.sceneMs();
+    const double prepare = renderer.cpuStageMs(Renderer::CpuPrepare), encode = renderer.cpuStageMs(Renderer::CpuEncode);
+    const double inRenderer = database.rendererMs();
+    CHECK(scene > 0 && prepare > 0 && encode > 0);
+    CHECK(scene + prepare + encode <= callMs + 0.5);
+    // `Renderer::render` holds both halves, and the scene half ends where it starts.
+    CHECK(inRenderer >= prepare + encode - 0.5 && scene + inRenderer <= callMs + 0.5);
+    Renderer::setCpuMeters(false);
+    for (int frame = 0; frame < 3; ++frame) database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    Renderer::setCpuMeters(true);
+    CHECK(database.sceneMs() == scene && database.rendererMs() == inRenderer);
+    CHECK(renderer.cpuStageMs(Renderer::CpuPrepare) == prepare && renderer.cpuStageMs(Renderer::CpuEncode) == encode);
+    // A sibling (a render target's or a reflection's renderer) publishes nothing, so it reads no clock.
+    auto child = renderer.sibling();
+    RenderDatabase childDatabase;
+    CHECK(!child->metered() && renderer.metered());
+    childDatabase.render(*child, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    CHECK(child->cpuStageMs(Renderer::CpuPrepare) == 0 && child->cpuStageMs(Renderer::CpuEncode) == 0);
+    CHECK(childDatabase.sceneMs() == 0 && childDatabase.rendererMs() == 0);
+}
+
+void overlayLeavesStageTotals() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 240);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    LitScene s;
+    RenderDatabase database, overlayDatabase;
+    database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    std::array<double, Renderer::kCpuStageCount> before{};
+    for (size_t i = 0; i < before.size(); ++i) before[i] = renderer.cpuStageMs(Renderer::CpuStage(i));
+    const double scene = database.sceneMs(), inRenderer = database.rendererMs();
+    // The canvas layer's draw is the overlay: its renderer is a sibling and its database is its own, so the world's
+    // totals (and the next world frame's difference) hold no overlay time.
+    Renderer& overlay = renderer.overlayRenderer();
+    CHECK(!overlay.metered());
+    for (int frame = 0; frame < 3; ++frame) overlayDatabase.render(overlay, s.scene, s.camera, {0, 0, 0, 0});
+    for (size_t i = 0; i < before.size(); ++i) CHECK(renderer.cpuStageMs(Renderer::CpuStage(i)) == before[i]);
+    CHECK(database.sceneMs() == scene && database.rendererMs() == inRenderer);
+    CHECK(overlayDatabase.sceneMs() == 0 && overlayDatabase.rendererMs() == 0);
+}
+
 void litScene() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -8213,7 +8272,7 @@ void drawRefreshGuardHoles() {
     }
 }
 
-TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
+TN_TEST_MAIN({"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances},{"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"frame_slab_is_per_program", frameSlabIsPerProgram},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

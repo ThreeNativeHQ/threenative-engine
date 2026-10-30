@@ -94,6 +94,15 @@ class RenderDatabase {
      */
     bool reuseMainFrame = true;
     bool profiling = false;
+    /**
+     * PRD-771: running wall ms of render()'s scene half, every call summed: the GPU-joint prep, the scene walk that
+     * packs the draw items (visibility, matrices, batching), the virtual-shadow sync and the reflection passes, up to
+     * the call that plans the frame. A caller turns two reads into per-frame time; it stops counting while
+     * `Renderer::cpuMeters()` is off.
+     */
+    [[nodiscard]] double sceneMs() const { return sceneMs_; }
+    /** Total wall ms inside `Renderer::render` (the plan plus the encode and what wraps them), when the stage meters are on. */
+    [[nodiscard]] double rendererMs() const { return rendererMs_; }
     // Matrix setup, projection/record refresh (including fused flat-scene matrices), batch packing, remaining.
     [[nodiscard]] const std::array<double, 4>& lastPrepareMs() const { return prepareMs_; }
     // With profiling: wall ms of the GPU-joint prep, the scene prepare and the reflection passes in render().
@@ -324,6 +333,8 @@ class RenderDatabase {
     uint64_t frame_ = 0;
     std::size_t previousDrawCount_ = 0;
     std::array<double, 3> renderPhaseMs_{};
+    double sceneMs_ = 0;
+    double rendererMs_ = 0;
     std::array<double, 2> reflectionMs_{};
     std::size_t reflectionItems_ = 0;
     std::array<double, 4> prepareMs_{};

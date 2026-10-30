@@ -420,6 +420,7 @@ public:
     std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
         auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
         child->sceneOnly_ = sceneOnly;
+        child->cpuMetered_ = false;
         child->textures_ = textures_;
         child->passTimer_ = passTimer_;
         child->ownsPassTimer_ = false;
@@ -757,8 +758,17 @@ public:
      */
     /** Running CPU ms (thread CPU where the platform has it, else wall) of renderPrepared's costly stages, every
      *  render summed, so a caller turns them into per-frame time by difference: the virtual shadow pages and caster
-     *  bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, and the encode half. */
-    enum CpuStage : std::size_t { CpuVirtualPages, CpuPlan, CpuShadowBuild, CpuPrepare, CpuEncode, kCpuStageCount };
+     *  bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, and the encode half. CpuPost is
+     *  the post effects' and output pass's share of the encode half (PRD-771), so the encode half without post is
+     *  CpuEncode - CpuPost. */
+    enum CpuStage : std::size_t { CpuVirtualPages, CpuPlan, CpuShadowBuild, CpuPrepare, CpuEncode, CpuPost, kCpuStageCount };
+    /** PRD-771: the stage meters read a clock around each stage, so a caller that must not pay even that (the paired
+     *  A/B of the meters' own cost) turns them off for every renderer. On by default; the totals stand while off. */
+    static void setCpuMeters(bool enabled);
+    static bool cpuMeters();
+    /** Whether this renderer's stages are metered: the switch above, and not a sibling (a render target's or a reflection's
+     *  totals are never published, so its clock reads would be a cost with no reader). */
+    bool metered() const { return cpuMetered_ && cpuMeters(); }
     double cpuStageMs(CpuStage stage) const { return cpuStageMs_[stage].load(std::memory_order_relaxed); }
     double lastGpuMs() const { return timing_->lastMs; }
     /**
@@ -1293,12 +1303,13 @@ private:
     float renderScale_ = 1;
     uint64_t renderId_ = 0;
     std::array<std::atomic<double>, kCpuStageCount> cpuStageMs_{};
+    bool cpuMetered_ = true;
     /** Adds the ms since `started` to a stage; the encode half adds its own from the render thread. */
     void addCpuStage(CpuStage stage, double started);
     struct CpuStageMeter {
         std::atomic<double>& total;
         double started;
-        explicit CpuStageMeter(std::atomic<double>& total);
+        CpuStageMeter(std::atomic<double>& total, bool on);
         ~CpuStageMeter();
     };
     FrameStats lastFrame_;

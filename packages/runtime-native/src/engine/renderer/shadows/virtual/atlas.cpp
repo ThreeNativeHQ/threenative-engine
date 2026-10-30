@@ -1,4 +1,5 @@
 #include "atlas.h"
+#include "engine/foundation/waste_counters.h"
 
 #include "engine/foundation/waste_counters.h"
 
@@ -314,6 +315,7 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
         const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || caster.signature != m.caster.signature);
         const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
         if (moving) {
+            waste::meterAdd(waste::counters().castersMoving);
             if (!m.moving && !inserted) invalidate(m.caster.bounds, true);
             m.moving = true; m.quiet = 0; m.settling = 0;
         } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {

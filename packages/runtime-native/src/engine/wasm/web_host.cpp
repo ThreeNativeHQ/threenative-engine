@@ -4,6 +4,7 @@
 // desktop; this file owns only device bring-up and the canvas surface. The test host
 // (tests/native-engine/wasm/browser.cpp) keeps its fixed-canvas bench and package proofs.
 #include "engine/abi/abi_internal.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/foundation/job_pool.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/frame_gate.h"
@@ -114,6 +115,56 @@ int refuse(const std::string& message) {
     if (reported.insert(message).second) std::fprintf(stderr, "TN_RENDERER: %s\n", message.c_str());
     return 1;
 }
+
+/**
+ * PRD-771: running wall ms of the main view's tnw_web_render, the queued kernels' flush inside it, and the batched queue
+ * submit that ends it (tnw_web_frame 75 to 77). The page differences two reads per frame; with the renderer's CPU meters
+ * off (Renderer::setCpuMeters) a scope reads no clock and adds nothing.
+ */
+double hostRenderMs = 0, hostComputeMs = 0, hostSubmitMs = 0, hostPollMs = 0, hostTailMs = 0, hostDatabaseMs = 0, hostTargetMs = 0;
+/**
+ * The page reads the stage totals in place instead of by ten host calls a frame (the renderer's ABI census is pinned):
+ * tnw_web_frame 78 answers this array's address, and every main-view render ends by writing the totals into it, in
+ * the order of three-native's CPU_STAGE_FIELDS, then three work counts (dirty transforms, moving casters, queue bytes).
+ */
+double stageTotals[18] = {};
+void publishStageTotals() {
+    if (!renderer) return;
+    const Renderer::CpuStage stages[] = {Renderer::CpuVirtualPages, Renderer::CpuPlan, Renderer::CpuShadowBuild,
+                                         Renderer::CpuPrepare, Renderer::CpuEncode, Renderer::CpuPost};
+    for (size_t i = 0; i < 6; ++i) stageTotals[i] = renderer->cpuStageMs(stages[i]);
+    stageTotals[6] = database.sceneMs();
+    stageTotals[7] = hostRenderMs;
+    stageTotals[8] = hostComputeMs;
+    stageTotals[9] = hostSubmitMs;
+    stageTotals[10] = hostPollMs;
+    stageTotals[11] = hostTailMs;
+    // The work counts beside the times (PRD-771): transforms moved, casters judged moving, bytes the queue took.
+    stageTotals[12] = database.rendererMs();
+    stageTotals[13] = hostDatabaseMs;
+    stageTotals[14] = hostTargetMs;
+    stageTotals[15] = double(waste::counters().dirtyTransforms.load(std::memory_order_relaxed));
+    stageTotals[16] = double(waste::counters().castersMoving.load(std::memory_order_relaxed));
+    stageTotals[17] = double(renderer->gpu().queueWriteBytes());
+}
+struct HostMeter {
+    double& total;
+    double started = -1;
+    HostMeter(double& total, bool counted) : total(total) {
+        if (counted && Renderer::cpuMeters()) started = emscripten_get_now();
+    }
+    ~HostMeter() {
+        if (started >= 0) total += emscripten_get_now() - started;
+    }
+};
+
+/** Writes the totals into `stageTotals` when it goes out of scope; declare it before the HostMeter it follows. */
+struct StagePublisher {
+    bool counted;
+    ~StagePublisher() {
+        if (counted && Renderer::cpuMeters()) publishStageTotals();
+    }
+};
 
 /** Runs the queued kernels and readbacks ahead of whatever draws or reads next; a refusal prints by name. */
 void flushCompute() {
@@ -290,7 +341,12 @@ extern "C" void tnw_web_set_presentation_hold(int held) { presentationHeld = hel
  */
 extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t* cameraHandle, double r, double g,
                               double b, double a, int overlay, uint32_t sourceFrame) {
-    tnw_web_poll();
+    const StagePublisher publisher{!overlay};  // declared first, so it runs after the meter below has closed
+    const HostMeter renderMeter(hostRenderMs, !overlay);
+    {
+        const HostMeter pollMeter(hostPollMs, !overlay);  // delivers the queue's callbacks: readbacks, work-done
+        tnw_web_poll();
+    }
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
     auto* scene = rootOf(sceneHandle);
     auto* camera = cameraOf(cameraHandle);
@@ -302,7 +358,10 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
         if (frame.texture == nullptr) throw std::runtime_error("TN_WASM_SURFACE: no canvas texture");
         return view = wgpuTextureCreateView(frame.texture, nullptr);
     };
-    flushCompute();
+    {
+        const HostMeter computeMeter(hostComputeMs, !overlay);
+        flushCompute();
+    }
     if (outputChanged) renderer->setOutput(output);
     outputChanged = false;
     // RenderPipeline installs its graph before the facade submits renderer settings. Compile only
@@ -339,7 +398,11 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
             Renderer::PresentScope present(
                 *renderer, [&]() -> WGPUTextureView { return presentationHeld ? nullptr : acquire(); },
                 surfaceFormat);
-            const uint64_t submission = database.render(*renderer, *scene, *camera, {r, g, b, a});
+            uint64_t submission;
+            {
+                const HostMeter databaseMeter(hostDatabaseMs, true);
+                submission = database.render(*renderer, *scene, *camera, {r, g, b, a});
+            }
             // A frame the environment bake gated (0) drew nothing, so it is not one of the startup's world submissions.
             if (submission != 0) {
                 ++worldSubmissions;
@@ -350,12 +413,19 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     } catch (const std::exception& error) {
         refused = error.what();
     }
-    if (view) wgpuTextureViewRelease(view);
-    if (frame.texture) wgpuTextureRelease(frame.texture);
+    {
+        const HostMeter tailMeter(hostTailMs, !overlay);
+        if (view) wgpuTextureViewRelease(view);
+        if (frame.texture) wgpuTextureRelease(frame.texture);
+    }
     // A render target draw batches its submit until the next one that does not batch, so a target drawn last would
     // leave the frame's serial off the queue: no work-done ever arrives, the gate declines every later frame, and
     // nothing submits again (a timestamp readback each frame used to flush it). The frame's work goes now.
-    GpuResources::flushSubmits();
+    {
+        const HostMeter submitMeter(hostSubmitMs, !overlay);
+        GpuResources::flushSubmits();
+    }
+    const HostMeter diagnosticsMeter(hostTailMs, !overlay);  // the gate's note and the diagnostics below, to the return
     frameGate.submitted(renderer->gpu().submittedSerial(), emscripten_get_now());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
@@ -487,6 +557,10 @@ extern "C" int tnw_web_compile_status(uint32_t id) {
 extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_handle_t* rootHandle,
                                      const tn_handle_t* cameraHandle, double r, double g, double b, double a,
                                      int deferred) {
+    // A render target's draw is renderer work inside the page's render() call too (a post graph's offscreen passes), so it
+    // counts toward the same host total; the totals publish when it ends so a draw after the main view is not left behind.
+    const StagePublisher publisher{true};
+    const HostMeter renderMeter(hostRenderMs, true);
     tnw_web_poll();
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
     auto* target = objectAs<RenderTarget>(targetHandle, "RenderTarget");
@@ -496,7 +570,11 @@ extern "C" int tnw_web_render_target(const tn_handle_t* targetHandle, const tn_h
         return fail("TN_WASM_RENDER_TARGET: target, root or camera handle invalid");
     flushCompute();  // a material in the target may read what a queued kernel writes
     try {
-        const auto refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
+        std::vector<std::string> refused;
+        {
+            const HostMeter targetMeter(hostTargetMs, true);
+            refused = renderToTarget(*renderer, *target, *root, *camera, {r, g, b, a}, shadowMap, deferred != 0);
+        }
         if (!refused.empty()) return refuse(refused.front());
         return 0;
     } catch (const std::exception& error) {
@@ -779,6 +857,12 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * The temporal pass's counted frame follows the lamp fields, 30 to 33. The kept shadow maps and the uniform bytes are 40 and 41.
  */
 extern "C" double tnw_web_frame(int field) {
+    // -3 and -4: the CPU stage meters on and off (PRD-771); a static switch, so it answers before the renderer exists.
+    // On until a page asks otherwise.
+    if (field == -3 || field == -4) {
+        Renderer::setCpuMeters(field == -3);
+        return 0;
+    }
     if (!renderer) return 0;
     if (!lastDrawn) lastDrawn = renderer.get();
     switch (field) {
@@ -858,6 +942,23 @@ extern "C" double tnw_web_frame(int field) {
         case 73: return double(lastDrawn->lastFrame().shadowTriangles);
         case 40: return double(renderer->lastFrame().keptShadowMaps);
         case 41: return double(renderer->lastFrame().uniformBytes);
+        // PRD-771, 73 to 77: running ms, every render summed, like 66 to 70. 73 the post effects' and output pass's share of
+        // the encode half (inside 70); 74 the scene half of RenderDatabase::render (joints, scene walk, shadow sync);
+        // 75 the whole main-view tnw_web_render, of which 76 is the queued kernels' flush and 77 the batched queue submit.
+        case 73: return renderer->cpuStageMs(Renderer::CpuPost);
+        case 74: return database.sceneMs();
+        case 75: return hostRenderMs;
+        case 76: return hostComputeMs;
+        case 77: return hostSubmitMs;
+        // 79 and 80: the tnw_web_poll that opens a render, and the render's tail (surface texture release, frame gate, diagnostics).
+        case 79: return hostPollMs;
+        case 80: return hostTailMs;
+        case 81: return database.rendererMs();
+        case 82: return hostDatabaseMs;
+        case 83: return hostTargetMs;
+        case 84: return Renderer::cpuMeters() ? 1 : 0;  // the stage meters on (the page lists the totals only while they run)
+        // 78: the address of the array above, as a number; the page reads 18 doubles from it after each render.
+        case 78: return double(reinterpret_cast<uintptr_t>(stageTotals));
         default: return 0;
     }
 }

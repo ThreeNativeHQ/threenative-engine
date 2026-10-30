@@ -162,8 +162,10 @@ export async function bindWebEngine(
     isWebHostModule(module)
       ? () => {
           const totals = { ...counters() };
-          for (const [name, field] of Object.entries(CPU_STAGE_FIELDS))
-            totals[name] = module._tnw_web_frame(field);
+          // Off, the engine reads no clock and the totals stand at their last value: listing them would report a stale cost.
+          if (module._tnw_web_frame(84) !== 0)
+            for (const [name, field] of Object.entries(CPU_STAGE_FIELDS))
+              totals[name] = module._tnw_web_frame(field);
           return totals;
         }
       : counters;

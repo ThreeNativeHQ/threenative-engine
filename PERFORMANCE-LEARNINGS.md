@@ -769,3 +769,22 @@ no COOP/COEP); that lane is open.
   different camera pose at capture: take 3+ frames per arm before you read a shadow outlier as a cull defect.
 - Revisit when: GPU p95 on `?stress` rises above 16.7 ms again, or a game keeps casters that are not instanced (they
   still draw whole on a rebuild); then FG2 (fixed depth band with a pan anchor).
+
+### 2026-10-30 — Method: the render phase splits into named stages on every window — KEEP (telemetry)
+- Where: `packages/core/src/profiling/FrameStages.ts`, `FrameBudget.addStages` and `stagesAtP95`, `Renderer::CpuStage` +
+  `RenderDatabase::sceneMs/rendererMs` + `web_host.cpp` stage totals (`tnw_web_frame` 78).
+- Use: every `TN_FRAME_BUDGET` window carries `stages`, `stageSum` and `stagesAtP95`; `?tnStages=0` turns the meters off
+  for the A/B of their own cost.
+- Result (stress lab, `?stress`, develop Wasm, fair window): frame p50 14.70 ms = plan 4.00 + scene 2.83 + JS before the
+  call 2.65 + update 2.26 + engineJs 0.81 + render targets 0.72 + remainders 0.80 + post 0.25 + encode 0.12; submit,
+  poll, compute 0. The p95 tail (+5.3 ms) is 71% shadow refresh (encode +1.4, VSM pages +1.4, shadow lists +1.0), 22%
+  crowd and JS. Meters on vs off: +0.05 ms (5 valid pairs).
+- Insight: publish the subtractions (`engineJs`, `wasmOther`, the gaps) as stages. A named remainder is a number to
+  chase; the first build had a 1.25 ms `wasmOther` that two extra meters split into 0.89 ms of render targets and a 0.39
+  ms remainder.
+- Insight: a meter that nobody reads is not free. Metering sibling renderers (render targets, reflections) cost 0.2 ms a
+  frame on Wasm (6 of 6 pairs); gate the meter to the renderer whose totals are published.
+- Insight: read engine totals in place from linear memory. The renderer ABI census is pinned, and ten extra host calls a
+  frame broke it.
+- Revisit when: a Chrome build with precise `performance.memory` runs the stress lab (`jsAllocKbP50` reads 0 under
+  Brave's bucketing).

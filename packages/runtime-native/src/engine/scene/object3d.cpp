@@ -102,7 +102,7 @@ void Object3D::enableTrackedTransform() {
 
 uint8_t* Object3D::ownTransformTracking() const { return transform_.page->tracking[transform_.index].data(); }
 
-void Object3D::markLocalTransformDirty() { waste::debugAdd(waste::counters().sceneDirtyMarks); transform_.page->tracking[transform_.index][1] = 1; }
+void Object3D::markLocalTransformDirty() { waste::debugAdd(waste::counters().sceneDirtyMarks); waste::meterAdd(waste::counters().dirtyTransforms); transform_.page->tracking[transform_.index][1] = 1; }
 
 uint8_t* Object3D::transformTrackingAddress(const void* address) {
     auto& pool = transforms();

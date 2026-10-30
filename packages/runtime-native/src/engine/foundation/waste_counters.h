@@ -117,6 +117,13 @@ struct Counters {
      * tests bound: tests/native-engine/vsm/vsm_pages_test.cpp's eviction_allocation.
      */
     std::atomic<uint64_t> shadowPageEvictionCandidates{0};
+    /**
+     * PRD-771, counted whenever the stage meters are on (`meterAdd`), not only under debug: the transforms a game moved
+     * (`Object3D::markLocalTransformDirty`, one per call) and the shadow casters the virtual atlas judged moving this
+     * frame (`PageAtlas::updateCasters`, one per moving caster per frame, each one invalidating its pages). The page reads
+     * both beside the stage times, so a frame's cost sits beside the work that caused it.
+     */
+    std::atomic<uint64_t> dirtyTransforms{0}, castersMoving{0};
 };
 
 static_assert(std::atomic<uint64_t>::is_always_lock_free, "the web back end reads the counters' bytes in place");
@@ -135,5 +142,11 @@ inline void debugAdd(std::atomic<uint64_t>& counter, uint64_t value = 1) {
 }
 
 inline void count(std::atomic<uint64_t>& counter) { counter.fetch_add(1, std::memory_order_relaxed); }
+
+/** The stage meters' switch (`Renderer::setCpuMeters` sets it): on until a page turns it off. */
+inline std::atomic<bool>& meterEnabled() { static std::atomic<bool> enabled{true}; return enabled; }
+inline void meterAdd(std::atomic<uint64_t>& counter, uint64_t value = 1) {
+    if (meterEnabled().load(std::memory_order_relaxed)) counter.fetch_add(value, std::memory_order_relaxed);
+}
 
 }  // namespace tn::engine::waste

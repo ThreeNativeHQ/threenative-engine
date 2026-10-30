@@ -7,7 +7,15 @@
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import { debugTelemetry } from "./debug-telemetry.js";
-import { GPU_STAGES, SHADOW_SEGMENT_FIELD, SHADOW_STAGE } from "./gpu-stages.js";
+import {
+  CPU_STAGE_ENTRIES,
+  type CpuStageName,
+  GPU_STAGES,
+  SHADOW_SEGMENT_FIELD,
+  SHADOW_STAGE,
+  WORK_COUNT_NAMES,
+  type WorkCountName,
+} from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
@@ -170,6 +178,17 @@ export function defineWebRenderer(
     get temporalUpscale(): boolean {
       return module._tnw_web_frame(34) === 1;
     }
+    #stageMeters = true;
+    /** Address of the host's stage-total array (`tnw_web_frame` 78), 0 until `init` asks. */
+    #stageBase = 0;
+    /**
+     * The engine's CPU stage meters on (the default) or off. Off, the engine reads no clock around its stages and this
+     * facade reads no totals, so the paired A/B of the meters' own cost can run on one build (PRD-771).
+     */
+    setStageMeters(enabled: boolean): void {
+      this.#stageMeters = enabled;
+      module._tnw_web_frame(enabled ? -3 : -4);
+    }
     setRenderScale(scale: number): void {
       if (!Number.isFinite(scale) || scale < 0.25 || scale > 1)
         throw new Error("renderScale must be finite and between 0.25 and 1.");
@@ -260,6 +279,12 @@ export function defineWebRenderer(
         },
         // The bytes of per-draw uniforms the last frame uploaded.
         uniformBytes: 0,
+        // The engine's CPU stages as running totals in ms (gpu-stages.ts `CPU_STAGE_FIELDS`) and the work counts beside
+        // them (`WORK_COUNT_NAMES`), re-read after every render while the stage meters are on: core differences two
+        // reads into `TN_FRAME_BUDGET.stages`. Made by `init` when the module publishes them: a module that does not
+        // has none, and core reads that as unmeasured, never as zero.
+        cpuMs: undefined as Record<CpuStageName, number> | undefined,
+        work: undefined as Record<WorkCountName, number> | undefined,
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -413,6 +438,15 @@ export function defineWebRenderer(
         // Honest, like the engine: a device without timestamp-query times no frame, so no caller
         // may be told timestamps are enabled. An explicit opt-out stays off.
         if (module._tnw_web_frame(10) === 0) this.backend.trackTimestamp = false;
+        this.#stageBase = module._tnw_web_frame(78);
+        if (this.#stageBase > 0) {
+          this.info.engine.cpuMs = Object.fromEntries(
+            CPU_STAGE_ENTRIES.map(([name]) => [name, 0]),
+          ) as Record<CpuStageName, number>;
+          this.info.engine.work = Object.fromEntries(
+            WORK_COUNT_NAMES.map((name) => [name, 0]),
+          ) as Record<WorkCountName, number>;
+        }
         return this;
       })();
       return this.#initialized;
@@ -649,6 +683,19 @@ export function defineWebRenderer(
         debug.add("temporalOutputPixels", temporal.outputWidth * temporal.outputHeight, "temporal");
       }
       engine.samples = module._tnw_web_frame(18);
+      const cpu = engine.cpuMs;
+      const work = engine.work;
+      if (this.#stageMeters && cpu !== undefined && work !== undefined) {
+        // In place, from the array the host fills at the end of every render: the ABI census above stays as it was.
+        const heap = module.HEAPF64;
+        const first = this.#stageBase / 8;
+        for (let index = 0; index < CPU_STAGE_ENTRIES.length; index += 1)
+          cpu[(CPU_STAGE_ENTRIES[index] as readonly [CpuStageName, number])[0]] =
+            heap[first + index] ?? 0;
+        for (let index = 0; index < WORK_COUNT_NAMES.length; index += 1)
+          work[WORK_COUNT_NAMES[index] as WorkCountName] =
+            heap[first + CPU_STAGE_ENTRIES.length + index] ?? 0;
+      }
       const passes = engine.passes;
       passes.mainRecorded = module._tnw_web_frame(60);
       passes.recordCause = module._tnw_web_frame(61);

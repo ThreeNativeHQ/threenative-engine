@@ -2837,13 +2837,27 @@ std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::sp
     return compilation;
 }
 
+static std::atomic<bool> cpuMetersOn{true};
+
+void Renderer::setCpuMeters(bool enabled) {
+    cpuMetersOn.store(enabled, std::memory_order_relaxed);
+    waste::meterEnabled().store(enabled, std::memory_order_relaxed);
+}
+bool Renderer::cpuMeters() { return cpuMetersOn.load(std::memory_order_relaxed); }
+
+// A stage opened while the meters are off carries a negative start and adds nothing, so flipping the switch inside a
+// frame never charges the clock's epoch to a stage.
+static double meterStart(bool on) { return on && cpuMetersOn.load(std::memory_order_relaxed) ? meterMs() : -1; }
+
 void Renderer::addCpuStage(CpuStage stage, double started) {
+    if (started < 0) return;
     cpuStageMs_[stage].store(cpuStageMs_[stage].load(std::memory_order_relaxed) + meterMs() - started, std::memory_order_relaxed);
 }
 
-Renderer::CpuStageMeter::CpuStageMeter(std::atomic<double>& total) : total(total), started(meterMs()) {}
+Renderer::CpuStageMeter::CpuStageMeter(std::atomic<double>& total, bool on) : total(total), started(meterStart(on)) {}
 
 Renderer::CpuStageMeter::~CpuStageMeter() {
+    if (started < 0) return;
     total.store(total.load(std::memory_order_relaxed) + meterMs() - started, std::memory_order_relaxed);
 }
 
@@ -2851,7 +2865,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                   const LightState& lights, std::array<double, 4> clear,
                                   std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
                                   WGPUTextureFormat outputFormat, bool defer) {
-    const double prepareStarted = meterMs();
+    const double prepareStarted = meterStart(cpuMetered_);
     FrameGpuTimer::Scope timerScope(compilation ? nullptr : passTimer_.get());
     // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
     if (!compilation && (pendingEncode_ || encoding_))
@@ -2959,7 +2973,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     const auto opaque = sortDraws(items, camera, stablePasses_ && stableRows_);
 
-    double stageStarted = meterMs();
+    double stageStarted = meterStart(cpuMetered_);
     // The light layout every lit program this frame is specialized for, in three's light order.
     // Upper case: the light casts a shadow, which a receiving mesh's program reads; a mesh that does
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
@@ -3395,7 +3409,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return h;
     };
 
-    stageStarted = meterMs();
+    stageStarted = meterStart(cpuMetered_);
     // Plan: each draw's program, pipeline and uniform slices, all uniforms into one CPU block.
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
@@ -3673,7 +3687,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
 
     addCpuStage(CpuPlan, stageStarted);
-    stageStarted = meterMs();
+    stageStarted = meterStart(cpuMetered_);
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
@@ -5273,7 +5287,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 }
 
 void Renderer::encodeFrame(FrameJob& job) {
-    const CpuStageMeter encodeMeter(cpuStageMs_[CpuEncode]);
+    const CpuStageMeter encodeMeter(cpuStageMs_[CpuEncode], cpuMetered_);
     FrameGpuTimer::Scope timerScope(passTimer_.get());
     // The encode half (PRD-613): records and submits what renderPrepared planned. It reads the job,
     // the renderer's own GPU state and the geometry cache's resolved handles, and nothing the game writes.
@@ -5815,6 +5829,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPUCommandEncoderDescriptor next = {};
         return wgpuDeviceCreateCommandEncoder(device_, &next);
     };
+    const double postStarted = meterStart(cpuMetered_);
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
         postEffects_->setHost(lateTraa_ ? PostEffects::HostPass([this](WGPUCommandEncoder resolveEncoder, WGPUTexture beauty,
@@ -5836,6 +5851,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     encoder = recordSampledTargets(encoder);
     if (!sceneOnly_ && (writesOutput_ || presentTarget)) outputPass(encoder, presentTarget, presentFormat);
+    addCpuStage(CpuPost, postStarted);
     const auto segments = passTimer_->segments;
     const auto passInfo = passTimer_->passes;
     const std::array<uint32_t, 4> extent{inputWidth_, inputHeight_, width_, height_};

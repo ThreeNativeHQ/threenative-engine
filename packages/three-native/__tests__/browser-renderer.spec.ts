@@ -105,6 +105,84 @@ async function drawn(parameters: Record<string, unknown>) {
   return { samples: renderer.samples, handed: state.mock.calls.at(-1)?.[5] };
 }
 
+describe("the owned engine's CPU stage totals (PRD-771)", () => {
+  const fieldsOf = (calls: number[]) => (field: number) => {
+    calls.push(field);
+    return field === 78 ? 64 : 0;
+  };
+
+  it("reads them in place from the host's array, so a steady frame pays no host call for them", async () => {
+    const asked: number[] = [];
+    const { Renderer, canvas, scene, camera, module } = host(fieldsOf(asked));
+    const heap = new Float64Array(32);
+    Reflect.set(module, "HEAPF64", heap);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      info: { engine: { cpuMs: Record<string, number> } };
+    };
+    await renderer.init();
+    // Fifteen doubles at address 64, in the order of CPU_STAGE_FIELDS: pages, plan, shadow lists, prepare, encode, post,
+    // then the scene half and the host's render, compute, submit, poll and tail, then `Renderer::render` itself, the whole database call and the render targets.
+    heap.set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], 8);
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.cpuMs).toEqual({
+      cpuVirtualPagesMs: 1,
+      cpuPlanMs: 2,
+      cpuShadowBuildMs: 3,
+      cpuPrepareMs: 4,
+      cpuEncodeMs: 5,
+      cpuPostMs: 6,
+      cpuSceneMs: 7,
+      hostRenderMs: 8,
+      hostComputeMs: 9,
+      hostSubmitMs: 10,
+      hostPollMs: 11,
+      hostTailMs: 12,
+      rendererMs: 13,
+      hostDatabaseMs: 14,
+      hostTargetMs: 15,
+    });
+    // 71-72 are startup reads and 73 the per-frame shadow split (PRD-770); none is a stage total.
+    expect(asked.filter((field) => field >= 66 && (field < 71 || field > 73))).toEqual([78]);
+  });
+
+  it("publishes no totals on a module without the array, so core reads them as unmeasured", async () => {
+    const { Renderer, canvas, scene, camera } = host(() => 0);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      info: { engine: { cpuMs?: unknown; work?: unknown } };
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.cpuMs).toBeUndefined();
+    expect(renderer.info.engine.work).toBeUndefined();
+  });
+
+  it("stops reading them, and tells the engine, when the meters are turned off", async () => {
+    const asked: number[] = [];
+    const { Renderer, canvas, scene, camera, module } = host(fieldsOf(asked));
+    const heap = new Float64Array(32).fill(5);
+    Reflect.set(module, "HEAPF64", heap);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      setStageMeters(enabled: boolean): void;
+      info: { engine: { cpuMs: Record<string, number> } };
+    };
+    await renderer.init();
+    renderer.setStageMeters(false);
+    renderer.render(scene, camera);
+    expect(asked).toContain(-4);
+    expect(renderer.info.engine.cpuMs.cpuSceneMs).toBe(0);
+    renderer.setStageMeters(true);
+    renderer.render(scene, camera);
+    expect(asked).toContain(-3);
+    expect(renderer.info.engine.cpuMs.cpuSceneMs).toBe(5);
+  });
+});
+
 describe("the owned engine's temporal render scale", () => {
   it("sends input scale while keeping the display-sized canvas", async () => {
     const fields: Record<number, number> = {};

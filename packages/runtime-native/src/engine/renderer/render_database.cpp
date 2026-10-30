@@ -1798,6 +1798,11 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         throw std::logic_error("TN_RENDER_THREAD_BATON: a frame was planned before the previous one was encoded");
     using Clock = std::chrono::steady_clock;
     const auto start = (cpuMs || profiling) ? Clock::now() : Clock::time_point{};
+    const bool metered = renderer.metered();
+    const auto sceneStart = metered ? Clock::now() : Clock::time_point{};
+    const auto chargeScene = [&] {
+        if (metered) sceneMs_ += std::chrono::duration<double, std::milli>(Clock::now() - sceneStart).count();
+    };
     const auto previousJoints = gpuJoints_;
     gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
     const auto jointsDone = profiling ? Clock::now() : Clock::time_point{};
@@ -1817,6 +1822,7 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     // advance one retained packet and skip the frame. No partial target is published and the covered
     // scene is not drawn. The native player and the WASM host both reach this through render().
     if (!renderer.prepareEnvironments(items_)) {
+        chargeScene();
         if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
         return 0;
     }
@@ -1834,13 +1840,16 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     if (const auto* world = dynamic_cast<const Scene*>(&scene); world && world->background)
         clear = {world->background->r, world->background->g, world->background->b, 1};
     const auto prepared = cpuMs ? Clock::now() : Clock::time_point{};
+    chargeScene();
     uint64_t result;
+    const auto rendererStart = metered ? Clock::now() : Clock::time_point{};
     if (encodeJobs) {
         result = renderer.renderDeferred(items_, cameraState_, lights_, clear);
         encodeJobs->push_back([&renderer] { renderer.encodePending(); });
     } else {
         result = renderer.render(items_, cameraState_, lights_, clear);
     }
+    if (metered) rendererMs_ += std::chrono::duration<double, std::milli>(Clock::now() - rendererStart).count();
     if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
     if (drawUse && !reflecting_) {
         const auto eligible = gpuJoints_ ? gpuJoints_->rigs.size() : 0;

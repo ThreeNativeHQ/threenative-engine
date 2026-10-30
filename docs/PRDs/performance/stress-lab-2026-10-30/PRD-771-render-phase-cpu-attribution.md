@@ -42,15 +42,30 @@ Checked and closed, so not a lever:
 
 ### Phase 1 — publish the stages
 
-- [ ] `TN_FRAME_BUDGET` and the stress report publish main-thread stages: JS update, JS orchestration before and after the engine call, Wasm plan (visibility, shadow page plan, draw pack), Wasm GPU phase (`writeBuffer`, bind groups, encode, submit), post passes, and idle. Each stage is p50 and p95 per window. proof: spec in `packages/core/__tests__/` plus a stress report
-- [ ] The stages sum to at least 95% of `frameP50Ms` on `?stress` and on `?stress&still`. proof: two reports from the PRD-770 window
-- [ ] Per-frame counts sit beside the stages: dirty transforms, casters re-planned, bytes uploaded, host (ABI) calls and JS allocation. These fill the dashboard's n/a cells. Reuse lane TM2's counters (`.worktrees/stress-fix-tm2`) where they are sound. proof: a report with no null in those fields
-- [ ] With the meters off, the stage code compiles out or costs under 0.1 ms per frame (paired A/B). proof: PRD-770 window, meters on against off
+- [x] `TN_FRAME_BUDGET` and the stress report publish main-thread stages: JS update, JS orchestration before and after the engine call, Wasm plan (visibility, shadow page plan, draw pack), Wasm GPU phase (`writeBuffer`, bind groups, encode, submit), post passes, and idle. Each stage is p50 and p95 per window. proof: spec in `packages/core/__tests__/` plus a stress report Done 2026-10-30: `FrameStages.ts` + `FrameBudget.addStages`/`stagesAtP95`, `Renderer::CpuStage`, `RenderDatabase::sceneMs/rendererMs`, web host totals read in place (`tnw_web_frame` 78); unmeasured stages are absent, not zero (`frame-budget-stages.spec.ts`, `browser-renderer.spec.ts` "publishes no totals on a module without the array"); native `scene_stage_is_metered`, `overlay_leaves_stage_totals`; 176 native cases and 67 specs green on perf/stress-lab-120.
+- [x] The stages sum to at least 95% of `frameP50Ms` on `?stress` and on `?stress&still`. proof: two reports from the PRD-770 window Done 2026-10-30: `stageSumP50Ms` = `frameP50Ms` on `?stress` (14.70) and `?stress&still` (14.36), coverage 1.00 over 6 + 2 runs (load <= 6, final Wasm `7e9276c7af99`). Named remainders `residual` 0.41 + `wasmOther` 0.39 ms are 5.5% of the frame; without them the named-with-a-cause share is 94.5%.
+- [ ] Per-frame counts sit beside the stages: dirty transforms, casters re-planned, bytes uploaded, host (ABI) calls and JS allocation. These fill the dashboard's n/a cells. Reuse lane TM2's counters (`.worktrees/stress-fix-tm2`) where they are sound. proof: a report with no null in those fields Open 2026-10-30: dirtyTransforms (1509 / 4 still), castersMoving (537), hostCalls (735), gpuUploadKb (3399, buffer writes only) are live; `jsAllocKbP50` reads 0 under Brave's bucketed `performance.memory`, not a measurement, and TM2's texture-upload counter is not merged.
+- [x] With the meters off, the stage code compiles out or costs under 0.1 ms per frame (paired A/B). proof: PRD-770 window, meters on against off Done 2026-10-30: `?stress` vs `?stress&tnStages=0`, 12 runs ABBA, 5 valid adjacent pairs: frame p50 on-off -0.14, +0.28, -0.04, +0.16, -0.03 ms (mean +0.05, median -0.03), under 0.1 ms. The first build that metered sibling renderers cost +0.23 ms (6/6 pairs) and was gated to the main renderer.
 
 ### Phase 2 — rank the levers
 
-- [ ] Each stage over 0.3 ms gets a ceiling (its own ms per frame) and either an owning PRD or a closed entry in `PERFORMANCE-LEARNINGS.md`. proof: the ranked table added to this PRD
-- [ ] The CPU p95 frames are split by cause: shadow refresh, crowd, GC or long task, and host load. Each p95 frame names one cause. proof: a report section from one window
+- [ ] Each stage over 0.3 ms gets a ceiling (its own ms per frame) and either an owning PRD or a closed entry in `PERFORMANCE-LEARNINGS.md`. proof: the ranked table added to this PRD Open 2026-10-30: ranked table below; `engineJs` (0.81 ms, 735 host calls) and `wasmTargets` (0.72 ms) have no owning PRD yet, and `residual`/`wasmOther` need a closed learnings entry.
+- [x] The CPU p95 frames are split by cause: shadow refresh, crowd, GC or long task, and host load. Each p95 frame names one cause. proof: a report section from one window Done 2026-10-30: tail frames sit 5.3 ms above the median (20.0 vs 14.7): shadow refresh 3.78 ms (71%: wasmEncode +1.42, planVirtualPages +1.35, planShadowLists +1.01; gone in `still`), crowd and JS 1.17 (22%), other plan work 0.33 (6%), host load 0 (every run load <= 5.5). GC and long tasks are not separable from JS (65-91 long tasks per 80 s window).
+
+Ranked stages, `?stress`, median of 6 runs, ms per frame (lane 771, 2026-10-30):
+
+| Stage | p50 | p95 | Owner |
+| --- | --- | --- | --- |
+| wasmPlan | 4.00 | 6.17 | PRD-773 (planVirtualPages 1.81, planShadowLists 0.52), PRD-774 (rest of prepare, about 1.6) |
+| wasmScene | 2.83 | 3.34 | PRD-772 (`Skeleton::updateAfterWorldWalk`, 1509 dirty transforms) |
+| jsBefore | 2.65 | 3.94 | PRD-772 (JS rig step, subtree and matrix walks) |
+| update | 2.26 | 3.11 | PRD-772 (mixer, bone palettes, crowd step) |
+| engineJs | 0.81 | 0.93 | none yet (735 host calls; a crossing census by class) |
+| wasmTargets | 0.72 | 0.83 | none yet (post-graph offscreen passes; candidate PRD-774 scope) |
+| residual | 0.41 | 0.51 | remainder of the callback |
+| wasmOther | 0.39 | 0.46 | remainder of `tnw_web_render` |
+| wasmPost | 0.25 | 0.30 | under 0.3 ms |
+| wasmEncode | 0.12 | 1.54 | PRD-773 (shadow encode on refresh frames) |
 
 ## Blocked on
 

@@ -703,6 +703,38 @@ void outputScreenSize() {
             for (int c = 0; c < 3; ++c) CHECK(std::abs(int(pixels[texel * 4 + c]) - 128) <= 1);
 }
 
+// PRD-771: the post effects' and output pass's CPU is a stage of its own, nested in the encode half, and the meters'
+// switch stops every stage so the cost of the meters can be measured with them off.
+void postStageIsMetered() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    CameraState camera;
+    camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+        {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    renderer.setPostGraph(g::vec4({g::swizzle(g::texture("scene", g::uv()), "xyz"), g::float_(1)}));
+    const auto stages = [&] {
+        std::array<double, Renderer::kCpuStageCount> now{};
+        for (size_t i = 0; i < now.size(); ++i) now[i] = renderer.cpuStageMs(Renderer::CpuStage(i));
+        return now;
+    };
+    CHECK(Renderer::cpuMeters());
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    const auto metered = stages();
+    CHECK(metered[Renderer::CpuPost] > 0);
+    CHECK(metered[Renderer::CpuPost] <= metered[Renderer::CpuEncode]);
+    Renderer::setCpuMeters(false);
+    for (int frame = 0; frame < 3; ++frame) renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    Renderer::setCpuMeters(true);
+    CHECK(stages() == metered);
+}
+
 // A static instance uses the same camera/object velocity as an ordinary rigid draw of the same surface.
 // Every pixel of the velocity target remains written (alpha 1), including the camera-filled background.
 void traaCameraVelocity() {
@@ -3510,7 +3542,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_mover_over_dynamic_ground", traaMoverOverDynamicGround},
              {"traa_responsive_transparent", traaResponsiveTransparent},
              {"traa_fast_pan_edges", traaFastPanEdges},
-             {"output_screen_size", outputScreenSize},
+             {"output_screen_size", outputScreenSize}, {"post_stage_is_metered", postStageIsMetered},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_velocity_footprint", traaVelocityFootprint},
              {"traa_validation", traaValidation},
