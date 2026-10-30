@@ -1032,7 +1032,9 @@ if(EMSCRIPTEN)
         # The node ABI check below cannot start this glue (no `node` environment); the stamp ties it to the
         # same sources as the single-thread module, which that check runs on.
         set_target_properties(tn-native-engine-web PROPERTIES OUTPUT_NAME tn-native-engine-web-threads)
-        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0)
+        # mimalloc: dlmalloc's one global lock serialized the workers' allocations with the main thread's
+        # (stress lab FB1: CPU frame p50 -6.5% in a fair uncapped window).
+        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0 -sMALLOC=mimalloc)
         add_custom_command(TARGET tn-native-engine-web POST_BUILD
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write tn-native-engine-web-threads
             VERBATIM)

@@ -740,3 +740,14 @@ no COOP/COEP); that lane is open.
 - Insight: a lever for the camera-motion shadow burst must show GPU p95 falling, not only fps. FP2's worktree mixed two
   workers' changes after the arm wrapper restarted a stopped worker: stop a lane by its wrapper, not its child.
 - Revisit when: FP2 is split into its two changes and each is measured on top of FS11+FS12.
+
+### 2026-10-30 — Stress lab: mimalloc on the threaded web engine (FB1) — KEEP
+- Where: `packages/runtime-native/cmake/NativeEngineCore.cmake`, the `TN_WEB_THREADS` link options (`-sMALLOC=mimalloc`);
+  lock: `packages/runtime-native/__tests__/web-threads-allocator.spec.ts`.
+- Result: fair uncapped window, ABBA, develop `0974fd3b8` vs the same tree plus mimalloc, load peak 4.66: CPU frame p50
+  14.75 -> 13.76 and 14.65 -> 13.73 ms (-6.7%, -6.3%), fps 64.1 / 65.6 -> 70.7 / 70.7. Pixels cannot move.
+- Insight: Emscripten's default dlmalloc takes one global lock in a `-pthread` build, so the job pool's workers and the
+  main thread queue on every allocation. The single-thread build has no contention and keeps dlmalloc. Two earlier
+  profiled pairs read -5.5% and -23%; the second was voided (a stray stress page shared the GPU 07:30-09:20Z), which is
+  why the decision rests on the fair window.
+- Revisit when: the engine stops allocating per frame on worker threads, or Emscripten changes its default allocator.
