@@ -22,8 +22,13 @@ namespace tn::engine {
  */
 class JobPool {
 public:
-    /** At most this many workers: the frame's splittable work is a few milliseconds (PRD-752). */
-    static constexpr unsigned kMaxWorkers = 3;
+    /**
+     * At most this many workers. Measured on a 24-logical-thread host over a job of the shape the frame's one
+     * pooled job has (132 items x 0.165 ms): 3.89 lanes of work at 3 workers, 7.53 at 8, 8.76 at 15 and 8.50 at
+     * 23, with the caller one of the lanes. Past 8 the item count is the wall, not the core count, and 8 also
+     * keeps the caller's spin for the last straggler short (0.52 ms of loss over a perfect split, 1.15 ms at 15).
+     */
+    static constexpr unsigned kMaxWorkers = 8;
 
     explicit JobPool(unsigned workers);
     ~JobPool();
@@ -34,6 +39,8 @@ public:
      * The process pool: min(hardware threads - 1, kMaxWorkers) workers, at least 1, started on first use (the
      * first walk that shares out). On native `TN_JOB_WORKERS=<n>` names the count; 0 or a non-number throws
      * TN_JOB_WORKERS_OFF. On the web each worker is a pthread started then, and a job never waits for one to load.
+     * A spawn the platform refuses leaves the pool that many short, and a pool with no worker at all throws
+     * TN_JOB_WORKERS_START_FAILED rather than run on one thread unnamed.
      */
     static JobPool& shared();
     /** Replaces the process pool with one of `workers` workers: tests run one case at 1 and N threads. */

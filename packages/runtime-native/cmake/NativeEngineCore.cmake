@@ -852,6 +852,9 @@ target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAK
 # PRD-752 phase 4: the job pool runs each item once, and the matrix walk on it is the one-thread walk, bit for bit.
 tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
     native_engine_job_pool=for_each_once
+    native_engine_job_pool_dispatch_floor=dispatch_floor
+    native_engine_job_pool_workers_cover_the_machine=workers_cover_the_machine
+    native_engine_job_pool_fails_closed=pool_fails_closed_when_no_worker_starts
     native_engine_matrix_walk_jobs=matrix_walk_jobs
     native_engine_matrix_walk_threshold=matrix_walk_threshold
     native_engine_job_pool_starts_on_need=pool_starts_on_need

@@ -33,7 +33,7 @@ revisit later is the engine's job, not yours.
 - **Web threads.** The dev and preview servers send `Cross-Origin-Opener-Policy: same-origin` and
   `Cross-Origin-Embedder-Policy: require-corp`, and the build writes both into `dist/_headers`, so the
   page is cross-origin isolated and loads the threaded engine: the world-matrix walk splits over up
-  to 3 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"`. The page always loads the threaded
+  to 8 workers. `TN_FRAME_BUDGET` reports `threads: "on (N)"`. The page always loads the threaded
   engine and fails closed with `TN_WEB_THREADS_OFF` when it is not cross-origin isolated or the pool
   starts no worker, so a host must send the two headers; `TN_WASM_THREADS_MISSING` names a missing
   threaded build. A cross-origin asset without a `Cross-Origin-Resource-Policy` header needs
