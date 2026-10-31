@@ -439,63 +439,32 @@ export interface IComputeWarmUpReport {
   readonly timedOut: boolean;
 }
 
-/** Compiles kernels without running them, and hands back anything it zeroed. */
+/** Compiles kernels without running them. */
 interface IComputeWarmUpSeam {
   warm(node: unknown): Promise<void>;
-  /** Restores every zeroed dispatch that has not settled yet, so a stuck compile cannot strand one. */
-  release(): void;
-}
-
-/** The dispatch a compute node carries itself, zeroed, and the way back. */
-function zeroDispatch(node: unknown): (() => void) | undefined {
-  if (typeof node !== "object" || node === null) return undefined;
-  const computeNode = node as { count?: unknown; dispatchSize?: unknown };
-  const { count, dispatchSize } = computeNode;
-  const sized = count !== null && count !== undefined;
-  if (!sized && (dispatchSize === null || dispatchSize === undefined)) return undefined;
-  if (sized) computeNode.count = 0;
-  else computeNode.dispatchSize = [0, 1, 1];
-  return () => {
-    computeNode.count = count;
-    computeNode.dispatchSize = dispatchSize;
-  };
 }
 
 function computeAsyncOf(renderer: IWarmUpRenderer): IComputeWarmUpSeam | undefined {
   const receiver = typeof renderer.computeAsync === "function" ? renderer : renderer.raw;
   if (typeof receiver !== "object" || receiver === null) return undefined;
-  const { backend, computeAsync } = receiver as {
+  const { backend, compileComputeAsync, computeAsync } = receiver as {
     backend?: { isWebGPUBackend?: boolean };
+    compileComputeAsync?: (node: unknown) => Promise<void>;
     computeAsync?: (node: unknown, dispatchSize?: number | readonly number[]) => Promise<void>;
   };
-  if (typeof computeAsync !== "function") return undefined;
-  if (backend?.isWebGPUBackend !== true) {
-    const plain = computeAsync.bind(receiver);
-    return { warm: (node) => plain(node), release: () => {} };
+  if (backend?.isWebGPUBackend === true) {
+    // Three 0.187 compiles a compute pipeline and its bindings without dispatching it
+    // (src/renderers/common/Renderer.js:1359, `compileComputeAsync`), so warm-up builds the pipeline
+    // the real dispatch uses and nothing runs against the live storage buffers. Dispatching the same
+    // kernel with a zeroed count instead made Chrome report `DispatchWorkgroups with a workgroup
+    // count of 0 is unusual` once per kernel per warm-up. A renderer without that path reports its
+    // kernels as uncompiled rather than silently running them.
+    if (typeof compileComputeAsync !== "function") return undefined;
+    return { warm: (node) => compileComputeAsync.call(receiver, node) };
   }
-  // WebGPU compiles zero workgroups without running a solver against its live storage buffers.
-  // Three 0.187 refuses a dispatch size beside a node that already carries one, so a sized kernel
-  // gets its zero on the node instead (src/renderers/common/Renderer.js:3238, PR #34813). The
-  // count is a uniform bounds check refreshed per dispatch, so the pipeline built here is the one
-  // the real dispatch uses (src/nodes/gpgpu/ComputeNode.js:setup).
-  const pending = new Set<() => void>();
-  return {
-    warm(node) {
-      const restore = zeroDispatch(node);
-      if (restore === undefined) return Promise.resolve(computeAsync.call(receiver, node, 0));
-      pending.add(restore);
-      const settle = (): void => {
-        if (pending.delete(restore)) restore();
-      };
-      return Promise.resolve()
-        .then(() => computeAsync.call(receiver, node))
-        .finally(settle);
-    },
-    release() {
-      for (const restore of [...pending]) restore();
-      pending.clear();
-    },
-  };
+  if (typeof computeAsync !== "function") return undefined;
+  const plain = computeAsync.bind(receiver);
+  return { warm: (node) => plain(node) };
 }
 
 /**
@@ -592,30 +561,26 @@ async function runComputeWarmUp(
   let compiled = 0;
   let abandoned = 0;
   let timedOut = false;
-  try {
-    for (let index = 0; index < nodes.length; index += 1) {
-      const remaining = deadline - now();
-      if (remaining <= 0) {
-        timedOut = true;
-        abandoned += nodes.length - index;
-        break;
-      }
-      const finished = await withinDeadline(
-        Math.min(deadline, now() + compileTimeoutMs),
-        Promise.resolve().then(() => seam.warm(nodes[index])),
-        yieldFrame,
-        now,
-      );
-      if (finished) compiled += 1;
-      else abandoned += 1;
-      if (now() >= deadline && (!finished || index + 1 < nodes.length)) {
-        timedOut = true;
-        abandoned += nodes.length - index - 1;
-        break;
-      }
+  for (let index = 0; index < nodes.length; index += 1) {
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      timedOut = true;
+      abandoned += nodes.length - index;
+      break;
     }
-  } finally {
-    seam.release();
+    const finished = await withinDeadline(
+      Math.min(deadline, now() + compileTimeoutMs),
+      Promise.resolve().then(() => seam.warm(nodes[index])),
+      yieldFrame,
+      now,
+    );
+    if (finished) compiled += 1;
+    else abandoned += 1;
+    if (now() >= deadline && (!finished || index + 1 < nodes.length)) {
+      timedOut = true;
+      abandoned += nodes.length - index - 1;
+      break;
+    }
   }
   return { compiled, abandoned, unsupported: false, timedOut };
 }

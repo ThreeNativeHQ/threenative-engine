@@ -1250,53 +1250,46 @@ describe("warm-up absolute budget", () => {
   );
 });
 
-describe("compute warm-up dispatch", () => {
+describe("compute warm-up compiles without dispatching", () => {
+  // Three 0.187's `compileComputeAsync` builds a kernel's pipeline and bindings and dispatches
+  // nothing (Renderer.js:1359), so the pipeline the real dispatch uses is the one warm-up built.
+  // Dispatching a zeroed count instead made Chrome report `DispatchWorkgroups with a workgroup
+  // count of 0 is unusual` once per kernel per warm-up.
   test.each([false, true])(
-    "WebGPU warm-up uses zero kernel invocations (raw wrapper: %s)",
+    "WebGPU warm-up compiles the kernel (raw wrapper: %s)",
     async (wrapped) => {
-      const node = {};
+      const node = { count: 64, dispatchSize: null };
+      const compileComputeAsync = vi.fn(async () => undefined);
       const computeAsync = vi.fn(async () => undefined);
-      const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+      const receiver = { backend: { isWebGPUBackend: true }, compileComputeAsync, computeAsync };
       const report = await warmUpComputeNodes(wrapped ? { raw: receiver } : receiver, [node]);
       expect(report.compiled).toBe(1);
-      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node, 0);
-      expect(computeAsync.mock.contexts[0]).toBe(receiver);
+      expect(compileComputeAsync).toHaveBeenCalledExactlyOnceWith(node);
+      expect(compileComputeAsync.mock.contexts[0]).toBe(receiver);
+      expect(computeAsync).not.toHaveBeenCalled();
+      // Warm-up never touches the dispatch a kernel carries itself.
+      expect(node.count).toBe(64);
+      expect(node.dispatchSize).toBeNull();
     },
   );
 
-  // Three 0.187 refuses a dispatch size beside a node that carries its own (Renderer.js:3238,
-  // PR #34813), so a sized kernel takes its zero on the node and gets its own count back.
-  test.each([
-    ["count", { count: 64, dispatchSize: null }, "count", 0, 64],
-    [
-      "dispatchSize",
-      { count: null, dispatchSize: [2, 1, 1] },
-      "dispatchSize",
-      [0, 1, 1],
-      [2, 1, 1],
-    ],
-  ] as const)(
-    "a node sized by %s warms at zero workgroups without a dispatch size",
-    async (_field, fields, sized, zeroed, restored) => {
-      const node = { ...fields } as Record<string, unknown>;
-      const seen: unknown[] = [];
-      const computeAsync = vi.fn(async (target: unknown) => {
-        const fieldsOf = target as Record<string, unknown>;
-        seen.push(fieldsOf[sized], fieldsOf[sized === "count" ? "dispatchSize" : "count"]);
-      });
-      const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
-      const report = await warmUpComputeNodes(receiver, [node]);
-      expect(report.compiled).toBe(1);
-      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node);
-      expect(seen).toEqual([zeroed, fields[sized === "count" ? "dispatchSize" : "count"]]);
-      expect(node[sized]).toEqual(restored);
-    },
-  );
-
-  test("a zeroed dispatch is released even when its compile never settles", async () => {
-    const node: Record<string, unknown> = { count: 64, dispatchSize: null };
-    const computeAsync = vi.fn(() => new Promise<void>(() => {}));
+  test("a WebGPU backend without a compile-only path reports compute unsupported", async () => {
+    const computeAsync = vi.fn(async () => undefined);
     const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+    const report = await warmUpComputeNodes(receiver, [{}]);
+    expect(report.unsupported).toBe(true);
+    // Fail closed: an uncompiled kernel is reported, never run.
+    expect(computeAsync).not.toHaveBeenCalled();
+  });
+
+  test("a compile that never settles is abandoned, leaving the kernel untouched", async () => {
+    const node = { count: 64, dispatchSize: null };
+    const compileComputeAsync = vi.fn(() => new Promise<void>(() => {}));
+    const receiver = {
+      backend: { isWebGPUBackend: true },
+      compileComputeAsync,
+      computeAsync: vi.fn(),
+    };
     let clock = 0;
     const report = await warmUpComputeNodes(receiver, [node], {
       budgetMs: 5,
