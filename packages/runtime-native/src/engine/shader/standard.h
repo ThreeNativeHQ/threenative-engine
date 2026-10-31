@@ -162,7 +162,7 @@ struct VertexVariant {
     bool mapSRGB = false;
     /**
      * The scene sets an environment (or the material an envMap): the fragment samples the PMREM
-     * cubeUV texture `env` for IBL irradiance and radiance (three's EnvironmentNode).
+     * cube `env` for IBL irradiance and radiance (three's EnvironmentNode).
      */
     bool environment = false;
     /**

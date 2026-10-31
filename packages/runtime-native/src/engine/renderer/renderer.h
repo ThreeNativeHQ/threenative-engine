@@ -1444,8 +1444,8 @@ private:
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group
     // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.
     std::map<std::string, WGPUBindGroup> mapGroups_;
-    // PMREM (three's PMREMGenerator.fromEquirectangular): the cubeUV tiles and the pipelines that
-    // fill them, keyed by the equirect source texture.
+    // PMREM (three's PMREMGenerator.fromEquirectangular): the cube it bakes, its source cube and the
+    // pipelines that fill them, keyed by the equirect source texture.
     std::map<uint64_t, EnvironmentGpu> environments_;  // by Texture::ident
     WGPUBindGroupLayout envLayout_ = nullptr;      // a 2D source: the equirect conversion and the mip chain
     WGPUBindGroupLayout envCubeLayout_ = nullptr;  // a cube source: the GGX and integration passes

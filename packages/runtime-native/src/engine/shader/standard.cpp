@@ -1344,7 +1344,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
-    // Derivatives must execute before cubeUV's per-fragment branches (three's roughness variable).
+    // Derivatives must execute before the environment's per-fragment branches (three's roughness variable).
     if (variant.environment) roughness = f.load(f.var(Type::f32(), roughness));
     // specularF90 (mix(specularIntensity, 1, metalness)) is BRDF_GGX's f90 and F_Schlick's f90 in the direct
     // term since r187 (PhysicalLightingModel.js:678-680), as well as the indirect term's.
