@@ -6,11 +6,7 @@ import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { uniform } from "three/tsl";
 import type { Node, PassNode, TextureNode } from "three/webgpu";
 import { type ITemporalAANode, createTemporalAAFrame } from "./temporalAAFrame.js";
-import {
-  type ITemporalAARenderPipelineState,
-  type PipelineContext,
-  createTemporalAAHooks,
-} from "./temporalAAHooks.js";
+import { type PipelineContext, createTemporalAAHooks } from "./temporalAAHooks.js";
 import { disposeTemporalAAInput } from "./temporalAAInput.js";
 import type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
 import { createTemporalCurrentProducer } from "./temporalCurrentProducer.js";
@@ -113,16 +109,7 @@ export function createTemporalAA(
     properties.temporalDepth = depth;
     properties.temporalVelocity = velocity;
     const pipeline = (builder.context as { renderPipeline?: unknown }).renderPipeline;
-    if (pipeline !== undefined) {
-      // Three 0.187 keeps a pipeline's callbacks in the builder context and registers its own pair
-      // only while nothing owns the view offset. The provider owns it: upstream's pair would ask
-      // for the whole drawing buffer rather than the raster the input draws on.
-      const state = (builder.context as ITemporalAARenderPipelineState).renderPipelineState;
-      if (state === undefined)
-        throw new Error("Temporal AA requires the render pipeline state of Three 0.187.0.");
-      state.viewOffsetOwner = node;
-      hooks.captureBeforeSetup(builder.context as PipelineContext);
-    }
+    if (pipeline !== undefined) hooks.claim(builder.context, node);
     const output = setup(builder);
     resolve.configure(builder.renderer);
     // Upstream's resolve is what this replaces, so the reset kernel runs by default.

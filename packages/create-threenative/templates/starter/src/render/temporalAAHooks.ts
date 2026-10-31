@@ -78,6 +78,18 @@ export function createTemporalAAHooks(jitter: (renderer: Renderer) => void, clea
 
   return {
     /**
+     * Three 0.187 keeps a pipeline's callbacks in the builder context and registers its own pair
+     * only while nothing owns the view offset. The provider owns it: upstream's pair would ask
+     * for the whole drawing buffer rather than the raster the input draws on.
+     */
+    claim(builderContext: unknown, owner: unknown): void {
+      const state = (builderContext as ITemporalAARenderPipelineState).renderPipelineState;
+      if (state === undefined)
+        throw new Error("Temporal AA requires the render pipeline state of Three 0.187.0.");
+      state.viewOffsetOwner = owner;
+      this.captureBeforeSetup(builderContext as PipelineContext);
+    },
+    /**
      * The context this compile pushes into, read before upstream's setup runs. A recompile into a
      * fresh context object hands the previous one back first, so the context three stops calling
      * keeps nothing it borrowed.
