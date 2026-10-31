@@ -1,4 +1,6 @@
 // PRD-633: the starter's sky is Unreal's default level sky, and it lights the scene.
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { type DataTexture, type FogExp2, Scene, Texture } from "three";
 import { afterEach, describe, expect, it } from "vitest";
 import { setupLighting } from "../templates/starter/src/render/lighting.js";
@@ -60,5 +62,23 @@ describe("starter atmosphere sky", () => {
     expect(scene.environment).toBe(photo);
     expect(setupLighting(new Scene(), renderer).key.color.getHex()).toBe(0xfff1e0);
     expect(() => setupSky(new Scene())).toThrow(/sky\.jpg/u);
+  });
+});
+
+describe("atmosphere model copies", () => {
+  it("ships the starter's model files byte for byte in every kit that has them", () => {
+    const root = path.join(import.meta.dirname, "..", "templates");
+    const kits = readdirSync(root).filter((kit) =>
+      existsSync(path.join(root, kit, "src/render/atmosphere.ts")),
+    );
+    expect(kits.length).toBeGreaterThan(1);
+    for (const file of ["atmosphere.ts", "clouds.ts", "gpuSky.ts"]) {
+      const starter = readFileSync(path.join(root, "starter/src/render", file), "utf8");
+      for (const kit of kits)
+        expect(
+          readFileSync(path.join(root, kit, "src/render", file), "utf8"),
+          `${kit}/${file}`,
+        ).toBe(starter);
+    }
   });
 });
