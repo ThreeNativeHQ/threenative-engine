@@ -1,7 +1,7 @@
 {
   "create-threenative": "/tmp/p345pk/create-threenative-0.2.8.tgz",
   "@threenative/assets": "/tmp/p345pk/threenative-assets-0.3.5.tgz",
-  "threenative-blender-mcp": "/tmp/p345pk/threenative-blender-mcp-0.1.4.tgz",
+  "@threenative/blender-bridge": "/tmp/p345pk/@threenative/blender-bridge-0.1.4.tgz",
   "@threenative/core": "/tmp/p345pk/threenative-core-0.3.4.tgz",
   "threenative-engine-mcp": "/tmp/p345pk/threenative-engine-mcp-0.2.4.tgz",
   "@threenative/metahuman": "/tmp/p345pk/threenative-metahuman-0.1.0.tgz",

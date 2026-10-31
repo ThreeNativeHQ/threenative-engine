@@ -149,7 +149,6 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-animation-mcp` | Inspects, attaches, edits and verifies character animation through one MCP, as build-time edits of one GLB |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
-| `threenative-blender-mcp` | Drives an installed Blender headlessly so a downloaded `.fbx` becomes a loadable GLB — ships no Blender |
 
 ## Platform support
 

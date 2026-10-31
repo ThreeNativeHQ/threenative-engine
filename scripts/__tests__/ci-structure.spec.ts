@@ -2102,18 +2102,14 @@ describe("CI pipeline structure", () => {
     expect(publish).toContain("pnpm tsx scripts/release.ts --skip-gates");
   });
 
-  it("provisions the registry verifier before the guarded publish command", async () => {
+  it("provisions the desktop runtime prerequisites before the guarded publish command", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
     const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
     expect(publish).toBeDefined();
     if (publish === undefined) return;
-    const prerequisites = publish.indexOf(
-      "Install the pinned Blender used by the registry verifier",
-    );
+    const prerequisites = publish.indexOf("libvulkan1 mesa-vulkan-drivers");
     const release = publish.indexOf("pnpm tsx scripts/release.ts --yes");
     expect(prerequisites).toBeGreaterThanOrEqual(0);
-    expect(publish).toContain("libvulkan1 mesa-vulkan-drivers");
-    expect(publish).toContain("THREENATIVE_BLENDER_PATH");
     expect(release).toBeGreaterThan(prerequisites);
   });
 

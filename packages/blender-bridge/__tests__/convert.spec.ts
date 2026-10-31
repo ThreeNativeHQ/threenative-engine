@@ -11,7 +11,6 @@ import {
   parseBlenderResult,
 } from "../src/bridge.js";
 import { resolveBlender } from "../src/detect.js";
-import { TOOL_DEFINITIONS, handleLine } from "../src/index.js";
 
 /**
  * The bridge against a real Blender. These are the only tests in this repository that spawn one, so
@@ -23,13 +22,12 @@ const blender = resolveBlender();
 const available = blender.available;
 if (!available) {
   process.stderr.write(
-    `TN_BLENDER_TESTS_SKIPPED: ${blender.detail} Install Blender to run packages/blender-mcp/__tests__/convert.spec.ts.\n`,
+    `TN_BLENDER_TESTS_SKIPPED: ${blender.detail} Install Blender to run packages/blender-bridge/__tests__/convert.spec.ts.\n`,
   );
 }
 const withBlender = available ? describe : describe.skip;
 
 const character = path.resolve("packages/assets/__tests__/fixtures/blender/character.fbx");
-const prop = path.resolve("packages/assets/__tests__/fixtures/blender/flag_A_blue.fbx");
 
 describe("bridge contract", () => {
   it("should ship the Blender script it says it runs", () => {
@@ -52,17 +50,6 @@ describe("bridge contract", () => {
 
   it("should list the extensions the asset pass classifies as models", () => {
     expect([...BLENDER_SOURCE_EXTENSIONS].sort()).toEqual(["blend", "dae", "fbx", "obj"]);
-  });
-
-  it("should serve exactly the tools this package implements", () => {
-    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
-      "blender_status",
-      "blender_inspect",
-      "blender_convert",
-      "blender_recipes",
-      "blender_export_world",
-      "blender_run_python",
-    ]);
   });
 });
 
@@ -102,44 +89,4 @@ withBlender("blender_convert against a real Blender", () => {
       await rm(root, { force: true, recursive: true });
     }
   }, 180_000);
-
-  it("should answer blender_convert over the JSON-RPC surface an agent speaks", async () => {
-    const root = await makeTempDir("tn-blender-rpc-");
-    try {
-      const out = path.join(root, "prop.glb");
-      const response = await handleLine(
-        JSON.stringify({
-          id: 7,
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: { arguments: { out, source: prop }, name: "blender_convert" },
-        }),
-      );
-      const parsed = JSON.parse(response ?? "null") as {
-        result?: { content?: { text: string }[] };
-      };
-      const payload = JSON.parse(parsed.result?.content?.[0]?.text ?? "null") as {
-        ok: boolean;
-        summary?: { materials: string[]; meshes: number };
-      };
-      expect(payload.ok).toBe(true);
-      expect(payload.summary?.meshes).toBe(1);
-      expect(payload.summary?.materials).toEqual(["platformer"]);
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  }, 180_000);
-
-  it("should report a bad argument as a tool error rather than converting nothing", async () => {
-    const response = await handleLine(
-      JSON.stringify({
-        id: 8,
-        jsonrpc: "2.0",
-        method: "tools/call",
-        params: { arguments: { out: 3, source: prop }, name: "blender_convert" },
-      }),
-    );
-    const parsed = JSON.parse(response ?? "null") as { error?: { message: string } };
-    expect(parsed.error?.message).toMatch(/blender_convert requires a non-empty string 'out'/u);
-  });
 });

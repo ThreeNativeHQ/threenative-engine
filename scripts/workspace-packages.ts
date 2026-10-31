@@ -18,11 +18,7 @@ const WORKFLOW_SHELL_CONTINUATION_PATTERN = /\\\r?\n[ \t]*/gu;
 const WORKFLOW_RUN_HEADER_PATTERN = /^[^\S\n]*(?:-[^\S\n]+)?run:/gmu;
 const WORKFLOW_YAML_FOLDED_SCALAR_HEADER_PATTERN =
   /^([ \t]*)(?:-[ \t]+)?run:[ \t]*>(?:[1-9][+-]?|[+-][1-9]?)?(?:[ \t]+#.*)?[ \t]*$/u;
-const OTHER_WORKSPACE_NAMES = new Set([
-  "create-threenative",
-  "threenative-blender-mcp",
-  "threenative-engine-mcp",
-]);
+const OTHER_WORKSPACE_NAMES = new Set(["create-threenative", "threenative-engine-mcp"]);
 const IMPLEMENTATION_EXTENSIONS = new Set([".cjs", ".js", ".mjs", ".ts", ".tsx"]);
 const WORKFLOW_EXTENSIONS = new Set([".yaml", ".yml"]);
 const SKIPPED_DIRECTORY_NAMES = new Set([

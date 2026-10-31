@@ -1,14 +1,14 @@
 #!/usr/bin/env tsx
-// Writes `packages/create-threenative/blender-mcp-tools.json` from a packed tarball installed into
-// a clean directory — never from `packages/blender-mcp/src`. A snapshot read off the source is the
-// object asserting about itself: it agrees with the code by construction and would keep agreeing
-// after a packaging mistake made the shipped server serve nothing at all.
+// Writes `packages/create-threenative/animation-mcp-tools.json` from a packed tarball installed
+// into a clean directory — never from `packages/animation-mcp/src`. A snapshot read off the source
+// is the object asserting about itself: it agrees with the code by construction and would keep
+// agreeing after a packaging mistake made the shipped server serve nothing at all.
 //
 // The published-tarball form PRD-346 asks for is not available while the package is unpublished, so
 // this packs the workspace and installs *that artifact*, which is what CI scaffolds from too.
 //
-//   pnpm tsx scripts/capture-blender-mcp-tools.ts            # blender (default)
-//   pnpm tsx scripts/capture-blender-mcp-tools.ts animation  # the same capture for the animation server
+//   pnpm tsx scripts/capture-mcp-tools.ts            # animation
+//   pnpm tsx scripts/capture-mcp-tools.ts animation   # the same, spelled out
 import { type ChildProcessWithoutNullStreams, execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,25 +26,10 @@ const SERVERS = {
     snapshot: "animation-mcp-tools.json",
     statusTool: undefined,
   },
-  blender: {
-    label: "blender",
-    package: "threenative-blender-mcp",
-    recommended: [
-      "blender_status",
-      "blender_inspect",
-      "blender_convert",
-      "blender_recipes",
-      "blender_run_python",
-    ],
-    snapshot: "blender-mcp-tools.json",
-    statusTool: "blender_status",
-  },
 } as const;
-const SELECTED = SERVERS[(process.argv[2] ?? "blender") as keyof typeof SERVERS];
+const SELECTED = SERVERS[(process.argv[2] ?? "animation") as keyof typeof SERVERS];
 if (SELECTED === undefined) {
-  throw new Error(
-    `TN_MCP_SNAPSHOT: unknown server '${process.argv[2]}'; use blender or animation.`,
-  );
+  throw new Error(`TN_MCP_SNAPSHOT: unknown server '${process.argv[2]}'; use animation.`);
 }
 const SNAPSHOT = path.join(REPO, "packages/create-threenative", SELECTED.snapshot);
 const PACKAGE = SELECTED.package;
@@ -54,7 +39,7 @@ const RECOMMENDED = SELECTED.recommended;
 const scratch: string[] = [];
 
 function packTarball(): string {
-  const staging = mkdtempSync(path.join(tmpdir(), "tn-blender-pack-"));
+  const staging = mkdtempSync(path.join(tmpdir(), "tn-mcp-pack-"));
   scratch.push(staging);
   execFileSync("pnpm", ["--filter", PACKAGE, "pack", "--pack-destination", staging], {
     cwd: REPO,
@@ -62,13 +47,13 @@ function packTarball(): string {
   });
   const tarball = readdirSync(staging).find((file) => file.endsWith(".tgz"));
   if (tarball === undefined) {
-    throw new Error(`TN_BLENDER_SNAPSHOT: pnpm pack produced no tarball in ${staging}.`);
+    throw new Error(`TN_MCP_SNAPSHOT: pnpm pack produced no tarball in ${staging}.`);
   }
   return path.join(staging, tarball);
 }
 
 function installTarball(tarball: string): string {
-  const root = mkdtempSync(path.join(tmpdir(), "tn-blender-install-"));
+  const root = mkdtempSync(path.join(tmpdir(), "tn-mcp-install-"));
   scratch.push(root);
   writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "probe", private: true }));
   execFileSync("npm", ["install", "--no-audit", "--no-fund", tarball], {
@@ -146,7 +131,7 @@ async function main(): Promise<void> {
     );
     const statusText = (status?.content as { text: string }[] | undefined)?.[0]?.text ?? "{}";
     const snapshot = {
-      comment: `The ${SELECTED.label} MCP surface a generated project actually gets. \`tools\` is set-equal to the live tools/list response of version ${manifest.version}, packed from this workspace and installed from that tarball into a clean directory — never read from src/. \`recommended\` is the ordered loop the shipped agent docs describe. Regenerate with \`pnpm tsx scripts/capture-blender-mcp-tools.ts${SELECTED.label === "blender" ? "" : ` ${SELECTED.label}`}\`.`,
+      comment: `The ${SELECTED.label} MCP surface a generated project actually gets. \`tools\` is set-equal to the live tools/list response of version ${manifest.version}, packed from this workspace and installed from that tarball into a clean directory — never read from src/. \`recommended\` is the ordered loop the shipped agent docs describe. Regenerate with \`pnpm tsx scripts/capture-mcp-tools.ts\`.`,
       version: manifest.version,
       serverInfo: initialized.serverInfo,
       recommended: [...RECOMMENDED],

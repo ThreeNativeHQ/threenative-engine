@@ -1220,30 +1220,6 @@ describe("template contracts", () => {
     expect(coreManifest.dependencies?.["threenative-sculpt-mcp"]).toBe(surface.version);
   });
 
-  it("should document only tools the pinned blender MCP serves", async () => {
-    const surface = JSON.parse(
-      await readFile(path.resolve("packages/create-threenative/blender-mcp-tools.json"), "utf8"),
-    ) as { recommended: string[]; tools: string[]; version: string };
-    const served = new Set(surface.tools);
-    const reference = await readFile(
-      path.resolve("packages/create-threenative/agent-docs/references/finding-assets.md"),
-      "utf8",
-    );
-    const mentioned = [...reference.matchAll(/`(blender_[a-z0-9_]+)`/gu)].map(
-      (match) => match[1] as string,
-    );
-    // A documented tool the server does not serve is an agent told to call something that fails.
-    expect(mentioned.length).toBeGreaterThan(0);
-    expect(mentioned.filter((name) => !served.has(name))).toEqual([]);
-    for (const name of surface.recommended) expect(reference, name).toContain(name);
-    const blenderManifest = JSON.parse(
-      await readFile(path.resolve("packages/blender-mcp/package.json"), "utf8"),
-    ) as { version: string };
-    // The snapshot was captured from a tarball of this version; a bumped package with a stale
-    // snapshot is a surface nobody has read.
-    expect(surface.version).toBe(blenderManifest.version);
-  });
-
   it("should list @types/three in every template that runs tsc", async () => {
     for (const template of await typecheckTemplates()) {
       const packageJson = JSON.parse(

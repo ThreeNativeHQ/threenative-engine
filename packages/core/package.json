@@ -27,7 +27,6 @@
     "dist",
     "LICENSE",
     "mcp",
-    "gpl",
     "scripts/apply-three-patch.mjs",
     "scripts/ensure-mcp.mjs",
     "scripts/postinstall.mjs",
@@ -84,7 +83,7 @@
   "sideEffects": false,
   "scripts": {
     "postinstall": "node ./scripts/postinstall.mjs",
-    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && node scripts/bundle-blender-mcp.mjs && node scripts/bundle-animation-mcp.mjs && publint",
+    "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && node scripts/bundle-animation-mcp.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict"
   },
@@ -105,7 +104,6 @@
     "react": "catalog:",
     "react-reconciler": "0.33.0",
     "threenative-animation-mcp": "workspace:*",
-    "threenative-blender-mcp": "workspace:*",
     "threenative-engine-mcp": "workspace:*",
     "tsup": "8.5.1",
     "typescript": "catalog:",

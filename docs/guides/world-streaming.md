@@ -11,7 +11,7 @@ a copy here.
 
 ```mermaid
 flowchart LR
-  Blend["world.blend"] -->|blender_export_world / export_world.py| Package["world package v1"]
+  Blend["world.blend"] -->|export_world.py| Package["world package v1"]
   Package --> Runtime["WorldCells.load"]
   Runtime --> Terrain["TerrainTiles terrain"]
   Runtime --> Instances["InstancedBatch props"]
@@ -45,16 +45,14 @@ The exporter decides nothing about looks. Materials, colours, lights and curves 
 
 ## 2. Export the package
 
-Through the Blender MCP server (`threenative-blender`, package `threenative-blender-mcp`), call the
-`blender_export_world` tool with `source`, `out` and `cell` (and optional `spacing`, default `2`).
-
-From a shell, run the same recipe directly:
+Run the recipe with the Blender you already have, passing `source`, `out` and `cell` (and optional
+`spacing`, default `2`):
 
 ```sh
 blender -b world.blend --python export_world.py -- --out /tmp/world --cell 64
 ```
 
-The recipe is [`export_world.py`](../../packages/blender-mcp/gpl/recipes/export_world.py); it
+The recipe is [`export_world.py`](../../packages/blender-bridge/gpl/recipes/export_world.py); it
 imports `collapse_decimate` from `_common.py` for the LOD1 rather than reimplementing it.
 
 The output directory is a package:
