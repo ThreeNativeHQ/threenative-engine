@@ -1063,6 +1063,10 @@ function uiBuildDriver(cwd: string, page: string, output: string, cssSourcemaps 
     'import { build, loadConfigFromFile, mergeConfig } from "vite";',
     "",
     `const root = ${literal(cwd)};`,
+    // The host of this page brings its own engine: a `src/ui/` that reaches a core value must not pull
+    // the threaded Wasm engine, which refuses a page without cross-origin isolation (TN_WEB_THREADS_OFF).
+    // Same switch as the native game bundle (runtime-native/scripts/bundle.mjs).
+    'process.env.THREENATIVE_NATIVE_BUNDLE = "ui";',
     `const loaded = await loadConfigFromFile({ command: "build", mode: "production" }, undefined, root);`,
     "const config = mergeConfig(loaded?.config ?? {}, {",
     "    root,",
