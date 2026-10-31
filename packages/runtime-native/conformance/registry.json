@@ -561,6 +561,7 @@
         "perceptualDeltaE": 5.0
       },
       "desktopGate": true,
+      "requiresHardwareAdapter": true,
       "required": true
     },
     {
@@ -813,6 +814,7 @@
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
+      "requiresHardwareAdapter": true,
       "required": true
     },
     {
@@ -826,6 +828,7 @@
         "perceptualDeltaE": 10.0
       },
       "desktopGate": false,
+      "requiresHardwareAdapter": true,
       "required": true
     },
     {
