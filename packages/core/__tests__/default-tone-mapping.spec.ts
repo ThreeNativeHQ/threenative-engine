@@ -1,6 +1,7 @@
 import { ACESFilmicToneMapping, AgXToneMapping, CustomToneMapping, NoToneMapping } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { applyRendererToneMapping } from "../src/look/default-tone-mapping.js";
+import { FILMIC_CURVE, installFilmicToneMapping } from "../src/look/filmic-tone-mapping.js";
 import { createRenderer } from "../src/renderer.js";
 
 // Owner 2026-10-22: a renderer with no look options starts with a fresh Unreal 5.8.3 project's tone curve.
@@ -59,6 +60,20 @@ describe("default tone mapping", () => {
     expect(f.raw.toneMapping).toBe(ACESFilmicToneMapping);
     expect(report).toHaveBeenCalledWith(expect.stringContaining("TN_TONEMAP"));
     renderer.dispose();
+  });
+
+  it("registers Unreal's curve once per renderer, so a WorldEnvironment install is no redefinition", () => {
+    const addToneMapping = vi.fn();
+    const raw = { library: { addToneMapping } };
+    // `createRenderer` installs the default curve, then `new WorldEnvironment({ tonemapMode: "filmic" })`
+    // installs the same one on the same renderer. Three keeps the first and warns `Redefinition of node 5`
+    // for the second (r187 src/renderers/common/nodes/NodeLibrary.js:158).
+    expect(applyRendererToneMapping(raw, "filmic", () => undefined)).toBe(CustomToneMapping);
+    expect(installFilmicToneMapping(raw)).toBe(CustomToneMapping);
+    expect(addToneMapping).toHaveBeenCalledTimes(1);
+    // A curve that differs still reaches the library: three keeps whichever came first, and says so.
+    expect(installFilmicToneMapping(raw, { ...FILMIC_CURVE, slope: 0.5 })).toBe(CustomToneMapping);
+    expect(addToneMapping).toHaveBeenCalledTimes(2);
   });
 
   it("throws on an unknown mode instead of falling back", () => {
