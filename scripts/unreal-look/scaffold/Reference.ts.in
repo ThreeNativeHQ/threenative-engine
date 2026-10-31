@@ -33,6 +33,7 @@ import {
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset, resolveQualityTier } from "../render/quality.js";
+import * as skyModule from "../render/sky.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
@@ -309,6 +310,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           });
       }
       if (level >= 2) {
+        // The template's sunlit-ground environment (`SKY_OPTIONS.ground`) stands in for Lumen's bounce, which
+        // Unreal's ladder adds at L7; below it Unreal's sky light has a dark nadir. The overlay has no such option.
+        const skyOptions = (skyModule as unknown as { SKY_OPTIONS?: { ground: boolean } }).SKY_OPTIONS;
+        if (skyOptions !== undefined) skyOptions.ground = level >= 7;
         setupSky(
           scene,
           sky,

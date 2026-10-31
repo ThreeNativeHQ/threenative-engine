@@ -359,12 +359,13 @@ export function viewDistanceSkyLight(toSun: { x: number; y: number; z: number })
  * default level fills that half with Lumen: the floor bounces sun into shadow sides and a mirror
  * reflects it. This environment is the only indirect light the templates have, so the ground stands
  * in for that bounce; without it shadow sides read navy and a chrome ball's lower half black (judge,
- * PRD-633). Drop it when the game adds its own global illumination.
+ * PRD-633). `ground` false draws Unreal's dark nadir, for a game with its own global illumination.
  */
 export function bakeSkyRadiance(
   toSun: { x: number; y: number; z: number },
   width: number,
   height: number,
+  ground: boolean,
 ): Float32Array {
   const sun: Vec3 = [toSun.x, toSun.y, toSun.z];
   const multi = multipleScatteringTable();
@@ -380,7 +381,7 @@ export function bakeSkyRadiance(
         Math.sin(elevation),
         Math.sin(azimuth) * Math.cos(elevation),
       ];
-      const ray = march(r0, dir, sun, false, multi, true, variable(4, 32, 150));
+      const ray = march(r0, dir, sun, false, multi, ground, variable(4, 32, 150));
       const o = (y * width + x) * 3;
       data[o] = ray.radiance[0];
       data[o + 1] = ray.radiance[1];

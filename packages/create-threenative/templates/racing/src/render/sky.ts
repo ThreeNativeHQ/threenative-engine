@@ -82,9 +82,12 @@ function setupPhotoSky(scene: Scene, sky?: Texture): void {
   scene.fogNode = heightFogNode(distanceFog, HEIGHT_FOG, SUN_DIRECTION);
 }
 
-export const SKY_OPTIONS: { sky: "atmosphere" | "photo"; clouds: boolean } = {
+export const SKY_OPTIONS: { sky: "atmosphere" | "photo"; clouds: boolean; ground: boolean } = {
   sky: "atmosphere",
   clouds: true,
+  // The sunlit ground below the horizon stands in for Unreal's Lumen floor bounce: it lifts shadow
+  // sides and a mirror reflects it. Set false when the game adds its own global illumination.
+  ground: true,
 };
 
 /**
@@ -125,7 +128,14 @@ export function setupSky(
   const fog = new FogExp2(0xffffff, 0);
   scene.fog = fog;
   scene.fogNode = heightFogNode(fog, { ...ATMOSPHERE_FOG }, SUN_DIRECTION);
-  const { node, environment } = createGpuSky(scene, SUN_DIRECTION, fogged, clouds, ATMOSPHERE_FOG);
+  const { node, environment } = createGpuSky(
+    scene,
+    SUN_DIRECTION,
+    fogged,
+    clouds,
+    ATMOSPHERE_FOG,
+    SKY_OPTIONS.ground,
+  );
   environment.mapping = EquirectangularReflectionMapping;
   environment.colorSpace = SRGBColorSpace;
   scene.background = environment;

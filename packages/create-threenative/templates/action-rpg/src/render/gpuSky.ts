@@ -684,7 +684,8 @@ export function createGpuSky(
   sun: Vector3,
   fogged: boolean,
   clouds: boolean,
-  fog?: ISkyFog,
+  fog: ISkyFog | undefined,
+  ground: boolean,
 ): { node: GpuSkyNode; environment: DataTexture } {
   const w = 64;
   const h = 32;
@@ -693,7 +694,7 @@ export function createGpuSky(
   environment.minFilter = environment.magFilter = LinearFilter;
   const refresh = () => {
     const start = performance.now();
-    const data = bakeSkyRadiance(sun, w, h);
+    const data = bakeSkyRadiance(sun, w, h, ground);
     if (clouds) bakeCloudRadiance(data, sun, w, h);
     const scale = temperatureColour(SUN_KELVIN).map((v) => v * SUN_ILLUMINANCE * SKY_TO_SUN) as [
       number,
