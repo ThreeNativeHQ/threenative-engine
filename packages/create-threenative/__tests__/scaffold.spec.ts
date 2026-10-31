@@ -314,6 +314,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
   // Re-pinned 2026-10-28 (owner chose sharp AA): core high tier is 4x MSAA with no camera motion blur;
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
+  // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
+  // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
   "action-rpg": "54f79745b1a9655afb2fe90d70316a80aba2cc97e73057242d9b1d9f05e5b355",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
@@ -369,7 +371,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   // Recomputed 2026-10-31: core key 0.36 and the traced-reflection option in setupPost (PRD-633); measured by this test.
-  starter: "0474bc33f667ace0b73b1ac98e542fea855f4f70bdc5547afe765fba3e185efa",
+  starter: "a07932e0a8205595e181819afdd23b58403ae212e9d6345dc320859dc9691f29",
   "tower-defense": "e96d44a2803acfc2f8bac3f9385304f641fd400e8b23b797b18841cb0af811b7",
 };
 
