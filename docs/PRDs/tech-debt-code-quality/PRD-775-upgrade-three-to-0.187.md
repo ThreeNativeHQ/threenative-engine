@@ -95,8 +95,8 @@ flowchart LR
 **Status:** NOT STARTED
 **Files:** source files that the breaking-change list names; `scripts/` hooks into three internals; `packages/three-native/tests/compatibility/goldens/0.187.0/`, `fixtures/*.json`, `__tests__/fixture-protocol.spec.ts`.
 
-- [ ] AC-4: Typecheck, lint and unit tests are green, and `capabilities.json` rebuilds with no lost entry. proof: `pnpm typecheck && pnpm lint && pnpm test && pnpm build && git diff --stat origin/develop -- packages/create-threenative/capabilities.json`
-- [ ] AC-5: The native compatibility suite passes on goldens recorded from 0.187.0, and each changed golden has an upstream reason in the PR body. proof: `pnpm native:build && pnpm parity` plus the `packages/three-native` compatibility tests
+- [x] AC-4: Typecheck, lint and unit tests are green, and `capabilities.json` rebuilds with no lost entry. proof: `pnpm typecheck && pnpm lint && pnpm test && pnpm build && git diff --stat origin/develop -- packages/create-threenative/capabilities.json` → on `dd85d632e` (2026-10-30): typecheck 0, lint 0, `pnpm test` 0 (16545 passed, 0 failed: root 14016 plus 9 package suites), `pnpm build` 0, `capabilities.json` diff empty (exit 0).
+- [x] AC-5: The native compatibility suite passes on goldens recorded from 0.187.0, and each changed golden has an upstream reason in the PR body. proof: `pnpm native:build && pnpm parity` plus the `packages/three-native` compatibility tests → on `dd85d632e` (2026-10-31): `test:reference -- --check` exit 0 on `goldens/0.187.0` (205 fixtures, 2371 observations, 0 blocked, NVIDIA Turing adapter); the changed-golden table with one upstream reason per row is in the PR #597 body. `pnpm native:build` 0. `pnpm parity` exits 1 with web 132 pass / 4 fail and desktop 125 pass / 8 fail; every one of those 12 reds fails the same way on develop `6bf21eab2` (base parity run in a clean worktree), this PR adds none and fixes desktop `realism-velocity-depth-normal`. Android and iOS rows are blocked (no device), as on develop.
 
 #### Phase 3: Games play, look and run the same
 
