@@ -314,7 +314,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
   // Re-pinned 2026-10-28 (owner chose sharp AA): core high tier is 4x MSAA with no camera motion blur;
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
-  "action-rpg": "f16567dea1595ccc660e367a848d0f15556e19187ecaa216f4879991df1fdc46",
+  "action-rpg": "54f79745b1a9655afb2fe90d70316a80aba2cc97e73057242d9b1d9f05e5b355",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -340,10 +340,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   adventure: "e0b1386e397e7667f8dcc100b55dc4515150d2ab06791b18ce2136634626af27",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "8fb66300417c03c5cfa6e6008eeb8689c3b11e32eb2365bffcfa4296bf55878f",
-  minimal: "89844820a550b4ff8b3c6d9e1bebc7d6a18e279025bd2931acf1954ec3bc78f5",
+  minimal: "c4c7eede996c85fcb3a92327137a1f5e6b27594aeadb193f8d445d14f1ca4a2d",
   platformer: "e945659c7413e170d3b259f42f9d0cb83607b078d10ffbf2bb6f3c5e3051b1cd",
   puzzle: "fb616f990f2dc7d03b309a570a0f376d368387adc104056d7910398fa6b847b1",
-  racing: "f387f94fd6e7f2190afefec58bad6c73bf8b0ef3b48a1e2be91839f30e2ea0da",
+  racing: "39852739699074c62e92103023402b3ef314e5d16c37bdd0091587c7f225e05c",
   rain: "05523b6f3c353a4ce42ea277293b422cfa43c0d0b028373f609ed6a2a5a07e0a",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
@@ -357,11 +357,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "580e2dabaab1f7fc40dbff654f2b6b7dc424a9407e01122153edd11e01c04fc7",
-  runner: "ff499fea3f8056b3bee076b43b2eacc4777d1cb440f4393a314d3a5376f351eb",
+  runner: "e643d0a020975e6fce91e4ceb8ca5385552874eb0cca355aae81a03c37dc00aa",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "a699af14d5d4509e2926c331bbb00d400493ffee0dc97cd228960d9279d989f8",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "0a58a2e2ca4956529b24239387b236887850a05c2668e7322bb19fabddab19a8",
+  shooter: "aff8f2c9dcc4ee9d1ff4925378e47ca9cdc64a778b0e1558dcb2b3f76010b0e0",
   snow: "1307c6fc70bbf3aa88d0f30c6f9a1ef1252ab7f416e09f21c1797b9c741f37a5",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts

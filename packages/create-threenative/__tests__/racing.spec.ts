@@ -139,7 +139,7 @@ describe("the circuit", () => {
     expect(load).toContain(
       'SKY_OPTIONS.sky === "photo" ? await ctx.assets.texture("sky.jpg") : undefined;',
     );
-    expect(load.indexOf("await")).toBeLessThan(load.indexOf("setupSky(scene, texture)"));
+    expect(load.indexOf("await")).toBeLessThan(load.indexOf("setupSky(scene, texture"));
     // The environment measurement reads the GPU back; it starts here and is not awaited.
     expect(load).toContain("void this.#sampleSky(");
     expect(load.match(/\bawait\b/gu)).toHaveLength(1);

@@ -119,7 +119,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     this.#sky = texture;
     const scene = ctx.scene;
     if (scene === undefined) return;
-    setupSky(scene, texture);
+    setupSky(scene, texture, ctx.renderer.softwareAdapter !== undefined);
     // The measurement is not awaited: it reads the GPU back and must not hold the first frame.
     void this.#sampleSky(ctx, scene, generation);
   }
@@ -155,7 +155,8 @@ export class Race extends Scene<GameState, IPhysicsContext> {
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
-    if (this.#sky === undefined && SKY_OPTIONS.sky === "photo") setupSky(ctx.scene, undefined);
+    if (this.#sky === undefined && SKY_OPTIONS.sky === "photo")
+      setupSky(ctx.scene, undefined, ctx.renderer.softwareAdapter !== undefined);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
