@@ -1,6 +1,6 @@
 import { CanvasTexture, Scene, Texture } from "three";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { setupSky } from "../templates/shooter/src/render/sky.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SKY_OPTIONS, setupSky } from "../templates/shooter/src/render/sky.js";
 
 class CanvasWithDraw {
   constructor(
@@ -23,7 +23,14 @@ class NativePolyfillCanvas {
   }
 }
 
-afterEach(() => vi.unstubAllGlobals());
+// The photograph is the named override (PRD-633); these cases are about its environment copy.
+beforeEach(() => {
+  SKY_OPTIONS.sky = "photo";
+});
+afterEach(() => {
+  SKY_OPTIONS.sky = "atmosphere";
+  vi.unstubAllGlobals();
+});
 
 describe("shooter environment source", () => {
   it("bakes a 1024x512 copy and keeps the full sky as the background", () => {

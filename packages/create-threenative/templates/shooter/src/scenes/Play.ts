@@ -50,7 +50,7 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { scale } from "../render/scale.js";
-import { setupSky } from "../render/sky.js";
+import { SKY_OPTIONS, setupSky } from "../render/sky.js";
 import { loadSurfaces } from "../render/surface.js";
 import { TOWN_HALF, type Town, type TownCollider, buildTown } from "../render/town.js";
 import { createTownMaterials } from "../render/townMaterials.js";
@@ -114,7 +114,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     | {
         enemy: LoadedModel;
         viewmodel: LoadedModel;
-        sky: Texture;
+        sky: Texture | undefined;
       }
     | undefined;
 
@@ -137,7 +137,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const [enemy, viewmodel, sky] = await Promise.all([
       ctx.assets.model<LoadedModel>("mannequin-combat.glb"),
       ctx.assets.model<LoadedModel>("player-viewmodel.glb"),
-      ctx.assets.texture("sky.jpg"),
+      // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
+      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
     // The town's five generated surfaces (`render/surface.ts`), before `enter` builds the town.
     await loadSurfaces(ctx.assets);
