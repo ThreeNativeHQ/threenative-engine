@@ -6,17 +6,14 @@ import {
   DataTexture,
   Group,
   InstancedMesh,
-  Matrix4,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
   PerspectiveCamera,
 } from "three";
-// Three's own sources, not the bundle `three` resolves to: the renderer under test is the source
-// one, and it culls with a `Frustum` of its own — a second class, so the seam below has to be that
-// one rather than the `Frustum` this file's world was built with.
-import { Frustum } from "three/src/math/Frustum.js";
+// Three's own sources, not the bundle `three` resolves to: the renderer under test is the source one.
 import Renderer from "three/src/renderers/common/Renderer.js";
+import StandardDrawingPipeline from "three/src/renderers/common/StandardDrawingPipeline.js";
 import { uniform, viewportSharedTexture } from "three/tsl";
 import {
   BundleGroup,
@@ -210,21 +207,13 @@ function chunkBundles(world: WorldCells): BundleGroup[] {
  * attribution measured — and a `BundleGroup` records its children into a render list of its own and
  * hands the frame one bundle entry instead, so `bundled` is what the replay draws in their place.
  *
- * The renderer is a stub holding only what `_projectObject` reads, called through three's own
- * prototype, because a node-environment test has no renderer with a GPU behind it. The frustum is
- * the one seam patched rather than faked: the count depends on it, since a record is culled by the
- * same test the old per-object path was, and three keeps that frustum in a module the test cannot
- * reach.
+ * The renderer is a stub holding only what the drawing pipeline's `project` reads, called through
+ * three's own `StandardDrawingPipeline`, because a node-environment test has no renderer with a GPU
+ * behind it. The pipeline builds its own frustum from the camera, so a record is culled by the same
+ * test the old per-object path was.
  */
 /** Three's projection, which is private and whose signature the class's types do not name. */
 interface IProjector {
-  _projectObject(
-    object: Object3D,
-    camera: PerspectiveCamera,
-    groupOrder: number,
-    renderList: unknown,
-    clippingContext: unknown,
-  ): void;
   /** Whether a recorded group has to be recorded again, which is what makes a bundle frozen. */
   _bundleNeedsUpdate(bundleGroup: BundleGroup, renderBundleData: { version?: number }): boolean;
 }
@@ -248,9 +237,6 @@ function project(
     },
     pushBundle: (): void => {},
   });
-  const frustum = new Frustum().setFromProjectionMatrix(
-    new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
-  );
   const projector = Renderer.prototype as unknown as IProjector;
   const renderer = {
     _bundles: { get: (): object => ({}) },
@@ -265,29 +251,15 @@ function project(
         return list(into);
       },
     },
-    // Three recurses through `this._projectObject`, so the stub has to answer with the method itself.
-    // Every argument is forwarded: a bundle's own record is projected into the list three hands the
-    // recursion, and a stub that pinned the base list would count a record as per-object draws.
-    _projectObject(
-      this: unknown,
-      object: Object3D,
-      at: PerspectiveCamera,
-      groupOrder: number,
-      renderList: unknown,
-      clippingContext: unknown,
-    ): void {
-      projector._projectObject.call(this, object, at, groupOrder, renderList, clippingContext);
-    },
     backend: { beginBundle: (): undefined => undefined, get: (): object => ({}) },
     sortObjects: true,
   };
-  const culled = Frustum.prototype.intersectsObject;
-  Frustum.prototype.intersectsObject = (object: Object3D): boolean => culled.call(frustum, object);
-  try {
-    projector._projectObject.call(renderer, root, camera, 0, list(perObject), undefined);
-  } finally {
-    Frustum.prototype.intersectsObject = culled;
-  }
+  // r187 moved the scene walk out of Renderer into its drawing pipeline, which recurses through its own
+  // `project` and culls with the frustum its `begin` builds from the camera.
+  const pipeline = new StandardDrawingPipeline();
+  pipeline.renderer = renderer as never;
+  pipeline.begin(camera, {} as never);
+  pipeline.project(root, camera, 0, list(perObject) as never, undefined as never);
   for (const into of recorded.values()) bundled.push(...into);
   return { bundled, groups: [...recorded.keys()], perObject };
 }

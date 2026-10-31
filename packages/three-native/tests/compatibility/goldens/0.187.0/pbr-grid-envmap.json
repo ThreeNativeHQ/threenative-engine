@@ -1,0 +1,27 @@
+{
+  "name": "pbr-grid-envmap",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — 5×5 roughness (columns) × metalness (rows) spheres, directional light and procedural equirectangular sky with bright sun; pinned three WebGPU PMREM GGX VNDF",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:17df0ea949633bd76ede19694a0bfbf487223bd07630f55d6c8fedbbccc35316",
+      "decimal": "17df0ea949633bd76ede19694a0bfbf487223bd07630f55d6c8fedbbccc35316"
+    }
+  ],
+  "render": {
+    "png": "pbr-grid-envmap.png",
+    "pngSha256": "17df0ea949633bd76ede19694a0bfbf487223bd07630f55d6c8fedbbccc35316",
+    "width": 320,
+    "height": 320,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

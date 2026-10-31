@@ -2,9 +2,9 @@
   "$schema": "./catalog.schema.json",
   "version": 1,
   "reference": {
-    "three": "0.185.1",
-    "types": "@types/three@0.185.3",
-    "patch": "packages/core/patches/three@0.185.1.patch"
+    "three": "0.187.0",
+    "types": "@types/three@0.187.0",
+    "patch": "packages/core/patches/three@0.187.0.patch"
   },
   "abi": {
     "engine": 1,

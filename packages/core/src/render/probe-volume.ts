@@ -43,7 +43,7 @@ import {
   RenderTarget,
   RenderTarget3D,
 } from "three/webgpu";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import type { IRendererLike } from "../renderer.js";
 
@@ -292,7 +292,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   #projectionMaterial: NodeMaterial | undefined;
   #repackMaterials: NodeMaterial[] | undefined;
   #repackSlice = uniform(0, "int");
-  #batchTextureNode: ReturnType<typeof texture> | undefined;
+  #batchTextureNode: TextureNode | undefined;
   #gpuWarmupStarted = false;
   #gpuWarmupSettled = true;
   #sceneWarmupStarted = false;
@@ -1484,7 +1484,7 @@ function createProjectionMaterial(cubeTarget: CubeRenderTarget, cubemapSize: num
 }
 
 function createRepackMaterials(
-  batchTextureNode: ReturnType<typeof texture>,
+  batchTextureNode: TextureNode,
   slice: Node<"int">,
   dimensions: Vector3,
   probeCount: number,

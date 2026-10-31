@@ -177,9 +177,11 @@ test("should ship the Three.js batched velocity patch with core", async () => {
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   ) as { files?: string[] };
   expect(manifest.files).toContain("patches");
-  const patch = await readFile(new URL("../patches/three@0.185.1.patch", import.meta.url), "utf8");
+  const patch = await readFile(new URL("../patches/three@0.187.0.patch", import.meta.url), "utf8");
   expect(patch).toContain("this.object.userData?.useVelocity === true");
-  expect(patch).toContain("_previousMatricesTexture ?? matricesTexture");
+  // r187 owns batched previous matrices itself (`getPreviousMatricesTexture` in
+  // `build/three.tsl.js`), so the patch's half of the contract is only the capability flag.
+  expect(patch).toContain("threeNativeBatchedVelocityPatch = true;");
   expect(patch).toContain("this.gpu = ( typeof navigator !== 'undefined' ) ? navigator.gpu : null");
 });
 
@@ -218,9 +220,14 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     await run("tar", ["-xzf", join(archiveDirectory, archive), "-C", archiveDirectory]);
 
     const packed = join(archiveDirectory, "package");
-    expect(
-      await readFile(join(packed, "patches", "three@0.185.1-prd269-upgrade.patch"), "utf8"),
-    ).toBe(await readFile(join(coreRoot, "patches", "three@0.185.1-prd269-upgrade.patch"), "utf8"));
+    // Only this release's patch ships. A project on r187 starts from stock three, so there is no
+    // predecessor patch state to migrate and no upgrade patch to carry.
+    await expect(
+      readFile(join(packed, "patches", "three@0.187.0-prd269-upgrade.patch"), "utf8"),
+    ).rejects.toThrow(/ENOENT/u);
+    expect(await readFile(join(packed, "patches", "three@0.187.0.patch"), "utf8")).toBe(
+      await readFile(join(coreRoot, "patches", "three@0.187.0.patch"), "utf8"),
+    );
     const packageManifest = JSON.parse(await readFile(join(packed, "package.json"), "utf8")) as {
       scripts?: { postinstall?: string };
     };
@@ -237,7 +244,7 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
         "--silent",
         "-p1",
         "-i",
-        join(packed, "patches", "three@0.185.1.patch"),
+        join(packed, "patches", "three@0.187.0.patch"),
       ],
       { cwd: consumerThree },
     );
@@ -264,6 +271,8 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
       "src/renderers/common/RenderObject.js",
       "src/renderers/webgpu/utils/WebGPUBindingUtils.js",
       "src/renderers/webgpu/WebGPUBackend.js",
+      "build/three.core.js",
+      "build/three.tsl.js",
     ];
     const firstRun = await Promise.all(
       patchedFiles.map(
@@ -272,8 +281,11 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     );
     expect(firstRun[0]?.[1]).toContain("threeNativeBatchedVelocityPatch");
     expect(firstRun[1]?.[1]).toContain("threenative.velocity.previousInstanceMatrices");
-    expect(firstRun[2]?.[1]).toContain("_previousMatricesTexture ?? matricesTexture");
     const patched = new Map(firstRun);
+    // Batched previous matrices are upstream r187's: the nodes moved to `build/three.tsl.js`, which
+    // `build/three.webgpu.js` imports from, and this package's patch only flags the capability.
+    expect(patched.get("build/three.core.js")).toContain("threeNativeBatchedVelocityPatch");
+    expect(patched.get("build/three.tsl.js")).toContain("getPreviousMatricesTexture");
     expect(patched.get("src/renderers/common/RenderContexts.js")).toContain(
       "this.renderer.currentSamples",
     );
@@ -299,30 +311,29 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
       "bindingsData.layoutKey === bindGroupLayoutKey",
     );
     expect(patched.get("src/renderers/webgpu/WebGPUBackend.js")).toContain(
-      "currentBindingGroups[ i ] !== bindingsData.group",
+      "currentBindingGroups[ i ] !== bindGroupGPU",
     );
     expect(patched.get("src/renderers/webgpu/WebGPUBackend.js")).toContain(
-      "currentBindingGroups[ i ] = bindingsData.group",
+      "currentBindingGroups[ i ] = bindGroupGPU",
     );
     expect(patched.get("build/three.webgpu.js")).toContain(
-      "currentBindingGroups[ i ] !== bindingsData.group",
+      "currentBindingGroups[ i ] !== bindGroupGPU",
     );
     expect(patched.get("build/three.webgpu.js")).toContain(
-      "currentBindingGroups[ i ] = bindingsData.group",
+      "currentBindingGroups[ i ] = bindGroupGPU",
     );
     for (const file of ["src/renderers/webgpu/WebGPUBackend.js", "build/three.webgpu.js"]) {
       const backend = patched.get(file);
       expect(backend).toContain("data.bindGroupLayoutKeys !== bindGroupLayoutKeys");
       expect(backend).toContain("data.bindGroupLayoutKeys = bindGroupLayoutKeys");
       expect(backend).toContain("bindGroupLayoutKeys,");
-      expect(backend).toContain("renderObject.getGeometryCacheKey( false )");
     }
 
-    for (const file of ["src/renderers/common/RenderObject.js", "build/three.webgpu.js"]) {
-      expect(patched.get(file)).toContain("getGeometryCacheKey( useMorphTargetIds = true )");
-      expect(patched.get(file)).toContain("targets.length + ',' + geometry.morphTargetsRelative");
-      expect(patched.get(file)).toContain("useMorphTargetIds ? attribute.id");
-      expect(patched.get(file)).toContain("attribute.count + ',' + attribute.itemSize");
+    for (const file of ["src/renderers/webgpu/WebGPUBackend.js", "build/three.webgpu.js"]) {
+      // The pipeline key is the real vertex layout plus the morph layout (PRD-566), never
+      // morph-attribute object identity.
+      expect(patched.get(file)).toContain("getVertexBufferLayoutCacheKey( renderObject )");
+      expect(patched.get(file)).toContain("renderObject.getGeometryCacheKey( false )");
     }
 
     await run(process.execPath, ["./scripts/postinstall.mjs"], {
@@ -365,7 +376,7 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     };
     await writeFile(
       consumerManifestPath,
-      `${JSON.stringify({ ...consumerManifest, version: "0.185.2" })}\n`,
+      `${JSON.stringify({ ...consumerManifest, version: "0.187.1" })}\n`,
     );
     await expect(
       run(process.execPath, ["./scripts/postinstall.mjs"], {
@@ -408,7 +419,7 @@ test("should prefer core's nested Three.js when the consumer has another version
           "--silent",
           "-p1",
           "-i",
-          join(packed, "patches", "three@0.185.1.patch"),
+          join(packed, "patches", "three@0.187.0.patch"),
         ],
         { cwd: threeRoot },
       );
@@ -419,7 +430,7 @@ test("should prefer core's nested Three.js when the consumer has another version
     };
     await writeFile(
       consumerManifestPath,
-      `${JSON.stringify({ ...consumerManifest, version: "0.185.2" })}\n`,
+      `${JSON.stringify({ ...consumerManifest, version: "0.187.1" })}\n`,
     );
 
     await run(process.execPath, ["./scripts/postinstall.mjs"], {
@@ -460,7 +471,7 @@ test("should apply the patch to a valid workspace-hoisted Three.js", async () =>
         "--silent",
         "-p1",
         "-i",
-        join(packed, "patches", "three@0.185.1.patch"),
+        join(packed, "patches", "three@0.187.0.patch"),
       ],
       { cwd: hoistedThree },
     );
@@ -501,7 +512,7 @@ test("should reject Three.js resolved only through a NODE_PATH fallback", async 
         "--silent",
         "-p1",
         "-i",
-        join(packed, "patches", "three@0.185.1.patch"),
+        join(packed, "patches", "three@0.187.0.patch"),
       ],
       { cwd: fallbackThree },
     );

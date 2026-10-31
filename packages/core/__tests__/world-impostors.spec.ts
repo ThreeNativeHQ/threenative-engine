@@ -9,6 +9,7 @@ import {
   Group,
   InstancedInterleavedBuffer,
   InstancedMesh,
+  type InterleavedBuffer,
   type InterleavedBufferAttribute,
   type Material,
   Matrix4,
@@ -60,7 +61,7 @@ import { type IWorldPackage, WorldCells } from "../src/world.js";
 
 // Exercise the installed renderer's actual upload decision; its private module has no declarations.
 interface ITestAttributes {
-  update(attribute: BufferAttribute | InterleavedBufferAttribute, type: number): void;
+  update(attribute: BufferAttribute | InterleavedBuffer, type: number): void;
 }
 const { default: ThreeAttributes } = (await import(
   import.meta.resolve("three/src/renderers/common/Attributes.js")
@@ -73,12 +74,22 @@ function attributeUploads(attribute: BufferAttribute | InterleavedBufferAttribut
   const copies: number[][] = [];
   const backend = {
     createAttribute: vi.fn(),
-    updateAttribute: vi.fn((written: BufferAttribute | InterleavedBufferAttribute) => {
+    // r187 deletes an attribute's buffer on its dispose event, through the backend.
+    destroyAttribute: vi.fn(),
+    updateAttribute: vi.fn((written: BufferAttribute | InterleavedBuffer) => {
       copies.push(Array.from(written.array));
     }),
   };
-  const attributes = new ThreeAttributes(backend, { createAttribute: vi.fn() });
-  const submit = () => attributes.update(attribute, AttributeType.VERTEX);
+  const attributes = new ThreeAttributes(backend, {
+    createAttribute: vi.fn(),
+    destroyAttribute: vi.fn(),
+  });
+  // r187 `Attributes.update` takes the interleaved buffer itself; the backend's `getBufferAttribute` unwraps
+  // an `InterleavedBufferAttribute` to it before the call.
+  const tracked = (attribute as InterleavedBufferAttribute).isInterleavedBufferAttribute
+    ? (attribute as InterleavedBufferAttribute).data
+    : (attribute as BufferAttribute);
+  const submit = () => attributes.update(tracked, AttributeType.VERTEX);
   submit(); // Initial allocation/upload is required even if nothing changed afterward.
   return { backend, copies, submit };
 }
@@ -88,9 +99,10 @@ function farMatrixRoute(mesh: InstancedMesh) {
   const material = mesh.material as NodeMaterial;
   const body = (
     material.positionNode as unknown as {
-      node: { shaderNode: { jsFunc: (inputs: unknown, builder: { object: Object3D }) => Node } };
+      // r187 TSL returns the call node itself; the r185 proxy wrapper (`.node`) is gone.
+      shaderNode: { jsFunc: (inputs: unknown, builder: { object: Object3D }) => Node };
     }
-  ).node.shaderNode.jsFunc;
+  ).shaderNode.jsFunc;
   const previous = getCurrentStack();
   const scope = stack();
   const columns = new Set<BufferAttributeNode<unknown>>();

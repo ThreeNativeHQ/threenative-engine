@@ -190,12 +190,12 @@ constexpr const char* kSlotNames[] = {
     "metalness", "emissive", "specular", "shininess", "ior", "specularIntensity", "specularColor", "uvTransform",
     "hemisphereSky", "hemisphereGround", "hemisphereDirection", "ambient", "boneBase", "bindMatrix",
     "bindMatrixInverse", "morphBase", "morphInfluenceBase", "morphVertexCount", "morphBaseInfluence",
-    "envMapIntensity", "cameraWorldMatrix", "envMapTexelWidth", "envMapTexelHeight", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
+    "envMapIntensity", "cameraWorldMatrix", "envMapMaxMip", "boneStride", "fogColor", "fogNear", "fogFar", "fogDensity", "backgroundRotation", "envRotation", "instanceBase", "normalScale", "normalUvTransform", "cameraPosition", "cameraProjectionMatrix",
     "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform",
     "bumpMapUvTransform", "specularColorMapUvTransform",
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
-    "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
+    "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
     "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
@@ -350,90 +350,94 @@ bool perDrawVertex(const shader::StageModule& stage) {
                        [](const shader::Binding& binding) { return graphTextureBinding(binding.name); });
 }
 
-// The PMREM generator's shaders, three's PMREMGenerator/PMREMUtils WGSL, ported operation for
-// operation: getDirection/getFace/getUV/roughnessToMip/bilinearCubeUV/textureCubeUV and the GGX
-// VNDF convolution (512 samples). Hand-written because the material IR has no u32 loop or bit ops;
-// this is renderer-internal plumbing, not a material.
+// three@0.187.0 PMREMGenerator's constants (renderers/common/extras/PMREMGenerator.js:29-45): a cube
+// no smaller than 256, a roughest mip LOD_MIN steps below the face size, 256 VNDF samples a sharp
+// level, and the last three mips integrated from a 16px source mip.
+constexpr uint32_t kPmremMinSize = 256;
+constexpr uint32_t kPmremLodMin = 3;
+constexpr uint32_t kPmremGgxSamples = 256;
+constexpr uint32_t kPmremIntegrationSize = 16;
+constexpr uint32_t kPmremIntegrationLevels = 3;
+// PmremUniforms: roughness, lodBias, sourceLod, pad, then the face's mat4x4.
+constexpr uint32_t kEnvUniformSize = 16 + 16 * 4;
+
+// The PMREM generator's shaders: three@0.187.0's PMREMGenerator (renderers/common/extras) and
+// PMREMUtils (nodes/pmrem) ported operation for operation — the equirect-to-cube conversion with its
+// four subpixel taps, the source cube's mip chain, the GGX VNDF convolution (256 samples, filtered
+// importance sampling) and the integration tail that weights every texel of a 16px source mip. Each
+// pass renders one face of one mip of a cube render target. Hand-written because the material IR has
+// no u32 loop or bit ops; this is renderer-internal plumbing, not a material.
+//
+// A face's fragment reads the direction three's box gives it (`positionWorldDirection`,
+// accessors/Position.js:74): the cube camera's view matrix (`u.face`, CubeCamera's WebGPU branch)
+// applied to the ray through the face texel, normalized. Both the equirect conversion and the
+// premultiplied bake draw their faces the same way, so the cube they write is the cube three writes.
 TN_WGSL_STRIPPED(kPmremPrelude, R"WGSL(
 struct PmremUniforms {
-  roughness: f32, mipInt: f32, texelWidth: f32, texelHeight: f32,
-  maxMip: f32, pad0: f32, pad1: f32, pad2: f32,
+  roughness: f32, lodBias: f32, sourceLod: f32, pad: f32,
+  face: mat4x4<f32>,
 };
 @group(0) @binding(0) var<uniform> u: PmremUniforms;
-@group(0) @binding(1) var t_src: texture_2d<f32>;
-@group(0) @binding(2) var s_src: sampler;
 struct VsOut {
   @builtin(position) position: vec4<f32>,
-  @location(0) uv: vec2<f32>,
-  @location(1) face: f32,
+  @location(0) ndc: vec2<f32>,
 };
-@vertex fn vs(@location(0) a_pos: vec3<f32>, @location(1) a_uv: vec2<f32>, @location(2) a_face: f32) -> VsOut {
+@vertex fn vs(@builtin(vertex_index) index: u32) -> VsOut {
+  // WebGPUTexturePassUtils' mainVS: one oversized triangle over the whole face.
+  let corners = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
   var out: VsOut;
-  out.position = vec4<f32>(a_pos.xy, 0.0, 1.0);
-  out.uv = a_uv;
-  out.face = a_face;
+  out.position = vec4<f32>(corners[index], 0.0, 1.0);
+  out.ndc = corners[index];
   return out;
 }
-fn pmremFace(direction: vec3<f32>) -> f32 {
-  let a = abs(direction);
-  var face = -1.0;
-  if (a.x > a.z) {
-    if (a.x > a.y) { face = select(3.0, 0.0, direction.x > 0.0); }
-    else { face = select(4.0, 1.0, direction.y > 0.0); }
-  } else {
-    if (a.z > a.y) { face = select(5.0, 2.0, direction.z > 0.0); }
-    else { face = select(4.0, 1.0, direction.y > 0.0); }
-  }
-  return face;
+fn pmremDirection(ndc: vec2<f32>) -> vec3<f32> {
+  return normalize((u.face * vec4<f32>(-ndc.x, -ndc.y, -1.0, 0.0)).xyz);
 }
-fn pmremUv(direction: vec3<f32>, face: f32) -> vec2<f32> {
-  var uv = vec2<f32>(0.0);
-  let a = abs(direction);
-  if (face == 0.0) { uv = vec2<f32>(direction.z, direction.y) / a.x; }
-  else if (face == 1.0) { uv = vec2<f32>(-direction.x, -direction.z) / a.y; }
-  else if (face == 2.0) { uv = vec2<f32>(-direction.x, direction.y) / a.z; }
-  else if (face == 3.0) { uv = vec2<f32>(-direction.z, direction.y) / a.x; }
-  else if (face == 4.0) { uv = vec2<f32>(-direction.x, direction.z) / a.y; }
-  else { uv = vec2<f32>(direction.x, direction.y) / a.z; }
-  return 0.5 * (uv + vec2<f32>(1.0));
-}
-fn pmremDirection(uvIn: vec2<f32>, face: f32) -> vec3<f32> {
-  let uv = uvIn * 2.0 - 1.0;
-  var d = vec3<f32>(uv, 1.0);
-  if (face == 0.0) { d = d.zyx; }
-  else if (face == 1.0) { d = d.xzy; d = vec3<f32>(-d.x, d.y, -d.z); }
-  else if (face == 2.0) { d.x *= -1.0; }
-  else if (face == 3.0) { d = d.zyx; d = vec3<f32>(-d.x, d.y, -d.z); }
-  else if (face == 4.0) { d = d.xzy; d = vec3<f32>(-d.x, -d.y, d.z); }
-  else { d.z *= -1.0; }
-  return d;
+// CubeTextureNode.setupUV (accessors/CubeTextureNode.js:115) negates x for the WebGPU coordinate
+// system: every cube three renders (CubeCamera faces included) is read through that flip.
+fn pmremCube(direction: vec3<f32>, lod: f32, sampler: sampler, texture: texture_cube<f32>) -> vec3<f32> {
+  return textureSampleLevel(texture, sampler, vec3<f32>(-direction.x, direction.y, direction.z), lod).rgb;
 }
 )WGSL");
 
+// The equirect-to-cube conversion, PMREMGenerator.js:647 `_getEquirectMaterial`: four subpixel taps
+// offset by the direction's derivatives, so a small bright feature survives the face resampling.
 const char* kPmremEquirect = R"WGSL(
+@group(0) @binding(1) var t_src: texture_2d<f32>;
+@group(0) @binding(2) var s_src: sampler;
+fn equirectTexel(direction: vec3<f32>) -> vec3<f32> {
+  // EquirectUV.js: atan(z, x) / 2pi + 0.5 and asin(y) / pi + 0.5.
+  let dir = normalize(direction);
+  let uEquirect = atan2(dir.z, dir.x) * 0.15915494309189535 + 0.5;
+  let vEquirect = asin(clamp(dir.y, -1.0, 1.0)) * 0.3183098861837907 + 0.5;
+  return textureSampleLevel(t_src, s_src, vec2<f32>(uEquirect, vEquirect), 0.0).rgb;
+}
 @fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
-  let direction = normalize(pmremDirection(in.uv, in.face));
-  let uEq = atan2(direction.z, direction.x) * 0.15915494309189535 + 0.5;
-  let vEq = asin(clamp(direction.y, -1.0, 1.0)) * 0.3183098861837907 + 0.5;
-  return textureSampleLevel(t_src, s_src, vec2<f32>(uEq, vEq), 0.0);
+  let direction = pmremDirection(in.ndc);
+  let dx = dpdx(direction) * 0.25;
+  let dy = dpdy(direction) * 0.25;
+  let color = equirectTexel(direction - dx - dy) + equirectTexel(direction + dx - dy)
+            + equirectTexel(direction - dx + dy) + equirectTexel(direction + dx + dy);
+  return vec4<f32>(color * 0.25, 1.0);
+}
+)WGSL";
+
+// The source cube's mip chain, WebGPUTexturePassUtils.generateMipmaps: each level is the previous
+// one sampled at its own texel centers through a linear filter, a 2x2 box down at the face edges.
+const char* kPmremMip = R"WGSL(
+@group(0) @binding(1) var t_src: texture_2d<f32>;
+@group(0) @binding(2) var s_src: sampler;
+@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
+  // A face's stored row 0 is the top of the face, so the destination row reads the source at the
+  // other end of clip-space y: v = 0.5 - ndc.y * 0.5. The two direction passes read ndc as a
+  // direction, not as a uv, and take no flip.
+  return textureSampleLevel(t_src, s_src, vec2<f32>(in.ndc.x * 0.5 + 0.5, 0.5 - in.ndc.y * 0.5), 0.0);
 }
 )WGSL";
 
 TN_WGSL_STRIPPED(kPmremGgx, R"WGSL(
-fn pmremBilinear(directionIn: vec3<f32>, mipIn: f32) -> vec3<f32> {
-  var mip = mipIn;
-  var face = pmremFace(directionIn);
-  let filterInt = max(4.0 - mip, 0.0);
-  mip = max(mip, 4.0);
-  let faceSize = exp2(mip);
-  var uv = pmremUv(directionIn, face) * (faceSize - 2.0) + 1.0;
-  if (face > 2.0) { uv.y += faceSize; face -= 3.0; }
-  uv.x += face * faceSize;
-  uv.x += filterInt * 48.0;
-  uv.y += 4.0 * (exp2(u.maxMip) - faceSize);
-  uv *= vec2<f32>(u.texelWidth, u.texelHeight);
-  return textureSampleLevel(t_src, s_src, uv, 0.0).xyz;
-}
+@group(0) @binding(1) var t_src: texture_cube<f32>;
+@group(0) @binding(2) var s_src: sampler;
 fn radicalInverse(bitsIn: u32) -> f32 {
   var bits = bitsIn;
   bits = (bits << 16u) | (bits >> 16u);
@@ -443,43 +447,72 @@ fn radicalInverse(bitsIn: u32) -> f32 {
   bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
   return f32(bits) * 2.3283064365386963e-10;
 }
-fn importanceSampleGGX_VNDF(Xi: vec2<f32>, V: vec3<f32>, roughness: f32) -> vec3<f32> {
-  let alpha = roughness * roughness;
-  let T1 = vec3<f32>(1.0, 0.0, 0.0);
-  let T2 = cross(V, T1);
-  let r = sqrt(Xi.x);
-  let phi = (2.0 * 3.14159265359) * Xi.y;
-  let t1 = r * cos(phi);
-  var t2 = r * sin(phi);
-  let s = 0.5 * (V.z + 1.0);
-  t2 = (1.0 - s) * sqrt(1.0 - t1 * t1) + s * t2;
-  let Nh = T1 * t1 + T2 * t2 + V * sqrt(max(0.0, 1.0 - (t1 * t1 + t2 * t2)));
-  return normalize(vec3<f32>(alpha * Nh.x, alpha * Nh.y, max(0.0, Nh.z)));
-}
+// PMREMUtils.js:88 ggxConvolution, V = N so the reflected direction is sampled directly, and each
+// sample reads the source mip level that matches its solid angle (filtered importance sampling).
 @fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
-  let N = normalize(pmremDirection(in.uv, in.face));
+  let N = pmremDirection(in.ndc);
   var prefiltered = vec3<f32>(0.0);
-  var totalWeight = 0.0;
   if (u.roughness < 0.001) {
-    prefiltered = pmremBilinear(N, u.mipInt);
+    prefiltered = pmremCube(N, 0.0, s_src, t_src);
   } else {
+    let alpha = u.roughness * u.roughness;
+    let alpha2 = alpha * alpha;
     let up = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, 1.0), abs(N.z) < 0.999);
     let tangent = normalize(cross(up, N));
     let bitangent = cross(N, tangent);
-    for (var i = 0u; i < 512u; i = i + 1u) {
-      let Xi = vec2<f32>(f32(i) / 512.0, radicalInverse(i));
-      let Ht = importanceSampleGGX_VNDF(Xi, vec3<f32>(0.0, 0.0, 1.0), u.roughness);
-      let H = normalize(tangent * Ht.x + bitangent * Ht.y + N * Ht.z);
-      let L = normalize(H * (dot(N, H) * 2.0) - N);
-      let NdotL = max(dot(N, L), 0.0);
+    var totalWeight = 0.0;
+    for (var i = 0u; i < 256u; i = i + 1u) {
+      let Xi = vec2<f32>(f32(i) / 256.0, radicalInverse(i));
+      let invQ = 1.0 / (1.0 - Xi.x + alpha2 * Xi.x);
+      let NdotL = (1.0 - Xi.x - alpha2 * Xi.x) * invQ;
       if (NdotL > 0.0) {
-        prefiltered += pmremBilinear(L, u.mipInt) * NdotL;
+        let phi = Xi.y * 6.283185307179586;
+        let sinTheta = alpha * 2.0 * sqrt(Xi.x * (1.0 - Xi.x)) * invQ;
+        let L = N * NdotL + (tangent * cos(phi) + bitangent * sin(phi)) * sinTheta;
+        // The mip whose texel solid angle matches 1 / (GGX_SAMPLES * pdf), with the half-mip bias.
+        let lod = max(log2(alpha2 * invQ) + u.lodBias, 0.0);
+        prefiltered += pmremCube(L, lod, s_src, t_src) * NdotL;
         totalWeight += NdotL;
       }
     }
-    if (totalWeight > 0.0) { prefiltered /= totalWeight; }
+    prefiltered = prefiltered / totalWeight;
   }
   return vec4<f32>(prefiltered, 1.0);
+}
+)WGSL");
+
+TN_WGSL_STRIPPED(kPmremIntegration, R"WGSL(
+@group(0) @binding(1) var t_src: texture_cube<f32>;
+@group(0) @binding(2) var s_src: sampler;
+// PMREMUtils.js:147 ggxIntegration: every texel of the 16px source mip, over three faces, weighted
+// by the GGX lobe. Opposite texels pair up: only the one in N's hemisphere contributes.
+@fragment fn fs(in: VsOut) -> @location(0) vec4<f32> {
+  let N = pmremDirection(in.ndc);
+  let alpha = u.roughness * u.roughness;
+  let alpha2 = alpha * alpha;
+  let texelSize = 2.0 / 16.0;
+  var prefiltered = vec3<f32>(0.0);
+  var totalWeight = 0.0;
+  for (var face = 0; face < 3; face = face + 1) {
+    for (var y = 0; y < 16; y = y + 1) {
+      for (var x = 0; x < 16; x = x + 1) {
+        let uv = (vec2<f32>(f32(x), f32(y)) + 0.5) * texelSize - 1.0;
+        // select( face == 0, vec3( 1.0, uv ), select( face == 1, vec3( uv.x, 1.0, uv.y ), vec3( uv, 1.0 ) ) ):
+        // three builds vec3(1.0, uv) by flattening the scalar first, so face 0 is (1, uv.x, uv.y).
+        var texelDirection = select(select(vec3<f32>(uv, 1.0), vec3<f32>(uv.x, 1.0, uv.y), face == 1),
+                                    vec3<f32>(1.0, uv.x, uv.y), face == 0);
+        let invDistance = inverseSqrt(dot(uv, uv) + 1.0);
+        var NdotL = dot(N, texelDirection);
+        texelDirection = texelDirection * select(1.0, -1.0, NdotL < 0.0);
+        NdotL = abs(NdotL) * invDistance;
+        let d = alpha2 + 1.0 + (alpha2 - 1.0) * NdotL;
+        let weight = NdotL * invDistance * invDistance * invDistance / (d * d);
+        prefiltered += pmremCube(texelDirection, u.sourceLod, s_src, t_src) * weight;
+        totalWeight += weight;
+      }
+    }
+  }
+  return vec4<f32>(prefiltered / totalWeight, 1.0);
 }
 )WGSL");
 
@@ -2018,11 +2051,16 @@ void Renderer::sweepTextures() {
             dropGroups();
             if (envPrep_ && envPrep_->ident == id) abandonEnvironment();  // a disposed source never publishes
             EnvironmentGpu& e = env->second;
+            for (WGPUTextureView view : e.targetViews)
+                if (view) wgpuTextureViewRelease(view);
+            for (WGPUTextureView view : e.sourceViews)
+                if (view) wgpuTextureViewRelease(view);
             if (e.view) wgpuTextureViewRelease(e.view);
-            if (e.pingView) wgpuTextureViewRelease(e.pingView);
+            if (e.sourceView) wgpuTextureViewRelease(e.sourceView);
             if (e.texture) wgpuTextureRelease(e.texture);
-            if (e.pingpong) wgpuTextureRelease(e.pingpong);
+            if (e.sourceCube) wgpuTextureRelease(e.sourceCube);
             if (e.sampler) wgpuSamplerRelease(e.sampler);
+            if (e.blitSampler) wgpuSamplerRelease(e.blitSampler);
             environments_.erase(env);
         }
         if (const auto record = textures_->records.find(id); record != textures_->records.end()) {
@@ -2036,64 +2074,66 @@ void Renderer::sweepTextures() {
 void Renderer::releaseEnvironments() {
     abandonEnvironment();  // release the in-flight packet's bind group before the shared buffers go
     for (auto& [texture, env] : environments_) {
+        for (WGPUTextureView view : env.targetViews)
+            if (view) wgpuTextureViewRelease(view);
+        for (WGPUTextureView view : env.sourceViews)
+            if (view) wgpuTextureViewRelease(view);
         if (env.view) wgpuTextureViewRelease(env.view);
-        if (env.pingView) wgpuTextureViewRelease(env.pingView);
+        if (env.sourceView) wgpuTextureViewRelease(env.sourceView);
         if (env.texture) wgpuTextureRelease(env.texture);
-        if (env.pingpong) wgpuTextureRelease(env.pingpong);
+        if (env.sourceCube) wgpuTextureRelease(env.sourceCube);
         if (env.sampler) wgpuSamplerRelease(env.sampler);
+        if (env.blitSampler) wgpuSamplerRelease(env.blitSampler);
     }
     environments_.clear();
     if (envEquirectPipeline_) wgpuRenderPipelineRelease(envEquirectPipeline_);
+    if (envMipPipeline_) wgpuRenderPipelineRelease(envMipPipeline_);
     if (envGgxPipeline_) wgpuRenderPipelineRelease(envGgxPipeline_);
+    if (envIntegrationPipeline_) wgpuRenderPipelineRelease(envIntegrationPipeline_);
     if (envPipelineLayout_) wgpuPipelineLayoutRelease(envPipelineLayout_);
+    if (envCubePipelineLayout_) wgpuPipelineLayoutRelease(envCubePipelineLayout_);
     if (envLayout_) wgpuBindGroupLayoutRelease(envLayout_);
-    envEquirectPipeline_ = envGgxPipeline_ = nullptr;
-    envPipelineLayout_ = nullptr;
-    envLayout_ = nullptr;
+    if (envCubeLayout_) wgpuBindGroupLayoutRelease(envCubeLayout_);
+    envEquirectPipeline_ = envMipPipeline_ = envGgxPipeline_ = envIntegrationPipeline_ = nullptr;
+    envPipelineLayout_ = envCubePipelineLayout_ = nullptr;
+    envLayout_ = envCubeLayout_ = nullptr;
 }
 
 void Renderer::buildEnvironmentPipelines() {
     if (envGgxPipeline_) return;
-    WGPUBindGroupLayoutEntry entries[3] = {};
-    entries[0].binding = 0;
-    entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
-    entries[0].buffer.type = WGPUBufferBindingType_Uniform;
-    entries[0].buffer.minBindingSize = 32;
-    entries[1].binding = 1;
-    entries[1].visibility = WGPUShaderStage_Fragment;
-    entries[1].texture.sampleType = WGPUTextureSampleType_Float;
-    entries[1].texture.viewDimension = WGPUTextureViewDimension_2D;
-    entries[2].binding = 2;
-    entries[2].visibility = WGPUShaderStage_Fragment;
-    entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
-    WGPUBindGroupLayoutDescriptor layoutDesc = {};
-    layoutDesc.entryCount = 3;
-    layoutDesc.entries = entries;
-    envLayout_ = wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+    // Every pass binds the packet's uniform slice, the source texture and a sampler; the source is a
+    // 2D view of the equirect shape (the conversion, the mip chain) or the cube (the GGX convolution,
+    // the integration tail), and the two cannot share a layout.
+    const auto makeLayout = [&](WGPUTextureViewDimension dimension) {
+        WGPUBindGroupLayoutEntry entries[3] = {};
+        entries[0].binding = 0;
+        entries[0].visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+        entries[0].buffer.type = WGPUBufferBindingType_Uniform;
+        entries[0].buffer.minBindingSize = kEnvUniformSize;
+        entries[1].binding = 1;
+        entries[1].visibility = WGPUShaderStage_Fragment;
+        entries[1].texture.sampleType = WGPUTextureSampleType_Float;
+        entries[1].texture.viewDimension = dimension;
+        entries[2].binding = 2;
+        entries[2].visibility = WGPUShaderStage_Fragment;
+        entries[2].sampler.type = WGPUSamplerBindingType_Filtering;
+        WGPUBindGroupLayoutDescriptor layoutDesc = {};
+        layoutDesc.entryCount = 3;
+        layoutDesc.entries = entries;
+        return wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+    };
+    envLayout_ = makeLayout(WGPUTextureViewDimension_2D);
+    envCubeLayout_ = makeLayout(WGPUTextureViewDimension_Cube);
     WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {};
     pipelineLayoutDesc.bindGroupLayoutCount = 1;
     pipelineLayoutDesc.bindGroupLayouts = &envLayout_;
     envPipelineLayout_ = wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc);
+    pipelineLayoutDesc.bindGroupLayouts = &envCubeLayout_;
+    envCubePipelineLayout_ = wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc);
 
-    WGPUVertexAttribute attributes[3] = {};
-    attributes[0].format = WGPUVertexFormat_Float32x3;
-    attributes[0].offset = 0;
-    attributes[0].shaderLocation = 0;
-    attributes[1].format = WGPUVertexFormat_Float32x2;
-    attributes[1].offset = 12;
-    attributes[1].shaderLocation = 1;
-    attributes[2].format = WGPUVertexFormat_Float32;
-    attributes[2].offset = 20;
-    attributes[2].shaderLocation = 2;
-    WGPUVertexBufferLayout vertexBuffer = {};
-    vertexBuffer.arrayStride = 24;
-    vertexBuffer.stepMode = WGPUVertexStepMode_Vertex;
-    vertexBuffer.attributeCount = 3;
-    vertexBuffer.attributes = attributes;
-
-    auto pipeline = [&](const char* fragment) {
-        std::string code = kPmremPrelude;
-        code += fragment;
+    // WebGPUTexturePassUtils' faces are one oversized triangle (`@builtin(vertex_index)`), so none of
+    // these passes reads a vertex buffer.
+    auto pipeline = [&](const std::string& code, WGPUPipelineLayout layout) {
         WGPUShaderModuleWGSLDescriptor_Compat wgsl = {};
         WGPUShaderModuleDescriptor shaderDesc = {};
         setupShaderModuleWGSL(&shaderDesc, &wgsl, code.c_str());
@@ -2107,11 +2147,9 @@ void Renderer::buildEnvironmentPipelines() {
         fragmentState.targetCount = 1;
         fragmentState.targets = &color;
         WGPURenderPipelineDescriptor desc = {};
-        desc.layout = envPipelineLayout_;
+        desc.layout = layout;
         desc.vertex.module = module;
         WGPU_SET_ENTRY_POINT(desc.vertex, "vs");
-        desc.vertex.bufferCount = 1;
-        desc.vertex.buffers = &vertexBuffer;
         desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
         desc.primitive.cullMode = WGPUCullMode_None;
         desc.primitive.frontFace = WGPUFrontFace_CCW;
@@ -2122,13 +2160,17 @@ void Renderer::buildEnvironmentPipelines() {
         wgpuShaderModuleRelease(module);
         return created;
     };
-    envEquirectPipeline_ = pipeline(kPmremEquirect);
-    envGgxPipeline_ = pipeline(kPmremGgx);
+    const std::string prelude = kPmremPrelude;
+    envEquirectPipeline_ = pipeline(prelude + kPmremEquirect, envPipelineLayout_);
+    envMipPipeline_ = pipeline(prelude + kPmremMip, envPipelineLayout_);
+    envGgxPipeline_ = pipeline(prelude + kPmremGgx, envCubePipelineLayout_);
+    envIntegrationPipeline_ = pipeline(prelude + kPmremIntegration, envCubePipelineLayout_);
 }
 
-// One face of a pass: its viewport spans the 3x2 face layout; the GGX filter takes 512 samples.
+// One face in fragment samples: a GGX face reads 256 source taps a pixel, an integration face every
+// texel of a 16px mip over three faces, the equirect conversion four taps, a mip chain step one.
 uint64_t Renderer::pmremPacketCost(const PmremPacket& packet) {
-    return uint64_t(packet.w / 3.0f) * uint64_t(packet.h / 2.0f) * (packet.roughness > 0.0f ? 512u : 1u);
+    return uint64_t(packet.width) * uint64_t(packet.height) * packet.samples;
 }
 
 void Renderer::beginEnvironment(const Texture& equirect) {
@@ -2140,149 +2182,170 @@ void Renderer::beginEnvironment(const Texture& equirect) {
         throw std::runtime_error("TN_NATIVE_ENVIRONMENT_INVALID: requires decoded RGBA equirectangular pixels, width >= 64");
     abandonEnvironment();  // one active preparation globally: envUniforms_ is shared
     EnvironmentGpu& env = environments_[equirect.ident.value()];
+    for (WGPUTextureView view : env.targetViews)
+        if (view) wgpuTextureViewRelease(view);
+    for (WGPUTextureView view : env.sourceViews)
+        if (view) wgpuTextureViewRelease(view);
     if (env.view) wgpuTextureViewRelease(env.view);
-    if (env.pingView) wgpuTextureViewRelease(env.pingView);
+    if (env.sourceView) wgpuTextureViewRelease(env.sourceView);
     if (env.texture) wgpuTextureRelease(env.texture);
-    if (env.pingpong) wgpuTextureRelease(env.pingpong);
+    if (env.sourceCube) wgpuTextureRelease(env.sourceCube);
     if (env.sampler) wgpuSamplerRelease(env.sampler);
+    if (env.blitSampler) wgpuSamplerRelease(env.blitSampler);
     env = EnvironmentGpu{};
     env.source = &equirect;
     env.version = equirect.version();
     env.ready = false;  // a re-bake never reads as ready until its last packet completes
     const MaterialTexture* source = materialTexture(equirect);
     if (source->view == nullptr) throw std::runtime_error("TN_NATIVE_ENVIRONMENT_UPLOAD_FAILED");
-    // three's _setSizeFromTexture: an equirect's cube size is image.width / 4.
+    // PMREMGenerator._setSize (:344): an equirect's cube size is image.width / 4, floored to a power
+    // of two and no smaller than MIN_SIZE (:29), so a 64x32 sky is upsampled to a 256 cube.
     uint32_t cubeSize = std::max(equirect.width / 4, 1u);
-    uint32_t lodMax = 0;
-    while ((2u << lodMax) <= cubeSize) ++lodMax;
-    cubeSize = 1u << lodMax;
+    uint32_t sizeLog2 = 0;
+    while ((2u << sizeLog2) <= cubeSize) ++sizeLog2;
+    cubeSize = std::max(1u << sizeLog2, kPmremMinSize);
     env.cubeSize = cubeSize;
-    env.lodMax = lodMax;
-    env.lods = lodMax - 4 + 1 + 6;  // LOD_MIN=4, EXTRA_LOD_SIGMA.length=6 in pinned PMREMGenerator
-    // _createPlanes computes positions and each LOD's expanded UVs in JS doubles, then stores
-    // Float32Arrays. Expanding base UVs in the vertex shader adds a second, different f32 rounding.
-    std::vector<float> data;
-    data.reserve(env.lods * 36 * 6);
-    static const unsigned kFaceLib[6] = {3, 1, 5, 0, 4, 2};
-    for (uint32_t i = 0; i < env.lods; ++i) {
-        const double size = double(1u << std::max(int(lodMax) - int(i), 4));
-        const double texelSize = 1.0 / (size - 2);
-        const float min = float(-texelSize), max = float(1.0 + texelSize);
-        const float uv[6][2] = {{min, min}, {max, min}, {max, max}, {min, min}, {max, max}, {min, max}};
-        std::array<float, 36 * 6> vertices{};
-        for (unsigned face = 0; face < 6; ++face) {
-            const double x = double(face % 3) * 2.0 / 3.0 - 1.0;
-            const double y = face > 2 ? 0.0 : -1.0;
-            const double coordinates[6][3] = {{x, y, 0}, {x + 2.0 / 3.0, y, 0}, {x + 2.0 / 3.0, y + 1, 0},
-                                              {x, y, 0}, {x + 2.0 / 3.0, y + 1, 0}, {x, y + 1, 0}};
-            const unsigned faceIdx = kFaceLib[face];
-            for (unsigned v = 0; v < 6; ++v) {
-                const unsigned offset = (faceIdx * 6 + v) * 6;
-                for (unsigned c = 0; c < 3; ++c) vertices[offset + c] = float(coordinates[v][c]);
-                vertices[offset + 3] = uv[v][0];
-                vertices[offset + 4] = uv[v][1];
-                vertices[offset + 5] = float(faceIdx);
+    // _allocateTarget (:371): one mip per roughness step, the roughest LOD_MIN steps down from the
+    // face size (256 -> mips 0..5 at 256, 128, 64, 32, 16, 8).
+    env.maxLod = std::max(uint32_t(std::bit_width(cubeSize) - 1), kPmremLodMin) - kPmremLodMin;
+    const uint32_t sourceMips = uint32_t(std::bit_width(cubeSize) - 1) + 1;
+    const float sourceLod = float(std::bit_width(cubeSize) - 1 - uint32_t(std::bit_width(kPmremIntegrationSize) - 1));
+
+    // The cube three renders into and filters from (HalfFloatType, LinearMipmapLinearFilter, a full
+    // mip chain: the GGX convolution reads it at the lod each sample's solid angle needs).
+    const auto createCube = [&](uint32_t mipLevels) {
+        WGPUTextureDescriptor desc = {};
+        desc.dimension = WGPUTextureDimension_2D;
+        desc.size = {cubeSize, cubeSize, 6};
+        desc.format = WGPUTextureFormat_RGBA16Float;
+        desc.mipLevelCount = mipLevels;
+        desc.sampleCount = 1;
+        desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        return wgpuDeviceCreateTexture(device_, &desc);
+    };
+    env.texture = createCube(env.maxLod + 1);
+    env.sourceCube = createCube(sourceMips);
+    const auto cubeView = [&](WGPUTexture texture, uint32_t mips) {
+        WGPUTextureViewDescriptor desc = {};
+        desc.dimension = WGPUTextureViewDimension_Cube;
+        desc.arrayLayerCount = 6;
+        desc.mipLevelCount = mips;
+        return wgpuTextureCreateView(texture, &desc);
+    };
+    env.view = cubeView(env.texture, env.maxLod + 1);
+    env.sourceView = cubeView(env.sourceCube, sourceMips);
+    // One 2D view per face of each mip, the attachment a pass renders into.
+    const auto faceViews = [](WGPUTexture texture, uint32_t mips) {
+        std::vector<WGPUTextureView> views;
+        views.reserve(size_t(mips) * 6);
+        for (uint32_t mip = 0; mip < mips; ++mip)
+            for (uint32_t face = 0; face < 6; ++face) {
+                WGPUTextureViewDescriptor desc = {};
+                desc.dimension = WGPUTextureViewDimension_2D;
+                desc.baseMipLevel = mip;
+                desc.mipLevelCount = 1;
+                desc.baseArrayLayer = face;
+                desc.arrayLayerCount = 1;
+                views.push_back(wgpuTextureCreateView(texture, &desc));
             }
-        }
-        data.insert(data.end(), vertices.begin(), vertices.end());
-    }
-    const uint64_t vertexBytes = data.size() * sizeof(float);
-    if (envVertex_.type == 0 || envVertexCapacity_ < vertexBytes) {
-        if (envVertex_.type != 0) gpu_.destroy(envVertex_);
-        envVertexCapacity_ = vertexBytes;
-        envVertex_ = gpu_.createBuffer(vertexBytes, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
-    }
-    gpu_.writeBuffer(envVertex_, 0, data.data(), vertexBytes);
-    const uint32_t width = 3 * std::max(cubeSize, 112u);
-    const uint32_t height = 4 * cubeSize;
-    env.width = width;
-    env.height = height;
-    env.texelWidth = 1.0f / float(width);
-    env.texelHeight = 1.0f / float(height);
-    env.maxMip = float(lodMax);
-    WGPUTextureDescriptor target = {};
-    target.dimension = WGPUTextureDimension_2D;
-    target.size = {width, height, 1};
-    target.format = WGPUTextureFormat_RGBA16Float;
-    target.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-    target.mipLevelCount = 1;
-    target.sampleCount = 1;
-    env.texture = wgpuDeviceCreateTexture(device_, &target);
-    env.pingpong = wgpuDeviceCreateTexture(device_, &target);
-    env.view = view2d(env.texture, WGPUTextureFormat_RGBA16Float);
-    env.pingView = view2d(env.pingpong, WGPUTextureFormat_RGBA16Float);
-    WGPUSamplerDescriptor sampler = {};
-    sampler.magFilter = sampler.minFilter = WGPUFilterMode_Linear;
-    sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = WGPUAddressMode_ClampToEdge;
-    sampler.maxAnisotropy = 1;
-    env.sampler = wgpuDeviceCreateSampler(device_, &sampler);
+        return views;
+    };
+    env.targetViews = faceViews(env.texture, env.maxLod + 1);
+    env.sourceViews = faceViews(env.sourceCube, sourceMips);
+
+    // Both cubes are read through a trilinear clamp sampler with the whole chain reachable:
+    // CubeRenderTarget's LinearMipmapLinearFilter, and a zeroed C descriptor would clamp lod to 0.
+    const auto sampler = [&](WGPUMipmapFilterMode mipmap) {
+        WGPUSamplerDescriptor desc = {};
+        desc.magFilter = desc.minFilter = WGPUFilterMode_Linear;
+        desc.mipmapFilter = mipmap;
+        desc.addressModeU = desc.addressModeV = desc.addressModeW = WGPUAddressMode_ClampToEdge;
+        desc.maxAnisotropy = 1;
+        desc.lodMaxClamp = 32;
+        return wgpuDeviceCreateSampler(device_, &desc);
+    };
+    env.sampler = sampler(WGPUMipmapFilterMode_Linear);
+    env.blitSampler = sampler(WGPUMipmapFilterMode_Nearest);
     buildEnvironmentPipelines();
 
-    // Every pass's uniform slice, then the passes themselves.
+    // Three's order: the equirect becomes the source cube's level 0, the source cube grows its mip
+    // chain, then every PMREM mip is filtered from it. Each is one face of one target per packet.
     struct Pass {
         WGPUTextureView target;
         WGPUTextureView source;
         WGPUSampler sampler;
         WGPURenderPipeline pipeline;
-        float x, y, w, h;
-        float roughness, mipInt;
-        uint64_t vertexOffset;
+        uint32_t size;
+        uint32_t samples;
+        float roughness, lodBias, sourceLod;
+        uint32_t face;
     };
     std::vector<Pass> passes;
-    passes.push_back({env.view, source->view, source->sampler, envEquirectPipeline_, 0, 0,
-                      float(3 * cubeSize), float(2 * cubeSize), 0.0f, 0.0f, 0});
-    int lod = int(lodMax);
-    for (int i = 1; i < int(env.lods); ++i) {
-        if (lod > 4) --lod;
-        const float size = float(1u << lod);
-        // _applyGGXFilter computes these in JavaScript doubles and rounds once, on upload to f32.
-        const double targetRoughness = double(i) / double(env.lods - 1);
-        const double sourceRoughness = double(i - 1) / double(env.lods - 1);
-        const double incremental = std::sqrt(targetRoughness * targetRoughness - sourceRoughness * sourceRoughness);
-        const float adjusted = float(incremental * (0.0 + targetRoughness * 1.25));
-        const float x = 3.0f * size * float(i > int(lodMax) - 4 ? i - int(lodMax) + 4 : 0);
-        const float y = 4.0f * float(cubeSize - unsigned(size));
-        // Render the GGX result into the ping-pong, then copy it back (roughness 0).
-        passes.push_back({env.pingView, env.view, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
-                          adjusted, shader::pmremMip(lodMax, i - 1), uint64_t(i) * 36 * 24});
-        passes.push_back({env.view, env.pingView, env.sampler, envGgxPipeline_, x, y, 3.0f * size, 2.0f * size,
-                          0.0f, shader::pmremMip(lodMax, i), uint64_t(i) * 36 * 24});
+    passes.reserve(6 + 6 * (size_t(sourceMips) - 1) + 6 * size_t(env.maxLod + 1));
+    for (uint32_t face = 0; face < 6; ++face)
+        passes.push_back({env.sourceViews[face], source->view, source->sampler, envEquirectPipeline_,
+                          cubeSize, 4, 0.0f, 0.0f, 0.0f, face});
+    for (uint32_t mip = 1; mip < sourceMips; ++mip) {
+        const uint32_t size = cubeSize >> mip;
+        for (uint32_t face = 0; face < 6; ++face)
+            passes.push_back({env.sourceViews[size_t(mip) * 6 + face], env.sourceViews[size_t(mip - 1) * 6 + face],
+                              env.blitSampler, envMipPipeline_, size, 1, 0.0f, 0.0f, 0.0f, face});
     }
-    const uint64_t stride = aligned(32);
+    for (uint32_t lod = 0; lod <= env.maxLod; ++lod) {
+        // lodToRoughness (:336): 1 - sqrt(1 - lod/maxLod); the last INTEGRATION_LEVELS integrate a
+        // 16px source mip instead of importance sampling. lodBias (:514) matches the source texel
+        // solid angle to 1 / (GGX_SAMPLES * pdf), with a half-mip bias against sampling noise.
+        const float roughness = float(1.0 - std::sqrt(1.0 - double(lod) / double(env.maxLod)));
+        const bool integrate = lod > env.maxLod - kPmremIntegrationLevels;
+        const double bias = roughness > 0.0f
+            ? std::log2(double(cubeSize)) + 0.5 * std::log2(6.0 / (kPmremGgxSamples * std::pow(double(roughness), 4.0))) + 0.5
+            : 0.0;
+        const uint32_t size = cubeSize >> lod;
+        for (uint32_t face = 0; face < 6; ++face)
+            passes.push_back({env.targetViews[size_t(lod) * 6 + face], env.sourceView, env.sampler,
+                              integrate ? envIntegrationPipeline_ : envGgxPipeline_, size,
+                              integrate ? kPmremIntegrationSize * kPmremIntegrationSize * 3u : kPmremGgxSamples,
+                              roughness, float(bias), sourceLod, face});
+    }
+
+    const uint64_t stride = aligned(kEnvUniformSize);
     const uint64_t total = stride * passes.size();
     if (envUniforms_.type == 0 || envUniformCapacity_ < total) {
         if (envUniforms_.type != 0) gpu_.destroy(envUniforms_);
         envUniformCapacity_ = std::max<uint64_t>(total, 4096);
         envUniforms_ = gpu_.createBuffer(envUniformCapacity_, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
     }
+    // PMREMGenerator's material draws a 5x5x5 box from inside: the face's direction is the box
+    // position, which is CubeCamera's view matrix applied to the ray through the face texel
+    // (backgroundCube's rotations, so both cubes share one orientation).
+    const Vector3 directions[6] = {{-1, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    const Vector3 ups[6] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
+    std::array<Matrix4, 6> rotations;
+    for (uint32_t face = 0; face < 6; ++face) rotations[face].lookAt(Vector3{}, directions[face], ups[face]);
     std::vector<float> uniforms(envUniformCapacity_ / 4, 0.0f);
     for (std::size_t p = 0; p < passes.size(); ++p) {
         float* slice = uniforms.data() + (p * stride) / 4;
         slice[0] = passes[p].roughness;
-        slice[1] = passes[p].mipInt;
-        slice[2] = env.texelWidth;
-        slice[3] = env.texelHeight;
-        slice[4] = env.maxMip;
+        slice[1] = passes[p].lodBias;
+        slice[2] = passes[p].sourceLod;
+        for (uint32_t c = 0; c < 16; ++c) slice[4 + c] = float(rotations[passes[p].face].elements[c]);
     }
     gpu_.writeBuffer(envUniforms_, 0, uniforms.data(), uniforms.size() * 4);
 
-    // Retain every full-quality pass/face packet; pumpEnvironment submits one cost-bounded group per
-    // call, only after the previous group's completion serial is observed. Never enqueue them all.
+    // Retain every full-quality packet; pumpEnvironment submits one cost-bounded group per call,
+    // only after the previous group's completion serial is observed. Never enqueue them all.
     EnvironmentPreparation prep;
     prep.ident = equirect.ident.value();
     prep.version = env.version;
     prep.source = &equirect;
     prep.stride = stride;
-    prep.packets.reserve(passes.size() * 6);
+    prep.packets.reserve(passes.size());
     for (std::size_t p = 0; p < passes.size(); ++p)
-        for (uint32_t face = 0; face < 6; ++face)
-            prep.packets.push_back({passes[p].target, passes[p].source, passes[p].sampler, passes[p].pipeline,
-                                    passes[p].x, passes[p].y, passes[p].w, passes[p].h, passes[p].roughness,
-                                    passes[p].mipInt, passes[p].vertexOffset, uint32_t(p), face, p == 0 && face == 0});
+        prep.packets.push_back({passes[p].target, passes[p].source, passes[p].sampler, passes[p].pipeline,
+                                passes[p].size, passes[p].size, passes[p].samples, uint32_t(p)});
     for (const PmremPacket& packet : prep.packets) prep.budget = std::max(prep.budget, pmremPacketCost(packet));
     envPrep_ = std::move(prep);
 }
-
 void Renderer::abandonEnvironment() {
     if (!envPrep_) return;
     if (envPrep_->group) wgpuBindGroupRelease(envPrep_->group);
@@ -2314,29 +2377,32 @@ bool Renderer::pumpEnvironment() {
     do {
     const PmremPacket& packet = prep.packets[prep.next];
     spent += pmremPacketCost(packet);
-    if (prep.groupPass != packet.pass) {
+    if (prep.groupUniform != packet.uniform) {
         if (prep.group) wgpuBindGroupRelease(prep.group);
+        // The uniform carries this face's rotation, so every packet has its own slice and group; the
+        // source's view dimension picks which layout the packet's pipeline was built against.
         WGPUBindGroupEntry entries[3] = {};
         entries[0].binding = 0;
         entries[0].buffer = gpu_.buffer(envUniforms_);
-        entries[0].offset = packet.pass * prep.stride;
-        entries[0].size = 32;
+        entries[0].offset = packet.uniform * prep.stride;
+        entries[0].size = kEnvUniformSize;
         entries[1].binding = 1;
         entries[1].textureView = packet.source;
         entries[2].binding = 2;
         entries[2].sampler = packet.sampler;
         WGPUBindGroupDescriptor groupDesc = {};
-        groupDesc.layout = envLayout_;
+        groupDesc.layout = packet.pipeline == envEquirectPipeline_ || packet.pipeline == envMipPipeline_
+                               ? envLayout_ : envCubeLayout_;
         groupDesc.entryCount = 3;
         groupDesc.entries = entries;
         prep.group = createBindGroup(device_, &groupDesc);
-        prep.groupPass = packet.pass;
+        prep.groupUniform = packet.uniform;
     }
     WGPUCommandEncoderDescriptor encoderDesc = {};
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device_, &encoderDesc);
     WGPURenderPassColorAttachment color = {};
     color.view = packet.target;
-    color.loadOp = packet.clear ? WGPULoadOp_Clear : WGPULoadOp_Load;
+    color.loadOp = WGPULoadOp_Clear;  // every packet writes a whole face, and nothing else writes it
     color.storeOp = WGPUStoreOp_Store;
     color.clearValue = {0, 0, 0, 1};
 #if defined(MYSTRAL_WEBGPU_DAWN)
@@ -2346,12 +2412,9 @@ bool Renderer::pumpEnvironment() {
     passDesc.colorAttachmentCount = 1;
     passDesc.colorAttachments = &color;
     WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc);
-    wgpuRenderPassEncoderSetViewport(pass, packet.x, packet.y, packet.w, packet.h, 0.0f, 1.0f);
-    wgpuRenderPassEncoderSetScissorRect(pass, uint32_t(packet.x), uint32_t(packet.y), uint32_t(packet.w), uint32_t(packet.h));
     wgpuRenderPassEncoderSetPipeline(pass, packet.pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, prep.group, 0, nullptr);
-    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, gpu_.buffer(envVertex_), packet.vertexOffset, 36 * 24);
-    wgpuRenderPassEncoderDraw(pass, 6, 1, packet.face * 6, 0);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);  // one oversized triangle covers the face
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
     WGPUCommandBufferDescriptor commandDesc = {};
@@ -2464,11 +2527,10 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
                       readsPostTexture(program.fragment)};
 }
 
-Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
-                                     bool softShadows) {
+Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights) {
     ++programKeyBuilds_;
     ++programLookups_;
-    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights + (softShadows ? "|soft" : "");
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights;
     const auto refuse = [&](const std::string& reason) -> Program* {
         if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
         return nullptr;
@@ -2487,7 +2549,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         if (backgroundNode) throw std::runtime_error(message);
         return refuse(message);
     };
-    const shader::LightLayout layout{lights, softShadows};
+    const shader::LightLayout layout{lights};
     shader::StandardPrograms source;
     try {
         switch (kind) {
@@ -2514,7 +2576,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
     Program& built = add(key, std::move(vertex), std::move(fragment));
-    built.kind = kind; built.variant = vv; built.lightKinds = lights; built.softShadows = softShadows;
+    built.kind = kind; built.variant = vv; built.lightKinds = lights;
     return &built;
 }
 
@@ -2552,7 +2614,7 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
     if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
     program.auxBuilt |= uint16_t(1u << mask);
     const shader::VertexVariant& variant = program.variant;
-    const shader::LightLayout layout{program.lightKinds, program.softShadows};
+    const shader::LightLayout layout{program.lightKinds};
     try {
         shader::StandardPrograms source;
         switch (program.kind) {
@@ -3441,12 +3503,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const uint64_t unshadowedKindsKey = hashBytes(unshadowedKinds.data(), unshadowedKinds.size());
     const uint64_t basicLightsKey = hashBytes("", 0) ^ 0x5bf03635ull;
     const auto drawLightsKey = [&](const DrawItem& item) {
-        uint64_t key = item.kind == MaterialKind::Basic ? basicLightsKey
-                       : item.receiveShadow              ? lightKindsKey
-                                                          : unshadowedKindsKey;
-        // A receiving mesh takes the soft-shadow filter (three keys a program on receiveShadow + type).
-        if (item.receiveShadow && lights.softShadows) key ^= 0x9e3779b97f4a7c15ull;
-        return key;
+        // A receiving mesh reads its lights' shadow maps, any other the unshadowed kinds: three keys a program on
+        // receiveShadow, and r187 has one shadow filter, so the map type no longer enters the key.
+        return item.kind == MaterialKind::Basic ? basicLightsKey
+               : item.receiveShadow            ? lightKindsKey
+                                               : unshadowedKindsKey;
     };
     // The pipeline target inputs not already in the VertexVariant: side, blending, depth state and
     // the vertex layout. Equal keys mean the same pipeline, so the cached handle can be reused.
@@ -3615,8 +3676,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             built = this->program(item.kind, variant,
                                   item.kind == MaterialKind::Basic ? ""
                                   : item.receiveShadow            ? lightKinds
-                                                                  : unshadowedKinds,
-                                  item.receiveShadow && lights.softShadows);
+                                                                  : unshadowedKinds);
             if (!built) continue;
             if (cache) {
                 cache->kind = item.kind; cache->variant = variant; cache->lightsKey = lightsKey;
@@ -3711,16 +3771,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const EnvironmentGpu& env = environment(*item.envMap);
             put(frameUniforms_, f, fs[kEnvRotation], item.envRotation);
             put(frameUniforms_, f, fs[kEnvMapIntensity], std::array<double, 1>{item.envMapIntensity});
-            put(frameUniforms_, f, fs[kEnvMapTexelWidth], std::array<double, 1>{env.texelWidth});
-            put(frameUniforms_, f, fs[kEnvMapTexelHeight], std::array<double, 1>{env.texelHeight});
-            put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{env.maxMip});
+            put(frameUniforms_, f, fs[kEnvMapMaxMip], std::array<double, 1>{double(env.maxLod)});
         }
         if (item.pmremMap) {
             const EnvironmentGpu& pmrem = environment(*item.pmremMap);
             put(frameUniforms_, f, fs[kPmremRotation], item.pmremRotation);
-            put(frameUniforms_, f, fs[kPmremTexelWidth], std::array<double, 1>{pmrem.texelWidth});
-            put(frameUniforms_, f, fs[kPmremTexelHeight], std::array<double, 1>{pmrem.texelHeight});
-            put(frameUniforms_, f, fs[kPmremMaxMip], std::array<double, 1>{pmrem.maxMip});
+            put(frameUniforms_, f, fs[kPmremMaxMip], std::array<double, 1>{double(pmrem.maxLod)});
         }
         if (item.sprite) for (const auto& field : program.vertex.uniforms) {
             if (field.name == "spriteCenter") put(frameUniforms_, v, &field, item.spriteCenter);
@@ -5604,8 +5660,6 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
     if (!passTimer_->queries)
         for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
-    // A resolve over a frame the graph draws seeds from that frame, in its own pass.
-    if (traa_ && !lateTraa_) traa_->seedHistory(encoder, sceneColor_);
     WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2, {"scene", inputWidth_, inputHeight_});
     bound = nullptr;
     boundIndex = nullptr;
@@ -5951,7 +6005,6 @@ void Renderer::encodeFrame(FrameJob& job) {
         postEffects_->setHost(lateTraa_ ? PostEffects::HostPass([this](WGPUCommandEncoder resolveEncoder, WGPUTexture beauty,
                                                                      WGPUTextureView beautyView, WGPUTexture output,
                                                                      WGPUTextureView outputView) {
-                                  traa_->seedHistory(resolveEncoder, beauty);
                                   traa_->resolve(resolveEncoder, beauty, beautyView, depth_, depthView_, output, outputView);
                               })
                               : PostEffects::HostPass());

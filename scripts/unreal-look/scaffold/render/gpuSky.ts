@@ -296,7 +296,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
   };
   readonly materials: NodeMaterial[] = [];
   readonly sun = uniform(new Vector3());
-  readonly #quad = new QuadMesh();
+  readonly #quad: QuadMesh;
   readonly #noise = cloudNoise();
   readonly #fog = uniform(new Color());
   readonly #scale = vec3(...temperatureColour(SUN_KELVIN)).mul(SUN_ILLUMINANCE * SKY_TO_SUN);
@@ -591,6 +591,8 @@ export class GpuSkyNode extends TempNode<"vec3"> {
         })(),
       ),
     );
+    // Three 0.187's QuadMesh takes its material in the constructor; each pass replaces it before drawing.
+    this.#quad = new QuadMesh(this.materials[0] as NodeMaterial);
   }
   override setup(_builder: NodeBuilder): Direction {
     const d = positionWorldDirection.normalize();

@@ -14,7 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -30,6 +30,15 @@ import {
 const { buildSync, transformSync } = createRequire(
   path.join(REPO_ROOT, "packages/runtime-native/package.json"),
 )("esbuild");
+const { PNG } = createRequire(path.join(REPO_ROOT, "packages/runtime-native/package.json"))(
+  "pngjs",
+) as {
+  readonly PNG: {
+    readonly sync: {
+      readonly read: (bytes: Buffer) => { readonly data: Buffer };
+    };
+  };
+};
 
 /**
  * The flags `--browser-recipe webgpu` passes, named in `packages/playtest/src/runner/browser.ts`.
@@ -50,6 +59,14 @@ export const SOFTWARE_ADAPTER =
   /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
 
 const PAGE_FILE = path.join(import.meta.dirname, "render", "render-fixture-page.js");
+
+/**
+ * A dropped command buffer: WebGPU rejected it, so the canvas holds no frame that was drawn.
+ *
+ * Dawn reports one per affected object; three prefixes the first with its own name. Either form
+ * contains the error name, so matching the name catches the event once whatever logs it.
+ */
+const WEBGPU_VALIDATION_ERROR = /Uncaptured WebGPU \w*Error|GPUValidationError/u;
 const OUTPUT_COLOR_SPACE_CONSTANTS = { srgb: "SRGBColorSpace", linear: "LinearSRGBColorSpace" };
 export const CAPTURE_TIMEOUT_MS = 90_000;
 
@@ -114,6 +131,26 @@ function page(request: Record<string, unknown>): string {
   ].join("");
 }
 
+/**
+ * A `three` addon from the pinned copy, by path, resolving its own relative imports the same way.
+ *
+ * A hand-written list of addon names drifts from the pinned tree's own import graph: in r187
+ * `tsl/display/TRAANode.js` imports `../utils/TAAUtils.js`, which no list entry named, so the
+ * page's dynamic import 404'd and the fixture failed with the module error instead of the cause.
+ * Serving the directory answers a new sibling without a harness change; a path that is not there
+ * fails closed with the file name rather than a 404 the browser reports as a broken import.
+ */
+function addonSource(pathname: string): [string, string] | undefined {
+  const prefix = "/addons/";
+  if (!pathname.startsWith(prefix)) return undefined;
+  const root = path.join(threeBuildDir(), "..", "examples", "jsm");
+  const file = path.resolve(root, pathname.slice(prefix.length));
+  if (!file.startsWith(`${root}${path.sep}`) || !file.endsWith(".js"))
+    throw new Error(`TN_FIXTURE_ADDON_INVALID: ${pathname} is not a .js under ${root}`);
+  if (!existsSync(file)) throw new Error(`TN_FIXTURE_ADDON_MISSING: ${file}`);
+  return ["text/javascript", readFileSync(file, "utf8")];
+}
+
 /** Serves the page, the in-page module and the two `three/webgpu` build files from one origin. */
 async function withServer(
   fixtures: ReadonlyMap<string, IFixture>,
@@ -170,23 +207,8 @@ async function withServer(
     });
     served.set("/core/probe-volume.js", ["text/javascript", probes.outputFiles[0].text]);
   }
-  // GLTFLoader and the two helpers it imports, resolving `three` through the page's import map; and
-  // every glTF a fixture loads, from the repository.
-  for (const addon of [
-    "loaders/GLTFLoader.js",
-    "tsl/display/TRAANode.js",
-    "tsl/display/GTAONode.js",
-    "tsl/display/DenoiseNode.js",
-    "tsl/display/BloomNode.js",
-    "tsl/display/SMAANode.js",
-    "math/SimplexNoise.js",
-    "utils/BufferGeometryUtils.js",
-    "utils/SkeletonUtils.js",
-  ])
-    served.set(`/addons/${addon}`, [
-      "text/javascript",
-      readFileSync(path.join(build, "..", "examples", "jsm", addon), "utf8"),
-    ]);
+  // GLTFLoader and every other addon a fixture or an addon reaches, resolving `three` through the
+  // page's import map; and every glTF a fixture loads, from the repository.
   for (const fixture of fixtures.values())
     for (const op of fixture.ops)
       if (op.op === "gltf")
@@ -202,7 +224,7 @@ async function withServer(
         ? fixture === undefined
           ? undefined
           : (["text/html", page(requestOf(fixture))] as [string, string])
-        : served.get(url.pathname);
+        : (served.get(url.pathname) ?? addonSource(url.pathname));
     if (file === undefined) {
       response.writeHead(404);
       response.end("not found");
@@ -240,6 +262,28 @@ function reported(pageOutcome: Promise<IPageOutcome>, fixture: string): Promise<
   ]);
 }
 
+/**
+ * Refuses a frame that holds a single RGBA colour: nothing was drawn, or nothing visible was.
+ *
+ * A golden of it asserts nothing, and the native comparison cannot reject it on its own — it
+ * inspects the reference first, so a uniform reference fails every engine as `capture is
+ * uniform`. No fixture draws one colour on purpose; the first that does needs an option here.
+ */
+function assertDrawn(png: Buffer, fixture: string): void {
+  const { data } = PNG.sync.read(png);
+  for (let offset = 4; offset < data.length; offset += 4)
+    if (
+      data[offset] !== data[0] ||
+      data[offset + 1] !== data[1] ||
+      data[offset + 2] !== data[2] ||
+      data[offset + 3] !== data[3]
+    )
+      return;
+  throw new Error(
+    `TN_FIXTURE_RENDER_UNIFORM_FRAME: ${fixture} drew the single RGBA colour ${String(data[0])},${String(data[1])},${String(data[2])},${String(data[3])}`,
+  );
+}
+
 /** One fixture's frame: open its page, wait for its own report, screenshot the canvas it drew. */
 async function captureOne(
   browser: Browser,
@@ -252,7 +296,12 @@ async function captureOne(
   const height = request.height as number;
   const tab = await browser.newPage({ viewport: { width, height } });
   const pageErrors: string[] = [];
+  const gpuErrors: string[] = [];
   tab.on("pageerror", (error) => pageErrors.push(error.message));
+  tab.on("console", (message) => {
+    const text = message.text();
+    if (WEBGPU_VALIDATION_ERROR.test(text)) gpuErrors.push(text.split("\n")[0] ?? text);
+  });
   let settle: ((outcome: IPageOutcome) => void) | null = null;
   // The page can finish before `goto` returns, so the report has a home before it opens.
   const pageOutcome = new Promise<IPageOutcome>((resolve) => {
@@ -296,6 +345,11 @@ async function captureOne(
       throw new Error(`TN_FIXTURE_RENDER_FAILED: ${fixture.name}\n${outcome.error}`);
     if (pageErrors.length > 0)
       throw new Error(`TN_FIXTURE_RENDER_FAILED: ${fixture.name} raised ${pageErrors.join("; ")}`);
+    // Fail closed on a rejected command buffer: the screenshot would be the blank canvas behind it.
+    if (gpuErrors.length > 0)
+      throw new Error(
+        `TN_FIXTURE_RENDER_GPU_ERROR: ${fixture.name} logged ${gpuErrors.join("; ")}`,
+      );
     const adapter = outcome.adapter;
     if (adapter === undefined)
       throw new Error(`TN_FIXTURE_RENDER_NO_ADAPTER: ${fixture.name} reported no adapter`);
@@ -305,6 +359,7 @@ async function captureOne(
         `TN_FIXTURE_RENDER_SOFTWARE_ADAPTER: ${fixture.name} was drawn by ${named}, a software adapter; pass --allow-software to record it anyway`,
       );
     const png = await tab.locator("#c").screenshot({ timeout: CAPTURE_TIMEOUT_MS });
+    assertDrawn(png, fixture.name);
     return {
       png,
       pngSha256: createHash("sha256").update(png).digest("hex"),

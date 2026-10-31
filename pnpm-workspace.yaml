@@ -7,9 +7,9 @@ confirmModulesPurge: false
 
 catalog:
   '@pmndrs/labs': 0.9.0
-  three: 0.185.1
+  three: 0.187.0
   '@types/node': 20.19.43
-  '@types/three': 0.185.3
+  '@types/three': 0.187.0
   tsup: 8.5.1
   procedural-animals: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512
   '@jridgewell/trace-mapping': 0.3.31
@@ -51,7 +51,7 @@ catalog:
   '@vitest/coverage-v8': 4.1.10
 
 patchedDependencies:
-  three@0.185.1: packages/core/patches/three@0.185.1.patch
+  three@0.187.0: packages/core/patches/three@0.187.0.patch
   tsup@8.5.1: patches/tsup@8.5.1.patch
   vite@8.2.0: patches/vite@8.2.0.patch
   "@tailwindcss/node@4.3.3": patches/@tailwindcss__node@4.3.3.patch

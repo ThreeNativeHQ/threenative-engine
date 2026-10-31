@@ -1250,19 +1250,68 @@ describe("warm-up absolute budget", () => {
   );
 });
 
-describe("compute warm-up dispatch", () => {
+describe("compute warm-up compiles without dispatching", () => {
+  // Three 0.187's `compileComputeAsync` builds a kernel's pipeline and bindings and dispatches
+  // nothing (Renderer.js:1359), so the pipeline the real dispatch uses is the one warm-up built.
+  // Dispatching a zeroed count instead made Chrome report `DispatchWorkgroups with a workgroup
+  // count of 0 is unusual` once per kernel per warm-up.
   test.each([false, true])(
-    "WebGPU warm-up uses zero kernel invocations (raw wrapper: %s)",
+    "WebGPU warm-up compiles the kernel (raw wrapper: %s)",
     async (wrapped) => {
-      const node = {};
+      const node = { count: 64, dispatchSize: null };
+      const compileComputeAsync = vi.fn(async () => undefined);
       const computeAsync = vi.fn(async () => undefined);
-      const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+      const receiver = { backend: { isWebGPUBackend: true }, compileComputeAsync, computeAsync };
       const report = await warmUpComputeNodes(wrapped ? { raw: receiver } : receiver, [node]);
       expect(report.compiled).toBe(1);
-      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node, 0);
-      expect(computeAsync.mock.contexts[0]).toBe(receiver);
+      expect(compileComputeAsync).toHaveBeenCalledExactlyOnceWith(node);
+      expect(compileComputeAsync.mock.contexts[0]).toBe(receiver);
+      expect(computeAsync).not.toHaveBeenCalled();
+      // Warm-up never touches the dispatch a kernel carries itself.
+      expect(node.count).toBe(64);
+      expect(node.dispatchSize).toBeNull();
     },
   );
+
+  test("a renderer offering only the compile-only path is the receiver, not its raw", async () => {
+    const compileComputeAsync = vi.fn(async () => undefined);
+    const receiver = { backend: { isWebGPUBackend: true }, compileComputeAsync };
+    const report = await warmUpComputeNodes(receiver, [{}]);
+    expect(report.unsupported).toBe(false);
+    expect(compileComputeAsync).toHaveBeenCalledOnce();
+  });
+
+  test("a WebGPU backend without a compile-only path reports compute unsupported", async () => {
+    const computeAsync = vi.fn(async () => undefined);
+    const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+    const report = await warmUpComputeNodes(receiver, [{}]);
+    expect(report.unsupported).toBe(true);
+    // Fail closed: an uncompiled kernel is reported, never run.
+    expect(computeAsync).not.toHaveBeenCalled();
+  });
+
+  test("a compile that never settles is abandoned, leaving the kernel untouched", async () => {
+    const node = { count: 64, dispatchSize: null };
+    const compileComputeAsync = vi.fn(() => new Promise<void>(() => {}));
+    const receiver = {
+      backend: { isWebGPUBackend: true },
+      compileComputeAsync,
+      computeAsync: vi.fn(),
+    };
+    let clock = 0;
+    const report = await warmUpComputeNodes(receiver, [node], {
+      budgetMs: 5,
+      compileTimeoutMs: 5,
+      yieldFrame: async () => {
+        clock += 10;
+      },
+    }).then((value) => {
+      clock += 10;
+      return value;
+    });
+    expect(report.abandoned).toBe(1);
+    expect(node.count).toBe(64);
+  });
 
   test.each([undefined, { isWebGLBackend: true }])(
     "other compute seams retain their existing call (%j)",

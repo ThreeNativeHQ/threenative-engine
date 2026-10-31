@@ -1,13 +1,7 @@
 import { type Color, PerspectiveCamera, Scene, Vector2 } from "three";
 import { context, mrt, output, pass, rtt, velocity } from "three/tsl";
-import type {
-  Node,
-  NodeBuilder,
-  NodeFrame,
-  RenderTarget,
-  Texture,
-  TextureNode,
-} from "three/webgpu";
+import type { Node, NodeFrame, RenderTarget, Texture, TextureNode } from "three/webgpu";
+import { WGSLNodeBuilder } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RenderChain } from "../../core/src/render/chain.js";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
@@ -115,9 +109,31 @@ const INPUT = {
 
 type Copy = { from: Texture; to: Texture };
 type PipelineCallbacks = {
-  onBeforeRenderPipeline?: () => void;
-  onAfterRenderPipeline?: () => void;
+  onBeforePipelineCallbacks?: (() => void)[];
+  onAfterPipelineCallbacks?: (() => void)[];
 };
+/** A pipeline's context data: three keeps one callback list per boundary and the view-offset state. */
+type PipelineContext = PipelineCallbacks & {
+  renderPipeline?: unknown;
+  renderPipelineState?: { viewOffsetOwner: unknown };
+};
+
+/** The part of a real builder these tests drive; the pinned declarations omit it. */
+type ISetupBuilder = WGSLNodeBuilder & {
+  context: Record<string, unknown>;
+  setBuildStage(stage: string): void;
+  getNodeProperties(node: Node): Record<string, unknown>;
+};
+
+/**
+ * The real WGSL builder held in its setup stage, which is all these unit tests run: r187's
+ * TRAANode.setup builds its three input nodes through Node.build before it sets anything up.
+ */
+function setupBuilder(renderer: object): ISetupBuilder {
+  const builder = new WGSLNodeBuilder(null as never, renderer as never) as ISetupBuilder;
+  builder.setBuildStage("setup");
+  return builder;
+}
 
 /** The renderer surface the overridden updateBefore drives, and the order it drives it in. */
 function stubRenderer(display = DISPLAY) {
@@ -137,7 +153,20 @@ function stubRenderer(display = DISPLAY) {
     toneMappingExposure: 1,
     outputColorSpace: "",
     contextNode: context(),
-    backend: { isWebGPUBackend: false },
+    // The surface a WGSLNodeBuilder reads while it generates WGSL (whose device calls stay stubbed).
+    coordinateSystem: 2001,
+    samples: 0,
+    shadowMap: { enabled: true, type: 1 },
+    debug: { diagnostics: { keywords: false } },
+    hasCompatibility: () => true,
+    hasFeature: () => false,
+    getOutputBufferType: () => 1016,
+    library: { fromMaterial: () => null },
+    backend: {
+      isWebGPUBackend: false,
+      capabilities: { getUniformBufferLimit: () => 65_536 },
+      utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+    },
     getOutputRenderTarget: () => null,
     getRenderTarget: () => target,
     getActiveCubeFace: () => 0,
@@ -238,22 +267,42 @@ function fixture(
     _resolveRenderTarget: RenderTarget;
     _historyValidUniform: { value: number };
   };
-  const dependencies: Record<string, unknown> = {};
   // A render pipeline is what asks the node for its first jitter, once before the scene pass draws
   // and once after the chain, in that order.
-  const pipeline = {
-    context: { ...options.pipelineCallbacks } as PipelineCallbacks,
+  const pipeline: { context: PipelineContext } = { context: {} };
+  // The pipeline callback reads the drawing buffer through the builder's renderer.
+  const builder = setupBuilder(stub.renderer as never);
+  builder.context.velocity = velocity;
+  /**
+   * Three 0.187 hands the pipeline's own context data to the node builder — both callback lists,
+   * the view-offset state and the pipeline itself — and rebuilds it on every recompile, which
+   * NodeBuilder.addContext merges into a fresh builder context.
+   */
+  const present = (callbacks: PipelineCallbacks = {}): PipelineContext => {
+    const data: PipelineContext = {
+      onBeforePipelineCallbacks: [...(callbacks.onBeforePipelineCallbacks ?? [])],
+      onAfterPipelineCallbacks: [...(callbacks.onAfterPipelineCallbacks ?? [])],
+      renderPipelineState: { viewOffsetOwner: null },
+      renderPipeline: pipeline,
+    };
+    Reflect.set(builder, "context", { ...(builder.context as object), ...data });
+    pipeline.context = data;
+    return data;
   };
-  const builder = {
-    context: {
-      velocity,
-      ...(options.renderPipeline === true ? { renderPipeline: pipeline } : {}),
-    },
-    // The pipeline callback reads the drawing buffer through the builder's renderer.
-    renderer: stub.renderer,
-    getNodeProperties: () => dependencies,
-  } as unknown as NodeBuilder;
+  if (options.renderPipeline === true) present(options.pipelineCallbacks);
+  // The provider declares its input passes as properties of its own node.
+  const dependencies = builder.getNodeProperties(temporal.node) as unknown as Record<
+    string,
+    unknown
+  >;
   temporal.node.setup(builder);
+  /** One pipeline boundary, as three drives it: every before callback, then every after callback. */
+  const runBefore = (): void => {
+    for (const callback of pipeline.context.onBeforePipelineCallbacks ?? []) callback();
+  };
+  const runAfter = (): void => {
+    for (const callback of pipeline.context.onAfterPipelineCallbacks ?? []) callback();
+  };
   return {
     builder,
     camera,
@@ -264,6 +313,9 @@ function fixture(
     node,
     order: stub.order,
     pipeline,
+    present,
+    runAfter,
+    runBefore,
     scenePass,
     stub,
     temporal,
@@ -317,11 +369,8 @@ function chainFixture(lowResolutionPassthrough = false) {
     request: { stages: ["traa"], velocity: { pass: scenePass } },
     stages,
   });
-  const builder = {
-    context: { velocity },
-    renderer: stub.renderer,
-    getNodeProperties: () => ({}),
-  } as unknown as NodeBuilder;
+  const builder = setupBuilder(stub.renderer as never);
+  builder.context.velocity = velocity;
   const frame = { renderer: stub.renderer } as unknown as NodeFrame;
   return {
     chain,
@@ -490,13 +539,13 @@ describe("opt-in temporal AA", () => {
   });
 
   it("jitters the input lattice when the scene pass draws, not the canvas", () => {
-    const { camera, temporal, frame, node, pipeline, scenePass } = fixture({
+    const { camera, frame, node, pipeline, runBefore, scenePass, temporal } = fixture({
       renderPipeline: true,
     });
-    // The pipeline callback runs before the scene pass draws, so the lattice it sets is the one the
-    // scene pass renders on. Upstream asks for the drawing buffer here instead.
-    expect(pipeline.context.onBeforeRenderPipeline).toBeTypeOf("function");
-    pipeline.context.onBeforeRenderPipeline?.();
+    // The claimed view offset makes this jitter the pipeline's only before callback, so the lattice
+    // it sets before the scene pass draws is the one that pass renders on.
+    expect(pipeline.context.onBeforePipelineCallbacks?.at(-1)).toBeTypeOf("function");
+    runBefore();
     expect(camera.view?.enabled).toBe(true);
     expect(camera.view?.fullWidth).toBe(INPUT.width);
     expect(camera.view?.fullHeight).toBe(INPUT.height);
@@ -509,14 +558,14 @@ describe("opt-in temporal AA", () => {
   });
 
   it("jitters the raster the scene pass is about to render, not the one it last used", () => {
-    const { camera, temporal, frame, pipeline, scenePass, stub } = fixture({
+    const { camera, frame, pipeline, runBefore, scenePass, stub, temporal } = fixture({
       renderPipeline: true,
     });
     temporal.node.updateBefore(frame);
     // A height-only display resize. The scene pass sizes its own target in its `updateBefore`, which
     // runs after this callback, so the target still carries the raster it last rendered into.
     stub.setDisplay(1280, 480);
-    pipeline.context.onBeforeRenderPipeline?.();
+    runBefore();
     expect(camera.view?.enabled).toBe(true);
     expect(camera.view?.fullWidth).toBe(853);
     expect(camera.view?.fullHeight).toBe(320);
@@ -527,7 +576,7 @@ describe("opt-in temporal AA", () => {
   });
 
   it("keeps the caller's projection while the jitter lattice is the input raster", () => {
-    const { camera, temporal, frame, pipeline, scenePass } = fixture({
+    const { camera, frame, pipeline, runAfter, runBefore, scenePass, temporal } = fixture({
       // A raster whose floored two-thirds is not the display's aspect, so a lattice that overwrites
       // the caller's framing cannot pass for the caller's framing.
       display: { width: 1280, height: 720 },
@@ -536,18 +585,18 @@ describe("opt-in temporal AA", () => {
     const authored = camera.aspect;
     const authoredProjection = camera.projectionMatrix.clone();
     const draw = (): void => {
-      pipeline.context.onBeforeRenderPipeline?.();
+      runBefore();
       temporal.node.updateBefore(frame);
-      pipeline.context.onAfterRenderPipeline?.();
+      runAfter();
     };
-    pipeline.context.onBeforeRenderPipeline?.();
+    runBefore();
     // The lattice is the raster the scene pass is about to render, one input texel wide.
     expect(camera.view?.enabled).toBe(true);
     expect(camera.view?.fullWidth).toBe(scenePass.renderTarget.width);
     expect(camera.view?.fullHeight).toBe(scenePass.renderTarget.height);
     expect(camera.aspect).toBe(authored);
     temporal.node.updateBefore(frame);
-    pipeline.context.onAfterRenderPipeline?.();
+    runAfter();
     // Unjittered, the projection is the caller's own again, which is what history reprojects against.
     expect(camera.projectionMatrix.equals(authoredProjection)).toBe(true);
     // The opening frame is the initial reset; applying the lattice is not another one.
@@ -600,13 +649,15 @@ describe("opt-in temporal AA", () => {
   });
 
   it("invalidates projection changes before jitter, not ordinary camera motion", () => {
-    const { temporal, camera, frame, pipeline, scenePass } = fixture({ renderPipeline: true });
+    const { camera, frame, pipeline, runAfter, runBefore, scenePass, temporal } = fixture({
+      renderPipeline: true,
+    });
     // One frame as the pipeline drives it: jitter on the input lattice, then the chain, then the
     // clear that advances the jitter index.
     const draw = (): void => {
-      pipeline.context.onBeforeRenderPipeline?.();
+      runBefore();
       temporal.node.updateBefore(frame);
-      pipeline.context.onAfterRenderPipeline?.();
+      runAfter();
     };
     draw();
     camera.position.x = 1;
@@ -618,6 +669,33 @@ describe("opt-in temporal AA", () => {
       historyValid: false,
       resetReason: "projection-change",
     });
+    temporal.dispose();
+    scenePass.dispose();
+  });
+
+  it("does not reset twice when the camera layout settles before the opening jitter", () => {
+    const { camera, frame, runAfter, runBefore, scenePass, temporal } = fixture({
+      renderPipeline: true,
+    });
+    // The pipeline asks for the jitter while its quad draws, after the node's own frame update, so
+    // the first projection the lattice meets was laid out after this node was built. That is the
+    // frame the `initial` reset already covers, not a change the caller authored (three 0.187
+    // dropped `_needsPostProcessingSync`, which used to consume this observation inside `draw`).
+    camera.aspect = 4 / 3;
+    camera.updateProjectionMatrix();
+    temporal.node.updateBefore(frame);
+    expect(temporal.report()).toMatchObject({ frame: 1, resetReason: "initial" });
+    runBefore();
+    runAfter();
+    temporal.node.updateBefore(frame);
+    expect(temporal.report()).toMatchObject({ frame: 2, historyValid: true, resetReason: null });
+    // An authored change after that baseline is still one reset, exactly once.
+    camera.fov = 70;
+    camera.updateProjectionMatrix();
+    runBefore();
+    runAfter();
+    temporal.node.updateBefore(frame);
+    expect(temporal.report()).toMatchObject({ frame: 3, resetReason: "projection-change" });
     temporal.dispose();
     scenePass.dispose();
   });
@@ -793,17 +871,17 @@ describe("opt-in temporal AA", () => {
         },
       });
       try {
-        f.pipeline.context.onBeforeRenderPipeline?.();
+        f.runBefore();
         expect(f.camera.view).toMatchObject({ enabled: true, fullWidth: 853, fullHeight: 480 });
         f.temporal.node.updateBefore(f.frame);
         expect(f.temporal.report()).toMatchObject({ inputWidth: 853, inputHeight: 480 });
-        f.pipeline.context.onAfterRenderPipeline?.();
+        f.runAfter();
         f.stub.setDisplay(1280, 480);
-        f.pipeline.context.onBeforeRenderPipeline?.();
+        f.runBefore();
         expect(f.camera.view).toMatchObject({ fullWidth: 853, fullHeight: automatic ? 320 : 480 });
         // The automatic target still has last frame's size before its update; a stale-size fix fails.
         expect(colour?.renderTarget?.height).toBe(480);
-        f.pipeline.context.onAfterRenderPipeline?.();
+        f.runAfter();
       } finally {
         f.temporal.dispose();
         f.scenePass.dispose();
@@ -987,59 +1065,66 @@ describe("opt-in temporal AA", () => {
     const after = (): void => {};
     const { builder, temporal, pipeline, scenePass } = fixture({
       renderPipeline: true,
-      pipelineCallbacks: { onBeforeRenderPipeline: before, onAfterRenderPipeline: after },
+      pipelineCallbacks: {
+        onBeforePipelineCallbacks: [before],
+        onAfterPipelineCallbacks: [after],
+      },
     });
-    // Upstream's own setup wrote a pair bound to this node; only the jitter callback is ours.
-    const jitter = pipeline.context.onBeforeRenderPipeline;
+    // Upstream's own setup pushed a pair bound to this node; only the jitter callback is ours.
+    const jitter = pipeline.context.onBeforePipelineCallbacks?.at(-1);
     expect(jitter).toBeTypeOf("function");
     expect(jitter).not.toBe(before);
-    expect(pipeline.context.onAfterRenderPipeline).toBeTypeOf("function");
-    expect(pipeline.context.onAfterRenderPipeline).not.toBe(after);
+    // The jitter stands in for upstream's view-offset callback, in front of the earlier owner.
+    expect(pipeline.context.onBeforePipelineCallbacks).toEqual([before, jitter]);
+    expect(pipeline.context.onAfterPipelineCallbacks?.at(-1)).toBeTypeOf("function");
+    expect(pipeline.context.onAfterPipelineCallbacks?.at(0)).toBe(after);
     // A recompile is this node's own pair again, and the jitter callback keeps its identity.
     temporal.node.setup(builder);
-    expect(pipeline.context.onBeforeRenderPipeline).toBe(jitter);
+    expect(pipeline.context.onBeforePipelineCallbacks).toEqual([before, jitter]);
+    expect(pipeline.context.onAfterPipelineCallbacks).toHaveLength(2);
     temporal.dispose();
-    expect(pipeline.context.onBeforeRenderPipeline).toBe(before);
-    expect(pipeline.context.onAfterRenderPipeline).toBe(after);
+    expect(pipeline.context.onBeforePipelineCallbacks).toEqual([before]);
+    expect(pipeline.context.onAfterPipelineCallbacks).toEqual([after]);
     scenePass.dispose();
   });
 
   it("returns the replaced context to its own originals when a recompile makes a new one", () => {
     const before = (): void => {};
     const after = (): void => {};
-    const { builder, temporal, pipeline, scenePass } = fixture({
+    const { builder, present, temporal, pipeline, scenePass } = fixture({
       renderPipeline: true,
-      pipelineCallbacks: { onBeforeRenderPipeline: before, onAfterRenderPipeline: after },
+      pipelineCallbacks: {
+        onBeforePipelineCallbacks: [before],
+        onAfterPipelineCallbacks: [after],
+      },
     });
-    const jitter = pipeline.context.onBeforeRenderPipeline;
-    // Three's RenderPipeline._update builds a fresh context object per recompile and `context` is
-    // the getter naming the active one, so replacing it here is what a real recompile presents.
+    const jitter = pipeline.context.onBeforePipelineCallbacks?.at(-1);
+    // Three's RenderPipeline._update builds a fresh context object per recompile and the builder
+    // merges it in, so presenting another one here is what a real recompile presents.
     const replaced = pipeline.context;
-    const fresh: PipelineCallbacks = {};
-    pipeline.context = fresh;
+    const fresh = present();
     temporal.node.setup(builder);
     // The jitter callback keeps its identity across the handover.
-    expect(fresh.onBeforeRenderPipeline).toBe(jitter);
-    expect(fresh.onAfterRenderPipeline).not.toBe(after);
-    expect(replaced.onBeforeRenderPipeline).toBe(before);
-    expect(replaced.onAfterRenderPipeline).toBe(after);
+    expect(fresh.onBeforePipelineCallbacks).toEqual([jitter]);
+    expect(fresh.onAfterPipelineCallbacks).toHaveLength(1);
+    expect(replaced.onBeforePipelineCallbacks).toEqual([before]);
+    expect(replaced.onAfterPipelineCallbacks).toEqual([after]);
     scenePass.dispose();
   });
 
   it("leaves the context a recompile made clean after disposal, whatever it still calls", () => {
-    const { builder, camera, temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
-    const fresh: PipelineCallbacks = {};
-    pipeline.context = fresh;
+    const { builder, camera, present, temporal, scenePass } = fixture({ renderPipeline: true });
+    const fresh = present();
     temporal.node.setup(builder);
-    expect(fresh.onAfterRenderPipeline).toBeTypeOf("function");
+    expect(fresh.onAfterPipelineCallbacks).toHaveLength(1);
     const view = camera.view;
     const projection = camera.projectionMatrix.clone();
     temporal.dispose();
-    expect(fresh.onBeforeRenderPipeline).toBeUndefined();
-    expect(fresh.onAfterRenderPipeline).toBeUndefined();
-    // The pair the disposed node left behind would still jitter and re-project the camera.
-    fresh.onBeforeRenderPipeline?.();
-    fresh.onAfterRenderPipeline?.();
+    expect(fresh.onBeforePipelineCallbacks).toEqual([]);
+    expect(fresh.onAfterPipelineCallbacks).toEqual([]);
+    // Anything the disposed node left behind would still jitter and re-project the camera.
+    for (const callback of fresh.onBeforePipelineCallbacks ?? []) callback();
+    for (const callback of fresh.onAfterPipelineCallbacks ?? []) callback();
     expect(camera.view).toBe(view);
     expect(camera.projectionMatrix.equals(projection)).toBe(true);
     scenePass.dispose();
@@ -1048,8 +1133,8 @@ describe("opt-in temporal AA", () => {
   it("leaves both slots empty when it found none before the first setup", () => {
     const { temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
     temporal.dispose();
-    expect(pipeline.context.onBeforeRenderPipeline).toBeUndefined();
-    expect(pipeline.context.onAfterRenderPipeline).toBeUndefined();
+    expect(pipeline.context.onBeforePipelineCallbacks).toEqual([]);
+    expect(pipeline.context.onAfterPipelineCallbacks).toEqual([]);
     scenePass.dispose();
   });
 
@@ -1057,26 +1142,28 @@ describe("opt-in temporal AA", () => {
     const { temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
     const laterBefore = (): void => {};
     const laterAfter = (): void => {};
-    pipeline.context.onBeforeRenderPipeline = laterBefore;
-    pipeline.context.onAfterRenderPipeline = laterAfter;
+    pipeline.context.onBeforePipelineCallbacks?.push(laterBefore);
+    pipeline.context.onAfterPipelineCallbacks?.push(laterAfter);
     temporal.dispose();
-    expect(pipeline.context.onBeforeRenderPipeline).toBe(laterBefore);
-    expect(pipeline.context.onAfterRenderPipeline).toBe(laterAfter);
+    expect(pipeline.context.onBeforePipelineCallbacks).toEqual([laterBefore]);
+    expect(pipeline.context.onAfterPipelineCallbacks).toEqual([laterAfter]);
     scenePass.dispose();
   });
 
   it("leaves the disposed camera alone whatever the pipeline still calls", () => {
-    const { camera, temporal, pipeline, scenePass } = fixture({ renderPipeline: true });
-    pipeline.context.onBeforeRenderPipeline?.();
+    const { camera, temporal, pipeline, runAfter, runBefore, scenePass } = fixture({
+      renderPipeline: true,
+    });
+    runBefore();
     expect(camera.view?.enabled).toBe(true);
     temporal.dispose();
-    expect(pipeline.context.onBeforeRenderPipeline).toBeUndefined();
-    expect(pipeline.context.onAfterRenderPipeline).toBeUndefined();
+    expect(pipeline.context.onBeforePipelineCallbacks).toEqual([]);
+    expect(pipeline.context.onAfterPipelineCallbacks).toEqual([]);
     const view = camera.view;
     const projection = camera.projectionMatrix.clone();
     // Upstream's pair belongs to the node being disposed, so restoring it would jitter it again.
-    pipeline.context.onBeforeRenderPipeline?.();
-    pipeline.context.onAfterRenderPipeline?.();
+    runBefore();
+    runAfter();
     expect(camera.view).toBe(view);
     expect(camera.projectionMatrix.equals(projection)).toBe(true);
     scenePass.dispose();
@@ -1085,7 +1172,7 @@ describe("opt-in temporal AA", () => {
 
 describe("input jitter belongs to the same frame as saved depth", () => {
   it("records the unjittered lazy-first input before late synchronization, then actual next jitter", () => {
-    const { temporal, node, camera, frame, pipeline, scenePass } = fixture({
+    const { camera, frame, node, pipeline, runAfter, runBefore, scenePass, temporal } = fixture({
       renderPipeline: true,
     });
     const internals = node as unknown as {
@@ -1103,8 +1190,8 @@ describe("input jitter belongs to the same frame as saved depth", () => {
       expect(internals._cameraProjectionMatrixInverse.value.equals(firstInputProjection)).toBe(
         true,
       );
-      pipeline.context.onAfterRenderPipeline?.();
-      pipeline.context.onBeforeRenderPipeline?.();
+      runAfter();
+      runBefore();
       const view = camera.view;
       expect(view?.enabled).toBe(true);
       const actualInputJitter = new Vector2(
@@ -1116,8 +1203,8 @@ describe("input jitter belongs to the same frame as saved depth", () => {
       expect(internals._previousJitterUV.value.toArray()).toEqual([0, 0]);
       expect(internals._currentJitterUV.value.equals(actualInputJitter)).toBe(true);
       expect(internals._cameraProjectionMatrixInverse.value.equals(nextInputProjection)).toBe(true);
-      pipeline.context.onAfterRenderPipeline?.();
-      pipeline.context.onBeforeRenderPipeline?.();
+      runAfter();
+      runBefore();
       temporal.node.updateBefore(frame);
       expect(internals._previousJitterUV.value.equals(actualInputJitter)).toBe(true);
     } finally {
@@ -1129,13 +1216,15 @@ describe("input jitter belongs to the same frame as saved depth", () => {
 
 describe("reconstruction uses the input camera that actually drew", () => {
   it("records zero jitter for lazy-first input then the real next view offset", () => {
-    const { temporal, camera, frame, pipeline, scenePass } = fixture({ renderPipeline: true });
+    const { camera, frame, pipeline, runAfter, runBefore, scenePass, temporal } = fixture({
+      renderPipeline: true,
+    });
     try {
       expect(camera.view?.enabled ?? false).toBe(false);
       temporal.node.updateBefore(frame);
       expect(temporal.jitterOffset.value.toArray()).toEqual([0, 0]);
-      pipeline.context.onAfterRenderPipeline?.();
-      pipeline.context.onBeforeRenderPipeline?.();
+      runAfter();
+      runBefore();
       const drawn = new Vector2(camera.view?.offsetX ?? 0, camera.view?.offsetY ?? 0);
       temporal.node.updateBefore(frame);
       expect(temporal.jitterOffset.value.toArray()).toEqual(drawn.toArray());
@@ -1198,14 +1287,15 @@ describe("generated temporal detail controls", () => {
     expect(sharpen.afterOutputTransform).not.toBe(true);
     source.build(rtt(output), { velocityNode: rtt(output) } as never);
     const frame = rtt(output);
+    // Three 0.187 joins a vec4 from a vec3 and a scalar into a JoinNode with one part each.
     const result = sharpen.build(frame, {
       velocityNode: rtt(output),
     } as never) as unknown as {
-      node: { nodes: { components?: string; node?: unknown }[] };
+      nodes: { components?: string; node?: unknown }[];
     };
     // Keep the composited frame's alpha outside the RGB-only detail selection.
-    expect(result.node.nodes[1]?.components).toBe("w");
-    expect(result.node.nodes[1]?.node).toBe(frame);
+    expect(result.nodes[1]?.components).toBe("w");
+    expect(result.nodes[1]?.node).toBe(frame);
     expect(sharpen.available?.({ velocityNode: rtt(output) } as never)).toBe(true);
     expect(() => sharpen.build(output, {} as never)).toThrow(/velocity/);
   });

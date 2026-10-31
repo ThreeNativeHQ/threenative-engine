@@ -419,16 +419,17 @@ type Deferred = { jsFunc: (...args: unknown[]) => void };
 /**
  * A stack as the IR's statements: a declared variable (`toVar`) is `vK = init`, an assignment to
  * one is `vK = value`, a storage element assignment is `store name[index] = value`, `If` is `if`,
- * `Loop` is `loop vK < count` whose index is the next variable. Hoisted values (VarNode intents)
- * carry no statement.
+ * `Loop` is `loop vK < count` whose index is the next variable. Hoisted values carry no
+ * statement: r185 wraps one in a VarNode intent, r187 marks the value itself `assignable`
+ * (Node.js:199 `toAssignable`) and only declares it when something assigns it.
  */
 function statements(stack: TslNode, depth: number): string[] {
   const pad = "  ".repeat(depth);
   const lines: string[] = [];
   for (const node of stack.nodes as TslNode[]) {
     const kind = node.constructor.type ?? node.constructor.name;
+    if (node.assignable === true || (kind === "VarNode" && node.intent === true)) continue;
     if (kind === "VarNode") {
-      if (node.intent === true) continue;
       const index = scope.vars.size;
       lines.push(`${pad}v${index} = ${canon(node.node as TslNode, false)}`);
       scope.vars.set(node, index);
@@ -538,8 +539,15 @@ export function referenceDumps(): string[] {
   const computes = STATEMENTS.map(([name, body]) => {
     scope.vars = new Map();
     scope.compute = true;
-    // `Fn(body)()` is a hoisted call (a VarNode intent around a ShaderCallNodeInternal).
-    const call = (Fn(body)() as unknown as { node: { shaderNode: Deferred } }).node;
+    // `Fn(body)()` is a hoisted call: r185 wraps a ShaderCallNodeInternal in a VarNode intent,
+    // r187 returns the call node itself (FnNode.call ends in `toAssignable()`, Node.js:199).
+    const called = Fn(body)() as unknown as {
+      node?: { shaderNode: Deferred };
+      shaderNode?: Deferred;
+    };
+    const call = (called.shaderNode !== undefined ? called : called.node) as {
+      shaderNode: Deferred;
+    };
     const text = statements(
       capture(() => call.shaderNode.jsFunc()),
       0,

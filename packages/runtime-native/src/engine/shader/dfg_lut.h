@@ -1,7 +1,8 @@
 #pragma once
 
-// three@0.185.1 src/nodes/functions/BSDF/DFGLUT.js, extracted verbatim (MIT, three.js authors):
-// the 16x16 RG half-float table of the split-sum DFG terms, x = roughness, y = dotNV.
+// three@0.187.0 src/nodes/functions/BSDF/DFGLUT.js, extracted verbatim (MIT, three.js authors):
+// the 16x16 RG half-float table of the split-sum DFG terms, x = roughness, y = dotNV. The table is
+// byte-identical to r185's; r187 only re-describes it as feeding direct multi-scattering too.
 #include <cstdint>
 
 namespace tn::engine::shader {

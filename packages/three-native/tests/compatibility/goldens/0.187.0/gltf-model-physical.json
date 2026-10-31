@@ -1,0 +1,35 @@
+{
+  "name": "gltf-model-physical",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — four dark dielectric spheres loaded by three's GLTFLoader and the native glTF loader: plain standard, KHR_materials_ior 2.2, KHR_materials_specular (factor 0.7, orange colour), and Midway's shape (ior 0, read as 1000, grey specular colour 0.3). Each extension makes a MeshPhysicalMaterial whose highlight differs from the standard sphere's.",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "model",
+      "kind": "string",
+      "path": "name",
+      "value": "s:",
+      "decimal": ""
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:a52e54de07dc90dd8af4f6c015d8fc10bd5ee139688e15d38e0049821483f9b3",
+      "decimal": "a52e54de07dc90dd8af4f6c015d8fc10bd5ee139688e15d38e0049821483f9b3"
+    }
+  ],
+  "render": {
+    "png": "gltf-model-physical.png",
+    "pngSha256": "a52e54de07dc90dd8af4f6c015d8fc10bd5ee139688e15d38e0049821483f9b3",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

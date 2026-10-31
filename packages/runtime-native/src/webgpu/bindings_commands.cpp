@@ -286,6 +286,7 @@ js::JSValueHandle handleGpuDeviceCreateRenderBundleEncoder(BindingsState* state,
                             state->engine->registerRelease(jsEncoder, [ownedResources, encoderId]() {
                                 ownedResources->releaseRenderBundleEncoder(encoderId);
                             });
+                            state->engine->setProperty(jsEncoder, "__tnRenderBundleEncoder", state->engine->newBoolean(true));
                             if (state->verboseLogging) std::cout << "[WebGPU] Created render bundle encoder" << std::endl;
                             return jsEncoder;
 }

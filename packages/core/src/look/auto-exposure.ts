@@ -4,14 +4,13 @@
 import { type RenderTarget, Texture, Vector2 } from "three";
 import { float, ivec2, nodeObject, texture, textureLoad, uniform, vec4 } from "three/tsl";
 import {
-  type Node,
+  Node,
   type NodeBuilder,
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
-  TempNode,
 } from "three/webgpu";
 import {
   type IExposureSettings,
@@ -42,7 +41,7 @@ export function applyExposure(colour: Node<"vec4">, exposure: Node<"float">): No
 }
 
 /** Owns scratch targets only. Never draws the world or installs another output transform. */
-export class AutoExposureNode extends TempNode<"float"> {
+export class AutoExposureNode extends Node<"float"> {
   static get type(): string {
     return "AutoExposureNode";
   }
@@ -61,7 +60,7 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #seed = uniform(0);
   readonly #enabled = uniform(false);
   readonly #bias = uniform(0);
-  readonly #quad = new QuadMesh();
+  readonly #quad: QuadMesh;
   readonly #meterMaterial = new NodeMaterial();
   readonly #reduceMaterial = new NodeMaterial();
   readonly #tilesMaterial = new NodeMaterial();
@@ -117,6 +116,8 @@ export class AutoExposureNode extends TempNode<"float"> {
       decode,
       this.#bias,
     );
+    // Three 0.187's QuadMesh takes its material in the constructor; each pass replaces it before drawing.
+    this.#quad = new QuadMesh(this.#meterMaterial);
   }
 
   override setup(builder: NodeBuilder): Node<"float"> {

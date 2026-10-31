@@ -1,5 +1,6 @@
 import {
   DataTexture,
+  EventDispatcher,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -19,6 +20,9 @@ function shaders(alphaTest: number, policy?: Record<string, unknown>) {
     65_536,
   );
   vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+  // r187 builders share bind groups through renderer._bindings, which init() creates. A fresh
+  // Bindings returns an unseen group as is.
+  Reflect.set(renderer, "_bindings", { getSharedBindGroup: (group: object) => group });
   if (policy !== undefined) renderer.contextNode = context(policy);
   const map = new DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   const material = new MeshBasicMaterial({ map, alphaTest });
@@ -113,11 +117,15 @@ describe("pass-scoped sample interpolation and position invariance", () => {
       backend: { isWebGPUBackend: true },
       _currentSourceMaterial: null,
     };
-    const nodes = { getCacheKey: () => 0, delete: vi.fn() };
+    const nodes = {
+      getCacheKey: () => 0,
+      getCustomProgramCacheKey: (m: MeshBasicNodeMaterial) => m.customProgramCacheKey(),
+      delete: vi.fn(),
+    };
     const manager = new RenderObjects(
       renderer,
       nodes,
-      {},
+      { deleteVertexState: vi.fn() },
       { delete: vi.fn() },
       { deleteForRender: vi.fn() },
       {},
@@ -126,7 +134,8 @@ describe("pass-scoped sample interpolation and position invariance", () => {
     const mesh = new Mesh(new PlaneGeometry(), material);
     const scene = new Scene();
     const camera = new PerspectiveCamera();
-    const lights = {};
+    // r187 render objects listen for the lights node's dispose event.
+    const lights = new EventDispatcher();
     const raster = { id: 1, sampleCount: 4 };
     const get = () => manager.get(mesh, material, scene, camera, lights, raster, null);
     const original = get();

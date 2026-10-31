@@ -836,6 +836,18 @@ export function filmicToneMappingNode(
 }
 
 /**
+ * The curve each renderer's library already holds, by its options.
+ *
+ * `createRenderer` installs Unreal's curve as the default and a `WorldEnvironment` installs it again
+ * for `tonemapMode: "filmic"`, so the same curve reaches the same library twice. r187's
+ * `NodeLibrary.addType` keeps the first registration and warns `Redefinition of node 5` for the
+ * second (src/renderers/common/nodes/NodeLibrary.js:158). Registering each curve once per library
+ * leaves the frame identical and the console clean; a *different* curve still registers (and still
+ * warns), because three keeps whichever came first.
+ */
+const installedCurves = new WeakMap<object, string>();
+
+/**
  * Registers the curve with a WebGPU renderer and returns the tone-mapping constant to assign.
  * A renderer without a node library (the WebGL fallback) keeps ACES and says so.
  */
@@ -847,6 +859,10 @@ export function installFilmicToneMapping(
   const library = (raw as { library?: { addToneMapping?(node: unknown, mode: number): void } })
     .library;
   if (library?.addToneMapping === undefined) return undefined;
-  library.addToneMapping(filmicToneMappingNode(c, grade), CustomToneMapping);
+  const curve = JSON.stringify([c, grade]);
+  if (installedCurves.get(library) !== curve) {
+    library.addToneMapping(filmicToneMappingNode(c, grade), CustomToneMapping);
+    installedCurves.set(library, curve);
+  }
   return CustomToneMapping;
 }

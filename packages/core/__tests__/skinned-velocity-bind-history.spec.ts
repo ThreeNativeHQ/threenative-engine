@@ -59,6 +59,7 @@ function shaderPreviousPosition(
   drawn: SkinnedMesh = mesh,
 ): Vector3 {
   const builder = new WGSLNodeBuilder(mesh, {
+    debug: { diagnostics: { keywords: false } },
     backend: { capabilities: { getUniformBufferLimit: () => 65_536 } },
     getMRT: () => new Set(["velocity"]),
   } as never) as ISkinBuilder;

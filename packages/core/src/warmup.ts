@@ -236,6 +236,7 @@ export interface IWarmUpReport {
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
+  compileComputeAsync?: (node: unknown) => Promise<void>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
   /**
@@ -439,18 +440,36 @@ export interface IComputeWarmUpReport {
   readonly timedOut: boolean;
 }
 
-function computeAsyncOf(renderer: IWarmUpRenderer): ((node: unknown) => Promise<void>) | undefined {
-  const receiver = typeof renderer.computeAsync === "function" ? renderer : renderer.raw;
+/** Compiles kernels without running them. */
+interface IComputeWarmUpSeam {
+  warm(node: unknown): Promise<void>;
+}
+
+function computeAsyncOf(renderer: IWarmUpRenderer): IComputeWarmUpSeam | undefined {
+  const receiver =
+    typeof renderer.compileComputeAsync === "function" ||
+    typeof renderer.computeAsync === "function"
+      ? renderer
+      : renderer.raw;
   if (typeof receiver !== "object" || receiver === null) return undefined;
-  const { backend, computeAsync } = receiver as {
+  const { backend, compileComputeAsync, computeAsync } = receiver as {
     backend?: { isWebGPUBackend?: boolean };
-    computeAsync?: (node: unknown, dispatchSize?: number) => Promise<void>;
+    compileComputeAsync?: (node: unknown) => Promise<void>;
+    computeAsync?: (node: unknown, dispatchSize?: number | readonly number[]) => Promise<void>;
   };
+  if (backend?.isWebGPUBackend === true) {
+    // Three 0.187 compiles a compute pipeline and its bindings without dispatching it
+    // (src/renderers/common/Renderer.js:1359, `compileComputeAsync`), so warm-up builds the pipeline
+    // the real dispatch uses and nothing runs against the live storage buffers. Dispatching the same
+    // kernel with a zeroed count instead made Chrome report `DispatchWorkgroups with a workgroup
+    // count of 0 is unusual` once per kernel per warm-up. A renderer without that path reports its
+    // kernels as uncompiled rather than silently running them.
+    if (typeof compileComputeAsync !== "function") return undefined;
+    return { warm: (node) => compileComputeAsync.call(receiver, node) };
+  }
   if (typeof computeAsync !== "function") return undefined;
-  // WebGPU compiles zero workgroups without running a solver against its live storage buffers.
-  return backend?.isWebGPUBackend === true
-    ? (node) => computeAsync.call(receiver, node, 0)
-    : computeAsync.bind(receiver);
+  const plain = computeAsync.bind(receiver);
+  return { warm: (node) => plain(node) };
 }
 
 /**
@@ -539,8 +558,8 @@ async function runComputeWarmUp(
   now: () => number,
   yieldFrame: () => Promise<void>,
 ): Promise<IComputeWarmUpReport> {
-  const computeAsync = computeAsyncOf(renderer);
-  if (computeAsync === undefined) {
+  const seam = computeAsyncOf(renderer);
+  if (seam === undefined) {
     return { compiled: 0, abandoned: 0, unsupported: true, timedOut: false };
   }
 
@@ -556,7 +575,7 @@ async function runComputeWarmUp(
     }
     const finished = await withinDeadline(
       Math.min(deadline, now() + compileTimeoutMs),
-      Promise.resolve().then(() => computeAsync(nodes[index])),
+      Promise.resolve().then(() => seam.warm(nodes[index])),
       yieldFrame,
       now,
     );

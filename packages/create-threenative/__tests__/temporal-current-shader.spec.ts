@@ -6,6 +6,7 @@ import {
   MeshBasicNodeMaterial,
   type Node,
   RenderTarget,
+  type TextureNode,
   WGSLNodeBuilder,
   WebGPURenderer,
 } from "three/webgpu";
@@ -25,7 +26,7 @@ describe("actual finite current WGSL", () => {
     vi.spyOn(r, "hasFeature").mockReturnValue(false);
     const camera = new PerspectiveCamera();
     const raw = pass(new Scene(), camera, { samples: 4 }) as ReturnType<typeof pass> & {
-      getRawTextureNode(name?: string): ReturnType<typeof texture>;
+      getRawTextureNode(name?: string): TextureNode;
     };
     const centre = pass(raw.scene, camera);
     raw.setSize(426, 240);
@@ -65,6 +66,16 @@ describe("actual finite current WGSL", () => {
       b.build();
       return b;
     };
+    // Three 0.187 builds a compute node through the builder's own compute slot, not the object.
+    const buildCompute = (node: unknown) => {
+      const b = new WGSLNodeBuilder(null as never, r) as WGSLNodeBuilder & {
+        build(): void;
+        computeShader: string;
+      };
+      Reflect.set(b, "compute", node);
+      b.build();
+      return b;
+    };
     const fragment = build(mesh).fragmentShader;
     expect(fragment).toContain("currentSampleArea");
     expect(fragment).toContain("texture_depth_multisampled_2d");
@@ -79,7 +90,7 @@ describe("actual finite current WGSL", () => {
     counter.sample(r, 1, 640, 360);
     await counter.settled();
     expect(dispatched).toHaveLength(2);
-    const compute = build(dispatched[1]).computeShader;
+    const compute = buildCompute(dispatched[1]).computeShader;
     expect(compute).toContain("currentSampleArea");
     expect(compute).toContain("texture_depth_multisampled_2d");
     expect(compute).toContain("texture_multisampled_2d<f32>");
@@ -102,7 +113,7 @@ describe("actual finite current WGSL", () => {
     vi.spyOn(r, "hasFeature").mockReturnValue(false);
     const camera = new PerspectiveCamera();
     const beauty = pass(new Scene(), camera, { samples: 4 }) as ReturnType<typeof pass> & {
-      getRawTextureNode(name?: string): ReturnType<typeof texture>;
+      getRawTextureNode(name?: string): TextureNode;
     };
     beauty.setSize(426, 240);
     const packet = new RenderTarget(426, 240, { type: FloatType, depthBuffer: false });

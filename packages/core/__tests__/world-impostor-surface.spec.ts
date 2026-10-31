@@ -51,9 +51,10 @@ function makeSurface(
  */
 function positionGraphSource(surface: WorldImpostorSurface): string {
   const node = surface.material.positionNode as unknown as {
-    readonly node?: { readonly shaderNode?: { readonly jsFunc?: unknown } };
+    // r187 TSL returns the call node itself; the r185 proxy wrapper (`.node`) is gone.
+    readonly shaderNode?: { readonly jsFunc?: unknown };
   };
-  const jsFunc = node.node?.shaderNode?.jsFunc;
+  const jsFunc = node.shaderNode?.jsFunc;
   if (typeof jsFunc !== "function") throw new Error("position graph builder missing");
   return String(jsFunc)
     .replace(/__vite_ssr_import_\d+__\./gu, "")

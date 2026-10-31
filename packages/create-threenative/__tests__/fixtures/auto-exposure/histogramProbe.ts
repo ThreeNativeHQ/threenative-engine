@@ -17,7 +17,6 @@ export async function runHistogramProbe(): Promise<void> {
   const renderer = new WebGPURenderer({ antialias: false });
   await renderer.init();
   const target = exposureTarget();
-  const quad = new QuadMesh();
   const previous = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
   previous.needsUpdate = true;
   const results: { name: string; luminance: number; goal: number }[] = [];
@@ -41,7 +40,8 @@ export async function runHistogramProbe(): Promise<void> {
       { ...exposureSettings, lowPercent, highPercent },
       (mean) => mean,
     );
-    quad.material = material;
+    // Three 0.187's QuadMesh takes its material in the constructor.
+    const quad = new QuadMesh(material);
     renderer.setRenderTarget(target);
     quad.render(renderer);
     const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, 1, 1);

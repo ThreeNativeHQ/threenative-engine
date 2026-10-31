@@ -31,6 +31,8 @@ function fragment(material: Material, light: DirectionalLight | PointLight): str
   vi.spyOn(Reflect.get(renderer.backend, "capabilities"), "getUniformBufferLimit").mockReturnValue(
     65_536,
   );
+  // r187 NodeBuilder shares bind groups through renderer._bindings, which is null until the renderer initializes.
+  Reflect.set(renderer, "_bindings", { getSharedBindGroup: (group: unknown) => group });
   const builder = new WGSLNodeBuilder(
     new Mesh(new BoxGeometry(), material),
     renderer,
@@ -54,6 +56,8 @@ function programKey(material: Material): string {
     object: new Mesh(),
     material,
     renderer: { backend: {} },
+    // r187 reads the custom program key through the renderer's node manager.
+    _nodes: { getCustomProgramCacheKey: (m: Material) => m.customProgramCacheKey() },
     clippingContextCacheKey: "",
     context: { id: 1 },
     getGeometryCacheKey: () => "",

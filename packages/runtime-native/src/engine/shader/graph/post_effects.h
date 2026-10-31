@@ -44,6 +44,10 @@ struct PostPass {
     bool floorSize = false, autoUpdate = true, visible = true;
     // GTAONode uses RedFormat + UnsignedByteType (R8Unorm), not an HDR colour target.
     bool redFormat = false;
+    // The effect computes its value in the consuming fragment shader in three (DenoiseNode inlines, r187
+    // examples/jsm/tsl/display/DenoiseNode.js: a plain Node, as r185's TempNode also was), so its result never sees
+    // a half-float round trip. A pass target keeps that value whole only at fp32.
+    bool float32 = false;
     float clear = 0;
     bool temporal = false;
     /** The effect whose parameters this pass draws with, read each frame (null: `uniforms` only). */

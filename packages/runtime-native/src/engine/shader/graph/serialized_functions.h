@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/shader/graph/graph.h"
 #include "engine/foundation/json.h"
+#include <algorithm>
 #include <cmath>
 
 namespace tn::engine::shader::graph {
@@ -32,8 +33,14 @@ inline Node importFunctionNode(const json::Value& record, const std::vector<Node
         for (auto child : list("body")) {
             while (child && (child->kind == Kind::Call || child->kind == Kind::Var)) child = child->args[0];
             if (child && child->kind == Kind::Body) {
+                const auto first = node->body.size();
                 node->body.insert(node->body.end(), child->body.begin(), child->body.end());
-                if (!child->args.empty()) { auto ret = std::make_shared<NodeData>(); ret->kind = Kind::Return; ret->args = child->args; node->body.push_back(ret); }
+                // three r187's void `Fn` call is both the stack's output and its one statement (no VarNode
+                // intent wrapper carries it since r187). A Return of that call would lower its body a second
+                // time, so the emitted statement stands for the output; a value keeps its Return.
+                const bool emitted = !child->args.empty() && child->args[0]->kind == Kind::Call &&
+                    std::find(node->body.begin() + static_cast<std::ptrdiff_t>(first), node->body.end(), child->args[0]) != node->body.end();
+                if (!child->args.empty() && !emitted) { auto ret = std::make_shared<NodeData>(); ret->kind = Kind::Return; ret->args = child->args; node->body.push_back(ret); }
             } else node->body.push_back(child);
         }
     } else if (kind == "ConditionalNode" && args.size() >= 2 && args.size() <= 3) {

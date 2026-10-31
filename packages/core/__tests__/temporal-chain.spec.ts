@@ -166,8 +166,17 @@ describe("the pinned TRAANode render-chain contract", () => {
     expect(chain.applied.stages).toEqual(["traa"]);
     expect(sampledVelocity).toBe(scenePass.getTextureNode("velocity"));
     const wrapped = graph as { value: { velocity: unknown } };
+    // r187 `setup` builds its depth, velocity and beauty nodes first; the jitter accessor this test
+    // pins is chosen after them, and building a pass node needs a full node builder.
+    if (temporal !== undefined) {
+      for (const node of [temporal.depthNode, temporal.velocityNode, temporal.beautyNode]) {
+        vi.spyOn(node, "build").mockReturnValue(null);
+      }
+    }
     temporal?.setup({
       context: { ...wrapped.value, renderPipeline: { context: {} } },
+      // r187 builds its pass nodes inside setup and reads the builder's shared context.
+      getSharedContext: () => ({}),
       renderer: {},
     } as unknown as NodeBuilder);
     const jitter = temporal as unknown as {

@@ -12,9 +12,6 @@
 
 namespace tn::engine::shader {
 
-// PMREM's extra 16px tiles use mipInt 3 through -2, not hardware mip levels.
-constexpr float pmremMip(int lodMax, int lod) { return float(lodMax - lod); }
-
 std::string probeStorageName(std::string_view name);
 
 /** ProbeVolume.sampleNode: padded atlas trilinear sampling followed by RGB L2 irradiance. */
@@ -165,7 +162,7 @@ struct VertexVariant {
     bool mapSRGB = false;
     /**
      * The scene sets an environment (or the material an envMap): the fragment samples the PMREM
-     * cubeUV texture `env` for IBL irradiance and radiance (three's EnvironmentNode).
+     * cube `env` for IBL irradiance and radiance (three's EnvironmentNode).
      */
     bool environment = false;
     /**
@@ -202,8 +199,6 @@ struct VertexVariant {
 // atlas `vsm{i}` and storage page table `vsmTable{i}` in both standard and basic lit programs.
 struct LightLayout {
     std::string kinds = "d";
-    /** three's PCFSoftShadowMap: shadowed directional and spot lights read PCFSoftShadowFilter. */
-    bool softShadows = false;
     /** Any upper-case kind: that light's shadow map is read (`light{i}Shadow*`, texture `shadow{i}`). */
     [[nodiscard]] bool shadowed() const {
         for (const char c : kinds)
@@ -226,8 +221,9 @@ struct StandardPrograms {
 };
 
 /**
- * Builds the standard material's two stages from the pinned node chain: BRDF_GGX_Multiscatter with
- * the DFG lookup, Lambert diffuse, getRoughness with geometry roughness, one directional, one
+ * Builds the standard material's two stages from the pinned node chain: BRDF_GGX with the DFG lookup
+ * shared by its multi-scattering compensation and the indirect terms, Lambert diffuse, getRoughness
+ * with geometry roughness, the indirect diffuse layer's dielectric energy loss, one directional, one
  * hemisphere and one ambient light (the N09 renderer generalizes lights). It writes linear HDR
  * colour; the output pass (output.h) tone maps and encodes it.
  * Uniforms: modelMatrix, viewMatrix, projectionMatrix, normalMatrix (vertex); diffuse (rgb,

@@ -873,7 +873,7 @@
         "`setExposureBias(stops)` is Unreal's Exposure Compensation, live: the game changes it per place or weather (`WorldEnvironment.apply` returns the node as `exposure`)"
       ],
       "package": "@threenative/core",
-      "signature": "export class AutoExposureNode extends TempNode<\"float\"> { … }",
+      "signature": "export class AutoExposureNode extends Node<\"float\"> { … }",
       "situations": [
         "the frame should expose itself the way a fresh Unreal project does as the sun and the view change",
         "a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather"

@@ -9,8 +9,8 @@
  * reused; new codes append. `TN_STATIC_ASSERT` is `_Static_assert` in C and `static_assert` in
  * C++, so every translation unit that includes this header checks the layout below.
  *
- * Reference: three 0.185.1, @types/three@0.185.3,
- * patch packages/core/patches/three@0.185.1.patch.
+ * Reference: three 0.187.0, @types/three@0.187.0,
+ * patch packages/core/patches/three@0.187.0.patch.
  */
 
 #ifndef THREENATIVE_ABI_TN_ABI_H

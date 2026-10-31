@@ -592,13 +592,14 @@ function stage(definition: {
 }
 
 /**
- * `three/addons` declares each TSL stage as its raw node class, and `DenoiseNode` is the only
- * one in this chain whose declaration omits the element API (`.mul`, `.rgb`, `.r`) that the
- * proxied node object it actually hands back at runtime carries — every other stage here is a
- * `ChainNode` on its own, checked by the compiler. This is an assertion and nothing else: no
- * conversion runs, no node is added to the graph, so it cannot move a pixel.
+ * `three/addons` declares these as raw nodes: `DenoiseNode` for the filter, and the SSGI gather's
+ * own `TextureNode` outputs, typed at their channel count rather than as the vec4 the chain reads.
+ * Their declarations omit element API (`.mul`, `.rgb`, `.r`) that the proxied node object they
+ * hand back at runtime carries — every other stage here is a `ChainNode` on its own, checked by the
+ * compiler. This is an assertion and nothing else: no conversion runs, no node is added to the
+ * graph, so it cannot move a pixel.
  */
-function denoised(node: ReturnType<typeof denoise>): ChainNode {
+function denoised(node: Node): ChainNode {
   return node as typeof node & ChainNode;
 }
 type OutputInstallation = { isCurrent(): boolean; dispose(): void };
@@ -1118,9 +1119,9 @@ export class WorldEnvironment {
       sample(texture);
       return texture;
     };
-    const giDenoise = (node: ChainNode): ChainNode => {
-      if (!options.denoiseEnabled) return node;
-      let result = node;
+    const giDenoise = (node: ChainNode | Node<"float"> | Node<"vec3">): ChainNode => {
+      let result = denoised(node);
+      if (!options.denoiseEnabled) return result;
       for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
         const filter = denoise(result, depth(), normal(), view) as {
           gpuStage?: string;

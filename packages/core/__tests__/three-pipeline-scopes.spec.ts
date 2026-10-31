@@ -50,9 +50,10 @@ function fixture(mode: string) {
       }
       return record;
     },
-    attributeUtils: { createShaderVertexBuffers: () => [] },
+    attributeUtils: { getVertexBufferLayout: () => [] },
     utils: {
       getPrimitiveTopology: () => "triangle-list",
+      getStripIndexFormat: () => undefined,
       getCurrentColorFormat: () => "bgra8unorm",
       getCurrentDepthStencilFormat: () => "depth24plus",
       getSampleCountRenderContext: () => 1,
@@ -235,6 +236,7 @@ describe.each(["source", "distribution"])("%s morph pipeline cache layout", (mod
       getCurrentColorFormat: () => "bgra8unorm",
       getCurrentDepthStencilFormat: () => "depth24plus",
       getPrimitiveTopology: () => "triangle-list",
+      getStripIndexFormat: () => undefined,
     });
     const make = () => {
       const geometry = new BufferGeometry();
@@ -248,6 +250,8 @@ describe.each(["source", "distribution"])("%s morph pipeline cache layout", (mod
         geometry,
         context: {},
         getBindings: () => [],
+        // r187 keys the pipeline on the attributes the render object consumes; this stub consumes all of them.
+        getAttributes: () => Object.values(geometry.attributes),
         getGeometryCacheKey: RenderObject.prototype.getGeometryCacheKey,
       };
     };
@@ -257,6 +261,13 @@ describe.each(["source", "distribution"])("%s morph pipeline cache layout", (mod
       Reflect.apply(Reflect.get(backend, "getRenderCacheKey"), backend, [object]) as string;
     expect(first.getGeometryCacheKey()).not.toBe(second.getGeometryCacheKey());
     expect(key(first)).toBe(key(second));
+    // PATCH DEFECT (PRD-775 arm E): the 0.185.1 patch keyed the pipeline on
+    // `renderObject.getGeometryCacheKey( false )`, so a morph layout change — target count,
+    // `morphTargetsRelative`, morph itemSize/count, attribute name and an index — changed the
+    // pipeline key (PRD-566, patch hunks `RenderObject.getGeometryCacheKey( useMorphTargetIds )`
+    // and `WebGPUBackend.getRenderCacheKey`). The 0.187.0 rebase dropped both halves, so the
+    // assertions below fail against the installed three. They are kept, not loosened: re-adding
+    // the term is the fix. See `~/.cache/tmp-tn/prd775/report-E.md`, patch defect 1.
     second.geometry.morphAttributes.position?.push(
       new Float32BufferAttribute(new Float32Array(9), 3),
     );
@@ -299,6 +310,7 @@ describe.each(["source", "distribution"])("%s morph pipeline cache layout", (mod
     second.geometry.setAttribute("normal", new Float32BufferAttribute(new Float32Array(9), 3));
     expect(key(first)).not.toBe(key(second));
     second.geometry.deleteAttribute("normal");
+    // PATCH DEFECT 1, same cause: the dropped `getGeometryCacheKey( false )` carried `index,`.
     second.geometry.setIndex([0, 1, 2]);
     expect(key(first)).not.toBe(key(second));
   });

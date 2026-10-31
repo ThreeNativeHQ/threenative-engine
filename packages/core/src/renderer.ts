@@ -1066,10 +1066,12 @@ function wrapRenderer(
       // reported absence rather than a frame-time error.
       const resolveTimestampsAsync = raw.resolveTimestampsAsync;
       if (resolveTimestampsAsync === undefined) return;
-      const observationBatch =
-        gpuObservation !== undefined && raw.backend?.trackTimestamp === true
-          ? gpuObservation.capture()
-          : undefined;
+      // Three records nothing on a frame its own cadence turned off (`setTimestampTracking`), and
+      // r187 answers the resolve with "WebGPURenderer: Timestamp tracking is disabled"
+      // (src/renderers/common/Backend.js:682). Ask only on a sampled frame. A renderer this engine
+      // never sampled (`timestampCapable` false) keeps three's tracking on and keeps resolving.
+      if (timestampCapable && raw.backend?.trackTimestamp !== true) return;
+      const observationBatch = gpuObservation !== undefined ? gpuObservation.capture() : undefined;
       void resolveTimestampsAsync.call(raw)?.catch(() => undefined);
       gpuObservation?.submitted(observationBatch);
       // Three maintains independent 2,048-query pools for render and compute passes. Resolving

@@ -1,8 +1,9 @@
 #pragma once
 
-// MaterialX noise as three@0.185.1 compiles it: the WGSL functions three's WGSLNodeBuilder emits for
-// mx_noise_float and mx_worley_noise_float/vec2 (src/nodes/materialx/lib/mx_noise.js), copied as emitted
-// so a pixel matches three's (three's mx_hash_int_3 drops its mx_bjmix call, and this keeps that).
+// MaterialX noise as three@0.187.0 compiles it: the WGSL functions three's WGSLNodeBuilder emits for
+// mx_noise_float and mx_worley_noise_float/vec2 (src/nodes/materialx/MaterialXNoise.js), copied as emitted
+// so a pixel matches three's. r187 writes mx_bjmix's result back into the hash state (#34897); r185's
+// mx_hash_int_3 called it and dropped it, so every 3D cell hash differed.
 // `_0` takes a vec2 coordinate and `_1` a vec3, the overload numbers three gives them. A program
 // that calls one gets the whole library once, ahead of its entry point. One literal per function
 // keeps each under MSVC's string-literal limit. three.js, MIT License, Copyright © 2010-2026 three.js
@@ -52,6 +53,40 @@ fn mx_bjfinal ( a : u32, b : u32, c : u32 ) -> u32 {
 	nodeVar0 = ( nodeVar0 - mx_rotl32( nodeVar1, 24 ) );
 
 	return nodeVar0;
+
+}
+)WGSL"
+R"WGSL(
+fn mx_bjmix ( a : u32, b : u32, c : u32 ) -> vec3<u32> {
+
+	var nodeVar0 : u32;
+	var nodeVar1 : u32;
+	var nodeVar2 : u32;
+
+	nodeVar0 = a;
+	nodeVar1 = b;
+	nodeVar2 = c;
+
+	nodeVar0 = ( nodeVar0 - nodeVar2 );
+	nodeVar0 = ( nodeVar0 ^ mx_rotl32( nodeVar2, 4 ) );
+	nodeVar2 = ( nodeVar2 + nodeVar1 );
+	nodeVar1 = ( nodeVar1 - nodeVar0 );
+	nodeVar1 = ( nodeVar1 ^ mx_rotl32( nodeVar0, 6 ) );
+	nodeVar0 = ( nodeVar0 + nodeVar2 );
+	nodeVar2 = ( nodeVar2 - nodeVar1 );
+	nodeVar2 = ( nodeVar2 ^ mx_rotl32( nodeVar1, 8 ) );
+	nodeVar1 = ( nodeVar1 + nodeVar0 );
+	nodeVar0 = ( nodeVar0 - nodeVar2 );
+	nodeVar0 = ( nodeVar0 ^ mx_rotl32( nodeVar2, 16 ) );
+	nodeVar2 = ( nodeVar2 + nodeVar1 );
+	nodeVar1 = ( nodeVar1 - nodeVar0 );
+	nodeVar1 = ( nodeVar1 ^ mx_rotl32( nodeVar0, 19 ) );
+	nodeVar0 = ( nodeVar0 + nodeVar2 );
+	nodeVar2 = ( nodeVar2 - nodeVar1 );
+	nodeVar2 = ( nodeVar2 ^ mx_rotl32( nodeVar1, 4 ) );
+	nodeVar1 = ( nodeVar1 + nodeVar0 );
+
+	return vec3<u32>( nodeVar0, nodeVar1, nodeVar2 );
 
 }
 )WGSL"
@@ -373,6 +408,7 @@ fn mx_hash_int_3 ( x : i32, y : i32, z : i32, xx : i32 ) -> u32 {
 	var nodeVar5 : u32;
 	var nodeVar6 : u32;
 	var nodeVar7 : u32;
+	var nodeVar9 : vec3<u32>;
 
 	nodeVar0 = xx;
 	nodeVar1 = z;
@@ -388,6 +424,10 @@ fn mx_hash_int_3 ( x : i32, y : i32, z : i32, xx : i32 ) -> u32 {
 	nodeVar5 = ( nodeVar5 + u32( nodeVar3 ) );
 	nodeVar6 = ( nodeVar6 + u32( nodeVar2 ) );
 	nodeVar7 = ( nodeVar7 + u32( nodeVar1 ) );
+	nodeVar9 = mx_bjmix( nodeVar5, nodeVar6, nodeVar7 );
+	nodeVar5 = nodeVar9.x;
+	nodeVar6 = nodeVar9.y;
+	nodeVar7 = nodeVar9.z;
 	nodeVar5 = ( nodeVar5 + u32( nodeVar0 ) );
 
 	return mx_bjfinal( nodeVar5, nodeVar6, nodeVar7 );

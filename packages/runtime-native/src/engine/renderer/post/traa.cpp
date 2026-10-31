@@ -494,15 +494,16 @@ void TraaPass::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uin
     outputWidth_ = outputWidth; outputHeight_ = outputHeight;
     history_.resize(0, width, height);
     history_.cameraCut(0); // an output-only resize invalidates colour history too
-    // UE 5.8.3 SceneVisibility.cpp:5268-5295; keep r185's 31 samples until density needs more.
+    // UE 5.8.3 SceneVisibility.cpp:5268-5295; r187 TRAANode.js:596 `computeHaltonOffsets(32)` fixes the count, so full
+    // resolution jitters over all 32 offsets as three does; an upscaled pass keeps r185's denser prime count until
+    // density needs more.
     const double upscale = std::max(double(outputWidth) / width, double(outputHeight) / height);
-    jitterLength_ = std::max(31u, uint32_t(std::ceil(8.0 * upscale * upscale)));
-    for (;;) {
+    jitterLength_ = upscale > 1.0 ? std::max(32u, uint32_t(std::ceil(8.0 * upscale * upscale))) : 32u;
+    for (; upscale > 1.0; ++jitterLength_) {
         bool prime = true;
         for (uint32_t divisor = 2; divisor * divisor <= jitterLength_; ++divisor)
             if (jitterLength_ % divisor == 0) { prime = false; break; }
         if (prime) break;
-        ++jitterLength_;
     }
     auto texture = [&](WGPUTextureFormat format, bool output) {
         WGPUTextureDescriptor desc{}; desc.dimension = WGPUTextureDimension_2D;
@@ -595,17 +596,6 @@ void TraaPass::fillVelocity(WGPUCommandEncoder encoder, WGPUTextureView depthVie
     wgpuRenderPassEncoderSetPipeline(pass, fillPipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
 }
-void TraaPass::seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty) {
-    if (!needsSeed()) return;
-    // A low-resolution image cannot seed a display-size history; the cold resolve uses current only.
-    if (width_ != outputWidth_ || height_ != outputHeight_) return;
-    // TRAANode.updateBefore copies the beauty target before the resolve quad updates its scene pass.
-    WGPUImageCopyTexture_Compat src{}, dst{};
-    src.texture = beauty; dst.texture = historyColor_[historySlot_];
-    src.aspect = dst.aspect = WGPUTextureAspect_All;
-    const WGPUExtent3D extent{width_, height_, 1};
-    wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
-}
 void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
                         WGPUTexture depth, WGPUTextureView depthView, WGPUTexture output, WGPUTextureView outputView) {
     copiesLastFrame_ = {};
@@ -621,6 +611,10 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
         wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
         ++count;
     };
+    // r187 TRAANode.js:390-400 resets the history with the beauty buffer of the frame it is about to resolve, so a
+    // first, cut or resized frame blends the current frame with itself instead of fading from an older one.
+    if (needsSeed() && width_ == outputWidth_ && height_ == outputHeight_)
+        copy(beauty, historyColor_[historySlot_], false, copiesLastFrame_.color);
     // On the initial render/resize there is no previous depth allocation to sample.
     if (history_.frame() == 0 || history_.generation(0) > depthGeneration_) {
         copy(depth, historyDepth_, true, copiesLastFrame_.depth);
@@ -655,7 +649,8 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     entries[0].buffer = uniforms_; entries[0].size = sizeof data;
     entries[1].textureView = beautyView; entries[2].textureView = depthView;
     entries[3].textureView = velocityView_; entries[4].textureView = historyView_[historySlot_];
-    entries[5].textureView = historyDepthView_; entries[6].sampler = sampler_;
+    entries[5].textureView = historyDepthView_;
+    entries[6].sampler = sampler_;
     entries[7].buffer = stats_; entries[7].size = 8;
     entries[8].textureView = dynamicView_[historySlot_];
     auto group = resolveGroups_.get(device_, layout_, entries);

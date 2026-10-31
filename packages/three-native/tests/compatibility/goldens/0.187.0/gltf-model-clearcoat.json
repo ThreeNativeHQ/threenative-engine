@@ -1,0 +1,35 @@
+{
+  "name": "gltf-model-clearcoat",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — two rough dark dielectric spheres loaded by three's GLTFLoader and the native glTF loader with KHR_materials_clearcoat: one coated by factors only (clearcoat 1, clearcoatRoughness 0.05), one with clearcoatTexture and clearcoatRoughnessTexture over factors 0.9 and 1.0 (fully rough where the map does not sharpen it). Each becomes a MeshPhysicalMaterial whose coat highlight the plain base lacks",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "model",
+      "kind": "string",
+      "path": "name",
+      "value": "s:",
+      "decimal": ""
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:e98152f84dfbcb34f7c3949e22b612bb5810fa23cb1ae28bf555ea67e5c6d8d6",
+      "decimal": "e98152f84dfbcb34f7c3949e22b612bb5810fa23cb1ae28bf555ea67e5c6d8d6"
+    }
+  ],
+  "render": {
+    "png": "gltf-model-clearcoat.png",
+    "pngSha256": "e98152f84dfbcb34f7c3949e22b612bb5810fa23cb1ae28bf555ea67e5c6d8d6",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

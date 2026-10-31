@@ -96,7 +96,7 @@
         "@threenative/core#attachToBone": "export function attachToBone(root: Object3D, boneName: string, child: Object3D): Object3D { … }",
         "@threenative/core#attitudeAxes": "export function attitudeAxes(state: IFlightState): IFlightAxes { … }",
         "@threenative/core#AudioBus": "export class AudioBus { … }",
-        "@threenative/core#AutoExposureNode": "export class AutoExposureNode extends TempNode<\"float\"> { … }",
+        "@threenative/core#AutoExposureNode": "export class AutoExposureNode extends Node<\"float\"> { … }",
         "@threenative/core#baseGeometryOf": "export function baseGeometryOf(mesh: Mesh): BufferGeometry { … }",
         "@threenative/core#beginSpan": "export function beginSpan(id: SpanId): void { … }",
         "@threenative/core#Billboard3D": "export class Billboard3D { … }",

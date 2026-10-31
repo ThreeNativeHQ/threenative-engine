@@ -1,7 +1,7 @@
 import { Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector2 } from "three";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { Fn, float, int, pass, uniform, uv, vec4, velocity } from "three/tsl";
-import type { Node, NodeBuilder } from "three/webgpu";
+import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial, WGSLNodeBuilder, WebGPURenderer } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js";
@@ -83,7 +83,12 @@ describe("authored temporal reconstruction kernel", () => {
       const donors = [...shader.matchAll(/(\w+) = clamp\( vec2<f32>\( vec2<i32>\(/gu)];
       expect(donors).toHaveLength(9);
       expect(shader.match(/textureLoad\(/gu)).toHaveLength(9);
-      expect(shader.match(/textureDimensions\([^\n]* - vec2<f32>\( 1\.0 \)/gu)).toHaveLength(9);
+      // Three 0.187 caches the repeated size node, so each bound names that one cached constant.
+      const bounds = [...shader.matchAll(/\( (\w+) - vec2<f32>\( 1\.0 \) \)/gu)];
+      expect(bounds).toHaveLength(9);
+      const [, sizeVar] = bounds[0] ?? [];
+      expect(shader).toContain(`let ${sizeVar} = vec2<f32>( textureDimensions(`);
+      for (const [, donorSizeVar] of bounds) expect(donorSizeVar).toBe(sizeVar);
       for (const [, donor] of donors) {
         expect(shader).toContain(`vec2<i32>( ${donor} ), u32( 0u )`);
         expect(shader).toMatch(new RegExp(`\\w+ = ${donor};`));
@@ -151,11 +156,14 @@ describe("authored temporal reconstruction kernel", () => {
       scenePass.getTextureNode("velocity"),
       camera,
     );
-    temporal.node.setup({
-      context: { velocity },
-      renderer,
-      getNodeProperties: () => ({}),
-    } as unknown as NodeBuilder);
+    // Three 0.187's TRAANode.setup builds its input nodes, so this setup runs on a real builder.
+    const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
+      context: Record<string, unknown>;
+      setBuildStage(stage: string): void;
+    };
+    builder.setBuildStage("setup");
+    builder.context.velocity = velocity;
+    temporal.node.setup(builder);
     const installed = (temporal.node as unknown as { _resolveMaterial: { colorNode: unknown } })
       ._resolveMaterial.colorNode;
     const bare = traa(
@@ -212,10 +220,12 @@ describe("authored temporal reconstruction kernel", () => {
       expect(compute).toHaveBeenCalledTimes(2);
       const dispatch = compute.mock.calls[1]?.[0];
       // Pinned declarations omit the real compute constructor/build surface.
-      const builder = new WGSLNodeBuilder(dispatch as never, renderer) as unknown as {
+      // Three 0.187 builds a compute node through the builder's own compute slot, not the object.
+      const builder = new WGSLNodeBuilder(null as never, renderer) as WGSLNodeBuilder & {
         build(): void;
         computeShader: string;
       };
+      Reflect.set(builder, "compute", dispatch);
       builder.build();
       expect(builder.computeShader.match(/textureLoad\([^\n]*clamp\( floor\(/gu)).toHaveLength(2);
       expect(builder.computeShader).not.toContain("textureSample(");

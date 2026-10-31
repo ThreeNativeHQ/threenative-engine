@@ -6,7 +6,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-export const EXPECTED_THREE_VERSION = '0.185.1';
+export const EXPECTED_THREE_VERSION = '0.187.0';
 export const EXAMPLE_ENTRY = 'examples/native-smoke/src/game.ts';
 export const READY_MARKER = 'TN_NATIVE_SMOKE_READY:webgpu';
 export const FIRST_FRAME_MARKER = 'TN_NATIVE_SMOKE_FIRST_FRAME';

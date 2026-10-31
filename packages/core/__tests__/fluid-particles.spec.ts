@@ -46,12 +46,15 @@ function computeSource(water: FluidParticles3D, name: string): string {
     },
     hasCompatibility: () => true,
     hasFeature: () => false,
+    debug: { diagnostics: { keywords: false } },
   };
   // Three's declarations omit the compute-node constructor path and generated shader fields.
-  const builder = new WGSLNodeBuilder(node as never, gpu as never) as unknown as {
+  const builder = new WGSLNodeBuilder(null as never, gpu as never) as unknown as {
     build(): void;
     computeShader: string;
   };
+  // r187 NodeManager.getForCompute builds a null object and assigns the compute node.
+  Reflect.set(builder, "compute", node);
   builder.build();
   return builder.computeShader;
 }

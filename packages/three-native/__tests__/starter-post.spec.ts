@@ -335,7 +335,35 @@ describe("starter post bindings", () => {
     const source = vec4(1);
     const reference = upstreamRtt(source, 16, 8);
     const target = {};
-    const renderer = { getRenderTarget: () => target, setRenderTarget: vi.fn(), render: vi.fn() };
+    // r187's RTTNode brackets its pass with RendererUtils.save/reset/restoreRendererState, so the
+    // double answers that whole surface; the target and render calls are what the assertions read.
+    const renderer = {
+      autoClear: false,
+      autoClearColor: false,
+      autoClearDepth: false,
+      autoClearStencil: false,
+      opaque: false,
+      transparent: false,
+      toneMapping: 0,
+      toneMappingExposure: 1,
+      outputColorSpace: "",
+      getRenderTarget: () => target,
+      setRenderTarget: vi.fn(),
+      render: vi.fn(),
+      getActiveCubeFace: () => 0,
+      getActiveMipmapLevel: () => 0,
+      getRenderObjectFunction: () => null,
+      setRenderObjectFunction: vi.fn(),
+      getPixelRatio: () => 1,
+      setPixelRatio: vi.fn(),
+      getMRT: () => null,
+      setMRT: vi.fn(),
+      getClearColor: (color: unknown) => color,
+      getClearAlpha: () => 1,
+      setClearColor: vi.fn(),
+      getScissorTest: () => false,
+      setScissorTest: vi.fn(),
+    };
     const builder = { getSharedContext: () => ({}) };
     node.setup(builder);
     const material = node._quadMesh.material as NodeMaterial;
@@ -348,7 +376,9 @@ describe("starter post bindings", () => {
     node.updateBefore({ renderer });
     reference.updateBefore({ renderer } as never);
     expect(renderer.render).toHaveBeenCalledTimes(2);
-    expect(renderer.setRenderTarget).toHaveBeenLastCalledWith(target);
+    // r187's restoreRendererState also passes the saved cube face and mip level, so the target is
+    // the first argument of the last call rather than its only one.
+    expect(renderer.setRenderTarget.mock.lastCall?.[0]).toBe(target);
     expect(node.textureNeedsUpdate).toBe(false);
     renderer.render.mockClear();
     node.needsUpdate = true;

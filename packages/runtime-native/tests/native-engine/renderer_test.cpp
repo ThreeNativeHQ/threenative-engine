@@ -312,7 +312,6 @@ void traaValidation() {
                 for (int j = 0; j < 16; ++j) std::cout << (j ? "," : "") << matrix[j];
                 std::cout << "]";
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
-                jitter.seedHistory(encoder, beauty);
                 jitter.resolve(encoder, beauty, beautyView, depth, depthView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
                 wgpuQueueSubmit(queue, 1, &commands);
@@ -422,7 +421,6 @@ void traaValidation() {
             for (int frame = 0; frame < (dump ? 20 : 3); ++frame) {
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
                 upscale.begin(identity, identity, identity);
-                upscale.seedHistory(encoder, beauty);
                 upscale.fillVelocity(encoder, depthView);
                 upscale.resolve(encoder, beauty, beautyView, depth, depthView, output, outputView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
@@ -1258,7 +1256,6 @@ void traaHistoryClipping() {
             wgpuRenderPassEncoderEnd(clearing); wgpuRenderPassEncoderRelease(clearing);
             if (cut && frame == 18) temporal.cameraCut();
             temporal.begin(identity, identity, identity);
-            temporal.seedHistory(encoder, beauty);
             temporal.fillVelocity(encoder, depthView);
             {
                 // Blue: 1 is known static, 3 is known dynamic, 0 is unknown geometry; identity motion remains zero in RG.
@@ -1629,8 +1626,10 @@ void traaResetSeed() {
     };
     const auto history = bytes("frame-20-history.bin");
     CHECK(history.size() == 16 * 16 * 4 * sizeof(float));
-    CHECK(history == bytes("frame-19-beauty.bin"));
-    CHECK(history != bytes("frame-20-beauty.bin"));
+    // r187 TRAANode.js:390-400 resets the history from the beauty buffer of the frame it resolves: the cut frame seeds
+    // its own image, not the frame before it.
+    CHECK(history == bytes("frame-20-beauty.bin"));
+    CHECK(history != bytes("frame-19-beauty.bin"));
 }
 
 // Pixels that differ from the clear colour (black), and whether the centre pixel is lit.
@@ -1687,9 +1686,9 @@ void resizeReadback() {
     CHECK(renderer.geometry().stats().fullUploads == uploads);
 }
 
-// three@0.185.1 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
+// three@0.187.0 in Chromium (WebGPU, NVIDIA Turing), tonemap-ramp-* goldens: the 8-bit sRGB output
 // of linear grey 0..8 under each tone mapping, exposure 1. Read from the golden PNGs
-// (packages/three-native/tests/compatibility/goldens/0.185.1/tonemap-ramp-<mapping>.png, strip centres).
+// (packages/three-native/tests/compatibility/goldens/0.187.0/tonemap-ramp-<mapping>.png, strip centres).
 extern "C" unsigned char* stbi_load(const char* filename, int* x, int* y, int* comp, int req_comp);
 extern "C" void stbi_image_free(void* data);
 extern "C" int stbi_write_png(const char* filename, int w, int h, int comp, const void* data, int stride);
@@ -1703,7 +1702,7 @@ constexpr Ramp kRamps[] = {
     {"linear", shader::ToneMapping::Linear, {0, 255, 255, 255, 255, 255, 255, 255, 255}},
     {"reinhard", shader::ToneMapping::Reinhard, {0, 188, 213, 225, 231, 235, 238, 240, 242}},
     {"cineon", shader::ToneMapping::Cineon, {0, 216, 233, 240, 244, 246, 247, 248, 249}},
-    {"aces", shader::ToneMapping::ACESFilmic, {0, 227, 242, 247, 250, 251, 252, 253, 253}},
+    {"aces", shader::ToneMapping::ACESFilmic, {0, 226, 242, 247, 250, 251, 252, 253, 253}},
     {"agx", shader::ToneMapping::AgX, {0, 202, 224, 233, 239, 242, 245, 246, 248}},
     {"neutral", shader::ToneMapping::Neutral, {0, 240, 250, 252, 253, 254, 254, 254, 254}},
 };

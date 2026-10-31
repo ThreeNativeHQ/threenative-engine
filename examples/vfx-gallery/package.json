@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@threenative/playtest": "workspace:*",
-    "@types/three": "0.185.3",
+    "@types/three": "0.187.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "@typescript/native": "catalog:"

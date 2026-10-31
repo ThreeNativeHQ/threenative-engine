@@ -299,18 +299,18 @@ describe("installPartialRender", () => {
       expect(material?.depthWrite).toBe(true);
       expect(material?.depthFunc).toBe(AlwaysDepth);
       // vec4(0) is the exact RGBA the stock shadow pass clears, independent of material color.
+      // r187 builds a vec4 constant directly, where r185 wrapped it in a convert node.
       expect(material?.fragmentNode).toMatchObject({
-        node: { nodeType: "vec4", value: new Vector4(0, 0, 0, 0) },
+        nodeType: "vec4",
+        value: new Vector4(0, 0, 0, 0),
       });
       expect(material?.vertexNode).toMatchObject({
-        node: {
-          nodes: [
-            expect.anything(),
-            expect.anything(),
-            expect.objectContaining({ value: reversed ? 0 : 1 }),
-            expect.objectContaining({ value: 1 }),
-          ],
-        },
+        nodes: [
+          expect.anything(),
+          expect.anything(),
+          expect.objectContaining({ value: reversed ? 0 : 1 }),
+          expect.objectContaining({ value: 1 }),
+        ],
       });
     },
   );

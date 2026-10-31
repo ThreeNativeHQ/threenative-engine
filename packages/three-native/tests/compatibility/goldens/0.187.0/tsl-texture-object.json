@@ -1,0 +1,35 @@
+{
+  "name": "tsl-texture-object",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — TSL texture(textureObject, uv) on unnamed DataTextures, the way Midway's ocean and ripples read theirs: a positionNode displacing a tilted plane by texture(bumps, uv()).level(0).r and a colorNode of texture(ramp, uv()).rgb",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:f4a5ded06f62303d9d9224a2fbf9cc1fbc48ee092003524b63b472ca57b41eea",
+      "decimal": "f4a5ded06f62303d9d9224a2fbf9cc1fbc48ee092003524b63b472ca57b41eea"
+    }
+  ],
+  "render": {
+    "png": "tsl-texture-object.png",
+    "pngSha256": "f4a5ded06f62303d9d9224a2fbf9cc1fbc48ee092003524b63b472ca57b41eea",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}
