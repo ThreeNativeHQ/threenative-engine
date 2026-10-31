@@ -834,3 +834,21 @@ no COOP/COEP); that lane is open.
 - Insight: one 4096×2048 sky crossed as 33.5 M boxed numbers, written as 268 MB of float64: 1.56 s of a 1.98 s load
   window. The rest of the scene built in 276 ms. Profile the load window before you suspect the scene build.
 - Next: FL2, the same image is read back twice through an `OffscreenCanvas` (about 180 ms).
+
+### 2026-10-31 — Stress lab: a slow frame adds at most 1/20 s of simulated time (core FixedStepLoop) — KEEP
+
+- Where: `packages/core/src/loop.ts` `FixedStepLoop`, `maxPhysicsDeltaTime` (default 1/20 s, after Unreal's
+  `MaxPhysicsDeltaTime` 1/30, UE 5.8.3 `PhysicsSettings.cpp:22`, `PhysLevel.cpp:212`). Commit 24c5fe53a.
+- Cause: from load 1 to load 4 (4x bodies) the physics step grew x24 and the frame fell to 12 fps, because each slow
+  frame ran up to 5 whole game updates to catch up, which made the next frame slower still. Profile
+  `lanes/prof-ramp/l1.json`, `l4.json`.
+- Result at load 4, plain sun, fair ABBA against vanilla three.js (rows #128-#131): vsync 20.07 fps against 16.17,
+  presented p95 66.7 against 83.3 ms; uncapped 20.03 against 16.00 fps, p95 65.6 against 82.2 ms. Before the
+  clamp, ThreeNative read 15.79 fps and p95 100 ms at load 4 vsync (row #119), behind vanilla.
+- Insight: under overload a fixed-step loop must slow the simulation, not catch it up; the catch-up is a spiral.
+  1/30 s broke the 30 fps determinism spec (a 34 ms frame dropped a tick), so the default keeps 1/20 s.
+- Risk: an overloaded game now runs its simulation slower than wall time (as Unreal does). Vanilla still catches up
+  with up to 4 Rapier steps, so the two compare frames delivered, not simulated seconds. Override:
+  `maxPhysicsDeltaTime: Infinity`.
+- Open: ThreeNative update p50 is still 28 ms against vanilla's 13 ms at load 4, and GPU p95 21-24 against 14 ms.
+  The clamp-against-develop pair at load 4 is still being measured (host load voided the first two tries).
