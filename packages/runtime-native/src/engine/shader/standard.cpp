@@ -1,9 +1,12 @@
-// The standard materials, ported from three@0.185.1's TSL node chain line by line where order of
+// The standard materials, ported from three@0.187.0's TSL node chain line by line where order of
 // operations is observable: src/nodes/functions/BSDF/{F_Schlick,V_GGX_SmithCorrelated,D_GGX,
-// BRDF_GGX,BRDF_GGX_Multiscatter,BRDF_Lambert,DFGLUT}.js, functions/material/getRoughness.js,
-// functions/PhysicalLightingModel.js (direct, indirect diffuse), lighting/HemisphereLightNode.js.
-// Lambert and Phong come from functions/PhongLightingModel.js (its Blinn-Phong D_BlinnPhong and
-// BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js wire them.
+// BRDF_GGX,BRDF_Lambert,DFGLUT}.js, functions/material/getRoughness.js,
+// functions/PhysicalLightingModel.js (start, direct, indirect diffuse, indirect specular),
+// lighting/HemisphereLightNode.js. Lambert and Phong come from functions/PhongLightingModel.js (its
+// Blinn-Phong D_BlinnPhong and BRDF_BlinnPhong) as materials/nodes/Mesh{Lambert,Phong}NodeMaterial.js
+// wire them. r186/r187 re-derived the energy conservation (PhysicalLightingModel.js:591-638, 675-703,
+// 786-798, 854-895): the DFG texel is sampled once in start() and shared, BRDF_GGX_Multiscatter is
+// gone, and both the direct and the indirect diffuse layers lose the energy the specular lobe keeps.
 
 #include "standard.h"
 #include "cube_uv.h"
@@ -73,10 +76,11 @@ struct Surface {
     uint32_t dfg;
 };
 
-// BRDF_GGX( lightDirection, f0, f90, roughness )
+// BRDF_GGX( lightDirection, f0, f90, roughness ). r187 BRDF_GGX.js:14 raises the roughness to 0.045
+// first: a punctual light needs a minimum roughness to show a highlight.
 ExprId brdfGgx(Tsl& t, const Surface& s, ExprId light) {
     Program& p = t.p;
-    const ExprId alpha = t.pow2(s.roughness);  // UE4's roughness
+    const ExprId alpha = t.pow2(p.call("max", {s.roughness, t.f(0.045f)}));  // UE4's roughness
     const ExprId half = p.call("normalize", {p.add(light, s.view)});
     const ExprId dotNL = t.saturate(t.dot(s.normal, light));
     const ExprId dotNV = t.saturate(t.dot(s.normal, s.view));
@@ -90,27 +94,6 @@ ExprId brdfGgx(Tsl& t, const Surface& s, ExprId light) {
 ExprId dfgLut(Tsl& t, const Surface& s, ExprId dotNV) {
     Program& p = t.p;
     return p.swizzle(p.sample(s.dfg, p.construct(Type::vec(2), {s.roughness, dotNV})), "xy");
-}
-
-// BRDF_GGX_Multiscatter
-ExprId brdfGgxMultiscatter(Tsl& t, const Surface& s, ExprId light) {
-    Program& p = t.p;
-    const ExprId singleScatter = brdfGgx(t, s, light);
-    const ExprId dotNL = t.saturate(t.dot(s.normal, light));
-    const ExprId dotNV = t.saturate(t.dot(s.normal, s.view));
-    const ExprId dfgV = dfgLut(t, s, dotNV);
-    const ExprId dfgL = dfgLut(t, s, dotNL);
-    const ExprId FssEssV = p.add(p.mul(s.f0, p.swizzle(dfgV, "x")), p.mul(s.f90, p.swizzle(dfgV, "y")));
-    const ExprId FssEssL = p.add(p.mul(s.f0, p.swizzle(dfgL, "x")), p.mul(s.f90, p.swizzle(dfgL, "y")));
-    const ExprId EssV = p.add(p.swizzle(dfgV, "x"), p.swizzle(dfgV, "y"));
-    const ExprId EssL = p.add(p.swizzle(dfgL, "x"), p.swizzle(dfgL, "y"));
-    const ExprId EmsV = p.sub(t.f(1), EssV);
-    const ExprId EmsL = p.sub(t.f(1), EssL);
-    const ExprId Favg = p.add(s.f0, p.mul(t.oneMinus(s.f0), t.f(0.047619f)));  // 1/21
-    const ExprId Fms = p.div(p.mul(p.mul(FssEssV, FssEssL), Favg),
-                             p.add(p.sub(t.f(1), p.mul(p.mul(p.mul(EmsV, EmsL), Favg), Favg)), t.f(kEpsilon)));
-    const ExprId compensationFactor = p.mul(EmsV, EmsL);
-    return p.add(singleScatter, p.mul(Fms, compensationFactor));
 }
 
 // D_BlinnPhong( dotNH ) = ( shininess * 0.5 + 1.0 ) * (1/pi) * pow( dotNH, shininess )
@@ -239,15 +222,15 @@ ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughnes
     return p.load(color);
 }
 
-// three's computeMultiscattering, returning (singleScatter, multiScatter) for one f0.
+// three's PhysicalLightingModel.computeMultiscattering (r187 :623), returning (singleScatter,
+// multiScatter) for one f0 from the DFG texel start() sampled once at dotNV.
 struct Multiscatter {
     ExprId single;
     ExprId multi;
 };
-Multiscatter computeMultiscattering(Tsl& t, ExprId roughness, ExprId dotNV, ExprId f0, ExprId specularF90, uint32_t dfg) {
+Multiscatter computeMultiscattering(Tsl& t, ExprId fab, ExprId f0, ExprId specularF90) {
     Program& p = t.p;
     auto f = [&](float v) { return p.constant(v); };
-    const ExprId fab = p.swizzle(p.sample(dfg, p.construct(Type::vec(2), {roughness, dotNV})), "xy");
     const ExprId FssEss = p.add(p.mul(f0, p.swizzle(fab, "x")), p.mul(specularF90, p.swizzle(fab, "y")));
     const ExprId Ess = p.add(p.swizzle(fab, "x"), p.swizzle(fab, "y"));
     const ExprId Ems = p.sub(f(1), Ess);
@@ -1460,19 +1443,20 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId materialRoughness = slotValue(f, slots, variant.nodes.roughnessNode, Type::f32(), roughnessFactor);
     out.materialProperties = f.construct(Type::vec(4), {metalness, materialRoughness, t.f(0), t.f(1)});
 
-    // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
+    // getRoughness: max(roughness, 0.045) + getGeometryRoughness, capped at 1. r187 raises the floor from
+    // r185's 0.0525 to Filament's MIN_PERCEPTUAL_ROUGHNESS (getRoughness.js:10).
     const ExprId dxy = f.call("max", {f.call("abs", {f.call("dFdx", {normalViewGeometry})}),
                                       f.call("abs", {f.call("dFdy", {normalViewGeometry})})});
     const ExprId geometryRoughness =
         f.call("max", {f.call("max", {f.swizzle(dxy, "x"), f.swizzle(dxy, "y")}), f.swizzle(dxy, "z")});
-    ExprId roughness = f.call("min", {f.add(f.call("max", {materialRoughness, t.f(0.0525f)}),
+    ExprId roughness = f.call("min", {f.add(f.call("max", {materialRoughness, t.f(0.045f)}),
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
     // Derivatives must execute before cubeUV's per-fragment branches (three's roughness variable).
     if (variant.environment) roughness = f.load(f.var(Type::f32(), roughness));
-    // specularF90 (mix(specularIntensity, 1, metalness)) feeds only PhysicalLightingModel's indirect
-    // specular, which arrives with environment lighting; direct light passes f90: 1 for every material.
+    // specularF90 (mix(specularIntensity, 1, metalness)) is BRDF_GGX's f90 and F_Schlick's f90 in the direct
+    // term since r187 (PhysicalLightingModel.js:678-680), as well as the indirect term's.
     ExprId specularColorBlended;
     ExprId specularF90;
     ExprId f0Dielectric;
@@ -1496,11 +1480,26 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         specularF90 = t.f(1);
     }
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
-    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, t.f(1), f.texture2d("dfg")};
+    // PhysicalLightingModel.start (r187 :591-607): the DFG texel at (roughness, dotNV) is sampled once and
+    // shared by the direct compensation and by both indirect paths, and the dielectric multiscattering is
+    // computed up front so the indirect diffuse layer can subtract it. specularColor is the PropertyNode
+    // (0.04 for a standard material, the physical program's f0).
+    const uint32_t dfg = f.texture2d("dfg");
+    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, specularF90, dfg};
+    const ExprId dfgTexel =
+        f.load(f.var(Type::vec(2), dfgLut(t, surface, t.saturate(t.dot(n, positionViewDirection)))));
+    // Energy of the single-scattering lobe in a white furnace (F0 = F90 = 1); the energy lost to multiple
+    // scattering is added back, tinted by F0 (Practical Multiple Scattering Compensation, equation 16).
+    const ExprId ess = f.add(f.swizzle(dfgTexel, "x"), f.swizzle(dfgTexel, "y"));
+    const ExprId multiScatteringCompensation =
+        f.add(f.mul(specularColorBlended, f.sub(f.div(t.f(1), ess), t.f(1))), t.f(1));
+    const Multiscatter dielectric = computeMultiscattering(t, dfgTexel, f0Dielectric, specularF90);
+    const Multiscatter metallic = computeMultiscattering(t, dfgTexel, diffuseColor, specularF90);
+    const ExprId energyLoss = t.oneMinus(f.add(dielectric.single, dielectric.multi));
 
     // MeshPhysicalNodeMaterial.setupVariants with useClearcoat: clearcoat = materialClearcoat (times the
     // clearcoatMap's red), clearcoatRoughness = getRoughness(materialClearcoatRoughness, times the
-    // clearcoatRoughnessMap's red). PhysicalLightingModel's clearcoatF0 = vec3(0.04), clearcoatF90 = 1.
+    // clearcoatRoughnessMap's green). PhysicalLightingModel's clearcoatF0 = vec3(0.04), clearcoatF90 = 1.
     const bool coated = physical && variant.clearcoat;
     ExprId clearcoat = kInvalid, clearcoatNormalView = kInvalid;
     Surface coat{};
@@ -1510,9 +1509,10 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         if (variant.reads(kClearcoatMap)) clearcoat = f.mul(clearcoat, f.swizzle(pbrTexel(f, variant, kClearcoatMap), "x"));
         ExprId clearcoatRoughnessFactor = f.uniform("clearcoatRoughness", Type::f32());
         if (variant.reads(kClearcoatRoughnessMap))
+            // MaterialNode.js:295 (r187) reads the clearcoat roughness map's GREEN channel; r185 read red.
             clearcoatRoughnessFactor =
-                f.mul(clearcoatRoughnessFactor, f.swizzle(pbrTexel(f, variant, kClearcoatRoughnessMap), "x"));
-        ExprId clearcoatRoughness = f.call("min", {f.add(f.call("max", {clearcoatRoughnessFactor, t.f(0.0525f)}), geometryRoughness), t.f(1)});
+                f.mul(clearcoatRoughnessFactor, f.swizzle(pbrTexel(f, variant, kClearcoatRoughnessMap), "y"));
+        ExprId clearcoatRoughness = f.call("min", {f.add(f.call("max", {clearcoatRoughnessFactor, t.f(0.045f)}), geometryRoughness), t.f(1)});
         // Its derivatives run before the environment's branches, as roughness's do.
         if (variant.environment) clearcoatRoughness = f.load(f.var(Type::f32(), clearcoatRoughness));
         clearcoatNormalView = clearcoatNormal(f, variant, n);
@@ -1521,7 +1521,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         clearcoatSpecularDirect = f.construct(Type::vec(3), {t.f(0)});
     }
 
-    // PhysicalLightingModel.direct for each light, accumulated in three's order.
+    // PhysicalLightingModel.direct (r187 :648-703) for each light, accumulated in three's order. Light
+    // reflected by the specular interface is not available to the diffuse layer (glTF fresnel_mix), and the
+    // specular lobe is scaled by the multi-scattering compensation rather than adding a multi-scatter BRDF.
     const ExprId brdfLambert = f.mul(diffuseContribution, t.f(1 / kPi));
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
@@ -1533,6 +1535,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
+        // PhysicalLightingModel.direct :675-678: F_Schlick on the specular interface at dotVH, which the
+        // diffuse layer loses.
+        const ExprId halfDir = f.call("normalize", {f.add(light.direction, positionViewDirection)});
+        const ExprId dotVH = t.saturate(t.dot(positionViewDirection, halfDir));
+        const ExprId oneMinusF = t.oneMinus(fSchlick(t, f0Dielectric, specularF90, dotVH));
         ExprId diffuseBrdf = brdfLambert;
         if (variant.roughDiffuse) {
             // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
@@ -1541,8 +1548,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
                 r = f.mul(r, t.saturate(t.oneMinus(f.mul(light.sourceRadius, t.f(1 / kEonSizeLimit)))));
             diffuseBrdf = f.mul(brdfLambert, roughDiffuseFactor(f, t, diffuseContribution, r, n, positionViewDirection, light.direction));
         }
-        directDiffuse = f.add(directDiffuse, f.mul(irradiance, diffuseBrdf));
-        directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
+        directDiffuse = f.add(directDiffuse, f.mul(f.mul(irradiance, diffuseBrdf), oneMinusF));
+        directSpecular =
+            f.add(directSpecular, f.mul(f.mul(irradiance, brdfGgx(t, surface, light.direction)), multiScatteringCompensation));
         if (subsurface != kInvalid) {
             const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
             const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));
@@ -1555,11 +1563,12 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
     }
 
-    // Hemisphere and ambient irradiance, then PhysicalLightingModel.indirect diffuse.
+    // Hemisphere and ambient irradiance, then PhysicalLightingModel.indirectDiffuse (r187 :786-798): energy
+    // reflected by the specular lobe is not available to the diffuse layer.
     const ExprId hemiWeight = f.add(f.mul(t.dot(normalWorld, f.call("normalize", {f.uniform("hemisphereDirection", Type::vec(3))})), t.f(0.5f)), t.f(0.5f));
     const ExprId hemisphere = f.call("mix", {f.uniform("hemisphereGround", Type::vec(3)), f.uniform("hemisphereSky", Type::vec(3)), hemiWeight});
     const ExprId indirectIrradiance = f.add(hemisphere, f.uniform("ambient", Type::vec(3)));
-    const ExprId indirectDiffuse = f.mul(indirectIrradiance, brdfLambert);
+    const ExprId indirectDiffuse = f.mul(f.mul(indirectIrradiance, brdfLambert), energyLoss);
 
     // EnvironmentNode: IBL irradiance (normalWorld, level 1) and radiance (the roughness-mixed
     // reflection, level = roughness), then PhysicalLightingModel.indirect. The PMREM texture is a
@@ -1582,13 +1591,8 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, f.mul(f.mul(t.pow2(roughness), roughness), roughness)})});
         reflectVec = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), reflectVec);
         const ExprId radiance = f.mul(textureCubeUV(f, env, flipped(reflectVec), roughness), envIntensity);
-        const ExprId dotNV = t.saturate(t.dot(n, positionViewDirection));
-        const uint32_t dfg = f.texture2d("dfg");
-        const Multiscatter dielectric = computeMultiscattering(t, roughness, dotNV, f0Dielectric, specularF90, dfg);
-        const Multiscatter metallic = computeMultiscattering(t, roughness, dotNV, diffuseColor, specularF90, dfg);
         const ExprId single = f.call("mix", {dielectric.single, metallic.single, metalness});
         const ExprId multi = f.call("mix", {dielectric.multi, metallic.multi, metalness});
-        const ExprId energyLoss = t.oneMinus(f.add(dielectric.single, dielectric.multi));
         const ExprId cosineWeightedIrradiance = f.mul(iblIrradiance, t.f(1 / kPi));
         environmentSpecular = f.add(f.mul(radiance, single), f.mul(multi, cosineWeightedIrradiance));
         environmentDiffuse = f.mul(f.mul(diffuseContribution, energyLoss), cosineWeightedIrradiance);

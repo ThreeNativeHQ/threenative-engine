@@ -226,8 +226,9 @@ struct StandardPrograms {
 };
 
 /**
- * Builds the standard material's two stages from the pinned node chain: BRDF_GGX_Multiscatter with
- * the DFG lookup, Lambert diffuse, getRoughness with geometry roughness, one directional, one
+ * Builds the standard material's two stages from the pinned node chain: BRDF_GGX with the DFG lookup
+ * shared by its multi-scattering compensation and the indirect terms, Lambert diffuse, getRoughness
+ * with geometry roughness, the indirect diffuse layer's dielectric energy loss, one directional, one
  * hemisphere and one ambient light (the N09 renderer generalizes lights). It writes linear HDR
  * colour; the output pass (output.h) tone maps and encodes it.
  * Uniforms: modelMatrix, viewMatrix, projectionMatrix, normalMatrix (vertex); diffuse (rgb,
