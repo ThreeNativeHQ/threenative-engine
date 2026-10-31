@@ -558,8 +558,8 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..754d9674a2398367cacecbfaaaca526d
 +		try {
 +
 +			this._init( cubeUVRenderTarget );
-+			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
-+			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			// One fence covers the heaviest single face (the first GGX filter pass), never less than a 256 cube's: a fence waits behind every queued frame.
++			this._fenceBudget = Math.max( 128 * 128, this._sizeLods[ 1 ] * this._sizeLods[ 1 ] ) * GGX_SAMPLES;
 +			this._fencePending = 0;
 +			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
 +			await this._applyPMREMAsync( cubeUVRenderTarget );
@@ -3468,8 +3468,8 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..46b9864470ab0489d095513c7ab6493e
 +		try {
 +
 +			this._init( cubeUVRenderTarget );
-+			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
-+			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			// One fence covers the heaviest single face (the first GGX filter pass), never less than a 256 cube's: a fence waits behind every queued frame.
++			this._fenceBudget = Math.max( 128 * 128, this._sizeLods[ 1 ] * this._sizeLods[ 1 ] ) * GGX_SAMPLES;
 +			this._fencePending = 0;
 +			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
 +			await this._applyPMREMAsync( cubeUVRenderTarget );
@@ -7395,8 +7395,8 @@ index 27df07dd99b46ac85a69f3249d9934334ff10dae..ace19db76fab3f08ed4d581d1e272066
 +		try {
 +
 +			this._init( cubeUVRenderTarget );
-+			// One fence covers as much queued work as the heaviest single face (the first GGX filter pass).
-+			this._fenceBudget = this._sizeLods[ 1 ] * this._sizeLods[ 1 ] * GGX_SAMPLES;
++			// One fence covers the heaviest single face (the first GGX filter pass), never less than a 256 cube's: a fence waits behind every queued frame.
++			this._fenceBudget = Math.max( 128 * 128, this._sizeLods[ 1 ] * this._sizeLods[ 1 ] ) * GGX_SAMPLES;
 +			this._fencePending = 0;
 +			await this._textureToCubeUVAsync( texture, cubeUVRenderTarget );
 +			await this._applyPMREMAsync( cubeUVRenderTarget );
