@@ -1,0 +1,27 @@
+{
+  "name": "fog-exp2",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — nodes/fog/Fog.js exp2 factor over -positionView.z before tone mapping, alpha retained, material.fog=false. Red control: force fogFactor to constant 0 (all three panels stay red).",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:7af776aeb27fb0a00e47817a637778afa8bf6ce5c3f893b17549a5d6f2c3cde0",
+      "decimal": "7af776aeb27fb0a00e47817a637778afa8bf6ce5c3f893b17549a5d6f2c3cde0"
+    }
+  ],
+  "render": {
+    "png": "fog-exp2.png",
+    "pngSha256": "7af776aeb27fb0a00e47817a637778afa8bf6ce5c3f893b17549a5d6f2c3cde0",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

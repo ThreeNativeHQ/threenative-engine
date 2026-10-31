@@ -1,0 +1,27 @@
+{
+  "name": "particles-sprite",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — PRD-527: real core GPUParticles3D with game-supplied SpriteNodeMaterial, ten compute steps, oblique camera and transformed sprite",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:fc8768d1b7b6ba86cb558fd0b73198c8034d30373d4c9f7d11434989800e5619",
+      "decimal": "fc8768d1b7b6ba86cb558fd0b73198c8034d30373d4c9f7d11434989800e5619"
+    }
+  ],
+  "render": {
+    "png": "particles-sprite.png",
+    "pngSha256": "fc8768d1b7b6ba86cb558fd0b73198c8034d30373d4c9f7d11434989800e5619",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

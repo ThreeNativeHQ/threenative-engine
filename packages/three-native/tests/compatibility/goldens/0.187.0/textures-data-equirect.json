@@ -1,0 +1,35 @@
+{
+  "name": "textures-data-equirect",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — a 64x32 RGBA8 sRGB DataTexture (a gradient with a bright patch) with mapping EquirectangularReflectionMapping as scene.background and scene.environment, reflected by a smooth and a rough metal sphere",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "env",
+      "kind": "number",
+      "path": "mapping",
+      "value": "n:4072f00000000000",
+      "decimal": "303"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:66ec299284c382936e3a44c08b66145d74fb192d186f2f747644e9769037fa8a",
+      "decimal": "66ec299284c382936e3a44c08b66145d74fb192d186f2f747644e9769037fa8a"
+    }
+  ],
+  "render": {
+    "png": "textures-data-equirect.png",
+    "pngSha256": "66ec299284c382936e3a44c08b66145d74fb192d186f2f747644e9769037fa8a",
+    "width": 256,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

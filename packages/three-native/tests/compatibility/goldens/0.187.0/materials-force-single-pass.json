@@ -1,0 +1,35 @@
+{
+  "name": "materials-force-single-pass",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — two transparent DoubleSide torus knots: the left draws three's back-then-front two passes, the right sets forceSinglePass and draws once",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "singleMat",
+      "kind": "boolean",
+      "path": "forceSinglePass",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:5e720593c74078da3ee6599062ee4cfae8fcbce875356e9f5362abe563347052",
+      "decimal": "5e720593c74078da3ee6599062ee4cfae8fcbce875356e9f5362abe563347052"
+    }
+  ],
+  "render": {
+    "png": "materials-force-single-pass.png",
+    "pngSha256": "5e720593c74078da3ee6599062ee4cfae8fcbce875356e9f5362abe563347052",
+    "width": 320,
+    "height": 160,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

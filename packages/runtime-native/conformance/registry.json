@@ -1,6 +1,6 @@
 {
   "schemaVersion": "0.1.0",
-  "threeVersion": "0.185.1",
+  "threeVersion": "0.187.0",
   "policy": {
     "renderer": "three/webgpu WebGPURenderer",
     "noCustomCppRenderer": true,

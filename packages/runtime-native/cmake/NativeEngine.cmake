@@ -207,7 +207,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         set_tests_properties(native_engine_traa_projection_reference PROPERTIES LABELS "native-engine")
     endif()
     target_compile_definitions(tn-native-engine-renderer-test PRIVATE
-        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1")
+        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.187.0")
 
     # The fixture driver with a GPU: it answers render fixtures' `render` lines (PRD-514).
     add_executable(tn-native-engine-render-driver EXCLUDE_FROM_ALL tests/native-engine/fixture/render_main.cpp)
@@ -388,7 +388,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # The skinned cases drive the player's SkinnedCrowd scene.
     target_link_libraries(tn-native-engine-render-database-test PRIVATE tn_engine_renderer tn_host_services tn_engine_player)
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
-        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
+        TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.187.0"
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
     # PRD-634: the sun filter's edge widens with the caster gap as the browser's penumbraUv model says.
     tn_native_engine_test(tn-native-engine-vsm-source-angle-test tests/native-engine/vsm/vsm_source_angle_gpu_test.cpp

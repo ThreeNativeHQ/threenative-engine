@@ -1,0 +1,2168 @@
+{
+  "name": "math-euler-gimbal-lock",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Euler.tests.js — the locked cases where Math.abs(m13) < 0.9999999 is false, at exactly +-PI/2 and one ulp away",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "q02",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fdf87834027efc5,n:3fe03b5eced7207c,n:bfd19f810512a34a,n:3fe4d75aed697246",
+      "decimal": "0.4926460386775456, 0.507247356400526, -0.27536035056487107, 0.651288474745862"
+    },
+    {
+      "index": 1,
+      "id": "b04",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 2,
+      "id": "b04",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 3,
+      "id": "b04",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 4,
+      "id": "b04",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 5,
+      "id": "k05",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 6,
+      "id": "k05",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 7,
+      "id": "k05",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 8,
+      "id": "k05",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 9,
+      "id": "q07",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fdf87834027efc5,n:3fe03b5eced7207c,n:bfe03b5eced7207c,n:3fdf87834027efc8",
+      "decimal": "0.4926460386775456, 0.507247356400526, -0.507247356400526, 0.49264603867754575"
+    },
+    {
+      "index": 10,
+      "id": "b09",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 11,
+      "id": "b09",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3ff999999999999b",
+      "decimal": "1.6000000000000003"
+    },
+    {
+      "index": 12,
+      "id": "b09",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 13,
+      "id": "b09",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 14,
+      "id": "k10",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 15,
+      "id": "k10",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3ff999999999999a",
+      "decimal": "1.6"
+    },
+    {
+      "index": 16,
+      "id": "k10",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 17,
+      "id": "k10",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 18,
+      "id": "q12",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe4d75aed697245,n:bfd19f810512a348,n:bfd19f810512a34a,n:3fe4d75aed697246",
+      "decimal": "0.6512884747458619, -0.27536035056487096, -0.27536035056487107, 0.651288474745862"
+    },
+    {
+      "index": 19,
+      "id": "b14",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 20,
+      "id": "b14",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 21,
+      "id": "b14",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bfe999999999999a",
+      "decimal": "-0.8"
+    },
+    {
+      "index": 22,
+      "id": "b14",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 23,
+      "id": "k15",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 24,
+      "id": "k15",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 25,
+      "id": "k15",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bfe9999999999999",
+      "decimal": "-0.7999999999999999"
+    },
+    {
+      "index": 26,
+      "id": "k15",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 27,
+      "id": "q17",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe4d75aed697245,n:bfd19f810512a348,n:bfe03b5eced7207c,n:3fdf87834027efc8",
+      "decimal": "0.6512884747458619, -0.27536035056487096, -0.507247356400526, 0.49264603867754575"
+    },
+    {
+      "index": 28,
+      "id": "b19",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d17",
+      "decimal": "1.5707963267948963"
+    },
+    {
+      "index": 29,
+      "id": "b19",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd9999999999999",
+      "decimal": "0.39999999999999997"
+    },
+    {
+      "index": 30,
+      "id": "b19",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 31,
+      "id": "b19",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 32,
+      "id": "k20",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 33,
+      "id": "k20",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 34,
+      "id": "k20",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 35,
+      "id": "k20",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 36,
+      "id": "q22",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fdf87834027efc5,n:bfd19f810512a348,n:bfe03b5eced7207c,n:3fe4d75aed697246",
+      "decimal": "0.4926460386775456, -0.27536035056487096, -0.507247356400526, 0.651288474745862"
+    },
+    {
+      "index": 37,
+      "id": "b24",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d17",
+      "decimal": "1.5707963267948963"
+    },
+    {
+      "index": 38,
+      "id": "b24",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 39,
+      "id": "b24",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 40,
+      "id": "b24",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 41,
+      "id": "k25",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 42,
+      "id": "k25",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 43,
+      "id": "k25",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 44,
+      "id": "k25",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 45,
+      "id": "q27",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe4d75aed697245,n:3fe03b5eced7207c,n:bfd19f810512a34a,n:3fdf87834027efc8",
+      "decimal": "0.6512884747458619, 0.507247356400526, -0.27536035056487107, 0.49264603867754575"
+    },
+    {
+      "index": 46,
+      "id": "b29",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d17",
+      "decimal": "1.5707963267948963"
+    },
+    {
+      "index": 47,
+      "id": "b29",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd99999999999a0",
+      "decimal": "0.40000000000000036"
+    },
+    {
+      "index": 48,
+      "id": "b29",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333335",
+      "decimal": "-1.2000000000000004"
+    },
+    {
+      "index": 49,
+      "id": "b29",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 50,
+      "id": "k30",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 51,
+      "id": "k30",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 52,
+      "id": "k30",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 53,
+      "id": "k30",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 54,
+      "id": "q32",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfe4d75aed697245,n:bfd19f810512a348,n:bfe03b5eced7207c,n:3fdf87834027efc8",
+      "decimal": "-0.6512884747458619, -0.27536035056487096, -0.507247356400526, 0.49264603867754575"
+    },
+    {
+      "index": 55,
+      "id": "b34",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d17",
+      "decimal": "-1.5707963267948963"
+    },
+    {
+      "index": 56,
+      "id": "b34",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd9999999999999",
+      "decimal": "0.39999999999999997"
+    },
+    {
+      "index": 57,
+      "id": "b34",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 58,
+      "id": "b34",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 59,
+      "id": "k35",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 60,
+      "id": "k35",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 61,
+      "id": "k35",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 62,
+      "id": "k35",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 63,
+      "id": "q37",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfe4d75aed697245,n:bfd19f810512a348,n:bfd19f810512a34a,n:3fe4d75aed697246",
+      "decimal": "-0.6512884747458619, -0.27536035056487096, -0.27536035056487107, 0.651288474745862"
+    },
+    {
+      "index": 64,
+      "id": "b39",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 65,
+      "id": "b39",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfe999999999999a",
+      "decimal": "-0.8"
+    },
+    {
+      "index": 66,
+      "id": "b39",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 67,
+      "id": "b39",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 68,
+      "id": "k40",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 69,
+      "id": "k40",
+      "kind": "number",
+      "path": "y",
+      "value": "n:bfe9999999999999",
+      "decimal": "-0.7999999999999999"
+    },
+    {
+      "index": 70,
+      "id": "k40",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 71,
+      "id": "k40",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 72,
+      "id": "q42",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfdf87834027efc5,n:3fe03b5eced7207c,n:bfe03b5eced7207c,n:3fdf87834027efc8",
+      "decimal": "-0.4926460386775456, 0.507247356400526, -0.507247356400526, 0.49264603867754575"
+    },
+    {
+      "index": 73,
+      "id": "b44",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 74,
+      "id": "b44",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 75,
+      "id": "b44",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff999999999999b",
+      "decimal": "-1.6000000000000003"
+    },
+    {
+      "index": 76,
+      "id": "b44",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 77,
+      "id": "k45",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 78,
+      "id": "k45",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 79,
+      "id": "k45",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff999999999999a",
+      "decimal": "-1.6"
+    },
+    {
+      "index": 80,
+      "id": "k45",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 81,
+      "id": "q47",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfdf87834027efc5,n:3fe03b5eced7207c,n:bfd19f810512a34a,n:3fe4d75aed697246",
+      "decimal": "-0.4926460386775456, 0.507247356400526, -0.27536035056487107, 0.651288474745862"
+    },
+    {
+      "index": 82,
+      "id": "b49",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 83,
+      "id": "b49",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 84,
+      "id": "b49",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 85,
+      "id": "b49",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 86,
+      "id": "k50",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 87,
+      "id": "k50",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 88,
+      "id": "k50",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 89,
+      "id": "k50",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 90,
+      "id": "q52",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfe4d75aed697245,n:3fe03b5eced7207c,n:bfd19f810512a34a,n:3fdf87834027efc8",
+      "decimal": "-0.6512884747458619, 0.507247356400526, -0.27536035056487107, 0.49264603867754575"
+    },
+    {
+      "index": 91,
+      "id": "b54",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d17",
+      "decimal": "-1.5707963267948963"
+    },
+    {
+      "index": 92,
+      "id": "b54",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd99999999999a0",
+      "decimal": "0.40000000000000036"
+    },
+    {
+      "index": 93,
+      "id": "b54",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333335",
+      "decimal": "-1.2000000000000004"
+    },
+    {
+      "index": 94,
+      "id": "b54",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 95,
+      "id": "k55",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 96,
+      "id": "k55",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 97,
+      "id": "k55",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 98,
+      "id": "k55",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 99,
+      "id": "q57",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfdf87834027efc5,n:bfd19f810512a348,n:bfe03b5eced7207c,n:3fe4d75aed697246",
+      "decimal": "-0.4926460386775456, -0.27536035056487096, -0.507247356400526, 0.651288474745862"
+    },
+    {
+      "index": 100,
+      "id": "b59",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d17",
+      "decimal": "-1.5707963267948963"
+    },
+    {
+      "index": 101,
+      "id": "b59",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 102,
+      "id": "b59",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 103,
+      "id": "b59",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 104,
+      "id": "k60",
+      "kind": "number",
+      "path": "x",
+      "value": "n:bff921fb54442d18",
+      "decimal": "-1.5707963267948966"
+    },
+    {
+      "index": 105,
+      "id": "k60",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 106,
+      "id": "k60",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 107,
+      "id": "k60",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 108,
+      "id": "q62",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fdf878336c97600,n:3fe03b5eccdc18e6,n:bfd19f810c5ea89d,n:3fe4d75af0f49228",
+      "decimal": "0.49264602995194196, 0.5072473527113999, -0.27536035736069114, 0.6512884813460618"
+    },
+    {
+      "index": 109,
+      "id": "b64",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d84a",
+      "decimal": "1.5707963"
+    },
+    {
+      "index": 110,
+      "id": "b64",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 111,
+      "id": "b64",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 112,
+      "id": "b64",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 113,
+      "id": "k65",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d84a",
+      "decimal": "1.5707963"
+    },
+    {
+      "index": 114,
+      "id": "k65",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 115,
+      "id": "k65",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 116,
+      "id": "k65",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 117,
+      "id": "q67",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fdf878336c97600,n:3fe03b5eccdc18e6,n:bfe03b5ed0d22810,n:3fdf87834986698b",
+      "decimal": "0.49264602995194196, 0.5072473527113999, -0.5072473600896519, 0.49264604740314927"
+    },
+    {
+      "index": 118,
+      "id": "b69",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4c442d18",
+      "decimal": "1.5707962969925742"
+    },
+    {
+      "index": 119,
+      "id": "b69",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3ff999999999999a",
+      "decimal": "1.6"
+    },
+    {
+      "index": 120,
+      "id": "b69",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 121,
+      "id": "b69",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 122,
+      "id": "k70",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d568e5e",
+      "decimal": "1.5707963009853283"
+    },
+    {
+      "index": 123,
+      "id": "k70",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3ff9999999999999",
+      "decimal": "1.5999999999999999"
+    },
+    {
+      "index": 124,
+      "id": "k70",
+      "kind": "number",
+      "path": "z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 125,
+      "id": "k70",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 126,
+      "id": "q72",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe4d75ae9de5262,n:bfd19f80fdc69df2,n:bfd19f810c5ea89d,n:3fe4d75af0f49228",
+      "decimal": "0.6512884681456621, -0.2753603437690507, -0.27536035736069114, 0.6512884813460618"
+    },
+    {
+      "index": 127,
+      "id": "b74",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4c442d18",
+      "decimal": "1.5707962969925742"
+    },
+    {
+      "index": 128,
+      "id": "b74",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 129,
+      "id": "b74",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bfe9999999999999",
+      "decimal": "-0.7999999999999999"
+    },
+    {
+      "index": 130,
+      "id": "b74",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 131,
+      "id": "k75",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d568e5e",
+      "decimal": "1.5707963009853283"
+    },
+    {
+      "index": 132,
+      "id": "k75",
+      "kind": "number",
+      "path": "y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 133,
+      "id": "k75",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bfe999999999999b",
+      "decimal": "-0.8000000000000002"
+    },
+    {
+      "index": 134,
+      "id": "k75",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 135,
+      "id": "q77",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe4d75ae9de5262,n:bfd19f80fdc69df2,n:bfe03b5ed0d22810,n:3fdf87834986698b",
+      "decimal": "0.6512884681456621, -0.2753603437690507, -0.5072473600896519, 0.49264604740314927"
+    },
+    {
+      "index": 136,
+      "id": "b79",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d84a",
+      "decimal": "1.5707963"
+    },
+    {
+      "index": 137,
+      "id": "b79",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd9999999999998",
+      "decimal": "0.3999999999999999"
+    },
+    {
+      "index": 138,
+      "id": "b79",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 139,
+      "id": "b79",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 140,
+      "id": "k80",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d84a",
+      "decimal": "1.5707963"
+    },
+    {
+      "index": 141,
+      "id": "k80",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 142,
+      "id": "k80",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 143,
+      "id": "k80",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 144,
+      "id": "q82",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fdf878336c97600,n:bfd19f80fdc69df2,n:bfe03b5ed0d22810,n:3fe4d75af0f49228",
+      "decimal": "0.49264602995194196, -0.2753603437690507, -0.5072473600896519, 0.6512884813460618"
+    },
+    {
+      "index": 145,
+      "id": "b84",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d849",
+      "decimal": "1.5707962999999998"
+    },
+    {
+      "index": 146,
+      "id": "b84",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd9999999999994",
+      "decimal": "0.3999999999999997"
+    },
+    {
+      "index": 147,
+      "id": "b84",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 148,
+      "id": "b84",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 149,
+      "id": "k85",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d84a",
+      "decimal": "1.5707963"
+    },
+    {
+      "index": 150,
+      "id": "k85",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 151,
+      "id": "k85",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 152,
+      "id": "k85",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 153,
+      "id": "q87",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe4d75ae9de5262,n:3fe03b5eccdc18e6,n:bfd19f810c5ea89d,n:3fdf87834986698b",
+      "decimal": "0.6512884681456621, 0.5072473527113999, -0.27536035736069114, 0.49264604740314927"
+    },
+    {
+      "index": 154,
+      "id": "b89",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d849",
+      "decimal": "1.5707962999999998"
+    },
+    {
+      "index": 155,
+      "id": "b89",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999d",
+      "decimal": "0.4000000000000002"
+    },
+    {
+      "index": 156,
+      "id": "b89",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 157,
+      "id": "b89",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 158,
+      "id": "k90",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ff921fb4d12d84a",
+      "decimal": "1.5707963"
+    },
+    {
+      "index": 159,
+      "id": "k90",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 160,
+      "id": "k90",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 161,
+      "id": "k90",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 162,
+      "id": "q92",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfbcb7a425a82a4a,n:3fc4fcee9c54962f,n:bfe1b5591baad941,n:3fe9e26063269daf",
+      "decimal": "-0.11217714232785983, 0.16396887429543613, -0.5533872166040866, 0.8088838516750253"
+    },
+    {
+      "index": 163,
+      "id": "b94",
+      "kind": "number",
+      "path": "x",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 164,
+      "id": "b94",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 165,
+      "id": "b94",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 166,
+      "id": "b94",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 167,
+      "id": "k95",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 168,
+      "id": "k95",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 169,
+      "id": "k95",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 170,
+      "id": "k95",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 171,
+      "id": "q97",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfbcb7a425a82a4a,n:3fc4fcee9c54962f,n:bfe1b5591baad941,n:3fe9e26063269daf",
+      "decimal": "-0.11217714232785983, 0.16396887429543613, -0.5533872166040866, 0.8088838516750253"
+    },
+    {
+      "index": 172,
+      "id": "b99",
+      "kind": "number",
+      "path": "x",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 173,
+      "id": "b99",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 174,
+      "id": "b99",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 175,
+      "id": "b99",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 176,
+      "id": "k100",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 177,
+      "id": "k100",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 178,
+      "id": "k100",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 179,
+      "id": "k100",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 180,
+      "id": "q102",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fbcb7a425a82a4a,n:3fc4fcee9c54962f,n:bfe1b5591baad941,n:3fe9e26063269daf",
+      "decimal": "0.11217714232785983, 0.16396887429543613, -0.5533872166040866, 0.8088838516750253"
+    },
+    {
+      "index": 181,
+      "id": "b104",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 182,
+      "id": "b104",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 183,
+      "id": "b104",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 184,
+      "id": "b104",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 185,
+      "id": "k105",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 186,
+      "id": "k105",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 187,
+      "id": "k105",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 188,
+      "id": "k105",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 189,
+      "id": "q107",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fbcb7a425a82a4a,n:3fc4fcee9c54962f,n:bfe1b5591baad941,n:3fe9e26063269daf",
+      "decimal": "0.11217714232785983, 0.16396887429543613, -0.5533872166040866, 0.8088838516750253"
+    },
+    {
+      "index": 190,
+      "id": "b109",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 191,
+      "id": "b109",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 192,
+      "id": "b109",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 193,
+      "id": "b109",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 194,
+      "id": "k110",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 195,
+      "id": "k110",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 196,
+      "id": "k110",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 197,
+      "id": "k110",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 198,
+      "id": "q112",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfbcb7a425a82a4a,n:3fc4fcee9c54962f,n:bfe1b5591baad941,n:3fe9e26063269daf",
+      "decimal": "-0.11217714232785983, 0.16396887429543613, -0.5533872166040866, 0.8088838516750253"
+    },
+    {
+      "index": 199,
+      "id": "b114",
+      "kind": "number",
+      "path": "x",
+      "value": "n:8000000000000000",
+      "decimal": "-0"
+    },
+    {
+      "index": 200,
+      "id": "b114",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 201,
+      "id": "b114",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 202,
+      "id": "b114",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 203,
+      "id": "k115",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 204,
+      "id": "k115",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 205,
+      "id": "k115",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 206,
+      "id": "k115",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 207,
+      "id": "q117",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fbcb7a425a82a4a,n:3fc4fcee9c54962f,n:bfe1b5591baad941,n:3fe9e26063269daf",
+      "decimal": "0.11217714232785983, 0.16396887429543613, -0.5533872166040866, 0.8088838516750253"
+    },
+    {
+      "index": 208,
+      "id": "b119",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 209,
+      "id": "b119",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 210,
+      "id": "b119",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 211,
+      "id": "b119",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 212,
+      "id": "k120",
+      "kind": "number",
+      "path": "x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 213,
+      "id": "k120",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 214,
+      "id": "k120",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 215,
+      "id": "k120",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 216,
+      "id": "q122",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe9e26063269daf,n:3fe1b5591baad941,n:3fc4fcee9c54962e,n:3fbcb7a425a82a4e",
+      "decimal": "0.8088838516750253, 0.5533872166040866, 0.1639688742954361, 0.11217714232785989"
+    },
+    {
+      "index": 217,
+      "id": "b124",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 218,
+      "id": "b124",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 219,
+      "id": "b124",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 220,
+      "id": "b124",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 221,
+      "id": "k125",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 222,
+      "id": "k125",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 223,
+      "id": "k125",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 224,
+      "id": "k125",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XYZ",
+      "decimal": "XYZ"
+    },
+    {
+      "index": 225,
+      "id": "q127",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe9e26063269daf,n:3fe1b5591baad941,n:bfc4fcee9c549630,n:bfbcb7a425a82a46",
+      "decimal": "0.8088838516750253, 0.5533872166040866, -0.16396887429543616, -0.11217714232785977"
+    },
+    {
+      "index": 226,
+      "id": "b129",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ca0000000000000",
+      "decimal": "1.1102230246251565e-16"
+    },
+    {
+      "index": 227,
+      "id": "b129",
+      "kind": "number",
+      "path": "y",
+      "value": "n:c005eec82110f9e5",
+      "decimal": "-2.741592653589793"
+    },
+    {
+      "index": 228,
+      "id": "b129",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fff10c3755526ff",
+      "decimal": "1.9415926535897936"
+    },
+    {
+      "index": 229,
+      "id": "b129",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 230,
+      "id": "k130",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ca1a62633145c07",
+      "decimal": "1.2246467991473532e-16"
+    },
+    {
+      "index": 231,
+      "id": "k130",
+      "kind": "number",
+      "path": "y",
+      "value": "n:c005eec82110f9e5",
+      "decimal": "-2.741592653589793"
+    },
+    {
+      "index": 232,
+      "id": "k130",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fff10c3755526fe",
+      "decimal": "1.9415926535897934"
+    },
+    {
+      "index": 233,
+      "id": "k130",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YXZ",
+      "decimal": "YXZ"
+    },
+    {
+      "index": 234,
+      "id": "q132",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe9e26063269daf,n:bfe1b5591baad941,n:3fc4fcee9c54962e,n:3fbcb7a425a82a4e",
+      "decimal": "0.8088838516750253, -0.5533872166040866, 0.1639688742954361, 0.11217714232785989"
+    },
+    {
+      "index": 235,
+      "id": "b134",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ca4000000000000",
+      "decimal": "1.3877787807814457e-16"
+    },
+    {
+      "index": 236,
+      "id": "b134",
+      "kind": "number",
+      "path": "y",
+      "value": "n:c005eec82110f9e5",
+      "decimal": "-2.741592653589793"
+    },
+    {
+      "index": 237,
+      "id": "b134",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fff10c3755526ff",
+      "decimal": "1.9415926535897936"
+    },
+    {
+      "index": 238,
+      "id": "b134",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 239,
+      "id": "k135",
+      "kind": "number",
+      "path": "x",
+      "value": "n:3ca1a62633145c07",
+      "decimal": "1.2246467991473532e-16"
+    },
+    {
+      "index": 240,
+      "id": "k135",
+      "kind": "number",
+      "path": "y",
+      "value": "n:c005eec82110f9e5",
+      "decimal": "-2.741592653589793"
+    },
+    {
+      "index": 241,
+      "id": "k135",
+      "kind": "number",
+      "path": "z",
+      "value": "n:3fff10c3755526fe",
+      "decimal": "1.9415926535897934"
+    },
+    {
+      "index": 242,
+      "id": "k135",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZXY",
+      "decimal": "ZXY"
+    },
+    {
+      "index": 243,
+      "id": "q137",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe9e26063269daf,n:bfe1b5591baad941,n:bfc4fcee9c549630,n:bfbcb7a425a82a46",
+      "decimal": "0.8088838516750253, -0.5533872166040866, -0.16396887429543616, -0.11217714232785977"
+    },
+    {
+      "index": 244,
+      "id": "b139",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 245,
+      "id": "b139",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 246,
+      "id": "b139",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 247,
+      "id": "b139",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 248,
+      "id": "k140",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 249,
+      "id": "k140",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999a",
+      "decimal": "0.4"
+    },
+    {
+      "index": 250,
+      "id": "k140",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333333",
+      "decimal": "-1.2"
+    },
+    {
+      "index": 251,
+      "id": "k140",
+      "kind": "string",
+      "path": "order",
+      "value": "s:ZYX",
+      "decimal": "ZYX"
+    },
+    {
+      "index": 252,
+      "id": "q142",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe9e26063269daf,n:bfe1b5591baad941,n:bfc4fcee9c549630,n:3fbcb7a425a82a4e",
+      "decimal": "0.8088838516750253, -0.5533872166040866, -0.16396887429543616, 0.11217714232785989"
+    },
+    {
+      "index": 253,
+      "id": "b144",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 254,
+      "id": "b144",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 255,
+      "id": "b144",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333334",
+      "decimal": "-1.2000000000000002"
+    },
+    {
+      "index": 256,
+      "id": "b144",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 257,
+      "id": "k145",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 258,
+      "id": "k145",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 259,
+      "id": "k145",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 260,
+      "id": "k145",
+      "kind": "string",
+      "path": "order",
+      "value": "s:YZX",
+      "decimal": "YZX"
+    },
+    {
+      "index": 261,
+      "id": "q147",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe9e26063269daf,n:3fe1b5591baad941,n:3fc4fcee9c54962e,n:bfbcb7a425a82a46",
+      "decimal": "0.8088838516750253, 0.5533872166040866, 0.1639688742954361, -0.11217714232785977"
+    },
+    {
+      "index": 262,
+      "id": "b149",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 263,
+      "id": "b149",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 264,
+      "id": "b149",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 265,
+      "id": "b149",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    },
+    {
+      "index": 266,
+      "id": "k150",
+      "kind": "number",
+      "path": "x",
+      "value": "n:400921fb54442d18",
+      "decimal": "3.141592653589793"
+    },
+    {
+      "index": 267,
+      "id": "k150",
+      "kind": "number",
+      "path": "y",
+      "value": "n:3fd999999999999b",
+      "decimal": "0.4000000000000001"
+    },
+    {
+      "index": 268,
+      "id": "k150",
+      "kind": "number",
+      "path": "z",
+      "value": "n:bff3333333333332",
+      "decimal": "-1.1999999999999997"
+    },
+    {
+      "index": 269,
+      "id": "k150",
+      "kind": "string",
+      "path": "order",
+      "value": "s:XZY",
+      "decimal": "XZY"
+    }
+  ]
+}

@@ -14,7 +14,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -114,6 +114,26 @@ function page(request: Record<string, unknown>): string {
   ].join("");
 }
 
+/**
+ * A `three` addon from the pinned copy, by path, resolving its own relative imports the same way.
+ *
+ * A hand-written list of addon names drifts from the pinned tree's own import graph: in r187
+ * `tsl/display/TRAANode.js` imports `../utils/TAAUtils.js`, which no list entry named, so the
+ * page's dynamic import 404'd and the fixture failed with the module error instead of the cause.
+ * Serving the directory answers a new sibling without a harness change; a path that is not there
+ * fails closed with the file name rather than a 404 the browser reports as a broken import.
+ */
+function addonSource(pathname: string): [string, string] | undefined {
+  const prefix = "/addons/";
+  if (!pathname.startsWith(prefix)) return undefined;
+  const root = path.join(threeBuildDir(), "..", "examples", "jsm");
+  const file = path.resolve(root, pathname.slice(prefix.length));
+  if (!file.startsWith(`${root}${path.sep}`) || !file.endsWith(".js"))
+    throw new Error(`TN_FIXTURE_ADDON_INVALID: ${pathname} is not a .js under ${root}`);
+  if (!existsSync(file)) throw new Error(`TN_FIXTURE_ADDON_MISSING: ${file}`);
+  return ["text/javascript", readFileSync(file, "utf8")];
+}
+
 /** Serves the page, the in-page module and the two `three/webgpu` build files from one origin. */
 async function withServer(
   fixtures: ReadonlyMap<string, IFixture>,
@@ -170,23 +190,8 @@ async function withServer(
     });
     served.set("/core/probe-volume.js", ["text/javascript", probes.outputFiles[0].text]);
   }
-  // GLTFLoader and the two helpers it imports, resolving `three` through the page's import map; and
-  // every glTF a fixture loads, from the repository.
-  for (const addon of [
-    "loaders/GLTFLoader.js",
-    "tsl/display/TRAANode.js",
-    "tsl/display/GTAONode.js",
-    "tsl/display/DenoiseNode.js",
-    "tsl/display/BloomNode.js",
-    "tsl/display/SMAANode.js",
-    "math/SimplexNoise.js",
-    "utils/BufferGeometryUtils.js",
-    "utils/SkeletonUtils.js",
-  ])
-    served.set(`/addons/${addon}`, [
-      "text/javascript",
-      readFileSync(path.join(build, "..", "examples", "jsm", addon), "utf8"),
-    ]);
+  // GLTFLoader and every other addon a fixture or an addon reaches, resolving `three` through the
+  // page's import map; and every glTF a fixture loads, from the repository.
   for (const fixture of fixtures.values())
     for (const op of fixture.ops)
       if (op.op === "gltf")
@@ -202,7 +207,7 @@ async function withServer(
         ? fixture === undefined
           ? undefined
           : (["text/html", page(requestOf(fixture))] as [string, string])
-        : served.get(url.pathname);
+        : (served.get(url.pathname) ?? addonSource(url.pathname));
     if (file === undefined) {
       response.writeHead(404);
       response.end("not found");

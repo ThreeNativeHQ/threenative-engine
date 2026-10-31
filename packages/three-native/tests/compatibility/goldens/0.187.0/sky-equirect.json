@@ -1,0 +1,27 @@
+{
+  "name": "sky-equirect",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — starter setupSky: sRGB equirect background/environment, intensity 2.5, sharp cubemap, PMREM fill, rotated asymmetric sky. Red control: clear backgroundTexture (sky black); clear environment (both spheres black).",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:79556b4a92580aaacc6317423537b788866b4a1707f2074d2f1a7dcf2ae0672c",
+      "decimal": "79556b4a92580aaacc6317423537b788866b4a1707f2074d2f1a7dcf2ae0672c"
+    }
+  ],
+  "render": {
+    "png": "sky-equirect.png",
+    "pngSha256": "79556b4a92580aaacc6317423537b788866b4a1707f2074d2f1a7dcf2ae0672c",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

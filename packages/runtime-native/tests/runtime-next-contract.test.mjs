@@ -1043,15 +1043,15 @@ test.skipIf(
   const generated = read(generatedAndroidBundle);
   assert.match(generated, new RegExp(`THREENATIVE_ANDROID_NATIVE_SMOKE_SOURCE_SHA256:${expectedHash}`));
   assert.match(generated, /THREENATIVE_ANDROID_NATIVE_SMOKE_ENTRY:examples\/native-smoke\/src\/game\.ts/);
-  for (const marker of ['TN_NATIVE_SMOKE_THREE:0.185.1', 'TN_NATIVE_SMOKE_READY:webgpu', 'TN_NATIVE_SMOKE_FIRST_FRAME', 'TN_NATIVE_SMOKE_300_FRAMES:300']) {
+  for (const marker of ['TN_NATIVE_SMOKE_THREE:0.187.0', 'TN_NATIVE_SMOKE_READY:webgpu', 'TN_NATIVE_SMOKE_FIRST_FRAME', 'TN_NATIVE_SMOKE_300_FRAMES:300']) {
     assert.match(generated, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 
   const meta = JSON.parse(read(generatedAndroidMeta));
   const inputPaths = Object.keys(meta.inputs || {}).join('\n');
   assert.equal(meta.publicApiPackage, '@threenative/core');
-  assert.equal(meta.catalogThree, '0.185.1');
-  assert.equal(meta.installedThree, '0.185.1');
+  assert.equal(meta.catalogThree, '0.187.0');
+  assert.equal(meta.installedThree, '0.187.0');
   assert.match(inputPaths, /examples\/native-smoke\/src\/game\.ts/);
   assert.match(inputPaths, /node_modules\/three\/package\.json/);
 

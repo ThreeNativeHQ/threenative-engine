@@ -1,0 +1,35 @@
+{
+  "name": "materials-vertex-colors",
+  "threeVersion": "0.187.0",
+  "adaptedFrom": "original — vertexColors: an rgb color attribute on a MeshBasicMaterial plane and on a lit MeshStandardMaterial box, an rgba one on a transparent plane (alpha multiplies opacity), and a control plane whose material leaves vertexColors off",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "basicMat",
+      "kind": "boolean",
+      "path": "vertexColors",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:c62bd3c8b1bcb13ff66fb84e10101b84e411408f30fcc8e53eaa2ded5c4aafb8",
+      "decimal": "c62bd3c8b1bcb13ff66fb84e10101b84e411408f30fcc8e53eaa2ded5c4aafb8"
+    }
+  ],
+  "render": {
+    "png": "materials-vertex-colors.png",
+    "pngSha256": "c62bd3c8b1bcb13ff66fb84e10101b84e411408f30fcc8e53eaa2ded5c4aafb8",
+    "width": 320,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}
