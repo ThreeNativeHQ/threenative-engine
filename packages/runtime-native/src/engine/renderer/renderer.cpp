@@ -2060,7 +2060,6 @@ void Renderer::sweepTextures() {
             if (e.texture) wgpuTextureRelease(e.texture);
             if (e.sourceCube) wgpuTextureRelease(e.sourceCube);
             if (e.sampler) wgpuSamplerRelease(e.sampler);
-            if (e.sourceSampler) wgpuSamplerRelease(e.sourceSampler);
             if (e.blitSampler) wgpuSamplerRelease(e.blitSampler);
             environments_.erase(env);
         }
@@ -2084,7 +2083,6 @@ void Renderer::releaseEnvironments() {
         if (env.texture) wgpuTextureRelease(env.texture);
         if (env.sourceCube) wgpuTextureRelease(env.sourceCube);
         if (env.sampler) wgpuSamplerRelease(env.sampler);
-        if (env.sourceSampler) wgpuSamplerRelease(env.sourceSampler);
         if (env.blitSampler) wgpuSamplerRelease(env.blitSampler);
     }
     environments_.clear();
@@ -2193,7 +2191,6 @@ void Renderer::beginEnvironment(const Texture& equirect) {
     if (env.texture) wgpuTextureRelease(env.texture);
     if (env.sourceCube) wgpuTextureRelease(env.sourceCube);
     if (env.sampler) wgpuSamplerRelease(env.sampler);
-    if (env.sourceSampler) wgpuSamplerRelease(env.sourceSampler);
     if (env.blitSampler) wgpuSamplerRelease(env.blitSampler);
     env = EnvironmentGpu{};
     env.source = &equirect;
@@ -2256,21 +2253,19 @@ void Renderer::beginEnvironment(const Texture& equirect) {
     env.targetViews = faceViews(env.texture, env.maxLod + 1);
     env.sourceViews = faceViews(env.sourceCube, sourceMips);
 
-    // The material reads the PMREM through a trilinear cube sampler with the whole chain reachable:
+    // Both cubes are read through a trilinear clamp sampler with the whole chain reachable:
     // CubeRenderTarget's LinearMipmapLinearFilter, and a zeroed C descriptor would clamp lod to 0.
-    const auto sampler = [&](WGPUMipmapFilterMode mipmap, bool cube) {
+    const auto sampler = [&](WGPUMipmapFilterMode mipmap) {
         WGPUSamplerDescriptor desc = {};
         desc.magFilter = desc.minFilter = WGPUFilterMode_Linear;
         desc.mipmapFilter = mipmap;
         desc.addressModeU = desc.addressModeV = desc.addressModeW = WGPUAddressMode_ClampToEdge;
         desc.maxAnisotropy = 1;
         desc.lodMaxClamp = 32;
-        (void)cube;
         return wgpuDeviceCreateSampler(device_, &desc);
     };
-    env.sampler = sampler(WGPUMipmapFilterMode_Linear, true);
-    env.sourceSampler = sampler(WGPUMipmapFilterMode_Linear, true);
-    env.blitSampler = sampler(WGPUMipmapFilterMode_Nearest, false);
+    env.sampler = sampler(WGPUMipmapFilterMode_Linear);
+    env.blitSampler = sampler(WGPUMipmapFilterMode_Nearest);
     buildEnvironmentPipelines();
 
     // Three's order: the equirect becomes the source cube's level 0, the source cube grows its mip
@@ -2307,7 +2302,7 @@ void Renderer::beginEnvironment(const Texture& equirect) {
             : 0.0;
         const uint32_t size = cubeSize >> lod;
         for (uint32_t face = 0; face < 6; ++face)
-            passes.push_back({env.targetViews[size_t(lod) * 6 + face], env.sourceView, env.sourceSampler,
+            passes.push_back({env.targetViews[size_t(lod) * 6 + face], env.sourceView, env.sampler,
                               integrate ? envIntegrationPipeline_ : envGgxPipeline_, size,
                               integrate ? kPmremIntegrationSize * kPmremIntegrationSize * 3u : kPmremGgxSamples,
                               roughness, float(bias), sourceLod, face});

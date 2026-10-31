@@ -1033,8 +1033,7 @@ private:
         WGPUTextureView view = nullptr;        // its cube view, every mip level
         WGPUTexture sourceCube = nullptr;      // PMREMGenerator's source target, with a full mip chain
         WGPUTextureView sourceView = nullptr;  // its cube view, every mip level
-        WGPUSampler sampler = nullptr;         // cube, trilinear: what the material samples with
-        WGPUSampler sourceSampler = nullptr;   // cube, trilinear: what the generator samples with
+        WGPUSampler sampler = nullptr;         // cube, trilinear: the PMREM and the source it filters
         WGPUSampler blitSampler = nullptr;     // 2D, linear: the source mip chain's downsample
         std::vector<WGPUTextureView> targetViews;  // PMREM [lod * 6 + face], one mip of one layer
         std::vector<WGPUTextureView> sourceViews;  // source [mip * 6 + face]
