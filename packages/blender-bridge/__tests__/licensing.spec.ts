@@ -9,7 +9,9 @@ import { describe, expect, it } from "vitest";
  * nothing else in this repository would notice.
  */
 
-const gplRoot = path.resolve("packages/blender-bridge/gpl");
+// From this file, not the working directory: `pnpm test` runs the spec from the package directory.
+const packageRoot = path.resolve(import.meta.dirname, "..");
+const gplRoot = path.join(packageRoot, "gpl");
 
 function pythonFiles(directory: string): readonly string[] {
   if (!existsSync(directory)) return [];
@@ -35,13 +37,13 @@ describe("blender-bridge GPL boundary", () => {
   });
 
   it("should keep every Python file this package ships under gpl/", () => {
-    const stray = pythonFiles(path.resolve("packages/blender-bridge/src"));
+    const stray = pythonFiles(path.join(packageRoot, "src"));
     expect(stray).toEqual([]);
   });
 
   it("should keep the package manifest MIT and ship the gpl directory", () => {
     const manifest = JSON.parse(
-      readFileSync(path.resolve("packages/blender-bridge/package.json"), "utf8"),
+      readFileSync(path.join(packageRoot, "package.json"), "utf8"),
     ) as { files?: string[]; license?: string };
     expect(manifest.license).toBe("MIT");
     expect(manifest.files).toContain("gpl");
