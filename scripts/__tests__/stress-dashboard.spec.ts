@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const { breakPoint, familyOf, loadOf, rampCells } = await import(
+const { breakPoint, familyOf, loadOf, rampCells, rollingMedian, trendSeries } = await import(
   new URL("../stress-dashboard.mjs", import.meta.url).href
 );
 
@@ -103,5 +103,51 @@ describe("stress dashboard: arm families", () => {
     // One family (or none) keeps today's single series.
     const one = rampCells([row(1, "load=2&arm=tn-l2", 20), row(2, "stress", 17)], ctx);
     expect(one).toHaveLength(1);
+  });
+});
+
+describe("stress dashboard: trend series", () => {
+  const row = (
+    id: number,
+    engine: string,
+    variant: string,
+    pass: string | undefined,
+    peak = 3,
+  ) => ({
+    id,
+    engine,
+    variant,
+    pass,
+    shadow: variant.includes("plainShadow") ? "plain" : "virtual",
+    load: { peak },
+    metrics: { fps: 60 },
+  });
+  const ctx = { loadVoid: 6, shadowOf: (r: { shadow: string }) => r.shadow };
+
+  it("makes one series per scene and pass at load 1, without ramp, vanilla or void rows", () => {
+    const series = trendSeries(
+      [
+        row(1, "threenative-wasm", "stress", "vsync"),
+        row(2, "threenative-wasm", "stress", "uncapped"),
+        row(3, "threenative-wasm", "plainShadow&arm=a", "uncapped"),
+        row(4, "threenative-wasm", "stress", "vsync"),
+        row(5, "threenative-wasm", "plainShadow&load=4&arm=tn-l4", "vsync"),
+        row(6, "three-vanilla", "stress", "vsync"),
+        row(7, "threenative-wasm", "stress", "vsync", 6.5),
+        row(8, "threenative-wasm", "stress", undefined),
+      ],
+      ctx,
+    );
+    expect(series.map((s: { key: string }) => s.key)).toEqual([
+      "virtual|vsync",
+      "virtual|uncapped",
+      "plain|uncapped",
+    ]);
+    expect(series[0].rows.map((r: { id: number }) => r.id)).toEqual([1, 4]);
+  });
+
+  it("takes a centered rolling median of 5, clipped at the ends", () => {
+    expect(rollingMedian([1, 100, 3, 4, 5, 6], 5)).toEqual([3, 3.5, 4, 5, 4.5, 5]);
+    expect(rollingMedian([], 5)).toEqual([]);
   });
 });

@@ -338,7 +338,120 @@ function ladder(lanes) {
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Presented p95 against the 120, 90 and 60 fps rungs">${rungs}${body}</svg>`;
 }
 
-function overviewTab(rows, ctx, extra) {
+const TREND_ORDER = [
+  ["virtual", "vsync"],
+  ["virtual", "uncapped"],
+  ["plain", "vsync"],
+  ["plain", "uncapped"],
+];
+const TREND_COLOR = ["--s1", "--s2", "--s3", "--s4"];
+
+/**
+ * The trend series: ThreeNative (Wasm) at load 1, one per scene and pass, so a line never jumps between setups.
+ * Rows from before the pass field (no pass, no host-load record) are left out, with ramp, vanilla and void rows.
+ */
+export function trendSeries(rows, { loadVoid, shadowOf }) {
+  const groups = new Map();
+  for (const row of rows) {
+    if (row.engine !== "threenative-wasm" || loadOf(row.variant) > 1 || isVoid(row, loadVoid))
+      continue;
+    if (passOf(row) === null) continue;
+    const key = `${shadowOf(row)}|${passOf(row)}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  return TREND_ORDER.map(([shadow, pass], index) => ({
+    key: `${shadow}|${pass}`,
+    label: `${SHADOW[shadow]} · ${pass}`,
+    color: `var(${TREND_COLOR[index]})`,
+    rows: groups.get(`${shadow}|${pass}`) ?? [],
+  })).filter((series) => series.rows.length > 0);
+}
+
+/** A centered rolling median, the window clipped at both ends. */
+export const rollingMedian = (values, window = 5) =>
+  values.map((_, i) => {
+    const part = values
+      .slice(Math.max(0, i - (window >> 1)), i + (window >> 1) + 1)
+      .sort((a, b) => a - b);
+    const mid = part.length >> 1;
+    return part.length % 2 === 1 ? part[mid] : (part[mid - 1] + part[mid]) / 2;
+  });
+
+/** One goal over the rows, a line per series on a log scale. A value off the scale (0) is a marker on the edge. */
+function trendChart(goal, series, order) {
+  const [W, H, pl, pr, pt, pb] = [400, 190, 36, 8, 12, 22];
+  const at = new Map(order.map((id, i) => [id, i]));
+  const x = (id) => pl + ((W - pl - pr) * ((at.get(id) ?? 0) + 0.5)) / order.length;
+  const all = series.flatMap((s) => s.rows.map((r) => r.metrics[goal.key]));
+  const positive = [...all, goal.goal].filter((v) => typeof v === "number" && v > 0);
+  if (positive.length === 0) return "";
+  const lo = Math.min(...positive) / 1.25;
+  const hi = Math.max(...positive) * 1.25;
+  const y = (v) => H - pb - ((H - pt - pb) * Math.log(Math.max(v, lo) / lo)) / Math.log(hi / lo);
+  const decades = [0.1, 1, 10, 100, 1000]
+    .flatMap((d) => [d, 2 * d, 5 * d])
+    .filter((v) => v > lo * 1.05 && v < hi / 1.05);
+  const grid = decades
+    .map(
+      (v) =>
+        `<line class="grid" x1="${pl}" x2="${W - pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="tick" x="${pl - 4}" y="${y(v).toFixed(1)}" text-anchor="end" dominant-baseline="middle">${v}</text>`,
+    )
+    .join("");
+  const step = Math.ceil(order.length / 8);
+  const xs = order
+    .map((id, i) =>
+      i % step === 0
+        ? `<text class="tick" x="${x(id).toFixed(1)}" y="${H - 6}" text-anchor="middle">#${id}</text>`
+        : "",
+    )
+    .join("");
+  const gy = y(goal.goal).toFixed(1);
+  const goalLine = `<line class="goal" x1="${pl}" x2="${W - pr}" y1="${gy}" y2="${gy}"/><text class="goaltext" x="${pl + 3}" y="${Number(gy) - 3}">goal ${goal.better === "lower" ? "≤" : "≥"} ${goal.goal} ${esc(goal.unit)}</text>`;
+  const marks = series
+    .map((s) => {
+      const known = s.rows.filter((r) => typeof r.metrics[goal.key] === "number");
+      const pts = (rowsOf, f) =>
+        rowsOf.map((r) => `${x(r.id).toFixed(1)},${y(f(r)).toFixed(1)}`).join(" ");
+      const med = rollingMedian(known.map((r) => r.metrics[goal.key]));
+      const line =
+        known.length > 1
+          ? `<polyline fill="none" stroke="${s.color}" stroke-width="1.5" stroke-opacity=".55" points="${pts(known, (r) => r.metrics[goal.key])}"/>`
+          : "";
+      const median =
+        known.length > 4
+          ? `<polyline fill="none" stroke="${s.color}" stroke-width="1.5" stroke-dasharray="4 3" points="${known.map((r, i) => `${x(r.id).toFixed(1)},${y(med[i]).toFixed(1)}`).join(" ")}"/>`
+          : "";
+      const dots = known
+        .map((r) => {
+          const v = r.metrics[goal.key];
+          const title = `<title>#${r.id} ${esc(armOf(r) ?? "")}: ${num(v, 2)} ${esc(goal.unit)} · ${esc(s.label)}</title>`;
+          return v > 0
+            ? `<circle cx="${x(r.id).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.5" fill="${s.color}">${title}</circle>`
+            : `<path d="M${x(r.id).toFixed(1)} ${H - pb} l-3 -5 h6z" fill="${s.color}">${title}</path>`;
+        })
+        .join("");
+      return line + median + dots;
+    })
+    .join("");
+  return `<figure class="card"><figcaption>${esc(goal.label)} <span class="dim">(${goal.better} is better, log scale)</span></figcaption>
+<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(goal.label)} per iteration, goal ${goal.goal} ${esc(goal.unit)}">${grid}${goalLine}${marks}${xs}</svg></figure>`;
+}
+
+/** The trend charts: one line per setup (scene and pass), load 1 only. The Load ramp tab has the rest. */
+function trendSection(rows, ctx, goals) {
+  const series = trendSeries(rows, ctx);
+  if (series.length === 0) return "";
+  const order = [...new Set(series.flatMap((s) => s.rows.map((r) => r.id)))].sort((a, b) => a - b);
+  const legend = series
+    .map(
+      (s) =>
+        `<span class="inline-flex items-center gap-1"><i class="inline-block h-2 w-2 rounded-full" style="background:${s.color}"></i>${esc(s.label)}</span>`,
+    )
+    .join("");
+  return `<details open><summary>Trend per iteration</summary><div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-dim">${legend}<span>ThreeNative (Wasm), load 1 only; one line per setup. Dashed: rolling median of 5. Triangle on the bottom edge: a value of 0. Hover a dot for the row and arm.</span></div><div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${goals.map((goal) => trendChart(goal, series, order)).join("")}</div></details>`;
+}
+
+function overviewTab(rows, ctx, extra, goals) {
   const lanes = [];
   for (const shadow of ["virtual", "plain"])
     for (const pass of PASSES) lanes.push(laneOf(rows, ctx, shadow, pass));
@@ -366,7 +479,8 @@ function overviewTab(rows, ctx, extra) {
   return `<div class="grid items-start gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
 <figure class="card"><figcaption>120 fps goal ladder · presented p95 <span class="dim">(ms, load 1)</span></figcaption>${ladder(lanes)}<p class="mt-1 text-[11px] text-dim"><span style="color:var(--s1)">●</span> latest develop baseline · <span style="color:var(--ok)">◆</span> best kept arm · <span style="color:var(--s3)">■</span> vanilla three.js (plain sun only) · rungs 8.33 / 11.1 / 16.67 ms</p></figure>
 <div><h2>Where it stands</h2>${table}<p class="mt-1 text-[11px] text-dim">VSM is <code>?stress</code>; plain sun is <code>?stress&amp;plainShadow</code>. A vsync pass floors at 16.7 ms on a 60 Hz display, so only the uncapped pass can show 90 or 120 fps. Baseline is the latest <code>develop</code>, <code>head</code> or <code>stack*</code> arm.</p></div></div>
-${extra}`;
+${extra}
+${trendSection(rows, ctx, goals)}`;
 }
 
 const DELTAS = [
@@ -579,7 +693,7 @@ export function renderDashboard(ledger, now, ctx, parts) {
 <header class="mb-2 flex flex-wrap items-baseline gap-x-3"><h1 class="m-0 text-lg font-semibold">Stress lab</h1><span class="text-[11.5px] text-dim">${esc(parts.header)} Snapshot ${esc(now.toISOString())}.</span></header>
 <p class="m-0 mb-2 text-[11px] text-dim">${esc(stats)}. The <code>pnpm dashboard</code> Stress lab tab renders <code>docs/stress-loop/ledger.json</code> on each load.</p>
 <nav class="mb-3 flex overflow-x-auto border-b border-line" role="tablist" aria-label="Stress lab sections">${nav}</nav>
-<section data-panel="overview">${overviewTab(rows, ctx, parts.overview)}</section>
+<section data-panel="overview">${overviewTab(rows, ctx, parts.overview, parts.goals)}</section>
 <section data-panel="ramp" hidden>${rampTab(rows, ctx)}</section>
 <section data-panel="arms" hidden>${armsTab(rows, ctx, parts.comparison)}</section>
 <section data-panel="ledger" hidden>${ledgerTab(rows, ctx)}</section>
