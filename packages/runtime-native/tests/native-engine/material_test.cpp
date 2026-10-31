@@ -784,22 +784,4 @@ void depthTextureLowering() {
 
 }  // namespace
 
-// A sun's shadow lookup adds the receiver-plane bias over PCFSoftShadowFilter's 1.5-texel reach, so a floor
-// under a low sun stops shading itself in rings; a spot light's perspective map keeps three's constant bias.
-static void sunReceiverPlaneBias() {
-    const auto fragment = [](const char* kinds) {
-        LightLayout layout;
-        layout.kinds = kinds;
-        layout.softShadows = true;
-        const auto programs = buildStandard(StandardMaterial{}, VertexVariant{}, layout);
-        CHECK(programs.diagnostics.empty());
-        const WgslModule module = WgslEmitter::emit(programs.fragment);
-        CHECK(module.ok());
-        return module.code;
-    };
-    const std::string sun = fragment("D"), spot = fragment("S");
-    CHECK(sun.find("1.5") != std::string::npos);
-    CHECK(spot.find("1.5") == std::string::npos);
-}
-
-TN_TEST_MAIN({"sun_receiver_plane_bias", sunReceiverPlaneBias}, {"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"alpha_hash", alphaHash}, {"ssr_passes", ssrPasses}, {"denoise_reads_raw_normals", denoiseReadsRawNormals}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

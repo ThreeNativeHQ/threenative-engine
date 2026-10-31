@@ -849,48 +849,15 @@ static ExprId softShadowSamples(Program& f, Tsl& t, uint32_t map, ExprId uv, Exp
     return f.mul(f.add(f.add(f.add(row1, row2), row3), row4), t.f(1.0f / 9.0f));
 }
 
-// A sun's receiver-plane bias: how far the receiver's own plane rises towards the light across the filter's
-// footprint, in map depth. A constant bias that suits a high sun is a fraction of that rise under a low one,
-// so the floor shaded itself in rings and a cylinder in stripes. Unreal adds the same term to every
-// directional shadow lookup, 2 * max(0, dot(DepthSlopeUV, TexelOffset)) from the geometric normal
-// (UE 5.8.3: Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjectionDirectional.ush:16-36 and
-// :105-110); the virtual shadow path here already does (slopeBias in virtualShadowFactor). The map is
-// orthographic, so its rows map a world step straight to uv and depth: on the plane n.d = 0 the depth
-// changes by -(n.gu / |gu|^2) / (n.gz / |gz|^2) per uv unit along u (likewise v). `texels` is the
-// footprint's reach in texels; the guard on n.gz is the virtual path's, 1e-4 of the normal's length.
-static ExprId sunReceiverPlaneBias(Program& f, Tsl& t, ExprId matrix, ExprId normalWorld, ExprId mapSize, ExprId texels) {
-    const auto column = [&](float x, float y, float z) {
-        return f.mul(matrix, f.construct(Type::vec(4), {t.f(x), t.f(y), t.f(z), t.f(0)}));
-    };
-    const ExprId cx = column(1, 0, 0), cy = column(0, 1, 0), cz = column(0, 0, 1);
-    const auto row = [&](const char* lane) {
-        return f.construct(Type::vec(3), {f.swizzle(cx, lane), f.swizzle(cy, lane), f.swizzle(cz, lane)});
-    };
-    const ExprId gu = row("x"), gv = row("y"), gz = row("z");
-    const ExprId along = f.call("max", {f.call("abs", {t.dot(normalWorld, gz)}),
-                                        f.mul(f.mul(f.call("length", {normalWorld}), f.call("length", {gz})), t.f(1e-4f))});
-    const ExprId rise = f.add(f.div(f.call("abs", {t.dot(normalWorld, gu)}), t.dot(gu, gu)),
-                              f.div(f.call("abs", {t.dot(normalWorld, gv)}), t.dot(gv, gv)));
-    return f.mul(f.div(f.mul(rise, t.dot(gz, gz)), along), f.div(texels, f.swizzle(mapSize, "x")));
-}
-
-static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool soft, bool leaf,
-                           bool sun) {
+static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool soft, bool leaf) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("shadow" + std::to_string(index));
     const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
-    const ExprId matrix = f.uniform(at + "ShadowMatrix", Type::mat(4, 4));
-    const ExprId shadowPosition = f.mul(matrix, f.construct(Type::vec(4), {world, t.f(1)}));
+    const ExprId shadowPosition =
+        f.mul(f.uniform(at + "ShadowMatrix", Type::mat(4, 4)), f.construct(Type::vec(4), {world, t.f(1)}));
     const ExprId projected = f.div(f.swizzle(shadowPosition, "xyz"), f.swizzle(shadowPosition, "w"));
     const ExprId x = f.swizzle(projected, "x"), y = t.oneMinus(f.swizzle(projected, "y"));
-    ExprId z = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
-    if (sun) {
-        // PCFSoftShadowFilter reads the 3x3 texels around the snapped uv, 1.5 texels each way; the Vogel
-        // disk reaches `radius` texels plus the tap's own texel.
-        const ExprId texels = soft ? t.f(1.5f)
-                                   : f.add(f.call("max", {f.uniform(at + "ShadowRadius", Type::f32()), t.f(0)}), t.f(1));
-        z = f.sub(z, sunReceiverPlaneBias(f, t, matrix, normalWorld, f.uniform(at + "ShadowMapSize", Type::vec(2)), texels));
-    }
+    const ExprId z = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
     const ExprId uv = f.construct(Type::vec(2), {x, y});
     ExprId shadow = kInvalid;
     if (soft) {
@@ -1383,7 +1350,7 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     }
     if (kind >= 'A' && kind <= 'Z') {
         const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld, leaf)
-                                          : shadowFactor(f, t, index, positionWorld, normalWorld, softShadows, leaf, kind == 'D');
+                                          : shadowFactor(f, t, index, positionWorld, normalWorld, softShadows, leaf);
         color = f.mul(color, shadow); // colorNode.mul(shadowNode)
         kind = static_cast<char>(kind - 'A' + 'a');
     }
