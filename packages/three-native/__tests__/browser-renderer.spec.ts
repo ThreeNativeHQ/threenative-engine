@@ -789,7 +789,13 @@ describe("the Wasm engine's startup presentation hold", () => {
     Reflect.set(module, "_tnw_web_set_presentation_hold", (held: number) => hold.push(held));
     const renderer = new Renderer({ canvas }) as {
       readonly info: {
-        engine: { startup: { shadowInputsReady: boolean; worldSubmissions: number } };
+        engine: {
+          startup: {
+            shadowInputsReady: boolean;
+            worldPresented: boolean;
+            worldSubmissions: number;
+          };
+        };
       };
       init(): Promise<unknown>;
       render(scene: unknown, camera: unknown): void;
@@ -799,7 +805,11 @@ describe("the Wasm engine's startup presentation hold", () => {
     };
     await renderer.init();
     const startup = (): unknown => renderer.info.engine.startup;
-    expect(startup()).toEqual({ shadowInputsReady: false, worldSubmissions: 0 });
+    expect(startup()).toEqual({
+      shadowInputsReady: false,
+      worldPresented: true,
+      worldSubmissions: 0,
+    });
 
     renderer.setPresentationHeld(true);
     expect(hold).toEqual([1]);
@@ -807,7 +817,11 @@ describe("the Wasm engine's startup presentation hold", () => {
     // pages and feeds the meter, so skipping it would hold the cover waiting for work nothing else starts.
     renderer.render(scene, camera);
     expect(render).toHaveBeenCalledTimes(1);
-    expect(startup()).toEqual({ shadowInputsReady: true, worldSubmissions: 1 });
+    expect(startup()).toEqual({
+      shadowInputsReady: true,
+      worldPresented: true,
+      worldSubmissions: 1,
+    });
 
     // A frame the gate declined never reached the engine, and the loading cover's overlay is not a world
     // frame: neither may read as the startup's first one.
@@ -820,13 +834,30 @@ describe("the Wasm engine's startup presentation hold", () => {
     renderer.renderOverlay(scene, camera);
     expect(render).toHaveBeenCalledTimes(2);
     expect(render.mock.calls[1]?.[6]).toBe(1);
-    expect(startup()).toEqual({ shadowInputsReady: true, worldSubmissions: 1 });
+    expect(startup()).toEqual({
+      shadowInputsReady: true,
+      worldPresented: true,
+      worldSubmissions: 1,
+    });
 
     // Engaging the same hold twice does not stack, and only this renderer's own dispose releases it.
     renderer.setPresentationHeld(true);
     expect(hold).toEqual([1]);
+
+    // Past the release the next world frame is the one the player sees: it counts as presented only once the host
+    // says the GPU finished it (field 86), and a presented one costs no further host call.
+    renderer.setPresentationHeld(false);
+    expect(startup()).toMatchObject({ worldPresented: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.render(scene, camera);
+    expect(startup()).toMatchObject({ worldPresented: false });
+    fields[86] = 1;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.render(scene, camera);
+    expect(startup()).toMatchObject({ worldPresented: true });
+    renderer.setPresentationHeld(true);
     renderer.dispose();
-    expect(hold).toEqual([1, 0]);
+    expect(hold).toEqual([1, 0, 1, 0]);
   });
 });
 
@@ -1700,7 +1731,8 @@ describe("debug renderer observations", () => {
     renderer.setPresentationHeld(false);
     frame.mockClear();
     renderer.render(scene, camera);
-    expect(frame.mock.calls).toHaveLength(38);
+    // One more (field 86) while the first uncovered frame has not finished on the GPU.
+    expect(frame.mock.calls).toHaveLength(39);
   });
 });
 

@@ -1584,6 +1584,16 @@ export function rendererFrameGateSkips(raw: unknown): number | undefined {
 }
 
 /**
+ * Whether the first world frame drawn after the hold came off has finished on the GPU, so the display shows it.
+ * `undefined` for a renderer with no engine report (it has no such answer, and the hand-off then counts draws as before).
+ */
+export function rendererWorldPresented(raw: unknown): boolean | undefined {
+  const startup = (raw as { info?: { engine?: { startup?: { worldPresented?: unknown } } } } | null)
+    ?.info?.engine?.startup;
+  return typeof startup?.worldPresented === "boolean" ? startup.worldPresented : undefined;
+}
+
+/**
  * Whether the renderer is drawing under the loading cover to finish its environment bake. A bake
  * draw presents nothing and its world is still unlit, so its pixels are not the view's first frame:
  * the eye adaptation must not adopt them. A renderer without an engine report answers false.

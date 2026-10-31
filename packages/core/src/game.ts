@@ -102,6 +102,7 @@ import {
   type RendererKind,
   createRenderer,
   rendererFrameGateSkips,
+  rendererWorldPresented,
 } from "./renderer.js";
 import { RESOLUTION_SCALER, ResolutionScaler } from "./resolution-scaler.js";
 import type {
@@ -2460,7 +2461,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // the whole session. Past the window the cover lifts anyway, and says why.
         const handOffWaitedMs = now() - (timeline.readyMs ?? now());
         const handOffBounded = handOffWaitedMs >= STARTUP_STABLE_WINDOW_MS;
-        if (stateHandOffFrames > 0 && (!declined || handOffBounded)) {
+        // A draw the gate accepted is only queued: the cover lifts once the GPU has finished the first world frame.
+        const worldOnDisplay = rendererWorldPresented(renderer.raw) !== false;
+        if (stateHandOffFrames > 0 && ((!declined && worldOnDisplay) || handOffBounded)) {
           if (handOffBounded) {
             console.warn(
               `TN_STARTUP_HANDOFF_BOUNDED:${JSON.stringify({
