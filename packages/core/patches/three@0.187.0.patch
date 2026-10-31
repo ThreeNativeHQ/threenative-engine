@@ -1055,7 +1055,7 @@ index 7c8d2322834904c1247c79cda31beff8e2bfc497..e31c796b5c7be32312b51b5d858c3762
  
  		this._value = value;
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..0efbaa6dc87a9fd3ab7466007f29ae9bb476f275 100644
+index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..4d35535a6face537f1f2fd4119c3fda2c38bc10a 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -5182,7 +5182,7 @@ class Animation {
@@ -1580,6 +1580,15 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..0efbaa6dc87a9fd3ab7466007f29ae9b
  		if ( this.has( texture ) === true ) {
  
  			const textureData = this.get( texture );
+@@ -13129,7 +13421,7 @@ class NodeBuilder {
+ 
+ 		let bindGroup = new BindGroup( groupName, bindings );
+ 
+-		if ( sharedGroup && this.renderer._bindings !== undefined ) {
++		if ( sharedGroup && this.renderer._bindings != null ) { // an uninitialised renderer holds null here
+ 
+ 			bindGroup = this.renderer._bindings.getSharedBindGroup( bindGroup );
+ 
 @@ -16304,7 +16596,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
@@ -2863,7 +2872,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..0efbaa6dc87a9fd3ab7466007f29ae9b
  		renderer.xr.enabled = currentXR;
  
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..40e3ff49e8c625879e7fe5682dc773898e2ce5d3 100644
+index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..2f341969996140debd376a01ba681a975e793ffc 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -179,6 +179,15 @@ class NodeMaterialObserver {
@@ -4420,6 +4429,15 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..40e3ff49e8c625879e7fe5682dc77389
 +	const { near: shadowCameraNear, far: shadowCameraFar, bias } = getShadowUniforms( shadow );
  
  	const result = float( 1.0 ).toVar();
+ 
+@@ -54331,7 +55259,7 @@ class NodeBuilder {
+ 
+ 		let bindGroup = new BindGroup( groupName, bindings );
+ 
+-		if ( sharedGroup && this.renderer._bindings !== undefined ) {
++		if ( sharedGroup && this.renderer._bindings != null ) { // an uninitialised renderer holds null here
+ 
+ 			bindGroup = this.renderer._bindings.getSharedBindGroup( bindGroup );
  
 @@ -57506,7 +58434,7 @@ class NodeBuilder {
  
@@ -6078,9 +6096,18 @@ index 515a70c0fa70b39ad599ec133c838d521a6a96a9..37a79ac16a78fa4614e9de815050eda8
  		//
  
 diff --git a/src/nodes/core/NodeBuilder.js b/src/nodes/core/NodeBuilder.js
-index cb5ae8e681d2e11dbc959988ff1215167d4b76e9..20fb38f59608d9e9a1f9277894e6b7372f1af58e 100644
+index cb5ae8e681d2e11dbc959988ff1215167d4b76e9..74f53738ce0cbf557f8b62aebc818960913332a1 100644
 --- a/src/nodes/core/NodeBuilder.js
 +++ b/src/nodes/core/NodeBuilder.js
+@@ -734,7 +734,7 @@ class NodeBuilder {
+ 
+ 		let bindGroup = new BindGroup( groupName, bindings );
+ 
+-		if ( sharedGroup && this.renderer._bindings !== undefined ) {
++		if ( sharedGroup && this.renderer._bindings != null ) { // an uninitialised renderer holds null here
+ 
+ 			bindGroup = this.renderer._bindings.getSharedBindGroup( bindGroup );
+ 
 @@ -3909,7 +3909,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();

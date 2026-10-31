@@ -252,6 +252,8 @@ function fixture(
     // The pipeline callback reads the drawing buffer through the builder's renderer.
     renderer: stub.renderer,
     getNodeProperties: () => dependencies,
+    // Three 0.187 dedupes a node through the builder's hash table before it sets it up.
+    getNodeFromHash: () => undefined,
   } as unknown as NodeBuilder;
   temporal.node.setup(builder);
   return {
@@ -321,6 +323,7 @@ function chainFixture(lowResolutionPassthrough = false) {
     context: { velocity },
     renderer: stub.renderer,
     getNodeProperties: () => ({}),
+    getNodeFromHash: () => undefined,
   } as unknown as NodeBuilder;
   const frame = { renderer: stub.renderer } as unknown as NodeFrame;
   return {
