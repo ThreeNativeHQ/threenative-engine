@@ -1,4 +1,5 @@
 import { BoxGeometry, DepthTexture, DirectionalLight, Mesh, MeshBasicMaterial } from "three";
+import Bindings from "three/src/renderers/common/Bindings.js";
 // @ts-expect-error Three's private chain map has no public declarations.
 import ChainMap from "three/src/renderers/common/ChainMap.js";
 // @ts-expect-error Three's node manager has no public declarations.
@@ -30,17 +31,24 @@ interface IRecordBuilder {
 }
 
 /** One renderer for every material of the test, as one render context holds them all. */
+const backend = {
+  isWebGPUBackend: true,
+  utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+  renderer: undefined as unknown,
+};
 const renderer = {
-  backend: {
-    isWebGPUBackend: true,
-    utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
-  },
+  backend,
+  debug: { diagnostics: { keywords: false } },
   hasCompatibility: () => true,
   hasFeature: () => false,
   library: { fromMaterial: () => null },
   reversedDepthBuffer: false,
   shadowMap: { enabled: true, type: 1 },
+  // r187 builds a shared bind group through the renderer's bindings manager, which caches it per render context.
+  _bindings: new Bindings(backend, {}, {}, {}, {}, {}),
+  _currentRenderContext: {},
 };
+backend.renderer = renderer;
 
 /** A material that samples `shadow` through three's PCF filter, built by its own node builder as three does. */
 function record(shadow: DirectionalLight["shadow"]): IRecordBuilder {

@@ -330,8 +330,10 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     }
 
     for (const file of ["src/renderers/webgpu/WebGPUBackend.js", "build/three.webgpu.js"]) {
-      // The pipeline key is the real vertex layout, never morph-attribute object identity.
+      // The pipeline key is the real vertex layout plus the morph layout (PRD-566), never
+      // morph-attribute object identity.
       expect(patched.get(file)).toContain("getVertexBufferLayoutCacheKey( renderObject )");
+      expect(patched.get(file)).toContain("renderObject.getGeometryCacheKey( false )");
     }
 
     await run(process.execPath, ["./scripts/postinstall.mjs"], {

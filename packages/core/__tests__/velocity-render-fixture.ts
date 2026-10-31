@@ -247,7 +247,11 @@ export class SoftwareVelocityRenderer implements IRenderChainRenderer {
 
 function buildVelocityUpdateNodes(object: Object3D, node: Node): IInspectableVelocityBuilder {
   const renderer = {
-    backend: { capabilities: { getUniformBufferLimit: () => 65_536 } },
+    backend: {
+      capabilities: { getUniformBufferLimit: () => 65_536 },
+      utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+    },
+    debug: { diagnostics: { keywords: false } },
     getDrawIndex: () => null,
     getMRT: () => new Set(["velocity"]),
     hasFeature: () => false,

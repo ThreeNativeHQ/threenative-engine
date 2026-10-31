@@ -30,7 +30,10 @@ describe("velocity fixture coverage identity", () => {
   it("compiles binary coverage from actual object identity and fragment position, without shading or history", () => {
     const moving = new Mesh(new SphereGeometry(velocityFixtureRadius), new MeshBasicMaterial());
     const wall = new Mesh();
-    const builder = new WGSLNodeBuilder(moving, { backend: {} } as never) as ICoverageBuilder;
+    const builder = new WGSLNodeBuilder(moving, {
+      backend: {},
+      debug: { diagnostics: { keywords: false } },
+    } as never) as ICoverageBuilder;
     builder.setShaderStage("fragment");
     const shader = builder.flowStagesNode(velocityCoverageNode(moving, 960), "vec4");
     builder.buildUpdateNodes();

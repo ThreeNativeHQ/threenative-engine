@@ -116,7 +116,7 @@ interface IStockShadowTarget {
 const builder = {
   context: {},
   material: {},
-  renderer: { shadowMap: { enabled: true } },
+  renderer: { debug: { diagnostics: { keywords: false } }, shadowMap: { enabled: true } },
 } as unknown as NodeBuilder;
 
 /**
@@ -191,6 +191,7 @@ function shadowGraphBuilder(
       utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
     },
     reversedDepthBuffer,
+    debug: { diagnostics: { keywords: false } },
     hasCompatibility: () => true,
     hasFeature: () => false,
     library: { fromMaterial: () => null },
@@ -393,6 +394,8 @@ describe("virtual shadow level diagnostic", () => {
       light.shadow.shadowNode = node;
       const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
       renderer.shadowMap.enabled = true;
+      // r187 `NodeBuilder._getBindGroup` shares groups through an initialized renderer's bindings.
+      Reflect.set(renderer, "_bindings", { getSharedBindGroup: (group: object) => group });
       vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
       vi.spyOn(renderer, "hasCompatibility").mockReturnValue(true);
       vi.spyOn(
@@ -543,8 +546,9 @@ describe("virtual shadow level diagnostic", () => {
           vec4(lightingContext(lights([light]), model) as never, 1) as unknown as Node,
           "vec4",
         );
+        // r187 assigns the mix straight to outgoingLight; r185 staged it in a nodeVar first.
         expect(flow.code).toMatch(
-          /(nodeVar\d+) = mix\( outgoingLight, virtualShadowLevelTint\w*, 0\.5 \);\s*outgoingLight = \1;\s*$/u,
+          /outgoingLight = mix\( outgoingLight, virtualShadowLevelTint\w*, 0\.5 \);\s*$/u,
         );
       } finally {
         node.dispose();

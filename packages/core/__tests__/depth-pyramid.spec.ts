@@ -19,13 +19,16 @@ function compile(node: unknown, samples: number) {
     },
     hasCompatibility: () => true,
     hasFeature: () => false,
+    debug: { diagnostics: { keywords: false } },
   };
   // Three's declarations omit the compute-node path and its generated shader fields.
-  const builder = new WGSLNodeBuilder(node as never, gpu as never) as unknown as {
+  const builder = new WGSLNodeBuilder(null as never, gpu as never) as unknown as {
     build(): void;
     computeShader: string;
     uniforms: { compute: { node: { value: unknown } }[] };
   };
+  // r187 NodeManager.getForCompute builds a null object and assigns the compute node.
+  Reflect.set(builder, "compute", node);
   builder.build();
   return builder;
 }

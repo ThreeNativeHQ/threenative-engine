@@ -127,6 +127,7 @@ interface IInspectableVelocityBuilder {
 function buildVelocityUpdateNodes(object: Object3D, node: Node): IInspectableVelocityBuilder {
   const renderer = {
     backend: { capabilities: { getUniformBufferLimit: () => 65_536 } },
+    debug: { diagnostics: { keywords: false } },
     getMRT: () => new Set(["velocity"]),
   } as never;
   const builder = new WGSLNodeBuilder(object, renderer) as unknown as IInspectableVelocityBuilder;

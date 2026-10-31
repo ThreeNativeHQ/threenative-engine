@@ -2,6 +2,8 @@ import { BoxGeometry, Euler, Quaternion } from "three";
 import { InstancedMesh, MeshStandardNodeMaterial, NodeMaterialObserver } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 
+const canvasTarget = {};
+
 /** The slice of three's RenderObject that NodeMaterialObserver.equals() actually reads. */
 function renderObjectFor(object: InstancedMesh) {
   return {
@@ -10,8 +12,15 @@ function renderObjectFor(object: InstancedMesh) {
     material: object.material,
     bundle: null as null,
     lights: [] as never[],
-    lightsNode: { getLights: () => [] },
-    scene: { environmentIntensity: 1, environmentRotation: new Quaternion() },
+    renderer: {
+      getRenderTarget: () => null,
+      getOutputRenderTarget: () => null,
+      getCanvasTarget: () => canvasTarget,
+    },
+    context: { width: 1, height: 1 },
+    _geometries: { attributes: { disposeVersion: 0 } },
+    lightsNode: { getBuiltinLights: () => [] },
+    scene: { environment: null, environmentIntensity: 1, environmentRotation: new Quaternion() },
   };
 }
 
@@ -46,9 +55,12 @@ describe("NodeMaterialObserver geometry refresh latch", () => {
 
     // Frame 2: the first draw sees the new attribute version and re-snapshots it.
     expect(observer.equals(a, [], 2)).toBe(false);
-    // The second draw shares that geometry. The re-snapshot already settled it, so the second
-    // draw must not report "changed" again — the latch re-ran the refresh branch for every later
-    // draw of the same geometry for the rest of the frame.
+    // The second draw shares that geometry. r187 versions the geometry snapshot (`_version`) and
+    // each render object compares its own copy, so the draw that has not refreshed yet reports
+    // "changed" exactly once and is settled right after. The old latch re-ran the refresh branch
+    // for every later draw of the same geometry for the rest of the frame.
+    expect(observer.equals(b, [], 2)).toBe(false);
+    expect(observer.equals(a, [], 2)).toBe(true);
     expect(observer.equals(b, [], 2)).toBe(true);
 
     // Nothing moved on frame 3, so both draws stay settled.

@@ -1,6 +1,7 @@
 import {
   AgXToneMapping,
   DepthTexture,
+  PCFShadowMap,
   RenderTarget,
   SRGBColorSpace,
   Vector2,
@@ -38,6 +39,8 @@ function fixture(mode: string) {
     STORAGE_BINDING: 8,
     RENDER_ATTACHMENT: 16,
   });
+  // r187 draw() tests the current pass with `instanceof GPURenderBundleEncoder`.
+  vi.stubGlobal("GPURenderBundleEncoder", class {});
   const canvas = { width: 1920, height: 1080 };
   const target = new CanvasTarget(canvas as HTMLCanvasElement);
   const data = new WeakMap<object, Record<string, unknown>>();
@@ -103,6 +106,11 @@ function fixture(mode: string) {
     "_validateTransientDepth",
     "updateViewport",
     "updateScissor",
+    "getOcclusionData",
+    "_resetRenderContextData",
+    "_copyFramebufferToTexture",
+    "getBufferAttribute",
+    "_hasExternalTexture",
   ])
     Reflect.set(backend, name, Reflect.get(compiledBackend ?? WebGPUBackend.prototype, name));
   textures.backend = backend;
@@ -143,6 +151,7 @@ it("executes a graph framebuffer copy and depth LOAD restart before the existing
   });
   const context = {
     id: 1,
+    camera: {},
     textures: null,
     renderTarget: null,
     depth: true,
@@ -318,7 +327,7 @@ describe.each(["source", "distribution"])(
       const pipeline = {
         renderer,
         _update: () => undefined,
-        _context: { onBeforeRenderPipeline: null, onAfterRenderPipeline: null },
+        _contextData: { onBeforePipelineCallbacks: [], onAfterPipelineCallbacks: [] },
         _quadMesh: {
           render: () => {
             samples.push(renderer.currentSamples);
@@ -582,6 +591,7 @@ describe.each(["source", "distribution"])("%s owned transient depth protocol", (
     });
     const context = {
       id: 1,
+      camera: {},
       textures: null,
       depthTexture: null,
       renderTarget: null,
@@ -640,6 +650,9 @@ function transientFixture(mode: string, withUv = false) {
   const gpu = new Renderer({ canvas: state.canvas as HTMLCanvasElement });
   gpu.hasFeature = () => false;
   Reflect.get(gpu.backend, "capabilities").getUniformBufferLimit = () => 65536;
+  // r187 builders share bind groups through renderer._bindings, which init() creates. A fresh
+  // Bindings returns an unseen group as is.
+  Reflect.set(gpu, "_bindings", { getSharedBindGroup: (group: object) => group });
   const Pipeline = mode === "source" ? SourceRenderPipeline : RenderPipeline;
   const output = withUv
     ? mode === "source"
@@ -1279,6 +1292,7 @@ describe.each(["source", "distribution"])("%s transient depth boundaries", (mode
           _renderContexts: { get: () => s.context },
           _canvasTarget: s.target,
           _tnOutputOwner: s.quad,
+          shadowMap: { type: PCFShadowMap },
           depth: true,
           stencil: false,
           opaque: true,
@@ -1286,8 +1300,15 @@ describe.each(["source", "distribution"])("%s transient depth boundaries", (mode
           inspector: { beginRender: () => undefined, finishRender: () => undefined },
           _updateCamera: (camera: object) => camera,
           getDrawingBufferSize: (size: Vector2) => size.set(1920, 1080),
-          _renderLists: { get: () => renderList },
-          _projectObject: () => undefined,
+          xr: { isPresenting: false },
+          _renderLists: { get: () => renderList, update: () => undefined },
+          // r187 culls through renderer.drawingPipeline; projection stays a no-op here.
+          drawingPipeline: {
+            begin: () => undefined,
+            beginRenderList: (list: typeof renderList) => list.begin(),
+            project: () => undefined,
+            finishRenderList: (list: typeof renderList) => list.finish(),
+          },
           _background: { update: () => undefined },
           _renderObjects: () => {
             if (!fail) {

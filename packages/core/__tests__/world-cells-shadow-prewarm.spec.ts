@@ -246,12 +246,16 @@ describe("a streamed world's caster prewarm", () => {
     // draws rather than about mints.
     scene.add(world);
     // Real RenderObjects and NodeManager caches; only shader compilation is replaced by a counter.
+    // r187's observer keys the output size by the canvas target.
+    const canvasTarget = {};
     const render = {
       _currentSourceMaterial: null as unknown,
       backend: { isWebGPUBackend: true },
       contextNode: { id: 1, version: 0 },
       currentSamples: 1,
+      getCanvasTarget: () => canvasTarget,
       getMRT: () => null,
+      getOutputRenderTarget: () => null,
       getRenderTarget: () => null,
     };
     const nodes = new NodeManager(render, render.backend);
@@ -259,6 +263,8 @@ describe("a streamed world's caster prewarm", () => {
     nodes._createNodeBuilder = (object: { object: InstancedMesh; material: unknown }) => ({
       build: () => builds.push(object.object),
       getAttributesArray: () => [],
+      // r187 caches only builders that are not object specific; a real builder starts `false`.
+      objectSpecific: false,
       getBindings: () => [],
       updateNodes: [],
       updateBeforeNodes: [],
@@ -268,7 +274,12 @@ describe("a streamed world's caster prewarm", () => {
     const objects = new RenderObjects(
       render,
       nodes,
-      { getIndex: (object: { geometry: BufferGeometry }) => object.geometry.index },
+      {
+        // r187's observer snapshots the attribute manager's dispose counter.
+        attributes: { disposeVersion: 0 },
+        deleteVertexState: vi.fn(),
+        getIndex: (object: { geometry: BufferGeometry }) => object.geometry.index,
+      },
       { delete: vi.fn() },
       { deleteForRender: vi.fn() },
       {},
@@ -278,7 +289,13 @@ describe("a streamed world's caster prewarm", () => {
     let refreshes = 0;
     let draws = 0;
     const context = { id: 1, sampleCount: 1 };
-    const lights = { getLights: () => [] };
+    // r187 render objects listen for the lights node's dispose.
+    const lights = {
+      addEventListener() {},
+      getBuiltinLights: () => [],
+      getLights: () => [],
+      removeEventListener() {},
+    };
     const submitted = new Set<InstancedMesh>();
     const coverage = new Map<InstancedMesh, Set<unknown>>();
     shadowDraws(node, scene, tally, (mesh, index) => {
