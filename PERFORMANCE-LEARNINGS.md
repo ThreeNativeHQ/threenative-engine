@@ -850,5 +850,9 @@ no COOP/COEP); that lane is open.
 - Risk: an overloaded game now runs its simulation slower than wall time (as Unreal does). Vanilla still catches up
   with up to 4 Rapier steps, so the two compare frames delivered, not simulated seconds. Override:
   `maxPhysicsDeltaTime: Infinity`.
-- Open: ThreeNative update p50 is still 28 ms against vanilla's 13 ms at load 4, and GPU p95 21-24 against 14 ms.
-  The clamp-against-develop pair at load 4 is still being measured (host load voided the first two tries).
+- Ramp against vanilla three.js, fair ABBA, plain sun: load 2 vsync 54.3 against 35.3 fps, uncapped 53.2 against
+  37.8 (rows #145-#148); load 8 vsync 9.65 against 7.6 fps, uncapped 9.5 against 7.9 (rows #149-#152).
+  ThreeNative leads at every load from 2 to 8. Against develop at load 4: vsync 19.1-19.6 against 17.1 fps
+  (+12-15%), uncapped 20.1 against 19.2-19.9 (+1-5%, inside noise) (rows #141-#144).
+- Open: ThreeNative update p50 is still 28 ms against vanilla's 13 ms at load 4, and GPU p95 is 7.5 against 4.2 ms
+  at load 2, 21-24 against 14 ms at load 4 and 44 against 21 ms at load 8.
