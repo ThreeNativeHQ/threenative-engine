@@ -1341,14 +1341,16 @@ void raycasterLOD() {
         root.updateMatrixWorld(true);
         const r = new Raycaster(new Vector3(0.2, -0.3, 5), new Vector3(0,0,-1));
         const hits = r.intersectObject(root);
-        assert(hits.length === 2 && hits[0].object === mesh && hits[0].distance === 4.5);
+        // three r187's watertight intersection (src/math/Ray.js:538) answers this box face with
+        // 4.500000000000001 (0x4012000000000001), where r185's GeometricTools port gave 4.5.
+        assert(hits.length === 2 && hits[0].object === mesh && hits[0].distance === 4.500000000000001);
         assert(hits[0].point instanceof Vector3 && hits[0].uv instanceof Vector2);
         assert(hits[0].normal instanceof Vector3 && hits[0].face.normal instanceof Vector3);
         assert(hits[0].faceIndex >= 0 && hits[0].barycoord instanceof Vector3);
         assert(r.ray instanceof Ray && r.ray === r.ray && r.ray.origin.z === 5);
         assert(r.intersectObjects([root]).length === 2 && r.intersectObjects([]).length === 0);
         const target = [hits[1]];
-        assert(r.intersectObject(root, true, target) === target && target.length === 3 && target[0].distance === 4.5);
+        assert(r.intersectObject(root, true, target) === target && target.length === 3 && target[0].distance === 4.500000000000001);
         assert(r.intersectObject(root, false).length === 0);
         r.near = 5; assert(r.intersectObject(root).length === 1);
         r.far = 5.1; assert(r.intersectObject(root).length === 0);

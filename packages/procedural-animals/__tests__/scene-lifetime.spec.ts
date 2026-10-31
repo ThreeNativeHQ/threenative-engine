@@ -21,7 +21,11 @@ const { default: Attributes } = (await import(`${privateThree}Attributes.js`)) a
   ) => { update(attribute: BufferAttribute, type: number): void };
 };
 const { default: Geometries } = (await import(`${privateThree}Geometries.js`)) as {
-  default: new (attributes: object, info: Info) => { initGeometry(renderObject: object): void };
+  default: new (
+    backend: object,
+    attributes: object,
+    info: Info,
+  ) => { initGeometry(geometry: object): void };
 };
 const { default: RenderObject } = (await import(`${privateThree}RenderObject.js`)) as {
   default: { prototype: { getAttributes(this: object): BufferAttribute[] } };
