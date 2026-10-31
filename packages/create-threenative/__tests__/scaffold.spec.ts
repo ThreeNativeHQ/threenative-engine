@@ -366,7 +366,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   rts: "ef563d91cfced486787fce286924379546f0ac544ed89c61999b532c41a67072",
   runner: "58d6552e90a20cbca8d5e90258e075b94c1fd83056d803afa1f9d8122133b01f",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "6d9d1fb3a93deb84dc753ef2fa67dc3a079434acc830c256948880009faea5eb",
+  sailing: "e7a510172ebd31023dce16888654e0c9f74a3d5885523fc3169c6404f7e1c6d6",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
   shooter: "845f705eca688d2e18ed54bc4b3d6e98e11669ac86d3ae239e43e5a8257d5c02",
   snow: "c2ccc14a026e3d2d75a021a3f433d68e7db675236be456560b70596e9e6b2e54",
