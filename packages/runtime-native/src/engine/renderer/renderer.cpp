@@ -2464,11 +2464,10 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
                       readsPostTexture(program.fragment)};
 }
 
-Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights,
-                                     bool softShadows) {
+Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights) {
     ++programKeyBuilds_;
     ++programLookups_;
-    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights + (softShadows ? "|soft" : "");
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights;
     const auto refuse = [&](const std::string& reason) -> Program* {
         if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
         return nullptr;
@@ -2487,7 +2486,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         if (backgroundNode) throw std::runtime_error(message);
         return refuse(message);
     };
-    const shader::LightLayout layout{lights, softShadows};
+    const shader::LightLayout layout{lights};
     shader::StandardPrograms source;
     try {
         switch (kind) {
@@ -2514,7 +2513,7 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
     Program& built = add(key, std::move(vertex), std::move(fragment));
-    built.kind = kind; built.variant = vv; built.lightKinds = lights; built.softShadows = softShadows;
+    built.kind = kind; built.variant = vv; built.lightKinds = lights;
     return &built;
 }
 
@@ -2552,7 +2551,7 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask)
     if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
     program.auxBuilt |= uint16_t(1u << mask);
     const shader::VertexVariant& variant = program.variant;
-    const shader::LightLayout layout{program.lightKinds, program.softShadows};
+    const shader::LightLayout layout{program.lightKinds};
     try {
         shader::StandardPrograms source;
         switch (program.kind) {
@@ -3441,12 +3440,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const uint64_t unshadowedKindsKey = hashBytes(unshadowedKinds.data(), unshadowedKinds.size());
     const uint64_t basicLightsKey = hashBytes("", 0) ^ 0x5bf03635ull;
     const auto drawLightsKey = [&](const DrawItem& item) {
-        uint64_t key = item.kind == MaterialKind::Basic ? basicLightsKey
-                       : item.receiveShadow              ? lightKindsKey
-                                                          : unshadowedKindsKey;
-        // A receiving mesh takes the soft-shadow filter (three keys a program on receiveShadow + type).
-        if (item.receiveShadow && lights.softShadows) key ^= 0x9e3779b97f4a7c15ull;
-        return key;
+        // A receiving mesh reads its lights' shadow maps, any other the unshadowed kinds: three keys a program on
+        // receiveShadow, and r187 has one shadow filter, so the map type no longer enters the key.
+        return item.kind == MaterialKind::Basic ? basicLightsKey
+               : item.receiveShadow            ? lightKindsKey
+                                               : unshadowedKindsKey;
     };
     // The pipeline target inputs not already in the VertexVariant: side, blending, depth state and
     // the vertex layout. Equal keys mean the same pipeline, so the cached handle can be reused.
@@ -3615,8 +3613,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             built = this->program(item.kind, variant,
                                   item.kind == MaterialKind::Basic ? ""
                                   : item.receiveShadow            ? lightKinds
-                                                                  : unshadowedKinds,
-                                  item.receiveShadow && lights.softShadows);
+                                                                  : unshadowedKinds);
             if (!built) continue;
             if (cache) {
                 cache->kind = item.kind; cache->variant = variant; cache->lightsKey = lightsKey;
@@ -5604,8 +5601,6 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
     if (!passTimer_->queries)
         for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
-    // A resolve over a frame the graph draws seeds from that frame, in its own pass.
-    if (traa_ && !lateTraa_) traa_->seedHistory(encoder, sceneColor_);
     WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2, {"scene", inputWidth_, inputHeight_});
     bound = nullptr;
     boundIndex = nullptr;
@@ -5951,7 +5946,6 @@ void Renderer::encodeFrame(FrameJob& job) {
         postEffects_->setHost(lateTraa_ ? PostEffects::HostPass([this](WGPUCommandEncoder resolveEncoder, WGPUTexture beauty,
                                                                      WGPUTextureView beautyView, WGPUTexture output,
                                                                      WGPUTextureView outputView) {
-                                  traa_->seedHistory(resolveEncoder, beauty);
                                   traa_->resolve(resolveEncoder, beauty, beautyView, depth_, depthView_, output, outputView);
                               })
                               : PostEffects::HostPass());

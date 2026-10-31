@@ -1307,7 +1307,8 @@ void instancePlacesSurviveADrawLeavingTheView() {
 // The frame's uniform arena, the hash of its bytes and the channels a one-light channel flip moves, as the
 // per-draw plan wrote them: recorded from the red run of this test, before the slab existed (FM2).
 constexpr uint64_t kFrameSlabArenaBytes = 6144, kFrameSlabArenaHash = 0x81822b8c72b318c0ull;
-constexpr int kFrameSlabLightFlipDiffers = 2037;
+// 2037 -> 2034 with three 0.187.0's physical lighting (73be3a6e9): the flip moves the same pixels, shaded r187's way.
+constexpr int kFrameSlabLightFlipDiffers = 2034;
 void frameSlabIsPerProgram() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());

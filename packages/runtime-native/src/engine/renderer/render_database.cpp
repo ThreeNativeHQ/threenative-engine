@@ -1,4 +1,5 @@
 #include "engine/foundation/waste_counters.h"
+#include "engine/foundation/ThreeConstants.h"
 #include "engine/scene/raycaster.h"
 #include "engine/foundation/prefetch.h"
 #include "render_database.h"
@@ -1563,7 +1564,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     const auto matrices = profiling ? Clock::now() : Clock::time_point{};
     lights = LightState{};
     lights.hemisphereSky = lights.hemisphereGround = {0, 0, 0};
-    lights.softShadows = shadowMapType == 2;
+    // r187 src/renderers/common/Renderer.js:1031 rewrites PCFSoftShadowMap to PCFShadowMap on the next render (its
+    // filter slot is null in ShadowNode.js:117), so every directional and spot map reads PCFShadowFilter.
+    if (shadowMapType == PCFSoftShadowMap) shadowMapType = 1;  // PCFShadowMap; three has no other map filter here
     callbacks_.clear();
     direct_.clear();
     skeletonsUpdated_.clear();

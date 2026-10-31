@@ -312,7 +312,6 @@ void traaValidation() {
                 for (int j = 0; j < 16; ++j) std::cout << (j ? "," : "") << matrix[j];
                 std::cout << "]";
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
-                jitter.seedHistory(encoder, beauty);
                 jitter.resolve(encoder, beauty, beautyView, depth, depthView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
                 wgpuQueueSubmit(queue, 1, &commands);
@@ -422,7 +421,6 @@ void traaValidation() {
             for (int frame = 0; frame < (dump ? 20 : 3); ++frame) {
                 const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
                 upscale.begin(identity, identity, identity);
-                upscale.seedHistory(encoder, beauty);
                 upscale.fillVelocity(encoder, depthView);
                 upscale.resolve(encoder, beauty, beautyView, depth, depthView, output, outputView);
                 const auto commands = wgpuCommandEncoderFinish(encoder, nullptr);
@@ -1258,7 +1256,6 @@ void traaHistoryClipping() {
             wgpuRenderPassEncoderEnd(clearing); wgpuRenderPassEncoderRelease(clearing);
             if (cut && frame == 18) temporal.cameraCut();
             temporal.begin(identity, identity, identity);
-            temporal.seedHistory(encoder, beauty);
             temporal.fillVelocity(encoder, depthView);
             {
                 // Blue: 1 is known static, 3 is known dynamic, 0 is unknown geometry; identity motion remains zero in RG.
@@ -1629,8 +1626,10 @@ void traaResetSeed() {
     };
     const auto history = bytes("frame-20-history.bin");
     CHECK(history.size() == 16 * 16 * 4 * sizeof(float));
-    CHECK(history == bytes("frame-19-beauty.bin"));
-    CHECK(history != bytes("frame-20-beauty.bin"));
+    // r187 TRAANode.js:390-400 resets the history from the beauty buffer of the frame it resolves: the cut frame seeds
+    // its own image, not the frame before it.
+    CHECK(history == bytes("frame-20-beauty.bin"));
+    CHECK(history != bytes("frame-19-beauty.bin"));
 }
 
 // Pixels that differ from the clear colour (black), and whether the centre pixel is lit.

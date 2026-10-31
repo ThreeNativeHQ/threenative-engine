@@ -314,9 +314,6 @@ struct LightState {
     std::array<double, 3> hemisphereGround{0, 0, 0};
     std::array<double, 3> hemisphereUp{0, 1, 0};
     std::array<double, 3> ambient{0, 0, 0};
-    /** three's `renderer.shadowMap.type` is PCFSoftShadowMap: directional and spot maps read with
-     *  PCFSoftShadowFilter; otherwise PCFShadowMap's filter. Point lights read PointShadowFilter either way. */
-    bool softShadows = false;
 };
 
 /** three's renderer output settings: `toneMapping`, `toneMappingExposure`, `outputColorSpace`. */
@@ -921,7 +918,6 @@ private:
         MaterialKind kind = MaterialKind::Standard;
         shader::VertexVariant variant;
         std::string lightKinds;
-        bool softShadows = false;
         std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
         uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
@@ -942,8 +938,7 @@ private:
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
      *  as three logs a shader error and draws the rest of the scene. */
-    Program* program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
-                     bool softShadows = false);
+    Program* program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
     Program& depthProgram(const shader::VertexVariant& variant, bool masked);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);

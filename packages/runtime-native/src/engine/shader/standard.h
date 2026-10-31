@@ -202,8 +202,6 @@ struct VertexVariant {
 // atlas `vsm{i}` and storage page table `vsmTable{i}` in both standard and basic lit programs.
 struct LightLayout {
     std::string kinds = "d";
-    /** three's PCFSoftShadowMap: shadowed directional and spot lights read PCFSoftShadowFilter. */
-    bool softShadows = false;
     /** Any upper-case kind: that light's shadow map is read (`light{i}Shadow*`, texture `shadow{i}`). */
     [[nodiscard]] bool shadowed() const {
         for (const char c : kinds)
