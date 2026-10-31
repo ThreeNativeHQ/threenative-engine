@@ -42,9 +42,10 @@ describe("blender-bridge GPL boundary", () => {
   });
 
   it("should keep the package manifest MIT and ship the gpl directory", () => {
-    const manifest = JSON.parse(
-      readFileSync(path.join(packageRoot, "package.json"), "utf8"),
-    ) as { files?: string[]; license?: string };
+    const manifest = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8")) as {
+      files?: string[];
+      license?: string;
+    };
     expect(manifest.license).toBe("MIT");
     expect(manifest.files).toContain("gpl");
   });

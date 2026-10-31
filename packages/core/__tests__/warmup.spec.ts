@@ -157,7 +157,10 @@ describe("scene warm-up", () => {
     let finish: (ready: boolean) => void = () => undefined;
     Object.defineProperty(PMREMNode, "prepareTextureAsync", {
       configurable: true,
-      value: () => new Promise<boolean>((resolve) => (finish = resolve)),
+      value: () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
     });
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
