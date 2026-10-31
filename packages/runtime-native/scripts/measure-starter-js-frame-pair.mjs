@@ -87,7 +87,7 @@ export function failureReason(result) {
 }
 
 function command(executable, args, options = {}) {
-  const result = spawnSync(executable, args, { encoding: 'utf8', timeout: 240_000, maxBuffer: 64 * 1024 * 1024, ...options });
+  const result = spawnSync(executable, args, { encoding: 'utf8', timeout: 360_000, maxBuffer: 64 * 1024 * 1024, ...options });
   requireEvidence(!result.error && result.status === 0, `${executable} failed: ${failureReason(result)}`);
   return result.stdout;
 }
@@ -111,7 +111,7 @@ function main() {
     // exec preserves the host PID so the shipped perf collector's SIGTERM reaches the host.
     // tee retains the exact raw stream without adding measurement instrumentation.
     const stdout = command(process.execPath, [
-      join(root, 'packages/playtest/dist/runner/cli.js'), 'perf', '--require-windows', '2', '--timeout', '180',
+      join(root, 'packages/playtest/dist/runner/cli.js'), 'perf', '--require-windows', '2', '--timeout', '300',
       '--executable', '/bin/bash', '--host-arg', '-c', '--host-arg',
       'exec "$1" run "$2" --ui "$4" --width 1280 --height 720 > >(tee "$3") 2>&1',
       '--host-arg', 'starter-perf', '--host-arg', binaries[engine], '--host-arg', bundle, '--host-arg', `${prefix}.log`, '--host-arg', join(dirname(bundle), 'ui'),

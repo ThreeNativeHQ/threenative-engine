@@ -692,7 +692,6 @@ export class FrameBudget {
   readonly hitchMs: number;
   readonly #simulation: IFrameBudgetSimulation | undefined;
   #windowStartTick: number | undefined;
-  #windowStartMs: number | undefined;
   #report: (line: string) => void;
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
@@ -884,7 +883,6 @@ export class FrameBudget {
       throw new Error("FrameBudget.beginFrame called before the previous frame ended.");
     this.#open = true;
     this.#windowStartTick ??= this.#simulation?.tick();
-    this.#windowStartMs ??= nowMs;
     this.#frameStart = nowMs;
     if (this.#firstFrameStart === undefined) this.#firstFrameStart = nowMs;
     this.#firstTaskFrameStart ??= nowMs;
@@ -1574,17 +1572,11 @@ export class FrameBudget {
   }
 
   #maybeReport(): void {
-    // Callers without a loop clock retain presented-frame window boundaries. With one, a window spans
-    // `reportEvery` ticks, or as much wall time when the simulation runs slower: the loop's
-    // `maxPhysicsDeltaTime` clamp, slow motion or a pause would otherwise stretch it without bound.
+    // Callers without a loop clock retain presented-frame window boundaries.
     const elapsed =
       this.#simulation === undefined
         ? this.#framesInWindow
-        : Math.max(
-            this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick()),
-            ((this.#lastFrameEnd ?? 0) - (this.#windowStartMs ?? this.#lastFrameEnd ?? 0)) /
-              (this.#simulation.step * 1_000),
-          );
+        : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
     if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
@@ -1628,7 +1620,6 @@ export class FrameBudget {
     for (const source of MAIN_DRAW_SOURCES) this.#passDrawSourceRings[source].reset();
     this.#framesInWindow = 0;
     this.#windowStartTick = this.#simulation?.tick();
-    this.#windowStartMs = undefined;
     this.#hitchesInWindow = 0;
     this.#taskCount = 0;
     this.#longestTaskMs = 0;
