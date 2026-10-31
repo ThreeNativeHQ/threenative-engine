@@ -52,6 +52,16 @@ const SKY_RANGE = 4;
 /** Baked sky resolution. Smooth sky, bilinear lookups: 256 x 128 is 1.4 degrees a texel. */
 const SKY_WIDTH = 256;
 
+/**
+ * The starter's sky switches, which its game scene and lighting read. The harness draws its own calibrated
+ * atmosphere; `ground` is the layer ladder's (Reference.ts sets it from the layer).
+ */
+export const SKY_OPTIONS: { sky: "atmosphere" | "photo"; clouds: boolean; ground: boolean } = {
+  sky: "atmosphere",
+  clouds: true,
+  ground: false,
+};
+
 /** Unit vector toward the photographed sun: 47.9 deg up, measured from the source HDR. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
