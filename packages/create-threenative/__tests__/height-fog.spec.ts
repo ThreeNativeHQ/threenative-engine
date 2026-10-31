@@ -139,10 +139,10 @@ async function loadKit(kit: string) {
   await mod.loadSky?.({ texture: async () => new Texture() });
   const scene = new Scene();
   // The eye-level haze is the photo sky's contract; the atmosphere sky takes Unreal's fog (PRD-633).
-  const sky = mod.SKY_OPTIONS?.sky;
+  const skyMode = mod.SKY_OPTIONS?.sky;
   if (mod.SKY_OPTIONS) mod.SKY_OPTIONS.sky = "photo";
   mod.setupSky(scene, new Texture());
-  if (mod.SKY_OPTIONS && sky !== undefined) mod.SKY_OPTIONS.sky = sky;
+  if (mod.SKY_OPTIONS && skyMode !== undefined) mod.SKY_OPTIONS.sky = skyMode;
   const distanceFog = scene.fog as FogExp2 | null;
   expect(distanceFog, `${kit} keeps FogExp2 as the distance term`).toBeTruthy();
   expect(scene.fogNode).toBeTruthy();
