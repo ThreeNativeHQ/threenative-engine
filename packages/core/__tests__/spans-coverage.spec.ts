@@ -273,7 +273,7 @@ describe("the frame record carries the boundary counts", () => {
       __THREENATIVE_ENGINE_COST__: true,
       __tnEngineCost: { walkVisits: 0 } as Record<string, number>,
     };
-    const totals = host.__tnEngineCost as Record<string, number>;
+    const totals = host.__tnEngineCost as { walkVisits: number };
     const engine = createEngineCounterReader(host);
     engine(); // the run's baseline, not a frame
     totals.walkVisits += 5; // the frame's own walk
