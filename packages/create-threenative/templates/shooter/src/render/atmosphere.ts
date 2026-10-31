@@ -351,8 +351,15 @@ export function viewDistanceSkyLight(toSun: { x: number; y: number; z: number })
 
 /**
  * Sky radiance per unit sun illuminance on an equirectangular grid in three's layout: row 0 is the
- * zenith, the middle row the horizon, the last row the nadir (dark: no ground luminance, as in Unreal's sky pass), and u = atan2(z, x) /
- * 2pi + 0.5. `sun` is the unit direction toward the sun, y up.
+ * zenith, the middle row the horizon, the last row the nadir, and u = atan2(z, x) / 2pi + 0.5. `sun`
+ * is the unit direction toward the sun, y up.
+ *
+ * Below the horizon it draws the atmosphere's sunlit ground (albedo `GROUND_ALBEDO`, the term
+ * Unreal's multiple-scattering pass uses), where Unreal's own sky capture is near black. Unreal's
+ * default level fills that half with Lumen: the floor bounces sun into shadow sides and a mirror
+ * reflects it. This environment is the only indirect light the templates have, so the ground stands
+ * in for that bounce; without it shadow sides read navy and a chrome ball's lower half black (judge,
+ * PRD-633). Drop it when the game adds its own global illumination.
  */
 export function bakeSkyRadiance(
   toSun: { x: number; y: number; z: number },
@@ -373,7 +380,7 @@ export function bakeSkyRadiance(
         Math.sin(elevation),
         Math.sin(azimuth) * Math.cos(elevation),
       ];
-      const ray = march(r0, dir, sun, false, multi, false, variable(4, 32, 150));
+      const ray = march(r0, dir, sun, false, multi, true, variable(4, 32, 150));
       const o = (y * width + x) * 3;
       data[o] = ray.radiance[0];
       data[o + 1] = ray.radiance[1];
