@@ -193,6 +193,9 @@ describe("animal qualification scene acquisition and cleanup", () => {
     const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
     const capabilities = Reflect.get(renderer.backend, "capabilities");
     vi.spyOn(capabilities, "getUniformBufferLimit").mockReturnValue(65_536);
+    // Three 0.187 shares bind groups through `renderer._bindings` unless it is `undefined`; an
+    // uninitialised renderer holds `null` there, so this builder runs without the shared cache.
+    Reflect.set(renderer, "_bindings", undefined);
     // Three omits this production NodeManager accessor from its declarations.
     const builder = new WGSLNodeBuilder(probe, renderer) as unknown as {
       build(): void;
@@ -216,6 +219,7 @@ describe("animal qualification scene acquisition and cleanup", () => {
     const backend = {
       createStorageAttribute: (item: object) => live.add(item),
       destroyAttribute: (item: object) => live.delete(item),
+      getBufferAttribute: (item: object) => item,
     };
     const info = new Info();
     const destroyed = vi.spyOn(info, "destroyAttribute");
@@ -224,8 +228,9 @@ describe("animal qualification scene acquisition and cleanup", () => {
       (item) => Reflect.get(item, "isStorageInstancedBufferAttribute") === true,
     ))
       manager.update(item, AttributeType.STORAGE);
-    const geometries = new Geometries(manager, info as never);
-    geometries.initGeometry({ geometry: probe.geometry, getAttributes: () => attributes } as never);
+    const geometries = new Geometries(backend as never, manager, info as never);
+    // Three 0.187 initialises the geometry itself and frees `geometry.attributes` on dispose.
+    geometries.initGeometry(probe.geometry);
     expect(live.size).toBe(5);
     expect(info.memory.geometries).toBe(1);
     probe.detach();
