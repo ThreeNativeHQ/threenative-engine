@@ -101,33 +101,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
-      - name: Install the pinned Blender used by the registry verifier
-        env:
-          BLENDER_VERSION: 5.2.0
-        run: |
-          archive="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          checksums="${RUNNER_TEMP}/blender-${BLENDER_VERSION}.sha256"
-          install_root="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz" \
-            --output "$archive"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}.sha256" \
-            --output "$checksums"
-          test -s "$archive"
-          (
-            cd "$RUNNER_TEMP"
-            sha256sum --ignore-missing --check "$(basename "$checksums")"
-          )
-          tar -xJf "$archive" -C "$RUNNER_TEMP"
-          blender="${install_root}/blender"
-          test -x "$blender"
-          actual_version="$("$blender" --version | awk 'NR == 1 { print $2 }')"
-          test "$actual_version" = "$BLENDER_VERSION" || {
-            echo "Expected Blender ${BLENDER_VERSION}, received ${actual_version}." >&2
-            exit 1
-          }
-          echo "THREENATIVE_BLENDER_PATH=${blender}" >> "$GITHUB_ENV"
       # The publish set, named one package per line so `pnpm publish:check` can assert that no
       # publishable package is missing from it. A package that exists, is not private, and is
       # absent here would be omitted from the release.
@@ -148,6 +121,7 @@ jobs:
           pnpm tsx scripts/verify-native-release-commit.ts "$native_tag"
       # BEGIN GENERATED WORKSPACE PUBLISH SET
       #   @threenative/assets
+      #   @threenative/blender-bridge
       #   @threenative/core
       #   @threenative/metahuman
       #   @threenative/physics
@@ -161,7 +135,6 @@ jobs:
       #   @threenative/ui
       #   create-threenative
       #   threenative-animation-mcp
-      #   threenative-blender-mcp
       #   threenative-engine-mcp
       # END GENERATED WORKSPACE PUBLISH SET
       - name: Run the single guarded release path
@@ -228,33 +201,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libvulkan1 mesa-vulkan-drivers libwebkit2gtk-4.1-0
-      - name: Install the pinned Blender used by the MCP conversion proof
-        env:
-          BLENDER_VERSION: 5.2.0
-        run: |
-          archive="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-          checksums="${RUNNER_TEMP}/blender-${BLENDER_VERSION}.sha256"
-          install_root="${RUNNER_TEMP}/blender-${BLENDER_VERSION}-linux-x64"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz" \
-            --output "$archive"
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://download.blender.org/release/Blender5.2/blender-${BLENDER_VERSION}.sha256" \
-            --output "$checksums"
-          test -s "$archive"
-          (
-            cd "$RUNNER_TEMP"
-            sha256sum --ignore-missing --check "$(basename "$checksums")"
-          )
-          tar -xJf "$archive" -C "$RUNNER_TEMP"
-          blender="${install_root}/blender"
-          test -x "$blender"
-          actual_version="$("$blender" --version | awk 'NR == 1 { print $2 }')"
-          test "$actual_version" = "$BLENDER_VERSION" || {
-            echo "Expected Blender ${BLENDER_VERSION}, received ${actual_version}." >&2
-            exit 1
-          }
-          echo "THREENATIVE_BLENDER_PATH=${blender}" >> "$GITHUB_ENV"
       # Proves the registry path, which no other gate in this repository exercises: the sandbox,
       # the sweeps and verify-golden-path all resolve `file:` tarballs by design.
       - name: Install from the registry in a directory with no workspace above it

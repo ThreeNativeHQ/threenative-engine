@@ -220,6 +220,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-28 (0.3.7): the cohort's own pins now hash as a placeholder, so a release bump
 // leaves every tree as it is; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // 2026-10-30: the Blender MCP server is gone, so every kit's seven host configs lose their
+  // `threenative-blender` entry and all sixteen trees move. Measured by this test.
   // 2026-10-29: every kit's seven MCP host configs gain the `threenative-devtools` server, and its
   // AGENTS/CLAUDE pair and performance skill name the slow-game order, so all sixteen trees move.
   // Measured by this test.
@@ -315,7 +317,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
   // Re-pinned 2026-10-28 (owner chose sharp AA): core high tier is 4x MSAA with no camera motion blur;
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
-  "action-rpg": "4916bfb87967144e6522585783efe12217e9e5e641e8b5f23904174d3cb0391a",
+  "action-rpg": "61095107aeb320b0ce34e804f2f04403133743b0d524c61bc454bf7a2eb16dc5",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -329,7 +331,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "42fef2289979b139a9acb4ed5e7baa9d6c8d15d29231b6a9177a2bec85599f04",
+  collectathon: "1f736d24a16fb08e3158e6fb0f89dce8b8ad53b42f70066f0493a15ef54579b5",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -338,14 +340,14 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "73995514f492f05fbe8f8ddd8e700b28c2573c693c4a080b78a321e325d900b0",
+  adventure: "3114377ad3db663682ccee202741ce26963d2c4822ccc4ab9c86da15f58e11f9",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "01de59fe1da00bfdcd45aa29eb4e999c76070545d54c60a4fc46e24d9044f5ab",
-  minimal: "07ca22acec15fa7c9c0bf1e6df7b7cb40f5bd84393aaa7790fb6f04d12679cd8",
-  platformer: "5f04baaa2fe0dc9352aa63adb1924943d41668af5a142901b55c2f9074d267c4",
-  puzzle: "e2ff43ff4307728e3dfab086f06ad4c2f1d0f15862a5bc7d12f17e9c12bf8bcb",
-  racing: "3f83a4a6c563733a9fd291f41cb74e306fff0d1cad7c80d9f9d470ad6343a553",
-  rain: "6e78dd39bbb574b468fcc1c0c81ef61519801671f99197d739bab0ff913c1d71",
+  kart: "5033dffe34745d519352eadd691de6c9582025c36ea333bb9343c34c0297dec9",
+  minimal: "98bed3698236e95d27385863885cefd5916c3b4071a9c3e05b9e33da8fb9575c",
+  platformer: "57422ad00f62e30c42cc04befc0bc1801efa863d2233b885ecfa551491869ce2",
+  puzzle: "a098cf9bfe0ce5118d085bb4397c31c663a0d0c3b4765c2b589978d1531e329a",
+  racing: "3e7a09ea3e5ec997a4d1a72aefa4587c36655426d9fdef2eb0d3dfe46c56425a",
+  rain: "1c5402b286d666604d354968abf7e74f587b2fb251a29352c2e0f5d90e0beea0",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
   // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
@@ -357,13 +359,13 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
-  rts: "f0d26a1d85147fd5f7ced80ff474ead2148d34797be46832ba41eb991b075c37",
-  runner: "863cc5bd333ea11584605556d0393576ee4feb6d0e7bcc58be8f10ec98dcf7c0",
+  rts: "ef563d91cfced486787fce286924379546f0ac544ed89c61999b532c41a67072",
+  runner: "70ba7b3e244e90ec6ccb450c6868831a88acf684d305e112393d2dd0e2025817",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "5b262f8b829457aac274c592dec54646ea2a756b3906c43a87eb3a15ae52fa21",
+  sailing: "6d9d1fb3a93deb84dc753ef2fa67dc3a079434acc830c256948880009faea5eb",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "d7e84201a0088814c9872dfb04acb7216fd9d3e017b6f123d2f6c302735463f9",
-  snow: "17438dd58dbbda94baa79fd29d215094db0853a5130d8544cadc97261f86c9a0",
+  shooter: "e6743db57f71c7f3520c5b25b9c0368b93b45a4330bc6baa9504d9b2a7b7587d",
+  snow: "c2ccc14a026e3d2d75a021a3f433d68e7db675236be456560b70596e9e6b2e54",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
@@ -371,8 +373,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source alone moves. Measured by this test.
-  starter: "d57cd2d5bf2a4f468de17e60517a2b6c5eb6189abfa1088db6eeb28297f9e749",
-  "tower-defense": "f90deb251cb72c47b221b873b650d56ef59cb74817518ac5479b3dc8edbd2bab",
+  // Re-pinned 2026-10-31 after merging develop's PRD-633 atmosphere-sky kits onto the 0.187 patch.
+  starter: "ce7911732f21a35b7b05b16a327078c2d2b2431c735b0139564e2d6448bc593d",
+  "tower-defense": "aa233cb67544c74d363cef4a00d47d7cea5c9ae093f04b231284a2f8574b0b98",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -641,12 +644,7 @@ describe("create-threenative", () => {
       // Kit-loop rows 1-6 (PRD-750): a cold agent scaffolds from its session folder, so the host
       // never loads the game's .mcp.json (a probe that wrote it mid-session got NO_TOOL) and five
       // builds made zero engine calls. The last line hands it every server through mcp/call.mjs.
-      const servers = [
-        "threenative-assets",
-        "threenative-sculpt",
-        "threenative-engine",
-        "threenative-blender",
-      ];
+      const servers = ["threenative-assets", "threenative-sculpt", "threenative-engine"];
       const next = scaffoldNextSteps("/w/mario64", true, servers);
       expect(next).toMatch(/\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u);
       expect(next).toContain(`.mcp.json (${servers.join(", ")})`);
@@ -1844,10 +1842,6 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
           },
-          "threenative-blender": {
-            command: "node",
-            args: [`${CORE_SHIM}/blender.mjs`],
-          },
           "threenative-animation": {
             command: "node",
             args: [`${CORE_SHIM}/animation.mjs`],
@@ -1887,10 +1881,6 @@ describe("create-threenative", () => {
           "threenative-engine": {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
-          },
-          "threenative-blender": {
-            command: "node",
-            args: [`${CORE_SHIM}/blender.mjs`],
           },
           "threenative-animation": {
             command: "node",

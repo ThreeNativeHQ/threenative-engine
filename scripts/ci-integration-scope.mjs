@@ -45,10 +45,10 @@ export const INDEPENDENT_PACKAGES = [
   "raw-unreal",
   "ueformat",
   "engine-mcp",
-  "blender-mcp",
+  "blender-bridge",
 ];
 const OWNED_PACKAGES =
-  "core|physics|playtest|assets|ui|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp";
+  "core|physics|playtest|assets|ui|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-bridge";
 const PACKAGE_CONTRACT = new RegExp(
   `^packages/(?:${OWNED_PACKAGES})/(?:__tests__/.*\\.spec\\.ts|tests/.*\\.test\\.mjs)$`,
   "u",
@@ -87,7 +87,9 @@ function dependencyLanes(file, current) {
   // New terrain/editor and import-package sources are built/unit-tested by the ordinary board,
   // and none of the retained integration fixtures imports these packages.
   if (
-    /^packages\/(?:terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp)\/src\//u.test(file)
+    /^packages\/(?:terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-bridge)\/src\//u.test(
+      file,
+    )
   )
     return [];
   return undefined;

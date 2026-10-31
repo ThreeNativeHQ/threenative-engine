@@ -28,7 +28,7 @@ const decoder = new TextDecoder();
 const RECOGNIZED_VITE_LAYOUTS = [
   "examples/engine-load-test/src/",
   "packages/assets/src/",
-  "packages/blender-mcp/src/",
+  "packages/blender-bridge/src/",
   "packages/core/src/",
   "packages/create-threenative/src/",
   "packages/engine-mcp/src/",

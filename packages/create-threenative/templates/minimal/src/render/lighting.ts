@@ -1,10 +1,32 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
-// One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
+// One sun. The sky in `sky.ts` is the fill light — its environment reaches every face the
 // sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
-import { SUN_DIRECTION } from "./sky.js";
+import {
+  SUN_ILLUMINANCE,
+  SUN_KELVIN,
+  sunLight,
+  sunLightTransmittance,
+  temperatureColour,
+} from "./atmosphere.js";
+import { SKY_OPTIONS, SUN_DIRECTION } from "./sky.js";
+
+/** The sun as Unreal's default level has it: 6 lux at 6500 K, tinted by the air it crosses. */
+function atmosphereSun(): DirectionalLight {
+  const tint = temperatureColour(SUN_KELVIN);
+  const through = sunLightTransmittance(Math.asin(Math.min(1, Math.max(-1, SUN_DIRECTION.y))));
+  const colour = new Color().setRGB(
+    tint[0] * through[0],
+    tint[1] * through[1],
+    tint[2] * through[2],
+  );
+  const key = new DirectionalLight(colour, SUN_ILLUMINANCE);
+  // `gpuSky.ts` re-tints it when the sun moves.
+  sunLight.current = key;
+  return key;
+}
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
@@ -16,8 +38,8 @@ export function setupLighting(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  // Warm white, matched by eye to the photographed midday sun against its own sky.
-  const key = new DirectionalLight(0xfff1e0, 4.5);
+  // The photo sky keeps the warm white matched by eye to its photographed midday sun.
+  const key = SKY_OPTIONS.sky === "photo" ? new DirectionalLight(0xfff1e0, 4.5) : atmosphereSun();
   key.position.copy(SUN_DIRECTION).multiplyScalar(30);
   key.castShadow = true;
   // One map fitted to the 36 m arena: 4096² is under a centimetre a texel, so every shadow has the

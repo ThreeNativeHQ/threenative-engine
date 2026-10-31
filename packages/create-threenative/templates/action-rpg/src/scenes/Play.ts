@@ -30,7 +30,7 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { setupSky } from "../render/sky.js";
+import { SKY_OPTIONS, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import {
   type IActionRpgVfxOptions,
@@ -107,7 +107,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // is a constructor call and never a second file to cook.
     [this.#mannequin, this.#sky] = await Promise.all([
       ctx.assets.model<IMannequin>("mannequin-combat.glb"),
-      ctx.assets.texture("sky.jpg"),
+      // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
+      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
     setupSky(ctx.scene, this.#sky);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
@@ -121,8 +122,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const mannequin = this.#mannequin;
-    if (mannequin === undefined || this.#sky === undefined)
-      throw new Error("Play.enter ran before load() loaded mannequin-combat.glb and sky.jpg.");
+    if (mannequin === undefined)
+      throw new Error("Play.enter ran before load() loaded mannequin-combat.glb.");
     const restored = loadProgress(Play.initialState);
     ctx.state.set(restored);
     ctx.state.flush();

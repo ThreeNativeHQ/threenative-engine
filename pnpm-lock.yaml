@@ -1116,6 +1116,9 @@ importers:
         specifier: 0.2.0
         version: 0.2.0
     devDependencies:
+      '@threenative/blender-bridge':
+        specifier: workspace:*
+        version: link:../blender-bridge
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
@@ -1134,9 +1137,6 @@ importers:
       publint:
         specifier: 0.3.22
         version: 0.3.22
-      threenative-blender-mcp:
-        specifier: workspace:*
-        version: link:../blender-mcp
       tsup:
         specifier: 8.5.1
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(yaml@2.9.1)
@@ -1144,7 +1144,7 @@ importers:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'
 
-  packages/blender-mcp:
+  packages/blender-bridge:
     devDependencies:
       '@gltf-transform/core':
         specifier: 'catalog:'
@@ -1210,9 +1210,6 @@ importers:
       threenative-animation-mcp:
         specifier: workspace:*
         version: link:../animation-mcp
-      threenative-blender-mcp:
-        specifier: workspace:*
-        version: link:../blender-mcp
       threenative-engine-mcp:
         specifier: workspace:*
         version: link:../engine-mcp
@@ -1265,6 +1262,9 @@ importers:
       '@threenative/assets':
         specifier: workspace:*
         version: link:../assets
+      '@threenative/blender-bridge':
+        specifier: workspace:*
+        version: link:../blender-bridge
       '@threenative/core':
         specifier: workspace:*
         version: link:../core
@@ -1301,9 +1301,6 @@ importers:
       publint:
         specifier: 0.3.22
         version: 0.3.22
-      threenative-blender-mcp:
-        specifier: workspace:*
-        version: link:../blender-mcp
       tsup:
         specifier: 8.5.1
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(yaml@2.9.1)

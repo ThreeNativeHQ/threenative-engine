@@ -91,7 +91,7 @@
     "@types/three": "0.187.0",
     "esbuild": "catalog:",
     "publint": "0.3.22",
-    "threenative-blender-mcp": "workspace:*",
+    "@threenative/blender-bridge": "workspace:*",
     "tsup": "8.5.1",
     "vite": "catalog:",
     "@typescript/native": "catalog:",

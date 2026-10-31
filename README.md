@@ -149,7 +149,6 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-animation-mcp` | Inspects, attaches, edits and verifies character animation through one MCP, as build-time edits of one GLB |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
-| `threenative-blender-mcp` | Drives an installed Blender headlessly so a downloaded `.fbx` becomes a loadable GLB — ships no Blender |
 
 ## Platform support
 
@@ -189,7 +188,7 @@ measured in lines of the Unreal source. Each one maps to the ThreeNative PRD tha
 
 [![Unreal port progress map](docs/PRDs/Unreal/research/unreal-port-status.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
-**Pace:** 103 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
+**Pace:** 104 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
 so at that pace the default look is done about **Nov 23, 2026**, and everything filed today about
 **Dec 17, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 

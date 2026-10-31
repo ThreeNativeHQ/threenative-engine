@@ -80,7 +80,7 @@ cancel and an axis-rolled limb is caught where a bone-direction check reads zero
 
 WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/` is yours to edit and is where the base look lives: the prototype test scene, a metre
 grid in world UVs over a light floor and a dark structure, `palette.ts`'s five roles with exactly one
-saturated `accent` for anything you can touch, `sky.ts`'s photograph behind everything, and bevelled
+saturated `accent` for anything you can touch, Unreal's default sky behind everything (`sky.ts`; `SKY_OPTIONS` takes `sky: "photo"` for the photograph), and bevelled
 `RoundedBoxGeometry` sunk by its bevel radius. Torch point lights are the only warm light. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the environment light `sky.ts` makes — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment.
 `quality.ts` defines `low`, `medium`, and `high`; the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise `high` when the family is `unknown`, and
 `setupPost(..., { tier: "low" })` is the named override — unknown tiers throw and `TN_QUALITY_TIER`

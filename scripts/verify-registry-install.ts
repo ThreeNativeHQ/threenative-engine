@@ -252,7 +252,6 @@ interface IMcpFixturePaths {
 const MCP_SAFE_TOOLS: Readonly<Record<string, string>> = {
   "threenative-animation": "animation_inspect",
   "threenative-assets": "asset_search_sources",
-  "threenative-blender": "blender_status",
   "threenative-devtools": "performance_start_trace",
   "threenative-engine": "engine_search_capabilities",
   "threenative-sculpt": "sculpt_grimoire",
@@ -305,11 +304,6 @@ export function mcpRequests(
   ];
   if (!MCP_LIST_ONLY.has(serverName))
     requests.push({ id: 3, jsonrpc: "2.0", method: "tools/call", params: operation });
-  if (serverName === "threenative-blender" && operation.name === "blender_convert") {
-    const argumentsValue = operation.arguments as Record<string, unknown>;
-    argumentsValue.source = fixture.source;
-    argumentsValue.out = fixture.out;
-  }
   return `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`;
 }
 
@@ -1127,14 +1121,9 @@ function mcpStep(project: string, runner: McpRunner): string {
         : {};
     try {
       const fixture: IMcpFixturePaths =
-        name === "threenative-blender"
-          ? {
-              out: path.join(project, ".registry-mcp", "triangle.glb"),
-              source: path.join(project, ".registry-mcp", "triangle.obj"),
-            }
-          : name === "threenative-animation"
-            ? { glb: path.join(project, ".registry-mcp", "empty.glb") }
-            : {};
+        name === "threenative-animation"
+          ? { glb: path.join(project, ".registry-mcp", "empty.glb") }
+          : {};
       if (fixture.glb !== undefined) {
         fs.mkdirSync(path.dirname(fixture.glb), { recursive: true });
         fs.writeFileSync(fixture.glb, emptyGlb());
@@ -1231,39 +1220,6 @@ function mcpStep(project: string, runner: McpRunner): string {
         results.push(
           `${name}: initialize, tools/list, search and detail ok (${hit.symbol}; ${hits.length} hit(s))`,
         );
-      } else if (name === "threenative-blender") {
-        if (record === undefined || record.available !== true) {
-          const detail = isNonEmptyString(record?.detail)
-            ? record.detail
-            : "Blender is unavailable";
-          const install = isNonEmptyString(record?.installCommand)
-            ? ` Install it with: ${record.installCommand}`
-            : "";
-          throw new Error(`TN_REGISTRY_INSTALL_BLENDER_UNAVAILABLE: ${detail}.${install}`);
-        }
-        const conversion = assertMcpHandshake(
-          name,
-          runner(
-            name,
-            server.command,
-            server.args as string[],
-            project,
-            env,
-            mcpRequests(name, fixture, {
-              arguments: { out: fixture.out, source: fixture.source },
-              name: "blender_convert",
-            }),
-          ),
-          "blender_convert",
-        );
-        const conversionPayload = objectRecord(parseToolPayload(conversion.operation, name));
-        if (
-          conversionPayload?.ok !== true ||
-          fixture.out === undefined ||
-          !fs.existsSync(fixture.out)
-        )
-          throw new Error("blender_convert did not produce a GLB from the owned OBJ fixture.");
-        results.push(`${name}: initialize, tools/list, status and conversion ok`);
       }
     } catch (error) {
       throw new Error(

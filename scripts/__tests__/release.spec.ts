@@ -119,7 +119,6 @@ describe("pnpm release ordering", () => {
       "threenative-assets",
       "threenative-sculpt",
       "threenative-engine",
-      "threenative-blender",
       "threenative-animation",
       "threenative-devtools",
     ]);

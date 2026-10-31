@@ -24,13 +24,6 @@ export const MCP_SERVERS = Object.freeze({
     command: "node",
     args: Object.freeze(["./node_modules/@threenative/core/mcp/engine.mjs"]),
   }),
-  // Drives an installed Blender headlessly so a downloaded .fbx becomes a GLB. It ships no
-  // Blender and probes for one only when a tool is called, so a project that never converts a
-  // model pays nothing for having this server wired.
-  "threenative-blender": Object.freeze({
-    command: "node",
-    args: Object.freeze(["./node_modules/@threenative/core/mcp/blender.mjs"]),
-  }),
   // Inspects, attaches, edits and verifies character animation. Every operation is a build-time
   // edit of one GLB, so a game that animates nothing pays for nothing.
   "threenative-animation": Object.freeze({
@@ -55,7 +48,6 @@ export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.15.0" }),
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
   engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.7" }),
-  blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.7" }),
   animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.3" }),
   // `args` fixes the launch for every host. The Chrome flags are `WEBGPU_BROWSER_ARGS` from
   // `@threenative/playtest`, so a DevTools trace profiles the same adapter a playtest does and not

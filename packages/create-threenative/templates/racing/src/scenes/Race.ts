@@ -23,7 +23,7 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { SUN_DIRECTION, setupSky } from "../render/sky.js";
+import { SKY_OPTIONS, SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
 import { Lap } from "../track/Lap.js";
@@ -113,7 +113,8 @@ export class Race extends Scene<GameState, IPhysicsContext> {
 
   override async load(ctx: GameCtx): Promise<void> {
     const generation = ++this.#lightingGeneration;
-    const texture = await ctx.assets.texture("sky.jpg");
+    // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
+    const texture = SKY_OPTIONS.sky === "photo" ? await ctx.assets.texture("sky.jpg") : undefined;
     if (generation !== this.#lightingGeneration) return;
     this.#sky = texture;
     const scene = ctx.scene;
@@ -154,7 +155,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
-    if (this.#sky === undefined) setupSky(ctx.scene, undefined);
+    if (this.#sky === undefined && SKY_OPTIONS.sky === "photo") setupSky(ctx.scene, undefined);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],

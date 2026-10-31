@@ -991,9 +991,17 @@ describe("generated template ordinary-frame runtime cost", () => {
       expect(complete).toBeTypeOf("function");
       race.enter(context as never);
       const controller = context.entities.get("material-lighting") as {
-        debug(): { status: string; meanRadiance: number | null };
+        debug(): { status: string; meanRadiance: number | null; reason: string };
       };
-      expect(controller.debug().status).toBe("unknown");
+      // The atmosphere sky's environment is a CPU-readable bake, so the controller measures the
+      // sky's own radiance as it enters. The pending GPU sample has not reached it yet: a sample
+      // applied early, or a controller the sample misses, both show up as the fixture's number.
+      const beforeSample = controller.debug();
+      expect(beforeSample.status).toBe("measured");
+      expect(beforeSample.reason).toBe(
+        "Solid-angle-weighted linear source radiance, with active environment intensity.",
+      );
+      expect(beforeSample.meanRadiance).not.toBe(0.25);
       complete?.();
       await Promise.resolve();
       await Promise.resolve();

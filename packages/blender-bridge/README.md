@@ -1,16 +1,13 @@
-# threenative-blender-mcp
+# @threenative/blender-bridge
 
-An MCP server that drives an **already installed** Blender headlessly, so a `.fbx`, `.blend`,
-`.obj` or `.dae` an agent downloaded becomes a GLB a ThreeNative game can load.
+Drives an **already installed** Blender headlessly, so a `.fbx`, `.blend`, `.obj` or `.dae` an
+agent downloaded becomes a GLB a ThreeNative game can load.
 
-It contains no Blender, downloads no Blender, and links against nothing from Blender. Installing
-it costs zero Blender bytes.
+It contains no Blender, downloads no Blender, and links against nothing from Blender. Importing it
+costs zero Blender bytes.
 
-## Tools
-
-| Tool | What it answers |
-| --- | --- |
-| `blender_status` | Can this machine convert models at all? Never fails — with no Blender it returns `available: false` and the install command for each platform. |
+Two consumers, one implementation: `blenderImportPass` in `@threenative/assets` converts a model at
+build time, and `threenative doctor` reports whether this machine can convert one at all.
 
 ## Finding Blender
 
@@ -26,7 +23,7 @@ A Blender older than **4.2** reports `available: false` with `cause: "blender-to
 than being driven with scripts written against a newer `bpy`.
 
 Blender is never installed for the user. `npm postinstall` has no TTY and cannot ask, and 350 MB
-is not an install cost this framework imposes without consent — so the server reports what is
+is not an install cost this framework imposes without consent — so the bridge reports what is
 missing and the agent asks in conversation. `THREENATIVE_TOOLCHAIN_AUTOINSTALL=0` suppresses even
 the offer.
 
@@ -36,8 +33,8 @@ Blender is GPLv2-or-later. This package holds the boundary in two places:
 
 - **The binary is resolved, never bundled, linked, imported or vendored.** ThreeNative spawns
   `blender --background`; it is a separate process.
-- **The Node server is MIT.** Every Python file that runs inside Blender against `bpy` lives under
-  `gpl/`, carries an `SPDX-License-Identifier: GPL-2.0-or-later` header, and sits beside
+- **The TypeScript here is MIT.** Every Python file that runs inside Blender against `bpy` lives
+  under `gpl/`, carries an `SPDX-License-Identifier: GPL-2.0-or-later` header, and sits beside
   `gpl/LICENSE.GPL`. `__tests__/licensing.spec.ts` fails on a `gpl/*.py` without that header and
   on a `.py` that appears anywhere else in this package.
 

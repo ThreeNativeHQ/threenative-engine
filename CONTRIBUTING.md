@@ -101,7 +101,7 @@ The **public surface** is every exported symbol, type, and export subpath of a p
 (`@threenative/core`, `@threenative/physics`, `@threenative/ui`, `@threenative/assets`,
 `@threenative/playtest`, `@threenative/runtime-native`, `@threenative/raw-unreal`,
 `@threenative/ueformat`, `create-threenative`, `threenative-engine-mcp`,
-`threenative-blender-mcp`) — the API your game and its agents import. Everything else is internal
+`threenative-animation-mcp`) — the API your game and its agents import. Everything else is internal
 and may change in any release.
 
 **Before 1.0** (`0.x.y`): `patch` is fixes only, `minor` may break. A break is always announced.

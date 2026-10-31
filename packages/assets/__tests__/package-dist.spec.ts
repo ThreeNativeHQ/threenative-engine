@@ -53,7 +53,7 @@ describe("packed @threenative/assets", () => {
   // The registry cannot resolve an unpublished package, so a published one that names it cannot be
   // installed at all:
   //
-  //   ERR_PNPM_FETCH_404 GET https://registry.npmjs.org/threenative-blender-mcp: Not Found
+  //   ERR_PNPM_FETCH_404 GET https://registry.npmjs.org/@threenative/blender-bridge: Not Found
   //   This error happened while installing the dependencies of @threenative/assets@0.3.0
   //
   // which killed `pnpm dlx --package <assets tarball>` and every scaffold with it. The Blender
@@ -66,8 +66,8 @@ describe("packed @threenative/assets", () => {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
-    expect(manifest.dependencies?.["threenative-blender-mcp"]).toBeUndefined();
-    expect(manifest.devDependencies?.["threenative-blender-mcp"]).toBe("workspace:*");
+    expect(manifest.dependencies?.["@threenative/blender-bridge"]).toBeUndefined();
+    expect(manifest.devDependencies?.["@threenative/blender-bridge"]).toBe("workspace:*");
 
     const copied = path.resolve("packages/assets/dist/blender-gpl");
     const script = await readFile(path.join(copied, "convert.py"), "utf8");
@@ -86,6 +86,6 @@ describe("packed @threenative/assets", () => {
     // And the bridge is inlined, not imported: a bare specifier here would fail at runtime in a
     // published install even though nothing declares it.
     const bundle = await readFile(path.resolve("packages/assets/dist/index.js"), "utf8");
-    expect(bundle).not.toMatch(/from\s*["']threenative-blender-mcp/u);
+    expect(bundle).not.toMatch(/from\s*["']@threenative\/blender-bridge/u);
   });
 });

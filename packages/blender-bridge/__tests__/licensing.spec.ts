@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  * nothing else in this repository would notice.
  */
 
-const gplRoot = path.resolve("packages/blender-mcp/gpl");
+const gplRoot = path.resolve("packages/blender-bridge/gpl");
 
 function pythonFiles(directory: string): readonly string[] {
   if (!existsSync(directory)) return [];
@@ -20,7 +20,7 @@ function pythonFiles(directory: string): readonly string[] {
   });
 }
 
-describe("blender-mcp GPL boundary", () => {
+describe("blender-bridge GPL boundary", () => {
   it("should ship a GPL licence beside the scripts that run inside Blender", () => {
     const licence = path.join(gplRoot, "LICENSE.GPL");
     expect(existsSync(licence), licence).toBe(true);
@@ -35,13 +35,13 @@ describe("blender-mcp GPL boundary", () => {
   });
 
   it("should keep every Python file this package ships under gpl/", () => {
-    const stray = pythonFiles(path.resolve("packages/blender-mcp/src"));
+    const stray = pythonFiles(path.resolve("packages/blender-bridge/src"));
     expect(stray).toEqual([]);
   });
 
   it("should keep the package manifest MIT and ship the gpl directory", () => {
     const manifest = JSON.parse(
-      readFileSync(path.resolve("packages/blender-mcp/package.json"), "utf8"),
+      readFileSync(path.resolve("packages/blender-bridge/package.json"), "utf8"),
     ) as { files?: string[]; license?: string };
     expect(manifest.license).toBe("MIT");
     expect(manifest.files).toContain("gpl");

@@ -119,7 +119,7 @@ export function validateReleaseCohort(repo = REPO, packages = publishSet(repo)):
   if (core === undefined)
     throw new Error("TN_RELEASE_COHORT_CORE_MISSING: @threenative/core is not in the publish set.");
   const coreMcp = path.join(core.directory, "mcp");
-  const requiredBundles = ["engine-server.mjs", "blender-server.mjs"];
+  const requiredBundles = ["engine-server.mjs"];
   for (const bundle of requiredBundles) {
     const file = path.join(coreMcp, bundle);
     if (!fs.existsSync(file) || fs.statSync(file).size === 0)
