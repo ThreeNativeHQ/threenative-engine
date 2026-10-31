@@ -32,12 +32,16 @@ describe("starter atmosphere sky", () => {
     const height = environment.image.height;
     const zenith = row(environment, height - 1);
     const horizon = row(environment, height / 2);
-    // Rayleigh sky: blue overhead, paler toward the horizon, black below it (Unreal's lower hemisphere).
+    // Rayleigh sky: blue overhead, paler toward the horizon.
     expect(zenith[2]).toBeGreaterThan((zenith[0] ?? 0) * 1.3);
     expect((horizon[0] ?? 0) / (horizon[2] ?? 1)).toBeGreaterThan(
       (zenith[0] ?? 0) / (zenith[2] ?? 1),
     );
-    expect(Math.max(...row(environment, 0))).toBeLessThan(8);
+    // Below the horizon, the sunlit ground: a warm grey that lifts shadow sides and that a mirror
+    // reflects, not black.
+    const nadir = row(environment, 0);
+    expect(Math.min(...nadir)).toBeGreaterThan(40);
+    expect(nadir[0]).toBeGreaterThanOrEqual(nadir[2] ?? 0);
     // The fog has no colour of its own: it takes the sky's, a blue-grey, not the photo palette grey.
     const fog = (scene.fog as FogExp2).color;
     expect(fog.b).toBeGreaterThan(fog.r);
