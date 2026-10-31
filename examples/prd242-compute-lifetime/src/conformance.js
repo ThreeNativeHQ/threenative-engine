@@ -39,8 +39,8 @@ async function assertCachedClothWarmupPreservesBuffers(renderer) {
     return originalCreate.call(this, attribute);
   };
   try {
-    // The engine's warm-up owns the zero-workgroup dispatch: three 0.187 refuses a dispatch size
-    // beside a node that already carries one (src/renderers/common/Renderer.js:3238, PR #34813).
+    // The engine's warm-up compiles through three 0.187's compile-only path
+    // (src/renderers/common/Renderer.js:1359, `compileComputeAsync`): nothing is dispatched.
     await warmUpComputeNodes(renderer, cloth.warmupNodes);
   } finally {
     backend.createStorageAttribute = originalCreate;
@@ -74,9 +74,9 @@ async function assertCachedClothWarmupPreservesBuffers(renderer) {
   const descriptor = Object.getOwnPropertyDescriptor(performance, "now");
   const seam = {
     backend,
-    computeAsync(node, count) {
+    compileComputeAsync(node) {
       calls += 1;
-      completion = renderer.computeAsync(node, count);
+      completion = renderer.compileComputeAsync(node);
       clock = 20;
       return completion;
     },

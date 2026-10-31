@@ -236,6 +236,7 @@ export interface IWarmUpReport {
 /** The narrow slice of the renderer this needs. Structural so a test needs no renderer. */
 export interface IWarmUpRenderer {
   compileAsync?: (scene: Object3D, camera: Camera, targetScene?: Object3D) => Promise<void>;
+  compileComputeAsync?: (node: unknown) => Promise<void>;
   computeAsync?: (node: unknown) => Promise<void>;
   pipelineCensus?: () => IPipelineCensus;
   /**
@@ -445,7 +446,11 @@ interface IComputeWarmUpSeam {
 }
 
 function computeAsyncOf(renderer: IWarmUpRenderer): IComputeWarmUpSeam | undefined {
-  const receiver = typeof renderer.computeAsync === "function" ? renderer : renderer.raw;
+  const receiver =
+    typeof renderer.compileComputeAsync === "function" ||
+    typeof renderer.computeAsync === "function"
+      ? renderer
+      : renderer.raw;
   if (typeof receiver !== "object" || receiver === null) return undefined;
   const { backend, compileComputeAsync, computeAsync } = receiver as {
     backend?: { isWebGPUBackend?: boolean };

@@ -1273,6 +1273,14 @@ describe("compute warm-up compiles without dispatching", () => {
     },
   );
 
+  test("a renderer offering only the compile-only path is the receiver, not its raw", async () => {
+    const compileComputeAsync = vi.fn(async () => undefined);
+    const receiver = { backend: { isWebGPUBackend: true }, compileComputeAsync };
+    const report = await warmUpComputeNodes(receiver, [{}]);
+    expect(report.unsupported).toBe(false);
+    expect(compileComputeAsync).toHaveBeenCalledOnce();
+  });
+
   test("a WebGPU backend without a compile-only path reports compute unsupported", async () => {
     const computeAsync = vi.fn(async () => undefined);
     const receiver = { backend: { isWebGPUBackend: true }, computeAsync };

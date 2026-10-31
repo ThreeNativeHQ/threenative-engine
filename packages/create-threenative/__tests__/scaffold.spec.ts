@@ -273,8 +273,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `patches/three@0.185.1.patch` was the only byte that moved on top of the exposure/fog tree, so
   // all thirteen trees moved again. Values below are the merged-tree measurement, not either side's.
   // Recomputed 2026-10-30 (PRD-775): the six kits that ship the Unreal sky extend three's `Node` where r187
-// deprecated `TempNode`, so those six trees move; the ten without a gpuSky.ts keep their values.
-// Recomputed 2026-10-30 (three 0.185.1 -> 0.187.0): the scaffolded `patches/three@0.187.0.patch`
+  // deprecated `TempNode`, so those six trees move; the ten without a gpuSky.ts keep their values.
+  // Recomputed 2026-10-30 (three 0.185.1 -> 0.187.0): the scaffolded `patches/three@0.187.0.patch`
   // is again the only byte that moves on top of these trees — the r187 patch is a different file
   // with a different name, and every kit pins and copies it — so all sixteen trees move once more.
   // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
