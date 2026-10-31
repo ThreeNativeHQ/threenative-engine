@@ -271,7 +271,7 @@ class GpuSkyNode extends TempNode<"vec3"> {
   };
   readonly materials: NodeMaterial[] = [];
   readonly sun = uniform(new Vector3());
-  readonly #quad = new QuadMesh();
+  readonly #quad = new QuadMesh(new NodeMaterial());
   readonly #noise = cloudNoise();
   readonly #fog = uniform(new Color());
   readonly #scale = vec3(...temperatureColour(SUN_KELVIN)).mul(SUN_ILLUMINANCE * SKY_TO_SUN);
