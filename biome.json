@@ -7,7 +7,6 @@
       "**/dist-native/**",
       "**/.threenative/**",
       "**/mcp/engine-server.mjs",
-      "**/mcp/blender-server.mjs",
       "**/mcp/animation-server.mjs",
       "packages/metahuman/wasm/**",
       "artifacts/**",

@@ -25,7 +25,7 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { OBSTACLE_SIZE } from "../render/shapes.js";
-import { setupSky } from "../render/sky.js";
+import { SKY_OPTIONS, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
 import { Track } from "../track.js";
@@ -52,9 +52,10 @@ export class Run extends Scene<GameState, RunnerPhysics> {
   override async load(ctx: GameCtx): Promise<void> {
     [this.#model, this.#sky] = await Promise.all([
       ctx.assets.model<IRunnerModel>("mannequin.glb"),
-      ctx.assets.texture("sky.jpg"),
+      // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
+      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
-    setupSky(ctx.scene, this.#sky);
+    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -65,9 +66,9 @@ export class Run extends Scene<GameState, RunnerPhysics> {
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, RunnerPhysics> {
-    if (this.#model === undefined || this.#sky === undefined)
-      throw new Error("Run.enter ran before load() loaded mannequin.glb and sky.jpg.");
-    setupSky(ctx.scene, this.#sky);
+    if (this.#model === undefined)
+      throw new Error("Run.enter ran before load() loaded mannequin.glb.");
+    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     const { key } = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],

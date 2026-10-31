@@ -7,6 +7,7 @@
 #include "engine/scene/object3d.h"
 
 #include "engine/foundation/job_pool.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/foundation/uuid.h"
 
 #include <algorithm>
@@ -101,7 +102,7 @@ void Object3D::enableTrackedTransform() {
 
 uint8_t* Object3D::ownTransformTracking() const { return transform_.page->tracking[transform_.index].data(); }
 
-void Object3D::markLocalTransformDirty() { transform_.page->tracking[transform_.index][1] = 1; }
+void Object3D::markLocalTransformDirty() { waste::debugAdd(waste::counters().sceneDirtyMarks); waste::meterAdd(waste::counters().dirtyTransforms); transform_.page->tracking[transform_.index][1] = 1; }
 
 uint8_t* Object3D::transformTrackingAddress(const void* address) {
     auto& pool = transforms();
@@ -317,7 +318,8 @@ Object3D::FlagOffsets Object3D::flagOffsets() {
     const auto at = [](const bool& flag) {
         return uint32_t(reinterpret_cast<const char*>(&flag) - reinterpret_cast<const char*>(probe.flags()));
     };
-    return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_)};
+    return {at(probe.visible_), at(probe.castShadow_), at(probe.receiveShadow_),
+            at(probe.matrixWorldNeedsUpdate)};
 }
 
 void Object3D::setCastShadow(bool value) {
@@ -518,6 +520,7 @@ Object3D& Object3D::add(Object3D& object) {
     // Re-parenting drops the old parent's hold: keep the object alive across it.
     const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();
     object.removeFromParent();
+    waste::debugAdd(waste::counters().sceneAdds);
     object.parent = this;
     children.push_back(&object);
     markHierarchy(this);
@@ -539,6 +542,7 @@ Object3D& Object3D::remove(Object3D& object) {
     const auto found = std::find(children.begin(), children.end(), &object);
     if (found == children.end()) return *this;
     const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();  // alive until this returns
+    waste::debugAdd(waste::counters().sceneRemoves);
     children.erase(found);
     markHierarchy(this);
     disown(object);
@@ -580,6 +584,7 @@ Object3D& Object3D::attach(Object3D& object) {
     object.applyMatrix4(scratchM1);
     const std::shared_ptr<Object3D> keep = object.weak_from_this().lock();
     object.removeFromParent();
+    waste::debugAdd(waste::counters().sceneAdds);
     object.parent = this;
     children.push_back(&object);
     markHierarchy(this);
@@ -795,6 +800,7 @@ int Object3D::visitMatrixWorldVisible(bool force, bool prune) {
 }
 
 uint32_t Object3D::updateMatrixWorldVisible(bool force, bool prune) {
+    waste::debugAdd(waste::counters().sceneVisits);
     const int childForce = visitMatrixWorldVisible(force, prune);
     uint32_t visited = 1;
     if (childForce >= 0)

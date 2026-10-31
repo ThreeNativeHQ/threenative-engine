@@ -101,6 +101,9 @@ describe("run-test-suite phase contract", () => {
     );
     expect(source.split(prebuiltPackageTestCall)).toHaveLength(3);
     expect(source).toContain("TN_SUITE_PREBUILT_MISSING");
+    expect(source, "the prebuilt check reads each package main, not dist/index.js").toContain(
+      "package.json').main",
+    );
     expect(source).toContain("packages/*/tsup.config.ts");
     expect(source).toContain('"${TN_SUITE_PHASES:-docs,build,package-test,unit}"');
     expect(source, "assets has no pure prebuilt check").toContain("@threenative/assets");

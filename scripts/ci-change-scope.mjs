@@ -80,7 +80,7 @@ export function changedTemplates(files) {
 // default tarball/scaffold/physics/React/asset/MCP/boot route. Unknown executables keep all kits.
 const REPRESENTATIVE_INPUTS = [
   /^docs\/(?:verification|benchmark)\/.*\.(?:png|jpe?g|webp|json|gz|txt)$/u,
-  /^packages\/(?:core|physics|ui|assets|playtest|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp)\//u,
+  /^packages\/(?:core|physics|ui|assets|playtest|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-bridge)\//u,
   /^examples\//u,
   /^scripts\/__tests__\/[^/]+\.spec\.ts$/u,
   /^scripts\/(?:api-surface\.json|run-test-suite\.sh|verify-animation-reversal\.ts|temporal-aa-(?:evidence|quality)\.ts|velocity-(?:capture|cost)-proof\.ts|verify-temporal-(?:aa|motion)\.ts|verify-velocity-history\.ts)$/u,

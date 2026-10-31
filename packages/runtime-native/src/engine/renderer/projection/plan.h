@@ -223,6 +223,19 @@ inline std::atomic<uint64_t>& uniformHashCount() {
     return count;
 }
 
+// Draws whose material state the render database recopied in this process, and the node graphs it copied for
+// them. A draw whose material's uniforms and geometry hold keeps both, so a steady frame adds nothing: the
+// unit-level work assertion, where a wall clock would only measure the machine.
+inline std::atomic<uint64_t>& materialRefreshCount() {
+    static std::atomic<uint64_t> count{0};
+    return count;
+}
+
+inline std::atomic<uint64_t>& materialNodeCopyCount() {
+    static std::atomic<uint64_t> count{0};
+    return count;
+}
+
 // Base colour travels per instance. Hash every other equality input; equality still resolves collisions.
 inline std::size_t uniformHash(const Material& m) {
     if (m.uniformHashEpoch_ == uniformEpoch()) return m.cachedUniformHash_;

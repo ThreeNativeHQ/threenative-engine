@@ -6,7 +6,16 @@
  */
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
-import { GPU_STAGES, SHADOW_SEGMENT_FIELD, SHADOW_STAGE } from "./gpu-stages.js";
+import { debugTelemetry } from "./debug-telemetry.js";
+import {
+  CPU_STAGE_ENTRIES,
+  type CpuStageName,
+  GPU_STAGES,
+  SHADOW_SEGMENT_FIELD,
+  SHADOW_STAGE,
+  WORK_COUNT_NAMES,
+  type WorkCountName,
+} from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
@@ -25,6 +34,8 @@ type HostCall =
   | "_tnw_web_adapter"
   | "_tnw_web_resize"
   | "_tnw_web_render"
+  | "_tnw_web_prepare_environment"
+  | "_tnw_web_set_presentation_hold"
   | "_tnw_web_compile_async"
   | "_tnw_web_compile_status"
   | "_tnw_web_renderer_state"
@@ -49,7 +60,7 @@ export function isWebHostModule(module: TnAbiModule): module is WebEngineModule 
  * The tnw_* contract this facade speaks (web_host.cpp `kWebHostAbi`). Bump both on every tnw_*
  * signature change: web-host-abi.spec.ts pins the signatures per number, and a mismatch fails init.
  */
-export const WEB_HOST_ABI = 5;
+export const WEB_HOST_ABI = 8;
 
 /** The canvas key the host's surface looks up; Emscripten resolves it before any DOM query. */
 const CANVAS_TARGET = "!threenative-canvas";
@@ -126,6 +137,7 @@ export function defineWebRenderer(
 ): new (
   parameters?: Record<string, unknown>,
 ) => object {
+  const debug = debugTelemetry(module);
   let claimed = false;
   // The engine starts once per page: one device, and one surface bound to the first renderer's canvas.
   // A renderer built after that one was disposed (a hot update re-runs the game) adopts both.
@@ -166,6 +178,17 @@ export function defineWebRenderer(
     get temporalUpscale(): boolean {
       return module._tnw_web_frame(34) === 1;
     }
+    #stageMeters = true;
+    /** Address of the host's stage-total array (`tnw_web_frame` 78), 0 until `init` asks. */
+    #stageBase = 0;
+    /**
+     * The engine's CPU stage meters on (the default) or off. Off, the engine reads no clock around its stages and this
+     * facade reads no totals, so the paired A/B of the meters' own cost can run on one build (PRD-771).
+     */
+    setStageMeters(enabled: boolean): void {
+      this.#stageMeters = enabled;
+      module._tnw_web_frame(enabled ? -3 : -4);
+    }
     setRenderScale(scale: number): void {
       if (!Number.isFinite(scale) || scale < 0.25 || scale > 1)
         throw new Error("renderScale must be finite and between 0.25 and 1.");
@@ -189,6 +212,20 @@ export function defineWebRenderer(
         graphKeys: 0,
         programs: 0,
         frameGateSkips: 0,
+        // The last frame's draws and triangles with the shadow passes apart from the main pass (web_host.cpp fields 0, 1, 27
+        // and 85). `info.render` adds them, as three's does; core's pass recorder reads this to report `main` and `shadow`.
+        frameSplit: { mainDraws: 0, mainTriangles: 0, shadowDraws: 0, shadowTriangles: 0 },
+        // The startup's first real frame (web_host.cpp fields 71 and 72): the ordinary world submissions that encoded,
+        // and whether the shadow inputs such a frame samples exist. Core holds presentation until both, and the
+        // eye adaptation, say the world is ready; a bake step, an overlay, a declined draw or a failed one adds to
+        // neither. A shadow draw count is not the same answer.
+        startup: {
+          worldSubmissions: 0,
+          shadowInputsReady: false,
+          // web_host.cpp field 86: the first world frame drawn after the hold came off has finished on the GPU. True
+          // until a hold comes off, so a page that never held presentation has nothing to wait for.
+          worldPresented: true,
+        },
         // True while prepareEnvironmentAsync draws the held scene under the loading cover. The world
         // is still unlit, so these pixels are not the view's first frame: core's eye adaptation holds
         // its history rather than adopting this bake's black target.
@@ -245,6 +282,12 @@ export function defineWebRenderer(
         },
         // The bytes of per-draw uniforms the last frame uploaded.
         uniformBytes: 0,
+        // The engine's CPU stages as running totals in ms (gpu-stages.ts `CPU_STAGE_FIELDS`) and the work counts beside
+        // them (`WORK_COUNT_NAMES`), re-read after every render while the stage meters are on: core differences two
+        // reads into `TN_FRAME_BUDGET.stages`. Made by `init` when the module publishes them: a module that does not
+        // has none, and core reads that as unmeasured, never as zero.
+        cpuMs: undefined as Record<CpuStageName, number> | undefined,
+        work: undefined as Record<WorkCountName, number> | undefined,
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -315,6 +358,8 @@ export function defineWebRenderer(
     #gpuSamples = 0;
     #holdsSlot = true;
     #timestampFrames: number[] = [];
+    /** The host's presentation hold is engaged, so this renderer has one of its own to release. */
+    #presentationHeld = false;
 
     constructor(parameters: Record<string, unknown> = {}) {
       if (claimed)
@@ -396,6 +441,15 @@ export function defineWebRenderer(
         // Honest, like the engine: a device without timestamp-query times no frame, so no caller
         // may be told timestamps are enabled. An explicit opt-out stays off.
         if (module._tnw_web_frame(10) === 0) this.backend.trackTimestamp = false;
+        this.#stageBase = module._tnw_web_frame(78);
+        if (this.#stageBase > 0) {
+          this.info.engine.cpuMs = Object.fromEntries(
+            CPU_STAGE_ENTRIES.map(([name]) => [name, 0]),
+          ) as Record<CpuStageName, number>;
+          this.info.engine.work = Object.fromEntries(
+            WORK_COUNT_NAMES.map((name) => [name, 0]),
+          ) as Record<WorkCountName, number>;
+        }
         return this;
       })();
       return this.#initialized;
@@ -531,6 +585,16 @@ export function defineWebRenderer(
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       const renderFrame = this.info.frame;
+      if (debug !== undefined) {
+        // Observation only: native captures this request with each submitted sample.
+        module._tnw_web_frame(this.backend.trackTimestamp ? -1 : -2);
+        debug?.add(
+          "gpuTimestampRequests",
+          this.backend.trackTimestamp ? 1 : 0,
+          "gpu",
+          "WebGPURenderer.render",
+        );
+      }
       this.#drawStatus(
         module._tnw_web_render(
           handles,
@@ -550,7 +614,8 @@ export function defineWebRenderer(
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
-      this.info.render.triangles += module._tnw_web_frame(1);
+      const lastTriangles = module._tnw_web_frame(1);
+      this.info.render.triangles += lastTriangles;
       const shadows = this.info.engine.shadows;
       shadows.lampRedraws = module._tnw_web_frame(25);
       shadows.lampDraws = module._tnw_web_frame(26);
@@ -559,8 +624,19 @@ export function defineWebRenderer(
       shadows.lampMapMax = module._tnw_web_frame(29);
       shadows.keptMaps = module._tnw_web_frame(40);
       this.info.engine.uniformBytes = module._tnw_web_frame(41);
+      const split = this.info.engine.frameSplit;
+      split.shadowDraws = shadows.shadowDraws;
+      split.shadowTriangles = module._tnw_web_frame(85);
+      split.mainDraws = this.info.render.frameCalls - split.shadowDraws;
+      split.mainTriangles = lastTriangles - split.shadowTriangles;
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
+        debug?.add(
+          "gpuTimestampSamples",
+          gpuSamples - this.#gpuSamples,
+          "gpu",
+          "native timestamp readback",
+        );
         this.#gpuSamples = gpuSamples;
         const gpuMs = module._tnw_web_frame(7);
         // The engine reports which submitted frame this sample belongs to; the readback can land
@@ -601,7 +677,28 @@ export function defineWebRenderer(
       temporal.jitterLength = module._tnw_web_frame(37);
       temporal.outputWidth = module._tnw_web_frame(38);
       temporal.outputHeight = module._tnw_web_frame(39);
+      if (debug !== undefined && temporal.active) {
+        // The native renderer counts the active/history/rejected/clamped pixel totals under these
+        // exact names (foundation/waste_counters.h, renderer.cpp); a JS series beside them would be
+        // overwritten by `counters()` where the names collide and silently stale where they do not.
+        // Only the input and output sizes have no native producer.
+        debug.add("temporalInputPixels", temporal.inputWidth * temporal.inputHeight, "temporal");
+        debug.add("temporalOutputPixels", temporal.outputWidth * temporal.outputHeight, "temporal");
+      }
       engine.samples = module._tnw_web_frame(18);
+      const cpu = engine.cpuMs;
+      const work = engine.work;
+      if (this.#stageMeters && cpu !== undefined && work !== undefined) {
+        // In place, from the array the host fills at the end of every render: the ABI census above stays as it was.
+        const heap = module.HEAPF64;
+        const first = this.#stageBase / 8;
+        for (let index = 0; index < CPU_STAGE_ENTRIES.length; index += 1)
+          cpu[(CPU_STAGE_ENTRIES[index] as readonly [CpuStageName, number])[0]] =
+            heap[first + index] ?? 0;
+        for (let index = 0; index < WORK_COUNT_NAMES.length; index += 1)
+          work[WORK_COUNT_NAMES[index] as WorkCountName] =
+            heap[first + CPU_STAGE_ENTRIES.length + index] ?? 0;
+      }
       const passes = engine.passes;
       passes.mainRecorded = module._tnw_web_frame(60);
       passes.recordCause = module._tnw_web_frame(61);
@@ -609,6 +706,14 @@ export function defineWebRenderer(
       passes.recordMs = module._tnw_web_frame(63);
       passes.shadowEncodeMs = module._tnw_web_frame(64);
       passes.shadowRecorded = module._tnw_web_frame(65);
+      // The startup's own report, read only while the cover is up so a held frame sees the one it just made. After
+      // the release nothing reads it, so a steady frame pays no host call for it and the last values stand.
+      if (this.#presentationHeld) {
+        engine.startup.worldSubmissions = module._tnw_web_frame(71);
+        engine.startup.shadowInputsReady = module._tnw_web_frame(72) === 1;
+      } else if (!engine.startup.worldPresented) {
+        engine.startup.worldPresented = module._tnw_web_frame(86) === 1;
+      }
       // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
       (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
     }
@@ -624,7 +729,7 @@ export function defineWebRenderer(
         renderScale,
       } = this;
       this.library.apply(toneMapping);
-      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}|${renderScale}`;
+      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}|${renderScale}|${this.backend.trackTimestamp}`;
       if (key === this.#state) return;
       const space = string(String(outputColorSpace));
       try {
@@ -637,6 +742,7 @@ export function defineWebRenderer(
             shadowMap.type,
             samples,
             renderScale,
+            this.backend.trackTimestamp ? 1 : 0,
           ),
         );
       } finally {
@@ -732,16 +838,30 @@ export function defineWebRenderer(
     }
 
     /**
+     * Holds the canvas while a startup's first world frame is still cold (web_host.cpp
+     * `tnw_web_set_presentation_hold`). A held render still draws its scene, shadow, post and temporal
+     * passes, but takes no canvas texture, so nothing the engine's inputs are not ready for is presented.
+     * Overlays still present. Core releases it on the first frame its own readiness accepts.
+     */
+    setPresentationHeld(held: boolean): void {
+      const next = held === true;
+      if (next === this.#presentationHeld) return;
+      this.#presentationHeld = next;
+      // The release is the moment the next world frame is the one the player sees: watch it leave the GPU.
+      if (!next) this.info.engine.startup.worldPresented = false;
+      module._tnw_web_set_presentation_hold(next ? 1 : 0);
+    }
+
+    /**
      * Startup warm-up's native counterpart of three's PMREM preparer: the engine bakes an environment
-     * a retained packet per render and skips every frame until it is done, so draw the held scene
-     * (behind the loading cover) until a render is no longer skipped for it. True when it drew;
-     * false at `deadlineMs` (a `performance.now()` time), so a bake that never finishes cannot
-     * hold the caller or keep drawing after it gave up.
+     * a retained packet per call and skips every frame until it is done, so advance the bake one step
+     * per task until it reports baked. True when it baked; false at `deadlineMs` (a `performance.now()`
+     * time), so a bake that never finishes cannot hold the caller or keep preparing after it gave up.
      *
-     * Each draw runs in a timer task, not in the animation frame, so the browser presents it by
-     * itself: an environment still baking presents black. `afterDraw` runs straight after every
-     * draw, in the same task, so the caller can paint its loading cover over that frame; without
-     * it the cover flickers against black for as long as the bake lasts.
+     * A step presents nothing. The bake used to reach the canvas through render(), so its last draw
+     * was the page's first picture: bright, without the cast shadows the next frame had, on screen for
+     * as long as the bake ran. `afterDraw` still runs after every step, in the same task, so the caller
+     * keeps its loading cover over the frame last presented while the world is unfinished.
      */
     async prepareEnvironmentAsync(
       scene: unknown,
@@ -750,8 +870,7 @@ export function defineWebRenderer(
       afterDraw?: () => void,
     ): Promise<boolean> {
       // The engine keeps a bake per texture and version, so a restart into the same sky has nothing
-      // to wait for. It must not draw to learn that: on a GPU that retires no frame the gate declines
-      // every draw and the loop below would hold the restart for its whole budget.
+      // to wait for: answer before a step, which would otherwise cost the caller a task per packet.
       const environment = (scene as { environment?: IBakedEnvironment | null }).environment;
       if (environment != null && bakedEnvironments.get(environment) === environment.version)
         return true;
@@ -763,10 +882,10 @@ export function defineWebRenderer(
       // Lantern Vale's bake drew the main pass at 4x MSAA before its TRAA graph was installed: 39
       // pipelines the game never drew, compiled synchronously behind the cover.
       this[PIPELINE_POST]?.();
-      // The bake's last draw is the scene's first, so build its pipelines off the queue first: on
+      // The scene's first drawn frame follows this bake, so build its pipelines off the queue first: on
       // Lantern Vale that draw compiled 84 synchronously and held the GPU queue for over a second
       // (ready 6.3 s -> 4.5 s). A refusal is the draw's to report, where it compiles that pipeline again.
-      // It waits at most half the time left, so a slow compile still leaves the bake its draws.
+      // It waits at most half the time left, so a slow compile still leaves the bake its steps.
       const compiling = this.compileAsync(scene, camera).catch(() => undefined);
       const left = (deadlineMs - performance.now()) / 2;
       if (Number.isFinite(left)) {
@@ -782,14 +901,15 @@ export function defineWebRenderer(
       this.info.engine.environmentBake = true;
       try {
         while (performance.now() < deadlineMs) {
-          const gated = this.info.engine.frameGateSkips;
-          this.render(scene, camera);
-          // Read before `afterDraw`: the cover is a draw too, and the engine's "skipped for an unbaked
-          // environment" flag describes the last draw it made.
-          const baked =
-            this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
+          // Every step: `afterDraw` may paint the cover through render(), which rewrites these slots.
+          writeHandle(0, scene, "scene");
+          writeHandle(12, camera, "camera");
+          // The host's own preparer, not a draw: no surface frame is taken, no shadow or post pass encoded,
+          // no temporal step advanced, and nothing is counted as a frame.
+          const status = module._tnw_web_prepare_environment(handles, handles + 12);
           afterDraw?.();
-          if (baked) {
+          if (status < 0) this.#drawStatus(status);
+          if (status > 0) {
             if (environment != null) {
               markBaked(environment);
               if (this.#bakingEnvironment === environment) this.#bakingEnvironment = undefined;
@@ -886,6 +1006,8 @@ export function defineWebRenderer(
       if (!this.#holdsSlot) return;
       this.#holdsSlot = false;
       claimed = false;
+      // A renderer disposed mid-startup must not leave its hold behind for the next one.
+      this.setPresentationHeld(false);
     }
   };
   const read = async (target: unknown, x: number, y: number, width: number, height: number) => {

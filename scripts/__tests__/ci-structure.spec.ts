@@ -2102,18 +2102,14 @@ describe("CI pipeline structure", () => {
     expect(publish).toContain("pnpm tsx scripts/release.ts --skip-gates");
   });
 
-  it("provisions the registry verifier before the guarded publish command", async () => {
+  it("provisions the desktop runtime prerequisites before the guarded publish command", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
     const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
     expect(publish).toBeDefined();
     if (publish === undefined) return;
-    const prerequisites = publish.indexOf(
-      "Install the pinned Blender used by the registry verifier",
-    );
+    const prerequisites = publish.indexOf("libvulkan1 mesa-vulkan-drivers");
     const release = publish.indexOf("pnpm tsx scripts/release.ts --yes");
     expect(prerequisites).toBeGreaterThanOrEqual(0);
-    expect(publish).toContain("libvulkan1 mesa-vulkan-drivers");
-    expect(publish).toContain("THREENATIVE_BLENDER_PATH");
     expect(release).toBeGreaterThan(prerequisites);
   });
 
@@ -3028,6 +3024,9 @@ describe("CI pipeline structure", () => {
     expect(ios).toContain("cmp -s");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_CHANGED");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_MISSING");
+    expect(ios, "the output snapshot reads each package main, not dist/index.js").toContain(
+      "package.json').main",
+    );
     expect(packSection).toContain("workspace-packages.ts --archives");
     expect(packSection).toContain('pnpm --filter "$package_name" pack --pack-destination');
     expect(packSection).not.toContain("--if-present run build");

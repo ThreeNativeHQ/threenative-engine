@@ -2624,7 +2624,8 @@ jobs:
           missing=()
           for config in packages/*/tsup.config.ts; do
             directory="${config%/tsup.config.ts}"
-            [ -f "$directory/dist/index.js" ] || missing+=("$directory/dist/index.js")
+            output="$directory/$(node -p "require('./$directory/package.json').main.replace(/^\\.\\//, '')")"
+            [ -f "$output" ] || missing+=("$output")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "TN_IOS_PACKAGE_OUTPUTS_MISSING: ${missing[*]}" >&2

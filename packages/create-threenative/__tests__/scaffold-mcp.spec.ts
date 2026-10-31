@@ -15,8 +15,6 @@ import { createProject, discoverTemplateNames } from "../src/index.js";
 const templates = discoverTemplateNames();
 const engineMcp = "threenative-engine-mcp";
 const enginePackageRoot = path.resolve("packages/engine-mcp");
-const blenderMcp = "threenative-blender-mcp";
-const blenderPackageRoot = path.resolve("packages/blender-mcp");
 const corePackageRoot = path.resolve("packages/core");
 const physicsPackageRoot = path.resolve("packages/physics");
 const temporaryRoots: string[] = [];
@@ -100,12 +98,6 @@ async function linkCore(target: string): Promise<void> {
   const destination = path.join(target, "node_modules", "@threenative", "core");
   await mkdir(path.dirname(destination), { recursive: true });
   await symlink(corePackageRoot, destination, "dir");
-}
-
-async function linkBlenderMcp(target: string): Promise<void> {
-  const destination = path.join(target, "node_modules", blenderMcp);
-  await mkdir(path.dirname(destination), { recursive: true });
-  await symlink(blenderPackageRoot, destination, "dir");
 }
 
 async function linkPhysics(target: string): Promise<void> {
@@ -863,101 +855,6 @@ describe("scaffolded host MCP configs", () => {
 // config is caught by a plain `pnpm test` too. It calls the generator's own comparison rather than
 // re-deriving the expectation: a second derivation would be a second generator, green against its
 // own copy of the rule.
-
-// The hard case, not the easy one: a server that only works where Blender happens to be installed
-// is exactly the failure this gate exists to prevent. The shim is launched over real stdio with
-// `PATH` scrubbed and no `THREENATIVE_BLENDER_PATH`, and the assertions read a real `tools/list`
-// and a real `tools/call` — never `MCP_SERVERS` asserting about `MCP_SERVERS`.
-describe("scaffolded blender MCP", () => {
-  it(
-    "should list blender tools with no Blender installed",
-    async () => {
-      const root = await makeTempDir("threenative-scaffold-blender-");
-      temporaryRoots.push(root);
-      const { target } = await createProject(
-        { install: false, target: "game", template: "minimal" },
-        root,
-      );
-      await linkCore(target);
-      await linkBlenderMcp(target);
-
-      // The server to probe is looked up in core's table, not spelled here: removing the entry from
-      // `MCP_SERVERS` must stop this gate probing it, which is the revert check for the wiring. A
-      // hardcoded name would have kept probing the committed template bytes and passed.
-      const servers = MCP_SERVERS as Record<string, { args: readonly string[] }>;
-      const blenderServerName = Object.keys(servers).find((name) =>
-        (servers[name]?.args[0] ?? "").endsWith("/blender.mjs"),
-      );
-      expect(blenderServerName, "MCP_SERVERS declares no blender server").toBeDefined();
-      const config = JSON.parse(await readFile(path.join(target, ".mcp.json"), "utf8")) as {
-        mcpServers: Record<string, { args: string[]; command: string }>;
-      };
-      const server = config.mcpServers[blenderServerName ?? ""];
-      expect(server?.args[0]).toBe("./node_modules/@threenative/core/mcp/blender.mjs");
-
-      // A PATH with one empty directory: `blender` cannot be found, and neither can anything else,
-      // so nothing on this machine can accidentally satisfy the probe.
-      const emptyBin = path.join(root, "empty-bin");
-      const emptyHome = path.join(root, "empty-home");
-      await mkdir(emptyBin, { recursive: true });
-      await mkdir(emptyHome, { recursive: true });
-      // `process.execPath`, not "node": PATH is scrubbed to a single empty directory so nothing
-      // on this machine can satisfy the Blender probe, and that leaves no node on PATH either.
-      const child = spawn(process.execPath, [server?.args[0] ?? ""], {
-        cwd: target,
-        env: {
-          ...process.env,
-          // An empty HOME as well as an empty PATH: detection also looks in `~/.local/bin`, and a
-          // developer machine with Blender installed there would otherwise pass this gate for the
-          // opposite reason to the one it is written for.
-          HOME: emptyHome,
-          PATH: emptyBin,
-          THREENATIVE_BLENDER_PATH: "",
-          USERPROFILE: emptyHome,
-        },
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      const lines = createInterface({ input: child.stdout });
-      const nextId = { value: 1 };
-      try {
-        await request(child, nextId, lines, "initialize", {
-          capabilities: {},
-          clientInfo: { name: "scaffold-blender-test", version: "0" },
-          protocolVersion: "2025-06-18",
-        });
-        child.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n');
-
-        const listed = await request(child, nextId, lines, "tools/list");
-        const tools = listed.tools as Array<{ name: string }>;
-        expect(tools.map((tool) => tool.name)).toContain("blender_status");
-
-        const called = await request(child, nextId, lines, "tools/call", {
-          arguments: {},
-          name: "blender_status",
-        });
-        const content = called.content as Array<{ text: string }>;
-        const status = JSON.parse(content[0]?.text ?? "null") as {
-          available: boolean;
-          cause?: string;
-          install: Record<string, string>;
-          installCommand: string;
-        };
-        // The whole point: absent Blender is a result an agent can act on, not a dead server.
-        expect(status.available).toBe(false);
-        expect(status.cause).toBe("blender-missing");
-        expect(Object.keys(status.install).sort()).toEqual(["linux", "macos", "windows"]);
-        expect(status.installCommand.length).toBeGreaterThan(0);
-      } finally {
-        lines.close();
-        if (child.exitCode === null && child.signalCode === null) {
-          child.kill();
-          await new Promise<void>((resolve) => child.once("exit", () => resolve()));
-        }
-      }
-    },
-    MCP_PROBE_TEST_TIMEOUT_MS,
-  );
-});
 
 describe("committed template MCP host configs", () => {
   it("should keep every template host config equal to the generator output", () => {

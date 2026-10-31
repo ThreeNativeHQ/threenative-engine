@@ -122,6 +122,13 @@ struct VertexVariant {
     bool skinned = false;
     bool skinnedPalette = false; // boneBase + instanceIndex * boneStride
     /**
+     * A virtual shadow page's grouped caster (FM8): the draw's per-instance skin values — its bone base and
+     * its bind matrix pair — come from the storage buffer `shadowSkin`, one record of nine vec4s per instance
+     * (the base in the first record's x, the bind matrix's four columns, then its inverse's), at `boneBase` +
+     * instanceIndex * 9. The palette itself stays the frame's, written once per rig, so four passes read it.
+     */
+    bool skinInstanceValues = false;
+    /**
      * three's morphReference(): `morphTargets` targets read from the storage buffer `morphData`
      * (vec4 per vertex and target; a normal entry after each position one when `morphNormals`) from
      * `morphBase`, with `morphVertexCount` vertices per target; influences from `morphInfluences` at
@@ -174,7 +181,7 @@ struct VertexVariant {
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
-               std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
+               std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }

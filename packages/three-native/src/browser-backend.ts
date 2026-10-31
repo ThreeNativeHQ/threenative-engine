@@ -15,6 +15,7 @@
 import { ENGINE_COST_KNOB, createBridgeMeter } from "./bridge-meter.js";
 import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
+import { type DebugTelemetry, debugTelemetry } from "./debug-telemetry.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
 
@@ -64,6 +65,7 @@ export type EngineValue =
 
 /** What the classes call; the Wasm ABI implements it, and a surface-only runtime refuses every call. */
 export interface IBrowserRuntime {
+  readonly debugTelemetry?: DebugTelemetry;
   typeId(className: string): number;
   construct(className: string, args: readonly EngineValue[]): IEngineRef;
   invoke(self: IEngineRef, method: string, args: readonly EngineValue[]): EngineValue;
@@ -87,6 +89,8 @@ export interface IBrowserRuntime {
   readWord?(address: number): number;
   /** Writes one double at `address` in the engine's memory; Wasm only. */
   writeDouble?(address: number, value: number): void;
+  /** Writes the byte at `address` in the engine's memory (a flag field); Wasm only. */
+  writeByte?(address: number, value: number): void;
   /**
    * A copy of the attribute's data, of its scalar type; three's `attribute.array` is built on it.
    * With `offset`/`count`, a copy of that scalar subrange only (a per-vertex setter syncs one item).
@@ -389,18 +393,26 @@ export function defineBrowserClasses(
   // Every call into the engine counts, one increment each: the bench's crossing budget reads it per frame.
   // A census frame (bridge-meter.ts) also records each one by name, so a redundant read is named.
   let crossings = 0;
+  const debug = source.debugTelemetry ?? debugTelemetry(source);
+  let debugActivated = false;
+  let crossingMicros: number | undefined;
   const typeNames = new Map<number, string>();
-  const meter = createBridgeMeter({
-    now: () => performance.now(),
-    // One getter crossing, timed over a thousand on a scratch Group through the uncounted runtime.
-    crossingMicros() {
+  const calibratedCrossingMicros = (): number => {
+    if (crossingMicros === undefined) {
       const ref = source.construct("Group", []);
       const start = performance.now();
       for (let i = 0; i < 1000; i++) source.get(ref, "name");
-      const micros = performance.now() - start;
+      crossingMicros = performance.now() - start;
       source.release(ref);
-      return micros;
-    },
+      if (!Number.isFinite(crossingMicros) || crossingMicros < 0)
+        throw new Error("TN_DEBUG: invalid crossing calibration.");
+    }
+    return crossingMicros;
+  };
+  const meter = createBridgeMeter({
+    now: () => performance.now(),
+    // Getter-equivalent microseconds: a thousand crossings measured in milliseconds.
+    crossingMicros: calibratedCrossingMicros,
     typeName: (type) => typeNames.get(type) ?? String(type),
     stack: () => new Error().stack,
     report: (line) => console.warn(line),
@@ -409,21 +421,27 @@ export function defineBrowserClasses(
     ...source,
     construct: (className, args) => {
       crossings++;
-      return source.construct(className, args);
+      const ref = source.construct(className, args);
+      if (meter.counting) meter.record("construct", ref, className);
+      debug?.crossing("construct", ref, className, className);
+      return ref;
     },
     get: (self, path) => {
       crossings++;
       if (meter.counting) meter.record("get", self, path);
+      debug?.crossing("get", self, path, typeNames.get(self.type) ?? String(self.type));
       return source.get(self, path);
     },
     set: (self, path, value) => {
       crossings++;
       if (meter.counting) meter.record("set", self, path);
+      debug?.crossing("set", self, path, typeNames.get(self.type) ?? String(self.type));
       source.set(self, path, value);
     },
     invoke: (self, method, args) => {
       crossings++;
       if (meter.counting) meter.record("call", self, method);
+      debug?.crossing("call", self, method, typeNames.get(self.type) ?? String(self.type));
       return source.invoke(self, method, args);
     },
     ...(source.engineReferences === undefined
@@ -431,10 +449,52 @@ export function defineBrowserClasses(
       : {
           engineReferences: (refs: readonly IEngineRef[]) => {
             crossings++;
+            const first = refs[0];
+            if (meter.counting && first !== undefined)
+              meter.record("engineReferences", first, "engineReferences");
+            if (debug !== undefined)
+              debug.crossing(
+                "engineReferences",
+                first ?? { key: "batch", type: 0 },
+                "engineReferences",
+                "Object3D",
+              );
             return source.engineReferences?.(refs) ?? [];
           },
         }),
   };
+  if (debug !== undefined) {
+    runtime.release = (self) => {
+      debug.crossing("release", self, "release", typeNames.get(self.type) ?? String(self.type));
+      source.release(self);
+    };
+    runtime.setCallback = (self, name, callback) => {
+      debug.crossing("callback", self, name, typeNames.get(self.type) ?? String(self.type));
+      source.setCallback(self, name, callback);
+    };
+    const attributeArray = source.attributeArray;
+    if (attributeArray !== undefined)
+      runtime.attributeArray = (self, offset, count) => {
+        debug.crossing(
+          "attributeRead",
+          self,
+          "array",
+          typeNames.get(self.type) ?? String(self.type),
+        );
+        return attributeArray(self, offset, count);
+      };
+    const attributeWrite = source.attributeWrite;
+    if (attributeWrite !== undefined)
+      runtime.attributeWrite = (self, value, offset) => {
+        debug.crossing(
+          "attributeWrite",
+          self,
+          "array",
+          typeNames.get(self.type) ?? String(self.type),
+        );
+        attributeWrite(self, value, offset);
+      };
+  }
   const classes: Record<string, new (...args: unknown[]) => object> = {};
   const byType = new Map<number, { prototype: object; own?: readonly IOwnField[] }>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
@@ -444,6 +504,26 @@ export function defineBrowserClasses(
   // Each object's kept `rotation` Euler (or `quaternion`) -> the object, whose other form a write syncs.
   const rotations = new WeakMap<object, object>();
   const quaternions = new WeakMap<object, object>();
+  const sharedTransforms = debug === undefined ? undefined : new WeakSet<object>();
+  const sharedTransformWrite =
+    debug === undefined
+      ? undefined
+      : (self: object, address: number, value: number): void => {
+          if (!sharedTransforms?.has(self)) return;
+          debug.add(
+            "sharedTransformWrites",
+            1,
+            "scene",
+            "browser-backend.ts:shared transform setter",
+          );
+          if (source.readDoubles !== undefined && Object.is(source.readDoubles(address, 1), value))
+            debug.add(
+              "unchangedSharedTransformWrites",
+              1,
+              "scene",
+              "browser-backend.ts:shared transform setter",
+            );
+        };
   // Properties only the object's own setter or methods change: `name` and `type` (read per track and
   // per bone while a game binds animations), an attribute's shape (read per merge), a mesh's
   // geometry and material. The answer is kept until JS sets it or calls a method on that object.
@@ -626,6 +706,13 @@ export function defineBrowserClasses(
         if (glueCounting) propertyReads += 1;
         const member = fromEngine(runtime.get(refOf(this), property));
         Object.defineProperty(this, property, { value: member, writable: false });
+        if (
+          property === "position" ||
+          property === "scale" ||
+          property === "rotation" ||
+          property === "quaternion"
+        )
+          sharedTransforms?.add(member as object);
         if (property === "rotation") rotations.set(member as object, this);
         if (property === "quaternion") quaternions.set(member as object, this);
         return member;
@@ -919,12 +1006,24 @@ export function defineBrowserClasses(
             return lane(addressOf(this) + offset);
           },
           set(this: object, value: number): void {
-            write(addressOf(this) + offset, Number(value));
+            const address = addressOf(this) + offset;
+            const next = Number(value);
+            sharedTransformWrite?.(this, address, next);
+            write(address, next);
           },
         });
       });
       skip.add("x").add("y").add("z").add("w");
-      // three syncs an Object3D's rotation from its quaternion; the engine does it in C++.
+      // three syncs an Object3D's rotation from its quaternion. Physics interpolation sets every body's
+      // quaternion every frame, so a call per sync cost 1,732 crossings a frame on the stress lab. This is
+      // Euler::setFromQuaternion with update off (Euler.cpp), written into the rotation's lanes: the same
+      // formulas, and Math is V8's fdlibm, which the engine's ieee754 functions are, so the bits match.
+      const eulerFields = registry.classes.Euler?.fields;
+      const angles = ["x", "y", "z"].map((key) => eulerFields?.[key]?.[0]);
+      const orderAt = eulerFields?.__order?.[0];
+      const local =
+        peek !== undefined && orderAt !== undefined && angles.every((at) => at !== undefined);
+      const [ax, ay, az] = angles as [number, number, number];
       Object.defineProperty(accessors, "_onChangeCallback", {
         configurable: true,
         writable: true,
@@ -933,11 +1032,26 @@ export function defineBrowserClasses(
             | { rotation?: object & { _order?: string } }
             | undefined;
           if (owner?.rotation === undefined) return;
-          // The rotation's own order; the engine refuses a missing one on this call.
-          runtime.invoke(refOf(owner.rotation), "setFromQuaternion", [
-            refOf(this),
-            owner.rotation._order ?? "XYZ",
-          ]);
+          if (!local) {
+            // The rotation's own order; the engine refuses a missing one on this call.
+            runtime.invoke(refOf(owner.rotation), "setFromQuaternion", [
+              refOf(this),
+              owner.rotation._order ?? "XYZ",
+            ]);
+            return;
+          }
+          const q = addressOf(this);
+          const e = addressOf(owner.rotation);
+          const [ex, ey, ez] = eulerFromQuaternion(
+            lane(q + (offsets[0] as number)),
+            lane(q + (offsets[1] as number)),
+            lane(q + (offsets[2] as number)),
+            lane(q + (offsets[3] as number)),
+            eulerOrders[(peek as (address: number) => number)(e + (orderAt as number))] ?? "XYZ",
+          );
+          write(e + ax, ex);
+          write(e + ay, ey);
+          write(e + az, ez);
         },
       });
       return;
@@ -984,7 +1098,10 @@ export function defineBrowserClasses(
             return lane(addressOf(this) + offset);
           },
           set(this: object, value: number): void {
-            write(addressOf(this) + offset, Number(value));
+            const address = addressOf(this) + offset;
+            const next = Number(value);
+            sharedTransformWrite?.(this, address, next);
+            write(address, next);
           },
         });
       });
@@ -1086,6 +1203,8 @@ export function defineBrowserClasses(
   const { attributeArray, attributeWrite } = runtime;
   const arrays = new WeakMap<object, { array: TypedArray }>();
   const itemSizes = new WeakMap<object, number>();
+  // Shape survives data uploads and transform calls; only copy/replacement changes it.
+  const shapes = new WeakMap<object, Map<string, unknown>>();
   const pending = new Set<object>();
   const writeBack = (): void => {
     for (const attribute of pending) {
@@ -1147,8 +1266,42 @@ export function defineBrowserClasses(
     if (fresh.length === entry.array.length) entry.array.set(fresh);
     else entry.array = fresh;
   };
+  // three's `InstancedMesh.setMatrixAt`/`setColorAt` write the mesh's own `instanceMatrix`/
+  // `instanceColor` array item (`index * 16`, `index * 3`); the engine's mesh-level call writes only
+  // its own store, so the shadow a game already holds (core's velocity capture reads one per mesh a
+  // frame) would send its frozen snapshot back at `needsUpdate` and leave the mesh where it stood.
+  // Take the item the call writes into that same array, as three does. No shadow, no work: this is
+  // a pair of map lookups and an array copy, never an engine call.
+  const instanceItem = (
+    mesh: object,
+    attribute: string,
+    index: unknown,
+    argument: unknown,
+  ): { array: TypedArray; at: number; values: ArrayLike<number> } | undefined => {
+    const held = shapes.get(mesh)?.get(attribute);
+    if (held === null || held === undefined) return undefined;
+    const entry = arrays.get(held as object);
+    if (entry === undefined) return undefined;
+    const source = argument as {
+      elements?: ArrayLike<number>;
+      r?: number;
+      g?: number;
+      b?: number;
+    } | null;
+    const values =
+      attribute === "instanceMatrix"
+        ? source?.elements
+        : [Number(source?.r), Number(source?.g), Number(source?.b)];
+    if (values === undefined) return undefined;
+    const at = Number(index) * values.length;
+    // three's `toArray` writes one lane at a time, so a lane outside the array is ignored, not an error.
+    if (!Number.isSafeInteger(at) || at < 0 || at + values.length > entry.array.length)
+      return undefined;
+    return { array: entry.array, at, values };
+  };
   const released = new FinalizationRegistry<IEngineRef>((ref) => {
     if (wrappers.get(ref.key)?.deref() === undefined) {
+      debug?.add("bridgeWrappersReleased");
       wrappers.delete(ref.key);
       shaderNodes.delete(ref.key); // the engine material keeps its graph; the JS nodes may go
       for (const name of callbackNames.get(ref.key) ?? []) runtime.setCallback(ref, name, null);
@@ -1158,12 +1311,14 @@ export function defineBrowserClasses(
   });
 
   const adopt = (target: object, ref: IEngineRef): object => {
+    debug?.add("bridgeWrappersCreated");
     (target as IWrapped)[REF] = ref;
     wrappers.set(ref.key, new WeakRef(target));
     released.register(target, ref);
     return target;
   };
   const wrap = (ref: IEngineRef): object => {
+    debug?.add("bridgeWrapRequests");
     const live = wrappers.get(ref.key)?.deref();
     if (live !== undefined) return live;
     const cls = byType.get(ref.type);
@@ -1188,7 +1343,11 @@ export function defineBrowserClasses(
     if (typeof value === "number" || typeof value === "boolean" || typeof value === "string")
       return value;
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
-      if (runtime.typedArrays === true && SCALARS.some((scalar) => value instanceof scalar))
+      // An image's `getImageData` pixels are a Uint8ClampedArray: boxed into a list, a 4096x2048 sky took 1.4 s.
+      if (
+        runtime.typedArrays === true &&
+        (value instanceof Uint8ClampedArray || SCALARS.some((scalar) => value instanceof scalar))
+      )
         return value as TypedArray;
       // quality-allow: a typed-array view read as its numeric index signature, which ArrayBufferView does not declare.
       const list = Array.from(value as unknown as ArrayLike<number>);
@@ -1337,6 +1496,14 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        if (
+          debug !== undefined &&
+          !debugActivated &&
+          binding.setters.includes("__debugTelemetry")
+        ) {
+          runtime.set(refOf(this), "__debugTelemetry", true);
+          debugActivated = true;
+        }
         // The hierarchy counter's address, asked once a process at the first scene node made, and the
         // engine's work counts ("name@address,..."), each read in place per frame by counters().
         if (hierarchyAt === undefined && hierarchyClass) {
@@ -1396,6 +1563,15 @@ export function defineBrowserClasses(
       const rangeMethod = attributeClass && rangeMethods.has(method);
       const transformMethod = attributeClass && transformMethods.has(method);
       const geometryWrite = geometryClass && geometryWrites.has(method);
+      // A mesh-level write into an attribute a game can hold a shadow of (see `instanceItem`).
+      const instanceWrite =
+        name !== "InstancedMesh"
+          ? undefined
+          : method === "setMatrixAt"
+            ? "instanceMatrix"
+            : method === "setColorAt"
+              ? "instanceColor"
+              : undefined;
       // A mixer or action call may write the tracks' targets (update, stop restoring originals).
       const drives =
         /^Animation(Mixer|Action|ObjectGroup)$/u.test(name) && !keeps && !/^is[A-Z]/u.test(method);
@@ -1466,6 +1642,12 @@ export function defineBrowserClasses(
             labels.delete(this);
             animated.delete(this);
           }
+          // The item a mesh-level attribute write makes: read before the arguments cross, since a
+          // Matrix4 is promoted in place, and written into the game's array once the call lands.
+          const item =
+            instanceWrite === undefined
+              ? undefined
+              : instanceItem(this, instanceWrite, args[0], args[1]);
           const mark = loans.length;
           let result: unknown;
           try {
@@ -1479,6 +1661,16 @@ export function defineBrowserClasses(
           } finally {
             if (loans.length > mark) result = repay(mark, result);
             if (drives) animated = new WeakMap();
+          }
+          if (method === "copy") {
+            shapes.delete(this);
+            itemSizes.delete(this);
+          } else if (instanceWrite !== undefined) {
+            const known = shapes.get(this);
+            // The engine creates `instanceColor` on the first setColorAt: a cached null is stale.
+            if (instanceWrite === "instanceColor" && known?.get("instanceColor") === null)
+              known.delete("instanceColor");
+            if (item !== undefined) item.array.set(item.values, item.at);
           }
           // The engine wrote only this range: copy it back, so a later game edit to the shadow wins.
           if (rangeMethod) {
@@ -1681,12 +1873,36 @@ export function defineBrowserClasses(
         flagField !== undefined && flagField[1] === 0 && peek !== undefined
           ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
           : undefined;
+      // One flag is a plain store in the engine: `matrixWorldNeedsUpdate` has no revision and no deferred
+      // transform behind its setter, and core's physics interpolation arms it on every body after the draw
+      // (stress lab: 300 crossings a frame). It is written in place, as the engine's own walks write it. The
+      // render flags keep their call: `visible`, `castShadow` and `receiveShadow` bump render revisions.
+      const store = runtime.writeByte;
+      const inPlace =
+        property === "matrixWorldNeedsUpdate" && store !== undefined ? flagField : undefined;
       // A geometry's bounds, once present, are one engine object the engine recomputes in place
       // (BufferGeometry::computeBoundingSphere); only its setter, copy() or another method replaces it.
       const bounds = geometryClass && (property === "boundingSphere" || property === "boundingBox");
+      const shape =
+        (attributeClass && ["itemSize", "count", "normalized", "gpuType"].includes(property)) ||
+        (name === "InstancedMesh" &&
+          ["count", "instanceMatrix", "instanceColor"].includes(property));
       const accessor: PropertyDescriptor = {
         configurable: true,
         get:
+          (shape
+            ? function (this: object) {
+                if (property === "itemSize") return itemSizeOf(this);
+                let known = shapes.get(this);
+                if (known === undefined) {
+                  known = new Map();
+                  shapes.set(this, known);
+                }
+                if (!known.has(property))
+                  known.set(property, fromEngine(runtime.get(refOf(this), property)));
+                return known.get(property);
+              }
+            : undefined) ??
           fastGetter(binding, property) ??
           (name === "AnimationMixer" && property === "stats"
             ? function (this: object) {
@@ -1721,7 +1937,13 @@ export function defineBrowserClasses(
                 return stats;
               }
             : undefined) ??
-          ((property === "children" || property === "parent") &&
+          // `children`, `parent` and an object's hierarchy revision are the kept hierarchy answers: every
+          // add, remove and attach moves the engine's counter, and nothing else changes who is under whom or
+          // when a subtree last did (`Object3D::subtreeVersion`, stamped from that same counter). Core's camera
+          // pass reads each rate root's revision every frame to keep its rig index (stress lab: 120 a frame).
+          ((property === "children" ||
+            property === "parent" ||
+            property === "__hierarchyRevision") &&
           binding.getters.includes("__hierarchy")
             ? function (this: object) {
                 if (glueCounting) propertyReads += 1;
@@ -1762,7 +1984,9 @@ export function defineBrowserClasses(
         ...(lane !== undefined && write !== undefined
           ? {
               set(this: object, value: number) {
-                write(addressOf(this) + (lane[0] ?? 0), value);
+                const address = addressOf(this) + (lane[0] ?? 0);
+                sharedTransformWrite?.(this, address, value);
+                write(address, value);
               },
             }
           : setters.has(property)
@@ -1772,6 +1996,13 @@ export function defineBrowserClasses(
                   // writes `visible` on hundreds of nodes a frame, so those stay out of the bridge.
                   if (flag !== undefined && typeof value === "boolean" && flag(this) === value)
                     return;
+                  if (inPlace !== undefined && typeof value === "boolean") {
+                    (store as (address: number, byte: number) => void)(
+                      addressOf(this) + (inPlace[0] ?? 0),
+                      value ? 1 : 0,
+                    );
+                    return;
+                  }
                   if (caching && (mirrored(binding, property, setters) || bounds)) {
                     // A mirrored property's setter writes only that property: the others stay kept,
                     // and a write of the primitive the mirror holds changes nothing in the engine.
@@ -1791,7 +2022,21 @@ export function defineBrowserClasses(
                     labels.delete(this);
                     animated.delete(this);
                   }
+                  // The shadow LOD sync skips its scene walk until this or the hierarchy moves.
+                  if (property === "geometry") {
+                    const host = globalThis as Record<symbol, unknown>;
+                    const key = Symbol.for("threenative.geometryAssignments");
+                    host[key] = ((host[key] as number | undefined) ?? 0) + 1;
+                  }
                   runtime.set(refOf(this), property, toEngine(value));
+                  if (shape) {
+                    let known = shapes.get(this);
+                    if (known === undefined) {
+                      known = new Map();
+                      shapes.set(this, known);
+                    }
+                    known.set(property, value);
+                  }
                 },
               }
             : {}),
@@ -2086,15 +2331,46 @@ export function defineBrowserClasses(
         propertyReads,
         walkVisits,
       };
+      if (debug !== undefined) {
+        // Getter-equivalent estimate, calibrated on this host; no per-crossing timer.
+        const estimated = ((debug.totals.bridgeCrossings ?? 0) * calibratedCrossingMicros()) / 1000;
+        debug.add(
+          "bridgeCrossingMs",
+          Math.max(0, estimated - (debug.totals.bridgeCrossingMs ?? 0)),
+          "bridge",
+          "browser-backend.ts",
+          "estimated-ms",
+        );
+        debug.add("bridgeLiveWrappers", 0, "bridge", "browser-backend.ts", "gauge");
+        Object.assign(totals, debug.totals, { bridgeLiveWrappers: wrappers.size });
+      }
       if (readWord === undefined) return totals;
       if (hierarchyAt !== undefined) totals.hierarchyMoves = readWord(hierarchyAt);
-      // The low word of each 64-bit total: core takes per-frame differences, which stay exact.
-      for (const [counter, address] of engineCountersAt) totals[counter] = readWord(address) >>> 0;
+      // Debug uses coherent 64-bit totals; off retains the original single-word census.
+      for (const [counter, address] of engineCountersAt) {
+        let value: number;
+        if (debug === undefined) value = readWord(address) >>> 0;
+        else {
+          let before: number;
+          let high: number;
+          let low: number;
+          do {
+            before = readWord(address + 4) >>> 0;
+            low = readWord(address) >>> 0;
+            high = readWord(address + 4) >>> 0;
+          } while (before !== high);
+          value = high * 0x100000000 + low;
+        }
+        if (counter.endsWith("Micros")) totals[`${counter.slice(0, -6)}Ms`] = value / 1000;
+        else totals[counter] = value;
+      }
       return totals;
     },
     collect() {
       meter.frame();
-      glueCounting = (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
+      debug?.frame();
+      glueCounting =
+        debug !== undefined || (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true;
       const wanted = cacheWanted();
       // A setter or method drops an object's kept answers whether or not the cache is on, so turning it
       // back on keeps nothing stale; the two tables that other calls drop are emptied anyway.
@@ -2196,6 +2472,7 @@ const KIND = {
   array: 6,
   record: 7,
   undefined: 8,
+  bytes: 9,
 } as const;
 
 // wasm32 layout of tn_tsl_arg_t (tn_tsl.h): kind 0, lanes 4, node 8 (u64), number 16, text 24,
@@ -2495,13 +2772,19 @@ function countCall(kind: string, self: IEngineRef, name: string): void {
 }
 
 export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
+  const debug = debugTelemetry(abi);
+  let encoding = "arguments";
   // The heap's views, made again only when the memory grows: Emscripten replaces HEAPU8 then, so one
   // identity test per use stands in for reading two `.buffer`s, which every crossing paid (PRD-748).
   let heap = abi.HEAPU8;
+  let heapBytes = heap.byteLength;
   let dataView = new DataView(heap.buffer);
   let words = new Uint32Array(heap.buffer);
   const grown = () => {
+    debug?.add("wasmGrowthEvents");
+    debug?.add("wasmGrowthBytes", Math.max(0, abi.HEAPU8.byteLength - heapBytes), "memory");
     heap = abi.HEAPU8;
+    heapBytes = heap.byteLength;
     dataView = new DataView(heap.buffer);
     words = new Uint32Array(heap.buffer);
   };
@@ -2523,6 +2806,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
   const allocations: number[] = [];
   const alloc = (size: number): number => {
     const aligned = (size + 7) & ~7;
+    debug?.add("bridgeScratchBytes", aligned);
     let pointer: number;
     if (arenaTop + aligned <= arenaBase + arenaSize) {
       pointer = arenaTop;
@@ -2531,6 +2815,8 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       // `>>> 0`: the module addresses up to 4 GB, and an export returns a pointer as a signed i32.
       pointer = abi._malloc(aligned) >>> 0;
       allocations.push(pointer);
+      debug?.add("bridgeOverflowAllocations");
+      debug?.add("bridgeOverflowBytes", aligned);
     }
     // A call's scratch is a few words (a handle, a value, a diagnostic): word stores beat a fill call.
     // `wordView` first: a `_malloc` above may have grown the memory.
@@ -2644,11 +2930,12 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
       // A forwarded typed array (see `toEngine`): one heap copy, its view bounds kept, no boxed list.
       const typed = value as TypedArray;
-      const numbers = alloc(Math.max(8, typed.length * 8));
-      abi.HEAPF64.set(typed, numbers / 8);
+      debug?.widen(typed, encoding, typed.byteLength);
+      const numbers = alloc(Math.max(8, typed.byteLength));
+      abi.HEAPU8.set(new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength), numbers);
       const name = string(typed.constructor.name).pointer;
       const w = view();
-      w.setUint32(pointer, KIND.numbers, true);
+      w.setUint32(pointer, KIND.bytes, true);
       w.setUint32(pointer + 32, name, true);
       w.setUint32(pointer + 48, numbers, true);
       return w.setBigUint64(pointer + 40, BigInt(typed.length), true);
@@ -2808,6 +3095,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
       view,
     }) ?? {}),
     ...gltfOf(abi, context, { scoped, alloc, keyOf }),
+    ...(debug === undefined ? {} : { debugTelemetry: debug }),
     typedArrays: true,
     typeId: (className) => abi._tn_type_id(name(className)),
     construct: (className, args) =>
@@ -2831,6 +3119,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     invoke: (self, method, args) =>
       scoped(() => {
         countCall("call", self, method);
+        if (debug !== undefined) encoding = method;
         const out = alloc(VALUE);
         const diag = diagnostic();
         check(
@@ -2854,6 +3143,9 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     writeDouble: (address, value) => {
       abi.HEAPF64[address / 8] = value;
     },
+    writeByte: (address, value) => {
+      abi.HEAPU8[address] = value;
+    },
     heapF64: () => abi.HEAPF64,
     readDoubles: (address, count) => {
       const at = address / 8;
@@ -2872,6 +3164,7 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
     set: (self, path, value) =>
       scoped(() => {
         countCall("set", self, path);
+        if (debug !== undefined) encoding = path;
         // One value written in place: no one-item list per write.
         const pointer = alloc(VALUE);
         writeValue(pointer, value);
@@ -2944,4 +3237,66 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
         check(status, diag, `set ${name}`);
       }),
   };
+}
+
+/**
+ * three's `Euler.setFromQuaternion` (and the engine's Euler.cpp, whose ieee754 functions are V8's fdlibm, so the
+ * bits match): the rotation matrix of a unit quaternion, then the angles of the given order.
+ */
+export function eulerFromQuaternion(
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+  order: string,
+): [number, number, number] {
+  const x2 = x + x;
+  const y2 = y + y;
+  const z2 = z + z;
+  const xx = x * x2;
+  const xy = x * y2;
+  const xz = x * z2;
+  const yy = y * y2;
+  const yz = y * z2;
+  const zz = z * z2;
+  const wx = w * x2;
+  const wy = w * y2;
+  const wz = w * z2;
+  const m11 = 1 - (yy + zz);
+  const m12 = xy - wz;
+  const m13 = xz + wy;
+  const m21 = xy + wz;
+  const m22 = 1 - (xx + zz);
+  const m23 = yz - wx;
+  const m31 = xz - wy;
+  const m32 = yz + wx;
+  const m33 = 1 - (xx + yy);
+  const asin = (value: number): number => Math.asin(Math.max(-1, Math.min(1, value)));
+  const free = (value: number): boolean => Math.abs(value) < 0.9999999;
+  switch (order) {
+    case "YXZ":
+      return free(m23)
+        ? [-asin(m23), Math.atan2(m13, m33), Math.atan2(m21, m22)]
+        : [-asin(m23), Math.atan2(-m31, m11), 0];
+    case "ZXY":
+      return free(m32)
+        ? [asin(m32), Math.atan2(-m31, m33), Math.atan2(-m12, m22)]
+        : [asin(m32), 0, Math.atan2(m21, m11)];
+    case "ZYX":
+      return free(m31)
+        ? [Math.atan2(m32, m33), -asin(m31), Math.atan2(m21, m11)]
+        : [0, -asin(m31), Math.atan2(-m12, m22)];
+    case "YZX":
+      return free(m21)
+        ? [Math.atan2(-m23, m22), Math.atan2(-m31, m11), asin(m21)]
+        : [0, Math.atan2(m13, m33), asin(m21)];
+    case "XZY":
+      return free(m12)
+        ? [Math.atan2(m32, m22), Math.atan2(m13, m11), -asin(m12)]
+        : [Math.atan2(-m23, m33), 0, -asin(m12)];
+    default:
+      return free(m13)
+        ? [Math.atan2(-m23, m33), asin(m13), Math.atan2(-m12, m11)]
+        : [Math.atan2(m32, m22), asin(m13), 0];
+  }
 }

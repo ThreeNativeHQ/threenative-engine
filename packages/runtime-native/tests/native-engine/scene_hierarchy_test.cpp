@@ -11,6 +11,7 @@
 
 #include "engine/abi/bindings.h"
 #include "engine/foundation/math/Vector.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometries.h"
 #include "engine/scene/material.h"
@@ -1441,9 +1442,30 @@ void unlinked_destruction() {
     CHECK(orphan->parent == nullptr && Object3D::hierarchyVersion() > linked);
 }
 
+void debug_scene_counts() {
+    auto& counts = waste::counters();
+    Object3D parent, child;
+    waste::setDebugEnabled(false);
+    const auto adds = counts.sceneAdds.load();
+    parent.add(child);
+    parent.remove(child);
+    CHECK(counts.sceneAdds.load() == adds);
+    waste::setDebugEnabled(true);
+    const auto removes = counts.sceneRemoves.load();
+    const auto visits = counts.sceneVisits.load();
+    parent.add(child);
+    parent.updateMatrixWorldVisible(false, false);
+    parent.remove(child);
+    parent.remove(child);  // An unsuccessful removal is not a hierarchy change.
+    CHECK(counts.sceneAdds.load() == adds + 1);
+    CHECK(counts.sceneRemoves.load() == removes + 1);
+    CHECK(counts.sceneVisits.load() == visits + 2);
+    waste::setDebugEnabled(false);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
+TN_TEST_MAIN({"debug_scene_counts", debug_scene_counts}, {"pruned_walk", pruned_walk}, {"hierarchy", hierarchy}, {"alias", alias}, {"revision", revision}, {"upstream", upstream},
              {"rotation_sync", rotation_sync}, {"teardown", teardown}, {"batched_mesh", batched_mesh},
              {"transform_layout", transform_layout}, {"transform_lease", transform_lease},
              {"raw_writes", raw_writes}, {"needs_update_setter", needs_update_setter},

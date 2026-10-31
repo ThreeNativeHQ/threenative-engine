@@ -6,6 +6,22 @@ import {
 } from "../../packages/playtest/src/runner/captureEnvironment.js";
 
 /**
+ * Stops a capture whose page did not read the query it was given. Since the starter runs its game in a
+ * web worker, `index.html` hands the scene an empty `location.search`: every cell then drew the default
+ * layer, sun and look while the capture filed it under the requested one. The page echoes what it read
+ * as `window.__tnRef.config`; each requested parameter must come back unchanged.
+ */
+export function assertConfigEcho(url: string, echoed: unknown): void {
+  const requested = Object.fromEntries(new URL(url).searchParams);
+  const read = (echoed ?? {}) as Record<string, unknown>;
+  const differ = Object.keys(requested).filter((key) => read[key] !== requested[key]);
+  if (differ.length > 0)
+    throw new Error(
+      `TN_UNREAL_LOOK_CONFIG_MISMATCH: the page read ${JSON.stringify(echoed ?? null)} for ${JSON.stringify(requested)} (${differ.join(", ")})`,
+    );
+}
+
+/**
  * The headed WebGPU browser every Unreal-look capture opens.
  *
  * A bare `chromium.launch({ headless: false })` paints on whatever `DISPLAY` the shell exports.

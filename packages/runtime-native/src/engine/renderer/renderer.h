@@ -76,12 +76,27 @@ enum class MaterialKind : uint8_t { Standard, Basic, Lambert, Phong, Physical };
 using GraphTextures = std::vector<std::pair<std::string, const Texture*>>;
 
 /**
+ * Diagnostic switch (TN_PROGRAM_PROBES=per-draw, or set by a test before a frame): a program's per-draw
+ * probes are resolved on every draw again, as before FM3, so the two arms' pixels can be compared. False
+ * by default: they are resolved once, when the program's layouts are built.
+ */
+bool& perDrawProbes();
+
+/**
+ * Diagnostic switch (TN_SHADOW_PAGE_SCAN=flat, or set by a test before a frame): each shadow page selects its
+ * casters from the whole draw list again, as before FS9, so the two arms' shadow plans can be compared. False
+ * by default: the pages select from a per-page index built once per granted level.
+ */
+bool& flatShadowSelection();
+
+/**
  * Per-draw resolved GPU state, reused by the renderer while the draw's program variant and pipeline
  * target are unchanged. The render database owns one per record (a record rebuild clears it), and
  * DrawItem::cache points at it; a synthesized (batched) draw carries none and resolves afresh. The
  * fields the renderer compares are the same inputs three keys its program cache on. The handle fields
  * are the renderer's opaque types (Program*, WGPURenderPipeline, WGPUBindGroup).
  */
+struct DrawItem;
 struct DrawCache {
     MaterialKind kind = MaterialKind::Standard;
     shader::VertexVariant variant;
@@ -95,6 +110,16 @@ struct DrawCache {
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
+    std::pair<Box3, double> shadowBounds;
+    // FG1: an instanced draw's world box per instance, built with `shadowBounds` under the same key; empty for any
+    // other draw. A virtual shadow page draws only the instances whose box can reach it.
+    std::vector<Box3> shadowInstanceBoxes;
+    using ShadowBoundsKey = std::tuple<const BufferStore*, uint32_t, uint64_t, uint64_t,
+                                      const BufferStore*, uint32_t, uint64_t, uint64_t, uint32_t, Matrix>;
+    std::optional<ShadowBoundsKey> shadowBoundsKey;
+    std::weak_ptr<const BufferStore> shadowPositionsOwner, shadowInstancesOwner;
+    uint64_t shadowBoundsBuilds = 0;
+    const std::pair<Box3, double>& virtualShadowBounds(const DrawItem& item);
 };
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
@@ -113,13 +138,24 @@ struct DrawItem {
     int32_t depthBias = 0;
     float depthBiasSlopeScale = 0;
     /** The geometry's other attributes (TSL attribute(name) reads them), float, and whether each is an
-     *  InstancedBufferAttribute read once per instance. */
+     *  InstancedBufferAttribute read once per instance. Its record owns the list and the draw points at it,
+     *  as it points at its material: a per-frame copy allocated a vector per draw per frame for nothing. */
     struct CustomAttribute {
         std::string name;
         BufferStore* store = nullptr;
         bool perInstance = false;
     };
-    std::vector<CustomAttribute> attributes;
+    /** A draw pointed at no record (a test's, the background's own) reads this one: empty, and never written. */
+    static std::vector<CustomAttribute>& noAttributes() {
+        static std::vector<CustomAttribute> none;
+        return none;
+    }
+    /** A hand-built draw that reads no graph gets this one: empty, and never written. */
+    static shader::MaterialNodes& noNodes() {
+        static shader::MaterialNodes none;
+        return none;
+    }
+    std::vector<CustomAttribute>* attributes = &noAttributes();
     BufferStore* colors = nullptr;       // material.vertexColors: the `color` attribute as float32
     uint8_t colorSize = 0;               // its item size, 3 or 4; 0 without vertex colours
     BufferStore* indices = nullptr;      // u16 or u32; null draws non-indexed
@@ -175,6 +211,11 @@ struct DrawItem {
     uint32_t gpuJointRig = 0;
     std::vector<uint32_t> gpuJointRigs; // Batch instance order; singleton draws use gpuJointRig.
     uint32_t boneStride = 0;           // palette matrices per instance; zero on exact skinned draws
+    /** A virtual shadow page's grouped caster (FM8): one instanced row draws every caster the page selected
+     *  for this geometry and material, and the vertex stage reads each one's own placement from the frame's
+     *  `instances` storage and its own bone base and bind pair from `shadowSkin`, so one palette per rig per
+     *  frame serves every page that draws it. */
+    bool shadowGroup = false;
     /** three's flipSided: mirrored authored meshes reverse the front-face winding. */
     [[nodiscard]] WGPUFrontFace frontFace() const {
         Matrix4 world;
@@ -199,7 +240,9 @@ struct DrawItem {
     // Automatic batching (RenderDatabase): which material it draws, and whether it may share a draw.
     const void* materialKey = nullptr;
     bool batchable = false;
-    shader::MaterialNodes nodes;
+    /** The material's node graph (and the scene's fog node, which prepare writes into it): the record owns the
+     *  graph, the draw points at it. Copying the graph per draw per frame was 14 refcount bumps each. */
+    shader::MaterialNodes* nodes = &noNodes();
     std::shared_ptr<const shader::PositionNode> positionNode;  // the material's; null keeps positionLocal
     /** The record's resolved-state cache, or null for a synthesized draw (the renderer then resolves afresh). */
     DrawCache* cache = nullptr;
@@ -377,6 +420,7 @@ public:
     std::unique_ptr<Renderer> sibling(bool sceneOnly = false) {
         auto child = std::make_unique<Renderer>(instance_, device_, queue_, events_);
         child->sceneOnly_ = sceneOnly;
+        child->cpuMetered_ = false;
         child->textures_ = textures_;
         child->passTimer_ = passTimer_;
         child->ownsPassTimer_ = false;
@@ -417,11 +461,30 @@ public:
     /** `tanHalfFov` is the main view's (0 for a pass that is not it): auto-sized atlases measure on it. */
     void syncVirtualShadows(const LightState& lights, double tanHalfFov = 0);
     bool hasVirtualShadows() const { return !virtualShadows_.empty(); }
+    /** True when every active virtual shadow has mapped its clip levels: the depth inputs a frame samples exist. */
+    bool virtualShadowsInitialized() const {
+        for (const auto& [light, shadow] : virtualShadows_)
+            if (!shadow.atlas.initialized()) return false;
+        return true;
+    }
     /** The page plan of light `light`'s virtual shadow, or null. */
     const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
         const auto it = virtualShadows_.find(light);
         return it == virtualShadows_.end() ? nullptr : &it->second.atlas;
     }
+    /**
+     * FS11: one record per light, one entry per position in the frame's frozen draw list. The frame's caster
+     * bookkeeping (bounds, diameter, whether the draw casts into this light) is a flat index, not two maps keyed by
+     * `DrawItem::key`, so a frame neither allocates a node per caster nor descends a tree per probe. The vector is
+     * reused between frames: an unchanged draw list keeps its storage.
+     */
+    struct CasterRecord {
+        Box3 bounds;
+        double diameter = 0;
+        bool casts = false;
+        const std::vector<Box3>* instances = nullptr;  // FG1: the draw cache's per-instance boxes, one per instance
+    };
+    [[nodiscard]] const std::map<std::size_t, std::vector<CasterRecord>>& casterRecords() const { return casterRecords_; }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
@@ -643,6 +706,12 @@ public:
          *  draws are neither encoded nor uploaded. And the bytes of per-draw uniforms the frame uploaded. */
         uint32_t keptShadowMaps = 0;
         uint64_t uniformBytes = 0;
+        /** The skinned palettes the frame copied into its `boneMatrices` storage, and the GPU-joint rigs it placed:
+         *  one per rig however many shadow pages draw it (FM8). */
+        uint32_t paletteWrites = 0;
+        /** The instanced draws whose instance floats the plan copied into `instances`: a draw whose stores did not move
+         *  since the GPU got its bytes is left alone (TR1b), so a static forest costs nothing here. */
+        uint32_t instanceCopies = 0;
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -652,6 +721,34 @@ public:
                                    const std::vector<uint64_t>& now, const std::vector<uint32_t>& nowRows);
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
+    /** One draw of the last planned frame's shadow passes, as the plan selected it: a test comparing two plans
+     *  (the page-wide caster selection runs serially or on the job pool) reads these rather than a count. */
+    struct ShadowPlanRow {
+        std::size_t pass = 0;          // its pass in frame order, and the state that pass drew with
+        std::size_t virtualLight = 0;
+        int virtualLevel = -1;
+        bool lamp = false, mover = false;
+        int x = 0, y = 0, size = 0;
+        std::array<double, 16> view{}, projection{};
+        uint64_t key = 0;  // the caster's stable identity, the same object in another renderer only by ordinal
+        const void* indices = nullptr;
+        uint32_t instanceCount = 0;
+        double instanceBase = 0;
+        std::array<double, 16> matrixWorld{};
+        /** The casters this row draws, in instance order. A row that draws one caster names it; a row that draws a
+         *  page's group of casters names every member, so a test can prove the grouped plan draws exactly the
+         *  casters, with the matrices, the per-caster plan drew. */
+        struct Member {
+            uint64_t key = 0;
+            std::array<double, 16> matrixWorld{};
+        };
+        std::vector<Member> members;
+        uint32_t vertexOffset = 0, fragmentOffset = 0, vertexBytes = 0, fragmentBytes = 0;
+    };
+    /** The shadow draws the last planned frame kept, in pass order, and one row per draw in draw order. */
+    std::vector<ShadowPlanRow> shadowPlan() const;
+    /** The bytes `shadowPlan()`'s offsets point into: one buffer per planned frame, written once. */
+    std::span<const uint8_t> frameUniformBytes() const { return frameUniforms_; }
     /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
     void collectFrame() {
         std::lock_guard lock(frameMailMutex_);
@@ -662,6 +759,20 @@ public:
      * GPU time of the most recent frame whose timestamps came back, summed over every render
      * and compute pass, including offscreen targets, in milliseconds; negative until one has, and always on a device without timestamp-query.
      */
+    /** Running CPU ms (thread CPU where the platform has it, else wall) of renderPrepared's costly stages, every
+     *  render summed, so a caller turns them into per-frame time by difference: the virtual shadow pages and caster
+     *  bounds, the draw plan, the shadow passes' draw lists, the whole prepare half, and the encode half. CpuPost is
+     *  the post effects' and output pass's share of the encode half (PRD-771), so the encode half without post is
+     *  CpuEncode - CpuPost. */
+    enum CpuStage : std::size_t { CpuVirtualPages, CpuPlan, CpuShadowBuild, CpuPrepare, CpuEncode, CpuPost, kCpuStageCount };
+    /** PRD-771: the stage meters read a clock around each stage, so a caller that must not pay even that (the paired
+     *  A/B of the meters' own cost) turns them off for every renderer. On by default; the totals stand while off. */
+    static void setCpuMeters(bool enabled);
+    static bool cpuMeters();
+    /** Whether this renderer's stages are metered: the switch above, and not a sibling (a render target's or a reflection's
+     *  totals are never published, so its clock reads would be a cost with no reader). */
+    bool metered() const { return cpuMetered_ && cpuMeters(); }
+    double cpuStageMs(CpuStage stage) const { return cpuStageMs_[stage].load(std::memory_order_relaxed); }
     double lastGpuMs() const { return timing_->lastMs; }
     /**
      * Whether frames are timed on the GPU: off by default, since a timed frame resolves its query
@@ -694,6 +805,7 @@ public:
      * lands. The caller owns the id: the engine's own render ids are not one per present.
      */
     void setGpuTimerSourceFrame(uint64_t frame) { sourceFrame_ = frame; }
+    void setDebugTimestampRequested(bool requested) { debugTimestampRequested_ = requested; }
     /**
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
      * scene pass, other passes (offscreen, compute, post, TRAA), output pass.
@@ -705,8 +817,10 @@ public:
     uint32_t gpuTimestampPasses() const { return timing_->passes; }
     /** The caller's frame id of the most recent resolved GPU time: the frame it was submitted with, not the one that read it back. */
     uint64_t gpuSourceFrame() const { return timing_->source; }
+    /** Whether the device negotiated timestamp-query, independent of this frame's sampling flag. */
+    bool gpuTimerAvailable() const { return passTimer_->queries != nullptr; }
     /** Whether frames are actually timed: the device negotiated timestamp-query and the timer is on. */
-    bool gpuTimerEnabled() const { return passTimer_->queries != nullptr && passTimer_->enabled; }
+    bool gpuTimerEnabled() const { return gpuTimerAvailable() && passTimer_->enabled; }
     /** Whether the last timed frame's GPU time began at its first shadow pass (else at the scene pass). */
     bool gpuTimerBeganAtShadow() const { return timerBeganAtShadow_; }
 
@@ -780,6 +894,13 @@ private:
     mutable std::mutex frameMailMutex_;
     FrameStats frameMail_, published_;
     bool publishes_ = false;
+    /** What a program's stage modules alone decide about a draw of it (renderer.cpp, `probesOf`). */
+    struct DrawProbes {
+        bool fragmentPerDraw = false;  // its fragment group binds the draw's own textures
+        bool vertexPerDraw = false;    // its vertex group does
+        bool viewport = false;         // it samples the frame's colour or depth as drawn before it
+        bool postTexture = false;      // it samples a post render-to-texture pass's output
+    };
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
@@ -791,6 +912,11 @@ private:
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
+        // FM2: this layout's share of the frame's light, camera and scene constants — one block, in a slot's
+        // own layout, filled once per frame and copied into every draw's slot. `frameSlabSerial` is the plan
+        // that filled it.
+        std::vector<uint8_t> frameSlab;
+        uint64_t frameSlabSerial = 0;
         // What the program was built from, so auxFragment() can build the same fragment again with more outputs.
         MaterialKind kind = MaterialKind::Standard;
         shader::VertexVariant variant;
@@ -798,7 +924,11 @@ private:
         bool softShadows = false;
         std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
         uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
+        /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
+        DrawProbes probes;
     };
+    /** A program's per-draw probes, resolved once in buildLayouts; read by every draw of every pass. */
+    DrawProbes probesOf(const Program& program);
     /** The post targets the scene can write besides its colour, in attachment order (PRD-740). */
     enum AuxTarget : uint8_t { kAuxNormal = 1, kAuxMaterial = 2, kAuxAlbedo = 4, kAuxEmissive = 8 };
     /**
@@ -836,16 +966,48 @@ private:
                             WGPUTextureView pmremView = nullptr, WGPUSampler pmremSampler = nullptr,
                             WGPUTextureView reflectorView = nullptr, WGPUSampler reflectorSampler = nullptr,
                             const GraphTextures* graphTextures = nullptr, RecentBindGroups* cache = nullptr);
-    /** The GPU texture and sampler for a material map, (re)built when the texture's version moves. */
+    /** The GPU texture and sampler for a material map: rebuilt when its shape or sampler moves, written in place
+     *  when only its pixels do. */
     struct MaterialTexture {
+        // What a record's GPU texture is made of; one per create branch in materialTextureKey.
+        enum Kind : uint8_t { kNone, kDepth, kStorage, kVolume, kImage, kExternal };
+        /** What a `needsUpdate` must leave equal to write into the texture that is already here: the GPU
+         *  texture's shape, usage and origin, and the sampler parameters, which pick the sampler. Equal keys
+         *  mean the view and its sampler stay valid, so no bind group and no recorded bundle has to change. */
+        struct Key {
+            uint32_t width = 0, height = 0, depth = 1;
+            uint32_t levels = 1;
+            uint32_t texelBytes = 4;  // of `format`: what the create path allocates
+            WGPUTextureFormat format = WGPUTextureFormat_Undefined;
+            WGPUTextureUsage usage = WGPUTextureUsage_None;
+            uint8_t kind = kNone;
+            uint16_t wrapS = 0, wrapT = 0, wrapR = 0, magFilter = 0, minFilter = 0;
+            double anisotropy = 0;
+            [[nodiscard]] bool operator==(const Key& other) const {
+                return kind == other.kind && width == other.width && height == other.height && depth == other.depth &&
+                       levels == other.levels && format == other.format && usage == other.usage &&
+                       wrapS == other.wrapS && wrapT == other.wrapT && wrapR == other.wrapR &&
+                       magFilter == other.magFilter && minFilter == other.minFilter && anisotropy == other.anisotropy;
+            }
+            /** Only the two paths that reach `wgpuQueueWriteTexture` can take the new pixels where they are. */
+            [[nodiscard]] bool updatesInPlace() const { return kind == kImage || kind == kVolume; }
+            [[nodiscard]] uint64_t bytes() const { return uint64_t(width) * height * depth * texelBytes; }
+        };
         WGPUTexture texture = nullptr;
         WGPUTextureView view = nullptr;
         WGPUSampler sampler = nullptr;
         uint32_t version = 0;
+        Key key;
         void release();
     };
     friend class GraphCompute;
     const MaterialTexture* materialTexture(const Texture& texture);
+    /** The key `texture` would be created with, from the descriptor its kind needs. */
+    static MaterialTexture::Key materialTextureKey(const Texture& texture);
+    /** Creates a material texture, counting the bytes it allocates as GpuResources counts its own. */
+    WGPUTexture createMaterialTexture(const MaterialTexture::Key& key);
+    /** Writes `texture`'s pixels into `destination` and regenerates the mip chain it was created with. */
+    void uploadMaterialTexture(WGPUTexture destination, const Texture& texture, const MaterialTexture::Key& key);
     // Render-target textures by texture id: views borrowed from each target's renderer, never released here.
     std::unordered_map<uint64_t, MaterialTexture> renderTargetTextures_;
     struct BackgroundCube {
@@ -987,6 +1149,8 @@ private:
         std::map<int, uint64_t> consumedCosts;
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
+    /** FS11: `virtualShadows_`' caster bookkeeping, indexed by the draw's position in `items`. */
+    std::map<std::size_t, std::vector<CasterRecord>> casterRecords_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
     std::map<std::size_t, uint64_t> mapSignatures_;
     /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
@@ -1141,6 +1305,16 @@ private:
     uint32_t inputWidth_ = 0, inputHeight_ = 0;
     float renderScale_ = 1;
     uint64_t renderId_ = 0;
+    std::array<std::atomic<double>, kCpuStageCount> cpuStageMs_{};
+    bool cpuMetered_ = true;
+    /** Adds the ms since `started` to a stage; the encode half adds its own from the render thread. */
+    void addCpuStage(CpuStage stage, double started);
+    struct CpuStageMeter {
+        std::atomic<double>& total;
+        double started;
+        CpuStageMeter(std::atomic<double>& total, bool on);
+        ~CpuStageMeter();
+    };
     FrameStats lastFrame_;
     WGPURenderBundle mainBundle_ = nullptr;
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
@@ -1182,6 +1356,7 @@ private:
     bool timerBeganAtShadow_ = false;
     std::shared_ptr<FrameGpuTimer> passTimer_;
     bool ownsPassTimer_ = true;
+    bool debugTimestampRequested_ = true;
     uint64_t sourceFrame_ = 0;  // the caller frame id the next timed frame is submitted with
     Handle timestampResolve_;
     // Shared with the readback callback by weak reference: a backend may deliver it after this
@@ -1211,10 +1386,30 @@ private:
     std::unordered_map<uint64_t, std::vector<uint64_t>> freeSlots_;  // freed offsets by block bytes
     std::unordered_map<uint64_t, uint32_t> slotUses_;  // this frame's occurrences per key
     uint64_t slotArena_ = 0, slotFrame_ = 0;
+    /** TR1: each instanced draw keeps its place in the `instances` storage, keyed by its matrix and colour stores, so a
+     *  reorder or a draw that leaves the view moves no other draw's bytes and the upload sends only what changed.
+     *  Offsets and counts are in floats (twenty per instance). A place unasked for in kInstanceSlotPlans plans is
+     *  dropped, and the storage starts over when the gaps outweigh the live places. */
+    /** `stamp` is what the draw's stores read (epoch, writes, version of the matrices and of the colours, instance count)
+     *  when the GPU last received this place; the same stamp next plan means the place's bytes are already in `instances`
+     *  and on the GPU, so the copy and the compare both skip it. It is committed only after the upload went through. */
+    using InstanceStamp = std::array<uint64_t, 7>;
+    struct InstanceSlot { uint64_t offset, count, seen; InstanceStamp stamp{}; bool stamped = false; };
+    std::map<std::pair<uint64_t, uint64_t>, InstanceSlot> instanceSlots_;  // keyed by the matrix and colour store ids
+    std::vector<std::pair<InstanceSlot*, InstanceStamp>> instancePlanned_;  // this plan's places, stamped once uploaded
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDirty_;  // float runs this plan copied: the only ones the upload scans
+    std::vector<std::pair<uint64_t, uint64_t>> instanceScan_;  // byte spans the upload compares
+    uint64_t instanceTop_ = 0;
+    static constexpr uint64_t kInstanceSlotPlans = 4096;
+    /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
+    uint64_t planSerial_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
+    /** FM2: the arena's bytes as the GPU last received them, and this frame's changed ranges in it. */
+    std::vector<uint8_t> uploadedUniforms_;
+    std::vector<std::pair<uint64_t, uint64_t>> uniformDirtyRanges_;
     // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index
     // from their `boneBase`; grown (and the bind groups rebuilt) like the uniform buffer.
     // Per-frame storage the vertex variants read, by binding name: `boneMatrices` (skinning),

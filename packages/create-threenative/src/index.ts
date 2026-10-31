@@ -20,18 +20,16 @@ const PACKAGE_SOURCE_FLAGS = {
   "@threenative/playtest": "--playtest-package",
   "@threenative/runtime-native": "--runtime-native-package",
   "@threenative/ui": "--ui-package",
-  "threenative-blender-mcp": "--blender-mcp-package",
   "threenative-engine-mcp": "--engine-mcp-package",
   "create-threenative": "--cli-package",
 } as const;
 
 /** The unscoped workspace packages, keyed by their flag suffix. Scoped packages derive their flag
- * from the package name; these three cannot, so the alias and the name live in one table rather
- * than in a chain of equality checks that a fourth unscoped package would have to be added to in
+ * from the package name; these two cannot, so the alias and the name live in one table rather
+ * than in a chain of equality checks that a third unscoped package would have to be added to in
  * two places. */
 const UNSCOPED_PACKAGE_FLAG_ALIASES: Readonly<Record<string, string>> = {
   "animation-mcp": "threenative-animation-mcp",
-  "blender-mcp": "threenative-blender-mcp",
   cli: "create-threenative",
   "engine-mcp": "threenative-engine-mcp",
 };

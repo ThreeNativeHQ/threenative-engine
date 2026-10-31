@@ -74,9 +74,21 @@ export function compareRuns(runs) {
   };
 }
 
+// The perf reader prints its verdict (violations such as TN_PERF_WINDOWS_MISSING) on stdout and leaves
+// stderr empty, so a reason built from stderr alone read "failed:" with nothing after it.
+export function failureReason(result) {
+  const tail = (text) => (text ?? '').trim().slice(-1500);
+  return [
+    result.error?.message,
+    `exit ${result.status ?? 'none'}${result.signal ? ` signal ${result.signal}` : ''}`,
+    tail(result.stderr) && `stderr: ${tail(result.stderr)}`,
+    tail(result.stdout) && `stdout: ${tail(result.stdout)}`,
+  ].filter(Boolean).join('; ');
+}
+
 function command(executable, args, options = {}) {
   const result = spawnSync(executable, args, { encoding: 'utf8', timeout: 240_000, maxBuffer: 64 * 1024 * 1024, ...options });
-  requireEvidence(!result.error && result.status === 0, `${executable} failed: ${result.error?.message ?? result.stderr ?? result.status}`);
+  requireEvidence(!result.error && result.status === 0, `${executable} failed: ${failureReason(result)}`);
   return result.stdout;
 }
 

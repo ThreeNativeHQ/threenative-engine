@@ -132,23 +132,23 @@ function packagesUnderTest(): readonly IPackageUnderTest[] {
 /**
  * Deliberately inlined rather than declared, with the reason.
  *
- * `threenative-blender-mcp` is an in-repo package that has never been published. A `dependencies`
+ * `@threenative/blender-bridge` is an in-repo package that has never been published. A `dependencies`
  * entry naming it makes its consumer **uninstallable** — `pnpm` stops with ERR_PNPM_FETCH_404 while
  * resolving the consumer, and every scaffold dies before its first build — which is a worse failure
  * than a private inlined copy. Both consumers gate the inlining separately: `package-dist.spec.ts`
  * asserts `@threenative/assets`' bundle carries no bare specifier and that the GPL scripts travel
- * with it in `dist/blender-gpl/`, and `mcp-install.spec.ts` asserts core carries the built server.
+ * with it in `dist/blender-gpl/`, and `assets/package-dist.spec.ts` asserts the bridge is inlined rather than declared.
  *
- * Delete these rows the day `threenative-blender-mcp` is published, and declare it normally.
+ * Delete these rows the day `@threenative/blender-bridge` is published, and declare it normally.
  */
 const INLINED_BY_DESIGN: Readonly<Record<string, readonly string[]>> = {
-  "@threenative/assets": ["threenative-blender-mcp"],
+  "@threenative/assets": ["@threenative/blender-bridge"],
   // The ESLint parser and plugin are bundled into `dist/quality.js` so they load the TypeScript 6
   // API beside the game's `tsc` 7; see PRD-626 Decisions.
   "create-threenative": [
     "@typescript-eslint/eslint-plugin",
     "@typescript-eslint/parser",
-    "threenative-blender-mcp",
+    "@threenative/blender-bridge",
   ],
 };
 
@@ -174,7 +174,7 @@ describe("published packages keep their runtime dependencies external", () => {
   it("copies Blender GPL sources without Python interpreter caches", () => {
     const fixture = makeTempDirSync("tn-blender-gpl-bundle-");
     const assets = path.join(fixture, "packages", "assets");
-    const source = path.join(fixture, "packages", "blender-mcp", "gpl");
+    const source = path.join(fixture, "packages", "blender-bridge", "gpl");
     const target = path.join(assets, "dist", "blender-gpl");
     try {
       fs.mkdirSync(path.join(assets, "scripts"), { recursive: true });

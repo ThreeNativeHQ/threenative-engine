@@ -1,12 +1,34 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
-// One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
+// One sun. The sky in `sky.ts` is the fill light — its environment reaches every face the
 // sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
 // The torch point lights in `dungeon.ts` are the only other sources, and they carry no shadows.
 import { Color, DirectionalLight, Object3D, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import {
+  SUN_ILLUMINANCE,
+  SUN_KELVIN,
+  sunLight,
+  sunLightTransmittance,
+  temperatureColour,
+} from "./atmosphere.js";
 import { DUNGEON_CENTRE } from "./dungeon.js";
-import { SUN_DIRECTION } from "./sky.js";
+import { SKY_OPTIONS, SUN_DIRECTION } from "./sky.js";
+
+/** The sun as Unreal's default level has it: 6 lux at 6500 K, tinted by the air it crosses. */
+function atmosphereSun(): DirectionalLight {
+  const tint = temperatureColour(SUN_KELVIN);
+  const through = sunLightTransmittance(Math.asin(Math.min(1, Math.max(-1, SUN_DIRECTION.y))));
+  const colour = new Color().setRGB(
+    tint[0] * through[0],
+    tint[1] * through[1],
+    tint[2] * through[2],
+  );
+  const key = new DirectionalLight(colour, SUN_ILLUMINANCE);
+  // `gpuSky.ts` re-tints it when the sun moves.
+  sunLight.current = key;
+  return key;
+}
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
@@ -22,8 +44,8 @@ export function setupLighting(
   renderer.shadowMap.type = PCFSoftShadowMap;
 
   // Warm white, matched by eye to the photographed midday sun against its own sky (owner
-  // 2026-10-26 prefers this 7b546d6 neutral look to the warmer 0xfff0dc at 5.5).
-  const key = new DirectionalLight(0xfff1e0, 4.5);
+  // The photo sky keeps the warm white matched by eye to its photographed midday sun.
+  const key = SKY_OPTIONS.sky === "photo" ? new DirectionalLight(0xfff1e0, 4.5) : atmosphereSun();
   key.name = "key-light";
   key.position.copy(SUN_DIRECTION).multiplyScalar(40);
   // A directional light aims at its target, and the default target sits on the world origin — six

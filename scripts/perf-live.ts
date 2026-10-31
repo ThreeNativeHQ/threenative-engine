@@ -789,6 +789,7 @@ export const TABS = [
   ["/ci-speed", "CI speed"],
   ["/asset-perf", "Asset perf"],
   ["/kit-loop", "Kit loop"],
+  ["/stress-lab", "Stress lab"],
 ] as const;
 
 const NAV_STYLE =
@@ -811,6 +812,7 @@ const LEDGER_TABS = {
   "ci-speed": { module: "./ci-speed-loop.mjs", ledger: "../docs/ci-speed/ledger.json" },
   "asset-perf": { module: "./asset-perf-loop.mjs", ledger: "../docs/asset-perf/ledger.json" },
   "kit-loop": { module: "./kit-loop.mjs", ledger: "../docs/kit-loop/ledger.json" },
+  "stress-lab": { module: "./stress-loop.mjs", ledger: "../docs/stress-loop/ledger.json" },
 } as const;
 
 const ledgerTabOf = (url = "") =>

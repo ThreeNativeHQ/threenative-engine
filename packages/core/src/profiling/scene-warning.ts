@@ -186,10 +186,38 @@ export function describeSceneShape(
   };
 }
 
+/**
+ * The count a dominant term names, in that term's own unit, or `undefined` for a term this build
+ * does not measure. The ranking compares these same terms, so a missing pass reads zero here too;
+ * an unknown term is refused rather than answered with a number measured for something else.
+ */
+function dominantCount(warning: ISceneWarning): { count: number; unit: string } | undefined {
+  switch (warning.dominantTerm) {
+    case "objectsConsidered":
+      return { count: warning.shape.objectsConsidered, unit: "objects" };
+    case "mainDraws":
+      return { count: warning.shape.draws.main ?? 0, unit: "draws" };
+    case "shadowDraws":
+      return { count: warning.shape.draws.shadow ?? 0, unit: "draws" };
+    case "reflectionDraws":
+      return { count: warning.shape.draws.reflection ?? 0, unit: "draws" };
+    default:
+      return undefined;
+  }
+}
+
 /** The one-line summary a reader sees without opening a log viewer. */
 export function describeSceneWarning(warning: ISceneWarning): string {
   const gpuPercent = Math.round(warning.gpuShare * 100);
-  return `the GPU used ${gpuPercent}% of the frame while the render phase took ${warning.renderMs} ms against a ${warning.displayPeriodMs} ms display period; ${warning.dominantTerm} is the largest term at ${warning.shape.trianglesPerDraw} triangles per draw`;
+  const dominant = dominantCount(warning);
+  // The dominant term is compared as a count, so it is printed as one: the triangles per draw
+  // beside it describe a different quantity and reading it as the object count overstates a scene
+  // by a factor of thirty.
+  const largest =
+    dominant === undefined
+      ? `${warning.dominantTerm} is the largest count: count unavailable`
+      : `${warning.dominantTerm} is the largest count: ${dominant.count} ${dominant.unit}`;
+  return `the GPU used ${gpuPercent}% of the frame while the render phase took ${warning.renderMs} ms against a ${warning.displayPeriodMs} ms display period; ${largest}; ${warning.shape.trianglesPerDraw} triangles per draw across passes`;
 }
 
 /** The marker line. */

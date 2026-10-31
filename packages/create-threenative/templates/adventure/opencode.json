@@ -29,19 +29,19 @@
       ],
       "enabled": true
     },
-    "threenative-blender": {
-      "type": "local",
-      "command": [
-        "node",
-        "./node_modules/@threenative/core/mcp/blender.mjs"
-      ],
-      "enabled": true
-    },
     "threenative-animation": {
       "type": "local",
       "command": [
         "node",
         "./node_modules/@threenative/core/mcp/animation.mjs"
+      ],
+      "enabled": true
+    },
+    "threenative-devtools": {
+      "type": "local",
+      "command": [
+        "node",
+        "./node_modules/@threenative/core/mcp/devtools.mjs"
       ],
       "enabled": true
     }

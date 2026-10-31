@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
-const { compareRuns, launchOrder } = await import(
+const { compareRuns, failureReason, launchOrder } = await import(
   new URL(
     "../../packages/runtime-native/scripts/measure-starter-js-frame-pair.mjs",
     import.meta.url,
@@ -47,6 +47,19 @@ function runs() {
 }
 
 describe("starter paired JS frame proof", () => {
+  it("names why a launch failed when the perf reader wrote its verdict to stdout and nothing to stderr", () => {
+    const reason = failureReason({
+      status: 1,
+      stderr: "",
+      stdout: '{"violations":[{"code":"TN_PERF_WINDOWS_MISSING"}]}',
+    });
+    expect(reason).toContain("exit 1");
+    expect(reason).toContain("TN_PERF_WINDOWS_MISSING");
+    expect(failureReason({ status: null, signal: "SIGTERM", stderr: "", stdout: "" })).toBe(
+      "exit none signal SIGTERM",
+    );
+  });
+
   it("uses alternating pairs and strict median of sampled run p50s, rejecting incomplete or incomparable evidence", () => {
     expect(launchOrder).toEqual(["quickjs", "v8", "v8", "quickjs", "quickjs", "v8"]);
     expect(compareRuns(runs())).toMatchObject({ pass: true, quickjsMedianMs: 10, v8MedianMs: 5 });

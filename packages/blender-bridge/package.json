@@ -1,0 +1,44 @@
+{
+  "name": "@threenative/blender-bridge",
+  "version": "0.2.0",
+  "license": "MIT",
+  "description": "Runs an installed Blender headlessly so a downloaded .fbx becomes a GLB a ThreeNative game loads. Ships no Blender.",
+  "keywords": ["threenative", "blender", "fbx", "gltf"],
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "bugs": {
+    "url": "https://github.com/ThreeNativeHQ/threenative/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/blender-bridge"
+  },
+  "type": "module",
+  "files": ["dist", "gpl", "README.md"],
+  "main": "./dist/bridge.js",
+  "module": "./dist/bridge.js",
+  "types": "./dist/bridge.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    "./bridge": {
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run build && vitest run --root ../.. blender-bridge/__tests__ && publint --strict"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "catalog:",
+    "publint": "0.3.22",
+    "tsup": "8.5.1",
+    "typescript": "catalog:",
+    "@typescript/native": "catalog:"
+  }
+}

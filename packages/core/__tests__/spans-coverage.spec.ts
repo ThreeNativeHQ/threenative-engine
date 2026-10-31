@@ -6,6 +6,7 @@ import {
   FrameCounters,
   createCrossingReader,
   createEngineCounterReader,
+  discardEngineCountsSinceLastFrame,
 } from "../src/profiling/FrameCounters.js";
 import { SPANS, SpanRecorder, setSpanRecorder, spanRecorder } from "../src/profiling/Spans.js";
 import { installSpanProbes } from "../src/profiling/span-probes.js";
@@ -265,6 +266,22 @@ describe("the frame record carries the boundary counts", () => {
     expect(window.counters.engine.childrenReads).toMatchObject({ max: 100, mean: 100, samples: 2 });
     expect(window.counters.engine.matrixEvaluations.mean).toBe(40);
     expect(window.counters.engine.cullRigRebuilds).toMatchObject({ max: 1, samples: 2 });
+  });
+
+  it("leaves the work done between frames, such as an observation's scene walk, out of the next frame", () => {
+    const host: Parameters<typeof createEngineCounterReader>[0] = {
+      __THREENATIVE_ENGINE_COST__: true,
+      __tnEngineCost: { walkVisits: 0 } as Record<string, number>,
+    };
+    const totals = host.__tnEngineCost as Record<string, number>;
+    const engine = createEngineCounterReader(host);
+    engine(); // the run's baseline, not a frame
+    totals.walkVisits += 5; // the frame's own walk
+    expect(engine()?.walkVisits).toBe(5);
+    totals.walkVisits += 9_901; // the playtest bridge answering an observation, between frames
+    discardEngineCountsSinceLastFrame(host);
+    totals.walkVisits += 5;
+    expect(engine()?.walkVisits).toBe(5);
   });
 
   it("reads no engine counter unless a playtest asked for them", () => {

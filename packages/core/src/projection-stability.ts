@@ -177,6 +177,17 @@ export class ProjectionStability {
     return this.#watchedCount;
   }
 
+  /** Distinct materials the last scan read — the list `holds` walks. It must describe the scene,
+   * never the number of scans run, so a spec pins it. */
+  get watchedMaterialCount(): number {
+    return this.#materials.length;
+  }
+
+  /** Distinct geometries the last scan read. Same contract as {@link watchedMaterialCount}. */
+  get watchedGeometryCount(): number {
+    return this.#geometries.length;
+  }
+
   /**
    * The exact lane the last scan classified, repooled for this frame's apply.
    *
@@ -201,6 +212,11 @@ export class ProjectionStability {
   record(source: Scene, scan: IProjectionScanResult): void {
     this.#materialSet.clear();
     this.#geometrySet.clear();
+    // The lists hold what *this* scan read, exactly like `#nodes` and `#watched`: without this every
+    // re-record appends another copy of the scene's materials and geometries and `holds()` pays for
+    // the log, not the scene.
+    this.#materials.length = 0;
+    this.#geometries.length = 0;
     const nodes = this.#nodes;
     const stack = this.#stack;
     const stackVisible = this.#stackVisible;

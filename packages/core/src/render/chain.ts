@@ -291,6 +291,26 @@ export function readRenderChainObservation(
 }
 
 /**
+ * Print `TN_RENDER_CHAIN` and remember the report for a frame that installs no chain because no stage
+ * is requested, so a game that turns every post stage off still reports its tier. Returns the forget call.
+ * @situation a `renderChain` playtest assertion on a game whose look runs no post stage
+ */
+export function publishDirectRenderChainReport(
+  renderer: Pick<IRenderChainRenderer, "raw">,
+  tier: RenderChainTier,
+  dropped: readonly IRenderChainDroppedStage[],
+  report: (line: string) => void = (line) => console.log(line),
+): () => void {
+  const marker: IRenderChainMarker = {
+    applied: { ...emptyApplied([], tier, "pinned", false), dropped },
+    marker: RENDER_CHAIN_MARKER,
+  };
+  rememberReport(renderer, marker);
+  report(`${RENDER_CHAIN_MARKER}:${JSON.stringify(marker)}`);
+  return () => forgetReport(renderer);
+}
+
+/**
  * Compose game-provided nodes through one ordered, measured, honest render seam.
  *
  * The chain owns only stage ordering, availability, velocity provisioning and quality selection.
@@ -1037,12 +1057,15 @@ function nextLowerTier(tier: RenderChainTier): RenderChainTier {
   return "off";
 }
 
-function rememberReport(renderer: IRenderChainRenderer, marker: IRenderChainMarker): void {
+function rememberReport(
+  renderer: Pick<IRenderChainRenderer, "raw">,
+  marker: IRenderChainMarker,
+): void {
   if (isObject(renderer)) storeReport(renderer, marker);
   if (isObject(renderer.raw)) storeReport(renderer.raw, marker);
 }
 
-function forgetReport(renderer: IRenderChainRenderer): void {
+function forgetReport(renderer: Pick<IRenderChainRenderer, "raw">): void {
   if (isObject(renderer)) storeReport(renderer, undefined);
   if (isObject(renderer.raw)) storeReport(renderer.raw, undefined);
 }

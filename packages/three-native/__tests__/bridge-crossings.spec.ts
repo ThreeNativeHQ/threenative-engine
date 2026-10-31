@@ -9,7 +9,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { Euler, Quaternion } from "three";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type IBrowserRuntime,
@@ -18,7 +19,13 @@ import {
   type TnAbiModule,
   createWasmRuntime,
   defineBrowserClasses,
+  eulerFromQuaternion,
 } from "../src/browser-backend.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 const registry = JSON.parse(
   readFileSync(
@@ -55,12 +62,26 @@ function memoryRuntime() {
     get(self, property) {
       if (property === "__address") return addresses.get(self.key) as number;
       calls.push(`get ${property}`);
-      if (property === "position" || property === "scale") {
-        const ref = construct("Vector3");
+      if (
+        property === "position" ||
+        property === "scale" ||
+        property === "quaternion" ||
+        property === "rotation"
+      ) {
+        const ref = construct(
+          property === "quaternion" ? "Quaternion" : property === "rotation" ? "Euler" : "Vector3",
+        );
         // The member's lanes follow its owner's, as the transform page lays them out.
         addresses.set(
           ref.key,
-          (addresses.get(self.key) as number) + (property === "scale" ? 64 : 0),
+          (addresses.get(self.key) as number) +
+            (property === "scale"
+              ? 64
+              : property === "quaternion"
+                ? 128
+                : property === "rotation"
+                  ? 160
+                  : 0),
         );
         return ref;
       }
@@ -78,6 +99,7 @@ function memoryRuntime() {
     writeDouble(address, value) {
       heap[address / 8] = value;
     },
+    readByte: () => 0,
   };
   return { runtime, calls, heap, addresses };
 }
@@ -104,6 +126,117 @@ describe("transform writes on the browser back end", () => {
     }
     expect(heap[(base + 64) / 8 + 2]).toBe(4);
     expect(calls.filter((call) => /^(set|invoke) /u.test(call))).toHaveLength(crossingsBefore);
+  });
+});
+
+describe("an Object3D's rotation follows its quaternion on the browser back end", () => {
+  it("syncs without a crossing, bit for bit as three's Euler.setFromQuaternion", () => {
+    const { runtime, calls, heap, addresses } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Object3D = classes.Object3D as new () => {
+      quaternion: { set(x: number, y: number, z: number, w: number): unknown };
+      rotation: object;
+    };
+    const object = new Object3D();
+    const { quaternion, rotation } = object;
+    const at = addresses.get(engineKey(rotation)) as number;
+    const lanes = ["x", "y", "z"].map(
+      (key) => (registry.classes.Euler?.fields?.[key]?.[0] ?? 0) / 8,
+    );
+    const expected = new Euler();
+    for (let step = 0; step < 200; step += 1) {
+      const q = new Quaternion(
+        Math.sin(step),
+        Math.cos(step * 0.7),
+        step % 5,
+        1 + step,
+      ).normalize();
+      quaternion.set(q.x, q.y, q.z, q.w);
+      expected.setFromQuaternion(q, "XYZ");
+      expect(lanes.map((lane) => heap[at / 8 + lane])).toEqual([
+        expected.x,
+        expected.y,
+        expected.z,
+      ]);
+    }
+    expect(calls.filter((call) => call === "invoke setFromQuaternion")).toHaveLength(0);
+  });
+
+  it("matches three in every order, the gimbal-locked branch included", () => {
+    const orders = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"] as const;
+    const quaternions = [
+      ...Array.from({ length: 50 }, (_, i) =>
+        new Quaternion(Math.sin(i * 1.3), Math.cos(i), Math.sin(i * 0.4), 0.5).normalize(),
+      ),
+      ...orders.map((order) =>
+        new Quaternion().setFromEuler(new Euler(Math.PI / 2, Math.PI / 2, 0.3, order)),
+      ),
+      new Quaternion(Math.SQRT1_2, 0, 0, Math.SQRT1_2),
+      new Quaternion(0, Math.SQRT1_2, 0, Math.SQRT1_2),
+      new Quaternion(0, 0, Math.SQRT1_2, Math.SQRT1_2),
+    ];
+    const expected = new Euler();
+    for (const order of orders)
+      for (const q of quaternions) {
+        expected.setFromQuaternion(q, order);
+        expect(eulerFromQuaternion(q.x, q.y, q.z, q.w, order)).toEqual([
+          expected.x,
+          expected.y,
+          expected.z,
+        ]);
+      }
+  });
+});
+
+describe("the world-matrix dirty flag", () => {
+  it("is armed in place, one byte, no crossing, as the engine's own walks write it", () => {
+    const bytes = new Uint8Array(256);
+    const calls: string[] = [];
+    const runtime: IBrowserRuntime = {
+      typeId: (name) => (name === "Mesh" ? 1 : 2),
+      construct: (name) => ({ key: `${name}:1`, type: 1 }),
+      invoke(_self, method) {
+        calls.push(`invoke ${method}`);
+        return null;
+      },
+      get(_self, property) {
+        // The flags block the class exposes as its `__address`.
+        if (property === "__address") return 64;
+        calls.push(`get ${property}`);
+        return property === "name" ? "" : 1;
+      },
+      set(_self, property) {
+        calls.push(`set ${property}`);
+      },
+      release: () => undefined,
+      setCallback: () => undefined,
+      readDoubles: (_address, count) => (count === 1 ? 0 : [0]),
+      writeDouble: () => undefined,
+      readByte: (address) => bytes[address] ?? 0,
+      writeByte: (address, value) => {
+        bytes[address] = value;
+      },
+    };
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Mesh = classes.Mesh as new () => {
+      matrixWorldNeedsUpdate: boolean;
+      matrixAutoUpdate: boolean;
+    };
+    const offset = registry.classes.Mesh?.fields?.matrixWorldNeedsUpdate?.[0] as number;
+    const mesh = new Mesh();
+    // What core's physics interpolation does to every body after the draw, once a frame.
+    mesh.matrixWorldNeedsUpdate = true;
+    expect(calls).toEqual([]);
+    expect(mesh.matrixWorldNeedsUpdate).toBe(true);
+    expect(calls).toEqual([]);
+    expect(bytes[64 + offset]).toBe(1);
+    // A write of the value the flag holds changes nothing, and a clear is the same one store.
+    mesh.matrixWorldNeedsUpdate = true;
+    mesh.matrixWorldNeedsUpdate = false;
+    expect(bytes[64 + offset]).toBe(0);
+    // The renderer's own flags keep their call: those setters bump render revisions.
+    mesh.matrixAutoUpdate = false;
+    expect(calls).toEqual(["set matrixAutoUpdate"]);
   });
 });
 
@@ -358,4 +491,287 @@ describe("per-crossing glue on the Wasm bridge", () => {
     expect((bufferReads - readsBefore) / 50).toBeLessThanOrEqual(1);
     expect(fills - fillsBefore).toBe(0);
   });
+});
+
+describe("debug bridge ABI observations", () => {
+  it("preserves actual off malloc/free/crossing census and reports Uint8 fog bytes on", () => {
+    function run(enabled: boolean) {
+      vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
+      vi.stubGlobal("__THREENATIVE_DEBUG__", false);
+      vi.stubGlobal("location", { search: "" });
+      const { module, grow } = growableModule();
+      const sets = vi.fn(() => 0);
+      module._tn_set = sets;
+      const runtime = createWasmRuntime(module);
+      const ref = { key: "1:0:1:1", type: 1 };
+      runtime.set(ref, "image.data", new Uint8Array(112 * 112 * 4));
+      const before = module.mallocs.length;
+      for (let i = 0; i < 995; i++) runtime.get(ref, "count");
+      expect(module.mallocs.length).toBe(before + 1); // one interned property name
+      grow();
+      runtime.get(ref, "count");
+      return {
+        mallocs: module.mallocs,
+        frees: module.frees,
+        crossings: sets.mock.calls.length,
+        debug: runtime.debugTelemetry,
+      };
+    }
+    const off = run(false);
+    expect(off.debug).toBeUndefined();
+    const on = run(true);
+    expect(on.mallocs).toEqual(off.mallocs);
+    expect(on.frees).toEqual(off.frees);
+    expect(on.crossings).toBe(off.crossings);
+    // Typed arrays cross as their own bytes (KIND.bytes), so the fog frame neither widens nor overflows.
+    expect(on.debug?.totals).toMatchObject({
+      bridgeTypedSourceBytes: 50176,
+      bridgeTypedEncodedBytes: 50176,
+      wasmGrowthEvents: 1,
+      wasmGrowthBytes: 1048576,
+    });
+    expect(on.debug?.totals).not.toHaveProperty("bridgeOverflowAllocations");
+    expect(on.debug?.totals).not.toHaveProperty("bridgeWidenings");
+  });
+
+  it("routes bridge totals through the existing browser engine counter reader", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnDebugSources", {});
+    const { runtime } = memoryRuntime();
+    const get = runtime.get;
+    runtime.get = (self, path) => (path === "name" ? "" : get(self, path));
+    const engine = defineBrowserClasses(registry, runtime);
+    const Object3D = engine.classes.Object3D as new () => { count: number };
+    new Object3D();
+    const counters = engine.counters();
+    expect(counters.bridgeConstructCrossings).toBe(1);
+    expect(counters.bridgeWrappersCreated).toBe(1);
+    expect(counters.bridgeLiveWrappers).toBe(1);
+    expect(
+      (globalThis as { __tnDebugSources?: Record<string, { unit: string }> }).__tnDebugSources
+        ?.bridgeLiveWrappers?.unit,
+    ).toBe("gauge");
+    expect(counters.bridgeCrossingMs).toBeGreaterThanOrEqual(0);
+    expect(
+      (globalThis as { __tnDebugSources?: Record<string, { unit: string }> }).__tnDebugSources
+        ?.bridgeCrossingMs?.unit,
+    ).toContain("estimated");
+  });
+});
+
+describe("shared transform write telemetry", () => {
+  it("observes repeated same-value position and quaternion writes without changing their values or crossings", () => {
+    function run(enabled: boolean) {
+      vi.stubEnv("TN_DEBUG", enabled ? "1" : "0");
+      const { runtime, calls, heap, addresses } = memoryRuntime();
+      const get = runtime.get;
+      runtime.get = (self, property) => (property === "name" ? "" : get(self, property));
+      const browser = defineBrowserClasses(registry, runtime);
+      const Object3D = browser.classes.Object3D as new () => {
+        position: { set(x: number, y: number, z: number): void };
+        quaternion: { set(x: number, y: number, z: number, w: number): void };
+      };
+      const object = new Object3D();
+      const { position, quaternion } = object;
+      const start = calls.length;
+      const now = vi.spyOn(performance, "now");
+      position.set(5, 6, 7);
+      position.set(5, 6, 7);
+      quaternion.set(1, 2, 3, 4);
+      quaternion.set(1, 2, 3, 4);
+      expect(now).not.toHaveBeenCalled();
+      now.mockRestore();
+      const writes = calls.slice(start);
+      const base = addresses.get(engineKey(object)) ?? 0;
+      const values = [
+        ...heap.subarray(base / 8, base / 8 + 3),
+        ...heap.subarray((base + 128) / 8, (base + 128) / 8 + 4),
+      ];
+      return { values, writes, counters: browser.counters() };
+    }
+    const off = run(false);
+    const on = run(true);
+    expect(off.values).toEqual([5, 6, 7, 1, 2, 3, 4]);
+    expect(on.values).toEqual(off.values);
+    expect(on.writes).toEqual(off.writes);
+    expect(off.counters).not.toHaveProperty("sharedTransformWrites");
+    expect(on.counters).toMatchObject({
+      sharedTransformWrites: 14,
+      unchangedSharedTransformWrites: 7,
+    });
+  });
+});
+
+describe("typed-array ABI bytes", () => {
+  it("keeps a fog-sized Uint8Array in the scratch arena without widening", () => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    const source = new Uint8Array(50180);
+    source.fill(173);
+    const fog = source.subarray(2, 50178);
+    let seen: unknown;
+    Reflect.set(module, "_tn_set", (_self: number, _name: number, at: number) => {
+      const view = new DataView(module.HEAPU8.buffer);
+      const pointer = view.getUint32(at + 48, true);
+      seen = {
+        kind: view.getUint32(at, true),
+        count: Number(view.getBigUint64(at + 40, true)),
+        bytes: [...module.HEAPU8.subarray(pointer, pointer + fog.byteLength)],
+      };
+      return 0;
+    });
+    runtime.set({ key: "5:2:7:9", type: 5 }, "image.data", new Uint8Array());
+    const before = module.mallocs.length;
+    runtime.set({ key: "5:2:7:9", type: 5 }, "image.data", fog);
+    expect(seen).toEqual({ kind: 9, count: 50176, bytes: [...fog] });
+    expect(module.mallocs.slice(before)).toEqual([]);
+  });
+
+  it.each([
+    Int8Array,
+    Uint8Array,
+    Int16Array,
+    Uint16Array,
+    Int32Array,
+    Uint32Array,
+    Float32Array,
+    Float64Array,
+  ])("preserves %s element type and sliced bytes", (Scalar) => {
+    const { module } = growableModule();
+    const runtime = createWasmRuntime(module);
+    const array = new Scalar([0, 1, 7, 0]).subarray(1, 3);
+    let seen: unknown;
+    const strings = new Map<number, string>();
+    Reflect.set(module, "stringToUTF8", (value: string, pointer: number) =>
+      strings.set(pointer, value),
+    );
+    Reflect.set(module, "_tn_set", (_self: number, _name: number, at: number) => {
+      const view = new DataView(module.HEAPU8.buffer);
+      const pointer = view.getUint32(at + 48, true);
+      seen = [
+        view.getUint32(at, true),
+        strings.get(view.getUint32(at + 32, true)),
+        Number(view.getBigUint64(at + 40, true)),
+        [...module.HEAPU8.subarray(pointer, pointer + array.byteLength)],
+      ];
+      return 0;
+    });
+    runtime.set({ key: "5:2:7:9", type: 5 }, "array", array);
+    expect(seen).toEqual([
+      9,
+      Scalar.name,
+      2,
+      [...new Uint8Array(array.buffer, array.byteOffset, array.byteLength)],
+    ]);
+  });
+});
+
+describe("RTS immutable shape mirrors", () => {
+  function setup() {
+    const { runtime, calls } = memoryRuntime();
+    const read = runtime.get;
+    const values = new Map<string, unknown>();
+    let capacity = 32;
+    const matrix = runtime.construct("BufferAttribute", []);
+    const color = runtime.construct("BufferAttribute", []);
+    runtime.get = (ref, key) => {
+      if (key === "__address") return read(ref, key);
+      calls.push(`get ${key}`);
+      if (key === "itemSize") return 16;
+      if (key === "instanceMatrix") return matrix;
+      if (key === "instanceColor") return (values.get(key) as never) ?? null;
+      if (key === "count") return capacity;
+      return null;
+    };
+    runtime.set = (_ref, key, value) => {
+      calls.push(`set ${key}`);
+      if (key === "count") {
+        if (!Number.isInteger(value) || Number(value) < 0) throw new Error("invalid count");
+        capacity = Number(value);
+      }
+      values.set(key, value);
+    };
+    runtime.invoke = (_ref, method) => {
+      calls.push(`invoke ${method}`);
+      if (method === "setColorAt") values.set("instanceColor", color);
+      if (method === "copy") {
+        capacity = 12;
+        values.set("instanceColor", null);
+      }
+      return null;
+    };
+    const { classes } = defineBrowserClasses(registry, runtime);
+    return { classes, calls };
+  }
+
+  it("keeps itemSize through range and usage changes", () => {
+    const { classes, calls } = setup();
+    const attr = new (
+      classes.BufferAttribute as new () => {
+        itemSize: number;
+        setUsage(n: number): void;
+        clearUpdateRanges(): void;
+        addUpdateRange(s: number, c: number): void;
+      }
+    )();
+    expect(attr.itemSize).toBe(16);
+    attr.setUsage(35048);
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(0, 16);
+    calls.length = 0;
+    expect(attr.itemSize).toBe(16);
+    expect(calls).toEqual([]);
+  });
+
+  it("keeps instance members and validated count through hot calls, invalidating copy and replacement", () => {
+    const { classes, calls } = setup();
+    const Mesh = classes.InstancedMesh as new () => {
+      count: number;
+      instanceMatrix: object;
+      instanceColor: object | null;
+      setMatrixAt(i: number, m: object): void;
+      setColorAt(i: number, c: object): void;
+      computeBoundingSphere(): void;
+      copy(o: object): void;
+    };
+    const mesh = new Mesh();
+    const matrix = mesh.instanceMatrix;
+    expect(mesh.count).toBe(32);
+    expect(mesh.instanceColor).toBeNull();
+    mesh.setColorAt(0, {});
+    const color = mesh.instanceColor;
+    expect(color).not.toBeNull();
+    mesh.count = 7;
+    mesh.setMatrixAt(0, {});
+    mesh.computeBoundingSphere();
+    calls.length = 0;
+    expect(mesh.count).toBe(7);
+    expect(mesh.instanceMatrix).toBe(matrix);
+    expect(mesh.instanceColor).toBe(color);
+    expect(calls).toEqual([]);
+    expect(() => {
+      mesh.count = -1;
+    }).toThrow();
+    expect(mesh.count).toBe(7);
+    const replacement = new (classes.BufferAttribute as new () => object)();
+    mesh.instanceMatrix = replacement;
+    expect(mesh.instanceMatrix).toBe(replacement);
+    mesh.copy(new Mesh());
+    expect(mesh.count).toBe(12);
+    expect(mesh.instanceColor).toBeNull();
+  });
+});
+
+it("keeps plain numeric arrays as ABI doubles", () => {
+  const { module } = growableModule();
+  const runtime = createWasmRuntime(module);
+  let seen: unknown;
+  Reflect.set(module, "_tn_set", (_self: number, _name: number, at: number) => {
+    const view = new DataView(module.HEAPU8.buffer);
+    const pointer = view.getUint32(at + 48, true);
+    seen = [view.getUint32(at, true), [...module.HEAPF64.subarray(pointer / 8, pointer / 8 + 2)]];
+    return 0;
+  });
+  runtime.set({ key: "5:2:7:9", type: 5 }, "array", [1.25, -3.5]);
+  expect(seen).toEqual([5, [1.25, -3.5]]);
 });

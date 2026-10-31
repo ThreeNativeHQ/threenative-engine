@@ -220,6 +220,11 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-28 (0.3.7): the cohort's own pins now hash as a placeholder, so a release bump
 // leaves every tree as it is; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // 2026-10-30: the Blender MCP server is gone, so every kit's seven host configs lose their
+  // `threenative-blender` entry and all sixteen trees move. Measured by this test.
+  // 2026-10-29: every kit's seven MCP host configs gain the `threenative-devtools` server, and its
+  // AGENTS/CLAUDE pair and performance skill name the slow-game order, so all sixteen trees move.
+  // Measured by this test.
   // PRD-723: RTS now ports its visually approved filmic/metered look, readable HUD/rings and full-resolution override.
   // Other kits retain the measured phase-1 core imports, vendor removal and guidance.
   // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
@@ -307,7 +312,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-27 (PR #574 restart lane): action-rpg publishes `animation` and fits the swing
   // to its clip; platformer binds R to restart.
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
-  "action-rpg": "2b8695b82a99bab0364ad5ee7f10cd3cebc6303a815bae2cbe44f0461467c8f1",
+  // Re-pinned 2026-10-28 (owner chose sharp AA): core high tier is 4x MSAA with no camera motion blur;
+  // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
+  // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
+  // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
+  "action-rpg": "54f79745b1a9655afb2fe90d70316a80aba2cc97e73057242d9b1d9f05e5b355",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -321,7 +330,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "379cb8767e9bc4ef9bba02bc7decbaeaf6b18c03a964ced7e64f2628f46ce2ec",
+  collectathon: "6e167b90989498f8f3ef5a052def12c5a2a0ccbd9320ec75e14b99e1d6bdfd72",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
@@ -330,28 +339,40 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Re-pinned 2026-10-26 (PRD-748 loading cover): adventure loses its `loaded` gate, rain
   // reads state through `useUiStateDuringStartup`.
   // Re-pinned 2026-10-27 (PRD-749 hud-clean): adventure, collectathon and rain HUD text reaches 3:1.
-  adventure: "4ea0e955379eec3f2bc66b436f1c91126a9ff3c5f71611887710d9a3c4546069",
+  adventure: "e0b1386e397e7667f8dcc100b55dc4515150d2ab06791b18ce2136634626af27",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "7b3613bccaa6324ae5514968af432481c55d70c19e8732f4d2ceb5d0235b1d2e",
-  minimal: "f01eb7fa62ff8886baf2484b4576051caed1592939e8760b7410b8176793f30d",
-  platformer: "3f79f7e9627106f50f7e63ebb34469083f90738ea014550f225c8d18c7fef18c",
-  puzzle: "70e9e60a2400e8dcec79f69a882370c2169d07eb6deed3828816c4d94c397465",
-  racing: "388bbe65ed8214dac991be61b1462c07486327280b7718c9fc77c9ee16ab2c0c",
-  rain: "6640d55336c2e52899b7b8fee270be13de8693e360a292f1b8377c736a16cad3",
-  rts: "4a887a611c7c9d67645b8c04325034c724f4326daa0be1be0791f655fcaa5240",
-  runner: "8169819d8d97170a02251758671ae1bf6a7cd22f1906f6155e75e5ea4d181262",
+  kart: "8fb66300417c03c5cfa6e6008eeb8689c3b11e32eb2365bffcfa4296bf55878f",
+  minimal: "c4c7eede996c85fcb3a92327137a1f5e6b27594aeadb193f8d445d14f1ca4a2d",
+  platformer: "e945659c7413e170d3b259f42f9d0cb83607b078d10ffbf2bb6f3c5e3051b1cd",
+  puzzle: "fb616f990f2dc7d03b309a570a0f376d368387adc104056d7910398fa6b847b1",
+  racing: "39852739699074c62e92103023402b3ef314e5d16c37bdd0091587c7f225e05c",
+  rain: "05523b6f3c353a4ce42ea277293b422cfa43c0d0b028373f609ed6a2a5a07e0a",
+  // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
+  // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
+  // then its legacy-linear colours, gamma fog of war, no bloom or environment, and a frame-sized shadow window.
+  // Then merged develop d37156a87: render imports from #589 and lodPixelScale for army.sync.
+  // Re-pinned 2026-10-28 (PRD-765): units drawn between rules steps, AstraCraft's thin pixel-snapped bars,
+  // a blurred slate fog of war, sRGB-decoded environment colours and no vignette.
+  // Then the HUD state on a 50 ms clock and no per-frame instance bound (perf/rts-kit-frame 76baed0bc, 5ab6c8dce).
+  // Then judge rounds 2-3: AstraCraft crystals, thin selection rings, a one-texel shadow kernel, its (-66, 57) start and bar colours made before the first draw.
+  // Re-pinned 2026-10-29: the fog-of-war sheet comes from palette.ts, rts-build probes the fog ground is lit
+  // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
+  // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
+  rts: "580e2dabaab1f7fc40dbff654f2b6b7dc424a9407e01122153edd11e01c04fc7",
+  runner: "e643d0a020975e6fce91e4ceb8ca5385552874eb0cca355aae81a03c37dc00aa",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "f1d59f24bf3e0d8e5565a4854753cd09c21cdc63cb30ca9cf795e6bd6fd09021",
+  sailing: "a699af14d5d4509e2926c331bbb00d400493ffee0dc97cd228960d9279d989f8",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "f387ed1b6075b4b225b34ddb95fb51d7b5f0da28c95697790ae317aa5ec7994b",
-  snow: "c6859d4d9f2256efcffeaeabba1933e1803484d0aa4db34adadf549ede3fb780",
+  shooter: "aff8f2c9dcc4ee9d1ff4925378e47ca9cdc64a778b0e1558dcb2b3f76010b0e0",
+  snow: "1307c6fc70bbf3aa88d0f30c6f9a1ef1252ab7f416e09f21c1797b9c741f37a5",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "670240cedf496b8e8741c85b4a5df95e377fea9a3c16ce1cdf1b0b2fc3b8aa57",
-  "tower-defense": "37e7e94389b116c34ce408722999efaa473bcceb31d0bdcc7a29fcebd9317183",
+  // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob (PRD-633); measured by this test.
+  starter: "265ae437f2a01fa6515cd10fa59c0238bc826d11015e345c9d275e62045c0b79",
+  "tower-defense": "e96d44a2803acfc2f8bac3f9385304f641fd400e8b23b797b18841cb0af811b7",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -620,12 +641,7 @@ describe("create-threenative", () => {
       // Kit-loop rows 1-6 (PRD-750): a cold agent scaffolds from its session folder, so the host
       // never loads the game's .mcp.json (a probe that wrote it mid-session got NO_TOOL) and five
       // builds made zero engine calls. The last line hands it every server through mcp/call.mjs.
-      const servers = [
-        "threenative-assets",
-        "threenative-sculpt",
-        "threenative-engine",
-        "threenative-blender",
-      ];
+      const servers = ["threenative-assets", "threenative-sculpt", "threenative-engine"];
       const next = scaffoldNextSteps("/w/mario64", true, servers);
       expect(next).toMatch(/\/w\/mario64[\s\S]*\.mcp\.json[\s\S]*pnpm test/u);
       expect(next).toContain(`.mcp.json (${servers.join(", ")})`);
@@ -1823,13 +1839,13 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
           },
-          "threenative-blender": {
-            command: "node",
-            args: [`${CORE_SHIM}/blender.mjs`],
-          },
           "threenative-animation": {
             command: "node",
             args: [`${CORE_SHIM}/animation.mjs`],
+          },
+          "threenative-devtools": {
+            command: "node",
+            args: [`${CORE_SHIM}/devtools.mjs`],
           },
         },
       });
@@ -1863,13 +1879,13 @@ describe("create-threenative", () => {
             command: "node",
             args: [`${CORE_SHIM}/engine.mjs`],
           },
-          "threenative-blender": {
-            command: "node",
-            args: [`${CORE_SHIM}/blender.mjs`],
-          },
           "threenative-animation": {
             command: "node",
             args: [`${CORE_SHIM}/animation.mjs`],
+          },
+          "threenative-devtools": {
+            command: "node",
+            args: [`${CORE_SHIM}/devtools.mjs`],
           },
         },
       });

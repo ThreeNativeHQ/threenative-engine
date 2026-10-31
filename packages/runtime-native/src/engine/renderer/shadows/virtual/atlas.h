@@ -98,6 +98,13 @@ public:
     static Vector3 viewFocus(const Vector3& eye, const Vector3& forward, double far,
                             double extent, const std::vector<Box3>& receivers);
     void invalidateAll();
+    /** True once every level's window is mapped: the depth pages a shadow resolve samples exist. A cut, a
+     *  direction change or a failed allocation leaves a level unmapped, so this is false until it is granted. */
+    bool initialized() const {
+        for (const Level& level : levels_)
+            if (!level.mapped) return false;
+        return true;
+    }
     const AtlasOptions& options() const { return options_; }
     const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }
@@ -113,6 +120,13 @@ public:
     int edge() const { return slotsPerAxis_ * stride(); }
     std::pair<int, int> origin(int slot) const { return {slot % slotsPerAxis_ * stride(), slot / slotsPerAxis_ * stride()}; }
     bool overlaps(const AtlasPage& page, const Box3& bounds) const;
+    /**
+     * The inverse of `overlaps`: the pages of `level` a caster's bounds can reach, as inclusive page indices,
+     * clamped to the level's `tiles() - 1`. A page the scan would take is always in the range (the page rects
+     * overlap by the border texels, and the range is padded), so indexing by it drops no shadow. An empty range
+     * (`high < low`) means no page of the level: the box is outside its window, or the level is not mapped.
+     */
+    void pageRange(int level, const Box3& bounds, int& x0, int& x1, int& y0, int& y1) const;
 
 private:
     struct Level {

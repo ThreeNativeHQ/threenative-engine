@@ -7,7 +7,7 @@ import {
   type HeightFogParams,
   heightFogDepth,
 } from "../templates/starter/src/render/heightFog.js";
-import { setupSky } from "../templates/starter/src/render/sky.js";
+import { SKY_OPTIONS, setupSky } from "../templates/starter/src/render/sky.js";
 
 const params: HeightFogParams = { ...HEIGHT_FOG };
 
@@ -61,7 +61,11 @@ describe("height fog", () => {
 
   it("should keep the old eye-level haze within 2%", () => {
     const scene = new Scene();
+    // The photo sky's contract; the atmosphere sky takes Unreal's fog (PRD-633).
+    const sky = SKY_OPTIONS.sky;
+    SKY_OPTIONS.sky = "photo";
     setupSky(scene, new Texture());
+    SKY_OPTIONS.sky = sky;
     const dist = (scene.fog as FogExp2).density;
     expect(scene.fogNode).toBeTruthy();
     const total = Math.exp(-((dist * 150) ** 2)) * transmittance(params, 2, 2, 150);
@@ -130,10 +134,15 @@ async function loadKit(kit: string) {
   const mod = (await import(/* @vite-ignore */ path.join(root, "sky.ts"))) as {
     loadSky?: (assets: { texture(path: string): Promise<Texture> }) => Promise<void>;
     setupSky: (scene: Scene, arg?: unknown) => unknown;
+    SKY_OPTIONS?: { sky: string };
   };
   await mod.loadSky?.({ texture: async () => new Texture() });
   const scene = new Scene();
+  // The eye-level haze is the photo sky's contract; the atmosphere sky takes Unreal's fog (PRD-633).
+  const skyMode = mod.SKY_OPTIONS?.sky;
+  if (mod.SKY_OPTIONS) mod.SKY_OPTIONS.sky = "photo";
   mod.setupSky(scene, new Texture());
+  if (mod.SKY_OPTIONS && skyMode !== undefined) mod.SKY_OPTIONS.sky = skyMode;
   const distanceFog = scene.fog as FogExp2 | null;
   expect(distanceFog, `${kit} keeps FogExp2 as the distance term`).toBeTruthy();
   expect(scene.fogNode).toBeTruthy();

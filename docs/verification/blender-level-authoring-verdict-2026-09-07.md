@@ -12,13 +12,13 @@ ThreeNative already has considerably more Blender support than the question assu
 
 | Existing mechanism | Evidence | Implication |
 | --- | --- | --- |
-| An owned headless Blender MCP with status, inspection, conversion, recipes and arbitrary Python execution | [Tool definitions](../../packages/blender-mcp/src/index.ts) | Agents can already author through `bpy`; a new MCP transport is unnecessary for a first experiment. |
+| An owned headless Blender MCP with status, inspection, conversion, recipes and arbitrary Python execution | the server's tool definitions (since removed with the MCP server) | Agents can already author through `bpy`; a new MCP transport is unnecessary for a first experiment. |
 | Conversion of `.blend`, `.fbx`, `.obj` and `.dae` into GLB during asset compilation | [Import pass](../../packages/assets/src/passes/blender-import.ts) | Blender-authored environments can enter the existing build pipeline. Conversion requires an installed Blender. |
-| Blender scripts for decimation, UV unwrapping, AO baking and animation retargeting | [Recipe registry](../../packages/blender-mcp/src/recipes.ts) | Reuse the bridge and its failure reporting before adding infrastructure. |
+| Blender scripts for decimation, UV unwrapping, AO baking and animation retargeting | the recipe files that now live in `packages/blender-bridge/gpl/recipes/` | Reuse the bridge and its failure reporting before adding infrastructure. |
 | Standard Three.js model loading plus compiled-model optimization | [Runtime loader](../../packages/core/src/assets.ts), [model pass](../../packages/assets/src/passes/model.ts) | A GLB can be a hierarchy of environment objects, not just an individual prop. Loading it does not automatically define gameplay. |
 | Static collision generation and navigation baking from Three.js geometry | [Static colliders](../../packages/physics/src/static-colliders.ts), [navigation regions](../../packages/physics/src/navigation/NavigationRegion3D.ts) | Imported environments can use existing mechanisms rather than introduce a separate physics or navigation implementation. |
 
-The server is bundled into core through [the existing launcher](../../packages/core/mcp/blender.mjs). Its README currently lists only the status tool; the executable defines five tools. That documentation undersells what already exists.
+The server is bundled into core through the `threenative-blender` core shim (since removed). Its README currently lists only the status tool; the executable defines five tools. That documentation undersells what already exists.
 
 The current starter also authors its world directly in [ordinary Three.js source](../../packages/create-threenative/templates/starter/src/render/arena.ts). We are comparing two authoring inputs to the same runtime, not replacing ThreeNative with Blender.
 
@@ -40,7 +40,7 @@ Do not move a simple blockout into Blender merely to recreate the same boxes thr
 
 ## 3. The export boundary is the actual work
 
-**Metadata is not enabled in the converter.** Its GLB export sets modifiers, animation, skinning and Y-up options, but does not set `export_extras=True`. The upstream exporter defines custom-property export as disabled by default. Therefore an approach that labels objects with gameplay properties cannot assume those labels reach the game. This is a source-level finding; no round-trip test was run. See [our converter](../../packages/blender-mcp/gpl/convert.py) and [the exporter definition](https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/main/addons/io_scene_gltf2/__init__.py).
+**Metadata is not enabled in the converter.** Its GLB export sets modifiers, animation, skinning and Y-up options, but does not set `export_extras=True`. The upstream exporter defines custom-property export as disabled by default. Therefore an approach that labels objects with gameplay properties cannot assume those labels reach the game. This is a source-level finding; no round-trip test was run. See [our converter](../../packages/blender-bridge/gpl/convert.py) and [the exporter definition](https://raw.githubusercontent.com/KhronosGroup/glTF-Blender-IO/main/addons/io_scene_gltf2/__init__.py).
 
 **An empty marker is not ordinary disposable geometry.** The model pass calls `prune` without specifying marker preservation. glTF Transform explicitly supports removing empty nodes. Spawn points and attachment anchors must be checked after the compiled GLB is loaded, not merely after export. Enabling custom properties alone would not prove preservation. See [the model pass](../../packages/assets/src/passes/model.ts) and [prune documentation](https://gltf-transform.dev/modules/functions/functions/prune).
 
@@ -63,7 +63,7 @@ Upstream already provides scene inspection, viewport screenshots and Python exec
 | Small upstream contribution or separate export addon | Consider after the experiment | Appropriate if a specific shared gap appears. |
 | Maintain a fork of the upstream MCP | **No, today** | Adds transport, addon compatibility and release maintenance without resolving the key export questions. |
 
-The inspected upstream server also contains prompt, code and screenshot telemetry paths governed by consent checks. Evaluate the pinned version's settings before using private game assets. That is a concrete integration difference from the owned headless bridge, not a reason by itself to fork. The repository carries an MIT license; reuse should still preserve notices and the project's existing separation for Blender-side Python. See [server code](https://raw.githubusercontent.com/ahujasid/blender-mcp/main/src/blender_mcp/server.py), [upstream license](https://raw.githubusercontent.com/ahujasid/blender-mcp/main/LICENSE) and [our package boundary](../../packages/blender-mcp/README.md).
+The inspected upstream server also contains prompt, code and screenshot telemetry paths governed by consent checks. Evaluate the pinned version's settings before using private game assets. That is a concrete integration difference from the owned headless bridge, not a reason by itself to fork. The repository carries an MIT license; reuse should still preserve notices and the project's existing separation for Blender-side Python. See [server code](https://raw.githubusercontent.com/ahujasid/blender-mcp/main/src/blender_mcp/server.py), [upstream license](https://raw.githubusercontent.com/ahujasid/blender-mcp/main/LICENSE) and [our package boundary](../../packages/blender-bridge/README.md).
 
 A fork becomes defensible only after a measured workflow win and a necessary transport/addon change that cannot be delivered through the existing Python tool, a small addon or an upstream contribution. No such requirement emerged from this investigation.
 
