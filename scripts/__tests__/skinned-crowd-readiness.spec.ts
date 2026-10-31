@@ -23,7 +23,8 @@ afterEach(() => {
   vi.resetModules();
 });
 
-// Real producers: 120 simulation ticks may contain fewer or more than 120 renders.
+// Real producers: 120 simulation ticks may contain fewer or more than 120 renders. The renders share
+// the window's 2 s of wall time, as they do while the simulation keeps up with the clock.
 function completedWindows(frames: number, arm: string) {
   let tick = 0;
   const recorder = new SpanRecorder();
@@ -40,7 +41,7 @@ function completedWindows(frames: number, arm: string) {
   });
   for (let window = 0; window < 3; window += 1) {
     for (let frame = 0; frame < frames; frame += 1) {
-      const now = (window * frames + frame) * 16;
+      const now = window * 2_000 + (frame * 2_000) / frames;
       budget.beginFrame(now, now);
       tick = window * 120 + Math.floor(((frame + 1) * 120) / frames);
       for (let rig = 0; rig < 128; rig += 1) {
