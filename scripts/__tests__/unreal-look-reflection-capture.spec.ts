@@ -1,4 +1,13 @@
-import { Mesh, MeshStandardMaterial, Scene, SphereGeometry, Texture } from "three";
+import {
+  DataTexture,
+  FloatType,
+  Mesh,
+  MeshStandardMaterial,
+  RGBAFormat,
+  Scene,
+  SphereGeometry,
+  Texture,
+} from "three";
 import { describe, expect, it, vi } from "vitest";
 import { skyDisc } from "../unreal-look/scaffold/render/gpuSky.js";
 import { captureReflections } from "../unreal-look/scaffold/render/reflectionCapture.js";
@@ -52,12 +61,29 @@ describe("static mirror scene capture", () => {
     expect(dielectric.material.envMap).toBeNull();
     expect(log).toHaveBeenCalledWith(
       expect.stringMatching(
-        /^TN_REFLECTION_CAPTURE \{"objects":1,"faceSize":256,"milliseconds":\d+\}$/,
+        /^TN_REFLECTION_CAPTURE \{"objects":1,"faceSize":256,"milliseconds":\d+,"zenith":\[null\]\}$/,
       ),
     );
     const release = vi.spyOn(captured, "dispose");
     dispose();
     expect(release).toHaveBeenCalledOnce();
+    log.mockRestore();
+  });
+
+  it("logs the capture's zenith radiance, so a capture whose faces missed the sky reads as zero", async () => {
+    const { scene } = fixture();
+    // 2 x 4 RGBA, rows from the north pole as the engine writes them: the zenith row is blue, the rest grey.
+    const sky = [0.2, 0.4, 1, 1, 0.2, 0.4, 1, 1];
+    const ground = [0.5, 0.5, 0.5, 1, 0.5, 0.5, 0.5, 1];
+    const data = new Float32Array([...sky, ...ground, ...ground, ...ground]);
+    const renderer = {
+      SphereReflectionCapture: vi.fn(
+        async () => new DataTexture(data, 2, 4, RGBAFormat, FloatType),
+      ),
+    };
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    await captureReflections(renderer, scene, scene);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('"zenith":[[0.2,0.4,1]]'));
     log.mockRestore();
   });
 

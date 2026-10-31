@@ -1039,26 +1039,35 @@ export function defineWebRenderer(
     Object.assign(Renderer.prototype, {
       // quality-allow: the capture API takes the requested Unreal actor name
       // biome-ignore lint/style/useNamingConvention: capture API uses the requested Unreal actor name.
-      SphereReflectionCapture: defineSphereReflectionCapture(async (scene, x, y, z, size, face) => {
-        beforeRender();
-        writeHandle(0, scene, "scene");
-        const id = module._tnw_web_capture_face(handles, x, y, z, size, face);
-        if (id === -2) return null;
-        if (id < 0) check(1);
-        const bytes = size * size * 3 * 4;
-        const out = module._malloc(bytes) >>> 0;
-        try {
-          for (;;) {
-            module._tnw_web_poll();
-            const status = module._tnw_web_read_target_take(id, out, bytes);
-            if (status === 1) return new Float32Array(module.HEAPU8.slice(out, out + bytes).buffer);
-            if (status < 0) throw new Error("TN_REFLECTION_CAPTURE_READ");
-            await new Promise((resolve) => setTimeout(resolve, 0));
+      SphereReflectionCapture: defineSphereReflectionCapture(
+        async (scene, x, y, z, size, face, renderer) => {
+          // A face is a render of `scene`, as three's CubeCamera.update is: the scene's frame nodes run updateBefore first,
+          // once per frame. Unreal captures the sky after the frame drew its look-up tables (UE 5.8.3:
+          // Engine/Source/Runtime/Renderer/Private/DeferredShadingRenderer.cpp:2850, :2868); a capture taken before the
+          // first frame read a sky node's never-drawn targets, and a chrome sphere reflected a black sky.
+          const { frame } = (renderer as { info: { frame: number } }).info;
+          beforeRender({ scene, renderer: renderer as object, frameId: frame });
+          writeHandle(0, scene, "scene");
+          const id = module._tnw_web_capture_face(handles, x, y, z, size, face);
+          if (id === -2) return null;
+          if (id < 0) check(1);
+          const bytes = size * size * 3 * 4;
+          const out = module._malloc(bytes) >>> 0;
+          try {
+            for (;;) {
+              module._tnw_web_poll();
+              const status = module._tnw_web_read_target_take(id, out, bytes);
+              if (status === 1)
+                return new Float32Array(module.HEAPU8.slice(out, out + bytes).buffer);
+              if (status < 0) throw new Error("TN_REFLECTION_CAPTURE_READ");
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          } finally {
+            module._free(out);
           }
-        } finally {
-          module._free(out);
-        }
-      }, DataTexture),
+        },
+        DataTexture,
+      ),
     });
   defineRenderTargets(Renderer.prototype, (renderer) => ({
     draw: (target, root, camera) =>
