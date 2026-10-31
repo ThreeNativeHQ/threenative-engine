@@ -445,6 +445,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
 
     const target = new Vector3();
     const reference = {
+      // The query this page read, echoed so the capture can stop when it ran on another one (a worker page reads none).
+      config: Object.fromEntries(params),
       // The live renderer, as the calibration scene exposes it: the capture's frame gate reads its draw counters and temporal state.
       renderer: ctx.renderer.raw,
       layer: LAYER,
