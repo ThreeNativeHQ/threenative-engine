@@ -914,7 +914,7 @@ test('Android default gate is generated from the public core native smoke at cat
   const buildScript = read('scripts/build-android-first-proof.mjs');
   assert.match(buildScript, new RegExp(smokePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'Android bundle build must use the public core smoke path');
   assert.match(buildScript, /@threenative\/core/, 'Android bundle must enforce the public core API import');
-  assert.match(buildScript, /EXPECTED_THREE_VERSION = '0\.185\.1'/, 'Android bundle must close the catalog Three.js gap');
+  assert.match(buildScript, /EXPECTED_THREE_VERSION = '0\.187\.0'/, 'Android bundle must close the catalog Three.js gap');
   assert.match(buildScript, /executable\(runtimeRoot, 'esbuild'\)/, 'Android bundle must be generated with the pinned runtime-package esbuild dependency');
   assert.match(buildScript, /metadataOutput/, 'Android bundle build must produce traceable input metadata');
 

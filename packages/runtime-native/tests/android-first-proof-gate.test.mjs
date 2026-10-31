@@ -45,7 +45,7 @@ test('screenshot inspection rejects blank PNGs and accepts visible output', () =
 });
 
 test('asset builder fails closed on catalog drift and non-core smoke input', () => {
-  assert.equal(catalogThreeVersion(`catalog:\n  three: ${EXPECTED_THREE_VERSION}\n`), '0.185.1');
+  assert.equal(catalogThreeVersion(`catalog:\n  three: ${EXPECTED_THREE_VERSION}\n`), '0.187.0');
   assert.throws(() => catalogThreeVersion('catalog:\n  vite: 8.2.0\n'), /no catalog Three/);
   assert.doesNotThrow(() =>
     assertNativeSmokeSource(
