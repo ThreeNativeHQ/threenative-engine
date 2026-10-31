@@ -39,6 +39,19 @@ std::string textureName(Node n) {
     if (const Node source = textureSource(n)) return source->name;
     throw std::runtime_error("TN_TSL_POST_INPUT: expected a depth/normal texture");
 }
+/**
+ * True when a denoise filters a one-channel field: GTAO's occlusion, directly or through the copy target
+ * `convertToTexture` materialises for it (`toTexture`, tsl_call.cpp — three's DenoiseNode converts its own input).
+ * The filter then writes (occlusion, 0, 0, 1) and one lane holds the value, so its fp32 target keeps one lane too.
+ */
+bool denoiseOfOneField(const PostEffect& effect) {
+    if (effect.kind != "DenoiseNode" || effect.inputs.empty()) return false;
+    Node source = effect.inputs[0];
+    while (source && !source->args.empty() &&
+           (source->kind == Kind::RenderTexture || source->kind == Kind::Swizzle || source->kind == Kind::Convert))
+        source = source->args[0];
+    return source && source->kind == Kind::PostEffect && source->post && source->post->kind == "GTAONode";
+}
 
 // Resolve scalar swizzles before binding: the scene's material outputs splat packed r/g to RGBA.
 // Other scalar graphs keep their own UVs/uniforms through the existing RTT materializer.
@@ -558,7 +571,7 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
     pass.resolutionScale = effect.resolutionScale;
     pass.uniforms = effect.parameters;
     pass.temporal = effect.temporal;
-    pass.redFormat = effect.kind == "GTAONode";
+    pass.redFormat = effect.kind == "GTAONode" || denoiseOfOneField(effect);
     pass.float32 = effect.kind == "DenoiseNode";
     pass.stage = effect.stage;
     StageModule fragment{Stage::Fragment};

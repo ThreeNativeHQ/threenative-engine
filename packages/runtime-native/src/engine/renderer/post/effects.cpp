@@ -36,17 +36,19 @@ WGPUTexture makeTexture(WGPUDevice device, uint32_t width, uint32_t height, WGPU
     return wgpuDeviceCreateTexture(device, &desc);
 }
 /**
- * A post pass's colour target. GTAO keeps three's RedFormat/UnsignedByteType. A denoise is inlined into the
- * consumer in three, so its value never sees a half-float round trip: at RGBA16F the stage's rounding moves a flat
- * AO field one-way by up to half an ulp, which flips an 8-bit output level across 11% of a frame (tsl-post-ao).
- * ponytail: fp32 costs twice the memory of the other post targets; without float32-filterable (its linear sampler
- * is what the composite reads through) the pass falls back to RGBA16F and keeps that sub-level bias.
+ * A post pass's colour target. GTAO keeps three's RedFormat/UnsignedByteType, and the denoise of that red-only field
+ * keeps RedFormat too: it writes (occlusion, 0, 0, 1), so one lane holds it (R32Float, 4 bytes per texel). A denoise is
+ * inlined into the consumer in three, so its value never sees a half-float round trip either way: at RGBA16F the stage's
+ * rounding moves a flat AO field one-way by up to half an ulp, which flips an 8-bit output level across 11% of a frame
+ * (tsl-post-ao). A denoise of a colour field (SSGI's gather) keeps all four lanes.
+ * ponytail: fp32 costs four times the memory of the other post targets; without float32-filterable (its linear sampler
+ * is what the composite reads through) the pass falls back to RGBA16F (R8Unorm for a red-only field) and keeps that
+ * sub-level bias.
  */
 WGPUTextureFormat passFormat(WGPUDevice device, const shader::graph::PostPass& pass) {
-    if (pass.redFormat) return WGPUTextureFormat_R8Unorm;
-    if (pass.float32 && wgpuDeviceHasFeature(device, WGPUFeatureName_Float32Filterable))
-        return WGPUTextureFormat_RGBA32Float;
-    return WGPUTextureFormat_RGBA16Float;
+    const bool fp32 = pass.float32 && wgpuDeviceHasFeature(device, WGPUFeatureName_Float32Filterable);
+    if (pass.redFormat) return fp32 ? WGPUTextureFormat_R32Float : WGPUTextureFormat_R8Unorm;
+    return fp32 ? WGPUTextureFormat_RGBA32Float : WGPUTextureFormat_RGBA16Float;
 }
 } // namespace
 
