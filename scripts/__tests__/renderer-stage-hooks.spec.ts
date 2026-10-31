@@ -104,7 +104,7 @@ describe("renderer stage hooks", () => {
 
     expect(() =>
       installRendererStageHooks(renderer, { clock: fakeClock([]), threeVersion: "0.185.0" }),
-    ).toThrow(/three@0\.185\.1/);
+    ).toThrow(/three@0\.187\.0/);
     expect(() =>
       installRendererStageHooks(renderer, {
         clock: fakeClock([]),

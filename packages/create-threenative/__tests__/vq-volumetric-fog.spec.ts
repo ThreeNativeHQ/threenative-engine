@@ -286,6 +286,8 @@ it.each([false, true])("builds the actual depth-clipped transport WGSL (lights=%
     getMRT: () => null,
     library: { fromMaterial: () => null },
     shadowMap: { enabled: true, type: 1 },
+    // Three 0.187's WGSLNodeBuilder.registerDeclaration reads the renderer's keyword diagnostics.
+    debug: { diagnostics: { keywords: false } },
   };
   const builder = new WGSLNodeBuilder(object, renderer as never) as unknown as {
     camera: PerspectiveCamera;
@@ -329,6 +331,8 @@ function fragmentCode(camera: PerspectiveCamera, node: Node, output: "vec4"): st
     getMRT: () => null,
     library: { fromMaterial: () => null },
     shadowMap: { enabled: true, type: 1 },
+    // Three 0.187's WGSLNodeBuilder.registerDeclaration reads the renderer's keyword diagnostics.
+    debug: { diagnostics: { keywords: false } },
   };
   const builder = new WGSLNodeBuilder(
     new Mesh(new BoxGeometry(), new MeshBasicMaterial()),

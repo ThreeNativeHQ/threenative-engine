@@ -6,7 +6,11 @@ import { traa } from "three/addons/tsl/display/TRAANode.js";
 import { uniform } from "three/tsl";
 import type { Node, PassNode, TextureNode } from "three/webgpu";
 import { type ITemporalAANode, createTemporalAAFrame } from "./temporalAAFrame.js";
-import { type PipelineContext, createTemporalAAHooks } from "./temporalAAHooks.js";
+import {
+  type ITemporalAARenderPipelineState,
+  type PipelineContext,
+  createTemporalAAHooks,
+} from "./temporalAAHooks.js";
 import { disposeTemporalAAInput } from "./temporalAAInput.js";
 import type { ITemporalAAReport, TemporalResetReason } from "./temporalAAStage.js";
 import { createTemporalCurrentProducer } from "./temporalCurrentProducer.js";
@@ -55,7 +59,7 @@ export function createTemporalAA(
     resolve.equations,
     currentProducer?.publishDepth,
   );
-  const hooks = createTemporalAAHooks(frames.jitterInput);
+  const hooks = createTemporalAAHooks(frames.jitterInput, () => internals.clearViewOffset());
   let ownedViewOffset: { width: number; height: number } | null = null;
   const projection = new Matrix4().copy(camera.projectionMatrix);
   const setViewOffset = internals.setViewOffset.bind(node);
@@ -108,14 +112,22 @@ export function createTemporalAA(
     properties.temporalColour = node.beautyNode;
     properties.temporalDepth = depth;
     properties.temporalVelocity = velocity;
-    const pipeline = (builder.context as { renderPipeline?: { context: PipelineContext } })
-      .renderPipeline;
-    // The originals are read before upstream's setup writes the node's own pair over them.
-    if (pipeline !== undefined) hooks.captureBeforeSetup(pipeline.context);
+    const pipeline = (builder.context as { renderPipeline?: unknown }).renderPipeline;
+    if (pipeline !== undefined) {
+      // Three 0.187 keeps a pipeline's callbacks in the builder context and registers its own pair
+      // only while nothing owns the view offset. The provider owns it: upstream's pair would ask
+      // for the whole drawing buffer rather than the raster the input draws on.
+      const state = (builder.context as ITemporalAARenderPipelineState).renderPipelineState;
+      if (state === undefined)
+        throw new Error("Temporal AA requires the render pipeline state of Three 0.187.0.");
+      state.viewOffsetOwner = node;
+      hooks.captureBeforeSetup(builder.context as PipelineContext);
+    }
     const output = setup(builder);
     resolve.configure(builder.renderer);
     // Upstream's resolve is what this replaces, so the reset kernel runs by default.
-    if (pipeline !== undefined) hooks.installAfterSetup(pipeline.context, builder.renderer);
+    if (pipeline !== undefined)
+      hooks.installAfterSetup(builder.context as PipelineContext, builder.renderer);
     // VelocityNode keeps whichever projection source that input pass first compiles: prime ours.
     if (ownedViewOffset === null) {
       camera.updateProjectionMatrix();

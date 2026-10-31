@@ -369,7 +369,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "46736bd8c7d71faf0451e84a1e1c5421690cbb9de4b54bbc5ca58c422c2dfc39",
+  // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
+  // offset and drives its callback lists, so starter's render source alone moves. Measured by this test.
+  starter: "2b2211a4c058dcca2d254de48cfa8dc84a05fe16757347b947a1831e70c5d4a1",
   "tower-defense": "95a8eeb53e650757763fafff7c384894c7048758e3f7267ecbe1bbd33d71580e",
 };
 

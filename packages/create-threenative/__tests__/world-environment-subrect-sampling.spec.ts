@@ -159,6 +159,22 @@ const retainedViewOf = (
   return undefined;
 };
 
+/** The expression a shader assigns to `name`, when it hoists it into a variable. */
+const hoistedExpression = (wgsl: string, name: string): string | undefined =>
+  new RegExp(`(?:^|\\n)\\s*(?:let\\s+)?${name}\\s*=(?!=)\\s*([^;]*);`, "u").exec(wgsl)?.[1];
+
+/** A read with the variables it names expanded, so a hoisted clamp is visible inline again. */
+const expandHoisted = (wgsl: string, read: string, depth = 0): string => {
+  if (depth > 3) return read;
+  let expanded = read;
+  for (const [, name] of read.matchAll(/(?<![\w.])(\w+Var\d+)(?![\w(])/gu)) {
+    const expression = name === undefined ? undefined : hoistedExpression(wgsl, name);
+    if (name !== undefined && expression !== undefined)
+      expanded = expanded.replaceAll(name, `( ${expandHoisted(wgsl, expression, depth + 1)} )`);
+  }
+  return expanded;
+};
+
 /** Uniform names whose live value is this exact vector, tolerating an absent one. */
 const maybeNamesOf = (built: IBuilt, vectors: readonly Vector2[]): string[] =>
   built.uniforms.fragment
@@ -327,7 +343,9 @@ const stage = (samples = 0) => {
     "real GTAO node",
   );
   const denoiser = proof.own<Node & { updateBefore(): void; _resolution: { value: Vector2 } }>(
-    "_resolution",
+    // Three 0.187's GTAONode owns a _resolution uniform of its own (GTAONode.js:181), so the
+    // denoiser answers to the 16-sample vector array only it has (DenoiseNode.js:132).
+    "_sampleVectors",
     "real denoiser",
   );
   const gtao = proof.compileMaterial(Reflect.get(ao, "_material"));
@@ -397,15 +415,32 @@ describe("canonical ambient occlusion under a retained sub-rectangle", () => {
       const depthReads = reads(proof.gtao.fragmentShader, depthNames);
       // Core reconstructs AO normals from depth; the denoiser still samples the normal target.
       expect(depthReads.length).toBeGreaterThanOrEqual(9);
+      // Three 0.187's multisampled textureLoad takes the zero sample index as an i32 of a level
+      // snippet that is the explicit int 0 or the `0u` default (WGSLNodeBuilder.js:781).
       if (samples > 0)
-        for (const read of depthReads) expect(read).toMatch(/,\s*i32\(\s*0\s*\)\s*\)$/);
-      const pairs = new Set(
-        depthReads.map((read) => retainedViewOf(read, fraction, half)?.fraction),
-      );
+        for (const read of depthReads) expect(read).toMatch(/,\s*i32\(\s*0u?\s*\)\s*\)$/);
+      const viewOf = (read: string): { fraction: string; half: string } | undefined =>
+        retainedViewOf(read, fraction, half) ??
+        retainedViewOf(expandHoisted(proof.gtao.fragmentShader, read), fraction, half);
+      const pairs = new Set(depthReads.map((read) => viewOf(read)?.fraction));
       // Every read is clamped by a live view uniform, and each sampler carries its own pair.
       expect(pairs.has(undefined)).toBe(false);
-      // GTAO marches depth along its horizons, so every read site owns its own live pair.
-      expect(pairs.size).toBe(depthReads.length);
+      // GTAO marches depth along its horizons, so every inline read site owns its own live pair.
+      const inlineReads = depthReads.filter(
+        (read) => retainedViewOf(read, fraction, half) !== undefined,
+      );
+      expect(new Set(inlineReads.map((read) => viewOf(read)?.fraction)).size).toBe(
+        inlineReads.length,
+      );
+      // Three 0.187 fetches a multisampled gather's four texels through one hoisted coordinate
+      // (WGSLNodeBuilder.js:1008-1038), so those reads share that coordinate's one live pair.
+      const hoistedReads = depthReads.filter((read) => !inlineReads.includes(read));
+      if (samples > 0) {
+        expect(hoistedReads.length).toBeGreaterThan(0);
+        expect(new Set(hoistedReads.map((read) => viewOf(read)?.fraction)).size).toBe(1);
+      } else {
+        expect(hoistedReads).toEqual([]);
+      }
       expect(pairs.size).toBeGreaterThanOrEqual(4);
       // The half texel is the retained capacity's, not the viewport's.
       for (const name of half) {

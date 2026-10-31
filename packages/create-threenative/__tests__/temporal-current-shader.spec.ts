@@ -66,6 +66,16 @@ describe("actual finite current WGSL", () => {
       b.build();
       return b;
     };
+    // Three 0.187 builds a compute node through the builder's own compute slot, not the object.
+    const buildCompute = (node: unknown) => {
+      const b = new WGSLNodeBuilder(null as never, r) as WGSLNodeBuilder & {
+        build(): void;
+        computeShader: string;
+      };
+      Reflect.set(b, "compute", node);
+      b.build();
+      return b;
+    };
     const fragment = build(mesh).fragmentShader;
     expect(fragment).toContain("currentSampleArea");
     expect(fragment).toContain("texture_depth_multisampled_2d");
@@ -80,7 +90,7 @@ describe("actual finite current WGSL", () => {
     counter.sample(r, 1, 640, 360);
     await counter.settled();
     expect(dispatched).toHaveLength(2);
-    const compute = build(dispatched[1]).computeShader;
+    const compute = buildCompute(dispatched[1]).computeShader;
     expect(compute).toContain("currentSampleArea");
     expect(compute).toContain("texture_depth_multisampled_2d");
     expect(compute).toContain("texture_multisampled_2d<f32>");
