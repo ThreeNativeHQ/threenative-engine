@@ -12,9 +12,6 @@
 
 namespace tn::engine::shader {
 
-// PMREM's extra 16px tiles use mipInt 3 through -2, not hardware mip levels.
-constexpr float pmremMip(int lodMax, int lod) { return float(lodMax - lod); }
-
 std::string probeStorageName(std::string_view name);
 
 /** ProbeVolume.sampleNode: padded atlas trilinear sampling followed by RGB L2 irradiance. */

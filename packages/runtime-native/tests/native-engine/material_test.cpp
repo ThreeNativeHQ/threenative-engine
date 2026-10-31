@@ -524,21 +524,13 @@ void builds() {
             stagesAgree(p.fragment, vertex.wgsl.code, fragment.wgsl.code);
         }
     }
-    // Both GGX and copy passes must address all extra tiles, including negative mips.
-    for (uint32_t lodMax : {4u, 8u}) {
-        for (int lod = 1; lod <= int(lodMax) + 2; ++lod) {
-            CHECK(pmremMip(lodMax, lod - 1) == float(int(lodMax) - lod + 1));
-            CHECK(pmremMip(lodMax, lod) == float(int(lodMax) - lod));
-        }
-        // Last copy (mip -2): filterInt = 6, so it reads the sixth extra tile at x = 288.
-        CHECK((4.0f - pmremMip(lodMax, int(lodMax) + 2)) * 48.0f == 288.0f);
-    }
     const StandardPrograms programs = buildStandard(StandardMaterial{});
     for (const std::string& d : programs.diagnostics) std::fprintf(stderr, "%s\n", d.c_str());
     CHECK(programs.diagnostics.empty());
     CHECK(WgslEmitter::emit(programs.vertex, 0).ok());
     CHECK(WgslEmitter::emit(programs.fragment, 1).ok());
-    // The environment variant must emit explicit cubeUV taps and keep derivatives before branches.
+    // The environment variant samples the PMREM as a cube (r187 PMREMNode.setup), at
+    // roughnessToMip = maxLod * r * (2 - r), and keeps its derivatives before any branch.
     VertexVariant environment;
     environment.environment = true;
     CHECK(environment.key() != VertexVariant{}.key());
@@ -549,38 +541,43 @@ void builds() {
         const auto fragment = WgslEmitter::emit(lit.fragment, 1);
         CHECK(fragment.ok());
         CHECK(fragment.code.find("textureSampleLevel(t_env") != std::string::npos);
+        CHECK(fragment.code.find("var t_env: texture_cube<f32>") != std::string::npos);
         CHECK(fragment.code.find("f_envMapIntensity") != std::string::npos);
         CHECK(fragment.code.rfind("dpdx") < fragment.code.find("if ("));
         // EnvironmentNode's pow4 is ((r*r)*r)*r, not (r*r)*(r*r): f32 rounding is observable.
         bool reflectionMix = false;
-        unsigned rotatedFlips = 0;
-        bool mipDenominators = false;
+        unsigned cubeFlips = 0, roughnessRamps = 0;
         for (ExprId id = 1; id <= lit.fragment.exprCount(); ++id) {
             const Expr& mix = lit.fragment.expr(id);
-            // r185 PMREMNode rotates vec3(x, -y, z), for diffuse and reflection.
-            if (mix.op == Op::Mul && lit.fragment.expr(mix.args[0]).op == Op::Uniform &&
-                lit.fragment.expr(mix.args[0]).type == Type::mat(4, 4)) {
-                const Expr& vector = lit.fragment.expr(mix.args[1]);
-                if (vector.op == Op::Construct && vector.argc == 2) {
-                    const Expr& direction = lit.fragment.expr(vector.args[0]);
-                    if (direction.op == Op::Construct && direction.argc == 3 &&
-                        lit.fragment.expr(direction.args[1]).op == Op::Neg) ++rotatedFlips;
-                }
-            }
-            // three's unsuffixed WGSL breakpoint subtraction folds in abstract-float precision.
-            if (mix.op == Op::Div) {
-                const Expr& numerator = lit.fragment.expr(mix.args[0]);
-                if (numerator.op == Op::Mul) {
-                    const Expr& delta = lit.fragment.expr(numerator.args[0]);
-                    if (delta.op == Op::Sub && lit.fragment.expr(delta.args[0]).op == Op::Constant &&
-                        lit.fragment.expr(delta.args[1]).op == Op::LoadVar) {
-                        const float high = std::bit_cast<float>(uint32_t(lit.fragment.expr(delta.args[0]).immediate));
-                        const float expected = high == 1.0f ? 0.2f : high == 0.8f ? 0.4f : 0.095f;
-                        const Expr& denominator = lit.fragment.expr(mix.args[1]);
-                        CHECK(denominator.op == Op::Constant && denominator.immediate == std::bit_cast<uint32_t>(expected));
-                        mipDenominators = true;
-                    }
-                }
+            // Every PMREM read is a cube sample of the rotated direction with its x negated for
+            // WebGPU's cube face order (CubeTextureNode.setupUV), one per irradiance, radiance and
+            // clearcoat lobe, and none goes through a cubeUV atlas.
+            if (mix.op == Op::SampleLevel) {
+                const Expr& direction = lit.fragment.expr(mix.args[0]);
+                CHECK(direction.op == Op::Construct && direction.argc == 2);
+                const Expr& flip = lit.fragment.expr(direction.args[0]);
+                CHECK(flip.op == Op::Neg);
+                // materialEnvRotation is applied before the flip: PMREMNode.setup rotates, then samples.
+                const Expr& rotated = lit.fragment.expr(flip.args[0]);
+                CHECK(rotated.op == Op::Swizzle);
+                ExprId source = rotated.args[0];
+                while (lit.fragment.expr(source).op == Op::Swizzle) source = lit.fragment.expr(source).args[0];
+                const Expr& rotation = lit.fragment.expr(source);
+                CHECK(rotation.op == Op::Mul && lit.fragment.expr(rotation.args[0]).op == Op::Uniform &&
+                      lit.fragment.expr(rotation.args[0]).type == Type::mat(4, 4));
+                ++cubeFlips;
+                // roughnessToMip (:19): maxLod * clamp(r) * (2 - clamp(r)).
+                const Expr& level = lit.fragment.expr(mix.args[1]);
+                CHECK(level.op == Op::Mul);
+                const Expr& maxLod = lit.fragment.expr(level.args[0]);
+                CHECK(maxLod.op == Op::Uniform && maxLod.type == Type::f32());
+                const Expr& ramp = lit.fragment.expr(level.args[1]);
+                CHECK(ramp.op == Op::Mul);
+                const Expr& clamped = lit.fragment.expr(ramp.args[0]);
+                CHECK(clamped.op == Op::Call && clamped.argc == 3);
+                const Expr& twoMinus = lit.fragment.expr(ramp.args[1]);
+                CHECK(twoMinus.op == Op::Sub && lit.fragment.expr(twoMinus.args[1]).op == Op::Call);
+                ++roughnessRamps;
             }
             if (mix.op != Op::Call || mix.argc != 3) continue;
             const Expr& reflection = lit.fragment.expr(mix.args[0]);
@@ -595,9 +592,9 @@ void builds() {
             CHECK(second.op == Op::Mul && second.args[0] == fourth.args[1] && second.args[1] == fourth.args[1]);
             reflectionMix = true;
         }
-        CHECK(rotatedFlips == 2);
+        CHECK(cubeFlips == 2);
+        CHECK(roughnessRamps == 2);  // irradiance and radiance; the clearcoat lobe is opt-in
         CHECK(reflectionMix);
-        CHECK(mipDenominators);
     }
 }
 

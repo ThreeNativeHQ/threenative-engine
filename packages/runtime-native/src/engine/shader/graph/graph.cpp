@@ -2,7 +2,7 @@
 #include "engine/scene/texture.h"
 
 #include "engine/shader/tsl/tsl.h"
-#include "engine/shader/cube_uv.h"
+#include "engine/shader/pmrem.h"
 #include "engine/shader/output.h"
 
 #include <algorithm>
@@ -434,14 +434,13 @@ ExprId Lowerer::emit(Node node) {
                                         program_.constant(int32_t(0)));
         }
         case Kind::Pmrem: {
-            // PMREMNode.setup: a render-target PMREM flips y, then materialEnvRotation turns it.
+            // PMREMNode.setup (r187 :336): materialEnvRotation turns the direction, then the PMREM
+            // cube is sampled at roughnessToMip(level). No render-target Y flip: r187 samples a cube.
             const ExprId direction = expression(d.args[0]), level = expression(d.args[1]);
             if (direction == kInvalid || level == kInvalid) return kInvalid;
-            const ExprId flipped = program_.construct(Type::vec(3), {program_.swizzle(direction, "x"),
-                program_.neg(program_.swizzle(direction, "y")), program_.swizzle(direction, "z")});
             const ExprId rotated = program_.swizzle(program_.mul(program_.uniform("pmremRotation", Type::mat(4, 4)),
-                program_.construct(Type::vec(4), {flipped, program_.constant(0.0f)})), "xyz");
-            return pmremSample(program_, program_.texture2d("pmrem"), rotated, level);
+                program_.construct(Type::vec(4), {direction, program_.constant(0.0f)})), "xyz");
+            return pmremSample(program_, program_.textureCube("pmrem"), rotated, level);
         }
         case Kind::PostEffect: {
             const auto sample = program_.sample(program_.texture2d(d.name), expression(uv()));

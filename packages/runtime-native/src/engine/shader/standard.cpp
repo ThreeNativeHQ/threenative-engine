@@ -9,7 +9,7 @@
 // gone, and both the direct and the indirect diffuse layers lose the energy the specular lobe keeps.
 
 #include "standard.h"
-#include "cube_uv.h"
+#include "pmrem.h"
 #include <stdexcept>
 #include <algorithm>
 #include "engine/shader/tsl/tsl.h"
@@ -116,110 +116,17 @@ ExprId brdfBlinnPhong(Tsl& t, ExprId normalView, ExprId positionViewDirection, E
 }
 
 // ---------------------------------------------------------------------------------------------
-// Environment (IBL): three's PMREM cubeUV sampling, nodes/pmrem/PMREMUtils.js ported operation
-// for operation. getFace/getUV/roughnessToMip/bilinearCubeUV/textureCubeUV, with the cubeUV layout
-// constants the PMREM generator packs (r0=1, r1=0.8, r4=0.4, r5=0.305, r6=0.21 and their mips).
+// Environment (IBL): three@0.187.0's PMREM sampling, nodes/pmrem/PMREMNode.js:336 and
+// nodes/pmrem/PMREMUtils.js:19. The PMREM is a six-mip cube render target whose mip `lod` holds
+// the radiance for roughness `lodToRoughness(lod, maxLod) = 1 - sqrt(1 - lod/maxLod)`, inverted
+// here by roughnessToMip. The cubeUV atlas, its piecewise roughness ramp and its 16px filter tiles
+// are gone in r187, as is the render-target Y flip (that flip only ever cancelled the atlas layout).
 
-// getFace(direction): PMREM face index, RH/PMREM convention.
-ExprId cubeFace(Program& p, ExprId direction) {
+// roughnessToMip(roughness, maxLod): PMREMUtils.js:19, `maxLod * r * (2 - r)` with r clamped.
+ExprId roughnessToMip(Program& p, ExprId roughness, std::string_view prefix) {
     auto f = [&](float v) { return p.constant(v); };
-    const ExprId absDir = p.call("abs", {direction});
-    const VarId face = p.var(Type::f32(), f(-1));
-    auto pick = [&](const char* comp, float positive, float negative) {
-        return p.select(p.less(f(0), p.swizzle(direction, comp)), f(positive), f(negative));
-    };
-    const ExprId x = p.swizzle(absDir, "x"), y = p.swizzle(absDir, "y"), z = p.swizzle(absDir, "z");
-    p.If(p.less(z, x),
-         [&] {
-             p.If(p.less(y, x), [&] { p.assign(face, pick("x", 0, 3)); },
-                 [&] { p.assign(face, pick("y", 1, 4)); });
-         },
-         [&] {
-             p.If(p.less(y, z), [&] { p.assign(face, pick("z", 2, 5)); },
-                 [&] { p.assign(face, pick("y", 1, 4)); });
-         });
-    return p.load(face);
-}
-
-// getUV(direction, face)
-ExprId cubeUv(Program& p, ExprId direction, ExprId face) {
-    auto f = [&](float v) { return p.constant(v); };
-    auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
-    auto neg = [&](ExprId v) { return p.neg(v); };
-    const ExprId d = direction;
-    const ExprId ax = p.swizzle(p.call("abs", {d}), "x"), ay = p.swizzle(p.call("abs", {d}), "y"),
-                 az = p.swizzle(p.call("abs", {d}), "z");
-    const ExprId dx = p.swizzle(d, "x"), dy = p.swizzle(d, "y"), dz = p.swizzle(d, "z");
-    const VarId uv = p.var(Type::vec(2), v2(f(0), f(0)));
-    auto set = [&](ExprId value) { p.assign(uv, value); };
-    p.If(p.equal(face, f(0)), [&] { set(p.div(v2(dz, dy), ax)); }, [&] {
-        p.If(p.equal(face, f(1)), [&] { set(p.div(v2(neg(dx), neg(dz)), ay)); }, [&] {
-            p.If(p.equal(face, f(2)), [&] { set(p.div(v2(neg(dx), dy), az)); }, [&] {
-                p.If(p.equal(face, f(3)), [&] { set(p.div(v2(neg(dz), dy), ax)); }, [&] {
-                    p.If(p.equal(face, f(4)), [&] { set(p.div(v2(neg(dx), dz), ay)); },
-                         [&] { set(p.div(v2(dx, dy), az)); });
-                });
-            });
-        });
-    });
-    return p.mul(f(0.5f), p.add(p.load(uv), v2(f(1), f(1))));
-}
-
-// roughnessToMip(roughness)
-ExprId roughnessToMip(Program& p, ExprId roughness) {
-    auto f = [&](float v) { return p.constant(v); };
-    const VarId mip = p.var(Type::f32(), f(0));
-    auto segment = [&](double rHigh, double rLow, double mHigh, double mLow) {
-        // three emits unsuffixed WGSL literals: these constant subtractions fold as abstract-float,
-        // then convert to f32. Subtracting already-rounded f32 breakpoints changes two denominators.
-        return p.add(p.div(p.mul(p.sub(f(float(rHigh)), roughness), f(float(mLow - mHigh))),
-                           f(float(rHigh - rLow))), f(float(mHigh)));
-    };
-    p.If(p.call("greaterEqual", {roughness, f(0.8f)}), [&] { p.assign(mip, segment(1.0, 0.8, -2.0, -1.0)); }, [&] {
-        p.If(p.call("greaterEqual", {roughness, f(0.4f)}), [&] { p.assign(mip, segment(0.8, 0.4, -1.0, 2.0)); }, [&] {
-            p.If(p.call("greaterEqual", {roughness, f(0.305f)}), [&] { p.assign(mip, segment(0.4, 0.305, 2.0, 3.0)); }, [&] {
-                p.If(p.call("greaterEqual", {roughness, f(0.21f)}), [&] { p.assign(mip, segment(0.305, 0.21, 3.0, 4.0)); },
-                     [&] { p.assign(mip, p.mul(f(-2.0f), p.call("log2", {p.mul(f(1.16f), roughness)}))); });
-            });
-        });
-    });
-    return p.load(mip);
-}
-
-// bilinearCubeUV(envMap, direction, mipInt)
-ExprId bilinearCubeUV(Program& p, uint32_t env, ExprId direction, ExprId mipInt, const std::string& prefix) {
-    auto f = [&](float v) { return p.constant(v); };
-    auto v2 = [&](ExprId x, ExprId y) { return p.construct(Type::vec(2), {x, y}); };
-    const VarId face = p.var(Type::f32(), cubeFace(p, direction));
-    const ExprId filterInt = p.call("max", {p.sub(f(4), mipInt), f(0)});
-    const ExprId clamped = p.call("max", {mipInt, f(4)});
-    const ExprId faceSize = p.call("exp2", {clamped});
-    const VarId uv = p.var(Type::vec(2), p.add(p.mul(cubeUv(p, direction, p.load(face)), p.sub(faceSize, f(2))), v2(f(1), f(1))));
-    p.If(p.less(f(2), p.load(face)), [&] {
-        p.assign(uv, p.add(p.load(uv), v2(f(0), faceSize)));
-        p.assign(face, p.sub(p.load(face), f(3)));
-    });
-    ExprId x = p.add(p.swizzle(p.load(uv), "x"), p.mul(p.load(face), faceSize));
-    x = p.add(x, p.mul(filterInt, f(48)));  // 3 * minTileSize(16)
-    ExprId y = p.add(p.swizzle(p.load(uv), "y"),
-                     p.mul(f(4), p.sub(p.call("exp2", {p.uniform(prefix + "MaxMip", Type::f32())}), faceSize)));
-    x = p.mul(x, p.uniform(prefix + "TexelWidth", Type::f32()));
-    y = p.mul(y, p.uniform(prefix + "TexelHeight", Type::f32()));
-    return p.swizzle(p.sampleLevel(env, v2(x, y), f(0)), "xyz");
-}
-
-// textureCubeUV(envMap, sampleDir, roughness)
-ExprId textureCubeUV(Program& p, uint32_t env, ExprId direction, ExprId roughness, const std::string& prefix = "envMap") {
-    auto f = [&](float v) { return p.constant(v); };
-    const ExprId mip = p.call("clamp", {roughnessToMip(p, roughness), f(-2.0f), p.uniform(prefix + "MaxMip", Type::f32())});
-    const ExprId mipF = p.call("fract", {mip});
-    const ExprId mipInt = p.call("floor", {mip});
-    const VarId color = p.var(Type::vec(3), bilinearCubeUV(p, env, direction, mipInt, prefix));
-    p.If(p.equal(mipF, f(0)), [] {}, [&] {
-        const ExprId next = bilinearCubeUV(p, env, direction, p.add(mipInt, f(1)), prefix);
-        p.assign(color, p.call("mix", {p.load(color), next, mipF}));
-    });
-    return p.load(color);
+    const ExprId r = p.call("clamp", {roughness, f(0), f(1)});
+    return p.mul(p.uniform(std::string(prefix) + "MaxMip", Type::f32()), p.mul(r, p.sub(f(2), r)));
 }
 
 // three's PhysicalLightingModel.computeMultiscattering (r187 :623), returning (singleScatter,
@@ -247,7 +154,14 @@ ExprId transformDirection(Program& p, ExprId m, ExprId v) {
 }  // namespace
 
 ExprId pmremSample(Program& p, uint32_t texture, ExprId direction, ExprId roughness, std::string_view prefix) {
-    return textureCubeUV(p, texture, direction, roughness, std::string(prefix));
+    // PMREMNode.setup (:336) samples the cube node with `materialEnvRotation.mul(uvNode)`;
+    // CubeTextureNode.setupUV (:115) then negates x for the WebGPU coordinate system, which is where
+    // the WebGPU cube face order puts three's: every cube the engine bakes is drawn the way
+    // CubeCamera draws it, so every read of one negates x too (backgroundCube does the same).
+    auto f = [&](float v) { return p.constant(v); };
+    const ExprId flipped = p.construct(Type::vec(3), {p.neg(p.swizzle(direction, "x")),
+                                                      p.swizzle(direction, "yz")});
+    return p.swizzle(p.sampleLevel(texture, flipped, roughnessToMip(p, roughness, prefix)), "rgb");
 }
 
 std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
@@ -1547,27 +1461,28 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId indirectIrradiance = f.add(hemisphere, f.uniform("ambient", Type::vec(3)));
     const ExprId indirectDiffuse = f.mul(f.mul(indirectIrradiance, brdfLambert), energyLoss);
 
-    // EnvironmentNode: IBL irradiance (normalWorld, level 1) and radiance (the roughness-mixed
-    // reflection, level = roughness), then PhysicalLightingModel.indirect. The PMREM texture is a
-    // render target, so three negates the sample direction's y before textureCubeUV.
+    // EnvironmentNode: IBL irradiance (normalWorld at level 1, which roughnessToMip turns into the
+    // last mip) and radiance (the roughness-mixed reflection at level = roughness), then
+    // PhysicalLightingModel.indirect. r187's PMREM is a cube texture (EnvironmentNode.js:104-118),
+    // so it is sampled as one; the render-target Y flip is gone with the cubeUV atlas.
     ExprId environmentDiffuse = kInvalid, environmentSpecular = kInvalid;
     if (variant.environment) {
-        const uint32_t env = f.texture2d("env");
+        const uint32_t env = f.textureCube("env");
         const ExprId envIntensity = f.uniform("envMapIntensity", Type::f32());
-        auto flipped = [&](ExprId v) {
-            // PMREMNode flips the render target's Y before materialEnvRotation, not after it.
-            v = f.construct(Type::vec(3), {f.swizzle(v, "x"), f.neg(f.swizzle(v, "y")), f.swizzle(v, "z")});
+        auto rotated = [&](ExprId v) {
+            // PMREMNode.setup: materialEnvRotation turns the sample direction (:336); the x negation
+            // for WebGPU's cube face order is pmremSample's.
             return f.swizzle(f.mul(f.uniform("envRotation", Type::mat(4, 4)), f.construct(Type::vec(4), {v, t.f(0)})), "xyz");
         };
         // material.irradianceNode replaces the environment's diffuse irradiance (the PMREM level-1 sample, whose
         // blur leaks a bright horizon into a surface that faces down) with the author's own, already cosine-weighted.
         const ExprId iblIrradiance = variant.nodes.irradianceNode
             ? f.mul(slotValue(f, slots, variant.nodes.irradianceNode, Type::vec(3), kInvalid), t.f(kPi))
-            : f.mul(f.mul(textureCubeUV(f, env, flipped(normalWorld), t.f(1)), t.f(kPi)), envIntensity);
+            : f.mul(f.mul(pmremSample(f, env, rotated(normalWorld), t.f(1), "envMap"), t.f(kPi)), envIntensity);
         ExprId reflectVec = f.call("reflect", {f.neg(positionViewDirection), n});
         reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, f.mul(f.mul(t.pow2(roughness), roughness), roughness)})});
         reflectVec = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), reflectVec);
-        const ExprId radiance = f.mul(textureCubeUV(f, env, flipped(reflectVec), roughness), envIntensity);
+        const ExprId radiance = f.mul(pmremSample(f, env, rotated(reflectVec), roughness, "envMap"), envIntensity);
         const ExprId single = f.call("mix", {dielectric.single, metallic.single, metalness});
         const ExprId multi = f.call("mix", {dielectric.multi, metallic.multi, metalness});
         const ExprId cosineWeightedIrradiance = f.mul(iblIrradiance, t.f(1 / kPi));
@@ -1580,7 +1495,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
             ccReflect = f.call("normalize", {f.call("mix", {ccReflect, clearcoatNormalView,
                                                             f.mul(f.mul(t.pow2(coat.roughness), coat.roughness), coat.roughness)})});
             ccReflect = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), ccReflect);
-            const ExprId clearcoatRadiance = f.mul(textureCubeUV(f, env, flipped(ccReflect), coat.roughness), envIntensity);
+            const ExprId clearcoatRadiance = f.mul(pmremSample(f, env, rotated(ccReflect), coat.roughness, "envMap"), envIntensity);
             const ExprId fab = dfgLut(t, coat, t.saturate(t.dot(clearcoatNormalView, positionViewDirection)));
             const ExprId clearcoatEnv = f.add(f.mul(coat.f0, f.swizzle(fab, "x")), f.mul(coat.f90, f.swizzle(fab, "y")));
             clearcoatSpecularIndirect = f.mul(clearcoatRadiance, clearcoatEnv);

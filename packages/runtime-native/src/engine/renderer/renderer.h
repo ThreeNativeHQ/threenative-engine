@@ -858,12 +858,12 @@ private:
         kMetalness, kEmissive, kSpecular, kShininess, kIor, kSpecularIntensity, kSpecularColor,
         kUvTransform, kHemisphereSky, kHemisphereGround, kHemisphereDirection, kAmbient, kBoneBase, kBindMatrix,
         kBindMatrixInverse, kMorphBase, kMorphInfluenceBase, kMorphVertexCount, kMorphBaseInfluence,
-        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapTexelWidth, kEnvMapTexelHeight, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kCameraPosition, kCameraProjectionMatrix,
+        kEnvMapIntensity, kCameraWorldMatrix, kEnvMapMaxMip, kBoneStride, kFogColor, kFogNear, kFogFar, kFogDensity, kBackgroundRotation, kEnvRotation, kInstanceBase, kNormalScale, kNormalUvTransform, kCameraPosition, kCameraProjectionMatrix,
         kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform,
         kBumpMapUvTransform, kSpecularColorMapUvTransform,
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
-        kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
+        kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
         kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
@@ -1018,36 +1018,39 @@ private:
     void sweepTextures();
     void dropMapGroups();
     /**
-     * The PMREM cubeUV form of an equirectangular (or PMREM) environment, built on first use and
-     * rebuilt when the source texture's version moves (three's PMREMGenerator.fromEquirectangular).
+     * The PMREM cube of an equirectangular environment, built on first use and rebuilt when the
+     * source texture's version moves (three@0.187.0 PMREMGenerator.fromEquirectangular). Mip `lod`
+     * holds the radiance for roughness `lodToRoughness(lod, maxLod)`, sharpest first; the source
+     * cube three filters from is a separate HalfFloat target with its own full mip chain.
      * The full-quality bake is frame-pumped: `ready` turns on only after every retained packet has
      * been submitted and its completion observed, so no caller can read a partial target.
      */
     struct EnvironmentGpu {
         const Texture* source = nullptr;
         uint32_t version = 0;
-        bool ready = false;              // all packets submitted and the last completion observed
-        WGPUTexture texture = nullptr;   // the cubeUV render target, sampled by the material
-        WGPUTextureView view = nullptr;
-        WGPUTexture pingpong = nullptr;
-        WGPUTextureView pingView = nullptr;
-        WGPUSampler sampler = nullptr;
-        uint32_t width = 0, height = 0, cubeSize = 0;
-        uint32_t lodMax = 0, lods = 0;
-        float texelWidth = 0, texelHeight = 0, maxMip = 0;
+        bool ready = false;                    // all packets submitted and the last completion observed
+        WGPUTexture texture = nullptr;         // the PMREM cube, sampled by the material
+        WGPUTextureView view = nullptr;        // its cube view, every mip level
+        WGPUTexture sourceCube = nullptr;      // PMREMGenerator's source target, with a full mip chain
+        WGPUTextureView sourceView = nullptr;  // its cube view, every mip level
+        WGPUSampler sampler = nullptr;         // cube, trilinear: what the material samples with
+        WGPUSampler sourceSampler = nullptr;   // cube, trilinear: what the generator samples with
+        WGPUSampler blitSampler = nullptr;     // 2D, linear: the source mip chain's downsample
+        std::vector<WGPUTextureView> targetViews;  // PMREM [lod * 6 + face], one mip of one layer
+        std::vector<WGPUTextureView> sourceViews;  // source [mip * 6 + face]
+        uint32_t cubeSize = 0, maxLod = 0;     // face size of mip 0, and of the roughest mip
     };
-    /** One retained PMREM packet: one full-quality pass drawn for one cube face. */
+    /** One retained PMREM packet: one face of one mip of the bake, drawn whole in one pass. */
     struct PmremPacket {
         WGPUTextureView target = nullptr;
         WGPUTextureView source = nullptr;
         WGPUSampler sampler = nullptr;
         WGPURenderPipeline pipeline = nullptr;
-        float x = 0, y = 0, w = 0, h = 0, roughness = 0, mipInt = 0;
-        uint64_t vertexOffset = 0;
-        uint32_t pass = 0, face = 0;     // the pass's uniform slice and the vertex's face span
-        bool clear = false;
+        uint32_t width = 0, height = 0;  // the face size at this packet's mip
+        uint32_t samples = 1;            // fragment samples per pixel: the packet's cost factor
+        uint32_t uniform = 0;            // its slice of envUniforms_
     };
-    /** One face of one pass in fragment samples: the per-call submission cost. */
+    /** One face in fragment samples: the per-call submission cost. */
     static uint64_t pmremPacketCost(const PmremPacket& packet);
     // The single in-flight preparation: envUniforms_ is one shared buffer, so only one bakes at a time.
     struct EnvironmentPreparation {
@@ -1057,8 +1060,8 @@ private:
         std::vector<PmremPacket> packets;
         std::size_t next = 0;
         uint64_t awaitSerial = 0;        // the last submitted packet's serial, awaited before the next
-        WGPUBindGroup group = nullptr;   // the current pass's bind group, rebuilt per pass
-        std::size_t groupPass = SIZE_MAX;
+        WGPUBindGroup group = nullptr;   // the current packet's bind group, rebuilt per packet
+        uint32_t groupUniform = UINT32_MAX;
         uint64_t stride = 0;
         uint64_t budget = 0;             // the costliest packet's cost: the per-call submission cap
     };
@@ -1444,13 +1447,15 @@ private:
     // PMREM (three's PMREMGenerator.fromEquirectangular): the cubeUV tiles and the pipelines that
     // fill them, keyed by the equirect source texture.
     std::map<uint64_t, EnvironmentGpu> environments_;  // by Texture::ident
-    WGPUBindGroupLayout envLayout_ = nullptr;
+    WGPUBindGroupLayout envLayout_ = nullptr;      // a 2D source: the equirect conversion and the mip chain
+    WGPUBindGroupLayout envCubeLayout_ = nullptr;  // a cube source: the GGX and integration passes
     WGPUPipelineLayout envPipelineLayout_ = nullptr;
+    WGPUPipelineLayout envCubePipelineLayout_ = nullptr;
     WGPURenderPipeline envEquirectPipeline_ = nullptr;
+    WGPURenderPipeline envMipPipeline_ = nullptr;
     WGPURenderPipeline envGgxPipeline_ = nullptr;
-    Handle envVertex_{};      // per-LOD: 36 vertices, position vec3 + expandedUv vec2 + face f32
-    uint64_t envVertexCapacity_ = 0;
-    Handle envUniforms_{};    // one aligned slice per PMREM pass
+    WGPURenderPipeline envIntegrationPipeline_ = nullptr;
+    Handle envUniforms_{};    // one aligned slice per PMREM packet
     uint64_t envUniformCapacity_ = 0;
 };
 
