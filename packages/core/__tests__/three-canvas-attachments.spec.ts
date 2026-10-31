@@ -97,13 +97,6 @@ function fixture(mode: string) {
     "_getDefaultRenderPassDescriptor",
   );
   for (const name of [
-    "_beginTransientDepth",
-    "_restoreTransientDepth",
-    "_finishTransientDepth",
-    "_releaseTransientDepth",
-    "_isFullTransientViewport",
-    "_resumeTransientDepth",
-    "_validateTransientDepth",
     "updateViewport",
     "updateScissor",
     "getOcclusionData",
@@ -557,83 +550,6 @@ describe.each(["source", "distribution"])(
   },
 );
 
-describe.each(["source", "distribution"])("%s owned transient depth protocol", (mode) => {
-  it("discards private depth, restores original 1 without a draw, and retires speculation after submit", () => {
-    const state = fixture(mode);
-    const methods = state.compiledBackend ?? WebGPUBackend.prototype;
-    for (const name of [
-      "_beginTransientDepth",
-      "_restoreTransientDepth",
-      "_finishTransientDepth",
-      "_releaseTransientDepth",
-      "_isFullTransientViewport",
-    ])
-      Reflect.set(state.backend, name, Reflect.get(methods, name));
-    const starts: unknown[] = [];
-    const events: string[] = [];
-    const encoder = {
-      beginRenderPass: (descriptor: object) => {
-        starts.push(structuredClone(descriptor));
-        return { end: () => events.push("end") };
-      },
-      finish: () => ({}),
-    };
-    Object.assign(state.backend.device, {
-      features: new Set(["transient-attachments"]),
-      createCommandEncoder: () => encoder,
-      queue: { submit: () => events.push("submit") },
-    });
-    Object.assign(state.backend, {
-      initTimestampQuery: () => undefined,
-      getTimestampUID: () => "output",
-      _isRenderCameraDepthArray: () => false,
-      _getDefaultRenderPassDescriptor: state.passDescriptor,
-    });
-    const context = {
-      id: 1,
-      camera: {},
-      textures: null,
-      depthTexture: null,
-      renderTarget: null,
-      depth: true,
-      stencil: false,
-      clearDepth: true,
-      clearDepthValue: 1,
-      clearColor: false,
-      occlusionQueryCount: 0,
-      viewport: false,
-      scissor: false,
-      width: 1920,
-      height: 1080,
-      _tnOutputOwner: {},
-    };
-    Reflect.get(methods, "beginRender").call(state.backend, context);
-    expect(starts[0]).toMatchObject({
-      depthStencilAttachment: {
-        depthLoadOp: "clear",
-        depthStoreOp: "discard",
-        depthClearValue: 1,
-        view: { allocation: { label: "tn-private-output-depth", sampleCount: 4 } },
-      },
-    });
-    Reflect.get(methods, "finishRender").call(state.backend, context);
-    expect(starts[1]).toMatchObject({
-      colorAttachments: [],
-      depthStencilAttachment: {
-        depthLoadOp: "clear",
-        depthStoreOp: "store",
-        depthClearValue: 1,
-        view: { allocation: { label: "depthBuffer", sampleCount: 4 } },
-      },
-    });
-    expect(events).toEqual(["end", "end", "submit"]);
-    expect(
-      state.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed,
-    ).toBe(1);
-    expect(state.allocations.find(({ label }) => label === "depthBuffer")?.destroyed).toBe(0);
-  });
-});
-
 interface IRecordedPass {
   colorAttachments: object[];
   depthStencilAttachment: {
@@ -733,7 +649,7 @@ function transientFixture(mode: string, withUv = false) {
   vi.stubGlobal("GPUShaderStage", { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 });
   vi.stubGlobal("GPUBufferUsage", { VERTEX: 32, COPY_DST: 8, UNIFORM: 64 });
   Object.assign(state.backend.device, {
-    features: new Set(["transient-attachments"]),
+    features: new Set(["depth32float-stencil8"]),
     createCommandEncoder,
     createBuffer: (descriptor: { size: number }) => {
       const buffer = new ArrayBuffer(descriptor.size);
@@ -792,7 +708,6 @@ function transientFixture(mode: string, withUv = false) {
     width: 1920,
     height: 1080,
     camera: quad.camera,
-    _tnOutputOwner: quad,
     viewportValue: { x: 0, y: 0, width: 1920, height: 1080, minDepth: 0, maxDepth: 1 },
     scissorValue: { x: 0, y: 0, width: 1920, height: 1080 },
   };
@@ -878,251 +793,7 @@ function transientFixture(mode: string, withUv = false) {
   };
 }
 
-describe.each(["source", "distribution"])("%s compiled draw transient protocol", (mode) => {
-  it.each([false, true])(
-    "draws the shipped full triangle (uv=%s) through private depth and stores original 0",
-    (withUv) => {
-      const s = transientFixture(mode, withUv);
-      if (withUv)
-        expect(s.builder.attributes.some((a: { name: string }) => a.name === "uv")).toBe(true);
-      expect(s.backend.get(s.renderObject.pipeline)._tnDepthProof).toBeTruthy();
-      expect(s.backend.get(s.quad.geometry.attributes.position)._tnFullTriangle).toBe(true);
-      s.begin();
-      s.draw();
-      s.finish();
-      expect(s.draws).toHaveLength(1);
-      expect(s.draws[0]?.depthStencilAttachment).toMatchObject({
-        depthLoadOp: "clear",
-        depthStoreOp: "discard",
-        view: { allocation: { label: "tn-private-output-depth" } },
-      });
-      expect(s.starts).toHaveLength(2);
-      expect(s.starts[1]).toMatchObject({
-        colorAttachments: [],
-        depthStencilAttachment: {
-          depthClearValue: 0,
-          depthLoadOp: "clear",
-          depthStoreOp: "store",
-          view: { allocation: { label: "depthBuffer" } },
-        },
-      });
-      expect(
-        s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed,
-      ).toBe(0);
-      s.target.dispose();
-      s.textures.destroyTexture(s.target.colorTexture);
-      expect(s.allocations.every(({ destroyed }) => destroyed === 1)).toBe(true);
-    },
-  );
-
-  it.each(["before", "after"])(
-    "restores canonical depth before a %s-draw framebuffer copy and never loads private depth",
-    (when) => {
-      const s = transientFixture(mode);
-      s.begin();
-      if (when === "after") s.draw();
-      s.copy();
-      if (when === "before") s.draw();
-      s.finish();
-      expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(when === "before" ? 1 : 0);
-      expect(s.events.indexOf("copy")).toBeGreaterThan(s.events.indexOf("end"));
-      expect(
-        s.starts
-          .filter(
-            (p) => p.depthStencilAttachment.view.allocation.label === "tn-private-output-depth",
-          )
-          .map((p) => p.depthStencilAttachment.depthLoadOp),
-      ).toEqual(["clear"]);
-      expect(
-        s.starts
-          .slice(2)
-          .every(
-            (p) =>
-              p.depthStencilAttachment.depthLoadOp === "load" &&
-              p.depthStencilAttachment.view.allocation.label === "depthBuffer",
-          ),
-      ).toBe(true);
-      if (when === "before")
-        expect(
-          s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed,
-        ).toBe(1);
-    },
-  );
-
-  describe.each(["cameraViewMatrix", "cameraProjectionMatrix", "world"])(
-    "%s GPU matrix snapshot",
-    (matrix) => {
-      it.each([0, 8, "missing"] as const)("rejects %s observed floats before drawing", (length) => {
-        const s = transientFixture(mode);
-        s.begin();
-        const group = s.groups.find(
-          (g: { name: string }) => g.name === (matrix === "world" ? "object" : "render"),
-        );
-        if (!group) throw new Error("Missing matrix fixture group");
-        const entries = s.backend.get(group)._tnBindings as {
-          binding: object;
-          uniforms: { name: string; itemSize: number; offset: number }[];
-        }[];
-        const entry = entries.find((e) =>
-          e.uniforms.some((u) => u.itemSize === 16 && (matrix === "world" || u.name === matrix)),
-        );
-        if (!entry) throw new Error("Missing matrix fixture binding");
-        const uniform = entry.uniforms.find(
-          (u: { name: string; itemSize: number }) =>
-            u.itemSize === 16 && (matrix === "world" || u.name === matrix),
-        );
-        if (!uniform) throw new Error("Missing matrix fixture uniform");
-        if (length === "missing") {
-          entry.uniforms = entry.uniforms.filter((u: object) => u !== uniform);
-        } else {
-          const uploaded = s.backend.get(entry.binding);
-          const snapshot = uploaded._tnUniformBytes;
-          if (!(snapshot instanceof Float32Array)) throw new Error("Missing GPU matrix snapshot");
-          uploaded._tnUniformBytes = snapshot.slice(0, uniform.offset + length);
-        }
-        s.draw();
-        expect(s.starts[1]).toMatchObject({
-          colorAttachments: [],
-          depthStencilAttachment: { depthClearValue: 1, depthStoreOp: "store" },
-        });
-        expect(s.draws[0]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
-        expect(s.events.indexOf("draw")).toBeGreaterThan(s.events.indexOf("end"));
-        s.finish();
-      });
-    },
-  );
-
-  it.each([
-    "partial",
-    "discard",
-    "depth",
-    "alpha",
-    "mask",
-    "geometry",
-    "cpu-geometry",
-    "gpu-geometry",
-    "projection",
-    "stale-shader",
-    "stale-material",
-    "indirect",
-  ])("falls back before an uncertified %s draw", (guard) => {
-    const s = transientFixture(mode);
-    s.begin();
-    if (guard === "partial") s.params.vertexCount = 2;
-    if (guard === "discard") {
-      s.renderObject.pipeline.fragmentProgram.code += "\nfn hidden() { discard; }";
-      s.compile();
-    }
-    if (guard === "depth") {
-      s.renderObject.pipeline.fragmentProgram.code =
-        s.renderObject.pipeline.fragmentProgram.code.replace(
-          "@location( 0 ) color:",
-          "@builtin( frag_depth ) customDepth: f32,\n@location( 0 ) color:",
-        );
-      s.compile();
-    }
-    if (guard === "alpha") s.quad.material.alphaToCoverage = true;
-    if (guard === "mask") {
-      s.renderObject.pipeline.fragmentProgram.code =
-        s.renderObject.pipeline.fragmentProgram.code.replace(
-          "@location( 0 ) color:",
-          "@builtin( sample_mask ) sampleMask: u32,\n@location( 0 ) color:",
-        );
-      s.compile();
-    }
-    if (guard === "geometry") {
-      s.quad.geometry.attributes.position.needsUpdate = true;
-      s.utilities.attributeUtils.updateAttribute(s.quad.geometry.attributes.position);
-    }
-    if (guard === "cpu-geometry") s.quad.geometry.attributes.position.array[0] = 0;
-    if (guard === "gpu-geometry") s.backend.get(s.quad.geometry.attributes.position).buffer = {};
-    if (guard === "projection") {
-      const binding = s.groups.find((g: { name: string }) => g.name === "render").bindings[0];
-      binding.buffer[0] = 2;
-      binding.clearUpdateRanges();
-      s.utilities.bindingUtils.updateBinding(binding);
-    }
-    if (guard === "stale-shader")
-      s.backend.get(s.renderObject.pipeline.vertexProgram)._tnShaderCode += " ";
-    if (guard === "stale-material") s.quad.material.needsUpdate = true;
-    if (guard === "indirect") s.renderObject.getIndirect = () => ({}) as never;
-    // Indirect draw itself is outside this protocol fixture; preserve its original method.
-    if (guard === "indirect") Reflect.set(s.backend, "_draw", () => undefined);
-    s.draw();
-    s.finish();
-    expect(s.starts[1]).toMatchObject({
-      colorAttachments: [],
-      depthStencilAttachment: { depthClearValue: 1, depthStoreOp: "store" },
-    });
-    expect(s.starts[2]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
-    expect(s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed).toBe(
-      1,
-    );
-  });
-});
-
-describe.each(["source", "distribution"])("%s transient depth boundaries", (mode) => {
-  it.each([
-    "off",
-    "absent",
-    "single",
-    "load",
-    "custom-clear",
-    "nonfinite",
-    "scissor",
-    "viewport",
-    "reversed",
-    "layers",
-    "xr",
-    "stencil",
-  ])("retains the ordinary allocation and pass for %s", (guard) => {
-    const s = transientFixture(mode);
-    if (guard === "off" || guard === "absent")
-      s.backend.device.features.delete("transient-attachments");
-    if (guard === "single") s.renderer.currentSamples = 1;
-    if (guard === "load") s.context.clearDepth = false;
-    if (guard === "custom-clear") s.context.clearDepthValue = 0.5;
-    if (guard === "nonfinite") s.context.clearDepthValue = Number.NaN;
-    if (guard === "scissor") s.context.scissor = true;
-    if (guard === "viewport") {
-      s.context.viewport = true;
-      s.context.viewportValue.width = 10;
-    }
-    if (guard === "reversed") s.renderer.reversedDepthBuffer = true;
-    if (guard === "layers") s.context.camera.isArrayCamera = true;
-    if (guard === "xr") Reflect.set(s.renderer, "xr", { isPresenting: true });
-    if (guard === "stencil") {
-      s.context.stencil = true;
-      s.renderer.stencil = true;
-    }
-    s.begin();
-    s.finish();
-    expect(s.allocations.some(({ label }) => label === "tn-private-output-depth")).toBe(false);
-    expect(s.starts).toHaveLength(1);
-    expect(s.starts[0]?.depthStencilAttachment.depthStoreOp).toBe("store");
-  });
-
-  it.each(["viewport", "scissor"])(
-    "restores original depth before changing %s coverage",
-    (operation) => {
-      const s = transientFixture(mode);
-      s.context.viewport = true;
-      s.begin();
-      expect(s.starts).toHaveLength(1); // Applying the initial full viewport must not fall back.
-      if (operation === "viewport") s.context.viewportValue.width = 20;
-      else s.context.scissor = true;
-      Reflect.get(s.methods, operation === "viewport" ? "updateViewport" : "updateScissor").call(
-        s.backend,
-        s.context,
-      );
-      expect(s.starts[1]?.depthStencilAttachment.depthClearValue).toBe(1);
-      expect(s.starts[2]?.depthStencilAttachment.depthLoadOp).toBe("load");
-      s.draw();
-      s.finish();
-      expect(s.draws[0]?.depthStencilAttachment.view.allocation.label).toBe("depthBuffer");
-    },
-  );
-
+describe.each(["source", "distribution"])("%s separate-encoder and copy ordering", (mode) => {
   it.each(
     ["before", "after"].flatMap((when) =>
       ["clear", "depth-copy", "color-copy", "read", "depth-write"].map((operation) => [
@@ -1131,87 +802,60 @@ describe.each(["source", "distribution"])("%s transient depth boundaries", (mode
       ]),
     ),
   )(
-    "keeps the separate encoder before pending main %s the quad for %s, matching feature-off",
+    "keeps the separate encoder before pending main %s the quad for %s",
     async (when, operation) => {
-      const snapshots = [];
-      for (const enabled of [false, true]) {
-        const s = transientFixture(mode);
-        if (!enabled) s.backend.device.features.delete("transient-attachments");
-        Reflect.set(s.renderer, "getClearDepth", () => 0.25);
-        vi.stubGlobal("GPUMapMode", { READ: 1 });
-        s.textures.getColorBuffer();
-        s.begin();
-        if (when === "after") s.draw();
-        const alias = { id: 2, image: { width: 1920, height: 1080 } };
-        const destination = { id: 3, image: { width: 1920, height: 1080 }, generateMipmaps: false };
-        const canonical = s.backend.get(
-          operation === "color-copy" || operation === "read"
-            ? s.target.colorTexture
-            : s.target.depthTexture,
-        ).texture;
-        s.backend.get(alias).texture = canonical;
-        s.backend.get(alias).textureDescriptorGPU = { format: "rgba8unorm" };
-        s.backend.get(destination).texture = {};
-        if (operation === "clear")
-          Reflect.get(s.methods, "clear").call(s.backend, false, true, false);
-        else if (operation === "read") {
-          // Mapping waits only for the submitted read encoder: the outer pass is still open.
-          const result = await Reflect.get(s.methods, "copyTextureToBuffer").call(
-            s.backend,
-            alias,
-            0,
-            0,
-            1,
-            1,
-            0,
-          );
-          expect(result).toEqual(new Uint8Array(4));
-        } else
-          Reflect.get(s.methods, "copyTextureToTexture").call(
-            s.backend,
-            ...(operation === "depth-write" ? [destination, alias] : [alias, destination]),
-          );
-        if (operation !== "clear") {
-          expect(s.copies[0]?.encoder).toBe(1);
-          expect(operation === "depth-write" ? s.copies[0]?.destination : s.copies[0]?.source).toBe(
-            canonical,
-          );
-        }
-        expect(s.submissions).toHaveLength(1);
-        expect(s.submissions[0]?.id).toBe(1);
-        expect(s.submissions[0]?.commands).toEqual([
-          operation === "clear" ? "pass:depthBuffer:0.25" : operation === "read" ? "read" : "copy",
-        ]);
-        if (when === "before") s.draw();
-        s.finish();
-        expect(s.submissions.map(({ id }) => id)).toEqual([1, 0]);
-        expect(s.submissions[1]?.commands).toContain("draw");
-        if (enabled) expect(s.submissions[1]?.commands.at(-1)).toBe("pass:depthBuffer:0");
-        snapshots.push(s.submissions[0]);
+      const s = transientFixture(mode);
+      Reflect.set(s.renderer, "getClearDepth", () => 0.25);
+      vi.stubGlobal("GPUMapMode", { READ: 1 });
+      s.textures.getColorBuffer();
+      s.begin();
+      if (when === "after") s.draw();
+      const alias = { id: 2, image: { width: 1920, height: 1080 } };
+      const destination = { id: 3, image: { width: 1920, height: 1080 }, generateMipmaps: false };
+      const canonical = s.backend.get(
+        operation === "color-copy" || operation === "read"
+          ? s.target.colorTexture
+          : s.target.depthTexture,
+      ).texture;
+      s.backend.get(alias).texture = canonical;
+      s.backend.get(alias).textureDescriptorGPU = { format: "rgba8unorm" };
+      s.backend.get(destination).texture = {};
+      if (operation === "clear")
+        Reflect.get(s.methods, "clear").call(s.backend, false, true, false);
+      else if (operation === "read") {
+        // Mapping waits only for the submitted read encoder: the outer pass is still open.
+        const result = await Reflect.get(s.methods, "copyTextureToBuffer").call(
+          s.backend,
+          alias,
+          0,
+          0,
+          1,
+          1,
+          0,
+        );
+        expect(result).toEqual(new Uint8Array(4));
+      } else
+        Reflect.get(s.methods, "copyTextureToTexture").call(
+          s.backend,
+          ...(operation === "depth-write" ? [destination, alias] : [alias, destination]),
+        );
+      if (operation !== "clear") {
+        expect(s.copies[0]?.encoder).toBe(1);
+        expect(operation === "depth-write" ? s.copies[0]?.destination : s.copies[0]?.source).toBe(
+          canonical,
+        );
       }
-      expect(snapshots[1]).toEqual(snapshots[0]);
+      expect(s.submissions).toHaveLength(1);
+      expect(s.submissions[0]?.id).toBe(1);
+      expect(s.submissions[0]?.commands).toEqual([
+        operation === "clear" ? "pass:depthBuffer:0.25" : operation === "read" ? "read" : "copy",
+      ]);
+      if (when === "before") s.draw();
+      s.finish();
+      expect(s.submissions.map(({ id }) => id)).toEqual([1, 0]);
+      expect(s.submissions[1]?.commands).toContain("draw");
     },
   );
-
-  it("retires used private depth on resize and creates it at the new physical size", () => {
-    const s = transientFixture(mode);
-    s.begin();
-    s.draw();
-    s.finish();
-    const first = s.allocations.find(({ label }) => label === "tn-private-output-depth");
-    s.target.setSize(640, 360, false);
-    expect(first?.destroyed).toBe(1);
-    s.context.width = 640;
-    s.context.height = 360;
-    s.begin();
-    s.draw();
-    s.finish();
-    const sources = s.allocations.filter(({ label }) => label === "tn-private-output-depth");
-    expect(sources).toHaveLength(2);
-    expect(sources[1]?.size).toEqual({ width: 640, height: 360 });
-    s.textures.dispose();
-    expect(sources[1]?.destroyed).toBe(1);
-  });
 
   it("executes the 939 graph updateBefore copy before pipeline construction and the original draw", () => {
     const s = transientFixture(mode);
@@ -1250,210 +894,5 @@ describe.each(["source", "distribution"])("%s transient depth boundaries", (mode
     expect(s.events.indexOf("copy")).toBeLessThan(s.events.indexOf("pipeline"));
     expect(s.events.indexOf("pipeline")).toBeLessThan(s.events.indexOf("draw"));
     expect(s.draws[0]?.depthStencilAttachment.depthLoadOp).toBe("load");
-  });
-
-  it.each(["before", "after", "fallback", "nested"])(
-    "discards the failed outer encoder %s the quad, matching feature-off submissions",
-    (when) => {
-      const snapshots = [];
-      for (const enabled of [false, true]) {
-        const s = transientFixture(mode);
-        if (!enabled) s.backend.device.features.delete("transient-attachments");
-        Reflect.set(s.renderer, "getClearDepth", () => 0.25);
-        Object.assign(s.backend, { updateTimeStampUID: () => undefined });
-        for (const name of ["beginRender", "finishRender", "_abortTransientDepth"])
-          Reflect.set(s.backend, name, Reflect.get(s.methods, name));
-        Object.assign(s.context, { viewportValue: new Vector4(), scissorValue: new Vector4() });
-        const previous = {};
-        const nodeFrame = { renderId: 99 };
-        const lighting = { beginRender: vi.fn(), finishRender: vi.fn() };
-        const renderList = {
-          begin: () => undefined,
-          finish: () => undefined,
-          bundles: [],
-          opaque: [s.quad],
-          transparent: [],
-          transparentDoublePass: [],
-          occlusionQueryCount: 0,
-        };
-        let fail = true;
-        const renderer = {
-          backend: s.backend,
-          _nodes: { nodeFrame },
-          lighting,
-          _currentRenderContext: previous,
-          _currentRenderObjectFunction: previous,
-          _handleObjectFunction: previous,
-          _callDepth: 0,
-          _renderTarget: null,
-          _outputRenderTarget: null,
-          _activeCubeFace: 0,
-          _activeMipmapLevel: 0,
-          _renderContexts: { get: () => s.context },
-          _canvasTarget: s.target,
-          _tnOutputOwner: s.quad,
-          shadowMap: { type: PCFShadowMap },
-          depth: true,
-          stencil: false,
-          opaque: true,
-          info: { calls: 0, render: { calls: 0, frameCalls: 0 } },
-          inspector: { beginRender: () => undefined, finishRender: () => undefined },
-          _updateCamera: (camera: object) => camera,
-          getDrawingBufferSize: (size: Vector2) => size.set(1920, 1080),
-          xr: { isPresenting: false },
-          _renderLists: { get: () => renderList, update: () => undefined },
-          // r187 culls through renderer.drawingPipeline; projection stays a no-op here.
-          drawingPipeline: {
-            begin: () => undefined,
-            beginRenderList: (list: typeof renderList) => list.begin(),
-            project: () => undefined,
-            finishRenderList: (list: typeof renderList) => list.finish(),
-          },
-          _background: { update: () => undefined },
-          _renderObjects: () => {
-            if (!fail) {
-              s.draw();
-              return;
-            }
-            if (when !== "before") {
-              s.draw();
-              if (enabled)
-                expect(s.backend.get(s.context)).toMatchObject({
-                  _tnDepth: { logical: 0, source: { used: false } },
-                });
-            }
-            if (when === "fallback") s.copy();
-            if (when === "nested") {
-              const nested = { ...s.context, id: 2 };
-              Reflect.get(s.methods, "beginRender").call(s.backend, nested);
-              s.renderObject.context = nested;
-              try {
-                s.draw();
-              } finally {
-                s.renderObject.context = s.context;
-              }
-              Reflect.get(s.methods, "finishRender").call(s.backend, nested);
-            }
-            Reflect.get(s.methods, "clear").call(s.backend, false, true, false);
-            throw new Error("graph callback failed");
-          },
-        };
-        const render = () =>
-          Reflect.get(
-            (mode === "source" ? SourceWebGPURenderer : WebGPURenderer).prototype,
-            "_renderScene",
-          ).call(renderer, s.quad, s.quad.camera, false);
-        expect(render).toThrow("graph callback failed");
-        expect(s.submissions.map(({ id }) => id)).toEqual(when === "nested" ? [1, 2] : [1]);
-        expect(renderer._currentRenderContext).toBe(previous);
-        expect(renderer._currentRenderObjectFunction).toBe(previous);
-        expect(renderer._handleObjectFunction).toBe(previous);
-        expect(renderer._callDepth).toBe(0);
-        expect(nodeFrame.renderId).toBe(99);
-        expect(lighting.finishRender).toHaveBeenCalledTimes(1);
-        expect(renderer._tnOutputOwner).toBe(s.quad);
-        if (enabled) {
-          const data = s.backend.get(s.context);
-          expect(data._tnDepth).toBeUndefined();
-          expect(data.encoder).toBeUndefined();
-          expect(data.currentPass).toBeUndefined();
-          expect(data.descriptor).toMatchObject({
-            depthStencilAttachment: {
-              view: { allocation: { label: "depthBuffer" } },
-              depthStoreOp: "store",
-            },
-          });
-          const privateDepth = s.allocations.find(
-            ({ label }) => label === "tn-private-output-depth",
-          );
-          expect(privateDepth?.destroyed).toBe(when === "nested" ? 0 : 1);
-          if (when === "before" || when === "after") expect(s.starts).toHaveLength(2);
-        }
-        snapshots.push(
-          s.submissions.map(({ id, commands }) => ({
-            id,
-            commands: commands.filter((command) => command !== "pass:depthBuffer:0"),
-          })),
-        );
-        fail = false;
-        render();
-        expect(s.submissions).toHaveLength(when === "nested" ? 3 : 2);
-        expect(s.submissions.at(-1)?.commands).toContain("draw");
-        if (enabled) expect(s.submissions.at(-1)?.commands.at(-1)).toBe("pass:depthBuffer:0");
-      }
-      // The nested render may use private depth; its independent clear and submission order agree.
-      if (when === "nested") expect(snapshots[1]?.at(-1)).toEqual(snapshots[0]?.at(-1));
-      else expect(snapshots[1]).toEqual(snapshots[0]);
-    },
-  );
-
-  it("retires private depth if queue submission throws after an encoded validated draw", () => {
-    const s = transientFixture(mode);
-    s.begin();
-    s.draw();
-    expect(s.backend.get(s.context)).toMatchObject({
-      _tnDepth: { logical: 0, source: { used: false } },
-    });
-    Reflect.get(s.backend.device, "queue").submit = () => {
-      throw new Error("submit failed");
-    };
-    expect(s.finish).toThrow("submit failed");
-    expect(s.backend.get(s.context)._tnDepth).toBeUndefined();
-    expect(s.allocations.find(({ label }) => label === "tn-private-output-depth")?.destroyed).toBe(
-      1,
-    );
-  });
-
-  it("restores scoped ownership, XR and output state when the owned render throws", () => {
-    const s = transientFixture(mode);
-    const previous = {};
-    Reflect.set(s.pipeline.renderer, "_tnOutputOwner", previous);
-    const quad = Reflect.get(s.pipeline, "_quadMesh");
-    quad.render = () => {
-      expect(Reflect.get(s.pipeline.renderer, "_tnOutputOwner")).toBe(quad);
-      throw new Error("graph callback failed");
-    };
-    const tone = s.pipeline.renderer.toneMapping;
-    const output = s.pipeline.renderer.outputColorSpace;
-    expect(() => s.pipeline.render()).toThrow("graph callback failed");
-    expect(Reflect.get(s.pipeline.renderer, "_tnOutputOwner")).toBe(previous);
-    expect(s.pipeline.renderer.toneMapping).toBe(tone);
-    expect(s.pipeline.renderer.outputColorSpace).toBe(output);
-    expect(s.pipeline.renderer.xr.enabled).toBe(false);
-  });
-});
-
-describe.each(["source", "distribution"])("%s private attachment isolation", (mode) => {
-  it("clears/discards both private aspects and loads/stores the original stencil unchanged", () => {
-    const s = transientFixture(mode);
-    s.renderer.stencil = true;
-    s.begin();
-    s.finish();
-    expect(s.starts[0]?.depthStencilAttachment).toMatchObject({
-      depthLoadOp: "clear",
-      depthStoreOp: "discard",
-      stencilLoadOp: "clear",
-      stencilStoreOp: "discard",
-    });
-    expect(s.starts[1]?.depthStencilAttachment).toMatchObject({
-      depthLoadOp: "clear",
-      depthStoreOp: "store",
-      stencilLoadOp: "load",
-      stencilStoreOp: "store",
-    });
-  });
-
-  it("keeps an outer private pass active while a different nested context renders", () => {
-    const s = transientFixture(mode);
-    s.begin();
-    const nested = { ...s.context, id: 2, _tnOutputOwner: null };
-    Reflect.get(s.methods, "beginRender").call(s.backend, nested);
-    Reflect.get(s.methods, "finishRender").call(s.backend, nested);
-    expect(s.backend.get(s.context)).toMatchObject({ _tnDepth: { active: true, logical: 1 } });
-    s.draw();
-    s.finish();
-    expect(s.draws[0]?.depthStencilAttachment.view.allocation.label).toBe(
-      "tn-private-output-depth",
-    );
   });
 });
