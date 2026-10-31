@@ -94,3 +94,24 @@ describe("atmosphere model copies", () => {
     }
   });
 });
+
+describe("atmosphere kits on a software adapter", () => {
+  // CI run 41178046079: five kits called `setupSky(scene, photo)` and never told the sky it ran on a
+  // CPU rasteriser, so engine "threejs" compiled the LUT and cloud passes for 150 s and drew nothing.
+  // The starter passes the flag; every scene that calls `setupSky` must.
+  it("passes the software flag from every scene that sets the sky up", () => {
+    const root = path.join(import.meta.dirname, "..", "templates");
+    const calls: string[] = [];
+    for (const kit of readdirSync(root)) {
+      if (!existsSync(path.join(root, kit, "src/render/atmosphere.ts"))) continue;
+      const scenes = path.join(root, kit, "src/scenes");
+      for (const file of readdirSync(scenes).filter((name) => name.endsWith(".ts"))) {
+        const source = readFileSync(path.join(scenes, file), "utf8");
+        for (const call of source.matchAll(/\bsetupSky\(([^;]*)\);/gu))
+          calls.push(`${kit}/${file}: ${call[0]}`);
+      }
+    }
+    expect(calls.length).toBeGreaterThan(10);
+    for (const call of calls) expect(call, call).toMatch(/softwareAdapter/u);
+  });
+});

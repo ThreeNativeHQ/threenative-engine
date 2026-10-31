@@ -23,6 +23,7 @@ import type { EntitySnapshot } from "./entities.js";
 import type { IGameObservationContribution, IGamePluginHooks, IGamePluginRuntime } from "./game.js";
 import { GEOMETRY_CAPTURE_CAPABILITY } from "./geometry-capture.js";
 import { PIPELINE_CENSUS_CAPABILITY } from "./pipeline-census.js";
+import { discardEngineCountsSinceLastFrame } from "./profiling/FrameCounters.js";
 import { readRenderChainObservation } from "./render/chain.js";
 import type { ICtx } from "./scene.js";
 import { CORE_VERSION } from "./version.js";
@@ -470,9 +471,16 @@ function installRuntimeChannels(
     );
   const sample = bridge.sample;
   bridge.sample = (request) =>
-    Promise.resolve(sample(request)).then((snapshot) =>
-      addRuntimeObservations(snapshot, request, runtime?.observations.contributions() ?? []),
-    );
+    Promise.resolve(sample(request)).then(async (snapshot) => {
+      const observed = await addRuntimeObservations(
+        snapshot,
+        request,
+        runtime?.observations.contributions() ?? [],
+      );
+      // An observation walks the scene for entity `debug()`; the next frame is not billed for it.
+      discardEngineCountsSinceLastFrame();
+      return observed;
+    });
 }
 function addRuntimeCapabilities(
   description: IPlaytestBridgeDescription,

@@ -21,7 +21,7 @@ import {
   stopVisualServer,
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
-import { launchWebgpuBrowser } from "./browser.js";
+import { assertConfigEcho, launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE } from "./capture-motion-threenative.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import {
@@ -404,6 +404,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 600_000 });
           const readyMs = Date.now() - started;
           await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+          assertConfigEcho(page.url(), await page.evaluate("window.__tnRef.config"));
           // Page start to the scene being ready; the GI cache bake (TN_GI_CACHE) runs inside this.
           console.info(
             `TN_UNREAL_LOOK startup layer=${layer} ready=${readyMs}ms scene=${Date.now() - started}ms`,

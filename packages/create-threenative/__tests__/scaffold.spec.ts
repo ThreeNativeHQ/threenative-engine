@@ -319,7 +319,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
   // Re-pinned 2026-10-28 (owner chose sharp AA): core high tier is 4x MSAA with no camera motion blur;
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
-  "action-rpg": "7069f47f6daebefd8c4be01dba98c0e0efe8064919c768c26019c08e45f2aaef",
+  // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
+  // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
+  "action-rpg": "e9fd58dbd90180e0564a243a4837c39280598d0dcfb0029184ac1392c78ed2a2",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -345,10 +347,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   adventure: "3114377ad3db663682ccee202741ce26963d2c4822ccc4ab9c86da15f58e11f9",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "5033dffe34745d519352eadd691de6c9582025c36ea333bb9343c34c0297dec9",
-  minimal: "6e7e8fd65d943e33c9c1414b65717e5d8c3b7d99cdc16509e3603d2e6744effa",
+  minimal: "4bf9f99ca6c0c22df2395cea7eb143225b1a6901444ebed7e490e116571b638e",
   platformer: "57422ad00f62e30c42cc04befc0bc1801efa863d2233b885ecfa551491869ce2",
   puzzle: "a098cf9bfe0ce5118d085bb4397c31c663a0d0c3b4765c2b589978d1531e329a",
-  racing: "f3728e7c96560c987ed0a1c2489bf3d5483850851cfacde47afe12d7e7651cd3",
+  racing: "d5a91d239f00f2329ad0119a4c5c76e5cefb7ec60c049fa30667173e6467e032",
   rain: "1c5402b286d666604d354968abf7e74f587b2fb251a29352c2e0f5d90e0beea0",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
@@ -362,21 +364,21 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "ef563d91cfced486787fce286924379546f0ac544ed89c61999b532c41a67072",
-  runner: "5e813da6d110925b01d650ddd80f6b03b2d8f2d1405c5f496e67939f8a9c04f2",
+  runner: "58d6552e90a20cbca8d5e90258e075b94c1fd83056d803afa1f9d8122133b01f",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "6d9d1fb3a93deb84dc753ef2fa67dc3a079434acc830c256948880009faea5eb",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "c7f94d33779660f3c25488ecf783f8d346407adc8a412efde606929a34f80e51",
+  shooter: "845f705eca688d2e18ed54bc4b3d6e98e11669ac86d3ae239e43e5a8257d5c02",
   snow: "c2ccc14a026e3d2d75a021a3f433d68e7db675236be456560b70596e9e6b2e54",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
+  // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob (PRD-633); measured by this test.
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
-  // offset and drives its callback lists, so starter's render source alone moves. Measured by this test.
-  // Re-pinned 2026-10-31 after merging develop's PRD-633 atmosphere-sky kits onto the 0.187 patch.
-  starter: "d5bbbada674267493edb4cc247bc91b5dbf7defe2235040de5eb28d81a485e06",
+  // offset and drives its callback lists, so starter's render source moves again. Measured by this test.
+  starter: "d6b74af007bec906cf3e1f89365b547b6d8cfd710c763b010137345f84883c38",
   "tower-defense": "aa233cb67544c74d363cef4a00d47d7cea5c9ae093f04b231284a2f8574b0b98",
 };
 

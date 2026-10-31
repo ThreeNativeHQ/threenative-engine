@@ -207,6 +207,72 @@ describe("the game loop reports frames the renderer declined to draw", () => {
       vi.restoreAllMocks();
     }
   });
+  it("does not reveal while an accepted world frame has not been presented", async () => {
+    // A slow software GPU accepts the first world draws and takes tens of seconds to finish them: the
+    // canvas still shows the cover, so a reveal now tells a screenshot the world is up when it is not.
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    for (const method of ["info", "warn", "log"] as const)
+      vi.spyOn(console, method).mockImplementation(() => undefined);
+    const info = {
+      engine: { frameGateSkips: 0, startup: { worldPresented: false } },
+      render: { calls: 0 },
+    };
+    class HudScene extends Scene {
+      static override readonly initialState = { loaded: false };
+      override enter(ctx: Parameters<Scene["enter"]>[0]): void {
+        void ctx.startup.whenReady().then(() => ctx.state.set({ loaded: true }));
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          info,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: HudScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (!frame || !game.ctx) throw new Error("Game did not start its loop");
+      const state = game.ctx.state as unknown as { getPublishedState(): { loaded: boolean } };
+      let time = performance.now();
+      const run = async (frames: number): Promise<void> => {
+        for (let index = 0; index < frames; index += 1) {
+          time += 16.7;
+          frame?.(time);
+          await Promise.resolve();
+        }
+      };
+      await run(80);
+      expect(state.getPublishedState().loaded).toBe(false);
+      info.engine.startup.worldPresented = true;
+      await run(8);
+      expect(state.getPublishedState().loaded).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      game.stop();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("lifts the cover after the bounded window when the renderer retires no frame", async () => {
     // Hosted CI's SwiftShader declined every world frame after readiness (73 of 73 in
     // racing-shift-brakes), so the hand-off never counted three and the HUD stayed covered for

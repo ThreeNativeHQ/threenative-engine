@@ -91,6 +91,9 @@ tn::engine::FrameGate frameGate;
 bool presentationHeld = false;
 uint64_t worldSubmissions = 0;
 bool shadowInputsReady = false;
+// Field 86: the GPU serial the first world frame that took a canvas texture was submitted under, 0 until one is. The
+// frame is on the display once the queue's completed serial reaches it, which a draw the gate accepted does not say.
+uint64_t firstPresentedSerial = 0;
 
 std::string text(WGPUStringView value) {
     if (value.data == nullptr) return {};
@@ -282,6 +285,7 @@ extern "C" int tnw_web_init(const char* selector, uint32_t w, uint32_t h, uint32
     presentationHeld = false;
     worldSubmissions = 0;
     shadowInputsReady = false;
+    firstPresentedSerial = 0;
     if (selector == nullptr || !validSize(w, h)) return fail("TN_WASM_INIT: canvas selector or size invalid");
     width = w;
     height = h;
@@ -369,6 +373,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     // A refusal the renderer throws (an unported feature, a refused binding, a post graph it cannot build) is this
     // frame's named failure, never a bare WebAssembly.Exception in the page.
     std::string refused;
+    bool presentedWorld = false;
     try {
         if (postChanged) renderer->setPostGraph(pendingPost);
     } catch (const std::exception& error) {
@@ -406,6 +411,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
             // A frame the environment bake gated (0) drew nothing, so it is not one of the startup's world submissions.
             if (submission != 0) {
                 ++worldSubmissions;
+                presentedWorld = !presentationHeld;
                 // Every active atlas walked, so only a held frame asks: nothing reads this field once the cover is gone.
                 if (presentationHeld) shadowInputsReady = renderer->virtualShadowsInitialized();
             }
@@ -427,6 +433,7 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     }
     const HostMeter diagnosticsMeter(hostTailMs, !overlay);  // the gate's note and the diagnostics below, to the return
     frameGate.submitted(renderer->gpu().submittedSerial(), emscripten_get_now());
+    if (presentedWorld && firstPresentedSerial == 0) firstPresentedSerial = renderer->gpu().submittedSerial();
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
     // post pass reads a depth-derived normal there), and so is TN_TRAA_VELOCITY_SKIPPED (the draw moves with
@@ -935,6 +942,11 @@ extern "C" double tnw_web_frame(int field) {
         // held frame recomputes it.
         case 71: return double(worldSubmissions);
         case 72: return shadowInputsReady ? 1 : 0;
+        // 86: 1 once the first world frame drawn after the hold came off has finished on the GPU, so the display shows
+        // it. A draw the gate accepted only says it was queued: a software rasteriser takes tens of seconds to finish it.
+        case 86:
+            tnw_web_poll();  // delivers the work-done callbacks that advance completedSerial
+            return firstPresentedSerial != 0 && renderer->gpu().completedSerial() >= firstPresentedSerial ? 1 : 0;
         // 40: the shadow maps the last frame kept because nothing they draw changed (sun or lamp, not virtual);
         // 41: the bytes of per-draw uniforms it uploaded.
         // 85 (PRD-770): the shadow passes' triangles, which field 1 adds in. With 27 (every shadow draw) it splits fields

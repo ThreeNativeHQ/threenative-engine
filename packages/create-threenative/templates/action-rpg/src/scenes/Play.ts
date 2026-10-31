@@ -110,7 +110,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
       SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
-    setupSky(ctx.scene, this.#sky);
+    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -129,7 +129,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.state.flush();
 
     const camera = ctx.camera as PerspectiveCamera;
-    setupSky(ctx.scene, this.#sky);
+    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],

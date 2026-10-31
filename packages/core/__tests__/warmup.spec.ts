@@ -150,6 +150,41 @@ describe("scene warm-up", () => {
     }
   });
 
+  test("should name the start and the end of an environment bake that outlives its deadline", async () => {
+    // CI run 41204117871: the wait ended at its deadline, the world drew without the environment's
+    // fill, and nothing said when the fill arrived.
+    const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
+    let finish: (ready: boolean) => void = () => undefined;
+    Object.defineProperty(PMREMNode, "prepareTextureAsync", {
+      configurable: true,
+      value: () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const prepared = await prepareSceneEnvironment(
+        { raw: { backend: { isWebGPUBackend: true } } },
+        { children: [], environment: { isTexture: true } } as never,
+        {} as never,
+        performance.now() + 10,
+      );
+      expect(prepared).toBe(false);
+      expect(info).toHaveBeenCalledWith("TN_ENVIRONMENT_BAKE:started");
+      expect(info).not.toHaveBeenCalledWith(
+        expect.stringContaining("TN_ENVIRONMENT_BAKE:finished"),
+      );
+      finish(true);
+      await Promise.resolve();
+      expect(info).toHaveBeenCalledWith("TN_ENVIRONMENT_BAKE:finished ready=true");
+    } finally {
+      info.mockRestore();
+      if (previous) Object.defineProperty(PMREMNode, "prepareTextureAsync", previous);
+      else Reflect.deleteProperty(PMREMNode, "prepareTextureAsync");
+    }
+  });
+
   test("should start the compile budget once a slow environment bake settles", async () => {
     // 3-CPU SwiftShader: the full-quality bake alone outlasts the 15 s compile budget, which left
     // warm-up timed out with nothing compiled (PRD-624). The bake has its own budget now.

@@ -222,6 +222,9 @@ export function defineWebRenderer(
         startup: {
           worldSubmissions: 0,
           shadowInputsReady: false,
+          // web_host.cpp field 86: the first world frame drawn after the hold came off has finished on the GPU. True
+          // until a hold comes off, so a page that never held presentation has nothing to wait for.
+          worldPresented: true,
         },
         // True while prepareEnvironmentAsync draws the held scene under the loading cover. The world
         // is still unlit, so these pixels are not the view's first frame: core's eye adaptation holds
@@ -708,6 +711,8 @@ export function defineWebRenderer(
       if (this.#presentationHeld) {
         engine.startup.worldSubmissions = module._tnw_web_frame(71);
         engine.startup.shadowInputsReady = module._tnw_web_frame(72) === 1;
+      } else if (!engine.startup.worldPresented) {
+        engine.startup.worldPresented = module._tnw_web_frame(86) === 1;
       }
       // Opt-in, as `__tnCallCounts`: a probe that sets `__tnPassLog` to an array gets every frame's counters.
       (globalThis as { __tnPassLog?: unknown[] }).__tnPassLog?.push({ ...passes });
@@ -842,6 +847,8 @@ export function defineWebRenderer(
       const next = held === true;
       if (next === this.#presentationHeld) return;
       this.#presentationHeld = next;
+      // The release is the moment the next world frame is the one the player sees: watch it leave the GPU.
+      if (!next) this.info.engine.startup.worldPresented = false;
       module._tnw_web_set_presentation_hold(next ? 1 : 0);
     }
 

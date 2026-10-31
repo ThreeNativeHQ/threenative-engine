@@ -3024,6 +3024,9 @@ describe("CI pipeline structure", () => {
     expect(ios).toContain("cmp -s");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_CHANGED");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_MISSING");
+    expect(ios, "the output snapshot reads each package main, not dist/index.js").toContain(
+      "package.json').main",
+    );
     expect(packSection).toContain("workspace-packages.ts --archives");
     expect(packSection).toContain('pnpm --filter "$package_name" pack --pack-destination');
     expect(packSection).not.toContain("--if-present run build");

@@ -317,6 +317,20 @@ interface IEngineCounterHost {
   readonly __tnEngineCounters?: () => Readonly<Record<string, number>>;
   /** Totals any module counts by name (`bag[name] = (bag[name] ?? 0) + 1`), on every engine. */
   readonly __tnEngineCost?: Readonly<Record<string, number>>;
+  /** Installed by the reader while it is on: drops the counts since the last frame's read. */
+  __tnEngineCounterRebase?: () => void;
+}
+
+/**
+ * Leaves the work done since the last frame out of the next frame's engine counts. A caller that does
+ * work between frames which is not the game's (the playtest bridge answering an observation walks the
+ * scene for `debug()`) calls this when it is done; without it the next frame is billed for the walk
+ * and a bound on one frame's cost fails on a measurement of the harness, on a timing race.
+ */
+export function discardEngineCountsSinceLastFrame(
+  host: Pick<IEngineCounterHost, "__tnEngineCounterRebase"> = globalThis as IEngineCounterHost,
+): void {
+  host.__tnEngineCounterRebase?.();
 }
 
 /**
@@ -330,12 +344,16 @@ export function createEngineCounterReader(
 ): () => Record<string, number> | undefined {
   const debug = debugRequested();
   let last: Record<string, number> | undefined;
+  const read = (): Record<string, number> => ({
+    ...host.__tnEngineCost,
+    ...host.__tnEngineCounters?.(),
+  });
   return () => {
     if (!debug && host.__THREENATIVE_ENGINE_COST__ !== true) return undefined;
-    const totals: Record<string, number> = {
-      ...host.__tnEngineCost,
-      ...host.__tnEngineCounters?.(),
+    host.__tnEngineCounterRebase ??= () => {
+      if (last !== undefined) last = read();
     };
+    const totals = read();
     const previous = last;
     last = totals;
     if (previous === undefined) return undefined;

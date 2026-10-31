@@ -129,6 +129,33 @@ export async function waitForWorld(
   }
 }
 
+/**
+ * Waits until every environment bake the page started has finished (`TN_ENVIRONMENT_BAKE`). A slow
+ * software adapter gives up its startup wait at the bake deadline and draws the world without the
+ * environment's fill; a frame photographed then shows black shadows on one arm only
+ * (CI run 41204117871: minimal scored 0.168 on a threejs frame taken before the bake landed).
+ */
+export async function waitForEnvironmentBake(
+  session: Pick<IBrowserCaptureSession, "consoleEntries" | "page">,
+  timeoutMs = WORLD_DRAWN_TIMEOUT_MS,
+): Promise<{ started: number; finished: number; waitedMs: number }> {
+  const startedAt = Date.now();
+  for (;;) {
+    const texts = session.consoleEntries.map(({ text }) => text);
+    const started = texts.filter((text) => text.startsWith("TN_ENVIRONMENT_BAKE:started")).length;
+    const finished = texts.filter((text) => text.startsWith("TN_ENVIRONMENT_BAKE:finished")).length;
+    if (finished >= started) return { started, finished, waitedMs: Date.now() - startedAt };
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error(
+        `TN_ENGINE_PARITY_ENVIRONMENT_NOT_BAKED: ${started - finished} environment bake(s) still running after ${timeoutMs}ms.`,
+      );
+    }
+    await session.page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+  }
+}
+
 /** Whether two captures end at the same absolute simulation pose. */
 export function sameFixedStepPose(
   a: { mode: string; tick?: number },
@@ -476,6 +503,7 @@ async function main(argv: string[]): Promise<number> {
             throw new Error("TN_ENGINE_PARITY_POSE: bridge did not publish an initial clock tick");
           }
           await session.bridge.advance(POSE_WAIT_TICKS);
+          const environment = await waitForEnvironmentBake(session);
           const world = await waitForWorld(session);
           const after = await readPose();
           if (
@@ -558,6 +586,7 @@ async function main(argv: string[]): Promise<number> {
                 },
                 visual,
                 world,
+                environment,
                 publishedDiagnostics: after.diagnostics,
                 observedErrorsAfterStartup: errors,
                 observedConsoleEntries: consoleEntries,

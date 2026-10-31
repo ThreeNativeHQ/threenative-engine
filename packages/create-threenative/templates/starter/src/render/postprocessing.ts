@@ -1,15 +1,12 @@
-import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
+import { type OutputRenderer, type TracedReflections, WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
-// This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
-// owns which stages run at which tier and records what each one measured. `WorldEnvironment` from
-// the core package builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
-// applied or refused **with a reason**, so a stage that silently no-op'd is never mistaken for
-// one you turned off.
+// This file wires two things together and decides nothing itself. `quality.ts` owns which stages
+// run at which tier and records what each one measured. Core's `WorldEnvironment` builds them and
+// prints `TN_WORLD_ENVIRONMENT`, naming every stage as applied or refused **with a reason**.
 //
-// To make the game cheaper or prettier everywhere, edit `quality.ts`. To force one tier for one
-// run — a desktop that is dropping frames, a capture you want to compare — pass it:
-// `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
+// To make the game cheaper or prettier everywhere, edit `quality.ts`. To force one tier for one run
+// (a slow desktop, a capture to compare), pass `setupPost(renderer, scene, camera, { tier: "low" })`.
 // `TN_QUALITY_TIER` names the tier that ran either way.
 import { type Camera, type DirectionalLight, FloatType, type Scene } from "three";
 import { LUTCubeLoader } from "three/addons/loaders/LUTCubeLoader.js";
@@ -73,6 +70,8 @@ export function setupPost(
      * rather than composed twice. Omit it and the chain starts from the beauty pass unchanged.
      */
     fog?: () => FogMedium | undefined;
+    /** `new TracedReflections(root)` once static meshes exist: chrome reflects the scene, not only the screen. */
+    reflectionTrace?: TracedReflections;
   } = {},
 ): IPostController {
   const policy = createAdaptiveQuality(environment, environment);
@@ -120,6 +119,7 @@ export function setupPost(
     });
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
+      reflectionTrace: environment.reflectionTrace,
       // Ahead of exposure and every stage, which is the only place a participating medium can go.
       baseColour: composed === undefined ? undefined : (scenePass) => composed.compose(scenePass),
     });
