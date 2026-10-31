@@ -106,6 +106,10 @@ export function defineTempNode(
   }
   Object.setPrototypeOf(TempNode.prototype, prototype);
   return {
+    // three r187 deprecated `TempNode` for its base class `Node`, and a game's node extends `Node`
+    // (src/nodes/core/TempNode.js:39). The shim class is that base here, so it answers both names.
+    // biome-ignore lint/style/useNamingConvention: three's export name, so a game imports `Node`.
+    Node: TempNode,
     TempNode,
     update(frame?: INodeFrame) {
       if (!frame?.renderer || frame.frameId === undefined) return;

@@ -662,7 +662,7 @@ const effects = new AudioBus({ camera });
 `class` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.
 
 ```ts
-export class AutoExposureNode extends TempNode<"float"> { … }
+export class AutoExposureNode extends Node<"float"> { … }
 ```
 
 - **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change · a white snowfield or a bright storm should not meter to middle grey, and the compensation changes with the weather

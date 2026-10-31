@@ -4,14 +4,13 @@
 import { type RenderTarget, Texture, Vector2 } from "three";
 import { float, ivec2, nodeObject, texture, textureLoad, uniform, vec4 } from "three/tsl";
 import {
-  type Node,
+  Node,
   type NodeBuilder,
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
-  TempNode,
 } from "three/webgpu";
 import {
   type IExposureSettings,
@@ -42,7 +41,7 @@ export function applyExposure(colour: Node<"vec4">, exposure: Node<"float">): No
 }
 
 /** Owns scratch targets only. Never draws the world or installs another output transform. */
-export class AutoExposureNode extends TempNode<"float"> {
+export class AutoExposureNode extends Node<"float"> {
   static get type(): string {
     return "AutoExposureNode";
   }

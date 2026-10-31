@@ -224,13 +224,14 @@ defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
 // three's QuadMesh over the engine Mesh (shared with the Wasm back end).
 export const QuadMesh = defineQuadMesh(globalThis);
 
-// three's TempNode (shared with the Wasm back end): the V8 TSL adapter reads a game node's engine node
+// three's node base (shared with the Wasm back end): the V8 TSL adapter reads a game node's engine node
 // under `threenative.tslNode`, and each top-level render runs the FRAME nodes' updateBefore first. An
-// engine node carries its methods itself; the adapter calls them on the receiver's engine node.
+// engine node carries its methods itself; the adapter calls them on the receiver's engine node. `Node` is
+// r187's name for it and `TempNode` the deprecated alias (r187 src/nodes/core/TempNode.js:39).
 const tslNode = Symbol.for("threenative.tslNode");
 const nodeMethods = Object.defineProperties({}, Object.getOwnPropertyDescriptors(globalThis.tsl.float(0)));
 const tempNodes = defineTempNode(nodeMethods, tslNode, (output) => (tslNode in output ? output[tslNode] : output));
-export const { TempNode } = tempNodes;
+export const { Node, TempNode } = tempNodes;
 // The game's startup render() runs before the player opens its renderer and draws no frame, so its nodes
 // update on the first render() of a drawn frame.
 let tempFrame = 0;

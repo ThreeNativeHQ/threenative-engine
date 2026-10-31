@@ -1,14 +1,13 @@
 import { HalfFloatType, LinearFilter, RenderTarget, Vector2 } from "three";
 import { Fn, Loop, float, nodeObject, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import {
-  type Node,
+  Node,
   type NodeBuilder,
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
-  TempNode,
   type TextureNode,
 } from "three/webgpu";
 
@@ -96,7 +95,7 @@ interface IStage {
 }
 
 /** Owns scratch targets only. Never draws the world or installs another output transform. */
-export class UnrealBloomNode extends TempNode<"vec3"> {
+export class UnrealBloomNode extends Node<"vec3"> {
   static get type(): string {
     return "UnrealBloomNode";
   }

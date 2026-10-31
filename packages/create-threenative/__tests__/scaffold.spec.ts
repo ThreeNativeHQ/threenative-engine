@@ -272,7 +272,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // then again on the merge carrying the WebGPU adapter-retention Three patch: the scaffolded
   // `patches/three@0.185.1.patch` was the only byte that moved on top of the exposure/fog tree, so
   // all thirteen trees moved again. Values below are the merged-tree measurement, not either side's.
-  // Recomputed 2026-10-30 (three 0.185.1 -> 0.187.0): the scaffolded `patches/three@0.187.0.patch`
+  // Recomputed 2026-10-30 (PRD-775): the six kits that ship the Unreal sky extend three's `Node` where r187
+// deprecated `TempNode`, so those six trees move; the ten without a gpuSky.ts keep their values.
+// Recomputed 2026-10-30 (three 0.185.1 -> 0.187.0): the scaffolded `patches/three@0.187.0.patch`
   // is again the only byte that moves on top of these trees — the r187 patch is a different file
   // with a different name, and every kit pins and copies it — so all sixteen trees move once more.
   // Recomputed on the PRD-478 merge into PR 473 (develop b12b257f1 + the runbook branch): the
@@ -317,7 +319,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
   // Re-pinned 2026-10-28 (owner chose sharp AA): core high tier is 4x MSAA with no camera motion blur;
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
-  "action-rpg": "b453338606767afe5ec266d127b7e6687ffc914e86878938b36b039c56880c91",
+  "action-rpg": "7069f47f6daebefd8c4be01dba98c0e0efe8064919c768c26019c08e45f2aaef",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -343,10 +345,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   adventure: "3114377ad3db663682ccee202741ce26963d2c4822ccc4ab9c86da15f58e11f9",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "5033dffe34745d519352eadd691de6c9582025c36ea333bb9343c34c0297dec9",
-  minimal: "b9d07aab9febd9a08c34a3d57825f88e910c49f4becf640714f6b871188e63bd",
+  minimal: "6e7e8fd65d943e33c9c1414b65717e5d8c3b7d99cdc16509e3603d2e6744effa",
   platformer: "57422ad00f62e30c42cc04befc0bc1801efa863d2233b885ecfa551491869ce2",
   puzzle: "a098cf9bfe0ce5118d085bb4397c31c663a0d0c3b4765c2b589978d1531e329a",
-  racing: "a590752211d54b6aca02a68a3d28d0039dcb1f67b91170ed8886710e4c55bfb7",
+  racing: "f3728e7c96560c987ed0a1c2489bf3d5483850851cfacde47afe12d7e7651cd3",
   rain: "1c5402b286d666604d354968abf7e74f587b2fb251a29352c2e0f5d90e0beea0",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
@@ -360,11 +362,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "ef563d91cfced486787fce286924379546f0ac544ed89c61999b532c41a67072",
-  runner: "c60af65256852f9fdd7205f139ed7b80ec9d11b56d68ccaca234c24489c06ce3",
+  runner: "5e813da6d110925b01d650ddd80f6b03b2d8f2d1405c5f496e67939f8a9c04f2",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "6d9d1fb3a93deb84dc753ef2fa67dc3a079434acc830c256948880009faea5eb",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "dbffa4cc3a72d450d0053f887e55bfb0d158fcf4a61a78b83423a40581565fd1",
+  shooter: "c7f94d33779660f3c25488ecf783f8d346407adc8a412efde606929a34f80e51",
   snow: "c2ccc14a026e3d2d75a021a3f433d68e7db675236be456560b70596e9e6b2e54",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
@@ -374,7 +376,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source alone moves. Measured by this test.
   // Re-pinned 2026-10-31 after merging develop's PRD-633 atmosphere-sky kits onto the 0.187 patch.
-  starter: "4a1d511c28ebf39c5940bda36ec4baeaf4470440fab469b8f2f0b6ff303ea62d",
+  starter: "d5bbbada674267493edb4cc247bc91b5dbf7defe2235040de5eb28d81a485e06",
   "tower-defense": "aa233cb67544c74d363cef4a00d47d7cea5c9ae093f04b231284a2f8574b0b98",
 };
 

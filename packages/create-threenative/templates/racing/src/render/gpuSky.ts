@@ -36,14 +36,13 @@ import {
   vec4,
 } from "three/tsl";
 import {
-  type Node,
+  Node,
   type NodeBuilder,
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
-  TempNode,
 } from "three/webgpu";
 import {
   BOTTOM_KM,
@@ -259,7 +258,7 @@ function cloudNoise() {
 const skyDisc = uniform(1);
 
 /** Cached passes: only texture reads and the analytic disc run at screen resolution. */
-class GpuSkyNode extends TempNode<"vec3"> {
+class GpuSkyNode extends Node<"vec3"> {
   static get type(): string {
     return "GpuSkyNode";
   }

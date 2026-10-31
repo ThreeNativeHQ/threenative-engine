@@ -22,14 +22,13 @@ import {
   vec4,
 } from "three/tsl";
 import {
-  type Node,
+  Node,
   type NodeBuilder,
   type NodeFrame,
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
   RendererUtils,
-  TempNode,
   type TextureNode,
 } from "three/webgpu";
 import { exposureMeter, exposureSettings } from "./exposure-settings.js";
@@ -124,7 +123,7 @@ function mirror(u: Node<"float">): Node<"float"> {
 }
 
 /** Owns scratch targets only. Never draws the world or installs another output transform. */
-export class LocalExposureNode extends TempNode<"float"> {
+export class LocalExposureNode extends Node<"float"> {
   static get type(): string {
     return "LocalExposureNode";
   }
