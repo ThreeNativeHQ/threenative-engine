@@ -8,18 +8,11 @@ import { TEMPLATE_ROOT } from "../../../test-support/templates.js";
  * PRD-747: the starter kits share one meter, `template-assets/kitExposure.ts`, at 0 EV (key 0.18)
  * instead of core's Unreal +1 EV. Kits with their own owner-approved exposure keep it.
  */
-const SHARED = [
-  "adventure",
-  "collectathon",
-  "kart",
-  "platformer",
-  "racing",
-  "runner",
-  "sailing",
-  "starter",
-];
+const SHARED = ["adventure", "collectathon", "kart", "platformer", "racing", "runner", "sailing"];
 const OWN_KEY: Readonly<Record<string, number>> = {
   minimal: 0.36,
+  // Owner, 2026-10-31: "starter back to Unreal". The starter is the Unreal calibration template.
+  starter: 0.36,
   rain: 0.36,
   shooter: 0.14,
   snow: 0.36,
