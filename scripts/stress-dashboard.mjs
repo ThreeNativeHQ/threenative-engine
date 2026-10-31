@@ -38,6 +38,13 @@ const armOf = (row) =>
   flagsOf(row.variant)
     .find((flag) => flag.startsWith("arm="))
     ?.slice(4);
+/** The arm family of a ramp row: `arm=tn-clamp-l4` is `tn-clamp`. An arm without a `-l<N>` suffix has none. */
+export const familyOf = (variant) =>
+  /^(.+)-l\d+$/u.exec(
+    flagsOf(variant)
+      .find((flag) => flag.startsWith("arm="))
+      ?.slice(4) ?? "",
+  )?.[1] ?? "";
 const num = (value, digits = 2) =>
   typeof value === "number" && Number.isFinite(value)
     ? String(Math.round(value * 10 ** digits) / 10 ** digits)
@@ -75,11 +82,25 @@ export function rampCells(rows, { loadVoid, shadowOf }) {
   const loads = [...new Set([...RAMP, ...valid.map((row) => loadOf(row.variant))])].sort(
     (a, b) => a - b,
   );
-  const keys = [...new Set(valid.map((row) => `${row.engine}|${shadowOf(row)}`))];
+  // An engine with two or more arm families (`tn`, `tn-clamp`) gets one series per family, so a cell never
+  // mixes two builds. With one family or none, its rows stay one series (`stack3` and `tn-l4` are one build line).
+  const families = new Map();
+  for (const row of valid) {
+    const group = `${row.engine}|${shadowOf(row)}`;
+    families.set(
+      group,
+      new Set([...(families.get(group) ?? []), familyOf(row.variant)].filter(Boolean)),
+    );
+  }
+  const familyKey = (row) => {
+    const group = `${row.engine}|${shadowOf(row)}`;
+    return families.get(group).size > 1 ? `${group}|${familyOf(row.variant)}` : `${group}|`;
+  };
+  const keys = [...new Set(valid.map(familyKey))];
   return keys
     .map((key) => {
-      const [engine, shadow] = key.split("|");
-      const mine = valid.filter((row) => row.engine === engine && shadowOf(row) === shadow);
+      const [engine, shadow, family] = key.split("|");
+      const mine = valid.filter((row) => familyKey(row) === key);
       const cells = Object.fromEntries(
         PASSES.map((pass) => [
           pass,
@@ -89,7 +110,7 @@ export function rampCells(rows, { loadVoid, shadowOf }) {
           }),
         ]),
       );
-      return { key, engine, shadow, cells };
+      return { key, engine, shadow, family, cells };
     })
     .sort((a, b) => Object.keys(SHORT).indexOf(a.engine) - Object.keys(SHORT).indexOf(b.engine));
 }
@@ -110,8 +131,8 @@ export function breakPoint(cells, limit) {
 }
 
 const seriesName = (s) =>
-  `${SHORT[s.engine] ?? s.engine}${s.engine === "three-vanilla" ? "" : ` · ${SHADOW[s.shadow]}`}`;
-const swatch = (index) => `var(--s${(index % 3) + 1})`;
+  `${SHORT[s.engine] ?? s.engine}${s.engine === "three-vanilla" ? "" : ` · ${SHADOW[s.shadow]}`}${s.family ? ` · ${s.family}` : ""}`;
+const swatch = (index) => `var(--s${(index % 5) + 1})`;
 const fpsOf = (ms) => `${Math.round(1000 / ms)} fps`;
 
 /** Where p95 stands on the ladder: the tightest rung it meets, or null. */
@@ -493,8 +514,8 @@ const body=grid.querySelector('tbody');
 `;
 
 const STYLE = `
-:root{--bg:#f6f6f2;--fg:#1d1d1b;--dim:#6b6b66;--card:#fff;--line:#d9d9d2;--accent:#2f6fed;--ok:#1a8f4c;--miss:#c4452d;--goal:#b7791f;--ok-bg:#e4f4ea;--ok-ink:#11693a;--miss-bg:#fbe9e5;--miss-ink:#a63220;--warn-bg:#fbf1dc;--s1:#2f6fed;--s2:#8b5cf6;--s3:#d9822b}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#141413;--fg:#ececE6;--dim:#9b9b94;--card:#1f1f1d;--line:#34342f;--accent:#6c9bff;--ok:#4cc380;--miss:#ef7a63;--goal:#e2b04a;--ok-bg:#1c3326;--ok-ink:#7fdca6;--miss-bg:#3a2420;--miss-ink:#ff9c88;--warn-bg:#3a3019;--s1:#6c9bff;--s2:#b69cff;--s3:#f0a85a}}
+:root{--bg:#f6f6f2;--fg:#1d1d1b;--dim:#6b6b66;--card:#fff;--line:#d9d9d2;--accent:#2f6fed;--ok:#1a8f4c;--miss:#c4452d;--goal:#b7791f;--ok-bg:#e4f4ea;--ok-ink:#11693a;--miss-bg:#fbe9e5;--miss-ink:#a63220;--warn-bg:#fbf1dc;--s1:#2f6fed;--s2:#8b5cf6;--s3:#d9822b;--s4:#0f9aa8;--s5:#c0397b}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#141413;--fg:#ececE6;--dim:#9b9b94;--card:#1f1f1d;--line:#34342f;--accent:#6c9bff;--ok:#4cc380;--miss:#ef7a63;--goal:#e2b04a;--ok-bg:#1c3326;--ok-ink:#7fdca6;--miss-bg:#3a2420;--miss-ink:#ff9c88;--warn-bg:#3a3019;--s1:#6c9bff;--s2:#b69cff;--s3:#f0a85a;--s4:#45c6d3;--s5:#f080b4}}
 body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.4 system-ui,sans-serif}
 main h2{margin:14px 0 6px;font-size:13px;font-weight:600}main h3{margin:10px 0 4px;font-size:12px;font-weight:600}
 main>nav.tabs{max-width:1240px;margin:0 auto;padding:10px 16px 0;box-sizing:border-box}

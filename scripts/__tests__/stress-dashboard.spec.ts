@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const { breakPoint, loadOf, rampCells } = await import(
+const { breakPoint, familyOf, loadOf, rampCells } = await import(
   new URL("../stress-dashboard.mjs", import.meta.url).href
 );
 
@@ -65,5 +65,43 @@ describe("stress dashboard: load ramp", () => {
       [4, 3],
       [8, null],
     ]);
+  });
+});
+
+describe("stress dashboard: arm families", () => {
+  it("strips a trailing -l<N> from the arm", () => {
+    expect(familyOf("plainShadow&load=4&arm=tn-l4&uncapped")).toBe("tn");
+    expect(familyOf("plainShadow&load=8&arm=tn-clamp-l8")).toBe("tn-clamp");
+    expect(familyOf("load=4&arm=vanilla-l4")).toBe("vanilla");
+    // No arm, or an arm without a ramp suffix, has no family.
+    expect(familyOf("stress")).toBe("");
+    expect(familyOf("arm=stack3")).toBe("");
+    expect(familyOf("arm=load")).toBe("");
+  });
+
+  it("splits a series by family only when an engine has two or more families", () => {
+    const row = (id: number, variant: string, p95: number) => ({
+      id,
+      engine: "threenative-wasm",
+      variant,
+      decision: "measure",
+      pass: "vsync",
+      shadow: "plain",
+      build: { sha256: "4fb0aba5a921" },
+      load: { peak: 3 },
+      metrics: { presentedP95Ms: p95 },
+    });
+    const ctx = { loadVoid: 6, shadowOf: (r: { shadow: string }) => r.shadow };
+    const split = rampCells(
+      [row(1, "load=2&arm=tn-l2", 20), row(2, "load=2&arm=tn-clamp-l2", 18)],
+      ctx,
+    );
+    expect(split.map((s: { family: string }) => s.family).sort()).toEqual(["tn", "tn-clamp"]);
+    const at2 = (s: { cells: { vsync: { load: number; row?: { id: number } }[] } }) =>
+      s.cells.vsync.find((c) => c.load === 2)?.row?.id;
+    expect(split.map(at2).sort()).toEqual([1, 2]);
+    // One family (or none) keeps today's single series.
+    const one = rampCells([row(1, "load=2&arm=tn-l2", 20), row(2, "stress", 17)], ctx);
+    expect(one).toHaveLength(1);
   });
 });
