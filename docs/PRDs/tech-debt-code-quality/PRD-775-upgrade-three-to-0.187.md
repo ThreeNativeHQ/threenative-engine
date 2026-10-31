@@ -1,6 +1,6 @@
 # PRD-775 — Upgrade three.js from 0.185.1 to 0.187.0
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (Phase 1 done)
 **Priority:** P2 — planned dependency upgrade; every phase box is open and no release blocker is recorded.
 **Complexity:** 6 (MEDIUM) — 11+ implementation files (3), engine patch rebase that ships to every generated game (+2 crosses the `@threenative/core` release boundary), external package (+1); risk override: none.
 **Owner:** João (owner), agent executor
@@ -80,12 +80,15 @@ flowchart LR
 
 #### Phase 1: Rebased patch installs everywhere
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/patches/three@0.187.0.patch` (new), `packages/core/patches/three@0.185.1*.patch` (deleted), `packages/core/scripts/apply-three-patch.mjs`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `packages/create-threenative/templates/*/package.json`, `scripts/make-sandbox.ts`, `packages/*/package.json`.
 
-- [ ] AC-1: `pnpm install --frozen-lockfile` resolves only `three@0.187.0` and `@types/three@0.187.0`, applies the new patch, and no pin file names 0.185. proof: `pnpm install --frozen-lockfile && pnpm ls three -r --depth 0 && rg -n '0\.185\.[0-9]' pnpm-workspace.yaml packages/*/package.json packages/create-threenative/templates/*/package.json scripts/make-sandbox.ts packages/core/scripts/apply-three-patch.mjs`
-- [ ] AC-2: Every one of the 162 source hunks is kept, ported or dropped with a reason in the PR body, and one marker per kept hunk exists in both `src/` and `build/` of the installed three, also after `node_modules/three` is deleted and reinstalled. proof: marker `grep` script over `node_modules/three/{src,build}`
-- [ ] AC-3: The consumer installer applies the new patch to a packed core in a clean project, is idempotent, and refuses a tampered file. proof: `pnpm exec vitest run packages/core/__tests__/three-patch-upgrade.spec.ts packages/core/__tests__/packaging.spec.ts`
+- [x] AC-1: `pnpm install --frozen-lockfile` resolves only `three@0.187.0` and `@types/three@0.187.0`, applies the new patch, and no pin file names 0.185. proof: `pnpm install --frozen-lockfile && pnpm ls three -r --depth 0 && rg -n '0\.185\.[0-9]' pnpm-workspace.yaml packages/*/package.json packages/create-threenative/templates/*/package.json scripts/make-sandbox.ts packages/core/scripts/apply-three-patch.mjs`
+  Result (45f8d12fa): frozen install exit 0; 42 importers, versions `['0.187.0']`; pin `rg` exit 1 (no match); no `0.185` entry left in `pnpm-lock.yaml`. Published `threenative-asset-mcp` pulls `@threenative/core@0.2.0` and `@threenative/playtest@0.3.2`, which pin 0.185.1, so the root `pnpm.overrides` sets `three: catalog:`.
+- [x] AC-2: Every one of the 162 source hunks is kept, ported or dropped with a reason in the PR body, and one marker per kept hunk exists in both `src/` and `build/` of the installed three, also after `node_modules/three` is deleted and reinstalled. proof: marker `grep` script over `node_modules/three/{src,build}`
+  Result: the per-hunk ledger has 153 rows (adjacent hunks share a row): 82 kept, 33 ported, 38 dropped with an upstream or obsolete reason (table in the PR body); 4 drops were reversed after review. 115 kept/ported markers: all found in installed `src/` before and after deleting the store copy and reinstalling frozen (one marker hand-checked because its `||` split the ledger cell). 110 also match a bundle verbatim; the other 5 are bundler rewrites (renamed `_cacheKeyValues$1`, stripped `export`, merged import, dead `if ( false )` removed). r187 moved the nodes into `build/three.tsl.js`, which the patch now covers. Stock r187 rollup build == npm `build/` byte for byte (6 files).
+- [x] AC-3: The consumer installer applies the new patch to a packed core in a clean project, is idempotent, and refuses a tampered file. proof: `pnpm exec vitest run packages/core/__tests__/three-patch-upgrade.spec.ts packages/core/__tests__/packaging.spec.ts`
+  Result: 22/22 pass. Red first: `TN_THREE_PATCH_INVALID: ambiguous hunk location` on two identical generated blocks in `build/three.tsl.js`; fixed in `apply-three-patch.mjs` (classification shifts later hunks only by hunks already patched on disk).
 
 #### Phase 2: Code compiles and the native engine matches
 
@@ -122,6 +125,9 @@ flowchart LR
 
 - 2026-10-30 (owner): target the latest npm release, 0.187.0. Branch from `origin/develop` at `6bf21eab2`.
 - 2026-10-30 (agent): go straight to 0.187.0, not through 0.186.x. The rebase work is the same and one board run costs less than two. Fallback is 0.186.1.
+- 2026-10-30 (agent): rebase by 3-way merge (stock 0.185.1 -> patched, cherry-picked onto stock 0.187.0), then a per-hunk intent review by two DeepSeek arms and a fresh Sonnet reviewer. Its 3 high findings were fixed: PMREM async face-5 mipmaps, settled-object uploads, BatchedMesh `null` previous matrices.
+- 2026-10-30 (agent): keep the 0.185.1 patch's "every draw step runs" in `Renderer._renderObjectDirect` instead of r187's `RenderObjectRefreshType` gate. The settled skips live inside each step, and the gate skipped a settled InstancedMesh write. Keep the PRD-566 morph-layout pipeline-key term too: r187's stage id likely covers it, but when unsure the fix stays.
+- 2026-10-30 (agent): r186 removed `PCFSoftShadowMap` for WebGPU (falls back to PCF with a warning) and made the GTAO distance knobs no-ops; r187 rebuilt PMREM. These are threejs-path look changes for the visual judge (AC-7), not code to restore.
 - 2026-10-30 (agent): drop the PRD-269 predecessor migration. It migrates old patch states of 0.185.1, and a game on 0.187.0 starts from stock files.
 
 ## Self-verification steps (run in order)
