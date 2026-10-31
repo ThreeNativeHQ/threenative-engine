@@ -9,7 +9,7 @@
 
 namespace tn::engine::shader {
 
-/** sRGBTransferOETF from three's ColorSpaceFunctions: linear vec3 to sRGB-encoded vec3. */
+/** sRGBTransferOETF as three's shipped build writes it: linear vec3 to sRGB-encoded vec3. */
 ExprId srgbTransferOetf(Program& p, ExprId linear);
 
 /** The output transform at an authored graph position. */

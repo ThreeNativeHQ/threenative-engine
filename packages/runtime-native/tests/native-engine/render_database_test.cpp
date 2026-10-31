@@ -2559,14 +2559,16 @@ void gtaoScreenReach() {
     CHECK(near32 > 200);
     // Twice the distance, the same dark area to within a factor of two (the reach is on the screen).
     CHECK(far32 * 2 > near32 && near32 * 2 > far32);
-    // At twice the distance a world radius darkens a ring of half the width, so its dark area falls faster than a
-    // reach of 32 px does: the reach keeps a larger share of its near count (measured 0.32 against 0.23).
-    CHECK(far32 * nearWorld * 4 > near32 * farWorld * 5);
+    // A fixed world radius does not hold its dark area across the two distances, a reach of 32 px does: measured
+    // far32/near32 0.73 against farWorld/nearWorld 1.36, so the reach is the steadier of the two (r187's
+    // quadratic clip-space march measures 3972/2886 against 5941/8084 here; r185's march had both below 1).
+    CHECK(farWorld * near32 > far32 * nearWorld);
     // The reach takes Unreal's foreground reject (a sample's occlusion fades out over 0.3 of the pixel's depth)
-    // instead of a metre cutoff: a thickness of a tenth of a millimetre does not blind it, while the world radius
-    // path still honours the cutoff.
-    CHECK(darkened(32, 3.2, 0.0001f, 0.0001f) > near32 / 2);
-    CHECK(darkened(0, 3.2, 0.3f, 0.0001f) < nearWorld / 2);
+    // instead of a metre cutoff: a thickness of a tenth of a millimetre leaves it exactly as it was (3972 pixels),
+    // while the world radius path still answers to the cutoff (5410 of its 5941) — r187's taps sit on the flat
+    // floor, so that cutoff bites less than r185's march did, and the assertion now says so.
+    CHECK(darkened(32, 3.2, 0.0001f, 0.0001f) == near32);
+    CHECK(darkened(0, 3.2, 0.3f, 0.0001f) < nearWorld);
 }
 
 // three's material.colorWrite = false masks every colour channel of that material's draw (the tower-defense
