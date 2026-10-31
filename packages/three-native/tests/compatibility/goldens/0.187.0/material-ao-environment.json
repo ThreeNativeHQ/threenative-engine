@@ -8,13 +8,13 @@
       "index": 0,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:e9c5e3331b6ac3c15e97a237993f9e07260c236014a4484d63b5411372427706",
-      "decimal": "e9c5e3331b6ac3c15e97a237993f9e07260c236014a4484d63b5411372427706"
+      "value": "s:0798b69393d58f4cf3be700c52a402f61f4ba678c24d0633e00d7c64c7c2aa39",
+      "decimal": "0798b69393d58f4cf3be700c52a402f61f4ba678c24d0633e00d7c64c7c2aa39"
     }
   ],
   "render": {
     "png": "material-ao-environment.png",
-    "pngSha256": "e9c5e3331b6ac3c15e97a237993f9e07260c236014a4484d63b5411372427706",
+    "pngSha256": "0798b69393d58f4cf3be700c52a402f61f4ba678c24d0633e00d7c64c7c2aa39",
     "width": 300,
     "height": 200,
     "adapter": {

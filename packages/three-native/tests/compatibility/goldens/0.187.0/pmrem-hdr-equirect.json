@@ -16,13 +16,13 @@
       "index": 1,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:66ec299284c382936e3a44c08b66145d74fb192d186f2f747644e9769037fa8a",
-      "decimal": "66ec299284c382936e3a44c08b66145d74fb192d186f2f747644e9769037fa8a"
+      "value": "s:e7ce5615b15fedbbf6b578fe5ec7d3d6118965439efa8042b6acbf3bb8b379d8",
+      "decimal": "e7ce5615b15fedbbf6b578fe5ec7d3d6118965439efa8042b6acbf3bb8b379d8"
     }
   ],
   "render": {
     "png": "pmrem-hdr-equirect.png",
-    "pngSha256": "66ec299284c382936e3a44c08b66145d74fb192d186f2f747644e9769037fa8a",
+    "pngSha256": "e7ce5615b15fedbbf6b578fe5ec7d3d6118965439efa8042b6acbf3bb8b379d8",
     "width": 256,
     "height": 128,
     "adapter": {

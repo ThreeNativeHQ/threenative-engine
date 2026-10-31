@@ -8,13 +8,13 @@
       "index": 0,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:3a37312ddad7a0504d565c7b241e97b3585a2e2d46f28c70b6794d7c13898aac",
-      "decimal": "3a37312ddad7a0504d565c7b241e97b3585a2e2d46f28c70b6794d7c13898aac"
+      "value": "s:17df0ea949633bd76ede19694a0bfbf487223bd07630f55d6c8fedbbccc35316",
+      "decimal": "17df0ea949633bd76ede19694a0bfbf487223bd07630f55d6c8fedbbccc35316"
     }
   ],
   "render": {
     "png": "pbr-grid-envmap.png",
-    "pngSha256": "3a37312ddad7a0504d565c7b241e97b3585a2e2d46f28c70b6794d7c13898aac",
+    "pngSha256": "17df0ea949633bd76ede19694a0bfbf487223bd07630f55d6c8fedbbccc35316",
     "width": 320,
     "height": 320,
     "adapter": {
