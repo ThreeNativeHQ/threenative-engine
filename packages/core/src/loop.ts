@@ -66,6 +66,13 @@ export interface IFixedStepLoopOptions {
   readonly interpolation?: PhysicsInterpolation;
   readonly step?: number;
   readonly maxSteps?: number;
+  /**
+   * The most wall time one frame adds to the simulation, in seconds. Default 1/20, after Unreal's
+   * `MaxPhysicsDeltaTime` (1/30 in UE 5.8.3: Engine/Source/Runtime/Engine/Private/PhysicsEngine/PhysicsSettings.cpp:22,
+   * applied per frame in PhysLevel.cpp:212). A slower frame slows the simulation instead of running
+   * extra whole updates to catch up. `Infinity` turns the clamp off; `maxSteps` still bounds a frame.
+   */
+  readonly maxPhysicsDeltaTime?: number;
   /** Collect per-frame render samples for diagnostics consumers. Default false. */
   readonly collectMetrics?: boolean;
   /** Runs once per presented frame, before any fixed-step simulation dispatches. */
@@ -152,9 +159,17 @@ function aggregatePassesByKind(passes: readonly IRenderPassSample[]): IRenderPas
  */
 const FROZEN_SETTLE_STEPS = 60;
 
+/**
+ * The most simulated time one frame may add. Unreal clamps at 1/30 s (`MaxPhysicsDeltaTime`); 1/20 s keeps
+ * real time for a 30 fps frame that lands at 34 ms (physics/__tests__/determinism.spec.ts holds 30 and
+ * 144 fps to one result) and still bounds an overloaded 60 Hz frame at 3 ticks instead of 5.
+ */
+const MAX_PHYSICS_DELTA_SECONDS = 1 / 20;
+
 export class FixedStepLoop {
   readonly step: number;
   readonly maxSteps: number;
+  readonly maxPhysicsDeltaTime: number;
   #onBeginFrame: (() => void) | undefined;
   #onUpdate: (dt: number) => void;
   #onAfterPhysics: (dt: number) => void;
@@ -204,6 +219,13 @@ export class FixedStepLoop {
       );
     }
     this.maxSteps = maxSteps;
+    const maxPhysicsDeltaTime = options.maxPhysicsDeltaTime ?? MAX_PHYSICS_DELTA_SECONDS;
+    if (Number.isNaN(maxPhysicsDeltaTime) || maxPhysicsDeltaTime <= 0) {
+      throw new Error(
+        `FixedStepLoop maxPhysicsDeltaTime must be seconds greater than zero, received ${String(options.maxPhysicsDeltaTime)}.`,
+      );
+    }
+    this.maxPhysicsDeltaTime = maxPhysicsDeltaTime;
     this.#collectMetrics = options.collectMetrics ?? false;
     this.#budget = options.budget;
     this.#spans = options.spans;
@@ -372,7 +394,9 @@ export class FixedStepLoop {
     }
     const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
     this.#lastTime = Math.max(this.#lastTime ?? now, now);
-    this.#accumulator += elapsed;
+    // An overloaded frame (the stress lab at load 4 drew at 12 fps) ran five whole game updates per
+    // frame to catch up, so the next frame was slower still; Unreal clamps instead.
+    this.#accumulator += Math.min(elapsed, this.maxPhysicsDeltaTime);
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
       this.#interpolation?.beginTick();
