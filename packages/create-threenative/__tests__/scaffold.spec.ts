@@ -312,7 +312,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-28 (PR #580 merges PR #574 c71b3f5cf): the PRD-750 scaffold text on top of the base kits.
   // Re-pinned 2026-10-28 (owner chose sharp AA): core high tier is 4x MSAA with no camera motion blur;
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
-  "action-rpg": "19bfc2e0403a622445cfa75e9c4c1066cb128fa6450dc95920971bde58a86b53",
+  "action-rpg": "e4ea9512ec11a89139f8699cc212fdf8b3f3e1baf7a9eac1c2009d66e115538d",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -338,10 +338,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   adventure: "c6aae31155fd59de00ef657605f2c0531463ae6a6dbecb6d11a80a97764050d3",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "b0a329ed75be095f598eba909cb7251bdde2cc3cf87528545f4e4b8badc3eb78",
-  minimal: "29b3b155b4e1853f36dfaa9788840e4d817eeef58aa8e614aec866b3a2c51725",
+  minimal: "a3090ac724f564a7d5f57f30773183ce75fffe3c7ada18bbabdf72beff8f966a",
   platformer: "15ab7cf6a86ff6d0b2592db54a3c6cb5542e779156de558dc56e15199b321613",
   puzzle: "648efb3159457ee30489d9be5c038d66d9c26f3c04aee072086ba93cf28f810b",
-  racing: "b5b7aa952677a54054067800ff5d9a0c429329fa3d799619714880cedbddde23",
+  racing: "b7f21d1c55ce087483ccd168c3173eb5f67e25893657e9dfa6c39188229168ed",
   rain: "2a239cbab925f6ddd0d9db77072155421aabae65daeeae61d093271f8b5fb9e0",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
@@ -355,18 +355,18 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "23d4b8c260e33997fd9f8d76b18ddf4c88b33b33ae41b0d2ba1f41f7bad85397",
-  runner: "3b4380c6a67eba6ddc6c4727ae2c7d39c440e767cd7025e6eb30f21cb0f3fd51",
+  runner: "b1983570ad5dafdfa86ed2e635bb50b3ee3aec5aed80742268d90cc05c767a0c",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "786c5c6abd5247c45003cc5418fed74f28364445abf6740562b915a164fa987f",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "5b872abb262a2e40d14e5154016d350c7e2898f838d8dad79258babd41a3d1f1",
+  shooter: "158fd02c56eda3cd00ad22dfc44c5f96c8e002def3a6a9cd403dfd80b35b40a8",
   snow: "8e4aadecb72500aa523be84c3fb5a5ef901ea60adc2912d7c661f74f05d40db3",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "ec35b46711ae9e8c4fd81f73ef456ee7e0cebea52221eca81420226f4343a91c",
+  starter: "86b0dc23b2fb26e0bbd6ace49c6ef0785aa8fcdc341b57b504b706e357eb23e8",
   "tower-defense": "7eaff3194935b98c32b84adadc0fe90f9ccff3cd80dbee1175f3994a4b5b9dfd",
 };
 

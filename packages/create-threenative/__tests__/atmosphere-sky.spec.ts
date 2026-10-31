@@ -21,6 +21,7 @@ function row(texture: DataTexture, y: number): number[] {
 describe("starter atmosphere sky", () => {
   afterEach(() => {
     SKY_OPTIONS.sky = "atmosphere";
+    SKY_OPTIONS.ground = true;
     SUN_DIRECTION.copy(defaultSun);
   });
 
@@ -46,6 +47,13 @@ describe("starter atmosphere sky", () => {
     const fog = (scene.fog as FogExp2).color;
     expect(fog.b).toBeGreaterThan(fog.r);
     expect(scene.backgroundNode).not.toBeNull();
+  });
+
+  it("draws Unreal's dark nadir when the game turns the ground stand-in off", () => {
+    SKY_OPTIONS.ground = false;
+    const scene = new Scene();
+    setupSky(scene, undefined, false, true, false);
+    expect(Math.max(...row(scene.environment as DataTexture, 0))).toBeLessThan(8);
   });
 
   it("tints the sun by the air it crosses: pale yellow high, orange at 4 degrees", () => {

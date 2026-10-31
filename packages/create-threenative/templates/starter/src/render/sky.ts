@@ -22,9 +22,12 @@ import { createGpuSky } from "./gpuSky.js";
 import { HEIGHT_FOG, type HeightFogParams, heightFogDepth, heightFogNode } from "./heightFog.js";
 import { palette } from "./palette.js";
 
-export const SKY_OPTIONS: { sky: "atmosphere" | "photo"; clouds: boolean } = {
+export const SKY_OPTIONS: { sky: "atmosphere" | "photo"; clouds: boolean; ground: boolean } = {
   sky: "atmosphere",
   clouds: true,
+  // The sunlit ground below the horizon stands in for Unreal's Lumen floor bounce: it lifts shadow
+  // sides and a mirror reflects it. Set false when the game adds its own global illumination.
+  ground: true,
 };
 
 /** Unit vector toward the sun: 47.9° up. Move it and the sky, the sun colour and the fog follow. */
@@ -98,7 +101,14 @@ export function setupSky(
   const fog = new FogExp2(0xffffff, 0);
   scene.fog = fog;
   scene.fogNode = heightFogNode(fog, { ...ATMOSPHERE_FOG }, SUN_DIRECTION);
-  const { node, environment } = createGpuSky(scene, SUN_DIRECTION, fogged, clouds, ATMOSPHERE_FOG);
+  const { node, environment } = createGpuSky(
+    scene,
+    SUN_DIRECTION,
+    fogged,
+    clouds,
+    ATMOSPHERE_FOG,
+    SKY_OPTIONS.ground,
+  );
   environment.mapping = EquirectangularReflectionMapping;
   environment.colorSpace = SRGBColorSpace;
   // The analytic sky with its sun disc; a software adapter draws the 64 x 32 bake instead, with no
