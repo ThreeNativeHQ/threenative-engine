@@ -41,12 +41,16 @@ export function readAttemptJobs(
       pages = JSON.parse(response);
     } catch (error) {
       const stderr = String(error.stderr ?? "");
+      // A read past the 30 s timeout is a transport outage too: the Windows leg of run 41129808033 lost its
+      // receipt (and the coverage receipt and ci-required behind it) to one `spawnSync gh ETIMEDOUT`.
+      const timedOut = error.code === "ETIMEDOUT";
       if (
         attempt === MAX_ATTEMPTS - 1 ||
-        error.status !== 1 ||
-        error.signal ||
-        !/error connecting to api\.github\.com|HTTP (?:500|502|503|504)\b/iu.test(stderr) ||
-        /HTTP (?:401|403|404|429)\b/iu.test(stderr)
+        (!timedOut &&
+          (error.status !== 1 ||
+            error.signal ||
+            !/error connecting to api\.github\.com|HTTP (?:500|502|503|504)\b/iu.test(stderr) ||
+            /HTTP (?:401|403|404|429)\b/iu.test(stderr)))
       )
         throw error;
       // Retry only the same read endpoint after 1, 2, 4 ... 64 seconds; no stale page, receipt or permission fallback.

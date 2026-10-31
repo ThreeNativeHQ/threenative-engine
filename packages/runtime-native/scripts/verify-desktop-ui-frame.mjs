@@ -24,7 +24,9 @@
  *    resource series rather than from a marker that could have been emitted before it;
  * 5. `TN_UI_HIT_REGIONS` published the page's own rectangles — drawn is not routed;
  * 6. the `ui` phase exists in `TN_FRAME_BUDGET` and is under the bound PRD-393 accepted it at
- *    (2.0 ms p95, AC-6) — the same number, not a second one.
+ *    (2.0 ms p95, AC-6) — the same number, not a second one — judged on the steady-state windows
+ *    that carried enough samples to have a p95, never on the partial window a run happens to end
+ *    in.
  *
  * Platform contract. On Linux the UI *is* a texture in the frame, so 2, 3 and 5 are all assertions
  * about the frame itself. Windows and macOS still attach a child web view that DWM and Quartz
@@ -45,7 +47,6 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { build as esbuild } from "esbuild";
 import { PNG } from "pngjs";
 
 import { inspectScreenshot } from "./verify-desktop-core.mjs";
@@ -83,6 +84,18 @@ const UI_PAGE_COLOR_TOLERANCE = 2;
  * samples behind it fails instead of comparing zero to a ceiling.
  */
 const UI_PHASE_P95_MS = 2.0;
+/**
+ * `ui` samples a window must carry before its p95 is a tail rather than its own worst frame.
+ *
+ * The engine ranks a percentile at `ceil(fraction * samples)` (`Ring.summarize`), so an 11-sample
+ * window's "p95" *is* its 11th frame: one slow frame on a shared runner takes it over any bound.
+ * CI run 41129808033 failed this gate at `3.13 ms at p95 over 11 frame(s)` on a tree whose pull
+ * request run passed — the window was where the runner's pace put the run's last boundary, not a
+ * regression. At 120 samples the p95 is the seventh-worst frame, which one frame cannot own.
+ * A run that collected fewer samples than this has measured no p95, and refuses in its own name
+ * rather than judging the worst frame it happened to see.
+ */
+const UI_PHASE_MIN_SAMPLES = 120;
 /**
  * Wall clock between the runner and every fixed-step advance it asks the host for.
  *
@@ -146,6 +159,9 @@ async function buildUiPage(destination) {
   }
   rmSync(destination, { force: true, recursive: true });
   mkdirSync(destination, { recursive: true });
+  // Loaded here rather than at the top: the bundle is one step of the run, and a judgement this
+  // file exports must be importable without a bundler (its spec imports it).
+  const { build: esbuild } = await import("esbuild");
   await esbuild({
     bundle: true,
     entryPoints: [uiEntry],
@@ -380,8 +396,18 @@ function requireHitRegions(lines, gameRegions) {
   return { count: last.count, reports: markers.length };
 }
 
-/** 6. The composite's own cost, as the run reported it. */
-function requireUiPhase(lines, boundMs = UI_PHASE_P95_MS) {
+/**
+ * 6. The composite's own cost, as the run reported it.
+ *
+ * The first window is warm-up — it carries the page attach, the first upload and every shader
+ * compile the run paid for — so AC-6's steady-state bound starts after it. Every later window is
+ * pooled: which frames a window holds is the runner's pace, so a bound read off one window is a
+ * bound on however many frames the runner happened to draw before that boundary. The worst window
+ * among those that carried enough samples to have a p95 is the judgement, which never reads lower
+ * than the merged p95 of all of them (at most 5% of any window sits above its own p95, so at most
+ * 5% of the pool can sit above the worst of them).
+ */
+export function requireUiPhase(lines, boundMs = UI_PHASE_P95_MS) {
   const windows = parseMarker(lines, "TN_FRAME_BUDGET");
   if (windows.length === 0) {
     throw new Error(
@@ -396,12 +422,42 @@ function requireUiPhase(lines, boundMs = UI_PHASE_P95_MS) {
   if (ui.samples === 0) {
     throw new Error("TN_FRAME_BUDGET_PHASE_EMPTY: the 'ui' phase reported zero samples; nothing was measured.");
   }
-  if (!(ui.p95 < boundMs)) {
+  const measured = [];
+  for (const [index, window] of windows.slice(1).entries()) {
+    const phase = window?.phases?.ui;
+    if (phase === undefined || !Number.isInteger(phase?.samples)) {
+      throw new Error(
+        `TN_FRAME_BUDGET_PHASE_MISSING: window ${index + 1} carries no 'ui' phase: ${JSON.stringify(window?.phases)}`,
+      );
+    }
+    if (phase.samples > 0) measured.push({ index: index + 1, phase });
+  }
+  const samples = measured.reduce((total, entry) => total + entry.phase.samples, 0);
+  const complete = measured.filter((entry) => entry.phase.samples >= UI_PHASE_MIN_SAMPLES);
+  if (complete.length === 0) {
+    const fullest = measured.reduce((most, entry) => Math.max(most, entry.phase.samples), 0);
     throw new Error(
-      `TN_FRAME_BUDGET_PHASE_OVER_BUDGET: the 'ui' phase is ${ui.p95} ms at p95 over ${ui.samples} frame(s), which is not under ${boundMs} ms.`,
+      `TN_FRAME_BUDGET_PHASE_UNDERSAMPLED: the run measured ${samples} 'ui' sample(s) over ${measured.length} steady-state window(s) and the fullest carried ${fullest}, under the ${UI_PHASE_MIN_SAMPLES} a p95 needs, so no p95 was measured. Of ${windows.length} window(s) reported, the first is warm-up and the rest carried no more than ${fullest} sample(s) each.`,
     );
   }
-  return { boundMs, phases: windows.length, p50: ui.p50, p95: ui.p95, samples: ui.samples, worst: ui.max };
+  const pooled = complete.reduce((total, entry) => total + entry.phase.samples, 0);
+  const worst = complete.reduce((most, entry) => (entry.phase.p95 > most.phase.p95 ? entry : most));
+  if (!(worst.phase.p95 < boundMs)) {
+    throw new Error(
+      `TN_FRAME_BUDGET_PHASE_OVER_BUDGET: the 'ui' phase is ${worst.phase.p95} ms at p95 over ${worst.phase.samples} frame(s) in reported window ${worst.index} of ${windows.length} (${pooled} pooled sample(s) in ${complete.length} steady-state window(s)), which is not under ${boundMs} ms.`,
+    );
+  }
+  return {
+    boundMs,
+    phases: windows.length,
+    p50: worst.phase.p50,
+    p95: worst.phase.p95,
+    samples: pooled,
+    skipped: measured.length - complete.length,
+    window: worst.index,
+    windows: complete.length,
+    worst: worst.phase.max,
+  };
 }
 
 function addAdvanceWallClock(transport, waitMs) {
@@ -649,7 +705,7 @@ async function main() {
       uiRoot: staged,
     });
     console.info(
-      `desktop UI frame gate passed on the ${contract} contract: overlay attached after ${evidence.overlayReports} report(s), ${evidence.hitRegions.count} hit region(s), ${pageWindow.windowMs} ms of page-startup window, game frame ${evidence.startedAfterUi.framesAtReady} -> ${evidence.startedAfterUi.framesAtEnd}, ui phase p95 ${evidence.uiPhase.p95} ms under ${evidence.uiPhase.boundMs} ms`,
+      `desktop UI frame gate passed on the ${contract} contract: overlay attached after ${evidence.overlayReports} report(s), ${evidence.hitRegions.count} hit region(s), ${pageWindow.windowMs} ms of page-startup window, game frame ${evidence.startedAfterUi.framesAtReady} -> ${evidence.startedAfterUi.framesAtEnd}, ui phase p95 ${evidence.uiPhase.p95} ms over ${evidence.uiPhase.samples} pooled sample(s) in ${evidence.uiPhase.windows} steady-state window(s) under ${evidence.uiPhase.boundMs} ms`,
     );
     if (evidence.composite !== undefined && evidence.pagePixels !== undefined) {
       console.info(
@@ -683,7 +739,9 @@ function stagedPreset() {
   return "tn-linux";
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
