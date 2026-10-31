@@ -75,6 +75,28 @@ describe("frame budget simulation clock", () => {
     expect(budget.window().frames).toBe(60);
     expect(budget.window().simulatedSeconds).toBeCloseTo(10 / 60);
   });
+
+  it("closes on wall time when the clamped simulation falls behind a 2 fps adapter", () => {
+    // The loop advances at most 1/20 s per frame (`maxPhysicsDeltaTime`), so a 500 ms frame
+    // simulates 3 ticks: 300 ticks would take 100 frames and 50 s, not 5.
+    let tick = 0;
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      simulation: { tick: () => tick, step: 1 / 60 },
+      reportEvery: 300,
+      minFrames: 60,
+      report: () => undefined,
+      onWindow: (window) => windows.push(window),
+    });
+    for (let frame = 0; frame < 60; frame += 1) {
+      budget.beginFrame(frame * 500, frame * 500);
+      tick += 3;
+      budget.endFrame(frame * 500 + 499);
+    }
+    expect(windows).toHaveLength(1);
+    expect(windows[0]?.frames).toBe(60);
+    expect(windows[0]?.simulatedSeconds).toBe(3);
+  });
 });
 
 /**
