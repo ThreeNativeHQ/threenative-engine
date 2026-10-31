@@ -310,9 +310,10 @@ describe("pyramid GPU timestamps", () => {
       expect(backend.trackTimestamp).toBe(false);
       await Promise.resolve();
       await Promise.resolve();
-      // Three refuses to resolve with the cadence off; the queries stay queued for the next sampled
-      // frame (develop's GpuFrameObservation contract), so nothing is read yet.
-      expect(resolves.every((resolve) => !resolve.enabled)).toBe(true);
+      // Three records no query with the cadence off and warns when asked anyway (r187
+      // src/renderers/common/Backend.js:682), so the resolve is not asked at all; the queries stay
+      // queued for the next sampled frame (develop's GpuFrameObservation contract).
+      expect(resolves).toEqual([]);
       expect(renderer.gpuPyramidMs?.()).toBeUndefined();
       renderer.beginFrame?.(); // Sampled again: the queued pyramid queries resolve.
       renderer.resolveGpuFrame();
