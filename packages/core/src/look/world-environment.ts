@@ -75,6 +75,7 @@ import {
   publishDirectRenderChainReport,
 } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
+import type { TracedReflections } from "../render/traced-reflections.js";
 import { STARTUP_EXPOSURE } from "../renderer.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
 import { UNREAL_AO_REACH_PX } from "./ao-reach.js";
@@ -93,7 +94,7 @@ import { LocalExposureNode } from "./local-exposure.js";
 import { lookDiagnostics } from "./look-diagnostics.js";
 import { motionBlur } from "./motion-blur.js";
 import { qualityPreset } from "./quality.js";
-import { reflectionTrace, tracedReflections } from "./reflection-trace.js";
+import { reflectionTrace, skyAmbientCube, tracedReflections } from "./reflection-trace.js";
 import { UnrealBloomNode } from "./unreal-bloom.js";
 import { vignetteMask } from "./vignette.js";
 
@@ -458,6 +459,13 @@ export interface IWorldEnvironmentTarget {
    * every stage.
    */
   readonly baseColour?: (scenePass: ReturnType<typeof pass>) => Node<"vec4">;
+  /**
+   * The scene's static triangles, for the `ssr` stage: a smooth surface (roughness under the trace's
+   * `maxRoughnessToTrace`) then reflects what its ray hits in the scene, as Unreal's Lumen reflections do,
+   * not only what the screen drew. Build it after the static scene exists; omit it and the stage marches the screen.
+   * @alias Lumen reflections, hit lighting, reflection rays
+   */
+  readonly reflectionTrace?: TracedReflections;
 }
 
 /**
@@ -1552,13 +1560,15 @@ export class WorldEnvironment {
           const base = convertToTexture(input);
           // A registered trace (`reflectionTrace`) finds the hit among the scene's triangles, so a ray that leaves
           // the frame, or reaches the far side of an object, hits the right surface. It replaces the screen march.
-          const trace = reflectionTrace.current;
+          const trace = target.reflectionTrace ?? reflectionTrace.current;
           if (trace !== undefined) {
             const traced = tracedReflections({
               trace,
               camera: view,
               ...(target.godraysLight === undefined ? {} : { sun: target.godraysLight }),
               ...(reflectionTrace.lamps === undefined ? {} : { lamps: reflectionTrace.lamps }),
+              // ponytail: read once per chain build; a game that rebakes its sky at run time keeps the old light until the next build.
+              skyIrradiance: skyAmbientCube(scene.environment, scene.environmentIntensity),
               base,
               depth: depth(),
               normal: normal(),

@@ -1,4 +1,4 @@
-import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
+import { type OutputRenderer, type TracedReflections, WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
@@ -73,6 +73,12 @@ export function setupPost(
      * rather than composed twice. Omit it and the chain starts from the beauty pass unchanged.
      */
     fog?: () => FogMedium | undefined;
+    /**
+     * The static scene's triangles (`new TracedReflections(root)`): a chrome or
+     * polished surface then reflects the scene around it, as Unreal's Lumen reflections do, and not only
+     * what the screen drew. Pass it once the static meshes exist; omit it and reflections march the screen.
+     */
+    reflectionTrace?: TracedReflections;
   } = {},
 ): IPostController {
   const policy = createAdaptiveQuality(environment, environment);
@@ -120,6 +126,7 @@ export function setupPost(
     });
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
+      reflectionTrace: environment.reflectionTrace,
       // Ahead of exposure and every stage, which is the only place a participating medium can go.
       baseColour: composed === undefined ? undefined : (scenePass) => composed.compose(scenePass),
     });

@@ -387,9 +387,19 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
         Object.assign(qualityPreset("high"), gtaoKnobs());
-        const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
+        // The template arm hands its post chain the scene's triangles, as a game with a chrome surface does: Unreal's
+        // reflections trace the scene from L8 (the tuned arm registers its own trace above). Diagnosis knob off=traced.
+        const templateTrace = !TUNED && !OFF.has("traced") ? new TracedReflections(model) : undefined;
+        const post = setupPost(ctx.renderer, scene, camera, {
+          godraysLight: key,
+          tier: "high",
+          ...(templateTrace === undefined ? {} : { reflectionTrace: templateTrace }),
+        });
         postDebug = () => post.debug();
-        this.#dispose = () => post.dispose();
+        this.#dispose = () => {
+          post.dispose();
+          templateTrace?.dispose();
+        };
       } else {
         // The template's own `high` chain with the L9-only stages off: bloom, vignette, the
         // authored grade and grain, auto exposure. AO enters at L6, as in the Unreal ladder.

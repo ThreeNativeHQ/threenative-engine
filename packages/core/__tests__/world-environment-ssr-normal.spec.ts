@@ -47,3 +47,53 @@ it("hands the reflection march a normal sampled at level 0, so FXC compiles the 
   expect(normals.length).toBeGreaterThan(0);
   for (const normal of normals) expect(normal.levelNode ?? null).not.toBeNull();
 });
+
+// A game hands the chain its scene's triangles (`reflectionTrace` on the target), and the stage traces them
+// instead of marching the screen, so a chrome ball reflects what stands around it (Unreal's Lumen reflections).
+it("traces the target's reflectionTrace instead of marching the screen", () => {
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  normals.length = 0;
+  const weight = vi.fn(() => vec4(1).x);
+  const reflectionTrace = { weight, maxRoughnessToTrace: 0.4 } as unknown as NonNullable<
+    Parameters<WorldEnvironment["apply"]>[3]
+  >["reflectionTrace"];
+  const target: OutputRenderer = {
+    kind: "webgpu",
+    raw: {},
+    createRenderChain({ stages }) {
+      const stage = stages?.find((entry) => entry.name === "ssr");
+      if (!stage) throw new Error("missing ssr stage");
+      stage.build(vec4(1), { tier: "high" });
+      return { applied: { stages: ["ssr"], dropped: [] }, dispose() {} };
+    },
+  };
+  new WorldEnvironment({
+    autoExposureEnabled: false,
+    tonemapMode: "aces",
+    ssrEnabled: true,
+    bloomEnabled: false,
+    screenSpaceAA: "disabled",
+  })
+    .apply(target, new Scene(), new PerspectiveCamera(), { reflectionTrace })
+    ?.dispose?.();
+  expect(weight).toHaveBeenCalled();
+  expect(normals).toEqual([]);
+});
+
+// A traced hit in shadow takes the sky light, as Unreal's hit lighting does: E / pi on each axis of the environment.
+it("measures the sky light a traced hit takes from a CPU environment", async () => {
+  const { DataTexture, FloatType, RGBAFormat } = await import("three");
+  const { skyAmbientCube } = await import("../src/look/reflection-trace.js");
+  const width = 64;
+  const height = 32;
+  const data = new Float32Array(width * height * 4);
+  // Radiance 1 above the horizon, 0 below: a surface facing up sees all of it, one facing down none.
+  for (let row = height / 2; row < height; row++)
+    data.fill(1, row * width * 4, (row + 1) * width * 4);
+  const cube = skyAmbientCube(new DataTexture(data, width, height, RGBAFormat, FloatType), 2);
+  expect(cube?.[2]?.[0]).toBeCloseTo(2, 1);
+  expect(cube?.[3]?.[0]).toBeCloseTo(0, 5);
+  expect(cube?.[0]?.[1]).toBeCloseTo(1, 1);
+  expect(skyAmbientCube(null)).toBeUndefined();
+});
