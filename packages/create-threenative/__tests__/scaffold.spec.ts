@@ -220,6 +220,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Recomputed 2026-10-28 (0.3.7): the cohort's own pins now hash as a placeholder, so a release bump
 // leaves every tree as it is; measured by this test.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // 2026-10-31: the six atmosphere-sky kits (action-rpg, minimal, racing, runner, shooter, starter) ship
+  // faster cloud noise (same bytes out) and a cached sky bake in clouds.ts and gpuSky.ts. Measured by this test.
   // 2026-10-31: every tree ships core's three patch, whose PMREM fence budget now has a floor, so all sixteen
   // trees move. Measured by this test.
   // 2026-10-30: the Blender MCP server is gone, so every kit's seven host configs lose their
@@ -318,7 +320,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // these kits' AGENTS.md say so, and rts drops its TRAA and blur overrides.
   // Re-pinned 2026-10-31: the starter crate gets a stacked-disc contact shadow (render/contactShadow.ts)
   // that keeps its contact coverage above the 0.02 floor at the core +1 EV key.
-  "action-rpg": "9d106051591702e6a16128ea94fcd10df2aabe05c5c733ffd32227ea17d0e97b",
+  "action-rpg": "fb54f842a7fd9c3e11fc9ba6261c85944614cd2eba012dc59258e1f49626e39b",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
@@ -344,10 +346,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   adventure: "9b02c5b1fe61b24dd8708413a6565b1f954c97df6ca81525c62424186ec495a0",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "8cded58cca0102f9fc555753582fbd0ef931740a2cef62a6bf11ebd139143d79",
-  minimal: "d6db1a733d6c57dd3441bc6637ab80afefee948c27a9da212a6c93adcbd1eaa0",
+  minimal: "ad63cf79276bba5e135178d5f666d0bdac89bb41f8306c0f070bc8693996dcd4",
   platformer: "def325b53767d1b12342f2fb52d94ee1ab95ddaadc26af72d63ca00592f3f546",
   puzzle: "b3b0d51ea061fdb0e54840229ecdb074959c6b783dd0ab99f77ece271a7a6e15",
-  racing: "e8de0d1af336875650d281b3fa267632bf2d8d656871f29dab3c250a21cb14c6",
+  racing: "aacb9a49593e0f64157512027d92bafe601610688e8c0909c882025914c86826",
   rain: "b039dcd6f1091916d9af6e707a3661d89ab7acfa08aa27d179fb64ca33e490bd",
   // Re-pinned 2026-10-28: the rts high tier turns camera motion blur off (an RTS pan smeared every unit).
   // Re-pinned 2026-10-28 (PRD-765): rts becomes AstraCraft — painted ground, mesas, scrub, ACES 1.02 look and the command HUD;
@@ -361,11 +363,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (it was a dark patch under a HUD card) and the top-location separator reaches 3:1 on the ink plate.
   // Then the UI final pass: a counted selection band, garrison and blocked-exit cards, overview, hotkeys, edge-scroll toggle, refusal toasts (imports sorted by biome).
   rts: "3a167df837c4524a606edb2077ba82df20816bd52705323b89d770a9440ef699",
-  runner: "8d5262c76607c15a7b4a02d06c16d35bb55a401de5d55e84f097673fe12c95db",
+  runner: "f51cc47da0e314e968df137440d1c26be3e2714748e1b8bf5b75d9150ef0b369",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "cda0c59a30c486a206c9b4598d463a04ce14be28d8f1d585292962b4e9d84fee",
   // Recomputed 2026-10-26 (PRD-746): the scene merges the town through mergeByMaterial (src/townBatch.ts).
-  shooter: "4d831dd17fadf02097bd8d84f269d0521c6fb46319b6ad984d4b05403c44576b",
+  shooter: "4e309f965e01a0effa50b178de3f07566c4c38b6caa1f0046917a47d1dcb4394",
   snow: "d4fb904b6231de3c49b047a39e6987744b3ee29bd4d34c3385d99e5263a2afe2",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
@@ -373,7 +375,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob, the portable trace type (PRD-633); measured by this test.
-  starter: "b153064a6815c8520e9dbd2707ce00f2ba620433452a7658334c132a2b67e9a6",
+  starter: "a4caf36cae01eb372d5e7d008dcae92dff033405636984a567d4bea34adc83ab",
   "tower-defense": "00115adbe8193e5a33423c96cc516bc7df32f585377d7b14201b1b35baa48a22",
 };
 

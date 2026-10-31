@@ -122,36 +122,53 @@ function rng(seed: number): () => number {
   };
 }
 
+/**
+ * One axis of a periodic lattice, per voxel: the two cells it blends (wrapped), and the blend weight of
+ * the second (`smooth` of the fraction) with its complement. Computed once per axis position, not once
+ * per voxel and neighbour; the expressions are the ones the per-voxel loop used, so every float matches.
+ */
+function latticeAxis(cells: number, size: number) {
+  const first = new Int32Array(size);
+  const second = new Int32Array(size);
+  const upper = new Float64Array(size);
+  const lower = new Float64Array(size);
+  for (let n = 0; n < size; n++) {
+    const f = ((n + 0.5) / size) * cells - 0.5;
+    const i = Math.floor(f);
+    const w = smooth(f - i);
+    first[n] = mod(i, cells);
+    second[n] = mod(i + 1, cells);
+    upper[n] = w;
+    lower[n] = 1 - w;
+  }
+  return { first, second, upper, lower };
+}
+
 /** Periodic value noise on a size^dims grid with `cells` lattice cells per axis. */
 function valueNoise(cells: number, size: number, dims: 2 | 3, next: () => number): Float32Array {
   const lattice = Float32Array.from({ length: cells ** dims }, next);
   const out = new Float32Array(size ** dims);
   const depth = dims === 3 ? size : 1;
+  const layers = dims === 3 ? 2 : 1;
+  const axis = latticeAxis(cells, size);
+  // Typed-array reads are in range by construction (every index is below `size`), hence the casts.
+  const { first, second, lower, upper } = axis;
   for (let z = 0; z < depth; z++) {
-    const fz = ((z + 0.5) / size) * cells - 0.5;
-    const iz = Math.floor(fz);
-    const wz = smooth(fz - iz);
     for (let y = 0; y < size; y++) {
-      const fy = ((y + 0.5) / size) * cells - 0.5;
-      const iy = Math.floor(fy);
-      const wy = smooth(fy - iy);
       for (let x = 0; x < size; x++) {
-        const fx = ((x + 0.5) / size) * cells - 0.5;
-        const ix = Math.floor(fx);
-        const wx = smooth(fx - ix);
         let sum = 0;
-        for (let c = 0; c < (dims === 3 ? 2 : 1); c++)
-          for (let b = 0; b < 2; b++)
+        for (let c = 0; c < layers; c++) {
+          const zOffset = dims === 3 ? cells * cells * ((c ? second[z] : first[z]) as number) : 0;
+          const wz = dims === 3 ? ((c ? upper[z] : lower[z]) as number) : 1;
+          for (let b = 0; b < 2; b++) {
+            const yOffset = cells * ((b ? second[y] : first[y]) as number);
+            const wy = (b ? upper[y] : lower[y]) as number;
             for (let a = 0; a < 2; a++) {
-              const at =
-                mod(ix + a, cells) +
-                cells * (mod(iy + b, cells) + (dims === 3 ? cells * mod(iz + c, cells) : 0));
-              sum +=
-                (lattice[at] ?? 0) *
-                (a ? wx : 1 - wx) *
-                (b ? wy : 1 - wy) *
-                (dims === 3 ? (c ? wz : 1 - wz) : 1);
+              const at = ((a ? second[x] : first[x]) as number) + yOffset + zOffset;
+              sum += (lattice[at] ?? 0) * ((a ? upper[x] : lower[x]) as number) * wy * wz;
             }
+          }
+        }
         out[x + size * (y + size * z)] = sum;
       }
     }
@@ -159,33 +176,73 @@ function valueNoise(cells: number, size: number, dims: 2 | 3, next: () => number
   return out;
 }
 
-/** Periodic inverted Worley F1: 1 minus the distance to the nearest of one point per cell. */
+/**
+ * Periodic inverted Worley F1: 1 minus the distance to the nearest of one point per cell.
+ *
+ * The nearest of the 27 surrounding cells' points is a minimum, so it does not depend on the order the
+ * cells are visited, and a cell whose nearest possible point (its whole cell box) is already farther
+ * than the best so far cannot change it. The cells are visited centre first and the far ones are
+ * skipped by that bound; each point's distance is computed with the same expression as before, so the
+ * result is bit for bit the full 27-cell scan.
+ */
 function worleyInverted(cells: number, size: number, next: () => number): Float32Array {
   const points = Float32Array.from({ length: cells ** 3 * 3 }, next);
   const out = new Float32Array(size ** 3);
-  for (let z = 0; z < size; z++)
-    for (let y = 0; y < size; y++)
+  // Per axis position: the sample point, its cell, the wrapped cell and the squared distance from the
+  // sample to the nearest edge of the box of each of the three neighbours (-1, 0, +1). A point lies
+  // in [0, 1) of its cell, and the margin covers the rounding of the bound itself.
+  const p = new Float64Array(size);
+  const cell = new Int32Array(size);
+  const wrapped = new Int32Array(size * 3);
+  const gap = new Float64Array(size * 3);
+  const margin = 1e-9;
+  for (let n = 0; n < size; n++) {
+    p[n] = ((n + 0.5) / size) * cells;
+    cell[n] = Math.floor(p[n] as number);
+    for (let d = 0; d < 3; d++) {
+      const low = (cell[n] as number) + d - 1 - (p[n] as number);
+      wrapped[n * 3 + d] = mod((cell[n] as number) + d - 1, cells);
+      gap[n * 3 + d] = low > 0 ? low * low : low + 1 < 0 ? (low + 1) ** 2 : 0;
+    }
+  }
+  for (let z = 0; z < size; z++) {
+    const pz = p[z] as number;
+    const cz = cell[z] as number;
+    for (let y = 0; y < size; y++) {
+      const py = p[y] as number;
+      const cy = cell[y] as number;
       for (let x = 0; x < size; x++) {
-        const px = ((x + 0.5) / size) * cells;
-        const py = ((y + 0.5) / size) * cells;
-        const pz = ((z + 0.5) / size) * cells;
-        const cx = Math.floor(px);
-        const cy = Math.floor(py);
-        const cz = Math.floor(pz);
+        const px = p[x] as number;
+        const cx = cell[x] as number;
         let best = 9;
-        for (let k = -1; k <= 1; k++)
-          for (let j = -1; j <= 1; j++)
-            for (let i = -1; i <= 1; i++) {
-              const at =
-                3 *
-                (mod(cx + i, cells) + cells * (mod(cy + j, cells) + cells * mod(cz + k, cells)));
+        for (let a = 0; a < 3; a++) {
+          const kk = (a + 1) % 3;
+          const gz = gap[z * 3 + kk] as number;
+          if (gz > best + margin) continue;
+          const k = kk - 1;
+          const zOffset = cells * cells * (wrapped[z * 3 + kk] as number);
+          for (let b = 0; b < 3; b++) {
+            const jj = (b + 1) % 3;
+            const gyz = gz + (gap[y * 3 + jj] as number);
+            if (gyz > best + margin) continue;
+            const j = jj - 1;
+            const yOffset = cells * (wrapped[y * 3 + jj] as number);
+            for (let c = 0; c < 3; c++) {
+              const ii = (c + 1) % 3;
+              if (gyz + (gap[x * 3 + ii] as number) > best + margin) continue;
+              const i = ii - 1;
+              const at = 3 * ((wrapped[x * 3 + ii] as number) + yOffset + zOffset);
               const dx = cx + i + (points[at] ?? 0) - px;
               const dy = cy + j + (points[at + 1] ?? 0) - py;
               const dz = cz + k + (points[at + 2] ?? 0) - pz;
               best = Math.min(best, dx * dx + dy * dy + dz * dz);
             }
+          }
+        }
         out[x + size * (y + size * z)] = 1 - Math.sqrt(best);
       }
+    }
+  }
   return out;
 }
 
@@ -298,6 +355,9 @@ export function cloudProfileTexture(size = 64): Float32Array {
   return out;
 }
 
+// The two samplers run per ray step in the CPU sky bake. The wrapped cell indices and the complementary
+// weights are computed once per call, not once per tap or closure; every product and sum is the one the
+// closure form evaluated, in the same order.
 function samplePattern(pattern: Float32Array, u: number, v: number, c: number): number {
   const n = PATTERN_SIZE;
   const fx = u * n - 0.5;
@@ -306,10 +366,15 @@ function samplePattern(pattern: Float32Array, u: number, v: number, c: number): 
   const iy = Math.floor(fy);
   const wx = fx - ix;
   const wy = fy - iy;
-  const at = (x: number, y: number): number => pattern[(mod(y, n) * n + mod(x, n)) * 4 + c] ?? 0;
+  const x0 = mod(ix, n);
+  const x1 = mod(ix + 1, n);
+  const row0 = mod(iy, n) * n;
+  const row1 = mod(iy + 1, n) * n;
+  const nx = 1 - wx;
   return (
-    (at(ix, iy) * (1 - wx) + at(ix + 1, iy) * wx) * (1 - wy) +
-    (at(ix, iy + 1) * (1 - wx) + at(ix + 1, iy + 1) * wx) * wy
+    ((pattern[(row0 + x0) * 4 + c] ?? 0) * nx + (pattern[(row0 + x1) * 4 + c] ?? 0) * wx) *
+      (1 - wy) +
+    ((pattern[(row1 + x0) * 4 + c] ?? 0) * nx + (pattern[(row1 + x1) * 4 + c] ?? 0) * wx) * wy
   );
 }
 
@@ -324,12 +389,21 @@ function sampleVolume(volume: Float32Array, x: number, y: number, z: number, c: 
   const wx = fx - ix;
   const wy = fy - iy;
   const wz = fz - iz;
-  const at = (a: number, b: number, d: number): number =>
-    volume[(mod(a, n) + n * (mod(b, n) + n * mod(d, n))) * 2 + c] ?? 0;
-  const plane = (d: number): number =>
-    (at(ix, iy, d) * (1 - wx) + at(ix + 1, iy, d) * wx) * (1 - wy) +
-    (at(ix, iy + 1, d) * (1 - wx) + at(ix + 1, iy + 1, d) * wx) * wy;
-  return plane(iz) * (1 - wz) + plane(iz + 1) * wz;
+  const x0 = mod(ix, n);
+  const x1 = mod(ix + 1, n);
+  const y0 = n * mod(iy, n);
+  const y1 = n * mod(iy + 1, n);
+  const z0 = n * n * mod(iz, n);
+  const z1 = n * n * mod(iz + 1, n);
+  const nx = 1 - wx;
+  const ny = 1 - wy;
+  const plane0 =
+    ((volume[(x0 + y0 + z0) * 2 + c] ?? 0) * nx + (volume[(x1 + y0 + z0) * 2 + c] ?? 0) * wx) * ny +
+    ((volume[(x0 + y1 + z0) * 2 + c] ?? 0) * nx + (volume[(x1 + y1 + z0) * 2 + c] ?? 0) * wx) * wy;
+  const plane1 =
+    ((volume[(x0 + y0 + z1) * 2 + c] ?? 0) * nx + (volume[(x1 + y0 + z1) * 2 + c] ?? 0) * wx) * ny +
+    ((volume[(x0 + y1 + z1) * 2 + c] ?? 0) * nx + (volume[(x1 + y1 + z1) * 2 + c] ?? 0) * wx) * wy;
+  return plane0 * (1 - wz) + plane1 * wz;
 }
 
 /**
