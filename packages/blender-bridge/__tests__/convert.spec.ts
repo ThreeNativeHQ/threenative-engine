@@ -27,7 +27,11 @@ if (!available) {
 }
 const withBlender = available ? describe : describe.skip;
 
-const character = path.resolve("packages/assets/__tests__/fixtures/blender/character.fbx");
+// From this file, not the working directory: `pnpm test` runs the spec from the package directory.
+const character = path.resolve(
+  import.meta.dirname,
+  "../../assets/__tests__/fixtures/blender/character.fbx",
+);
 
 describe("bridge contract", () => {
   it("should ship the Blender script it says it runs", () => {

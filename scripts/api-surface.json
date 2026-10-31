@@ -33,7 +33,7 @@
       }
     },
     "@threenative/blender-bridge": {
-      "exports": ["./bridge", "./package.json"],
+      "exports": [".", "./bridge", "./package.json"],
       "symbols": {}
     },
     "@threenative/core": {

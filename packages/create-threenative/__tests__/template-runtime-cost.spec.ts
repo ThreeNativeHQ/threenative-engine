@@ -316,6 +316,7 @@ function sceneContext(
     },
     after: () => ({ cancel: () => undefined }),
     afterPhysics: () => () => undefined,
+    beforeRender: () => () => undefined,
     every: () => ({ cancel: () => undefined }),
     assets,
     camera,
