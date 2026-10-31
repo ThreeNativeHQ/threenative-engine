@@ -1,4 +1,4 @@
-import { type OutputRenderer, type TracedReflections, WorldEnvironment } from "@threenative/core";
+import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts` owns which stages
@@ -71,7 +71,7 @@ export function setupPost(
      */
     fog?: () => FogMedium | undefined;
     /** `new TracedReflections(root)` once static meshes exist: chrome reflects the scene, not only the screen. */
-    reflectionTrace?: TracedReflections;
+    reflectionTrace?: NonNullable<Parameters<WorldEnvironment["apply"]>[3]>["reflectionTrace"];
   } = {},
 ): IPostController {
   const policy = createAdaptiveQuality(environment, environment);
