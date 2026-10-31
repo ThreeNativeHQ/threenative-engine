@@ -559,6 +559,7 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
     pass.uniforms = effect.parameters;
     pass.temporal = effect.temporal;
     pass.redFormat = effect.kind == "GTAONode";
+    pass.float32 = effect.kind == "DenoiseNode";
     pass.stage = effect.stage;
     StageModule fragment{Stage::Fragment};
     std::string code;

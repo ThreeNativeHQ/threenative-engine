@@ -35,6 +35,19 @@ WGPUTexture makeTexture(WGPUDevice device, uint32_t width, uint32_t height, WGPU
     desc.sampleCount = desc.mipLevelCount = 1;
     return wgpuDeviceCreateTexture(device, &desc);
 }
+/**
+ * A post pass's colour target. GTAO keeps three's RedFormat/UnsignedByteType. A denoise is inlined into the
+ * consumer in three, so its value never sees a half-float round trip: at RGBA16F the stage's rounding moves a flat
+ * AO field one-way by up to half an ulp, which flips an 8-bit output level across 11% of a frame (tsl-post-ao).
+ * ponytail: fp32 costs twice the memory of the other post targets; without float32-filterable (its linear sampler
+ * is what the composite reads through) the pass falls back to RGBA16F and keeps that sub-level bias.
+ */
+WGPUTextureFormat passFormat(WGPUDevice device, const shader::graph::PostPass& pass) {
+    if (pass.redFormat) return WGPUTextureFormat_R8Unorm;
+    if (pass.float32 && wgpuDeviceHasFeature(device, WGPUFeatureName_Float32Filterable))
+        return WGPUTextureFormat_RGBA32Float;
+    return WGPUTextureFormat_RGBA16Float;
+}
 } // namespace
 
 PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader::graph::PostPass> sources)
@@ -93,8 +106,7 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
             pipelineLayoutDesc.bindGroupLayoutCount = pass.vertexLayout ? 2 : 1;
             pipelineLayoutDesc.bindGroupLayouts = layouts;
             pass.pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &pipelineLayoutDesc);
-            PipelineTarget target{pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float,
-                                  WGPUTextureFormat_Undefined, WGPUCullMode_None};
+            PipelineTarget target{passFormat(device, pass.source), WGPUTextureFormat_Undefined, WGPUCullMode_None};
             if (pass.source.rtt && pass.source.rtt->material) {
                 const auto& material = *pass.source.rtt->material;
                 target.cull = material.side == Side::Double ? WGPUCullMode_None
@@ -267,7 +279,7 @@ void PostEffects::resize(uint32_t width, uint32_t height, uint32_t outputWidth, 
             pass.source.rtt->actualWidth = target.width;
             pass.source.rtt->actualHeight = target.height;
         }
-        target.format = pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float;
+        target.format = passFormat(device_, pass.source);
         // A host pass copies what it reads and what it wrote (the resolve seeds and stores its history from them).
         const bool copied = std::any_of(passes_.begin(), passes_.end(), [&](const auto& host) {
             return !host.source.host.empty() &&
