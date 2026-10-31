@@ -57,7 +57,7 @@ export function createTemporalAA(
   );
   const hooks = createTemporalAAHooks(frames.jitterInput, () => internals.clearViewOffset());
   let ownedViewOffset: { width: number; height: number } | null = null;
-  const projection = new Matrix4().copy(camera.projectionMatrix);
+  let projection: Matrix4 | undefined;
   const setViewOffset = internals.setViewOffset.bind(node);
   const clearViewOffset = internals.clearViewOffset.bind(node);
   let pending: TemporalResetReason | null = "initial";
@@ -90,8 +90,10 @@ export function createTemporalAA(
     const aspect = (camera as PerspectiveCamera).aspect;
     if (ownedViewOffset !== null) camera.clearViewOffset();
     camera.updateProjectionMatrix();
-    if (!camera.projectionMatrix.equals(projection)) pending ??= "projection-change";
-    projection.copy(camera.projectionMatrix);
+    // The first observation is the baseline: the `initial` reset already drops history. Three 0.187
+    // asks for the offset from the pipeline's before-callback, after the frame cleared `pending`.
+    if (projection?.equals(camera.projectionMatrix) === false) pending ??= "projection-change";
+    projection = (projection ?? new Matrix4()).copy(camera.projectionMatrix);
     setViewOffset(width, height);
     if ((camera as PerspectiveCamera).aspect !== aspect) {
       (camera as PerspectiveCamera).aspect = aspect;

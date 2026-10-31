@@ -1264,6 +1264,54 @@ describe("compute warm-up dispatch", () => {
     },
   );
 
+  // Three 0.187 refuses a dispatch size beside a node that carries its own (Renderer.js:3238,
+  // PR #34813), so a sized kernel takes its zero on the node and gets its own count back.
+  test.each([
+    ["count", { count: 64, dispatchSize: null }, "count", 0, 64],
+    [
+      "dispatchSize",
+      { count: null, dispatchSize: [2, 1, 1] },
+      "dispatchSize",
+      [0, 1, 1],
+      [2, 1, 1],
+    ],
+  ] as const)(
+    "a node sized by %s warms at zero workgroups without a dispatch size",
+    async (_field, fields, sized, zeroed, restored) => {
+      const node = { ...fields } as Record<string, unknown>;
+      const seen: unknown[] = [];
+      const computeAsync = vi.fn(async (target: unknown) => {
+        const fieldsOf = target as Record<string, unknown>;
+        seen.push(fieldsOf[sized], fieldsOf[sized === "count" ? "dispatchSize" : "count"]);
+      });
+      const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+      const report = await warmUpComputeNodes(receiver, [node]);
+      expect(report.compiled).toBe(1);
+      expect(computeAsync).toHaveBeenCalledExactlyOnceWith(node);
+      expect(seen).toEqual([zeroed, fields[sized === "count" ? "dispatchSize" : "count"]]);
+      expect(node[sized]).toEqual(restored);
+    },
+  );
+
+  test("a zeroed dispatch is released even when its compile never settles", async () => {
+    const node: Record<string, unknown> = { count: 64, dispatchSize: null };
+    const computeAsync = vi.fn(() => new Promise<void>(() => {}));
+    const receiver = { backend: { isWebGPUBackend: true }, computeAsync };
+    let clock = 0;
+    const report = await warmUpComputeNodes(receiver, [node], {
+      budgetMs: 5,
+      compileTimeoutMs: 5,
+      yieldFrame: async () => {
+        clock += 10;
+      },
+    }).then((value) => {
+      clock += 10;
+      return value;
+    });
+    expect(report.abandoned).toBe(1);
+    expect(node.count).toBe(64);
+  });
+
   test.each([undefined, { isWebGLBackend: true }])(
     "other compute seams retain their existing call (%j)",
     async (backend) => {

@@ -84,10 +84,6 @@ export function createTemporalAAFrame(
     internals._cameraWorldMatrix.value.copy(camera.matrixWorld);
     internals._cameraWorldMatrixInverse.value.copy(camera.matrixWorldInverse);
     internals._cameraProjectionMatrixInverse.value.copy(camera.projectionMatrixInverse);
-    if (internals._needsPostProcessingSync === true) {
-      internals.setViewOffset(input.x, input.y);
-      internals._needsPostProcessingSync = false;
-    }
     historyValid.value = reset ? 0 : 1;
     // Depth history stays input sized, independently of display history. Seed on either-axis resize.
     if (previousDepth?.image.width !== input.x || previousDepth?.image.height !== input.y) {

@@ -673,6 +673,33 @@ describe("opt-in temporal AA", () => {
     scenePass.dispose();
   });
 
+  it("does not reset twice when the camera layout settles before the opening jitter", () => {
+    const { camera, frame, runAfter, runBefore, scenePass, temporal } = fixture({
+      renderPipeline: true,
+    });
+    // The pipeline asks for the jitter while its quad draws, after the node's own frame update, so
+    // the first projection the lattice meets was laid out after this node was built. That is the
+    // frame the `initial` reset already covers, not a change the caller authored (three 0.187
+    // dropped `_needsPostProcessingSync`, which used to consume this observation inside `draw`).
+    camera.aspect = 4 / 3;
+    camera.updateProjectionMatrix();
+    temporal.node.updateBefore(frame);
+    expect(temporal.report()).toMatchObject({ frame: 1, resetReason: "initial" });
+    runBefore();
+    runAfter();
+    temporal.node.updateBefore(frame);
+    expect(temporal.report()).toMatchObject({ frame: 2, historyValid: true, resetReason: null });
+    // An authored change after that baseline is still one reset, exactly once.
+    camera.fov = 70;
+    camera.updateProjectionMatrix();
+    runBefore();
+    runAfter();
+    temporal.node.updateBefore(frame);
+    expect(temporal.report()).toMatchObject({ frame: 3, resetReason: "projection-change" });
+    temporal.dispose();
+    scenePass.dispose();
+  });
+
   it("invalidates an input raster change and keeps resolving at display size", () => {
     const { temporal, frame, node, scenePass } = fixture({ resolutionScale: 1 });
     temporal.node.updateBefore(frame);

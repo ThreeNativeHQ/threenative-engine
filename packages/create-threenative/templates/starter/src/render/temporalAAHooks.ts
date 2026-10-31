@@ -8,7 +8,6 @@ import type { ITemporalResolvePinned } from "./temporalResolveDepth.js";
 
 export interface ITemporalAANode extends ITemporalResolvePinned {
   _resolveMaterial: NodeMaterial;
-  _needsPostProcessingSync: boolean;
   _historyValidUniform: Node<"float"> & { value: number };
   _originalProjectionMatrix: Matrix4;
   _velocityNode: {

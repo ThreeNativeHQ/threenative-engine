@@ -371,7 +371,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
   // Recomputed 2026-10-31 (PRD-775): temporalAAHooks.ts claims the 0.187 render pipeline's view
   // offset and drives its callback lists, so starter's render source alone moves. Measured by this test.
-  starter: "10ecf548d2f0ed1484255fb8729694feb04e1f014b3e0c422f6d0525343a8af8",
+  starter: "9a55f349f5ebff478d0f0f2c6384f38a450151bc113d77a8dcce24be4dc723d2",
   "tower-defense": "d1e99392e3f0c66f0bf9f1e329aa531d6010dfc8c6dfb2bcd34b39adb455838e",
 };
 

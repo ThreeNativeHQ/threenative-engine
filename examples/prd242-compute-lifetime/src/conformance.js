@@ -39,7 +39,9 @@ async function assertCachedClothWarmupPreservesBuffers(renderer) {
     return originalCreate.call(this, attribute);
   };
   try {
-    for (const node of cloth.warmupNodes) await renderer.computeAsync(node, 0);
+    // The engine's warm-up owns the zero-workgroup dispatch: three 0.187 refuses a dispatch size
+    // beside a node that already carries one (src/renderers/common/Renderer.js:3238, PR #34813).
+    await warmUpComputeNodes(renderer, cloth.warmupNodes);
   } finally {
     backend.createStorageAttribute = originalCreate;
   }
