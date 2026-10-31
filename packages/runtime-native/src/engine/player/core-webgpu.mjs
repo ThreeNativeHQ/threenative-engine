@@ -312,7 +312,10 @@ export const RendererUtils = defineRendererUtils(Color);
 export const AssignNode = unsupportedExport("AssignNode");
 
 WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
-  async (scene, x, y, z, size, face) => {
+  async (scene, x, y, z, size, face, renderer) => {
+    // A face is a render of `scene` (three's CubeCamera.update): its FRAME nodes update first, once per frame, so a
+    // sky node's look-up tables are drawn before a face reads them (the Wasm back end does the same).
+    if (globalThis.tn.hasRenderer()) tempNodes.update({ renderer, scene, frameId: tempFrame });
     syncUniforms();
     const bytes = await globalThis.tn.captureFace(scene, x, y, z, size, face);
     return bytes === null ? null : new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);

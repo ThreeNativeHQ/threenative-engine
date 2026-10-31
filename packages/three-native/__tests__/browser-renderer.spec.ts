@@ -41,6 +41,7 @@ function host(
   tsl?: ITslRuntime,
   poll: () => number = () => 1,
   debugWords?: Uint32Array,
+  DataTexture?: Parameters<typeof defineWebRenderer>[5],
 ) {
   const types = new Map<string, number>();
   const runtime: IBrowserRuntime = {
@@ -86,7 +87,14 @@ function host(
     _tnw_web_frame: frame,
     _tnw_web_renderer_state: state,
   } as unknown as WebEngineModule;
-  const Renderer = defineWebRenderer(module, classes.Color as never, before, tsl, secondary);
+  const Renderer = defineWebRenderer(
+    module,
+    classes.Color as never,
+    before,
+    tsl,
+    secondary,
+    DataTexture,
+  );
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
@@ -1440,6 +1448,84 @@ describe("Wasm TempNode render lifecycle", () => {
     node.dispose();
     renderer.render(scene, camera);
     expect(update).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs a scene's frame nodes before a reflection capture reads its faces, once per frame, as three's cube camera render does", async () => {
+    // The Unreal-look harness captured its chrome sphere's probe in scene enter, before any frame: the sky node draws its
+    // look-up tables in updateBefore, the capture ran none, and the ball reflected a black sky (owner, 2026-10-31).
+    let next = 0;
+    const runtime: ITslRuntime = {
+      call: () => ++next,
+      release() {},
+      set() {},
+      setUniform() {},
+      effectParameter: () => 0,
+      setPost() {},
+      compute() {},
+      readStorage: async () => new ArrayBuffer(0),
+      deleteStorage() {},
+    };
+    const tsl = defineTsl(runtime);
+    class DataTextureStub {
+      mapping = 0;
+      colorSpace = "";
+      flipY = false;
+      needsUpdate = false;
+    }
+    const { Renderer, canvas, scene, camera, module } = host(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      tsl.sync,
+      undefined,
+      undefined,
+      undefined,
+      DataTextureStub,
+    );
+    const order: string[] = [];
+    Object.assign(module, {
+      HEAPU8: new Uint8Array(1 << 16),
+      _tnw_web_capture_face: () => {
+        order.push("face");
+        return 1;
+      },
+      _tnw_web_read_target_take: () => 1,
+    });
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<void>;
+      render(scene: unknown, camera: unknown): void;
+      SphereReflectionCapture(
+        scene: unknown,
+        at: { x: number; y: number; z: number },
+        size: number,
+      ): Promise<unknown>;
+    };
+    const TempNode = tsl.exports.TempNode as new (
+      type: string,
+    ) => { setup(builder: unknown): unknown; updateBeforeType: string };
+    class Sky extends TempNode {
+      constructor() {
+        super("vec3");
+        this.updateBeforeType = "frame";
+      }
+      override setup(builder: unknown) {
+        super.setup(builder);
+        return (tsl.exports.float as (v: number) => unknown)(1);
+      }
+      updateBefore(frame: { renderer: unknown; scene: unknown }) {
+        expect(frame.renderer).toBe(renderer);
+        expect(frame.scene).toBe(scene);
+        order.push("sky");
+      }
+    }
+    (tsl.exports.float as (v: unknown) => unknown)(new Sky());
+    await renderer.init();
+    await renderer.SphereReflectionCapture(scene, { x: 0, y: 1, z: 0 }, 16);
+    expect(order).toEqual(["sky", "face", "face", "face", "face", "face", "face"]);
+    // The frame the capture ran in has updated its nodes: the frame's own render does not run them again.
+    renderer.render(scene, camera);
+    expect(order.filter((step) => step === "sky")).toHaveLength(1);
   });
 });
 
