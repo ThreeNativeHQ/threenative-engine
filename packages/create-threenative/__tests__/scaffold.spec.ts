@@ -370,8 +370,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  // Recomputed 2026-10-31: core key 0.36 and the traced-reflection option in setupPost (PRD-633); measured by this test.
-  starter: "a07932e0a8205595e181819afdd23b58403ae212e9d6345dc320859dc9691f29",
+  // Recomputed 2026-10-31: core key 0.36, traced reflections, the crate contact blob (PRD-633); measured by this test.
+  starter: "265ae437f2a01fa6515cd10fa59c0238bc826d11015e345c9d275e62045c0b79",
   "tower-defense": "e96d44a2803acfc2f8bac3f9385304f641fd400e8b23b797b18841cb0af811b7",
 };
 
