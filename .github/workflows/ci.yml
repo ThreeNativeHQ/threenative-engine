@@ -982,7 +982,10 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-engine-cost:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
-    timeout-minutes: 30
+    # 45, owner-approved for this job only (2026-10-31): on 813c0166a the row step alone ran
+    # 964-1775+ s on hosted SwiftShader (VM speed spread 1.75x, 99% raster hostGap), and rain,
+    # adventure (twice) and shooter hit 30. Ticks, windows, bounds and every threshold are unchanged.
+    timeout-minutes: 45
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"
