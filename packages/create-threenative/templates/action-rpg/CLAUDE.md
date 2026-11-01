@@ -14,6 +14,36 @@ visual decision; `src/game.ts` stays portable and `src/main.ts` is the web-only 
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is a browser-only WASM boundary here; use returned subpaths, and `attachToBone` for the blade in `hand_r`.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and `npx @threenative/playtest doctor`; missing observations are not zero. For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
 
+## Spells
+
+Three spells are wired to keys, and a spell is a timeline rather than an emitter: it charges, crosses
+the room, lands, and the floor keeps the mark. `@threenative/core/spells` owns that machinery and the
+six stock spells; a game changes one completely through the named overrides on the factory call, so
+never edit a spell's numbers inside `node_modules`.
+
+```ts
+import { CastPool, SpellWorld, createFireball, createThunderstrike, createGlacialSpike } from "@threenative/core/spells";
+
+const world = new SpellWorld({
+  scene: ctx.scene, camera: ctx.camera, groundAt: (x, z) => floorHeightAt(x, z),
+  add: (object) => ctx.add(object),   // parents the pooled emitter AND attaches its renderer
+  reducedFlashes: accessibility.flashesLimited,
+});
+world.focus.copy(handPosition);        // where a cast with no `from` starts
+const casts = new CastPool(world);
+const fireball = createFireball(world, { core: "#ffe6c0", speed: 22 });
+
+// per frame: advance both. The world owns the lights, the floor marks and the shake.
+casts.update(dt);
+world.update(dt);
+```
+
+A cast is `casts.cast(fireball, targetPoint, { from, seed })`. Damage, mana, cooldowns and who the
+target is stay in the game: read `cast.pos` and `cast.phase` and decide. `world.reaction.sample("heat",
+x, z)` is how a combo asks whether the floor is already burning, with no GPU readback. With
+`reducedFlashes` on, the world refuses a fourth flash inside one second (WCAG 2.3.1) and the spell
+still lands.
+
 ## When the framework blocks you, write plain Three.js
 
 When an `@threenative/*` API is broken, missing, or does not do what you need, replace only that piece with portable Three.js/plain code. Keep the loop, scenes, input, registry, and playtest bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report what blocked you** (API, expectation, result, replacement); never stall the game.
