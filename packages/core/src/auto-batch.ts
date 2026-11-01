@@ -4,6 +4,7 @@ import { isEngineRenderHook } from "./engine-render-hook.js";
 import type { Registry } from "./entities.js";
 import { mergeByMaterial } from "./merge-parts.js";
 import { displacesVertices, hasMorphAttributes } from "./projection-plan.js";
+import { unbilled } from "./startup-offscreen-bytes.js";
 
 /**
  * Static meshes that share a material become one draw, with no call from the game.
@@ -489,17 +490,22 @@ export class AutoBatch {
     return this.#shapeChanges;
   }
 
-  /** Eligible meshes with the world matrix they were drawn at. */
+  /**
+   * Eligible meshes with the world matrix they were drawn at. Runs only while the scene settles, so
+   * its reads are no game's steady cost and the bridge census leaves them out.
+   */
   #snapshot(): Map<Mesh, Float64Array> {
-    this.#scene.updateMatrixWorld(true);
-    const found = new Map<Mesh, Float64Array>();
-    this.#optedOut = 0;
-    this.#held = 0;
-    const held = heldObjects(this.#entities);
-    this.#walk(this.#scene, false, held, (mesh) => {
-      found.set(mesh, Float64Array.from(mesh.matrixWorld.elements));
+    return unbilled(() => {
+      this.#scene.updateMatrixWorld(true);
+      const found = new Map<Mesh, Float64Array>();
+      this.#optedOut = 0;
+      this.#held = 0;
+      const held = heldObjects(this.#entities);
+      this.#walk(this.#scene, false, held, (mesh) => {
+        found.set(mesh, Float64Array.from(mesh.matrixWorld.elements));
+      });
+      return found;
     });
-    return found;
   }
 
   #walk(
