@@ -117,7 +117,7 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 #### Phase 1: One spell runs its whole timeline from a core import
 
 **Status:** NOT STARTED
-**Files:** `AGENTS.md` (the look exception, then `pnpm sync:agents`), `packages/core/package.json` and `tsup.config.ts` (subpath), `packages/core/src/spells/index.ts`, `cast-pool.ts`, `spell-world.ts` and `fireball.ts` (new), `packages/core/src/particles.ts` (kind table), `THIRD_PARTY_NOTICES.md` (upstream MIT notice), kit `src/scenes/Play.ts`, kit `src/ui/AbilityBar.tsx`.
+**Files:** `AGENTS.md` (the look exception, then `pnpm sync:agents`), `packages/core/package.json` and `tsup.config.ts` (subpath), `packages/core/src/spells/index.ts`, `cast-pool.ts`, `spell-world.ts` and `fireball.ts` (new), `packages/core/src/particles.ts` (kind table), `THIRD_PARTY_NOTICES.md` (upstream MIT notice), `examples/spell-lab/` (new), kit `src/scenes/Play.ts`, kit `src/ui/AbilityBar.tsx`.
 **Implementation:** Port the `cast.js` phase rules. Add the kind table. Build Fireball on them, then bind it to a kit slot. Use the real `GPUParticles3D`, `prewarm` and `CameraShake`.
 
 - [ ] `CastPool` steps charge, travel, impact, linger and done, recycles the oldest at capacity, and allocates nothing per cast. proof: `pnpm exec vitest run packages/core/__tests__/cast-pool.spec.ts`
@@ -128,7 +128,7 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 #### Phase 2: The world responds, and the other five spells land
 
 **Status:** NOT STARTED
-**Files:** `packages/core/src/spells/reaction-field.ts`, `spell-lights.ts` and five spell factories (new), `examples/spell-lab/` (new), kit `src/render/materials.ts`, kit `src/scenes/Play.ts`, kit `AGENTS.md`, `scripts/fixtures/capability-recall/corpus.json`.
+**Files:** `packages/core/src/spells/reaction-field.ts`, `spell-lights.ts` and five spell factories (new), `examples/spell-lab/`, kit `src/render/materials.ts`, kit `src/scenes/Play.ts`, kit `AGENTS.md`, `scripts/fixtures/capability-recall/corpus.json`.
 **Implementation:** Port the heat, char, wet and frost channels with decay and splats. Bind Thunderstrike and Glacial Spike to kit slots. Add a recall row per spell.
 
 - [ ] A Fireball impact leaves a scorch on the floor that fades over time. proof: `node packages/playtest/dist/runner/cli.js examples/spell-lab/playtests/spell-lab.playtest.json --browser-recipe webgpu`, scorch step
