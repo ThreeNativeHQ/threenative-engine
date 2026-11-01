@@ -50,7 +50,7 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { scale } from "../render/scale.js";
-import { setupSky } from "../render/sky.js";
+import { SKY_OPTIONS, setupSky } from "../render/sky.js";
 import { loadSurfaces } from "../render/surface.js";
 import { TOWN_HALF, type Town, type TownCollider, buildTown } from "../render/town.js";
 import { createTownMaterials } from "../render/townMaterials.js";
@@ -114,7 +114,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     | {
         enemy: LoadedModel;
         viewmodel: LoadedModel;
-        sky: Texture;
+        sky: Texture | undefined;
       }
     | undefined;
 
@@ -137,12 +137,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const [enemy, viewmodel, sky] = await Promise.all([
       ctx.assets.model<LoadedModel>("mannequin-combat.glb"),
       ctx.assets.model<LoadedModel>("player-viewmodel.glb"),
-      ctx.assets.texture("sky.jpg"),
+      // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
+      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
     // The town's five generated surfaces (`render/surface.ts`), before `enter` builds the town.
     await loadSurfaces(ctx.assets);
     this.#assets = { enemy, viewmodel, sky };
-    setupSky(ctx.scene, this.#assets.sky);
+    setupSky(ctx.scene, this.#assets.sky, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -169,7 +170,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     if (assets === undefined) throw new Error("Town assets did not load.");
 
     const camera = ctx.camera as PerspectiveCamera;
-    setupSky(ctx.scene, assets.sky);
+    setupSky(ctx.scene, assets.sky, ctx.renderer.softwareAdapter !== undefined);
     // The shadow map is fitted to the town, not to the arena this template's lighting was
     // written for, and both this call and the post chain below are told whether this is a phone
     // — a 2048² map and the `low` tier instead of a 4096² map plus full-resolution GTAO over 832

@@ -93,6 +93,23 @@ it("fails closed after eight connection failures without returning a receipt", (
   expect(() => readAttemptJobs(identity)).toThrow("error connecting");
   expect(execute).toHaveBeenCalledTimes(8);
 });
+it("retries a read that hit the 30 s timeout (Windows run 41129808033: spawnSync gh ETIMEDOUT)", () => {
+  execute.mockImplementationOnce(() => {
+    throw Object.assign(new Error("spawnSync gh ETIMEDOUT"), {
+      code: "ETIMEDOUT",
+      signal: "SIGTERM",
+      status: null,
+      stderr: "",
+    });
+  });
+  execute.mockReturnValueOnce(complete);
+  expect(readAttemptJobs(identity)).toEqual({
+    totalCount: 1,
+    jobs: [{ id: 10, run_attempt: 2 }],
+  });
+  expect(execute).toHaveBeenCalledTimes(2);
+  expect(execute.mock.calls[0]).toEqual(execute.mock.calls[1]);
+});
 it("resolves a valid one-page response after two connection failures", () => {
   execute.mockImplementationOnce(() => {
     throw failure("error connecting to api.github.com");

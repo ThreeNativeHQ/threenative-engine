@@ -14,6 +14,7 @@
 #include "engine/abi/bindings.h"
 #include "engine/abi/abi_internal.h"
 #include "engine/foundation/ThreeConstants.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/material.h"
 #include "engine/scene/texture.h"
 #include "engine/animation/skinning/skeleton.h"
@@ -458,6 +459,10 @@ Adapter::Adapter(v8::Isolate* isolate, tn_context_t* context) : tsl_(std::make_u
 
 Adapter::~Adapter() {
     isolate_->RemoveGCPrologueCallback(promote, this);
+    if (gcTelemetry_) {
+        isolate_->RemoveGCPrologueCallback(gcStarted, this);
+        isolate_->RemoveGCEpilogueCallback(gcFinished, this);
+    }
     // The isolate may outlive this adapter: wrappers left alive stop pointing at it, and the engine
     // stops calling into it.
     for (auto& [k, w] : wrappers_) {
@@ -589,6 +594,24 @@ void Adapter::collect() {
             if (const auto it = wrappers_.find(k); it != wrappers_.end()) visit(it->second);
     }
     undecided_.clear();
+}
+
+void Adapter::enableGcTelemetry() {
+    if (gcTelemetry_) return;
+    gcTelemetry_ = true;
+    isolate_->AddGCPrologueCallback(gcStarted, this);
+    isolate_->AddGCEpilogueCallback(gcFinished, this);
+}
+
+void Adapter::gcStarted(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data) {
+    static_cast<Adapter*>(data)->gcStarted_ = std::chrono::steady_clock::now();
+}
+
+void Adapter::gcFinished(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data) {
+    auto& counts = tn::engine::waste::counters();
+    const auto elapsed = std::chrono::steady_clock::now() - static_cast<Adapter*>(data)->gcStarted_;
+    counts.gcPauseMicros.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count(), std::memory_order_relaxed);
+    tn::engine::waste::count(counts.gcPauses);
 }
 
 void Adapter::promote(v8::Isolate*, v8::GCType, v8::GCCallbackFlags, void* data) {

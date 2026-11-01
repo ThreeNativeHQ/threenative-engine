@@ -120,6 +120,8 @@ function sceneRuntime(clock: { ms: number }) {
       calls.push(`get ${names.get(self.type)}.${property}`);
       if (property === "children") return [...(children.get(self.key) ?? [])];
       if (property === "parent") return parents.get(self.key) ?? null;
+      // Object3D::subtreeVersion: the process counter at the last add, remove or attach at or under it.
+      if (property === "__hierarchyRevision") return words[HIERARCHY / 4] ?? 0;
       if (property === "boundingSphere") return values.get(self.key)?.get(property) ?? null;
       if (property === "layers") {
         const layers = make("Layers");
@@ -140,6 +142,10 @@ function sceneRuntime(clock: { ms: number }) {
   const count = (call: string) => calls.filter((c) => c === call).length;
   return { runtime, calls, count, words };
 }
+
+/** Object3D's engine-internal subtree version, read as core's camera pass reads it. */
+const revisionOf = (object: object): number | undefined =>
+  (object as { __hierarchyRevision?: number }).__hierarchyRevision;
 
 interface ILight {
   intensity: number;
@@ -187,6 +193,8 @@ afterEach(() => {
   host.__THREENATIVE_BRIDGE_CACHE__ = undefined;
   host[ENGINE_COST_KNOB as "__THREENATIVE_ENGINE_COST__"] = undefined;
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("bridge reads the back end keeps", () => {
@@ -237,6 +245,24 @@ describe("bridge reads the back end keeps", () => {
     expect(seen).toEqual([other, key]);
   });
 
+  it("keeps a hierarchy revision until the engine's hierarchy counter moves", () => {
+    const { Light, Group, count } = scene();
+    const root = new Group();
+    const key = new Light(0xffffff, 1);
+    root.add(key);
+    // Core's camera pass reads this for every rate root every frame to decide whether its rig index
+    // still describes the engine's graph (stress lab: 120 crossings a frame).
+    const first = revisionOf(root);
+    for (let read = 0; read < 100; read++) expect(revisionOf(root)).toBe(first);
+    expect(count("get Group.__hierarchyRevision")).toBe(1);
+    // Its only writer stamps the same process-wide counter every add, remove and attach moves.
+    const other = new Group();
+    other.add(key);
+    expect(revisionOf(root)).not.toBe(first);
+    expect(revisionOf(other)).toBe(revisionOf(root));
+    expect(count("get Group.__hierarchyRevision")).toBe(3);
+  });
+
   it("asks an action whether it is scheduled once, until its own play/stop or a mixer-wide call", () => {
     const { Group, Mixer, count } = scene();
     const mixer = new Mixer(new Group());
@@ -255,6 +281,31 @@ describe("bridge reads the back end keeps", () => {
     mixer.stopAllAction();
     action.isScheduled();
     expect(count("call AnimationAction.isScheduled")).toBe(3);
+  });
+
+  it("reads an action's timeScale, paused, time and weight and the mixer's timeScale in place, no crossing", () => {
+    const { Group, Mixer, count } = scene();
+    const mixer = new Mixer(new Group()) as unknown as {
+      timeScale: number;
+      clipAction(clip: string): object;
+    };
+    const action = mixer.clipAction("walk") as {
+      timeScale: number;
+      paused: boolean;
+      time: number;
+      weight: number;
+    };
+    // An AnimationPlayer reads these on every action every frame.
+    for (let frame = 0; frame < 200; frame++) {
+      void action.timeScale;
+      void action.paused;
+      void action.time;
+      void action.weight;
+      void mixer.timeScale;
+    }
+    for (const property of ["timeScale", "paused", "time", "weight"])
+      expect(count(`get AnimationAction.${property}`)).toBe(0);
+    expect(count("get AnimationMixer.timeScale")).toBe(0);
   });
 
   it("keeps the labels through a transform-only method, a setter of another property and a same-value write", () => {
@@ -455,6 +506,8 @@ describe("the engine cost totals", () => {
         clock.ms += 16;
       }
       vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
       return lines.filter((line) => line.startsWith(BRIDGE_CENSUS_MARKER));
     };
     expect(run(false)).toEqual([]);
@@ -466,5 +519,79 @@ describe("the engine cost totals", () => {
     expect(census.crossings).toBe(2);
     expect(census.top[0]).toMatchObject({ name: "get DirectionalLight.intensity", perFrame: 2 });
     expect(census.top[0]?.caller).toContain("readTwice");
+  });
+});
+
+describe("debug hierarchy counter producer", () => {
+  it("converts native elapsed microseconds to monotonic milliseconds across a low-word rollover", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const engine = sceneRuntime({ ms: 0 });
+    const get = engine.runtime.get;
+    engine.runtime.get = (self, property) =>
+      property === "__engineCounters" ? "pipelineCompileMicros@80" : get(self, property);
+    const browser = defineBrowserClasses(registry, engine.runtime, catalog);
+    const Group = browser.classes.Group as new () => object;
+    new Group();
+    engine.words[20] = 0xffffffff;
+    const before = browser.counters().pipelineCompileMs;
+    engine.words[20] = 1;
+    engine.words[21] = 1;
+    expect(browser.counters().pipelineCompileMs).toBeCloseTo((before ?? 0) + 0.002, 6);
+    expect(browser.counters()).not.toHaveProperty("pipelineCompileMicros");
+  });
+
+  it("reads full debug byte totals coherently when the high word changes during a read", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const engine = sceneRuntime({ ms: 0 });
+    const get = engine.runtime.get;
+    engine.runtime.get = (self, property) =>
+      property === "__engineCounters" ? "bufferUploadBytes@80" : get(self, property);
+    let highReads = 0;
+    const readWord = engine.runtime.readWord;
+    engine.runtime.readWord = (address) => {
+      if (address === 84) return highReads++ === 0 ? 0 : 1;
+      if (address === 80) return highReads === 1 ? 0xffffffff : 1;
+      return readWord?.(address) ?? 0;
+    };
+    const browser = defineBrowserClasses(registry, engine.runtime, catalog);
+    const Group = browser.classes.Group as new () => object;
+    new Group();
+    expect(browser.counters().bufferUploadBytes).toBe(0x100000001);
+    expect(highReads).toBe(4);
+  });
+
+  it("keeps off counter reads on the original low-word census", () => {
+    vi.stubEnv("TN_DEBUG", "0");
+    const engine = sceneRuntime({ ms: 0 });
+    const read = vi.spyOn(engine.runtime, "readWord");
+    const browser = defineBrowserClasses(registry, engine.runtime, catalog);
+    const Group = browser.classes.Group as new () => object;
+    new Group();
+    read.mockClear();
+    browser.counters();
+    expect(read.mock.calls).toEqual([[HIERARCHY], [COMPOSES]]);
+  });
+
+  it("enables native totals once and retains repeated hierarchy reads and wrapper population", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    const graph = scene();
+    const root = new graph.Group();
+    const child = new graph.Group();
+    root.add(child);
+    const first = root.children;
+    expect(root.children).toBe(first);
+    root.traverse(() => {});
+    root.traverse(() => {});
+    const totals = graph.counters();
+    expect(graph.count("set Group.__debugTelemetry")).toBe(1);
+    expect(totals).toMatchObject({
+      childrenReads: 2,
+      walkVisits: 2,
+      bridgeWrappersCreated: 2,
+      bridgeLiveWrappers: 2,
+      hierarchyMoves: 1,
+    });
+    expect(totals.bridgeWrapRequests).toBeGreaterThan(0);
+    expect(totals.bridgeGetCrossings).toBeGreaterThan(0);
   });
 });

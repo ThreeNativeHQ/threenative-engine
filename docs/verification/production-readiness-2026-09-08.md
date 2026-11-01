@@ -28,7 +28,7 @@ threenative-engine: bundled in @threenative/core@0.3.0; 2 tools advertised
 
 These are real transport initialization/tool-list observations from the published `threenative doctor --text`, not just configuration-file inspection. Individual asset downloads, sculpt operations and editor UI integration were not exercised.
 
-**Current source has four servers, while the downloaded starter has three.** The additional Blender server is bundled with core in current source; assets is pinned to 0.7.0 there. Those improvements must be released before describing them as the public installation experience. See [server definitions](../../packages/core/mcp/servers.mjs) and [bundled Blender launcher](../../packages/core/mcp/blender.mjs).
+**Current source has four servers, while the downloaded starter has three.** The additional Blender server is bundled with core in current source; assets is pinned to 0.7.0 there. Those improvements must be released before describing them as the public installation experience. See [server definitions](../../packages/core/mcp/servers.mjs) The bundled Blender launcher named here was removed with the Blender MCP server on 2026-10-30.
 
 | Detail | Consumer experience |
 | --- | --- |

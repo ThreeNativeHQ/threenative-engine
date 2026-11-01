@@ -9,6 +9,7 @@ import {
   selectHotReloadServerProject,
 } from "../../test-support/hot-reload-project.js";
 import {
+  STARTER_LOOK_STAGE,
   contactShadowCoverage,
   dominantColorCoverage,
   findLargestColorObject,
@@ -56,6 +57,18 @@ describe("root Playwright lane contracts", () => {
     paint(image, { bottom: 52, left: 20, right: 80, top: 50 }, [230, 190, 130]);
 
     expect(dominantColorCoverage(image, { bottom: 100, left: 0, right: 100, top: 0 })).toBe(0.988);
+  });
+
+  it("reads the starter's unpainted cover frame as flat with its controls bar on screen", () => {
+    // The layout of PR #595 run 41275660116's frame: flat background, startup loading bar and the
+    // HUD controls bar (y 644-696). The stage must stay clear of the bar to see it as unpainted.
+    const image = new PNG({ height: 720, width: 1280 });
+    paint(image, { bottom: 720, left: 0, right: 1280, top: 0 }, [172, 177, 193]);
+    paint(image, { bottom: 524, left: 380, right: 796, top: 512 }, [42, 108, 240]);
+    paint(image, { bottom: 524, left: 796, right: 900, top: 512 }, [195, 210, 228]);
+    paint(image, { bottom: 696, left: 24, right: 845, top: 644 }, [70, 108, 128]);
+
+    expect(dominantColorCoverage(image, STARTER_LOOK_STAGE)).toBeGreaterThanOrEqual(0.98);
   });
 
   it("runs adapter provenance setup in both browser and benchmark configs", async () => {

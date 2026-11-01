@@ -3,6 +3,10 @@ let nextId = 0;
 const installed = new Set<ShadowBaseNode>();
 const dispatchKey = Symbol.for("threenative.virtualShadowCommand");
 const bridgeKey = Symbol.for("threenative.virtualShadow");
+/** Core's registration counter for the discrete LOD chains (see `bumpChains` in core's model-lod). */
+const chainsVersionKey = Symbol.for("threenative.discreteLodChainsVersion");
+/** The facade's count of `mesh.geometry` assignments (browser-backend's setter): a swap moves no hierarchy. */
+const geometryAssignmentsKey = Symbol.for("threenative.geometryAssignments");
 /** The symbol-keyed slots the native bridge keeps on a core shadow node. */
 interface IBridgeSlots {
   [dispatchKey]?: unknown;
@@ -22,6 +26,28 @@ export function detachVirtualShadow(value: unknown): void {
   value.lods.clear();
   delete (value as IBridgeSlots)[dispatchKey];
 }
+/**
+ * Records what the light-root walk depends on and answers whether the last one still holds. Its answer
+ * can change in exactly three ways: core registered a chain (the version), a mesh's geometry was assigned
+ * (the facade's counter), or the hierarchy moved (the
+ * engine's counter, stamped on the root and every one of its ancestors). A backend without that counter
+ * (JSDOM, another engine) never skips.
+ */
+function walkStillCurrent(node: ShadowBaseNode, root: IShadowObject): boolean {
+  const revision = (root as { __hierarchyRevision?: number }).__hierarchyRevision;
+  if (revision === undefined) return false;
+  const host = globalThis as Record<symbol, unknown>;
+  const version = host[chainsVersionKey] as number | undefined;
+  const assignments = host[geometryAssignmentsKey] as number | undefined;
+  const current =
+    revision === node.walkedAt &&
+    version === node.walkedVersion &&
+    assignments === node.walkedAssignments;
+  node.walkedAt = revision;
+  node.walkedVersion = version;
+  node.walkedAssignments = assignments;
+  return current;
+}
 export function syncVirtualShadowLods(): void {
   const chains = (globalThis as Record<symbol, unknown>)[
     Symbol.for("threenative.discreteLodChains")
@@ -35,6 +61,7 @@ export function syncVirtualShadowLods(): void {
     let root = node.light as IShadowObject;
     while (root.parent) root = root.parent;
     if (typeof root.traverse !== "function") continue;
+    if (walkStillCurrent(node, root)) continue;
     const present = new Set<number>();
     root.traverse((child) => {
       if (!child.geometry) return;
@@ -69,6 +96,10 @@ export class ShadowBaseNode {
   disposed = false;
   dispatch?: (value: object) => void;
   readonly lods = new Map<number, object>();
+  /** What the last light-root walk saw; neither number moving means its result cannot have changed. */
+  walkedAt?: number;
+  walkedVersion?: number;
+  walkedAssignments?: number;
   constructor(readonly light: object) {}
   dispose(): void {
     const shadow = (this.light as { shadow?: { shadowNode?: unknown } }).shadow;

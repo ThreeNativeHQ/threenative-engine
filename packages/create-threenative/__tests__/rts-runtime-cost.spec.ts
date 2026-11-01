@@ -566,6 +566,7 @@ describe("rts kit ordinary-frame runtime cost", () => {
     const selected = new Set<number>();
     for (const entity of game.own(0)) selected.add(entity.id);
     let time = 0;
+    const eye = camera.position.clone();
 
     // Cold means a new instanced batch, and nothing else: the first sync that needs a (type, team)
     // bakes its models and builds its meshes, which runs three's own constructors. That is the
@@ -590,12 +591,13 @@ describe("rts kit ordinary-frame runtime cost", () => {
     const sync = (): void => {
       terrain.updateFog(game);
       resources.sync(game);
-      army.sync(game, selected, time, DT, camera, lodPixelScale(camera, 1080, 1));
+      army.sync(game, selected, time, DT, camera, lodPixelScale(camera, 1080, 1), 0.5, eye);
     };
     const frame = (): void => {
       time += DT;
       cold = false;
       rendering = false;
+      army.step(game);
       game.step();
       rendering = true;
       sync();
@@ -760,7 +762,16 @@ describe("rts kit ordinary-frame runtime cost", () => {
     const patchIdentities = new Set<object>();
     const scene = new Scene();
     const camera = new OrthographicCamera(-53, 53, 30, -30, 1, 600);
+    // The scene draws its army in a `beforeRender` callback, so the fixture runs those after each
+    // tick, as the engine does before each world render.
+    const draws: (() => void)[] = [];
     const context = {
+      alpha: 0.5,
+      beforeRender: (callback: () => void) => {
+        draws.push(callback);
+        return () => draws.splice(draws.indexOf(callback), 1);
+      },
+      frameTime: 0,
       add: (object: { isObject3D?: boolean }) => {
         scene.add(object as never);
         return object;
@@ -809,12 +820,17 @@ describe("rts kit ordinary-frame runtime cost", () => {
     const frame = play.enter(context as never);
     if (typeof frame !== "function")
       throw new Error("Allocation fixture returned no rts scene frame.");
-    for (let warm = 0; warm < WARMUP_FRAMES; warm += 1) frame(context as never, DT);
+    const tick = (): void => {
+      frame(context as never, DT);
+      context.frameTime += DT * 1000;
+      for (const draw of draws) draw();
+    };
+    for (let warm = 0; warm < WARMUP_FRAMES; warm += 1) tick();
     const warmPatches = patchIdentities.size;
     probeState.vector2Allocations = 0;
     probeState.vector3Allocations = 0;
     probeState.vector3Clones = 0;
-    for (let measured = 0; measured < MEASURED_FRAMES; measured += 1) frame(context as never, DT);
+    for (let measured = 0; measured < MEASURED_FRAMES; measured += 1) tick();
 
     expect(state.selection).toBeGreaterThan(0);
     expect(state.simTime).toBeGreaterThan(0);
@@ -826,5 +842,6 @@ describe("rts kit ordinary-frame runtime cost", () => {
       "rts Play frame vector allocation sentinel",
     ).toEqual({ clones: 0, constructors: 0 });
     play.exit(context as never);
+    expect(draws, "exit removes the scene's draw callback").toHaveLength(0);
   });
 });

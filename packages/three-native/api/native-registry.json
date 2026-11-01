@@ -106,6 +106,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -170,7 +171,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "AnimationAction": {
       "constructor": false,
@@ -200,6 +206,7 @@
         "warp"
       ],
       "getters": [
+        "__address",
         "clampWhenFinished",
         "enabled",
         "loop",
@@ -227,7 +234,13 @@
       "callbacks": [],
       "events": [],
       "fixedMembers": [],
-      "fields": {}
+      "fields": {
+        "enabled": [33, 0],
+        "paused": [32, 0],
+        "time": [0, 1],
+        "timeScale": [8, 1],
+        "weight": [16, 1]
+      }
     },
     "AnimationClip": {
       "constructor": true,
@@ -263,7 +276,7 @@
       "callbacks": [],
       "events": ["finished", "loop"],
       "fixedMembers": [],
-      "fields": { "time": [0, 1] }
+      "fields": { "time": [0, 1], "timeScale": [8, 1] }
     },
     "BatchedMesh": {
       "constructor": true,
@@ -447,6 +460,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -574,7 +588,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "Bone": {
       "constructor": true,
@@ -678,6 +697,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -735,7 +755,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "Box3": {
       "constructor": true,
@@ -1099,6 +1124,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "coordinateSystem",
         "frustumCulled",
@@ -1163,7 +1189,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "CanvasTexture": {
       "constructor": true,
@@ -1902,6 +1933,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -1985,7 +2017,12 @@
         "shadow",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "DirectionalLightShadow": {
       "constructor": false,
@@ -2409,6 +2446,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -2466,7 +2504,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "HemisphereLight": {
       "constructor": true,
@@ -2577,6 +2620,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -2647,7 +2691,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "IcosahedronGeometry": {
       "constructor": true,
@@ -3042,6 +3091,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "boundingBox",
         "boundingSphere",
         "castShadow",
@@ -3176,7 +3226,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "LOD": {
       "constructor": true,
@@ -3286,6 +3341,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "autoUpdate",
         "castShadow",
         "frustumCulled",
@@ -3345,7 +3401,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "LatheGeometry": {
       "constructor": true,
@@ -3616,6 +3677,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -3741,7 +3803,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "LineBasicMaterial": {
       "constructor": true,
@@ -3974,6 +4041,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -4099,7 +4167,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "MathUtils": {
       "constructor": true,
@@ -4366,6 +4439,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "geometry",
@@ -4491,7 +4565,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "MeshBasicMaterial": {
       "constructor": true,
@@ -5396,6 +5475,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "frustumCulled",
         "layers.mask",
@@ -5453,7 +5533,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "OctahedronGeometry": {
       "constructor": true,
@@ -5653,6 +5738,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "bottom",
         "castShadow",
         "coordinateSystem",
@@ -5724,7 +5810,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "Path": {
       "constructor": true,
@@ -5875,6 +5966,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "aspect",
         "castShadow",
         "coordinateSystem",
@@ -5947,7 +6039,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "Plane": {
       "constructor": true,
@@ -6178,6 +6275,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "color",
         "color.b",
@@ -6258,7 +6356,12 @@
         "shadow",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "PointLightShadow": {
       "constructor": false,
@@ -6658,6 +6761,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "background",
         "backgroundBlurriness",
         "backgroundIntensity",
@@ -6736,7 +6840,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "Shape": {
       "constructor": true,
@@ -7041,6 +7150,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "bindMatrix",
         "bindMatrixInverse",
         "bindMode",
@@ -7177,7 +7287,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "Source": {
       "constructor": false,
@@ -7422,6 +7537,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "angle",
         "castShadow",
         "color",
@@ -7506,7 +7622,12 @@
         "shadow",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "SpotLightShadow": {
       "constructor": false,
@@ -7690,6 +7811,7 @@
       ],
       "setters": [
         "__alwaysRender",
+        "__debugTelemetry",
         "castShadow",
         "center.x",
         "center.y",
@@ -7818,7 +7940,12 @@
         "scale",
         "up"
       ],
-      "fields": { "castShadow": [1, 0], "receiveShadow": [2, 0], "visible": [0, 0] }
+      "fields": {
+        "castShadow": [1, 0],
+        "matrixWorldNeedsUpdate": [3, 0],
+        "receiveShadow": [2, 0],
+        "visible": [0, 0]
+      }
     },
     "SpriteMaterial": {
       "constructor": true,

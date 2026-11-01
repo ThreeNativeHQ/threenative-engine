@@ -8,6 +8,7 @@ export const BRIDGE_CENSUS_MARKER = "TN_BRIDGE_CENSUS:";
 interface ISummary {
   readonly mean?: number;
   readonly max?: number;
+  readonly samples?: number;
 }
 
 interface IEngineCostWindow {
@@ -41,22 +42,27 @@ export function engineCostWindows(lines: readonly string[]): (IEngineCostWindow 
     }
     const at = line.indexOf(FRAME_BUDGET_MARKER);
     if (at === -1) continue;
-    let report: { window?: number; counters?: { engine?: Record<string, ISummary>; bridgeCrossings?: ISummary } };
     try {
-      report = JSON.parse(line.slice(at + FRAME_BUDGET_MARKER.length)) as typeof report;
+      const report = JSON.parse(line.slice(at + FRAME_BUDGET_MARKER.length)) as { window?: number; counters?: { engine?: Record<string, ISummary>; bridgeCrossings?: ISummary } };
+      const engine = report.counters?.engine;
+      if (engine === undefined) continue;
+      if (engine === null || typeof engine !== "object" || Array.isArray(engine)) throw new Error("invalid engine counters");
+      const series: Record<string, ISummary> = {
+        ...engine,
+        ...(report.counters?.bridgeCrossings === undefined ? {} : { bridgeCrossings: report.counters.bridgeCrossings }),
+      };
+      for (const summary of Object.values(series)) {
+        if (summary === null || typeof summary !== "object" ||
+          !Number.isFinite(summary.mean) || (summary.mean as number) < 0 ||
+          !Number.isFinite(summary.max) || (summary.max as number) < 0 ||
+          !Number.isSafeInteger(summary.samples) || (summary.samples as number) < 1) throw new Error("unmeasured engine counter");
+      }
+      const pick = (field: "mean" | "max") =>
+        Object.fromEntries(Object.entries(series).map(([name, summary]) => [name, summary[field]]));
+      windows.push({ maxFrame: pick("max"), perFrame: pick("mean"), top, ...(report.window === undefined ? {} : { window: report.window }) });
     } catch {
       windows.push(undefined);
-      continue;
     }
-    const engine = report.counters?.engine;
-    if (engine === undefined) continue;
-    const series: Record<string, ISummary> = {
-      ...engine,
-      ...(report.counters?.bridgeCrossings === undefined ? {} : { bridgeCrossings: report.counters.bridgeCrossings }),
-    };
-    const pick = (field: keyof ISummary) =>
-      Object.fromEntries(Object.entries(series).map(([name, summary]) => [name, summary[field]]));
-    windows.push({ maxFrame: pick("max"), perFrame: pick("mean"), top, ...(report.window === undefined ? {} : { window: report.window }) });
   }
   return windows;
 }

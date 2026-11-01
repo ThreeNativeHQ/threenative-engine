@@ -1,5 +1,6 @@
 #include "check.h"
 #include "engine/foundation/reachability.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/renderer/gpu_resources.h"
 #include "mystral/webgpu/context.h"
 
@@ -53,6 +54,31 @@ bool pump(GpuResources& gpu, EventQueue& events, Done done) {
         if (!done()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     return done();
+}
+
+void debugCounters() {
+    namespace waste = tn::engine::waste;
+    Device device;
+    CHECK(device.ok);
+    if (!device.ok) return;
+    GpuResources gpu(device.context.getInstance(), device.context.getDevice(), device.context.getQueue(), device.events, 1);
+    auto& counters = waste::counters();
+    waste::setDebugEnabled(false);
+    const auto created = counters.bufferCreatedBytes.load();
+    auto off = gpu.createBuffer(16, WGPUBufferUsage_CopyDst);
+    CHECK(counters.bufferCreatedBytes.load() == created);
+    CHECK(gpu.destroy(off) == GpuStatus::Ok);
+    waste::setDebugEnabled(true);
+    const auto uploaded = counters.bufferUploadBytes.load();
+    const auto freed = counters.bufferFreedBytes.load();
+    auto buffer = gpu.createBuffer(16, WGPUBufferUsage_CopyDst);
+    uint32_t words[4] = {};
+    CHECK(gpu.writeBuffer(buffer, 0, words, sizeof(words)) == GpuStatus::Ok);
+    CHECK(counters.bufferCreatedBytes.load() == created + 16);
+    CHECK(counters.bufferUploadBytes.load() == uploaded + 16);
+    CHECK(gpu.destroy(buffer) == GpuStatus::Ok);
+    CHECK(counters.bufferFreedBytes.load() == freed + 16);
+    waste::setDebugEnabled(false);
 }
 
 void uploadReadback() {
@@ -452,6 +478,6 @@ void readbackReusesStaging() {
     CHECK(lateCalls == 0);
 }
 
-TN_TEST_MAIN({"upload_readback", uploadReadback}, {"deferred_destroy", deferredDestroy}, {"async_only", asyncOnly}, {"gpu_thread_ordering", gpuThreadOrdering},
+TN_TEST_MAIN({"debug_counters", debugCounters}, {"upload_readback", uploadReadback}, {"deferred_destroy", deferredDestroy}, {"async_only", asyncOnly}, {"gpu_thread_ordering", gpuThreadOrdering},
              {"lifetime_deferred_gpu", lifetimeDeferredGpu}, {"batched_submits", batchedSubmits},
              {"readback_reuses_staging", readbackReusesStaging})

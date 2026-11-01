@@ -7,7 +7,7 @@ import {
   BLENDER_SOURCE_EXTENSIONS,
   type BridgeResult,
   convertModel,
-} from "threenative-blender-mcp/bridge";
+} from "@threenative/blender-bridge/bridge";
 import type { IAssetPass, IAssetPassOutput } from "../compile.js";
 
 /**
@@ -41,9 +41,9 @@ const IMPORT_EXTENSIONS: ReadonlySet<string> = new Set(BLENDER_SOURCE_EXTENSIONS
  * Where this package's copy of the GPL Blender scripts lives.
  *
  * `dist/blender-gpl/` in a published install, written by `scripts/bundle-blender-gpl.mjs`; the
- * workspace `packages/blender-mcp/gpl/` when running from source. The bridge is inlined into this
+ * workspace `packages/blender-bridge/gpl/` when running from source. The bridge is inlined into this
  * package's bundle, so its own `import.meta.url` points here and cannot find them by itself — and
- * a `dependency` on the server package would make `@threenative/assets` uninstallable until that
+ * a `dependency` on the bridge package would make `@threenative/assets` uninstallable until that
  * package is published.
  */
 function scriptsDirectory(): string {
@@ -52,7 +52,7 @@ function scriptsDirectory(): string {
     // Built: `dist/index.js` sits beside `dist/blender-gpl/`.
     path.join(here, "blender-gpl"),
     // Source: `src/passes/` -> the workspace sibling.
-    path.resolve(here, "..", "..", "..", "blender-mcp", "gpl"),
+    path.resolve(here, "..", "..", "..", "blender-bridge", "gpl"),
   ];
   const found = candidates.find((candidate) => existsSync(path.join(candidate, "convert.py")));
   if (found === undefined) {

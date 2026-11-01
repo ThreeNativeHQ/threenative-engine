@@ -67,7 +67,6 @@ describe("release preparation", () => {
       "packages/create-threenative/src/doctor.ts",
       "packages/engine-mcp/src/index.ts",
       "packages/engine-mcp/__tests__/server.spec.ts",
-      "packages/blender-mcp/src/index.ts",
       "packages/core/mcp/servers.mjs",
       "packages/create-threenative/engine-mcp-tools.json",
       replay,
@@ -80,7 +79,6 @@ describe("release preparation", () => {
     const versions = new Map([
       ["@threenative/core", "9.9.9"],
       ["threenative-engine-mcp", "9.9.9"],
-      ["threenative-blender-mcp", "9.9.9"],
     ]);
 
     syncSourceVersions(repo, versions);

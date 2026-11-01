@@ -33,6 +33,7 @@ import {
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset, resolveQualityTier } from "../render/quality.js";
+import * as skyModule from "../render/sky.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
@@ -309,6 +310,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           });
       }
       if (level >= 2) {
+        // The template's sunlit-ground environment (`SKY_OPTIONS.ground`) stands in for Lumen's bounce, which
+        // Unreal's ladder adds at L7; below it Unreal's sky light has a dark nadir. The overlay has no such option.
+        const skyOptions = (skyModule as unknown as { SKY_OPTIONS?: { ground: boolean } }).SKY_OPTIONS;
+        if (skyOptions !== undefined) skyOptions.ground = level >= 7;
         setupSky(
           scene,
           sky,
@@ -382,9 +387,19 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
         Object.assign(qualityPreset("high"), gtaoKnobs());
-        const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
+        // The template arm hands its post chain the scene's triangles, as a game with a chrome surface does: Unreal's
+        // reflections trace the scene from L8 (the tuned arm registers its own trace above). Diagnosis knob off=traced.
+        const templateTrace = !TUNED && !OFF.has("traced") ? new TracedReflections(model) : undefined;
+        const post = setupPost(ctx.renderer, scene, camera, {
+          godraysLight: key,
+          tier: "high",
+          ...(templateTrace === undefined ? {} : { reflectionTrace: templateTrace }),
+        });
         postDebug = () => post.debug();
-        this.#dispose = () => post.dispose();
+        this.#dispose = () => {
+          post.dispose();
+          templateTrace?.dispose();
+        };
       } else {
         // The template's own `high` chain with the L9-only stages off: bloom, vignette, the
         // authored grade and grain, auto exposure. AO enters at L6, as in the Unreal ladder.
@@ -440,6 +455,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
 
     const target = new Vector3();
     const reference = {
+      // The query this page read, echoed so the capture can stop when it ran on another one (a worker page reads none).
+      config: Object.fromEntries(params),
       // The live renderer, as the calibration scene exposes it: the capture's frame gate reads its draw counters and temporal state.
       renderer: ctx.renderer.raw,
       layer: LAYER,

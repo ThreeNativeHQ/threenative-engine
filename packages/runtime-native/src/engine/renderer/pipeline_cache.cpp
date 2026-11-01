@@ -1,3 +1,5 @@
+#include "engine/foundation/waste_counters.h"
+#include <chrono>
 #include "pipeline_cache.h"
 
 #include <algorithm>
@@ -105,6 +107,7 @@ uint64_t bindGroupCount = 0;
 
 WGPUBindGroup createBindGroup(WGPUDevice device, const WGPUBindGroupDescriptor* descriptor) {
     ++bindGroupCount;
+    waste::debugAdd(waste::counters().bindGroups);
     return wgpuDeviceCreateBindGroup(device, descriptor);
 }
 
@@ -224,6 +227,7 @@ WGPURenderPipeline PipelineCache::get(const shader::StageModule& vertex, const s
         return found->second;
     }
     const auto pipeline = create(device_, vertex, fragment, target);
+    if (!compiling_.contains(key)) waste::debugAdd(waste::counters().pipelineCompiles);
     if (!compiling_.contains(key)) ++compiles_;  // an in-flight key and its draw fallback count once
     if (!pipeline) return nullptr;
     pipelines_.emplace(key, pipeline);
@@ -258,6 +262,7 @@ std::shared_ptr<PipelineCompilation> PipelineCache::getAsync(const shader::Stage
     auto pending = std::make_shared<Pending>(id, named, device_);
     compiling_.emplace(key, pending);
     ++compiles_;
+    waste::debugAdd(waste::counters().pipelineCompiles);
 #ifdef __EMSCRIPTEN__
     create(device_, vertex, fragment, target, pending);
 #else
@@ -290,6 +295,14 @@ std::shared_ptr<PipelineCompilation> PipelineCache::getAsync(const shader::Stage
 
 WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageModule& vertex,
     const shader::StageModule* fragment, const PipelineTarget& target, const std::shared_ptr<Pending>& pending) {
+    struct Timing {
+        bool enabled = waste::debugEnabled().load(std::memory_order_relaxed);
+        std::chrono::steady_clock::time_point start = enabled ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        ~Timing() {
+            if (enabled) waste::counters().pipelineCreateMicros.fetch_add(
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count(), std::memory_order_relaxed);
+        }
+    } timing;
     // One vertex buffer per attribute, in location order: the renderer binds them the same way. The
     // instance attributes step per instance; the four instance-matrix columns are one mat4 per
     // instance, the same buffer bound four times at offsets 0, 16, 32 and 48.

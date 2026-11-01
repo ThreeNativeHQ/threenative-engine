@@ -11,6 +11,24 @@ interface ITransformHistory {
   references: number;
 }
 
+/**
+ * Arming the object's world-matrix recompose. The engine composes a node's own matrix from
+ * `position`/`quaternion`/`scale` at its walk, whenever the world-matrix dirty flag is set — three's
+ * `updateMatrix` for a `matrixAutoUpdate` node, done again one instant later. Core's restore used to cross
+ * to request exactly that (one `Mesh.updateMatrix` a body a frame, 300 on the stress lab), so on the engine
+ * it sets the flag the walk reads instead. The bridge writes that byte in place (`bindings_scene.cpp`
+ * `matrixWorldNeedsUpdate`), so the whole restore crosses nothing. Plain three keeps the call, and so does
+ * a node the walk will not compose.
+ */
+function recompose(object: Object3D): void {
+  const engine = object as Object3D & { __tnCopyMatrixWorld?: unknown };
+  if (object.matrixAutoUpdate && engine.__tnCopyMatrixWorld !== undefined) {
+    engine.matrixWorldNeedsUpdate = true;
+    return;
+  }
+  object.updateMatrix();
+}
+
 /** Draw-only transforms: simulation and queries always retain the solved tick pose. */
 export class PhysicsInterpolation {
   readonly enabled: boolean;
@@ -122,7 +140,7 @@ export class PhysicsInterpolation {
           continue;
         history.object.position.copy(history.savedPosition);
         history.object.quaternion.copy(history.savedRotation);
-        history.object.updateMatrix();
+        recompose(history.object);
       }
     }
   }

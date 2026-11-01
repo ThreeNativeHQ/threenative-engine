@@ -362,20 +362,35 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
             normal = v.call("normalize", {v.div(v.mul(inverseTranspose, normal), v.call("dot", {a, bc}))});
         }
     };
-    if (!variant.skinnedPalette)
+    if (!variant.skinnedPalette && !variant.skinInstanceValues)
         applyInstance();
     if (variant.skinned) {
         // getSkinnedPosition and getSkinnedNormalAndTangent, operand for operand.
         const uint32_t bones = v.storageBuffer(previous + "boneMatrices", Type::mat(4, 4));
         ExprId base = v.construct(Type::u32(), {v.uniform(previous + "boneBase", Type::f32())});
-        if (variant.skinnedPalette) {
+        ExprId bindMatrix = v.uniform("bindMatrix", Type::mat(4, 4));
+        ExprId bindMatrixInverse = v.uniform("bindMatrixInverse", Type::mat(4, 4));
+        if (variant.skinInstanceValues) {
+            // A grouped shadow caster's palette base and bind pair, one nine-vec4 record per instance: the
+            // frame's own palette is shared by every page, so only these values move per caster.
+            const uint32_t skin = v.storageBuffer("shadowSkin", Type::vec(4));
+            const ExprId at = v.add(base, v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(9)})));
+            const auto record = [&](int index) {
+                return v.loadStorage(skin, v.add(at, v.construct(Type::u32(), {v.constant(index)})));
+            };
+            base = v.construct(Type::u32(), {v.swizzle(record(0), "x")});
+            const auto columns = [&](int first) {
+                return v.construct(Type::mat(4, 4),
+                                   {record(first), record(first + 1), record(first + 2), record(first + 3)});
+            };
+            bindMatrix = columns(1);
+            bindMatrixInverse = columns(5);
+        } else if (variant.skinnedPalette) {
             const ExprId stride = v.construct(Type::u32(), {v.uniform("boneStride", Type::f32())});
             base = v.add(base, v.mul(v.builtin("instanceIndex"), stride));
         }
         const ExprId index = v.attribute("skinIndex", Type::vec(4, Type::Scalar::U32));
         const ExprId weight = v.attribute("skinWeight", Type::vec(4));
-        const ExprId bindMatrix = v.uniform("bindMatrix", Type::mat(4, 4));
-        const ExprId bindMatrixInverse = v.uniform("bindMatrixInverse", Type::mat(4, 4));
         ExprId bone[4], w[4];
         for (int k = 0; k < 4; ++k) {
             const char lane[2] = {"xyzw"[k], 0};
@@ -402,7 +417,7 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     }
     // Palette matrices are world-space (identity placement) or rig-relative: placement must be
     // outside the skin fold for both positions and inverse-transpose normals, including mixed slots.
-    if (variant.skinnedPalette)
+    if (variant.skinnedPalette || variant.skinInstanceValues)
         applyInstance();
     // NodeMaterial.setupPosition: `positionLocal.assign(positionNode)` after morph, skinning and instancing.
     if (variant.positionNode) position = variant.positionNode->build(v, position);

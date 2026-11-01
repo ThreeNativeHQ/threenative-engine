@@ -80,7 +80,7 @@ export function changedTemplates(files) {
 // default tarball/scaffold/physics/React/asset/MCP/boot route. Unknown executables keep all kits.
 const REPRESENTATIVE_INPUTS = [
   /^docs\/(?:verification|benchmark)\/.*\.(?:png|jpe?g|webp|json|gz|txt)$/u,
-  /^packages\/(?:core|physics|ui|assets|playtest|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-mcp)\//u,
+  /^packages\/(?:core|physics|ui|assets|playtest|runtime-native|create-threenative|terrain|metahuman|raw-unreal|ueformat|engine-mcp|blender-bridge)\//u,
   /^examples\//u,
   /^scripts\/__tests__\/[^/]+\.spec\.ts$/u,
   /^scripts\/(?:api-surface\.json|run-test-suite\.sh|verify-animation-reversal\.ts|temporal-aa-(?:evidence|quality)\.ts|velocity-(?:capture|cost)-proof\.ts|verify-temporal-(?:aa|motion)\.ts|verify-velocity-history\.ts)$/u,
@@ -150,6 +150,7 @@ const FULL_JOBS = [
   "test-playtest",
   "golden-path-template",
   "template-nonvisual",
+  "template-engine-cost",
   "golden-path",
   "benchmark",
   "build",
@@ -235,7 +236,12 @@ export function selectionPlan(
           : (full && (name !== "test-native" || native)) ||
             ((ciLane || template) && CI_JOBS.has(name)) ||
             (template &&
-              ["template-nonvisual", "golden-path-template", "golden-path"].includes(name)) ||
+              [
+                "template-nonvisual",
+                "template-engine-cost",
+                "golden-path-template",
+                "golden-path",
+              ].includes(name)) ||
             (review &&
               (REVIEW_JOBS.includes(name) ||
                 (name === "test" && files.some((file) => file.startsWith("packages/"))))) ||
@@ -688,6 +694,7 @@ const UNPROVEN_REUSE_BOARDS = new Set([
   "test-unit",
   "golden-path-template",
   "template-nonvisual",
+  "template-engine-cost",
   "native-platforms",
 ]);
 
@@ -1104,6 +1111,7 @@ const SHA = /^[0-9a-f]{40}$/u;
 const MATRIX_BOARDS = [
   ["test-unit", "unitMatrix", "shard"],
   ["template-nonvisual", "templateMatrix", "template"],
+  ["template-engine-cost", "templateMatrix", "template"],
   ["golden-path-template", "goldenMatrix", "template"],
 ];
 

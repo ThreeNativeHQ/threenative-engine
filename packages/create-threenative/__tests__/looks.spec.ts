@@ -196,7 +196,13 @@ describe("starter visual floor", () => {
         // downsample chain) are multi-pass nodes of the same kind, and each file is the whole stage.
         // The filmic tone curve is one TSL graph (gamut, blue correction, glow, red modifier, the curve and an
         // output dither), with the same maths on plain numbers for a test or a capture script.
+        // The atmosphere sky is Unreal's sky model in three files: the scattering integrals
+        // (`atmosphere.ts`), the default cloud material (`clouds.ts`) and their LUT and cloud passes
+        // (`gpuSky.ts`), each one whole model the game can rewrite.
         if (
+          !name.endsWith("atmosphere.ts") &&
+          !name.endsWith("clouds.ts") &&
+          !name.endsWith("gpuSky.ts") &&
           !name.endsWith("loading.ts") &&
           !name.endsWith("worldEnvironment.ts") &&
           !name.endsWith("autoExposure.ts") &&

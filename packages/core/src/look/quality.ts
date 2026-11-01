@@ -127,26 +127,23 @@ const high: IWorldEnvironmentOptions = {
   // Epic: Unreal's screen probe gather (`sg.GlobalIlluminationQuality` 3). See `giPreset`.
   finalGatherMethod: "screenProbeGather",
   renderChainTier: "high",
-  // Unreal turns motion blur on for a high end PC only (HardwareTargetingModule.cpp), so the desktop tier has it
-  // and `medium` and `low` do not. It needs the chain's velocity, which costs one more scene pass target.
-  // Cost: unmeasured on its own; read `TN_FRAME_BUDGET`.
-  motionBlurEnabled: true,
-  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4, SceneView.cpp:236-246), and the desktop
-  // tier gets it. The engine jitters the camera, draws the motion and blends the frames, and the `traa` stage resolves
-  // the frame after its screen-space stages. Read `setupPost(...).debug().temporal` for the live frame, history and
-  // jitter. `temporalAA: false` here brings back the
-  // SMAA this tier shipped with. Unreal's Epic setting also keeps the history at twice the screen size
-  // (BaseScalability.ini, `[AntiAliasingQuality@3]`); this tier keeps it at the screen size.
-  temporalAA: true,
+  // Sharp in motion over Unreal's desktop defaults (owner, 2026-10-28: "as if things briefly lost definition"). Unreal
+  // turns camera motion blur on for a high end PC (HardwareTargetingModule.cpp) and resolves edges temporally
+  // (`r.AntiAliasingMethod` 4, SceneView.cpp:236-246); both soften anything that moves. This tier draws 4x MSAA,
+  // Unreal's own forward and mobile default (`r.MSAACount` 4), with no blur. `temporalAA: true` (the `traa` stage;
+  // `setupPost(...).debug().temporal` reads it) and `motionBlurEnabled: true` are the named opt-ins, for a scene whose
+  // foliage, specular or stochastic effects shimmer without temporal averaging.
+  motionBlurEnabled: false,
+  samples: 4,
+  temporalAA: false,
 };
 
 /**
  * The rung in between: the same occlusion, and the chain's own antialiasing one notch cheaper.
  */
-// Temporal AA owns medium edges (it comes with `...high`); another four-sample world resolve adds mobile bandwidth.
+// Medium keeps the chain's SMAA: a four-sample world resolve adds mobile bandwidth.
 const medium: IWorldEnvironmentOptions = {
   ...high,
-  motionBlurEnabled: false,
   // Medium: world-space probes only (`sg.GlobalIlluminationQuality` 1).
   finalGatherMethod: "irradianceField",
   // Unreal's Medium spends less on AO than Epic: AmbientOcclusionMaxQuality 60 against 100 (BaseScalability.ini:590,

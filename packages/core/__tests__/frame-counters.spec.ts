@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FrameCounters,
   counterDeviceOf,
   createCrossingReader,
 } from "../src/profiling/FrameCounters.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 interface IFakeEncoder extends Record<string, unknown> {
   drawIndexed: () => void;
@@ -55,6 +60,32 @@ describe("crossing counter", () => {
 });
 
 describe("FrameCounters", () => {
+  it("counts typed writeBuffer offsets in source elements, including debug GPU resource calls", () => {
+    vi.stubEnv("TN_DEBUG", "1");
+    vi.stubGlobal("__tnEngineCost", {});
+    const device = {
+      createBuffer: (_descriptor: { size: number }) => ({
+        mapAsync: async () => undefined,
+        destroy: () => undefined,
+      }),
+      createCommandEncoder: () => ({
+        beginRenderPass: () => ({ end: () => undefined }),
+        resolveQuerySet: () => undefined,
+      }),
+      queue: { writeBuffer: (..._args: unknown[]) => undefined, submit: () => undefined },
+    };
+    const counters = FrameCounters.install(device);
+    const buffer = device.createBuffer({ size: 128 });
+    device.queue.writeBuffer(buffer, 0, new Float32Array(8), 2, 3);
+    device.queue.submit();
+    expect(counters?.read().gpuBytes).toBe(12);
+    const totals = (globalThis as { __tnEngineCost?: Record<string, number> }).__tnEngineCost;
+    expect(totals?.gpuBufferCreates).toBe(1);
+    expect(totals?.gpuQueueSubmits).toBe(1);
+    counters?.uninstall();
+    device.createBuffer({ size: 128 });
+    expect(totals?.gpuBufferCreates).toBe(1);
+  });
   it("counts every command-encoder and queue call of one frame, and resets between frames", () => {
     const device = fakeDevice();
     const counters = FrameCounters.install(device);

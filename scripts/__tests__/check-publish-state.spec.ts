@@ -293,7 +293,7 @@ describe("pnpm publish:check", () => {
       root,
       "packages/core/package.json",
       JSON.stringify({
-        devDependencies: { "threenative-blender-mcp": "workspace:*" },
+        devDependencies: { "@threenative/blender-bridge": "workspace:*" },
         files: ["dist", "README.md"],
         name: "@threenative/core",
         version: "0.1.0",
@@ -303,10 +303,10 @@ describe("pnpm publish:check", () => {
     write(root, "packages/core/src/index.ts", "export const x = 1;\n");
     write(
       root,
-      "packages/blender-mcp/package.json",
-      JSON.stringify({ name: "threenative-blender-mcp", version: "0.1.0" }),
+      "packages/blender-bridge/package.json",
+      JSON.stringify({ name: "@threenative/blender-bridge", version: "0.1.0" }),
     );
-    write(root, "packages/blender-mcp/gpl/convert.py", "print('initial')\n");
+    write(root, "packages/blender-bridge/gpl/convert.py", "print('initial')\n");
     execFileSync("git", ["init", "--quiet"], { cwd: root });
     execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
     execFileSync("git", ["config", "user.name", "Test"], { cwd: root });
@@ -319,7 +319,7 @@ describe("pnpm publish:check", () => {
         GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
       },
     });
-    write(root, "packages/blender-mcp/gpl/convert.py", "print('changed')\n");
+    write(root, "packages/blender-bridge/gpl/convert.py", "print('changed')\n");
     execFileSync("git", ["add", "."], { cwd: root });
     execFileSync("git", ["commit", "--quiet", "-m", "change-sibling"], { cwd: root });
 
@@ -810,7 +810,6 @@ describe("pnpm publish:check", () => {
 
     expect(contents.entries).toContain("scripts/postinstall.mjs");
     expect(contents.entries).toContain("LICENSE");
-    expect(contents.entries).toContain("gpl/LICENSE.GPL");
     expect(contents.entries).not.toContain("scripts/vsm-proof/run.mjs");
     expect(contents.entries.some((entry) => entry.startsWith("scripts/vsm-proof/"))).toBe(false);
     expect(await unresolvableTarballImports(item as IPublishPackage, contents)).toEqual([]);

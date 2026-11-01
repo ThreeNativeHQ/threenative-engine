@@ -321,6 +321,14 @@ export async function prepareSceneEnvironment(
   // False at the deadline, as the native preparer does; the bake keeps running. Unbounded, an Action
   // RPG restart on 2-CPU SwiftShader waited the whole sky bake (about 30 s) with no frame drawn.
   const prepared = prepare.call(PMREMNode, raw, environment);
+  // The deadline below ends this wait, not the bake: the world draws without the environment's fill
+  // until the bake lands. Say when it does, so a harness (engine parity) can photograph the settled
+  // frame instead of the one before it.
+  console.info("TN_ENVIRONMENT_BAKE:started");
+  void prepared.then(
+    (ready) => console.info(`TN_ENVIRONMENT_BAKE:finished ready=${ready}`),
+    () => console.info("TN_ENVIRONMENT_BAKE:finished ready=false"),
+  );
   const remaining = deadlineMs - (globalThis.performance?.now() ?? Date.now());
   if (!Number.isFinite(remaining)) return prepared;
   let timer: ReturnType<typeof setTimeout> | undefined;

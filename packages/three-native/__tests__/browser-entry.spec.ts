@@ -180,7 +180,21 @@ describe("web engine nested render safe points", () => {
         renderHook = args[2];
         return class {} as ReturnType<typeof rendererBinding.defineWebRenderer>;
       });
-      await bindWebEngine(async () => ({}) as backend.TnAbiModule, []);
+      let hooks: { print: (line: string) => void } | undefined;
+      await bindWebEngine(async (options) => {
+        hooks = options;
+        return {} as backend.TnAbiModule;
+      }, []);
+      // The engine's stdout reads the console per line, so a console routed after load still gets it.
+      const routed = vi.fn();
+      const log = console.log;
+      console.log = routed;
+      try {
+        hooks?.print("TN_RENDERER: note");
+      } finally {
+        console.log = log;
+      }
+      expect(routed).toHaveBeenCalledWith("TN_RENDERER: note");
       setUniform.mockClear();
       renderHook({ renderer: {}, frameId: 0 });
       expect(collect).toHaveBeenCalledTimes(1);

@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 
 // Bundled into the CLI at build time, exactly like the MCP server table: `detect.ts` uses only
 // node builtins, so inlining it adds no runtime dependency to the published `create-threenative`.
-import { installCommandFor, resolveBlender } from "threenative-blender-mcp/bridge";
+import { installCommandFor, resolveBlender } from "@threenative/blender-bridge/bridge";
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { resolveRuntimeAssetCapabilities } from "./build.js";
@@ -212,7 +212,6 @@ const CORE_PACKAGE_NAME = "@threenative/core";
 const CORE_PACKAGE_VERSION = "0.3.7";
 const CORE_RESOLVED_SERVERS: ReadonlySet<string> = new Set([
   "threenative-engine",
-  "threenative-blender",
   "threenative-animation",
 ]);
 
@@ -238,30 +237,6 @@ export const MCP_SERVER_SPECS: readonly IMcpServerSpec[] = Object.entries(MCP_SE
 const ASSET_DOWNLOAD_DIRECTORIES = ["public/assets", "public/audio"] as const;
 /** The model sources `blenderImportPass` owns; kept equal to `BLENDER_SOURCE_EXTENSIONS`. */
 const BLENDER_SOURCE_SUFFIXES = [".fbx", ".blend", ".obj", ".dae"] as const;
-
-/** The configured name of the server that drives Blender, derived from the one table rather than
- * spelled again: a renamed server must not leave the conversion check silently probing nothing. */
-const BLENDER_PACKAGE = ((): IMcpPackage => {
-  const declared = MCP_PACKAGES.blender;
-  if (declared === undefined) {
-    throw new Error("TN_DOCTOR_MCP_TABLE: MCP_PACKAGES declares no 'blender' package.");
-  }
-  return declared;
-})();
-
-/** The configured name of the server whose shim is `blender.mjs`, matched on the shim rather than
- * on the package name: this server resolves to `@threenative/core`, like the engine one, so the
- * package name identifies neither. Derived from the one table so a rename cannot leave the
- * conversion check silently probing a server that is no longer there. */
-export const BLENDER_SERVER = ((): string => {
-  const entry = Object.entries(MCP_SERVERS).find(
-    ([, server]) => serverPackageKey(server) === "blender",
-  );
-  if (entry === undefined) {
-    throw new Error("TN_DOCTOR_MCP_TABLE: no configured MCP server launches blender.mjs.");
-  }
-  return entry[0];
-})();
 
 /** The part of one installer host entry doctor reads. */
 interface IMcpHost {
@@ -1977,20 +1952,13 @@ function conversionsExecuted(snapshot: IProjectSnapshot): number | undefined {
 }
 
 /**
- * Model conversion: four facts, never folded into one.
- *
- * The Blender MCP server starting is not the same fact as Blender being installed, which is not
- * the same fact as a conversion having run. A server that advertises `blender_convert` over a
- * healthy transport on a machine with no Blender will fail the first time a tool is called, and
- * before this check the report said "transport initialized and advertised 3 tool(s)" and nothing
- * else — a complete authoring toolchain claimed on the strength of a process that started.
+ * Model conversion: Blender being installed is not the same fact as a conversion having run.
  *
  * **`warn`, never `fail` for a missing application.** A game with no `.fbx`, `.blend`, `.obj` or
  * `.dae` in it needs no Blender and must stay green — a doctor that failed on a 350 MB dependency
  * the project does not use would be a doctor people stop running. A game that *does* carry one of
  * those sources gets a hard failure where it belongs: in the build, from `blenderImportPass`,
- * naming the same command. A broken transport is a different matter and does fail: that is the
- * package this project installed, not an application it chose not to have.
+ * naming the same command.
  */
 function modelConversionCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
   const probe = snapshot.blender;
@@ -2006,33 +1974,20 @@ function modelConversionCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefi
       : executed === 0
         ? "the bake manifest records no converted model"
         : `the bake manifest records ${executed} converted model(s)`;
-  const transport = snapshot.mcpServerHealth?.get(BLENDER_SERVER);
-  if (transport?.status === "fail") {
-    return {
-      detail: `${BLENDER_SERVER} is configured, but ${transport.detail}; no conversion tool is reachable — ${ran}`,
-      fix: `Reinstall @threenative/core and ${BLENDER_PACKAGE.name}, then rerun doctor.`,
-      name,
-      status: "fail",
-    };
-  }
-  const reachable =
-    transport === undefined
-      ? `${BLENDER_SERVER} was not probed`
-      : `${BLENDER_SERVER} transport is up`;
   if (!probe.available) {
     const carried =
       sources.length === 0
         ? "no .fbx, .blend, .obj or .dae in this project, so nothing needs it yet"
         : `${sources.length} source(s) in this project need it: ${sources.slice(0, 3).join(", ")}`;
     return {
-      detail: `${reachable}, but conversion is unavailable: ${probe.detail} — ${carried}; ${ran}`,
+      detail: `conversion is unavailable: ${probe.detail} — ${carried}; ${ran}`,
       fix: `Install Blender when you want to convert those formats: ${probe.installCommand}`,
       name,
       status: "warn",
     };
   }
   return {
-    detail: `${reachable} and Blender ${probe.version ?? "(version unreported)"} converts .fbx, .blend, .obj and .dae on this machine; ${ran}`,
+    detail: `Blender ${probe.version ?? "(version unreported)"} converts .fbx, .blend, .obj and .dae on this machine; ${ran}`,
     name,
     status: "ok",
   };

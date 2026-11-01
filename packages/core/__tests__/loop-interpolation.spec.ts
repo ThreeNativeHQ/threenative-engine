@@ -97,6 +97,30 @@ describe("draw-only transform history", () => {
     expect(settled.position.x).toBe(4);
   });
 
+  it("arms the engine's own recompose instead of crossing for it, as plain three still calls it", () => {
+    // On the Wasm engine the walk composes a node's own matrix from the pose the restore just wrote, so the
+    // restore arms the flag that walk reads: one crossing a body a frame before (300 on the stress lab).
+    const engine = new Object3D() as Object3D & { __tnCopyMatrixWorld?: () => void };
+    engine.__tnCopyMatrixWorld = () => undefined;
+    const engineUpdates = vi.spyOn(engine, "updateMatrix");
+    const plain = new Object3D();
+    const plainUpdates = vi.spyOn(plain, "updateMatrix");
+    for (const object of [engine, plain]) {
+      const interpolation = new PhysicsInterpolation();
+      interpolation.track(object);
+      interpolation.beginTick();
+      object.position.x = 2;
+      interpolation.endTick();
+      object.matrixWorldNeedsUpdate = false;
+      interpolation.render(0.5, () => expect(object.position.x).toBe(1));
+      expect(object.position.x).toBe(2);
+    }
+
+    expect(engineUpdates).not.toHaveBeenCalled();
+    expect(engine.matrixWorldNeedsUpdate).toBe(true);
+    expect(plainUpdates).toHaveBeenCalledTimes(1);
+  });
+
   it("resets a teleport during a tick and external position edits between ticks", () => {
     const object = new Object3D();
     const interpolation = new PhysicsInterpolation();

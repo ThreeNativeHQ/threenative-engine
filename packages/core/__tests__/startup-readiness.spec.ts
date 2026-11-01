@@ -457,3 +457,235 @@ describe("StartupReadiness predicate holds", () => {
     expect(ready).toBe(true);
   });
 });
+
+describe("StartupReadiness image holds", () => {
+  /**
+   * The defect this exists for: compile and the sustained-frame window both finished on a renderer whose
+   * first world picture was still cold. On the Wasm engine the post chain's exposure target read
+   * `[0, -1, -2.473931, 0]` — log exposure 0, luminance -1, unsettled — and the cover lifted on frames of
+   * 185 and 124 mean brightness before the settled 108. Frames are no answer either: the engine draws
+   * dozens of hidden frames the player never sees.
+   */
+  it("does not reveal a cold renderer when compile and stable timers finish", async () => {
+    vi.useFakeTimers();
+    try {
+      // The renderer's own answer, in the shape core's seam composes it: an ordinary submission drawn after
+      // the hold engaged, that frame's shadow inputs initialized, and the meter measured within 3% of its
+      // target. `submissions` starts at the generation the hold was engaged on.
+      const engagedOn = 7;
+      const targetStops = -0.483164;
+      const renderer = {
+        exposure: undefined as number | undefined,
+        shadowsReady: false,
+        submissions: 7,
+      };
+      const imageReady = (): boolean =>
+        renderer.submissions > engagedOn &&
+        renderer.shadowsReady &&
+        renderer.exposure !== undefined &&
+        Math.abs(renderer.exposure - targetStops) <= Math.log2(1.03);
+      const readiness = new StartupReadiness({
+        compileBudgetMs: 1_000,
+        frameBudgetMs: 50,
+        imageReady,
+        stableFrames: 2,
+        stableWindowMs: 1_000,
+      });
+      let ready = false;
+      void readiness.whenReady().then(() => {
+        ready = true;
+      });
+
+      readiness.start();
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+      for (let frame = 0; frame < 4; frame += 1) readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      // The framework's own work is done, on time, and the picture is still cold.
+      expect(readiness.frameworkReady).toBe(true);
+      expect(readiness.ready).toBe(false);
+      expect(ready).toBe(false);
+
+      // Both bounded timers have spent themselves: neither may release a picture the renderer calls cold. (The
+      // wait measured here stays inside `STARTUP_IMAGE_TIMEOUT_MS`, the deadline case that follows.)
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(ready).toBe(false);
+
+      // Frames that drew no world: a declined frame, the loading cover's overlay and an environment bake
+      // step all leave the submission count where it was, however many of them the cold start lasts.
+      for (let frame = 0; frame < 12; frame += 1) readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(ready).toBe(false);
+
+      // One input at a time, in the order the engine produces them: the submission first ...
+      renderer.submissions = engagedOn + 1;
+      readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(ready).toBe(false);
+      // ... then the shadow pages ...
+      renderer.shadowsReady = true;
+      readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(ready).toBe(false);
+      // ... then a measurement that is settled but 10% off. `settled` alone permits this; 3% does not.
+      renderer.exposure = targetStops + Math.log2(1.1);
+      readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(ready).toBe(false);
+
+      // The measured target itself is what releases the cover.
+      renderer.exposure = targetStops + 0.02;
+      readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(ready).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * The image wait has a deadline, because a real game can leave it outstanding forever: a fully black or
+   * unlit opening (a menu, space) whose meter never measures, a sun that moves every frame (every virtual
+   * shadow level resets on an exact direction change and only one is granted per frame), a target that keeps
+   * moving. A cover that waits on one of those is a launch that never ends, so the deadline reveals the world
+   * and says in one line which input never arrived.
+   */
+  it("reveals at the image deadline and names the input that never arrived", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      // A black opening: the shadow pages map, the world draws, and the meter never measures.
+      const imageReady = (): {
+        exposureSettled: boolean;
+        ready: boolean;
+        shadowInputsReady: boolean;
+      } => ({ exposureSettled: false, ready: false, shadowInputsReady: true });
+      const readiness = new StartupReadiness({
+        compileBudgetMs: 1_000,
+        frameBudgetMs: 50,
+        imageReady,
+        stableFrames: 2,
+        stableWindowMs: 1_000,
+      });
+      let ready = false;
+      void readiness.whenReady().then(() => {
+        ready = true;
+      });
+
+      readiness.start();
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+      for (let frame = 0; frame < 4; frame += 1) readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(readiness.frameworkReady).toBe(true);
+
+      // Up to the deadline the renderer's own answer still rules: both bounded timers spent, no reveal.
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(ready).toBe(false);
+      expect(
+        warn.mock.calls.some(([line]) => String(line).startsWith("TN_STARTUP_IMAGE_TIMEOUT")),
+      ).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(ready).toBe(true);
+      const lines = warn.mock.calls.map(([line]) => String(line));
+      expect(lines).toHaveLength(1);
+      const marker = lines[0] ?? "";
+      expect(marker).toMatch(/^TN_STARTUP_IMAGE_TIMEOUT \{/u);
+      expect(JSON.parse(marker.slice("TN_STARTUP_IMAGE_TIMEOUT ".length))).toEqual({
+        exposureSettled: false,
+        shadowInputsReady: true,
+        waitedMs: 3_000,
+      });
+      // The wait is over, so nothing is left for a stall report to name.
+      expect(readiness.pendingImage).toEqual([]);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds a picture that goes cold while a game hold is still pending", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      // Ready when the frame window ends, cold again before the streamed tier lands (a camera cut resets
+      // the shadow pages): the deadline must still bound the cover once the hold settles.
+      let warm = true;
+      const readiness = new StartupReadiness({
+        compileBudgetMs: 1_000,
+        frameBudgetMs: 50,
+        imageReady: () => ({ exposureSettled: true, ready: warm, shadowInputsReady: warm }),
+        stableFrames: 2,
+        stableWindowMs: 1_000,
+      });
+      let ready = false;
+      void readiness.whenReady().then(() => {
+        ready = true;
+      });
+      let land = (): void => undefined;
+      readiness.start();
+      readiness.hold(
+        "streamed tier",
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+        60_000,
+      );
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+      for (let frame = 0; frame < 4; frame += 1) readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(readiness.frameworkReady).toBe(true);
+
+      warm = false;
+      land();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(ready).toBe(false);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(ready).toBe(true);
+      expect(
+        warn.mock.calls.some(([line]) => String(line).startsWith("TN_STARTUP_IMAGE_TIMEOUT")),
+      ).toBe(true);
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves without the deadline line when the picture arrives in time", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      let shadowInputsReady = false;
+      const readiness = new StartupReadiness({
+        compileBudgetMs: 1_000,
+        frameBudgetMs: 50,
+        imageReady: () => ({ exposureSettled: true, ready: shadowInputsReady, shadowInputsReady }),
+        stableFrames: 2,
+        stableWindowMs: 1_000,
+      });
+      let ready = false;
+      void readiness.whenReady().then(() => {
+        ready = true;
+      });
+
+      readiness.start();
+      for (let index = 0; index < 6; index += 1) await Promise.resolve();
+      for (let frame = 0; frame < 4; frame += 1) readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(ready).toBe(false);
+      // A launch stuck on the picture says which wait it is in, so the stall report names it.
+      expect(readiness.pendingImage).toEqual(["the renderer's first world frame"]);
+
+      // The frame the world maps its shadow pages with arrives before the deadline, so it never speaks.
+      shadowInputsReady = true;
+      readiness.observe(10);
+      for (let index = 0; index < 4; index += 1) await Promise.resolve();
+      expect(ready).toBe(true);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});

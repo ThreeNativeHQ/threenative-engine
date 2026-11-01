@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.14.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.14.0 serves all 53 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
-  "version": "0.14.0",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.15.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.15.0 serves all 54 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
+  "version": "0.15.0",
   "profile": null,
   "recommended": [
     "ambientcg_list_files",
@@ -62,6 +62,7 @@
     "fab_search_assets",
     "itch_download_asset",
     "itch_list_downloads",
+    "mesh_optimize",
     "polyhaven_get_asset",
     "polyhaven_list_categories",
     "polyhaven_list_files",
@@ -494,6 +495,32 @@
         }
       },
       "required": ["target", "output", "projectRoot", "clips"]
+    },
+    "mesh_optimize": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Absolute path to a static GLB (no skin or morph targets)."
+        },
+        "outputPath": {
+          "description": "Output .glb path. Defaults to <name>.optimized.glb next to the input; never the input itself.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "maxTextureSize": {
+          "default": 2048,
+          "description": "Longest texture side kept; larger textures are downscaled in their own format.",
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 8192
+        }
+      },
+      "required": ["path"]
     },
     "fab_search_assets": {
       "type": "object",
@@ -2109,6 +2136,7 @@
     "asset_auto_rig": "Fit an 18-joint humanoid skeleton to an unrigged local GLB by measured geometry landmarks, bind smooth or rigid skin weights and publish the skinned GLB under the project root. Preserves an existing rig unless replaceRig is set; ambiguous anatomy returns a landmark correction request instead of a bad rig.",
     "asset_preview_animation": "Render a prepared GLB from several angles with an optional clip sample time or explicit bone pose, and publish a nonblank contact sheet under the project root. A missing rendering backend returns an explicit unavailable result instead of claiming success.",
     "asset_retarget_animations": "Fetch the selected pinned release donors, retarget their clips onto a prepared target skeleton with a world-space rest correction, preserve the target's mesh/materials/UVs and (by default) its existing clips, and publish a game minimal GLB. Root motion requires the matching _RM donor.",
+    "mesh_optimize": "Simplify a heavy static GLB with meshoptimizer under a rendered before/after gate: each error-ladder candidate must keep its silhouette (IoU >= 0.98) and mean grayscale difference (<= 2%) from six angles, or the original is kept and nothing is written. Resizes textures above maxTextureSize, never compresses the output, never overwrites the input, and refuses skinned or morph-target meshes.",
     "fab_search_assets": "Search public Fab marketplace listings. Free assets are returned by default. Results carry no file formats and there is no format filter: call fab_get_asset for a listing's formats.",
     "fab_get_asset": "Get normalized public details and per-license prices for one Fab listing.",
     "fab_list_filters": "List usable public Fab filter labels and slugs. A warning identifies versioned fallback or stale values.",

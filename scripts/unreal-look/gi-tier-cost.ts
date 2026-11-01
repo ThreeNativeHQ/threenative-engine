@@ -215,7 +215,7 @@ async function measureTier(
 ): Promise<Record<string, unknown>> {
   const { adapter, errors, page } = await openTier(
     browser,
-    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}${urlExtra}`,
+    `${origin}main.html?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}${urlExtra}`,
     pose,
   );
   try {
@@ -258,7 +258,7 @@ async function watchSteps(
 ): Promise<Record<string, unknown>> {
   const { adapter, errors, page } = await openTier(
     browser,
-    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=high&shadowAuto=1${urlExtra}`,
+    `${origin}main.html?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=high&shadowAuto=1${urlExtra}`,
     pose,
   );
   try {
@@ -315,7 +315,7 @@ async function measureInterleaved(
 ): Promise<Record<string, unknown>> {
   const { adapter, errors, page } = await openTier(
     browser,
-    `${origin}?tnGi=${name}&layer=L7&tier=high&shadowTier=high${urlExtra}`,
+    `${origin}main.html?tnGi=${name}&layer=L7&tier=high&shadowTier=high${urlExtra}`,
     pose,
   );
   try {

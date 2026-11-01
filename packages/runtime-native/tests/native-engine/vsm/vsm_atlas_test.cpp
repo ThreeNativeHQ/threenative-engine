@@ -3,15 +3,30 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
 #include "engine/abi/bindings.h"
+#include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
 #include "engine/scene/lights.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 using namespace tn::engine;
 using namespace tn::engine::shadows;
+
+namespace {
+// One number per page table, so a run before a change and a run after it compare in one line (`FNV-1a`).
+uint64_t tableDigest(const std::vector<float>& table) {
+    uint64_t hash = 0xcbf29ce484222325ull;
+    for (const float value : table) {
+        const uint32_t bits = std::bit_cast<uint32_t>(value);
+        for (int byte = 0; byte < 4; ++byte) { hash ^= (bits >> (8 * byte)) & 0xffu; hash *= 0x100000001b3ull; }
+    }
+    return hash;
+}
+} // namespace
 
 // The same registry setter is reached by the Wasm ABI and desktop V8 adapter.
 void binding() {
@@ -610,4 +625,149 @@ void mapSizes() {
     CHECK(!PageAtlas::create(bad, error));
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+// A panned window keeps the pages it still covers, as Unreal's clipmap panning does: only the
+// pages that enter at the edge are drawn. A depth change or a dirty page still redraws.
+void panKeepsPages() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    const Vector3 sun(0, 1, 0);
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    std::size_t fine = 0, coarse = 0;
+    for (int frame = 0; frame < 3; ++frame)
+        for (const auto& page : atlas->update(Vector3(4.5, 0, 0), sun)) ++(page.level == 0 ? fine : coarse);
+    // The fine level (4 x 4 pages of 4 m) moved by one page column: four new pages, not sixteen.
+    CHECK(fine > 0 && fine < 16);
+    CHECK(coarse < 16);
+    // A dirty page inside the panned window still redraws.
+    Box3 changed;
+    changed.set(Vector3(4, 0, -1), Vector3(5, 1, 1));
+    atlas->invalidate(changed, true);
+    std::size_t dirty = 0;
+    for (const auto& page : atlas->update(Vector3(4.5, 0, 0), sun)) dirty += page.level == 0;
+    CHECK(dirty > 0 && dirty < 16);
+    // FS12: a page's identity is three integers. Twenty panning frames grant pages, evict pages and protect the
+    // deferred level's tiles on every one of them, and the table the shader reads stays byte-identical while no
+    // page key is formatted at all: the string set, its per-tile insert, its erase pass and the pool's string lookup
+    // are what the frame used to pay for.
+    waste::setDebugEnabled(true);
+    const uint64_t keysBefore = waste::counters().shadowPageKeyStrings.load();
+    uint64_t panDigest = 0xcbf29ce484222325ull;
+    std::size_t granted = 0;
+    for (int frame = 0; frame < 20; ++frame) {
+        granted += atlas->update(Vector3(4.5 + 0.5 * frame, 0, 0), sun).size();
+        const uint64_t digest = tableDigest(atlas->table());
+        if (frame == 0) std::printf("pan: frame digests");
+        std::printf(" %016llx", (unsigned long long)digest);
+        panDigest = (panDigest ^ digest) * 0x100000001b3ull;
+    }
+    const uint64_t keyStrings = waste::counters().shadowPageKeyStrings.load() - keysBefore;
+    waste::setDebugEnabled(false);
+    std::printf("\npan: %zu page(s) granted over 20 panning frames, table digest %016llx, page keys formatted %llu\n",
+                granted, (unsigned long long)panDigest, (unsigned long long)keyStrings);
+    CHECK(granted > 0);
+    CHECK(keyStrings == 0);  // no string per tile, per granted page or per pool lookup
+    // A window whose page coordinates do not fit a page's numeric identity (24 signed bits per axis) grants nothing:
+    // an aliased id would protect one tile and evict another. Guards the refusal `pageId`'s packing needs. (At a
+    // level's 0.0625 m page unit, 1e6 m is 1.6e7 pages: past the limit, and still an exact int.)
+    CHECK(atlas->update(Vector3(1e6, 0, 0), sun).empty());
+}
+
+// PRD-773: every refresh names its cause. A level's grant is a rebuild (first map, camera cut), a pan that kept its
+// pages, or an invalidation under a window that stayed put, and the pages it drew are counted, so a slow shadow frame
+// in TN_FRAME_BUDGET.counters.engine says which of the three it was.
+void refreshReasons() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    const Vector3 sun(0, 1, 0);
+    waste::setDebugEnabled(true);
+    auto& w = waste::counters();
+    struct Tally { uint64_t all, pan, rebuild, invalidation, pages, evictions; };
+    const auto read = [&] {
+        return Tally{w.shadowRefreshes.load(), w.shadowRefreshPan.load(), w.shadowRefreshRebuild.load(),
+                     w.shadowRefreshInvalidation.load(), w.shadowPagesRefreshed.load(), w.shadowPageEvictions.load()};
+    };
+    const auto show = [](const char* what, const Tally& a, const Tally& b) {
+        std::printf("refresh %s: grants %llu (pan %llu, rebuild %llu, invalidation %llu), pages %llu, evictions %llu\n", what,
+                    (unsigned long long)(b.all - a.all), (unsigned long long)(b.pan - a.pan),
+                    (unsigned long long)(b.rebuild - a.rebuild), (unsigned long long)(b.invalidation - a.invalidation),
+                    (unsigned long long)(b.pages - a.pages), (unsigned long long)(b.evictions - a.evictions));
+    };
+    Tally before = read();
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(0, 0, 0), sun);
+    Tally after = read();
+    show("cold start", before, after);
+    CHECK(after.all - before.all == 2 && after.rebuild - before.rebuild == 2);  // one grant per level, both rebuilds
+    CHECK(after.pan == before.pan && after.invalidation == before.invalidation);
+    CHECK(after.pages - before.pages == 32);  // 2 levels x 4 x 4 pages
+
+    before = after;
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    after = read();
+    CHECK(after.all == before.all && after.pages == before.pages);  // a steady frame refreshes nothing
+
+    before = after;
+    for (int frame = 0; frame < 3; ++frame) atlas->update(Vector3(4.5, 0, 0), sun);
+    after = read();
+    show("pan", before, after);
+    CHECK(after.pan > before.pan && after.rebuild == before.rebuild && after.invalidation == before.invalidation);
+    CHECK(after.pages - before.pages < 16 * (after.all - before.all));  // a pan draws the entering pages only
+
+    before = after;
+    Box3 changed;
+    changed.set(Vector3(4, 0, -1), Vector3(5, 1, 1));
+    atlas->invalidate(changed, true);
+    const std::size_t dirty = atlas->update(Vector3(4.5, 0, 0), sun).size();
+    after = read();
+    show("invalidation", before, after);
+    CHECK(after.invalidation > before.invalidation && after.pan == before.pan && after.rebuild == before.rebuild);
+    CHECK(dirty > 0 && after.pages - before.pages == dirty);  // the counter is the pages the grant returned
+
+    before = after;
+    atlas->update(Vector3(40, 0, 0), sun, true);
+    atlas->update(Vector3(40, 0, 0), sun, true);
+    after = read();
+    show("camera cut", before, after);
+    CHECK(after.rebuild > before.rebuild && after.pan == before.pan);  // a cut to a far eye rebuilds, it keeps no page
+
+    waste::setDebugEnabled(false);
+    before = read();
+    atlas->update(Vector3(-80, 0, 0), sun, true);
+    CHECK(read().all == before.all);  // counters are opt-in: nothing counts while tnDebug is off
+}
+
+// The readiness evidence a startup frame waits on: a level's window is granted one per update (the clipmap cuts
+// finest first), so `initialized()` is the mapped levels themselves, never a draw count. A sun that moved is a new
+// shadow provider: every level is unmapped and the atlas is initialized again only once each one is granted.
+void initialized() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24, 48}; options.mapSize = 256; options.pageTexels = 64;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value()); if (!atlas) return;
+    CHECK(!atlas->initialized());
+    const Vector3 sun(0, 1, 0);
+    for (int grant = 1; grant <= 3; ++grant) {
+        CHECK(!atlas->update(Vector3(0, 0, 0), sun).empty());
+        // Two of three levels mapped is still cold; only the grant that maps the last one is initialized.
+        CHECK(atlas->initialized() == (grant == 3));
+    }
+    // A steady frame grants nothing and keeps the answer.
+    CHECK(atlas->update(Vector3(0, 0, 0), sun).empty());
+    CHECK(atlas->initialized());
+    const Vector3 moved(0.2, 1, 0.1);
+    CHECK(!atlas->update(Vector3(0, 0, 0), moved).empty());
+    CHECK(!atlas->initialized());
+    atlas->update(Vector3(0, 0, 0), moved);
+    CHECK(!atlas->initialized());
+    atlas->update(Vector3(0, 0, 0), moved);
+    CHECK(atlas->initialized());
+}
+
+TN_TEST_MAIN({"atlas", atlas}, {"initialized", initialized}, {"pan_keeps_pages", panKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

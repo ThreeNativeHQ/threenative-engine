@@ -13,7 +13,14 @@
  * at this host's own measured cost per crossing, take more than `REDUNDANT_SHARE` of the frame's
  * median interval: the frame's own length, so the guard holds on Xvfb and on a loaded host. The line
  * is `TN_BRIDGE_WARNING`, which a playtest fails on (`packages/playtest` perf warnings).
+ *
+ * What *all* crossings cost is an observation, not a defect: a game that reads 995 distinct
+ * properties once each has nothing to batch, so no fix exists and a warning about it is noise every
+ * game pays. It rides the census a debug run or a playtest already asked for, and the debug report
+ * ranks it (`bridgeCrossingMs`); the always-on line stays on repeated reads.
  */
+
+import { debugRequested } from "./debug-telemetry.js";
 
 export const BRIDGE_WARNING_MARKER = "TN_BRIDGE_WARNING";
 /**
@@ -78,7 +85,11 @@ export function callerOf(stack: string | undefined): string {
     .map((line) => line.slice(3));
   const fileOf = (frame: string) => /\(?([^()\s]+?)(?::\d+){1,2}\)?$/u.exec(frame)?.[1] ?? frame;
   const own = new Set(frames.slice(0, 2).map(fileOf));
-  let at = frames.findIndex((frame) => !own.has(fileOf(frame)));
+  let at = frames.findIndex(
+    (frame) =>
+      !own.has(fileOf(frame)) &&
+      !/(?:browser-backend|debug-telemetry|bridge-meter)\.[jt]s(?:[:?]|$)/u.test(fileOf(frame)),
+  );
   if (at < 0) at = Math.min(3, frames.length - 1);
   const short = (frame: string) =>
     frame.replace(
@@ -102,6 +113,21 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
   let window = 0;
   const finish = (done: ICensus): void => {
     window += 1;
+    const round = (value: number) => Math.round(value * 1000) / 1000;
+    // What one crossing costs on this host, asked once. A debug-off frame that repeated no read
+    // never pays for the calibration.
+    const costMicros = (): number => {
+      micros ??= host.crossingMicros();
+      if (!Number.isFinite(micros) || micros < 0)
+        throw new Error("TN_BRIDGE_WARNING: invalid crossing calibration.");
+      return micros;
+    };
+    const medianFrameMs = (): number => {
+      const sorted = [...intervals].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)] as number;
+    };
+    let redundant = 0;
+    for (const count of done.redundantByName.values()) redundant += count;
     if (done.printed) {
       let crossed = 0;
       for (const count of done.byName.values()) crossed += count;
@@ -113,15 +139,31 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
           perFrame,
           caller: done.callers.get(name) ?? "unknown",
         }));
-      host.report(`${BRIDGE_CENSUS_MARKER}:${JSON.stringify({ window, crossings: crossed, top })}`);
+      // The debug path's own observation: what every crossing of the frame cost, at this host's
+      // calibration. It is not a warning — a game with no repeated read has nothing to fix — so it
+      // rides the census a debug run or a playtest bound already asks for.
+      const frameMs = intervals.length === 0 ? undefined : medianFrameMs();
+      const crossingMs = crossed === 0 ? undefined : (crossed * costMicros()) / 1000;
+      host.report(
+        `${BRIDGE_CENSUS_MARKER}:${JSON.stringify({
+          window,
+          crossings: crossed,
+          ...(frameMs === undefined || crossingMs === undefined
+            ? {}
+            : {
+                crossingUs: round(costMicros()),
+                crossingMs: round(crossingMs),
+                share: round(crossingMs / frameMs),
+              }),
+          redundantReads: redundant,
+          top,
+        })}`,
+      );
     }
-    let redundant = 0;
-    for (const count of done.redundantByName.values()) redundant += count;
     if (redundant === 0 || intervals.length === 0) return;
-    micros ??= host.crossingMicros();
-    const sorted = [...intervals].sort((a, b) => a - b);
-    const frameMs = sorted[Math.floor(sorted.length / 2)] as number;
-    const redundantMs = (redundant * micros) / 1000;
+    const frameMs = medianFrameMs();
+    const crossingUs = costMicros();
+    const redundantMs = (redundant * crossingUs) / 1000;
     if (!(redundantMs > frameMs * REDUNDANT_SHARE)) return;
     const top = [...done.redundantByName]
       .sort((a, b) => b[1] - a[1])
@@ -132,12 +174,11 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
         redundant: count,
         caller: done.callers.get(name) ?? "unknown",
       }));
-    const round = (value: number) => Math.round(value * 1000) / 1000;
     host.report(
       `${BRIDGE_WARNING_MARKER}:${JSON.stringify({
         window,
         frameMs: round(frameMs),
-        crossingUs: round(micros),
+        crossingUs: round(crossingUs),
         redundantReads: redundant,
         redundantMs: round(redundantMs),
         share: round(redundantMs / frameMs),
@@ -184,7 +225,8 @@ export function createBridgeMeter(host: IBridgeMeterHost): IBridgeMeter {
           byRead: new Map(),
           redundantByName: new Map(),
           callers: new Map(),
-          printed: (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true,
+          printed:
+            debugRequested() || (globalThis as Record<string, unknown>)[ENGINE_COST_KNOB] === true,
         };
       }
     },

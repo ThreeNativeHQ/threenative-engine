@@ -88,7 +88,7 @@ const allowedProductionCreators = new Map<string, string>([
     "Blender reads paths, not buffers; the per-input staging directory is removed in finally.",
   ],
   [
-    "packages/blender-mcp/src/bridge.ts",
+    "packages/blender-bridge/src/bridge.ts",
     "The Blender subprocess gets a private TMPDIR so its scratch files cannot outlive it; the directory is removed in finally.",
   ],
   [
@@ -100,12 +100,12 @@ const allowedProductionCreators = new Map<string, string>([
     "The presentation contract compiles a standalone probe with the system compiler into a scratch root and removes it in a finally, for the same reason as the decode contract above.",
   ],
   [
-    "scripts/capture-blender-mcp-tools.ts",
+    "scripts/capture-mcp-tools.ts",
     "The tool-snapshot gate packs and installs into scratch roots removed in finally.",
   ],
   [
     "scripts/capture-asset-mcp-tools.ts",
-    "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the Blender one above.",
+    "The asset-MCP tool snapshot installs the pinned published package into a scratch root it pushes onto `scratch` and removes in finally, for the same reason as the animation one above.",
   ],
   [
     "packages/runtime-native/tests/native-engine/post-normal-pass.ts",

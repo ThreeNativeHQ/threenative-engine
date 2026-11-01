@@ -1,4 +1,5 @@
 #include "geometry_cache.h"
+#include "engine/foundation/waste_counters.h"
 
 #include <algorithm>
 #include <cstring>
@@ -21,6 +22,7 @@ void GeometryCache::upload(Handle buffer, const BufferStore& store, uint64_t off
         gpu_.writeBuffer(buffer, begin + whole, word, 4);
     }
     stats_.bytesUploaded += end - begin;
+    waste::debugAdd(waste::counters().attributeUploadBytes, whole + ((end - begin) != whole ? 4 : 0));
 }
 
 Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
@@ -49,6 +51,7 @@ Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
         e.tracked = !e.owner.expired();
         e.releases = store.gpuReleases();
         stats_.bytesUploaded += store.byteLength();
+        waste::debugAdd(waste::counters().attributeUploadBytes, store.byteLength());
         ++stats_.fullUploads;
     } else if (store.version() != e.version) {
         const auto ranges = store.updateRanges();

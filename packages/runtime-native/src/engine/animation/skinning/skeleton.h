@@ -131,6 +131,11 @@ class SkinnedMesh : public Mesh {
     [[nodiscard]] bool posesVertices() const override { return true; }
     Vector3& applyBoneTransform(uint64_t index, Vector3& target) const;
     void computeBoundingBox();
+    /** Mesh-space box holding every skinned vertex, from each bone's posed position and the farthest
+     * bind-pose vertex it weights (UE 5.8.3 fits skinned bounds to bones, not to skinned vertices).
+     * The reach is measured once per geometry revision, so a call costs O(bones). False when a
+     * vertex's weights do not sum to 1: the vertex then leaves the bones' hull. */
+    bool boneReachBounds(Box3& target) const;
     std::shared_ptr<Box3> boundingBox;
     std::shared_ptr<Skeleton> skeleton;
     std::weak_ptr<bool> gpuSkinValidity;
@@ -143,6 +148,13 @@ class SkinnedMesh : public Mesh {
 
   protected:
     const Box3& cachedBounds() override;
+
+  private:
+    mutable std::vector<double> boneReach_;
+    mutable const void* boneReachGeometry_ = nullptr;
+    mutable const void* boneReachSkeleton_ = nullptr;
+    mutable uint64_t boneReachRevision_ = 0;
+    mutable bool boneReachHolds_ = false;
 };
 
 /** SkeletonUtils.clone: copy the hierarchy, share mesh resources, remap each skin to cloned bones.

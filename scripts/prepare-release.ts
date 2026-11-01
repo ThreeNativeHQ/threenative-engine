@@ -226,8 +226,7 @@ function syncPeerRanges(repo: string, versions: ReadonlyMap<string, string>): nu
 export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, string>): number {
   const coreVersion = versions.get("@threenative/core");
   const engineVersion = versions.get("threenative-engine-mcp");
-  const blenderVersion = versions.get("threenative-blender-mcp");
-  if (coreVersion === undefined || engineVersion === undefined || blenderVersion === undefined)
+  if (coreVersion === undefined || engineVersion === undefined)
     throw new Error("TN_RELEASE_COHORT_INCOMPLETE: required release package is missing.");
 
   const sourceUpdates: readonly [string, RegExp, string][] = [
@@ -257,19 +256,9 @@ export function syncSourceVersions(repo: string, versions: ReadonlyMap<string, s
       `$1${engineVersion}$2`,
     ],
     [
-      path.join(repo, "packages/blender-mcp/src/index.ts"),
-      /const SERVER_VERSION = "[^"]+";/u,
-      `const SERVER_VERSION = ${JSON.stringify(blenderVersion)};`,
-    ],
-    [
       path.join(repo, "packages/core/mcp/servers.mjs"),
       /(name: "threenative-engine-mcp", version: ")[^"]+(")/u,
       `$1${engineVersion}$2`,
-    ],
-    [
-      path.join(repo, "packages/core/mcp/servers.mjs"),
-      /(name: "threenative-blender-mcp", version: ")[^"]+(")/u,
-      `$1${blenderVersion}$2`,
     ],
     [
       path.join(repo, "packages/create-threenative/engine-mcp-tools.json"),
@@ -328,12 +317,7 @@ async function main(): Promise<void> {
   );
 
   run("pnpm", ["build"], "pnpm build");
-  run("pnpm", ["tsx", "scripts/capture-blender-mcp-tools.ts"], "capture Blender MCP surface");
-  run(
-    "pnpm",
-    ["tsx", "scripts/capture-blender-mcp-tools.ts", "animation"],
-    "capture animation MCP surface",
-  );
+  run("pnpm", ["tsx", "scripts/capture-mcp-tools.ts"], "capture animation MCP surface");
 
   await provisionReleaseArtifacts(REPO);
   const report = await checkPublishState({

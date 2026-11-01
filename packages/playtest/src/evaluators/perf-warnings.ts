@@ -1,6 +1,7 @@
 const SCENE_WARNING = "TN_SCENE_WARNING";
-/** three-native's bridge census: a property read again and again in one frame across JS to Wasm. */
+/** three-native's calibrated cost of all JS-to-Wasm crossings. */
 const BRIDGE_WARNING = "TN_BRIDGE_WARNING";
+const HOT_CALL = "TN_HOT_CALL";
 const PROJECTION = "TN_RENDER_PROJECTION:";
 
 interface IProjectionLine {
@@ -13,7 +14,7 @@ interface IProjectionLine {
 
 /**
  * The engine's own performance warnings, read off the console: each `TN_SCENE_WARNING` and
- * `TN_BRIDGE_WARNING` line, and each
+ * `TN_BRIDGE_WARNING` and `TN_HOT_CALL` line, and each
  * `TN_RENDER_PROJECTION` line that declined to project. A run with one is not a pass.
  *
  * Two declines are not defects: `reasonCode: "disabled"` is the game's named `renderer.projection:
@@ -22,12 +23,13 @@ interface IProjectionLine {
  * A kart with 85 renderables printed it at the end of a run. A projection line that does not parse
  * fails closed, since it may be a decline.
  * Each finding is the marker text plus, for a decline, the `cause` code and its hint.
+ * `TN_DEBUG_REPORT` is informational; the ranked observations alone are not a warning.
  */
 export function perfWarnings(consoleLines: readonly string[]): string[] {
   const found: string[] = [];
   for (const line of consoleLines) {
     if (typeof line !== "string") continue;
-    for (const marker of [SCENE_WARNING, BRIDGE_WARNING]) {
+    for (const marker of [SCENE_WARNING, BRIDGE_WARNING, HOT_CALL]) {
       const warning = line.indexOf(marker);
       if (warning !== -1) found.push(line.slice(warning).trim());
     }

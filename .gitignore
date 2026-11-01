@@ -184,7 +184,7 @@ screenshot-*.png
 # scaffold the way a stranger's machine would; three of them were committed by accident in #37.
 *.tgz
 
-# Python bytecode caches. `packages/blender-mcp/gpl/recipes` is executed by Blender, which
+# Python bytecode caches. `packages/blender-bridge/gpl` is executed by Blender, which
 # writes a `__pycache__` beside the recipes on every run; one .pyc was committed by accident.
 __pycache__/
 *.pyc

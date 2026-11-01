@@ -33,7 +33,7 @@ import { createPennantMaterial, propMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { ball, block, spike, tube } from "../render/shapes.js";
-import { setupSky } from "../render/sky.js";
+import { SKY_OPTIONS, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { STARTER_MIST, createVolumetricFog } from "../render/volumetricFog.js";
 import type { GameState } from "../state.js";
@@ -80,7 +80,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.assets.texture("native-proof.png"),
       ctx.assets.model<{ scene: Group }>("native-proof.glb"),
       ctx.assets.model<IPlayerModel>("mannequin.glb"),
-      ctx.assets.texture("sky.jpg"),
+      // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
+      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
     ]);
     this.#playerModel = playerModel;
     this.#sky = sky;
@@ -135,11 +136,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
-    if (
-      this.#assetProof === undefined ||
-      this.#playerModel === undefined ||
-      this.#sky === undefined
-    )
+    if (this.#assetProof === undefined || this.#playerModel === undefined)
       throw new Error("Starter scene did not finish loading.");
     const state = ctx.state.getState();
     const player = ctx.entities.add(

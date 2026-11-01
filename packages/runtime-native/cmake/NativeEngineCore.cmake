@@ -317,6 +317,13 @@ tn_native_engine_test(tn-native-engine-tsl-material-accessors-test tests/native-
     native_engine_tsl_material_accessors_listed=every_accessor_is_listed)
 target_link_libraries(tn-native-engine-tsl-material-accessors-test PRIVATE tn_engine_abi)
 
+tn_native_engine_test(tn-native-engine-frame-gate-test tests/native-engine/frame_gate_test.cpp
+    native_engine_frame_gate_debug_reasons=debug_reasons_follow_gate
+    native_engine_frame_gate_late_signal=late_signal_draws_every_frame
+    native_engine_frame_gate_steady_late_signal=steady_late_signal_draws_every_frame
+    native_engine_frame_gate_growing_backlog=growing_backlog_is_declined
+    native_engine_frame_gate_gpu_behind=gpu_behind_is_declined
+    native_engine_frame_gate_unthrottled=unthrottled_loop_stays_bounded)
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
@@ -399,6 +406,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_tsl_ssr_parameters=tsl_ssr_parameters
     native_engine_abi_tsl_texture_store=tsl_texture_store
     native_engine_abi_tsl_mat4_element=tsl_mat4_element
+    native_engine_abi_binding_fn=binding_fn
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
     native_engine_abi_tsl_uniform_value=tsl_uniform_value
@@ -533,11 +541,14 @@ endif()
 # over the native port.
 tn_native_engine_test(tn-native-engine-vsm-test tests/native-engine/vsm/vsm_pages_test.cpp
     native_engine_vsm_pages=pages
-    native_engine_vsm_invalidation=invalidation)
+    native_engine_vsm_invalidation=invalidation
+    native_engine_vsm_eviction_allocation=eviction_allocation)
 target_link_libraries(tn-native-engine-vsm-test PRIVATE tn_engine_vsm)
 target_include_directories(tn-native-engine-vsm-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/vsm)
 tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vsm_atlas_test.cpp
     native_engine_vsm_atlas=atlas
+    native_engine_vsm_initialized=initialized
+    native_engine_vsm_pan_keeps_pages=pan_keeps_pages
     native_engine_vsm_continuous_invalidation=continuous_invalidation
     native_engine_vsm_sampling=sampling
     native_engine_vsm_ground_window=ground_window
@@ -694,6 +705,7 @@ endif()
 
 # PRD-508 phase 1: hierarchy, re-parenting, events and member identity.
 tn_native_engine_test(tn-native-engine-scene-test tests/native-engine/scene_hierarchy_test.cpp
+    native_engine_scene_debug_counts=debug_scene_counts
     native_engine_scene_hierarchy=hierarchy
     native_engine_scene_alias=alias
     native_engine_scene_revision=revision
@@ -840,9 +852,13 @@ target_include_directories(tn-native-engine-static-transform-test PRIVATE ${CMAK
 # PRD-752 phase 4: the job pool runs each item once, and the matrix walk on it is the one-thread walk, bit for bit.
 tn_native_engine_test(tn-native-engine-job-pool-test tests/native-engine/scene/job_pool_test.cpp
     native_engine_job_pool=for_each_once
+    native_engine_job_pool_dispatch_floor=dispatch_floor
+    native_engine_job_pool_workers_cover_the_machine=workers_cover_the_machine
+    native_engine_job_pool_fails_closed=pool_fails_closed_when_no_worker_starts
     native_engine_matrix_walk_jobs=matrix_walk_jobs
     native_engine_matrix_walk_threshold=matrix_walk_threshold
-    native_engine_job_pool_starts_on_need=pool_starts_on_need)
+    native_engine_job_pool_starts_on_need=pool_starts_on_need
+    native_engine_job_pool_is_always_on=pool_is_always_on)
 target_link_libraries(tn-native-engine-job-pool-test PRIVATE tn_engine_scene)
 
 # The engine's JSON reader and writer (header-only), against JSON.parse, JSON.stringify and
@@ -1016,7 +1032,9 @@ if(EMSCRIPTEN)
         # The node ABI check below cannot start this glue (no `node` environment); the stamp ties it to the
         # same sources as the single-thread module, which that check runs on.
         set_target_properties(tn-native-engine-web PROPERTIES OUTPUT_NAME tn-native-engine-web-threads)
-        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0)
+        # mimalloc: dlmalloc's one global lock serialized the workers' allocations with the main thread's
+        # (stress lab FB1: CPU frame p50 -6.5% in a fair uncapped window).
+        target_link_options(tn-native-engine-web PRIVATE -sPTHREAD_POOL_SIZE=0 -sPTHREAD_POOL_SIZE_STRICT=0 -sMALLOC=mimalloc)
         add_custom_command(TARGET tn-native-engine-web POST_BUILD
             COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write tn-native-engine-web-threads
             VERBATIM)
@@ -1036,7 +1054,7 @@ if(EMSCRIPTEN)
         # `worker`: a game can run in a worker on an OffscreenCanvas (PRD-752); without it the glue
         # reads `document` while the module loads.
         -sASSERTIONS=0 -sEXPORT_NAME=createTnWeb -sENVIRONMENT=web,worker -sMAXIMUM_MEMORY=4GB -sALLOW_TABLE_GROWTH=1
-        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage"
+        "-sEXPORTED_FUNCTIONS=_tn_engine_version,_tn_context_create,_tn_context_destroy,_tn_type_id,_tn_object_release,_tn_object_engine_references,_tn_construct,_tn_invoke,_tn_get,_tn_set,_tn_set_callback,_tn_diagnostic_release,_tnw_attribute_view,_tnw_attribute_view_release,_tnw_web_init,_tnw_web_host_abi,_tnw_web_threads,_tnw_web_poll,_tnw_web_error,_tnw_web_adapter,_tnw_web_resize,_tnw_web_render,_tnw_web_prepare_environment,_tnw_web_set_presentation_hold,_tnw_web_compile_async,_tnw_web_compile_status,_tnw_web_frame,_tn_tsl_call,_tn_tsl_release,_tn_tsl_set,_tn_tsl_set_uniform,_tn_tsl_effect_parameter,_tnw_web_set_post,_malloc,_free,_tnw_web_renderer_state,_tnw_web_load_gltf,_tnw_web_load_error,_tnw_web_gltf_file,_tnw_web_gltf_files_clear,_tnw_web_render_target,_tnw_web_read_target,_tnw_web_read_target_take,_tnw_web_capture_face,_tnw_web_compute,_tnw_web_compute_flush,_tnw_web_read_storage,_tnw_web_read_storage_size,_tnw_web_read_storage_take,_tnw_web_delete_storage"
         "-sEXPORTED_RUNTIME_METHODS=wasmMemory,HEAPU8,HEAPU32,HEAPF64,UTF8ToString,stringToUTF8,lengthBytesUTF8,addFunction,specialHTMLTargets")
 endif()
 

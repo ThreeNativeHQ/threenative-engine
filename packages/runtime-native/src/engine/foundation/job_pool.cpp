@@ -1,7 +1,11 @@
 #include "job_pool.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <system_error>
 
 #ifdef __EMSCRIPTEN_PTHREADS__
 #include <emscripten/em_js.h>
@@ -30,7 +34,24 @@ std::unique_ptr<JobPool>& sharedSlot() {
 JobPool::JobPool(unsigned workers) {
     if constexpr (kThreads) {
         threads_.reserve(workers);
-        for (unsigned i = 0; i < workers; ++i) threads_.emplace_back([this] { work(); });
+        for (unsigned i = 0; i < workers; ++i) {
+            // A spawn the platform refuses (no memory for the stack, a browser that will not start another
+            // Worker) is that worker short, never an unnamed std::system_error across the C ABI. The workers
+            // that did start run the frame; a pool with none fails closed by name instead of running on one
+            // thread. On the web a shortfall is the browser's answer, so it is reported and the pool runs.
+            try {
+                threads_.emplace_back([this] { work(); });
+            } catch (const std::system_error&) {
+            }
+        }
+        if (threads_.size() < workers) {
+            const unsigned missing = workers - unsigned(threads_.size());
+            if (threads_.empty())
+                throw std::runtime_error("TN_JOB_WORKERS_START_FAILED: " + std::to_string(missing) + " of " +
+                                         std::to_string(workers) + " workers did not start");
+            std::fprintf(stderr, "TN_JOB_WORKERS_START_FAILED: %u of %u workers did not start\n", missing,
+                         workers);
+        }
     }
 }
 
@@ -49,11 +70,16 @@ unsigned JobPool::defaultWorkers() {
     if (const char* named = std::getenv("TN_JOB_WORKERS"); named != nullptr && *named != '\0') {
         char* end = nullptr;
         const unsigned long value = std::strtoul(named, &end, 10);
-        if (end != nullptr && *end == '\0') return unsigned(value);
+        // Worker threads are on everywhere (owner, 2026-10-29: "force on native too"): no count turns them off.
+        if (end == nullptr || *end != '\0' || value == 0)
+            throw std::runtime_error(std::string("TN_JOB_WORKERS_OFF: TN_JOB_WORKERS=") + named +
+                                     " leaves the engine without worker threads; name 1 or more, or unset it");
+        return unsigned(value);
     }
 #endif
+    // One hardware thread still gets one worker: the pool is never off where threads can start.
     const unsigned hardware = std::thread::hardware_concurrency();
-    const unsigned spare = hardware > 1 ? hardware - 1 : 0;
+    const unsigned spare = hardware > 1 ? hardware - 1 : 1;
     return spare < kMaxWorkers ? spare : kMaxWorkers;
 }
 

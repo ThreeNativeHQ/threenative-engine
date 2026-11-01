@@ -6,11 +6,13 @@
 // handles. A caller implements Store; a binding never knows which caller it serves.
 
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <map>
 #include <set>
 #include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -122,10 +124,76 @@ struct Unsupported {
 
 class Store;
 using Args = std::vector<Value>;
-using Ctor = std::function<std::shared_ptr<void>(const Args&, Store&)>;
+/**
+ * What the registry stores for a binding: a std::function without its typeinfo and its five virtuals. The registry
+ * holds about a thousand lambdas, and each std::function<..> instance cost a type name, a vtable and the clone,
+ * destroy and target thunks in the web Wasm (4 MiB budget). A small trivially copyable callable (a captureless
+ * lambda, a field pointer and an index) lives in the object and costs its call thunk alone; any other callable is
+ * heap-held with one clone and one destroy function.
+ */
+template <typename Sig>
+class Fn;
+template <typename R, typename... A>
+class Fn<R(A...)> {
+public:
+    Fn() = default;
+    Fn(std::nullptr_t) {}
+    template <typename F, typename = std::enable_if_t<!std::is_same_v<std::decay_t<F>, Fn> && std::is_invocable_r_v<R, std::decay_t<F>&, A...>>>
+    Fn(F f) {
+        using D = std::decay_t<F>;
+        if constexpr (sizeof(D) <= kInline && alignof(D) <= alignof(void*) && std::is_trivially_copyable_v<D>) {
+            ::new (static_cast<void*>(buf_)) D(std::move(f));
+            call_ = [](void* self, A&&... a) -> R { return (*static_cast<D*>(self))(std::forward<A>(a)...); };
+        } else {
+            ::new (static_cast<void*>(buf_)) D*(new D(std::move(f)));
+            ops_ = &opsFor<D>;
+            call_ = [](void* self, A&&... a) -> R { return (**static_cast<D**>(self))(std::forward<A>(a)...); };
+        }
+    }
+    Fn(const Fn& other) : call_(other.call_), ops_(other.ops_) { copyFrom(other); }
+    Fn(Fn&& other) noexcept : call_(other.call_), ops_(other.ops_) {
+        std::memcpy(buf_, other.buf_, kInline);
+        other.call_ = nullptr;
+        other.ops_ = nullptr;
+    }
+    Fn& operator=(Fn other) noexcept {
+        unsigned char scratch[kInline];
+        std::memcpy(scratch, buf_, kInline);
+        std::memcpy(buf_, other.buf_, kInline);
+        std::memcpy(other.buf_, scratch, kInline);
+        std::swap(call_, other.call_);
+        std::swap(ops_, other.ops_);
+        return *this;
+    }
+    ~Fn() { if (ops_) ops_->destroy(*reinterpret_cast<void**>(buf_)); }
+
+    R operator()(A... a) const { return call_(const_cast<unsigned char*>(buf_), std::forward<A>(a)...); }
+    explicit operator bool() const { return call_ != nullptr; }
+
+private:
+    static constexpr std::size_t kInline = 2 * sizeof(void*);
+    struct Ops {
+        void* (*clone)(const void*);
+        void (*destroy)(void*);
+    };
+    template <typename D>
+    static constexpr Ops opsFor{[](const void* p) -> void* { return new D(*static_cast<const D*>(p)); },
+                                [](void* p) { delete static_cast<D*>(p); }};
+
+    void copyFrom(const Fn& other) {
+        if (ops_) ::new (static_cast<void*>(buf_)) void*(ops_->clone(*reinterpret_cast<void* const*>(other.buf_)));
+        else std::memcpy(buf_, other.buf_, kInline);
+    }
+
+    R (*call_)(void*, A&&...) = nullptr;
+    const Ops* ops_ = nullptr;
+    alignas(void*) unsigned char buf_[kInline] = {};
+};
+
+using Ctor = Fn<std::shared_ptr<void>(const Args&, Store&)>;
 /** Returns a value, or chain() to return the object it was called on. */
-using Method = std::function<Value(void* self, const Args&, Store&)>;
-using Getter = std::function<Value(void* self)>;
+using Method = Fn<Value(void* self, const Args&, Store&)>;
+using Getter = Fn<Value(void* self)>;
 
 /**
  * A property write. Most setters need only the value; a member object's whole-value write
@@ -146,15 +214,15 @@ public:
 private:
     /** A three-argument callable is kept as-is; a two-argument one ignores the store it is handed. */
     template <typename F>
-    static std::function<void(void*, const Value&, Store&)> wrap(F fn) {
+    static Fn<void(void*, const Value&, Store&)> wrap(F fn) {
         if constexpr (std::is_invocable_v<F&, void*, const Value&, Store&>) {
-            return std::function<void(void*, const Value&, Store&)>(std::move(fn));
+            return Fn<void(void*, const Value&, Store&)>(std::move(fn));
         } else {
             return [fn = std::move(fn)](void* self, const Value& value, Store&) { fn(self, value); };
         }
     }
 
-    std::function<void(void*, const Value&, Store&)> fn_;
+    Fn<void(void*, const Value&, Store&)> fn_;
 };
 
 struct ClassBinding {
@@ -183,10 +251,10 @@ struct ClassBinding {
     std::map<std::string, std::pair<uint32_t, uint32_t>> fields;
     // Callbacks a language sets on the object (`onBeforeRender`): set through tn_set_callback, never
     // a Value, because the engine calls back into the language that set them.
-    std::map<std::string, std::function<void(void* self, tn::engine::RenderCallback)>> callbacks;
+    std::map<std::string, Fn<void(void* self, tn::engine::RenderCallback)>> callbacks;
     // Event types a language listens for (`mixer.addEventListener("finished", fn)`), set through
     // tn_set_callback by type name; a null callback stops listening. The event arrives as a Record.
-    std::map<std::string, std::function<void(void* self, EventCallback, Store&)>> events;
+    std::map<std::string, Fn<void(void* self, EventCallback, Store&)>> events;
 };
 
 /** A language listener's failure inside an engine call (Object3D's graph events): the ABI call that

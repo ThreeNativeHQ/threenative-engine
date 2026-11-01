@@ -59,6 +59,8 @@ export type CaptureFace = (
   z: number,
   size: number,
   face: number,
+  /** The renderer the capture was called on: a face is a render of `scene` by it, as three's CubeCamera.update is. */
+  renderer: unknown,
 ) => Promise<Float32Array | null>;
 interface IEnvironmentTexture {
   mapping: number;
@@ -82,6 +84,7 @@ export function defineSphereReflectionCapture(
   ) => IEnvironmentTexture,
 ) {
   return async function SphereReflectionCapture(
+    this: unknown,
     scene: unknown,
     position: { x: number; y: number; z: number },
     faceSize = 256,
@@ -101,7 +104,7 @@ export function defineSphereReflectionCapture(
     for (let face = 0; face < 6; face++) {
       for (;;) {
         if (performance.now() > deadline) throw new Error("TN_REFLECTION_CAPTURE_TIMEOUT");
-        const pixels = await capture(scene, x, y, z, faceSize, face);
+        const pixels = await capture(scene, x, y, z, faceSize, face, this);
         if (pixels !== null) {
           faces.push(pixels);
           break;

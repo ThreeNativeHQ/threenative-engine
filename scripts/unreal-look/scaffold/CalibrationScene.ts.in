@@ -498,6 +498,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     // The actors a motion run moves, with the position the scene put them at (PRD-650 swing).
     const actors = new Map<string, { object: Object3D; rest: Vector3 }>();
     const reference = {
+      // The query this page read, echoed so the capture can stop when it ran on another one (a worker page reads none).
+      config: Object.fromEntries(params),
       layer: LAYER,
       tier: TIER,
       finalGatherMethod: GI_METHOD,

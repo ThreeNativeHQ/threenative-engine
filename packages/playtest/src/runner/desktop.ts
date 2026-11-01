@@ -121,6 +121,10 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
         ? { SDL_VIDEODRIVER: "x11" }
         : {}),
       MYSTRAL_HEADLESS: "1",
+      // A debug launch, because the run's own warning evaluator reads `TN_SCENE_WARNING` and the
+      // engine prints it only where a developer asked for the dev surfaces. The shell's value must
+      // not decide it: an inherited `DEV_MODE=0` would leave the check blind rather than red.
+      DEV_MODE: "1",
       ...this.options.env,
       TN_PLAYTEST_MAILBOX_ROOT: this.mailboxRoot,
       // The host reads the request before it evaluates the game entry, the way the browser runner

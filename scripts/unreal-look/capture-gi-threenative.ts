@@ -13,7 +13,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
-import { launchWebgpuBrowser } from "./browser.js";
+import { assertConfigEcho, launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js";
 import {
   HIDE_UI,
@@ -259,7 +259,7 @@ export async function captureGiThreeNative(options: {
                   },
                 ];
           for (const visit of visits) {
-            await page.goto(`${origin}?${visit.query}${extra}`, {
+            await page.goto(`${origin}main.html?${visit.query}${extra}`, {
               waitUntil: "domcontentloaded",
             });
             await page.addStyleTag({ content: HIDE_UI });
@@ -277,6 +277,7 @@ export async function captureGiThreeNative(options: {
                 `TN_UNREAL_LOOK_START_FAILED: ${name} ${layer}: ${startFailure.join(" | ")}`,
               );
             await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+            assertConfigEcho(page.url(), await page.evaluate("window.__tnRef.config"));
             const engine = await page.evaluate("window.__tnRef.engine");
             if (engine !== "threenative")
               throw new Error(

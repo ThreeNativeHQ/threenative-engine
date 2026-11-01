@@ -428,9 +428,9 @@ for (const name of names) {
       for (let wait = 0; pendingTable && wait < 200; wait++)
         await new Promise((resolve) => setTimeout(resolve, 10));
       if (pendingTable) throw new Error("grade: lut:pending (the table never loaded)");
-      if (name === "snow" && output === undefined) {
-        // postprocessing.ts:44 calls WorldEnvironment.apply; worldEnvironment.ts:480-483
-        // returns before building a pass when no stages/baseColour/auto-exposure run.
+      if (output === undefined) {
+        // A tier that turns every stage off (snow, rts-low) takes WorldEnvironment's direct tone
+        // mapping and installs no pass; it passes only when its preset proves it asked for none.
         const quality = await import(
           pathToFileURL(path.join(generated, "src/render/quality.ts")).href
         );
@@ -450,7 +450,7 @@ for (const name of names) {
           renderer.raw.toneMapping !== ACESFilmicToneMapping ||
           renderer.raw.toneMappingExposure !== preset.exposure
         )
-          throw new Error("TN_TEMPLATE_POST_EMPTY: snow requested a post graph");
+          throw new Error(`TN_TEMPLATE_POST_EMPTY: ${name} requested a post graph`);
         console.info(`${label}: no post chain (WorldEnvironment direct tone mapping)`);
         noPostChains++;
         continue;

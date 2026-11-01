@@ -1325,6 +1325,7 @@ describe("CI pipeline structure", () => {
     ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
     ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
     ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:template-engine-cost", heavyMatrix("ci:template-engine-cost:{0}", "matrix.template")],
     ["ci.yml:native-engine", heavy("ci:native-engine")],
     ["integration.yml:animation", heavy("integration:animation", "paths")],
     ["integration.yml:capture", heavy("integration:capture", "paths")],
@@ -2102,18 +2103,14 @@ describe("CI pipeline structure", () => {
     expect(publish).toContain("pnpm tsx scripts/release.ts --skip-gates");
   });
 
-  it("provisions the registry verifier before the guarded publish command", async () => {
+  it("provisions the desktop runtime prerequisites before the guarded publish command", async () => {
     const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
     const publish = jobSections(npm).find(([job]) => job === "publish")?.[1];
     expect(publish).toBeDefined();
     if (publish === undefined) return;
-    const prerequisites = publish.indexOf(
-      "Install the pinned Blender used by the registry verifier",
-    );
+    const prerequisites = publish.indexOf("libvulkan1 mesa-vulkan-drivers");
     const release = publish.indexOf("pnpm tsx scripts/release.ts --yes");
     expect(prerequisites).toBeGreaterThanOrEqual(0);
-    expect(publish).toContain("libvulkan1 mesa-vulkan-drivers");
-    expect(publish).toContain("THREENATIVE_BLENDER_PATH");
     expect(release).toBeGreaterThan(prerequisites);
   });
 
@@ -3028,6 +3025,9 @@ describe("CI pipeline structure", () => {
     expect(ios).toContain("cmp -s");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_CHANGED");
     expect(ios).toContain("TN_IOS_PACKAGE_OUTPUTS_MISSING");
+    expect(ios, "the output snapshot reads each package main, not dist/index.js").toContain(
+      "package.json').main",
+    );
     expect(packSection).toContain("workspace-packages.ts --archives");
     expect(packSection).toContain('pnpm --filter "$package_name" pack --pack-destination');
     expect(packSection).not.toContain("--if-present run build");
@@ -3336,6 +3336,45 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("run: pnpm verify:golden-path");
   });
 
+  it("the engine-cost row runs in its own required leg per kit, not inside the kit's 30 minutes", async () => {
+    // Its 1260 drawn ticks took 14m51s on hosted SwiftShader (run 41170629638), so inside
+    // template-nonvisual it cancelled adventure and collectathon at 30 minutes.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(requiredJob(ci, "template-nonvisual")).not.toContain("kit-contract-row.ts");
+    const job = requiredJob(ci, "template-engine-cost");
+    expect(job).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}");
+    expect(job).toContain('scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}"');
+    expect(job).toContain("--scenario playtests/contract-engine-cost.playtest.json");
+    expect(job).toContain("--browser-recipe webgpu --headed");
+    // 45 for this job only (owner, 2026-10-31: hosted SwiftShader ran the row 964-1775+ s); the
+    // kit legs keep their own caps.
+    expect(job).toContain("timeout-minutes: 45");
+    expect(requiredJob(ci, "template-nonvisual")).toContain(
+      "timeout-minutes: ${{ matrix.template == 'shooter' && 60 || matrix.template == 'rain' && 60 || 30 }}",
+    );
+    expect(requiredJob(ci, "ci-required")).toMatch(/needs: \[[^\]]*\btemplate-engine-cost\b/u);
+    // The row writer imports create-threenative, which needs the built `packages/*/dist` that only
+    // the workspace-packages artifact carries (run 41260320405: every leg failed at the row step).
+    const download = job.indexOf("name: workspace-packages");
+    expect(download).toBeGreaterThan(-1);
+    expect(download).toBeLessThan(job.indexOf("scripts/kit-contract-row.ts"));
+  });
+
+  it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
+    // Run 41249368283: `playwright install-deps` trickled from archive.ubuntu.com for 29 minutes and
+    // the tower-defense and animation jobs hit their 30-minute limit. A hang is not a failure, so
+    // retry-download.sh never retried it. Root runs the timeout, so it can kill apt's fetchers.
+    const action = await readFile(
+      path.join(repo, ".github/actions/playwright-chromium/action.yml"),
+      "utf8",
+    );
+    expect(action).toContain(
+      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium',
+    );
+    expect(action).not.toContain("pnpm exec playwright install-deps");
+    expect(action).not.toContain("--with-deps");
+  });
+
   it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {
     // #560's first review run: `vitest related` picked the browser e2e specs for a playtest change
     // and every one died on a missing Chromium, because the install step ran for `full` only.
@@ -3390,7 +3429,7 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(10);
+    expect(callers).toBe(11);
   });
 
   it("selects QuickJS for the packaged fallback without changing native features", async () => {

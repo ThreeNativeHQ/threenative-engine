@@ -236,6 +236,58 @@ describe("FrameBudget", () => {
     }
   });
 
+  it("counts Long Tasks per window, not since construction", () => {
+    let deliver!: (list: { getEntries(): { startTime: number; duration: number }[] }) => void;
+    vi.stubGlobal(
+      "PerformanceObserver",
+      class {
+        static supportedEntryTypes = ["longtask"];
+        constructor(callback: typeof deliver) {
+          deliver = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    try {
+      const windows: IFrameBudgetWindow[] = [];
+      const budget = new FrameBudget({
+        report: () => {},
+        reportEvery: 1,
+        onWindow: (window) => windows.push(window),
+        wallClock: () => 1_700_000,
+      });
+      budget.beginFrame(100, 100);
+      budget.endFrame(101); // window 1: nothing observed yet
+      deliver({
+        getEntries: () => [
+          { startTime: 20, duration: 600 },
+          { startTime: 110, duration: 75 },
+        ],
+      });
+      budget.beginFrame(200, 200);
+      budget.endFrame(201); // window 2 carries both
+      budget.beginFrame(300, 300);
+      budget.endFrame(301); // window 3: nothing new
+      expect(windows[1]?.longTasks).toEqual({
+        available: true,
+        count: 2,
+        longestMs: 600,
+        afterFirstFrameMs: 75,
+      });
+      // A window reports only the tasks observed inside it; `afterFirstFrameMs` stays the run's.
+      expect(windows[2]?.longTasks).toEqual({
+        available: true,
+        count: 0,
+        longestMs: 0,
+        afterFirstFrameMs: 75,
+      });
+      budget.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("reports Long Tasks as unavailable when the platform cannot observe them", () => {
     vi.stubGlobal("PerformanceObserver", undefined);
     try {

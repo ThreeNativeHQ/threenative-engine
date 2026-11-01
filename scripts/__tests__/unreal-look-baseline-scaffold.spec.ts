@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
@@ -24,7 +24,7 @@ async function patched(baseline: boolean): Promise<string> {
 }
 
 const NAMES = /import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"(\.[^"]+)"/g;
-const REEXPORT = /export\s*\{([^}]*)\}\s*from\s*"(\.[^"]+)"/g;
+const REEXPORT = /export\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"([^"]+)"/g;
 const names = (list: string) =>
   list
     .split(",")
@@ -49,36 +49,52 @@ function exportsName(file: string, name: string): boolean {
     return true;
   for (const [, list, from] of source.matchAll(REEXPORT))
     if (names(list as string).includes(name))
-      return exportsName(
-        path.resolve(path.dirname(file), (from as string).replace(/\.js$/, ".ts")),
-        name,
+      return (
+        !(from as string).startsWith(".") ||
+        exportsName(
+          path.resolve(path.dirname(file), (from as string).replace(/\.js$/, ".ts")),
+          name,
+        )
       );
   return false;
 }
 
-/** The relative named imports of Reference.ts that no file of the scaffold exports, as `<name> from <path>`. */
+/**
+ * The relative named imports of every source file in the scaffold that no file of it exports, as
+ * `<file>: <name> from <path>`. Every file, not only Reference.ts: the overlay replaces template modules
+ * that the game's own files import, and #563 deleted five modules the overlay's worldEnvironment.ts read,
+ * which broke the tuned arm with nothing failing until a capture.
+ */
 function unresolved(target: string): string[] {
-  const reference = path.join(target, "src/scenes/Reference.ts");
-  const source = readFileSync(reference, "utf8");
-  return [...source.matchAll(NAMES)].flatMap(([, list, from]) =>
-    names(list as string)
-      .filter(
-        (name) =>
-          !exportsName(
-            path.resolve(path.dirname(reference), (from as string).replace(/\.js$/, ".ts")),
-            name,
-          ),
-      )
-      .map((name) => `${name} from ${from}`),
-  );
+  const src = path.join(target, "src");
+  return readdirSync(src, { recursive: true, encoding: "utf8" })
+    .filter((file) => /\.tsx?$/.test(file))
+    .flatMap((file) => {
+      const at = path.join(src, file);
+      return [...readFileSync(at, "utf8").matchAll(NAMES)].flatMap(([, list, from]) =>
+        names(list as string)
+          .filter(
+            (name) =>
+              !exportsName(
+                path.resolve(path.dirname(at), (from as string).replace(/\.js$/, ".ts")),
+                name,
+              ) &&
+              !exportsName(
+                path.resolve(path.dirname(at), (from as string).replace(/\.js$/, ".tsx")),
+                name,
+              ),
+          )
+          .map((name) => `${file}: ${name} from ${from}`),
+      );
+    });
 }
 
 describe("the capture scaffold of an arm", () => {
-  it("resolves every relative import of Reference.ts in a --baseline scaffold (the template's own src/render)", async () => {
+  it("resolves every relative import of every source file in a --baseline scaffold (the template's own src/render)", async () => {
     expect(unresolved(await patched(true))).toEqual([]);
   });
 
-  it("resolves every relative import of Reference.ts in the tuned scaffold too", async () => {
+  it("resolves every relative import of every source file in the tuned scaffold too", async () => {
     expect(unresolved(await patched(false))).toEqual([]);
   });
 

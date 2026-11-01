@@ -787,6 +787,16 @@ const carriedChains = chainsHost[CHAINS_KEY] as
   | undefined;
 const chains: WeakMap<BufferGeometry, IRegisteredChain> = carriedChains ?? new WeakMap();
 chainsHost[CHAINS_KEY] = chains;
+/**
+ * Bumped on every chain registration: the shadow LOD sync re-walks the light root only when this or
+ * the hierarchy moved. Without it a chain joined onto a geometry already in the scene (the joined-rung
+ * path) would never reach native, and the caster would keep its rung-0 geometry in the shadow.
+ */
+const CHAINS_VERSION_KEY = Symbol.for("threenative.discreteLodChainsVersion");
+const bumpChains = (): void => {
+  chainsHost[CHAINS_VERSION_KEY] =
+    ((chainsHost[CHAINS_VERSION_KEY] as number | undefined) ?? 0) + 1;
+};
 
 /**
  * Geometry preparation commonly clones and bakes a model transform before instancing. Keep the
@@ -826,6 +836,7 @@ function preserveChainClones(registered: IRegisteredChain): void {
         policy: current.policy,
       };
       for (const geometry of levels) chains.set(geometry, copied);
+      bumpChains();
       preserveChainClones(copied);
       const apply = copy.applyMatrix4.bind(copy);
       copy.applyMatrix4 = (matrix: Matrix4): BufferGeometry => {
@@ -1041,6 +1052,7 @@ export class DiscreteLodPlugin {
       // Every level, not just the base: a clone made after a selection already swapped the source to
       // a coarser level carries that derived geometry, and must still resolve to this chain.
       for (const geometry of levels) chains.set(geometry, registered);
+      bumpChains();
       preserveChainClones(registered);
       controllers.set(mesh, new ModelLod(mesh, registered.chain, applied));
       appliedCount += 1;
@@ -1123,6 +1135,7 @@ export class DiscreteLodPlugin {
             policy: applied,
           };
           chains.set(member.geometry, registered);
+          bumpChains();
         }
         for (const geometry of registered.chain.levels) geometries.add(geometry);
       }
@@ -1150,6 +1163,7 @@ export class DiscreteLodPlugin {
         // Every level, not just the base: a clone made after a selection already swapped a member to
         // a coarser level carries that derived geometry, and must still resolve to this rung.
         for (const geometry of registered.chain.levels) chains.set(geometry, withJoined);
+        bumpChains();
         // Members that were already managed (a discrete chain) were built before the rung was known;
         // rebuild them with the rung and the authority mark.
         controllers.set(

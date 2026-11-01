@@ -148,8 +148,8 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/ui` | React bindings for HUD and game state |
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader for meshes exported from Unreal packages |
 | `threenative-animation-mcp` | Inspects, attaches, edits and verifies character animation through one MCP, as build-time edits of one GLB |
+| `@threenative/blender-bridge` | Drives an installed Blender headlessly so a downloaded `.fbx` becomes a loadable GLB — ships no Blender |
 | `threenative-engine-mcp` | Offline MCP capability discovery for authoring agents |
-| `threenative-blender-mcp` | Drives an installed Blender headlessly so a downloaded `.fbx` becomes a loadable GLB — ships no Blender |
 
 ## Platform support
 
@@ -185,13 +185,13 @@ Every Unreal 5.8.3 system that sets the look or the frame cost, split into 380 s
 measured in lines of the Unreal source. Each one maps to the ThreeNative PRD that ports it.
 
 **20% done · 24% in progress · 33% not started · 16% deferred · 5% with no PRD** (share of 676K Unreal lines; the tool-heavy Niagara, Landscape, World Partition, RHI and RenderCore modules are left out)
-· 82 open PRDs on this branch · 72 subsystems with no PRD
+· 84 open PRDs on this branch · 72 subsystems with no PRD
 
 [![Unreal port progress map](docs/PRDs/Unreal/research/unreal-port-status.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
-**Pace:** 118 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
-so at that pace the default look is done about **Nov 17, 2026**, and everything filed today about
-**Dec 8, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
+**Pace:** 102 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
+so at that pace the default look is done about **Nov 24, 2026**, and everything filed today about
+**Dec 18, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 
 [![Unreal port burn-up](docs/PRDs/Unreal/research/unreal-port-progress.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 

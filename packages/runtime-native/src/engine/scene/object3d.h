@@ -362,7 +362,7 @@ public:
 
     bool matrixAutoUpdate = true;
     bool matrixWorldAutoUpdate = true;
-    bool matrixWorldNeedsUpdate = false;
+    // matrixWorldNeedsUpdate is declared in the flags block below (object3d.h), so the ABI reads and writes it.
     /** three's `static`. core's markStatic sets it on every object of a frozen subtree, and turns off the frozen
      *  root's matrixWorldAutoUpdate: that pair is where updateMatrixWorldVisible stops (static-transform.ts). */
     bool isStatic = false;
@@ -375,7 +375,7 @@ public:
     void setVisible(bool value);
     /** Where each flag sits from `flags()`, for a back end that reads it in place (Wasm). The
      *  offsets count from the first flag, not the object, so they hold for every pointer size. */
-    struct FlagOffsets { uint32_t visible, castShadow, receiveShadow; };
+    struct FlagOffsets { uint32_t visible, castShadow, receiveShadow, matrixWorldNeedsUpdate; };
     static FlagOffsets flagOffsets();
     [[nodiscard]] const void* flags() const { return &visible_; }
     [[nodiscard]] bool castShadow() const { return castShadow_; }
@@ -498,6 +498,12 @@ private:
     bool visible_ = true;  // visible_, castShadow_, receiveShadow_: one block the ABI reads by offset (flags())
     bool castShadow_ = false;
     bool receiveShadow_ = false;
+public:
+    /** The world-matrix dirty flag, in the flags block so its offset from `flags()` is one byte: core's physics
+     *  interpolation arms it in place on the Wasm back end, one crossing fewer a body a frame. Public because
+     *  the engine's own walks and property bindings write it directly (see bindings_scene.cpp). */
+    bool matrixWorldNeedsUpdate = false;
+private:
     bool worldStale_ = false;  // hidden and skipped by the pruned walk: recompose it and force its subtree when shown
     int8_t holdsBones_ = -1;   // a Bone anywhere under this node: -1 not yet asked (a rig is built whole)
     int renderOrder_ = 0;
