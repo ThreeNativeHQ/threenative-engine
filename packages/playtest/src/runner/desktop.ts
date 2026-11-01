@@ -46,22 +46,16 @@ export class LocalDeviceMailbox {
 
   async remove(path: string): Promise<void> {
     // Node retries EPERM/EBUSY only with recursive mode, which could remove a directory here.
-    for (let retry = 0; ; retry += 1) {
-      try {
-        await rm(path, { force: true });
-        return;
-      } catch (error) {
-        if (retry >= 10 || !isTransientMailboxLock(error)) throw error;
-        await delay(20);
-      }
-    }
+    await retryMailboxLock(() => rm(path, { force: true }));
   }
 
   async write(path: string, contents: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
     const temporary = `${path}.tmp`;
-    await writeFile(temporary, contents, "utf8");
-    await rename(temporary, path);
+    await retryMailboxLock(async () => {
+      await writeFile(temporary, contents, "utf8");
+      await rename(temporary, path);
+    });
   }
 }
 
@@ -355,6 +349,19 @@ function isProcessExited(child: ChildProcess): boolean {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/** Windows holds a file through a scan or a pending delete. Two seconds, then the error is real. */
+async function retryMailboxLock(operation: () => Promise<void>): Promise<void> {
+  for (let retry = 0; ; retry += 1) {
+    try {
+      await operation();
+      return;
+    } catch (error) {
+      if (retry >= 100 || !isTransientMailboxLock(error)) throw error;
+      await delay(20);
+    }
+  }
 }
 
 function isTransientMailboxLock(error: unknown): boolean {

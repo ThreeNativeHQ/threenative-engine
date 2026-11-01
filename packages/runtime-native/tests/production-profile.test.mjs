@@ -73,6 +73,14 @@ test('desktop runner exceptions retain failed evidence rather than disappearing'
   const unsafe = desktopFailureRun(error, [{ text: '/home/operator/private/build', type: 'log' }], 123);
   assert.equal(JSON.stringify(unsafe.report).includes('/home/'), false);
   assert.match(unsafe.report.observations.console[0].text, /TN_PROD_REDACTION/u);
+  // Run 41348117470 could not name its failure: redaction must drop the path and keep the cause.
+  const locked = desktopFailureRun(
+    Object.assign(new Error("EPERM: operation not permitted, rename 'D:\\a\\request.tmp' -> 'D:\\a\\request'"), { syscall: 'rename' }),
+    [],
+    123,
+  );
+  assert.match(locked.report.diagnostics[0].message, /withheld \(EPERM rename\)/u);
+  assert.equal(JSON.stringify(locked.report).includes('request.tmp'), false);
   const source = readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8');
   assert.match(source, /return desktopFailureRun\(error, await driver.captureConsole\(\),/u);
 });
@@ -239,23 +247,19 @@ test('desktop child receives the transport mailbox root and writes a raw post-pr
       queueMicrotask(() => child.emit('spawn'));
       return child;
     },
-    writeFile: async (path, contents) => writes.push({ contents, path }),
-    rename: async (from, to) => writes.push({ from, to }),
     nonBlankPng: async () => true,
     DESKTOP_SCREENSHOT_TIMEOUT_MS: 100,
   };
   runInNewContext(driverSource, context);
-  const driver = context.createDesktopDriver('/fixture/mystral', project, { renderSize: { width: 1920, height: 1080 } }, mailboxRoot);
+  const mailbox = { write: async (path, contents) => writes.push({ contents, path }) };
+  const driver = context.createDesktopDriver('/fixture/mystral', project, { renderSize: { width: 1920, height: 1080 } }, mailboxRoot, mailbox);
   await driver.launch();
   assert.equal(childOptions.env.TN_PLAYTEST_MAILBOX_ROOT, mailboxRoot);
   assert.equal(childOptions.cwd, project);
   assert.deepEqual(Array.from(childArgs), ['--width', '1920', '--height', '1080', '--headless']);
   await driver.screenshot('/fixture/capture.png');
-  assert.deepEqual(writes, [
-    { contents: '/fixture/capture.png', path: `${screenshotRequestPath}.tmp` },
-    { from: `${screenshotRequestPath}.tmp`, to: screenshotRequestPath },
-  ]);
-  assert.match(source, /const driver = createDesktopDriver\(artifactPath, project, options, mailboxRoot\)/u);
+  assert.deepEqual(writes, [{ contents: '/fixture/capture.png', path: screenshotRequestPath }]);
+  assert.match(source, /const driver = createDesktopDriver\(artifactPath, project, options, mailboxRoot, mailbox\)/u);
 });
 
 test('production desktop mailbox uses atomic request writes', () => {
@@ -1998,7 +2002,7 @@ test('desktop screenshot evidence uses the host post-present mailbox protocol', 
   assert.doesNotMatch(profile, /runNativeScreenshot/u);
   assert.doesNotMatch(profile, /spawnNative\([^\n]+,\s*true\)/u);
   assert.match(profile, /tn-playtest-screenshot-request\.txt/u);
-  assert.match(profile, /writeFile\(temporary, path, 'utf8'\)/u);
+  assert.match(profile, /mailbox\.write\(screenshotRequestPath, path\)/u);
   assert.match(profile, /rm\(join\(root, 'tn-playtest-screenshot-request\.txt'\), \{ force: true \}\)/u);
   assert.match(profile, /screenshot: async \(path\)/u);
   assert.doesNotMatch(profile, /tn-production-screenshot-request\.json|nativeHost\?\.playtest\?\.receive|captureScreenshot/u);
