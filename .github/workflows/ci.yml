@@ -1664,7 +1664,7 @@ jobs:
           # with `--jq` or `--template`"), so the flatten of the paginated pages happens here. Paired
           # wrongly, the call failed, the guard below wrote `[]`, and every run's timing table was
           # header-only — an empty measurement read as a measured one.
-          if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+          if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=10" \
             | node -e 'let raw = ""; process.stdin.on("data", (chunk) => { raw += chunk; }).on("end", () => { process.stdout.write(JSON.stringify(JSON.parse(raw).flatMap((page) => page.jobs ?? []))); });' \
             > "$RUNNER_TEMP/job-timings.json"; then
             echo '[]' > "$RUNNER_TEMP/job-timings.json"

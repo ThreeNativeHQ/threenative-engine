@@ -560,7 +560,7 @@ function runReleaseGate({ runs = [candidateRun], detail = candidateRun, jobs = c
 case "$1 $2" in
   'run list') test "$MOCK_GH_FAILURE" != list || exit 42; printf '%s' "$MOCK_GH_RUNS" ;;
   'run view') test "$2" = view || exit 64; test "$MOCK_GH_FAILURE" != view || exit 42; printf '%s' "$MOCK_GH_DETAIL" ;;
-  'api --paginate') test "$2" = --paginate || exit 64; test "$3" = --slurp || exit 64; test "$4" = 'repos/ThreeNativeHQ/threenative/actions/runs/123/jobs?filter=latest&per_page=100' || exit 64; test "$MOCK_GH_FAILURE" != jobs || exit 42; printf '%s' "$MOCK_GH_PAGES" ;;
+  'api --paginate') test "$2" = --paginate || exit 64; test "$3" = --slurp || exit 64; test "$4" = 'repos/ThreeNativeHQ/threenative/actions/runs/123/jobs?filter=latest&per_page=10' || exit 64; test "$MOCK_GH_FAILURE" != jobs || exit 42; printf '%s' "$MOCK_GH_PAGES" ;;
   *) exit 64 ;;
 esac
 `);

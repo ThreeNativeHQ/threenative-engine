@@ -193,7 +193,7 @@ export function measure({ since, base = "develop", repo = process.env.GITHUB_REP
         "--paginate",
         "--jq",
         ".jobs[]",
-        `repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`,
+        `repos/${repository}/actions/runs/${run.id}/jobs?per_page=10`,
       ]),
     ).map((job) => ({
       name: job.name,

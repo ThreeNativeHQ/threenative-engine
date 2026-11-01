@@ -87,7 +87,7 @@ function holders(root: Object3D, camera: Camera): Map<string, { shown: boolean; 
  * A one-off measurement walk, like the playtest observer's, under the same mark: three-native's
  * bridge census then never bills its re-reads of every child to the game's frame.
  */
-function unbilled<T>(work: () => T): T {
+export function unbilled<T>(work: () => T): T {
   const host = globalThis as { __tnPlaytestObserving?: number };
   host.__tnPlaytestObserving = (host.__tnPlaytestObserving ?? 0) + 1;
   try {
