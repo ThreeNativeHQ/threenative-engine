@@ -3335,6 +3335,21 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("run: pnpm verify:golden-path");
   });
 
+  it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
+    // Run 41249368283: `playwright install-deps` trickled from archive.ubuntu.com for 29 minutes and
+    // the tower-defense and animation jobs hit their 30-minute limit. A hang is not a failure, so
+    // retry-download.sh never retried it. Root runs the timeout, so it can kill apt's fetchers.
+    const action = await readFile(
+      path.join(repo, ".github/actions/playwright-chromium/action.yml"),
+      "utf8",
+    );
+    expect(action).toContain(
+      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium',
+    );
+    expect(action).not.toContain("pnpm exec playwright install-deps");
+    expect(action).not.toContain("--with-deps");
+  });
+
   it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {
     // #560's first review run: `vitest related` picked the browser e2e specs for a playtest change
     // and every one died on a missing Chromium, because the install step ran for `full` only.
