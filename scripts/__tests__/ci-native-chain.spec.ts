@@ -282,7 +282,7 @@ describe("actual native receipt writer, collector and protected verdict", () => 
       if (!windows) throw new Error("missing fixture Windows job");
       windows.run_attempt = 1;
       f.publish();
-      expect(verdict().stderr).toContain("CI_NATIVE_JOB_IDENTITY");
+      expect(verdict().stderr).toContain("CI_NATIVE_BUILD_IDENTITY");
       expect(
         f.run("ci-native-receipts.mjs", [
           "--collect",

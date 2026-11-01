@@ -141,6 +141,34 @@ describe("authoritative full native qualification through ci-required", () => {
       f.cleanup();
     }
   });
+  it("accepts a green leg carried from an earlier attempt beside one rerun leg", () => {
+    const f = fixture();
+    try {
+      const carried = f.summary.receipts[0];
+      const job = f.jobs.find((row) => String(row.id) === carried?.jobId);
+      if (carried === undefined || job === undefined) throw new Error("fixture has no leg");
+      carried.runAttempt = "1";
+      job.run_attempt = 1;
+      const result = f.run();
+      expect(result.status, result.stderr).toBe(0);
+    } finally {
+      f.cleanup();
+    }
+  });
+  it("rejects a leg whose latest attempt is red, even with a green earlier attempt", () => {
+    const f = fixture();
+    try {
+      const carried = f.summary.receipts[0];
+      const job = f.jobs.find((row) => String(row.id) === carried?.jobId);
+      if (carried === undefined || job === undefined) throw new Error("fixture has no leg");
+      carried.runAttempt = "1";
+      f.jobs.push({ ...job, id: 998, run_attempt: 2, conclusion: "failure" });
+      job.run_attempt = 1;
+      f.reject();
+    } finally {
+      f.cleanup();
+    }
+  });
   it("never empties required Windows/macOS inventory when the entire desktop matrix skips", () => {
     const f = fixture();
     try {

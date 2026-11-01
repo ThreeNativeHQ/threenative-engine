@@ -2,28 +2,13 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { readAttemptJobs, receiptFiles } from "./ci-attempt-receipts.mjs";
+import { readAttemptJobs, readJobsAcrossAttempts, receiptFiles } from "./ci-attempt-receipts.mjs";
 import {
   integrationCandidatePreflight,
   validateIntegrationReceipts,
 } from "./ci-integration-scope.mjs";
 
-// Jobs of attempts 1..current, so a leg that passed before `gh run rerun --failed` still reads as it
-// did. The current attempt is read last and carries the settled-name wait.
-export function readIntegrationJobs(identity, prefix = "CI_INTEGRATION", settledNames = []) {
-  const current = Number(identity.runAttempt);
-  const byId = new Map();
-  for (let attempt = 1; attempt <= current; attempt++) {
-    const listing = readAttemptJobs(
-      { ...identity, runAttempt: String(attempt) },
-      prefix,
-      attempt === current ? settledNames : [],
-    );
-    for (const job of listing.jobs) byId.set(job.id, job);
-  }
-  const jobs = [...byId.values()];
-  return { totalCount: jobs.length, jobs };
-}
+export const readIntegrationJobs = readJobsAcrossAttempts;
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
