@@ -4649,4 +4649,22 @@ describe("a CI-configuration-only pull request", () => {
       await removeFixture(fixture.root);
     }
   });
+
+  it("reads a run's job list in small pages, because a large page answers 502 after a --failed rerun", async () => {
+    // Run 41288322050 attempt 3: `jobs?filter=latest&per_page=100` answered 502 at 10.6 s on 9 of 9
+    // reads, and the release gate of tag runtime-native-v0.3.7 could not read its own CI run.
+    const sources = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/ci-janitor.yml",
+      ".github/workflows/native-release.yml",
+      "scripts/ci-queue-watch.mjs",
+      "scripts/ci-merge-latency.mjs",
+    ];
+    for (const source of sources) {
+      const large = (await readFile(source, "utf8"))
+        .split("\n")
+        .filter((line) => /\/jobs\?[^"'`\s]*per_page=(?:[2-9]\d|\d{3})/u.test(line));
+      expect({ source, large }).toEqual({ source, large: [] });
+    }
+  });
 });

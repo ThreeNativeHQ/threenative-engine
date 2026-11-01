@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           # Aggregates (ci-required, golden-path, run-summary) only echo another job's failure.
-          failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --paginate \
+          failed="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=10" --paginate \
             --jq '.jobs[] | select(.conclusion == "failure") | select(.name | test("^(ci-required|golden-path|run-summary)$") | not) | .id')"
           [ -n "$failed" ] || { echo "No primary job failed; nothing to retry."; exit 0; }
           for id in $failed; do
