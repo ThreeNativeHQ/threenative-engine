@@ -137,7 +137,7 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'typecheck') }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'typecheck') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:typecheck')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -226,7 +226,7 @@ jobs:
 
   test:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' || (needs.scope.outputs.selection == 'review' && fromJSON(needs.scope.outputs.plan).jobs.test.required) && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test') }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || (needs.scope.outputs.selection == 'review' && fromJSON(needs.scope.outputs.plan).jobs.test.required)) && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 45
     env:
@@ -275,7 +275,7 @@ jobs:
   # one more runner, so four is the whole of it.
   test-unit:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-unit') }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-unit') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:test-unit:{0}', matrix.shard))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
@@ -343,7 +343,7 @@ jobs:
     # `warm` too: this job saves `native-build-*`, `native-third-party-*` and its ccache through the
     # cache action's post step, which is the product every pull request into develop reads. No step
     # below is gated on a full selection, so a develop push warms them.
-    if: ${{ (needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-native') }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs['test-native'].required) || needs.scope.outputs.selection == 'warm') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-native') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test-native')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
@@ -1296,7 +1296,7 @@ jobs:
 
   budgets:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'budgets') }}
+    if: ${{ ((needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci') && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'budgets') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:budgets')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -1741,7 +1741,13 @@ jobs:
           set -euo pipefail
           required_lanes=""
           if [ "$TN_CI_SCOPE" = full ]; then
-            required_lanes="performance-contracts,native-linux-contract"
+            # A carried job left its evidence in the run that `ci-required` names for it.
+            if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'performance-contracts') }}" != true ]; then
+              required_lanes="performance-contracts"
+            fi
+            if [ "${{ contains(fromJSON(needs.scope.outputs.plan).carriedJobs, 'test-native') }}" != true ]; then
+              required_lanes="${required_lanes:+$required_lanes,}native-linux-contract"
+            fi
           else
             echo "performance collector evidence: not applicable (explicit selective exemption)"
           fi

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   TEMPLATE_NAMES,
+  carryDeps,
   selectionPlan,
   validateEventPlan,
   validatePlan,
@@ -76,13 +77,26 @@ describe("which changed path reaches a leg", () => {
     expect(reaches(shooter, fixture, isProse)).toBe(true);
   });
 
-  it("sends a kit's files to that kit and the native starter only", () => {
+  it("sends a kit's files to that kit and every native leg", () => {
     const file = (name: string) => `packages/create-threenative/templates/${name}/src/main.ts`;
     expect(reaches(shooter, file("shooter"), isProse)).toBe(true);
     expect(reaches(shooter, file("racing"), isProse)).toBe(false);
-    expect(reaches(native, file("racing"), isProse)).toBe(false);
-    expect(reaches(native, file("starter"), isProse)).toBe(true);
+    // `examples/native-smoke/src/adapter-policy.mjs` reads templates/minimal, and a native-engine test
+    // reads templates/sailing/assets/ship.glb.
+    expect(reaches(native, file("minimal"), isProse)).toBe(true);
+    expect(reaches(native, file("sailing"), isProse)).toBe(true);
     expect(reaches(workspace, file("racing"), isProse)).toBe(true);
+  });
+
+  it("sends the starter kit to every kit leg, because a scaffold copies its render sources", () => {
+    const file = "packages/create-threenative/templates/starter/src/render/temporalDetailStage.ts";
+    expect(reaches(kit("template-nonvisual", "collectathon"), file, isProse)).toBe(true);
+    expect(reaches(kit("template-nonvisual", "shooter"), file, isProse)).toBe(true);
+  });
+
+  it("sends each kit manifest to every kit leg, because the scaffolder reads them all", () => {
+    const file = "packages/create-threenative/templates/racing/kit.json";
+    expect(reaches(shooter, file, isProse)).toBe(true);
   });
 
   it("reads a composite action as an input of every leg", () => {
@@ -125,6 +139,23 @@ describe("a release bump", () => {
         manifest("0.3.8", "0.187.0", "0.3.8"),
       ),
     ).toBe(false);
+  });
+
+  it("stays a change when a cohort dependency is removed or added", () => {
+    const withCore = JSON.stringify({ dependencies: { "@threenative/core": "0.3.7" } });
+    const without = JSON.stringify({ dependencies: {} });
+    expect(
+      versionOnly("packages/create-threenative/templates/x/package.json", withCore, without),
+    ).toBe(false);
+    expect(
+      versionOnly("packages/create-threenative/templates/x/package.json", without, withCore),
+    ).toBe(false);
+  });
+
+  it("stays a change when a cohort dependency leaves the workspace protocol", () => {
+    const before = JSON.stringify({ dependencies: { "@threenative/core": "workspace:*" } });
+    const after = JSON.stringify({ dependencies: { "@threenative/core": "0.3.8" } });
+    expect(versionOnly("packages/ui/package.json", before, after)).toBe(false);
   });
 
   it("stays a change when a manifest script moves with it", () => {
@@ -340,7 +371,7 @@ describe("the walk over recent runs", () => {
       ),
     );
     expect(carried).toContain("template-nonvisual (racing)");
-    expect(carried).toContain("native-platforms");
+    expect(carried).not.toContain("native-platforms");
     expect(carried).not.toContain("template-nonvisual (shooter)");
     expect(carried).not.toContain("typecheck");
     expect(carried).not.toContain("test");
@@ -397,7 +428,7 @@ describe("the walk over recent runs", () => {
     expect(carried).toContain("typecheck");
   });
 
-  it("takes an older green run when the newest run's job is red", () => {
+  it("takes an older green run when the newest run never ran the job", () => {
     const older = commit("older");
     const newer = commit("newer");
     const candidate = commit("candidate");
@@ -408,6 +439,79 @@ describe("the walk over recent runs", () => {
     );
     expect(carried.find((entry) => entry.leg === "budgets")?.runId).toBe(1);
     expect(carried.find((entry) => entry.leg === "typecheck")?.runId).toBe(2);
+  });
+
+  it.each(["failure", "timed_out"])(
+    "runs a job whose newest result on the same inputs is %s, even with an older green",
+    (conclusion) => {
+      const older = commit("older");
+      const newer = commit("newer");
+      const candidate = commit("candidate");
+      const plan = fullPlan(candidate);
+      const carried = legs(
+        findCarried(
+          plan,
+          deps([run(2, newer), run(1, older)], (id) =>
+            greenJobs(plan).map((job) =>
+              id === "2" && job.name === "budgets" ? { ...job, conclusion } : job,
+            ),
+          ),
+        ),
+      );
+      expect(carried).not.toContain("budgets");
+      expect(carried).toContain("typecheck");
+    },
+  );
+
+  it("runs an integration lane whose newest result on the same inputs is red", () => {
+    const older = commit("older");
+    const newer = commit("newer");
+    const candidate = commit("candidate");
+    const plan = fullPlan(candidate);
+    const carried = legs(
+      findCarried(
+        plan,
+        deps([run(2, newer), run(1, older)], (id) =>
+          greenJobs(plan).map((job) =>
+            id === "2" && job.name === "integration / csg"
+              ? { ...job, conclusion: "failure" }
+              : job,
+          ),
+        ),
+      ),
+    );
+    expect(carried).not.toContain("integration:csg");
+    expect(carried).toContain("integration:ik");
+  });
+
+  it("ignores a scheduled run, whose head_sha is not the commit it tested", () => {
+    const source = commit("source");
+    const candidate = commit("candidate");
+    const plan = fullPlan(candidate);
+    expect(
+      findCarried(
+        plan,
+        deps([run(1, source, { event: "schedule" })], () => greenJobs(plan)),
+      ),
+    ).toEqual([]);
+  });
+
+  it("runs the consumers when the job that builds their bytes changed", () => {
+    const source = commit("source");
+    write(
+      ".github/workflows/ci.yml",
+      realCi.replace("  build-artifacts:\n", "  build-artifacts:\n    # changed pack step\n"),
+    );
+    const candidate = commit("producer");
+    const plan = fullPlan(candidate);
+    const carried = legs(
+      findCarried(
+        plan,
+        deps([run(1, source)], () => greenJobs(plan)),
+      ),
+    );
+    expect(carried).not.toContain("template-nonvisual (shooter)");
+    expect(carried).not.toContain("typecheck");
   });
 
   it("ignores a fork's run, its own run, and a pull-request run with no tested commit", () => {
@@ -501,6 +605,13 @@ describe("which runs may carry at all", () => {
     expect(await withCarriedLegs(plan, options)).toBe(plan);
   });
 
+  it("the native matrix answers for its blocking legs, not the iOS one", async () => {
+    const plan = fullPlan();
+    const names = (await carryDeps(".", plan)).nativeJobs(plan);
+    expect(names).toContain("native-platforms / Android emulator visual parity");
+    expect(names.some((name: string) => name.includes("iOS"))).toBe(false);
+  });
+
   it("a developer machine keeps every leg", async () => {
     process.env.GITHUB_ACTIONS = "";
     const plan = fullPlan();
@@ -511,6 +622,30 @@ describe("which runs may carry at all", () => {
 
 describe("the workflows honour a carried job", () => {
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+
+  // `&&` binds tighter than `||`, so a gate appended to `a || b` applies only to `b`.
+  it.each(CARRIABLE_JOBS.filter((job: string) => job !== "native-platforms"))(
+    "%s's gate applies to the whole condition",
+    (job) => {
+      const condition =
+        /^ {4}if: (?:\$\{\{ )?(.*?)(?: \}\})?$/mu.exec(jobText(ci, job) ?? "")?.[1] ?? "";
+      const gate = ` && !contains(fromJSON(needs.scope.outputs.plan).carriedJobs, '${job}')`;
+      expect(condition.endsWith(gate)).toBe(true);
+      let depth = 0;
+      const rest = condition.slice(0, -gate.length);
+      for (let index = 0; index < rest.length; index += 1) {
+        if (rest[index] === "(") depth += 1;
+        if (rest[index] === ")") depth -= 1;
+        if (depth === 0) expect(rest.slice(index, index + 2)).not.toBe("||");
+      }
+    },
+  );
+
+  it("run-summary requires a performance lane only when its job ran", () => {
+    const summary = jobText(ci, "run-summary") ?? "";
+    expect(summary).toContain("carriedJobs, 'performance-contracts'");
+    expect(summary).toContain("carriedJobs, 'test-native'");
+  });
 
   it.each(CARRIABLE_JOBS.filter((job: string) => job !== "native-platforms"))(
     "%s has a job gate",

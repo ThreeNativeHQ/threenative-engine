@@ -165,10 +165,14 @@ export function treeChanges(git, source, candidate) {
 
 function withoutCohortVersions(text) {
   const { version: _version, ...manifest } = JSON.parse(text);
+  // Mask only the version, so that adding or removing a cohort dependency stays a change.
   for (const field of DEPENDENCY_FIELDS)
     if (manifest[field] !== undefined)
       manifest[field] = Object.fromEntries(
-        Object.entries(manifest[field]).filter(([name]) => !COHORT_PACKAGE.test(name)),
+        Object.entries(manifest[field]).map(([name, range]) => [
+          name,
+          COHORT_PACKAGE.test(name) ? String(range).replace(/\d+\.\d+\.\d+/gu, "V") : range,
+        ]),
       );
   return JSON.stringify(manifest);
 }
@@ -199,8 +203,11 @@ export function reaches(leg, path, isProse) {
     return false;
   if (leg.inputs === "template" && (PACKAGE_SPECS.test(path) || DOCS.test(path))) return false;
   const kit = TEMPLATE_DIR.exec(path)?.[1];
-  if (kit === undefined) return true;
-  return kit === (leg.inputs === "native" ? "starter" : leg.value);
+  // The native legs read several kits directly: `examples/native-smoke` reads templates/minimal, and
+  // a native-engine test reads templates/sailing/assets/ship.glb.
+  if (kit === undefined || leg.inputs === "native") return true;
+  // A scaffold copies render sources from starter into other kits and reads every kit manifest.
+  return kit === leg.value || kit === "starter" || path.endsWith("/kit.json");
 }
 
 /** A job's block in a workflow plus the workflow's `env`, which every job inherits. */
@@ -240,11 +247,14 @@ function comparison(deps, source, candidate) {
   return {
     // A release bump reaches no integration lane, so the lane selector never reads it.
     substantive: () => changes.filter((change) => !bumpOnly(change)),
+    // `build-artifacts` makes the bytes the other legs test, so its own text counts for all of them.
     jobUnchanged: (job) => {
       if (!ciChanged) return true;
       if (before === null || after === null) return false;
-      const text = jobText(after, job);
-      return text !== null && text === jobText(before, job);
+      return [job, "build-artifacts"].every((name) => {
+        const text = jobText(after, name);
+        return text !== null && text === jobText(before, name);
+      });
     },
     clean: (leg) =>
       !changes.some((change) => {
@@ -265,6 +275,13 @@ function laneState(deps, source, candidate, compared) {
     after,
   });
   return { lanes: selection.lanes, jobs: deps.integrationJobs(after) };
+}
+
+/** A failed job on the same inputs is the newest thing known about them, so it must run again. */
+function redIn(jobs, names) {
+  return jobs.some(
+    (job) => names.includes(job.name) && ["failure", "timed_out"].includes(job.conclusion),
+  );
 }
 
 function greenIn(jobs, names) {
@@ -302,8 +319,12 @@ function held(deps, sha) {
 }
 
 /**
- * Walk recent CI runs, newest first, until each leg has a green job on the same inputs. Returns the
- * carried entries. It carries nothing when the walk cannot start, which runs the board.
+ * Walk recent CI runs, newest first, until each leg has a result on the same inputs. Green carries it
+ * and red keeps it. Returns the carried entries, none when the walk cannot start, which runs the board.
+ *
+ * ponytail: the runner class is not compared, because scope runs before the matrix legs exist and
+ * their routing cannot be read yet. Hosted and tn-local leg times matched, and the 7-day window bounds
+ * the drift. Compare it here if a lane starts to pass on one class and fail on the other.
  */
 export function findCarried(plan, deps) {
   const started = (deps.now ?? Date.now)();
@@ -327,7 +348,9 @@ export function findCarried(plan, deps) {
       !Number.isSafeInteger(run?.id) ||
       String(run.id) === process.env.GITHUB_RUN_ID ||
       run.head_repository?.full_name !== process.env.GITHUB_REPOSITORY ||
-      !SHA.test(run.head_sha ?? "")
+      !SHA.test(run.head_sha ?? "") ||
+      // A scheduled run checks out develop while `head_sha` names the default branch.
+      run.event === "schedule"
     )
       continue;
     examined += 1;
@@ -353,7 +376,9 @@ export function findCarried(plan, deps) {
     const read = deps.runJobs(String(run.id));
     if ("error" in read) continue;
     for (const leg of legs) {
-      if (!greenIn(read.jobs, jobNames(leg, deps, plan))) continue;
+      const names = jobNames(leg, deps, plan);
+      if (redIn(read.jobs, names)) open.delete(leg.leg);
+      if (!greenIn(read.jobs, names)) continue;
       open.delete(leg.leg);
       carried.push({ job: leg.job, leg: leg.leg, runId: run.id, sourceSha: source });
     }
@@ -363,6 +388,7 @@ export function findCarried(plan, deps) {
     }
     for (const [lane] of quietLanes) {
       const names = lanes.jobs[lane] ?? [];
+      if (redIn(read.jobs, names)) lanesOpen.delete(lane);
       if (!lanesOpen.has(lane) || !greenIn(read.jobs, names)) continue;
       lanesOpen.delete(lane);
       carried.push({

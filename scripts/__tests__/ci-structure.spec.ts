@@ -743,9 +743,7 @@ describe("CI pipeline structure", () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");
     expect(scope).toContain("scripts/ci-change-scope.mjs");
-    expect(scope).toContain(
-      "fetch-depth: 0",
-    );
+    expect(scope).toContain("fetch-depth: 0");
     expect(scope).toContain("scope: ${{ steps.classify.outputs.scope }}");
     expect(scope).toContain("selection: ${{ steps.classify.outputs.selection }}");
     expect(scope).toContain("reason: ${{ steps.classify.outputs.reason }}");
@@ -857,7 +855,10 @@ describe("CI pipeline structure", () => {
     expect(performance).toContain("TN_CI_SCOPE: ${{ needs.scope.outputs.selection }}");
     expect(performance).toContain('required_lanes=""');
     expect(performance).toContain('if [ "$TN_CI_SCOPE" = full ]; then');
-    expect(performance).toContain('required_lanes="performance-contracts,native-linux-contract"');
+    expect(performance).toContain('required_lanes="performance-contracts"');
+    expect(performance).toContain(
+      'required_lanes="${required_lanes:+$required_lanes,}native-linux-contract"',
+    );
     expect(performance).toContain('--required-lanes "$required_lanes"');
     expect(performance).not.toContain(
       "--required-lanes performance-contracts,native-linux-contract",

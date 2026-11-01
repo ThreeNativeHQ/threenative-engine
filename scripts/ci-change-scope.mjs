@@ -1404,7 +1404,11 @@ export async function carryDeps(root, plan) {
     integrationWorkflow: ".github/workflows/integration.yml",
     integrationSelection,
     integrationJobs: integrationJobNamesByLane,
-    nativeJobs: (owed) => nativeInventory(owed ?? plan).map((leg) => leg.name),
+    // iOS is non-blocking in the verdict, so its red cannot hold the matrix's carry either.
+    nativeJobs: (owed) =>
+      nativeInventory(owed ?? plan)
+        .filter((leg) => leg.job !== "ios-simulator")
+        .map((leg) => leg.name),
   };
 }
 
