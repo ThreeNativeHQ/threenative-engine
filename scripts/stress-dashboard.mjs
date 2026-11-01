@@ -474,6 +474,14 @@ export function scoreOf(metrics) {
   return total;
 }
 
+/** Green wins, yellow ties at the top, red loses. A lone measured engine has nothing to beat, so it stays neutral. */
+export function rankOf(value, values) {
+  if (values.length < 2) return "s-none";
+  const top = Math.max(...values);
+  if (value < top) return "s-lose";
+  return values.filter((other) => other === top).length > 1 ? "s-tie" : "s-win";
+}
+
 const bar = (fraction, cls) =>
   `<span class="score-track"><span class="score-fill ${cls}" style="width:${(Math.max(0, Math.min(1, fraction)) * 100).toFixed(1)}%"></span></span>`;
 
@@ -495,43 +503,59 @@ function scorePanel(rows, ctx) {
     [
       "One sun shadow map, the same on both",
       [
-        ["ThreeNative (Wasm)", "s-tn", plain.baseline],
-        ["Vanilla three.js", "s-three", plain.vanilla],
+        ["ThreeNative (Wasm)", plain.baseline],
+        ["Vanilla three.js", plain.vanilla],
       ],
     ],
     [
       "Virtual shadows",
       [
-        ["ThreeNative (Wasm)", "s-tn", virtual.baseline],
-        ["Unreal 5.8.3, no Lumen", "s-ue", unrealRow(rows, ctx, "tnmatched")],
-        ["Unreal 5.8.3, stock (Lumen on)", "s-ue", unrealRow(rows, ctx, "stock")],
+        ["ThreeNative (Wasm)", virtual.baseline],
+        ["Unreal 5.8.3, no Lumen", unrealRow(rows, ctx, "tnmatched")],
+        ["Unreal 5.8.3, stock (Lumen on)", unrealRow(rows, ctx, "stock")],
       ],
     ],
   ];
-  const rowHtml = ([name, cls, row], best) => {
+  /** What a reader sees: the rounded score, the rounded share of each goal. Equal numbers are a tie. */
+  const shown = (row) => {
     const score = row === undefined ? null : scoreOf(row.metrics);
-    const head = `<td class="score-name">${score !== null && score === best ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))}</span>`}</td>`;
-    if (score === null)
-      return `<tr>${head}<td class="score-cell">${bar(0, cls)}</td><td class="n dim">pending</td>${SCORE_PARTS.map(() => '<td class="n dim">-</td>').join("")}</tr>`;
-    const parts = SCORE_PARTS.map(({ key, unit, part }) => {
+    if (score === null) return null;
+    const parts = SCORE_PARTS.map(({ key, part }) =>
+      Math.round(Math.min(1, part(row.metrics[key])) * 100),
+    );
+    return { score: Math.round(score), parts };
+  };
+  const rowHtml = ([name, row], measured) => {
+    const mine = shown(row);
+    const rank =
+      mine === null
+        ? "s-none"
+        : rankOf(
+            mine.score,
+            measured.map(({ score }) => score),
+          );
+    const head = `<td class="score-name">${rank === "s-win" ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))}</span>`}</td>`;
+    if (mine === null)
+      return `<tr>${head}<td class="score-cell">${bar(0, rank)}</td><td class="n dim">pending</td>${SCORE_PARTS.map(() => '<td class="n dim">-</td>').join("")}</tr>`;
+    const parts = SCORE_PARTS.map(({ key, unit, part }, index) => {
       const value = row.metrics[key];
-      return `<td class="n">${esc(`${Number(value.toFixed(1))}${unit === "" ? "" : ` ${unit}`}`)}${bar(part(value), "score-part")}</td>`;
+      const partRank = rankOf(
+        mine.parts[index],
+        measured.map((arm) => arm.parts[index]),
+      );
+      return `<td class="n">${esc(`${Number(value.toFixed(1))}${unit === "" ? "" : ` ${unit}`}`)}${bar(part(value), `score-part ${partRank}`)}</td>`;
     }).join("");
-    return `<tr>${head}<td class="score-cell">${bar(score / 100, cls)}</td><td class="n"><b class="score-num">${Math.round(score)}</b></td>${parts}</tr>`;
+    return `<tr>${head}<td class="score-cell">${bar(mine.score / 100, rank)}</td><td class="n"><b class="score-num">${mine.score}</b></td>${parts}</tr>`;
   };
   const body = groups
     .map(([title, arms]) => {
-      const scores = arms
-        .map(([, , row]) => (row === undefined ? null : scoreOf(row.metrics)))
-        .filter((score) => score !== null);
-      // A lone engine has nothing to beat, so it gets no ✅.
-      const best = scores.length > 1 ? Math.max(...scores) : null;
-      return `<tr class="sec"><td colspan="${3 + SCORE_PARTS.length}">${esc(title)}</td></tr>${arms.map((arm) => rowHtml(arm, best)).join("")}`;
+      const measured = arms.map(([, row]) => shown(row)).filter((arm) => arm !== null);
+      return `<tr class="sec"><td colspan="${3 + SCORE_PARTS.length}">${esc(title)}</td></tr>${arms.map((arm) => rowHtml(arm, measured)).join("")}`;
     })
     .join("");
   return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene and GPU: 100 = the 120 fps goal)</span></figcaption>
 <div class="scroll"><table class="t score"><thead><tr><th>Engine</th><th>Score</th><th class="n">/100</th>${SCORE_PARTS.map(({ short, weight }) => `<th class="n">${esc(short)} <span class="dim">${weight}%</span></th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
-<p class="mt-1 text-[11px] text-dim">Each timing earns goal / value, so half the speed earns half its points, capped at the goal. The small bar under a value is its share of the goal. Compare only inside one group: the groups have different shadow work. Unreal stock also pays for Lumen, a richer picture.</p></figure>`;
+<p class="mt-1 text-[11px] text-dim">Green wins its group, yellow ties at the top, red loses, grey has nothing to compare with yet. Each timing earns goal / value, so half the speed earns half its points, capped at the goal. The small bar under a value is its share of the goal. Compare only inside one group: the groups have different shadow work. Unreal stock also pays for Lumen, a richer picture.</p></figure>`;
 }
 
 function overviewTab(rows, ctx, extra, goals) {
@@ -724,7 +748,7 @@ code{font-size:11.5px}.dim,small{color:var(--dim)}
 .t tbody tr:hover td{background:color-mix(in srgb,var(--accent) 7%,var(--card))}
 .t .d{display:block;font-size:10px;line-height:1.1}.t sup{font-size:9px;color:var(--dim)}
 .scroll{overflow-x:auto;max-width:100%}.scroll.tall{max-height:70vh;overflow:auto}.ledger thead th{position:sticky;top:0;z-index:1}
-.score-track{display:block;height:12px;min-width:180px;background:var(--bg);border:1px solid var(--line);border-radius:3px;overflow:hidden}.score-fill{display:block;height:100%}.s-tn{background:var(--accent)}.s-three{background:var(--goal)}.s-ue{background:var(--s2)}.score-part{background:var(--dim)}td .score-track:has(.score-part){height:4px;min-width:64px;margin-top:2px}.score-num{font-size:15px}.score-name{white-space:nowrap}.score-cell{min-width:200px;vertical-align:middle}
+.score-track{display:block;height:12px;min-width:180px;background:var(--bg);border:1px solid var(--line);border-radius:3px;overflow:hidden}.score-fill{display:block;height:100%}.s-win{background:var(--ok)}.s-tie{background:#e0b400}.s-lose{background:var(--miss)}.s-none{background:var(--dim)}td .score-track:has(.score-part){height:4px;min-width:64px;margin-top:2px}.score-num{font-size:15px}.score-name{white-space:nowrap}.score-cell{min-width:200px;vertical-align:middle}
 .t-ok{color:var(--ok-ink)}.t-mid{color:var(--goal)}.t-bad{color:var(--miss-ink)}
 .chip{display:inline-block;padding:0 6px;border-radius:99px;border:1px solid var(--line);font-size:10.5px;line-height:16px;color:var(--dim)}
 .chip.keep{color:var(--ok-ink);background:var(--ok-bg);border-color:transparent}.chip.reject{color:var(--miss-ink);background:var(--miss-bg);border-color:transparent}.chip.baseline{color:var(--accent)}

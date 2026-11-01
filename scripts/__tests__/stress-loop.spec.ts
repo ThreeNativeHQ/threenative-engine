@@ -14,7 +14,7 @@ const {
   readLedger,
   writeLedger,
 } = await import(new URL("../stress-loop.mjs", import.meta.url).href);
-const { scoreOf } = await import(new URL("../stress-dashboard.mjs", import.meta.url).href);
+const { rankOf, scoreOf } = await import(new URL("../stress-dashboard.mjs", import.meta.url).href);
 
 const report = (overrides: Record<string, unknown> = {}) => ({
   schema: "stress-lab-report/1",
@@ -386,6 +386,15 @@ describe("stress-loop", () => {
     expect(scoreOf({ ...goal, gpuP95Ms: null })).toBeNull();
   });
 
+  it("colors a bar green for the winner, yellow for a tie at the top and red for a loser", () => {
+    expect(rankOf(10, [10, 5])).toBe("s-win");
+    expect(rankOf(5, [10, 5])).toBe("s-lose");
+    expect(rankOf(10, [10, 10, 5])).toBe("s-tie");
+    expect(rankOf(5, [10, 10, 5])).toBe("s-lose");
+    // Nothing to beat is no win.
+    expect(rankOf(10, [10])).toBe("s-none");
+  });
+
   it("shows one score bar per engine at the top of the Overview, and pending for an engine with no valid run", () => {
     const metrics = (fps: number) => ({ metrics: { ...report().metrics, fps } });
     const ledger = [
@@ -420,6 +429,11 @@ describe("stress-loop", () => {
     expect(panel).not.toContain("7.92");
     // A group with one measured engine names no winner: both groups here have two.
     expect(panel.match(/✅/gu)?.length).toBe(2);
+    // Vanilla loses its group on the score bar, and the equal metrics of the pair tie.
+    expect(panel).toContain('class="score-fill s-win"');
+    expect(panel).toContain('class="score-fill s-lose"');
+    expect(panel).toContain('class="score-fill score-part s-tie"');
+    expect(panel).toContain('class="score-fill s-none"');
     // The panel comes before the ladder and is on the visible Overview tab.
     expect(html.indexOf("Engine score")).toBeLessThan(html.indexOf("120 fps goal ladder"));
   });
