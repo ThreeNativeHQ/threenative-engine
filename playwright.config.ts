@@ -14,6 +14,7 @@ import {
   selectHotReloadServerProject,
 } from "./test-support/hot-reload-project.js";
 import {
+  STARTER_LOOK_STAGE,
   contactShadowCoverage,
   dominantColorCoverage,
   findLargestColorObject,
@@ -266,7 +267,7 @@ async function assertStarterScreenshot(file: string): Promise<void> {
       `Starter look screenshot must be 1280x720, got ${image.width}x${image.height}.`,
     );
   }
-  const stage = { bottom: 660, left: 220, right: 1060, top: 160 };
+  const stage = STARTER_LOOK_STAGE;
   const pixels = stagePixels(image, stage);
   // The starter is a grey test arena: the pushable crate is its one saturated blue block and the
   // player is the near-white mannequin. Measured on the 1280x720 reference: the crate is the

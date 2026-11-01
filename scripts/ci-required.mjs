@@ -23,6 +23,20 @@ import {
   validateTemplateTypechecks,
 } from "./ci-template-typecheck.mjs";
 
+/**
+ * A join's receipt names the attempt that last ran the join. `gh run rerun --failed` reruns only
+ * red jobs and their dependents, so a green join keeps its earlier attempt, and GitHub lists it in
+ * the later attempt as a copy under a new job id. The join is judged against the listing of its
+ * own attempt; a receipt from an attempt after this one is forged.
+ */
+function joinAttempt(receiptAttempt, currentAttempt) {
+  return (
+    /^[1-9]\d*$/u.test(receiptAttempt ?? "") &&
+    /^[1-9]\d*$/u.test(currentAttempt ?? "") &&
+    Number(receiptAttempt) <= Number(currentAttempt)
+  );
+}
+
 try {
   const needs = JSON.parse(process.env.TN_CI_NEEDS ?? "null");
   if (needs?.scope?.result !== "success")
@@ -186,11 +200,11 @@ try {
         receipt?.version !== 1 ||
         receipt.candidateSha !== plan.candidateSha ||
         receipt.runId !== runId ||
-        receipt.runAttempt !== runAttempt ||
+        !joinAttempt(receipt.runAttempt, runAttempt) ||
         receipt.planVersion !== plan.version
       )
         throw new Error(
-          "CI_INTEGRATION_RECEIPT_IDENTITY: required join has no exact current-attempt receipt",
+          "CI_INTEGRATION_RECEIPT_IDENTITY: required join has no receipt from an attempt of this run",
         );
       const expected = {
         ...integrationCandidatePreflight({
@@ -201,12 +215,12 @@ try {
           candidateSha: plan.candidateSha,
         }),
         runId,
-        runAttempt,
+        runAttempt: receipt.runAttempt,
       };
       validateIntegrationReceipts(
         expected,
         receipt.receipts,
-        readIntegrationJobs({ repository, runId, runAttempt }),
+        readIntegrationJobs({ repository, runId, runAttempt: receipt.runAttempt }),
       );
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
@@ -219,19 +233,24 @@ try {
         GITHUB_RUN_ID: runId,
         GITHUB_RUN_ATTEMPT: runAttempt,
       } = process.env;
+      const summary = JSON.parse(process.env.TN_CI_NATIVE_RECEIPT ?? "null");
+      if (!joinAttempt(summary?.runAttempt, runAttempt))
+        throw new Error(
+          "CI_NATIVE_RECEIPT_IDENTITY: required join has no receipt from an attempt of this run",
+        );
       const expected = nativeCandidatePreflight({
         plan,
         eventName: process.env.TN_CI_EVENT,
         target: process.env.TN_CI_BASE_REF,
         candidateSha: plan.candidateSha,
         runId,
-        runAttempt,
+        runAttempt: summary.runAttempt,
         workflowHeadSha: process.env.TN_CI_HEAD_SHA || process.env.GITHUB_SHA,
       });
       validateNativeReceipts(
         expected,
-        JSON.parse(process.env.TN_CI_NATIVE_RECEIPT ?? "null"),
-        readAttemptJobs({ repository, runId, runAttempt }, "CI_NATIVE"),
+        summary,
+        readAttemptJobs({ repository, runId, runAttempt: summary.runAttempt }, "CI_NATIVE"),
       );
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
