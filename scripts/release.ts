@@ -21,7 +21,7 @@
  * replaced.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -176,19 +176,7 @@ export async function prepareReleaseCohort(
  * when the scaffolder was published on its own and its dependencies were repaired afterwards.
  */
 export function releaseOrder(packages: readonly { name: string; manifest: string }[]): string[] {
-  const names = new Set(packages.map((item) => item.name));
-  const dependencies = new Map<string, Set<string>>();
-  for (const item of packages) {
-    const manifest = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as Record<string, unknown>;
-    const internal = new Set<string>();
-    for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
-      const block = manifest[field];
-      if (typeof block !== "object" || block === null) continue;
-      for (const dependency of Object.keys(block as Record<string, unknown>))
-        if (names.has(dependency) && dependency !== item.name) internal.add(dependency);
-    }
-    dependencies.set(item.name, internal);
-  }
+  const dependencies = internalDependencies(packages);
   const ordered: string[] = [];
   const visiting = new Set<string>();
   const visit = (name: string): void => {
@@ -204,6 +192,112 @@ export function releaseOrder(packages: readonly { name: string; manifest: string
   };
   for (const item of packages) visit(item.name);
   return ordered;
+}
+
+function internalDependencies(
+  packages: readonly { name: string; manifest: string }[],
+): Map<string, Set<string>> {
+  const names = new Set(packages.map((item) => item.name));
+  const dependencies = new Map<string, Set<string>>();
+  for (const item of packages) {
+    const manifest = JSON.parse(fs.readFileSync(item.manifest, "utf8")) as Record<string, unknown>;
+    const internal = new Set<string>();
+    for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+      const block = manifest[field];
+      if (typeof block !== "object" || block === null) continue;
+      for (const dependency of Object.keys(block as Record<string, unknown>))
+        if (names.has(dependency) && dependency !== item.name) internal.add(dependency);
+    }
+    dependencies.set(item.name, internal);
+  }
+  return dependencies;
+}
+
+/**
+ * `releaseOrder` as levels: a package depends only on packages in earlier levels, so everything in
+ * one level can go out together and the dependency rule above still holds.
+ *
+ * The scaffolder's templates pin the other packages and no manifest says so. Its level therefore
+ * comes after every package that does not depend on it, or a new project could pin a version the
+ * registry cannot serve yet. A serial loop got this from the list order; a level has to state it.
+ */
+export function releaseLevels(
+  packages: readonly { name: string; manifest: string }[],
+): readonly (readonly string[])[] {
+  releaseOrder(packages); // Refuses a cycle before the walks below rely on there being none.
+  const dependencies = internalDependencies(packages);
+  const reaches = (from: string, target: string): boolean =>
+    [...(dependencies.get(from) ?? [])].some((dep) => dep === target || reaches(dep, target));
+  const scaffolder = dependencies.get("create-threenative");
+  if (scaffolder !== undefined)
+    for (const name of [...dependencies.keys()])
+      if (name !== "create-threenative" && !reaches(name, "create-threenative"))
+        scaffolder.add(name);
+  const levelOf = new Map<string, number>();
+  const level = (name: string): number => {
+    const known = levelOf.get(name);
+    if (known !== undefined) return known;
+    const value = Math.max(-1, ...[...(dependencies.get(name) ?? [])].map(level)) + 1;
+    levelOf.set(name, value);
+    return value;
+  };
+  const levels: string[][] = [];
+  for (const item of packages) {
+    const index = level(item.name);
+    levels[index] = [...(levels[index] ?? []), item.name];
+  }
+  return levels;
+}
+
+/** A guess at a polite limit: npm documents none for publishes, and the waits below need no slot. */
+const PUBLISH_CONCURRENCY = 4;
+
+/**
+ * Publish level by level. A serial loop spent 43 minutes on 16 packages in 0.3.6, nearly all of it
+ * waiting for each package to become readable (a 31 KB package took 7). A level's uploads share a
+ * small limit and its readability waits all run at once, so a level costs its slowest package. A
+ * dependent still starts only after everything it depends on is readable, and a failure stops the
+ * uploads that have not started and every later level.
+ */
+export async function publishCohort(
+  levels: readonly (readonly string[])[],
+  steps: {
+    readonly publish: (name: string) => Promise<void>;
+    readonly visible: (name: string) => Promise<void>;
+  },
+  concurrency = PUBLISH_CONCURRENCY,
+): Promise<void> {
+  const describe = (name: string, error: unknown): string =>
+    `${name}: ${error instanceof Error ? error.message : String(error)}`;
+  for (const level of levels) {
+    const queue = [...level];
+    const published: string[] = [];
+    const failures: string[] = [];
+    const worker = async (): Promise<void> => {
+      while (failures.length === 0) {
+        const name = queue.shift();
+        if (name === undefined) return;
+        try {
+          await steps.publish(name);
+          published.push(name);
+        } catch (error) {
+          failures.push(describe(name, error));
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, level.length) }, worker));
+    await Promise.all(
+      published.map((name) =>
+        steps.visible(name).catch((error: unknown) => {
+          failures.push(describe(name, error));
+        }),
+      ),
+    );
+    if (failures.length > 0)
+      throw new Error(
+        `TN_RELEASE_STEP_FAILED: ${failures.join("; ")}. Nothing further was published.`,
+      );
+  }
 }
 
 export interface IReleaseArtifactSteps {
@@ -266,6 +360,17 @@ function run(command: string, args: readonly string[], label: string): void {
   } catch {
     throw new Error(`TN_RELEASE_STEP_FAILED: ${label}. Nothing further was published.`);
   }
+}
+
+function runConcurrently(command: string, args: readonly string[], label: string): Promise<void> {
+  process.stdout.write(`\n▸ ${label}\n`);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, [...args], { cwd: REPO, stdio: "inherit" });
+    child.once("error", reject);
+    child.once("close", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${label} exited with ${String(code)}`)),
+    );
+  });
 }
 
 /** Refuse to publish artifacts produced from package files that are not in the commit. */
@@ -579,26 +684,34 @@ async function main(args: readonly string[]): Promise<void> {
       "\nPublishing without --provenance: npm can only attest a build from CI, and this is not CI.\n",
     );
   }
-  for (const name of order) {
-    if (!publishNames.has(name)) continue;
+  const versionOf = (name: string): string => {
     const version = versions.get(name);
     if (version === undefined) throw new Error(`TN_RELEASE_NO_VERSION: ${name}`);
-    run(
-      "pnpm",
-      [
-        "--filter",
-        name,
-        "publish",
-        "--no-git-checks",
-        "--access",
-        "public",
-        ...(attestable ? ["--provenance"] : []),
-      ],
-      `publish ${name}@${version}`,
-    );
-    process.stdout.write(`  waiting for ${name}@${version} to be readable…\n`);
-    await waitForRegistry(name, version);
-  }
+    return version;
+  };
+  await publishCohort(
+    releaseLevels(packages).map((level) => level.filter((name) => publishNames.has(name))),
+    {
+      publish: (name) =>
+        runConcurrently(
+          "pnpm",
+          [
+            "--filter",
+            name,
+            "publish",
+            "--no-git-checks",
+            "--access",
+            "public",
+            ...(attestable ? ["--provenance"] : []),
+          ],
+          `publish ${name}@${versionOf(name)}`,
+        ),
+      visible: async (name) => {
+        process.stdout.write(`  waiting for ${name}@${versionOf(name)} to be readable…\n`);
+        await waitForRegistry(name, versionOf(name));
+      },
+    },
+  );
 
   // The npm cohort is up; now publish the payload the runtime package installs against. The lock
   // is uploaded last, so the clean-room install below reads a release whose advertised keys exist.
