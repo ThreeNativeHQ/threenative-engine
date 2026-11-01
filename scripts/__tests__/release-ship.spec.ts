@@ -224,6 +224,29 @@ describe("pnpm release:ship resumes", () => {
     expect(calls).toEqual(["publish"]);
   });
 
+  // The 0.3.5, 0.3.6 and 0.3.7 tag runs concluded failure on the non-gating iOS job, so reading the
+  // run's own conclusion made `release:ship` stop on a release `finalize` had already promoted.
+  it("publishes a promoted release even when the iOS evidence job failed the run", async () => {
+    const { calls, deps } = world({
+      candidate: [run(10, "workflow_dispatch")],
+      release: { isDraft: false, isPrerelease: false },
+      tagCommit: SHA,
+      tagRuns: [run(20, "push", { conclusion: "failure", headBranch: TAG })],
+    });
+    expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["publish"]);
+    expect(calls).toEqual(["publish"]);
+  });
+
+  it("stops on a failed tag run that never promoted its release", async () => {
+    const { deps } = world({
+      candidate: [run(10, "workflow_dispatch")],
+      release: { isDraft: false, isPrerelease: true },
+      tagCommit: SHA,
+      tagRuns: [run(20, "push", { conclusion: "failure", headBranch: TAG })],
+    });
+    await expect(ship(deps, { dryRun: false, sha: SHA })).rejects.toThrow("TN_SHIP_TAG_RUN_FAILED");
+  });
+
   it("only verifies when the cohort is already on npm", async () => {
     const { calls, deps } = world({ candidate: [run(10, "workflow_dispatch")], npm: [VERSION] });
     expect(await ship(deps, { dryRun: false, sha: SHA })).toEqual(["verify"]);

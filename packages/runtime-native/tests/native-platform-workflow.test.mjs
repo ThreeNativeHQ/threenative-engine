@@ -388,6 +388,11 @@ test('iOS consumer launches the bundle identifier produced by its packager', () 
   expect(workflow).toContain('report="$app.json"');
   expect(workflow).toContain('--bundle-id "$bundle_id"');
   expect(workflow).not.toContain('--bundle-id dev.threenative.runtime');
+  // The release consumer hit this same mismatch on every tag run: the simulator never listed the id.
+  const release = readFileSync(new URL('../../../.github/workflows/native-release.yml', import.meta.url), 'utf8');
+  expect(release).toContain('echo "IOS_BUNDLE_ID=$bundle_id" >> "$GITHUB_ENV"');
+  expect(release).toContain('--bundle-id "$IOS_BUNDLE_ID"');
+  expect(release).not.toContain('--bundle-id dev.threenative.runtime');
 });
 
 test('iOS builds selected React UI from installed packages and checks full-screen pixels', () => {

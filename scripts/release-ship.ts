@@ -221,7 +221,9 @@ export function nextStep(state: IShipState, sha: string): ShipStep {
   if (state.npmPublished) return "verify";
   if (state.candidate.successes === 0) return "candidate";
   if (state.tag.commit !== sha) return "tag";
-  if (state.release !== "public" || state.tagRun !== "success") return "wait";
+  // Promotion is the verdict: `finalize` makes a release public only after its gating consumers pass.
+  // The run's own conclusion also carries the iOS evidence job, which does not gate (owner, 2026-09-23).
+  if (state.release !== "public") return "wait";
   return "publish";
 }
 
@@ -363,11 +365,12 @@ export async function ship(deps: IShipDeps, options: IShipOptions): Promise<read
         `${tag} run and release`,
         () => {
           const now = readShipState(deps, sha, tag, version);
+          if (now.release === "public") return true;
           if (now.tagRun === "failed")
             throw new Error(
               `TN_SHIP_TAG_RUN_FAILED: the ${tag} run failed. Fix it on main and ship the new commit.`,
             );
-          return now.release === "public" && now.tagRun === "success";
+          return false;
         },
         120,
       );
