@@ -451,6 +451,89 @@ function trendSection(rows, ctx, goals) {
   return `<details open><summary>Trend per iteration</summary><div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-dim">${legend}<span>ThreeNative (Wasm), load 1 only; one line per setup. Dashed: rolling median of 5. Triangle on the bottom edge: a value of 0. Hover a dot for the row and arm.</span></div><div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${goals.map((goal) => trendChart(goal, series, order)).join("")}</div></details>`;
 }
 
+/**
+ * The engine score, 100 at the 120 fps goal: what the player sees weighs most (presented p95, then FPS), then the two
+ * costs behind it, then hitches. A timing earns goal / value, so half the speed earns half the points. Capped at the goal.
+ */
+const SCORE_PARTS = [
+  { key: "presentedP95Ms", short: "Presented p95", unit: "ms", weight: 35, part: (v) => 8.33 / v },
+  { key: "fps", short: "FPS", unit: "", weight: 30, part: (v) => v / 120 },
+  { key: "frameP95Ms", short: "CPU p95", unit: "ms", weight: 15, part: (v) => 8.33 / v },
+  { key: "gpuP95Ms", short: "GPU p95", unit: "ms", weight: 15, part: (v) => 8.33 / v },
+  { key: "hitchesPerMin", short: "Hitches/min", unit: "", weight: 5, part: (v) => 1 / (1 + v) },
+];
+
+/** The score of one row's metrics, or null when a part is missing: never a low number for an unmeasured engine. */
+export function scoreOf(metrics) {
+  let total = 0;
+  for (const { key, weight, part } of SCORE_PARTS) {
+    const value = metrics?.[key];
+    if (!Number.isFinite(value) || value < 0) return null;
+    total += weight * Math.min(1, value === 0 && key !== "hitchesPerMin" ? 0 : part(value));
+  }
+  return total;
+}
+
+const bar = (fraction, cls) =>
+  `<span class="score-track"><span class="score-fill ${cls}" style="width:${(Math.max(0, Math.min(1, fraction)) * 100).toFixed(1)}%"></span></span>`;
+
+/** The latest valid uncapped load 1 row of one Unreal setup. Each setup keeps its own bar: they are different pictures. */
+const unrealRow = (rows, ctx, setup) =>
+  rows.findLast(
+    (row) =>
+      row.engine === "unreal" &&
+      flagsOf(row.variant).includes(setup) &&
+      passOf(row) === "uncapped" &&
+      isValid(row, ctx.loadVoid),
+  );
+
+/** One bar per engine on the same scene. A group ranks only engines with the same shadow technique. */
+function scorePanel(rows, ctx) {
+  const plain = laneOf(rows, ctx, "plain", "uncapped");
+  const virtual = laneOf(rows, ctx, "virtual", "uncapped");
+  const groups = [
+    [
+      "One sun shadow map, the same on both",
+      [
+        ["ThreeNative (Wasm)", "s-tn", plain.baseline],
+        ["Vanilla three.js", "s-three", plain.vanilla],
+      ],
+    ],
+    [
+      "Virtual shadows",
+      [
+        ["ThreeNative (Wasm)", "s-tn", virtual.baseline],
+        ["Unreal 5.8.3, no Lumen", "s-ue", unrealRow(rows, ctx, "tnmatched")],
+        ["Unreal 5.8.3, stock (Lumen on)", "s-ue", unrealRow(rows, ctx, "stock")],
+      ],
+    ],
+  ];
+  const rowHtml = ([name, cls, row], best) => {
+    const score = row === undefined ? null : scoreOf(row.metrics);
+    const head = `<td class="score-name">${score !== null && score === best ? "✅ " : ""}${esc(name)}${row === undefined ? "" : `<br><span class="dim">#${row.id} · ${esc(row.at.slice(0, 10))}</span>`}</td>`;
+    if (score === null)
+      return `<tr>${head}<td class="score-cell">${bar(0, cls)}</td><td class="n dim">pending</td>${SCORE_PARTS.map(() => '<td class="n dim">-</td>').join("")}</tr>`;
+    const parts = SCORE_PARTS.map(({ key, unit, part }) => {
+      const value = row.metrics[key];
+      return `<td class="n">${esc(`${Number(value.toFixed(1))}${unit === "" ? "" : ` ${unit}`}`)}${bar(part(value), "score-part")}</td>`;
+    }).join("");
+    return `<tr>${head}<td class="score-cell">${bar(score / 100, cls)}</td><td class="n"><b class="score-num">${Math.round(score)}</b></td>${parts}</tr>`;
+  };
+  const body = groups
+    .map(([title, arms]) => {
+      const scores = arms
+        .map(([, , row]) => (row === undefined ? null : scoreOf(row.metrics)))
+        .filter((score) => score !== null);
+      // A lone engine has nothing to beat, so it gets no ✅.
+      const best = scores.length > 1 ? Math.max(...scores) : null;
+      return `<tr class="sec"><td colspan="${3 + SCORE_PARTS.length}">${esc(title)}</td></tr>${arms.map((arm) => rowHtml(arm, best)).join("")}`;
+    })
+    .join("");
+  return `<figure class="card mb-3"><figcaption>Engine score <span class="dim">(uncapped, load 1, same scene and GPU: 100 = the 120 fps goal)</span></figcaption>
+<div class="scroll"><table class="t score"><thead><tr><th>Engine</th><th>Score</th><th class="n">/100</th>${SCORE_PARTS.map(({ short, weight }) => `<th class="n">${esc(short)} <span class="dim">${weight}%</span></th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
+<p class="mt-1 text-[11px] text-dim">Each timing earns goal / value, so half the speed earns half its points, capped at the goal. The small bar under a value is its share of the goal. Compare only inside one group: the groups have different shadow work. Unreal stock also pays for Lumen, a richer picture.</p></figure>`;
+}
+
 function overviewTab(rows, ctx, extra, goals) {
   const lanes = [];
   for (const shadow of ["virtual", "plain"])
@@ -476,7 +559,7 @@ function overviewTab(rows, ctx, extra, goals) {
         `<tr><td>${SHADOW[lane.shadow]}</td><td>${lane.pass}</td>${cell(lane.baseline)}${cell(lane.kept)}${lane.shadow === "plain" ? cell(lane.vanilla) : `<td class="dim">no equivalent</td>`}${verdict(lane)}</tr>`,
     )
     .join("")}</tbody></table></div>`;
-  return `<div class="grid items-start gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+  return `${scorePanel(rows, ctx)}<div class="grid items-start gap-3 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
 <figure class="card"><figcaption>120 fps goal ladder · presented p95 <span class="dim">(ms, load 1)</span></figcaption>${ladder(lanes)}<p class="mt-1 text-[11px] text-dim"><span style="color:var(--s1)">●</span> latest develop baseline · <span style="color:var(--ok)">◆</span> best kept arm · <span style="color:var(--s3)">■</span> vanilla three.js (plain sun only) · rungs 8.33 / 11.1 / 16.67 ms</p></figure>
 <div><h2>Where it stands</h2>${table}<p class="mt-1 text-[11px] text-dim">VSM is <code>?stress</code>; plain sun is <code>?stress&amp;plainShadow</code>. A vsync pass floors at 16.7 ms on a 60 Hz display, so only the uncapped pass can show 90 or 120 fps. Baseline is the latest <code>develop</code>, <code>head</code> or <code>stack*</code> arm.</p></div></div>
 ${extra}
@@ -641,6 +724,7 @@ code{font-size:11.5px}.dim,small{color:var(--dim)}
 .t tbody tr:hover td{background:color-mix(in srgb,var(--accent) 7%,var(--card))}
 .t .d{display:block;font-size:10px;line-height:1.1}.t sup{font-size:9px;color:var(--dim)}
 .scroll{overflow-x:auto;max-width:100%}.scroll.tall{max-height:70vh;overflow:auto}.ledger thead th{position:sticky;top:0;z-index:1}
+.score-track{display:block;height:12px;min-width:180px;background:var(--bg);border:1px solid var(--line);border-radius:3px;overflow:hidden}.score-fill{display:block;height:100%}.s-tn{background:var(--accent)}.s-three{background:var(--goal)}.s-ue{background:var(--s2)}.score-part{background:var(--dim)}td .score-track:has(.score-part){height:4px;min-width:64px;margin-top:2px}.score-num{font-size:15px}.score-name{white-space:nowrap}.score-cell{min-width:200px;vertical-align:middle}
 .t-ok{color:var(--ok-ink)}.t-mid{color:var(--goal)}.t-bad{color:var(--miss-ink)}
 .chip{display:inline-block;padding:0 6px;border-radius:99px;border:1px solid var(--line);font-size:10.5px;line-height:16px;color:var(--dim)}
 .chip.keep{color:var(--ok-ink);background:var(--ok-bg);border-color:transparent}.chip.reject{color:var(--miss-ink);background:var(--miss-bg);border-color:transparent}.chip.baseline{color:var(--accent)}

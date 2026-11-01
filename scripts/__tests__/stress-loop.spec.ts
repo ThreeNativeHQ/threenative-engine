@@ -14,6 +14,7 @@ const {
   readLedger,
   writeLedger,
 } = await import(new URL("../stress-loop.mjs", import.meta.url).href);
+const { scoreOf } = await import(new URL("../stress-dashboard.mjs", import.meta.url).href);
 
 const report = (overrides: Record<string, unknown> = {}) => ({
   schema: "stress-lab-report/1",
@@ -365,6 +366,62 @@ describe("stress-loop", () => {
     expect(kpiTable).toContain("62.7 fps");
     expect(kpiTable).not.toContain("7.92");
     expect(kpiTable).toContain("#1");
+  });
+
+  it("scores a row 0 to 100 against the 120 fps goal, and refuses a row with a missing metric", () => {
+    const goal = {
+      presentedP95Ms: 8.33,
+      fps: 120,
+      frameP95Ms: 8.33,
+      gpuP95Ms: 8.33,
+      hitchesPerMin: 0,
+    };
+    expect(scoreOf(goal)).toBe(100);
+    expect(scoreOf({ ...goal, fps: 500, gpuP95Ms: 1 })).toBe(100);
+    // Half the speed on every timing, no hitches: 95 points at half, plus all 5 hitch points.
+    expect(
+      scoreOf({ ...goal, presentedP95Ms: 16.66, fps: 60, frameP95Ms: 16.66, gpuP95Ms: 16.66 }),
+    ).toBeCloseTo(52.5);
+    expect(scoreOf({ ...goal, hitchesPerMin: 1 })).toBeCloseTo(97.5);
+    expect(scoreOf({ ...goal, gpuP95Ms: null })).toBeNull();
+  });
+
+  it("shows one score bar per engine at the top of the Overview, and pending for an engine with no valid run", () => {
+    const metrics = (fps: number) => ({ metrics: { ...report().metrics, fps } });
+    const ledger = [
+      { variant: "plainShadow&arm=develop&uncapped", engine: WASM, fps: 100 },
+      { variant: "arm=vanilla&uncapped", engine: "three-vanilla", fps: 60 },
+      { variant: "arm=develop&uncapped", engine: WASM, fps: 62 },
+      { variant: "load=8&arm=l8&uncapped", engine: "three-vanilla", fps: 7.92 },
+      { variant: "tnmatched&uncapped", engine: "unreal", fps: 70 },
+    ].reduce(
+      (acc, { variant, engine, fps }) =>
+        recordRun(
+          acc,
+          run(
+            {
+              pass: "uncapped",
+              build: { kind: engine === WASM ? "wasm" : "js", sha256: "4fb0aba5a921", commit: "a" },
+            },
+            metrics(fps),
+          ),
+          { label: variant, variant, engine, decision: "measure" },
+        ),
+      readLedger(ledgerPath()),
+    );
+    const html = renderHtml(ledger, new Date(0));
+    const panel = html.slice(html.indexOf("Engine score"), html.indexOf("120 fps goal ladder"));
+    expect(panel).toContain("Vanilla three.js");
+    expect(panel).toContain("Unreal 5.8.3");
+    expect(panel).toContain("ThreeNative (Wasm)");
+    expect(panel.match(/class="score-fill s-/gu)?.length).toBe(5);
+    // Unreal stock has no row: it reads pending, never zero. The load 8 row is not an engine's score.
+    expect(panel).toContain("pending");
+    expect(panel).not.toContain("7.92");
+    // A group with one measured engine names no winner: both groups here have two.
+    expect(panel.match(/✅/gu)?.length).toBe(2);
+    // The panel comes before the ladder and is on the visible Overview tab.
+    expect(html.indexOf("Engine score")).toBeLessThan(html.indexOf("120 fps goal ladder"));
   });
 
   it("defines the comparison colors for the light and the dark theme", () => {
