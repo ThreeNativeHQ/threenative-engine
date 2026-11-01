@@ -5,7 +5,7 @@ import { loadKitContract } from "./kit-contract.js";
 
 /**
  * Writes one kit contract row's scenario into a scaffolded kit's playtests, so a CI job that runs the
- * kit's own scenarios runs the row too (PRD-748: `engine-cost` in template-nonvisual, every PR).
+ * kit's own scenarios runs the row too (PRD-748: `engine-cost` in template-engine-cost, nightly).
  * A kit that opts out prints its reason and gets no file; an undeclared row throws, as the sweep does.
  *
  *   tsx scripts/kit-contract-row.ts <row> <kit> <playtests directory>

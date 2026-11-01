@@ -83,7 +83,7 @@ function runJobs(repository, runId) {
       "api",
       "--paginate",
       "--slurp",
-      `repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
+      `repos/${repository}/actions/runs/${runId}/jobs?filter=latest&per_page=10`,
     ]),
   );
   return pages.flatMap((page) => page.jobs ?? []);

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { readAttemptJobs, receiptFiles } from "./ci-attempt-receipts.mjs";
+import { readJobsAcrossAttempts, receiptFiles } from "./ci-attempt-receipts.mjs";
 import {
   nativeBuildProfile,
   nativeCandidatePreflight,
@@ -207,7 +207,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       workflowHeadSha: env.TN_CI_WORKFLOW_HEAD_SHA,
       reusable: env.TN_CI_NATIVE_REUSABLE !== "false",
     });
-    const listing = readAttemptJobs(
+    const listing = readJobsAcrossAttempts(
       { repository: env.GITHUB_REPOSITORY, runId: expected.runId, runAttempt: expected.runAttempt },
       "CI_NATIVE",
     );
@@ -247,7 +247,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         runId: expected.runId,
         runAttempt: expected.runAttempt,
         planVersion: plan.version,
-        receipts: receiptFiles(process.argv[3], "CI_NATIVE"),
+        // A carried leg's receipt was written by an earlier attempt; the newest per leg speaks.
+        receipts: [
+          ...new Map(
+            receiptFiles(process.argv[3], "CI_NATIVE")
+              .sort((a, b) => Number(a.runAttempt) - Number(b.runAttempt))
+              .map((receipt) => [receipt.job, receipt]),
+          ).values(),
+        ],
       };
       validateNativeReceipts(expected, summary, listing);
       appendFileSync(env.GITHUB_OUTPUT, `coverage_receipt=${JSON.stringify(summary)}\n`);

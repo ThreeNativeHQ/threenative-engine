@@ -119,8 +119,8 @@ function boardJobs(base: string): string[] {
     if (!job.required) continue;
     if (name === "test-unit") {
       for (const shard of plan.unitMatrix.shard) names.push(`test-unit (${shard})`);
-    } else if (name === "template-nonvisual") {
-      for (const t of plan.templateMatrix.template) names.push(`template-nonvisual (${t})`);
+    } else if (name === "template-nonvisual" || name === "template-engine-cost") {
+      for (const t of plan.templateMatrix.template) names.push(`${name} (${t})`);
     } else if (name === "golden-path-template") {
       for (const t of plan.goldenMatrix.template) names.push(`golden-path-template (${t})`);
     } else names.push(name === "integration" ? "integration / fog-native" : name);

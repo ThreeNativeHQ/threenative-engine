@@ -808,9 +808,8 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
     expect(triggers).toContain("ios_only:");
-    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
-    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
   });
 
   it("never lets a draft pull request run cancel a ready one", async () => {
@@ -1325,6 +1324,7 @@ describe("CI pipeline structure", () => {
     ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
     ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
     ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:template-engine-cost", heavyMatrix("ci:template-engine-cost:{0}", "matrix.template")],
     ["ci.yml:native-engine", heavy("ci:native-engine")],
     ["integration.yml:animation", heavy("integration:animation", "paths")],
     ["integration.yml:capture", heavy("integration:capture", "paths")],
@@ -2424,8 +2424,7 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     expect(triggerSection(native)).toContain("workflow_call:");
-    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggerSection(native)).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
   });
 
   it("both emulator lanes share the KVM provisioning commands", async () => {
@@ -3228,9 +3227,8 @@ describe("CI pipeline structure", () => {
     // The reusable workflow is invoked by ci.yml for every non-prose board selection.
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_call:");
-    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
-    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
-    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
+    // The release candidate reads its reports from the main CI run, so nothing starts this alone.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule|push):/u);
 
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");
@@ -3335,6 +3333,45 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("run: pnpm verify:golden-path");
   });
 
+  it("the engine-cost row runs in its own required leg per kit, not inside the kit's 30 minutes", async () => {
+    // Its 1260 drawn ticks took 14m51s on hosted SwiftShader (run 41170629638), so inside
+    // template-nonvisual it cancelled adventure and collectathon at 30 minutes.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(requiredJob(ci, "template-nonvisual")).not.toContain("kit-contract-row.ts");
+    const job = requiredJob(ci, "template-engine-cost");
+    expect(job).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}");
+    expect(job).toContain('scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}"');
+    expect(job).toContain("--scenario playtests/contract-engine-cost.playtest.json");
+    expect(job).toContain("--browser-recipe webgpu --headed");
+    // 45 for this job only (owner, 2026-10-31: hosted SwiftShader ran the row 964-1775+ s); the
+    // kit legs keep their own caps.
+    expect(job).toContain("timeout-minutes: 45");
+    expect(requiredJob(ci, "template-nonvisual")).toContain(
+      "timeout-minutes: ${{ matrix.template == 'shooter' && 60 || matrix.template == 'rain' && 60 || 30 }}",
+    );
+    expect(requiredJob(ci, "ci-required")).toMatch(/needs: \[[^\]]*\btemplate-engine-cost\b/u);
+    // The row writer imports create-threenative, which needs the built `packages/*/dist` that only
+    // the workspace-packages artifact carries (run 41260320405: every leg failed at the row step).
+    const download = job.indexOf("name: workspace-packages");
+    expect(download).toBeGreaterThan(-1);
+    expect(download).toBeLessThan(job.indexOf("scripts/kit-contract-row.ts"));
+  });
+
+  it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
+    // Run 41249368283: `playwright install-deps` trickled from archive.ubuntu.com for 29 minutes and
+    // the tower-defense and animation jobs hit their 30-minute limit. A hang is not a failure, so
+    // retry-download.sh never retried it. Root runs the timeout, so it can kill apt's fetchers.
+    const action = await readFile(
+      path.join(repo, ".github/actions/playwright-chromium/action.yml"),
+      "utf8",
+    );
+    expect(action).toContain(
+      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium',
+    );
+    expect(action).not.toContain("pnpm exec playwright install-deps");
+    expect(action).not.toContain("--with-deps");
+  });
+
   it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {
     // #560's first review run: `vitest related` picked the browser e2e specs for a playtest change
     // and every one died on a missing Chromium, because the install step ran for `full` only.
@@ -3389,7 +3426,7 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(10);
+    expect(callers).toBe(11);
   });
 
   it("selects QuickJS for the packaged fallback without changing native features", async () => {
@@ -4607,6 +4644,24 @@ describe("a CI-configuration-only pull request", () => {
       expect(refused.stderr).toContain("CI_SCOPE_INVALID_PLAN");
     } finally {
       await removeFixture(fixture.root);
+    }
+  });
+
+  it("reads a run's job list in small pages, because a large page answers 502 after a --failed rerun", async () => {
+    // Run 41288322050 attempt 3: `jobs?filter=latest&per_page=100` answered 502 at 10.6 s on 9 of 9
+    // reads, and the release gate of tag runtime-native-v0.3.7 could not read its own CI run.
+    const sources = [
+      ".github/workflows/ci.yml",
+      ".github/workflows/ci-janitor.yml",
+      ".github/workflows/native-release.yml",
+      "scripts/ci-queue-watch.mjs",
+      "scripts/ci-merge-latency.mjs",
+    ];
+    for (const source of sources) {
+      const large = (await readFile(source, "utf8"))
+        .split("\n")
+        .filter((line) => /\/jobs\?[^"'`\s]*per_page=(?:[2-9]\d|\d{3})/u.test(line));
+      expect({ source, large }).toEqual({ source, large: [] });
     }
   });
 });

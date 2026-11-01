@@ -150,6 +150,7 @@ const FULL_JOBS = [
   "test-playtest",
   "golden-path-template",
   "template-nonvisual",
+  "template-engine-cost",
   "golden-path",
   "benchmark",
   "build",
@@ -196,6 +197,7 @@ export function selectionPlan(
   reusedRunId = 0,
   target = "",
   qualification = selection === "full" && target !== "develop",
+  nightly = false,
 ) {
   const full = selection === "full";
   const reused = selection === "reused";
@@ -229,17 +231,20 @@ export function selectionPlan(
       // producers; neither widens one, so any other job is exempt exactly as it is for prose.
       // The engine job is the one lane a full board owes only conditionally: when the diff reaches the
       // engine tree, or when the run qualifies a whole candidate. Every other full diff reads as before.
+      // The engine-cost row is nightly only (owner, 2026-11-01): it costs 180 job-minutes a board.
       const required =
-        name === "native-engine"
-          ? engine || (full && (qualification || files.some(isEnginePath)))
-          : (full && (name !== "test-native" || native)) ||
-            ((ciLane || template) && CI_JOBS.has(name)) ||
-            (template &&
-              ["template-nonvisual", "golden-path-template", "golden-path"].includes(name)) ||
-            (review &&
-              (REVIEW_JOBS.includes(name) ||
-                (name === "test" && files.some((file) => file.startsWith("packages/"))))) ||
-            (warm && WARM_JOBS.includes(name));
+        name === "template-engine-cost"
+          ? nightly && (full || template)
+          : name === "native-engine"
+            ? engine || (full && (qualification || files.some(isEnginePath)))
+            : (full && (name !== "test-native" || native)) ||
+              ((ciLane || template) && CI_JOBS.has(name)) ||
+              (template &&
+                ["template-nonvisual", "golden-path-template", "golden-path"].includes(name)) ||
+              (review &&
+                (REVIEW_JOBS.includes(name) ||
+                  (name === "test" && files.some((file) => file.startsWith("packages/"))))) ||
+              (warm && WARM_JOBS.includes(name));
       return [
         name,
         {
@@ -320,6 +325,7 @@ export function selectionPlan(
   return {
     version: 2,
     qualification,
+    nightly,
     files,
     reason,
     scope: selection,
@@ -362,6 +368,7 @@ export function validatePlan(value) {
     typeof value !== "object" ||
     value.version !== 2 ||
     typeof value.qualification !== "boolean" ||
+    typeof value.nightly !== "boolean" ||
     (value.qualification &&
       (value.selection !== "full" || !value.native || value.reusedRunId !== 0)) ||
     !SELECTIONS.has(value.selection) ||
@@ -400,6 +407,7 @@ export function validatePlan(value) {
     value.reusedRunId,
     value.target,
     value.qualification,
+    value.nightly,
   );
   for (const field of [
     "scope",
@@ -443,7 +451,10 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
       !plan.native ||
       plan.nativeTier !== "full" ||
       plan.reusedRunId !== 0 ||
-      Object.values(plan.jobs).some((job) => !job.required) ||
+      // Only the nightly owes the engine-cost row.
+      Object.entries(plan.jobs).some(
+        ([name, job]) => !job.required && (name !== "template-engine-cost" || event === "schedule"),
+      ) ||
       JSON.stringify(plan.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
       JSON.stringify(plan.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||
       JSON.stringify(plan.unitMatrix.shard) !== JSON.stringify(["1/4", "2/4", "3/4", "4/4"])
@@ -688,6 +699,7 @@ const UNPROVEN_REUSE_BOARDS = new Set([
   "test-unit",
   "golden-path-template",
   "template-nonvisual",
+  "template-engine-cost",
   "native-platforms",
 ]);
 
@@ -983,6 +995,7 @@ export function classify(input) {
             0,
             target,
             qualification,
+            options.eventName === "schedule",
           ),
           options,
           candidateSha,
@@ -1104,6 +1117,7 @@ const SHA = /^[0-9a-f]{40}$/u;
 const MATRIX_BOARDS = [
   ["test-unit", "unitMatrix", "shard"],
   ["template-nonvisual", "templateMatrix", "template"],
+  ["template-engine-cost", "templateMatrix", "template"],
   ["golden-path-template", "goldenMatrix", "template"],
 ];
 
@@ -1258,6 +1272,7 @@ function reuseOrKeep(plan, options, candidateSha) {
       0,
       plan.target,
       plan.qualification,
+      plan.nightly,
     );
   // PRD-730: the queue takes its own narrow rule, never the generic cross-commit one below.
   if (options.eventName === "merge_group") {

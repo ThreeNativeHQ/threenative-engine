@@ -23,14 +23,16 @@ it.each(["exposure", "cold-boot"])("routes actual exposure producers to %s", asy
       file,
     ).toBe(true);
   }
+  // Cold boot runs when exposure code changes and nightly (owner, 2026-11-01), not on every consumer.
   for (const file of [
     "packages/core/src/game.ts",
     "packages/core/src/renderer-config.ts",
     "packages/playtest/src/runner/bridgeClient.ts",
     "packages/runtime-native/src/webgpu/bindings_resources.cpp",
   ]) {
-    expect(selected(file), file).toBe(true);
+    expect(selected(file), file).toBe(lane === "exposure");
   }
+  expect(selected("packages/core/src/look/exposure-graph.ts")).toBe(true);
   expect(selected("packages/create-threenative/template-assets/vegetation.ts")).toBe(false);
   expect(selected("packages/create-threenative/templates/starter/src/render/lighting.ts")).toBe(
     false,
