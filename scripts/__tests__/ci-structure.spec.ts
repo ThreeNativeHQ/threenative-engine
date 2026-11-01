@@ -1325,6 +1325,7 @@ describe("CI pipeline structure", () => {
     ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
     ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
     ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:template-engine-cost", heavyMatrix("ci:template-engine-cost:{0}", "matrix.template")],
     ["ci.yml:native-engine", heavy("ci:native-engine")],
     ["integration.yml:animation", heavy("integration:animation", "paths")],
     ["integration.yml:capture", heavy("integration:capture", "paths")],
@@ -3335,6 +3336,25 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("run: pnpm verify:golden-path");
   });
 
+  it("the engine-cost row runs in its own required leg per kit, not inside the kit's 30 minutes", async () => {
+    // Its 1260 drawn ticks took 14m51s on hosted SwiftShader (run 41170629638), so inside
+    // template-nonvisual it cancelled adventure and collectathon at 30 minutes.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(requiredJob(ci, "template-nonvisual")).not.toContain("kit-contract-row.ts");
+    const job = requiredJob(ci, "template-engine-cost");
+    expect(job).toContain("matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}");
+    expect(job).toContain('scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}"');
+    expect(job).toContain("--scenario playtests/contract-engine-cost.playtest.json");
+    expect(job).toContain("--browser-recipe webgpu --headed");
+    expect(job).toContain("timeout-minutes: 30");
+    expect(requiredJob(ci, "ci-required")).toMatch(/needs: \[[^\]]*\btemplate-engine-cost\b/u);
+    // The row writer imports create-threenative, which needs the built `packages/*/dist` that only
+    // the workspace-packages artifact carries (run 41260320405: every leg failed at the row step).
+    const download = job.indexOf("name: workspace-packages");
+    expect(download).toBeGreaterThan(-1);
+    expect(download).toBeLessThan(job.indexOf("scripts/kit-contract-row.ts"));
+  });
+
   it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
     // Run 41249368283: `playwright install-deps` trickled from archive.ubuntu.com for 29 minutes and
     // the tower-defense and animation jobs hit their 30-minute limit. A hang is not a failure, so
@@ -3404,7 +3424,7 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    expect(callers).toBe(10);
+    expect(callers).toBe(11);
   });
 
   it("selects QuickJS for the packaged fallback without changing native features", async () => {
