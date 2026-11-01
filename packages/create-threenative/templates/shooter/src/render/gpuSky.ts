@@ -673,6 +673,32 @@ function distantFogColour(sun: Vector3): Color {
   );
 }
 
+/**
+ * The composited sky radiance of one sun, kept for the next scene that asks for the same sky: a scene
+ * that restarts (load, then enter) would otherwise march the same 2048 rays twice, seconds of one
+ * thread on a slow interpreter. Keyed by everything the bake reads; a moved sun misses and bakes.
+ * Callers only read the result. Only the newest few suns are kept.
+ */
+const radianceCache = new Map<string, Float32Array>();
+const RADIANCE_CACHE_SUNS = 8;
+function bakedRadiance(
+  sun: Vector3,
+  w: number,
+  h: number,
+  ground: boolean,
+  clouds: boolean,
+): Float32Array {
+  const key = `${sun.x},${sun.y},${sun.z},${w},${h},${ground},${clouds}`;
+  const cached = radianceCache.get(key);
+  if (cached) return cached;
+  const data = bakeSkyRadiance(sun, w, h, ground);
+  if (clouds) bakeCloudRadiance(data, sun, w, h);
+  radianceCache.set(key, data);
+  if (radianceCache.size > RADIANCE_CACHE_SUNS)
+    radianceCache.delete(radianceCache.keys().next().value as string);
+  return data;
+}
+
 /** CPU pixels are still needed by the owned PMREM.
  * Renderer::beginEnvironment rejects GPU-only textures (renderer.cpp: decoded RGBA pixels).
  * At 64x32 this avoids the full 256x128 bake; both paths use the same radiometric scale.
@@ -693,8 +719,7 @@ export function createGpuSky(
   environment.minFilter = environment.magFilter = LinearFilter;
   const refresh = () => {
     const start = performance.now();
-    const data = bakeSkyRadiance(sun, w, h, ground);
-    if (clouds) bakeCloudRadiance(data, sun, w, h);
+    const data = bakedRadiance(sun, w, h, ground, clouds);
     const scale = temperatureColour(SUN_KELVIN).map((v) => v * SUN_ILLUMINANCE * SKY_TO_SUN) as [
       number,
       number,

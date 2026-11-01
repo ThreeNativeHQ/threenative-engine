@@ -1,10 +1,20 @@
 // PRD-633: the starter's sky is Unreal's default level sky, and it lights the scene.
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { type DataTexture, type FogExp2, Scene, Texture } from "three";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { bakeSkyRadiance } from "../templates/starter/src/render/atmosphere.js";
+import { cloudTextures } from "../templates/starter/src/render/clouds.js";
 import { setupLighting } from "../templates/starter/src/render/lighting.js";
 import { SKY_OPTIONS, SUN_DIRECTION, setupSky } from "../templates/starter/src/render/sky.js";
+
+// The spy wraps the real bake: it counts the ray marches and changes none of them.
+vi.mock("../templates/starter/src/render/atmosphere.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../templates/starter/src/render/atmosphere.js")>();
+  return { ...actual, bakeSkyRadiance: vi.fn(actual.bakeSkyRadiance) };
+});
 
 const renderer = { shadowMap: { enabled: false, type: 0 } };
 const defaultSun = SUN_DIRECTION.clone();
@@ -74,6 +84,49 @@ describe("starter atmosphere sky", () => {
     expect(scene.environment).toBe(photo);
     expect(setupLighting(new Scene(), renderer).key.color.getHex()).toBe(0xfff1e0);
     expect(() => setupSky(new Scene())).toThrow(/sky\.jpg/u);
+  });
+});
+
+describe("atmosphere CPU bake cost", () => {
+  afterEach(() => {
+    SUN_DIRECTION.copy(defaultSun);
+  });
+
+  // The starter calls setupSky in load and again in enter; each call used to march the same 2048 rays,
+  // seconds of one thread on QuickJS arm64 (CI: the playtest mailbox gave up at 15 s).
+  it("bakes the environment once for two skies with the same sun, and again when the sun moves", () => {
+    const bakes = vi.mocked(bakeSkyRadiance);
+    SUN_DIRECTION.set(0.31, 0.62, 0.72).normalize();
+    const before = bakes.mock.calls.length;
+    setupSky(new Scene(), undefined, true, true, false);
+    setupSky(new Scene(), undefined, true, true, false);
+    expect(bakes.mock.calls.length - before).toBe(1);
+    SUN_DIRECTION.set(0.31, 0.64, 0.72).normalize();
+    setupSky(new Scene(), undefined, true, true, false);
+    expect(bakes.mock.calls.length - before).toBe(2);
+  });
+
+  it("keeps a cached bake apart from a sky with other inputs", () => {
+    SUN_DIRECTION.set(0.2, 0.7, 0.4).normalize();
+    const clear = new Scene();
+    const cloudy = new Scene();
+    setupSky(clear, undefined, true, true, false);
+    setupSky(cloudy, undefined, true, true, true);
+    const clearPixels = (clear.environment as DataTexture).image.data as Uint8Array;
+    const cloudyPixels = (cloudy.environment as DataTexture).image.data as Uint8Array;
+    expect(Buffer.from(cloudyPixels).equals(Buffer.from(clearPixels))).toBe(false);
+  });
+
+  // Captured from the code before the noise loops were hoisted: the same bytes are the same pixels.
+  // sha256 over each texture's float32 bytes.
+  it("generates the cloud textures byte for byte as before", () => {
+    const { pattern, volume } = cloudTextures();
+    const sha = (texture: Float32Array) =>
+      createHash("sha256")
+        .update(new Uint8Array(texture.buffer, texture.byteOffset, texture.byteLength))
+        .digest("hex");
+    expect(sha(pattern)).toBe("0f45fa26ee5cb45723570fb2bb3f316dccb19b21480fd3cc618f78999ce590dd");
+    expect(sha(volume)).toBe("1165a61000c67b8c68958279b4cb0c095d8a264e3e8d80705accbf9215c04b85");
   });
 });
 

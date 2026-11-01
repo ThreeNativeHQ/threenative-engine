@@ -583,11 +583,11 @@ index 7c8d2322834904c1247c79cda31beff8e2bfc497..aa718836287becc1fa9c959ca616ac46
 +
 +		try {
 +
-+			// one fence covers as much queued work as the heaviest single face (the first GGX pass)
++			// one fence covers the heaviest single face (the first GGX pass), never less than a 256 cube's: a fence waits behind every queued frame
 +
 +			const heavy = this._cubeSize >> 1;
 +
-+			this._fenceBudget = heavy * heavy * GGX_SAMPLES;
++			this._fenceBudget = Math.max( 128 * 128, heavy * heavy ) * GGX_SAMPLES;
 +			this._fencePending = 0;
 +
 +			await this._textureToCubemapAsync( texture );
@@ -2930,11 +2930,11 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..825b83f785e7d86ca3bababda95202ab
 +
 +		try {
 +
-+			// one fence covers as much queued work as the heaviest single face (the first GGX pass)
++			// one fence covers the heaviest single face (the first GGX pass), never less than a 256 cube's: a fence waits behind every queued frame
 +
 +			const heavy = this._cubeSize >> 1;
 +
-+			this._fenceBudget = heavy * heavy * GGX_SAMPLES;
++			this._fenceBudget = Math.max( 128 * 128, heavy * heavy ) * GGX_SAMPLES;
 +			this._fencePending = 0;
 +
 +			await this._textureToCubemapAsync( texture );
@@ -6705,11 +6705,11 @@ index 44bc579ef34aca93ad7546bf625f3f7d1c507aaa..a46a6800f3fb18b654fb7757b3f87ed1
 +
 +		try {
 +
-+			// one fence covers as much queued work as the heaviest single face (the first GGX pass)
++			// one fence covers the heaviest single face (the first GGX pass), never less than a 256 cube's: a fence waits behind every queued frame
 +
 +			const heavy = this._cubeSize >> 1;
 +
-+			this._fenceBudget = heavy * heavy * GGX_SAMPLES;
++			this._fenceBudget = Math.max( 128 * 128, heavy * heavy ) * GGX_SAMPLES;
 +			this._fencePending = 0;
 +
 +			await this._textureToCubemapAsync( texture );
