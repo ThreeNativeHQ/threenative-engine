@@ -3346,7 +3346,12 @@ describe("CI pipeline structure", () => {
     expect(job).toContain('scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}"');
     expect(job).toContain("--scenario playtests/contract-engine-cost.playtest.json");
     expect(job).toContain("--browser-recipe webgpu --headed");
-    expect(job).toContain("timeout-minutes: 30");
+    // 45 for this job only (owner, 2026-10-31: hosted SwiftShader ran the row 964-1775+ s); the
+    // kit legs keep their own caps.
+    expect(job).toContain("timeout-minutes: 45");
+    expect(requiredJob(ci, "template-nonvisual")).toContain(
+      "timeout-minutes: ${{ matrix.template == 'shooter' && 60 || matrix.template == 'rain' && 60 || 30 }}",
+    );
     expect(requiredJob(ci, "ci-required")).toMatch(/needs: \[[^\]]*\btemplate-engine-cost\b/u);
     // The row writer imports create-threenative, which needs the built `packages/*/dist` that only
     // the workspace-packages artifact carries (run 41260320405: every leg failed at the row step).

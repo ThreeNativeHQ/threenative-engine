@@ -36,6 +36,32 @@ test("Android console attributes errors to the launched app rather than another 
   expect(await driver.captureConsole()).toEqual([{ text: own, type: "log" }]);
 });
 
+test("Android console ignores system_server AppHibernationService lines that name the package", async () => {
+  // Native release run 41262008866, clean-consumer: `adb install -r` made system_server log these
+  // four lines, and a physics run whose every assertion passed failed noConsoleErrors on them.
+  const own = "I/MystralRuntime(15365): TN_NATIVE_SMOKE_FIRST_FRAME";
+  const driver = new AdbAndroidDriver({
+    activity: ".MystralActivity",
+    adbPath: "/nonexistent/adb",
+    packageName: "com.threenative.threenativeconsumerproof",
+    user: "0",
+  });
+  (driver as unknown as { adb: (args: readonly string[]) => Promise<string> }).adb = async (
+    args,
+  ) => {
+    if (args[1] === "pidof") return "15365\n";
+    if (args[0] === "logcat" && args[1] === "-d")
+      return [
+        "E/AppHibernationService(  559): Package com.threenative.threenativeconsumerproof is not installed for user 0",
+        "E/AppHibernationService(  559): Package com.threenative.threenativeconsumerproof is not installed for any user",
+        own,
+      ].join("\n");
+    return "";
+  };
+  await driver.prepare("http://127.0.0.1:41777/playtest");
+  expect(await driver.captureConsole()).toEqual([{ text: own, type: "log" }]);
+});
+
 test("Android console retains its launched pid's errors after that process exits", async () => {
   let alive = true;
   const error = "E/MystralRuntime(15365): TN_NATIVE_START_FAILED: authored startup failed";
