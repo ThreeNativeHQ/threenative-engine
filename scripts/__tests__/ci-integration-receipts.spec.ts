@@ -280,6 +280,41 @@ it("joins actual receipt writers, collector and protected verdict on the exact c
       });
     const green = verdict(summary);
     expect(green.status, green.stderr).toBe(0);
+    // PR #595 run 41262008820 attempt 3: `gh run rerun --failed` reran only the red legs, so both
+    // green joins kept their attempt-2 receipts while ci-required ran in attempt 3. GitHub copies a
+    // carried job into the later attempt under a new id, so the join is judged against the listing
+    // of the attempt that wrote its receipt, never against the copies.
+    writeFileSync(
+      `${evidence.apiFile}.3`,
+      JSON.stringify([
+        {
+          total_count: evidence.jobs.length,
+          jobs: evidence.jobs.map((job: { id: number }) => ({
+            ...job,
+            id: job.id + 10_000,
+            run_attempt: 3,
+          })),
+        },
+      ]),
+    );
+    const carried = run("ci-required.mjs", [], {
+      TN_CI_NEEDS: JSON.stringify(needs),
+      TN_CI_BASE_SHA: sha,
+      TN_CI_HEAD_SHA: sha,
+      TN_CI_INTEGRATION_RECEIPT: summary,
+      GITHUB_RUN_ATTEMPT: "3",
+    });
+    expect(carried.status, carried.stderr).toBe(0);
+    const future = run("ci-required.mjs", [], {
+      TN_CI_NEEDS: JSON.stringify(needs),
+      TN_CI_BASE_SHA: sha,
+      TN_CI_HEAD_SHA: sha,
+      TN_CI_INTEGRATION_RECEIPT: summary,
+      GITHUB_RUN_ATTEMPT: "1",
+    });
+    expect(future.status).toBe(1);
+    expect(future.stderr).toContain("CI_INTEGRATION_RECEIPT_IDENTITY");
+    expect(future.stderr).toContain("CI_NATIVE_RECEIPT_IDENTITY");
     const wrong = JSON.parse(summary);
     wrong.receipts[0].candidateSha = "b".repeat(40);
     const rejected = verdict(JSON.stringify(wrong));
