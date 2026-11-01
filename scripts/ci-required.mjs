@@ -5,8 +5,10 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { readAttemptJobs, readJobsAcrossAttempts } from "./ci-attempt-receipts.mjs";
 import {
   assertMergeParentCandidate,
+  carryDeps,
   classify,
   currentRun,
+  owedPlan,
   promotionOwnsCommit,
   queueHeadReuse,
   sourceVerdict,
@@ -18,6 +20,7 @@ import {
   integrationCandidatePreflight,
   validateIntegrationReceipts,
 } from "./ci-integration-scope.mjs";
+import { carriedFailures } from "./ci-leg-carry.mjs";
 import { nativeCandidatePreflight, validateNativeReceipts } from "./ci-native-qualification.mjs";
 import {
   discoverTypecheckTemplates,
@@ -170,8 +173,18 @@ try {
     if (name !== "scope" && !Object.hasOwn(plan.jobs, name))
       failures.push(`CI_REQUIRED_UNMAPPED_JOB: ${name}`);
   }
-  if (plan.qualification) {
+  if (plan.carried?.length) {
+    const owed = owedPlan(plan);
+    for (const entry of plan.carried)
+      lines.push(`- carried: ${entry.leg} from CI run ${entry.runId} (\`${entry.sourceSha}\`)`);
+    failures.push(...carriedFailures(plan, owed, await carryDeps(process.cwd(), owed)));
+  }
+  if (plan.qualification && plan.jobs["template-nonvisual"].required) {
     try {
+      // A carried kit's compiler step passed in the run its entry names, checked above.
+      const compiledHere = discoverTypecheckTemplates().filter((template) =>
+        plan.templateMatrix.template.includes(template),
+      );
       const identity = {
         repository: process.env.GITHUB_REPOSITORY,
         runId: process.env.GITHUB_RUN_ID,
@@ -185,7 +198,7 @@ try {
           workflowHeadSha: process.env.TN_CI_HEAD_SHA || process.env.GITHUB_SHA,
           eventName: process.env.TN_CI_EVENT,
           target: process.env.TN_CI_BASE_REF,
-          templates: discoverTypecheckTemplates(),
+          templates: compiledHere,
           workflow: readFileSync(".github/workflows/ci.yml", "utf8"),
         },
         readAttemptJobs(identity, "CI_TEMPLATE_TYPECHECK"),

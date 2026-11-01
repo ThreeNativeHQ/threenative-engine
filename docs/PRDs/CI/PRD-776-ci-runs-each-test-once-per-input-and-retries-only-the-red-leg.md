@@ -97,6 +97,12 @@ Risks:
   coverage and per-leg routing exist." Phase 2 supplies that coverage and edits the rule text in
   the same commit.
 
+## Corrections and decisions, 2026-11-01
+
+- The clean path to `latest` costs about 236 min, not 125 min or 3 h, because the promotion board and the main push board run in series: 64 + 64 + 5 + 60 + 43 min.
+- The "no capacity" decision in this PRD assumed a real cost. The GitHub Team plan raises hosted jobs from 20 to 60 for about $4 per seat per month (verify on the pricing page). The purchase is the owner's call.
+- A replay of 59 develop commits against their direct parents finds 24% of legs clean (kit legs about 35%, native 20%, unit legs 7%). Same-tree and version-only runs carry almost everything, so the release path gains most.
+
 ## Execution Phases
 
 #### Phase 1: one board per tree, and a red leg retries alone
@@ -111,16 +117,27 @@ partial rerun), root `AGENTS.md` (the `--failed` sentence).
 - [ ] A red leg on a full board turns `ci-required` green with `gh run rerun <id> --failed` alone, and the retry wall time is the red leg plus at most 10 min. proof: a CI run id with attempt 2 green and attempt 1 red.
 - [ ] `ci-required` accepts a join receipt from the join's own latest attempt and rejects one when the join ran again later. proof: `pnpm exec vitest run scripts/__tests__/ci-required-attempts.spec.ts`, red on the current rule first.
 - [ ] A promotion PR to main whose tree a develop push run already qualified runs no test leg and reports `reused` in at most 10 min. proof: CI run id of the promotion PR.
+- [x] A develop push with a ready promotion PR on the same head keeps only the cache producers, and develop pushes share one concurrency group. proof: 2690e724e, `scripts/__tests__/ci-needs.spec.ts` "while a promotion pull request runs the board on the same head". No CI run has run it yet.
+- [x] The npm cohort publishes by dependency level, with 4 uploads at once and the scaffolder last. proof: 47c3520b7, `scripts/__tests__/release.spec.ts` 32/32, plus real `pnpm publish` calls against a throwaway local verdaccio. Registry time on npm is unverified until a release runs it.
 
 #### Phase 2: each leg runs once per input
-**Status:** NOT STARTED
-**Files:** `scripts/ci-change-scope.mjs` (per-leg keys from the PRD-483 impact map), new
-`scripts/ci-leg-receipts.mjs` (write and find a green receipt by key), `scripts/ci-required.mjs`
-(accept a carried receipt), `.github/workflows/ci.yml` (each leg skips on a hit), root `AGENTS.md`
+**Status:** IN PROGRESS
+**Files:** `scripts/ci-change-scope.mjs` (`withCarriedLegs`), new `scripts/ci-leg-carry.mjs`,
+`scripts/ci-required.mjs` (recheck each carried leg), `scripts/ci-integration-scope.mjs` (carried
+lanes), `scripts/ci-template-typecheck.mjs`, `.github/workflows/ci.yml` (job gates), root `AGENTS.md`
 (the reuse rule).
-**Verification:** key specs first, then live runs.
+**Verification:** carry specs first, then live runs.
 
-- [ ] A changed file inside a leg's closure changes that leg's key, a file outside it does not, and a path no closure claims makes every key unknown. proof: `pnpm exec vitest run scripts/__tests__/ci-leg-keys.spec.ts`.
+**Design change, 2026-11-01:** no hash and no receipt store. Scope walks the CI runs of the last 7
+days, compares each tested commit with the candidate by `git diff-tree`, and reads the job's result
+on the Actions API. GitHub's job record is the receipt, so reuse adds no storage and no write
+permission. The 7 days bound how long a leg stays carried, because a tree cannot show a new runner
+image. Owner order, relayed by the release session on 2026-11-01: "just trigger cached result", "it
+hits the cache and thats it".
+
+- [x] A changed path that no rule excludes reaches every leg, a path outside a leg's inputs does not, a cohort version bump is no change, and a third-party version bump is one. proof: `pnpm exec vitest run scripts/__tests__/ci-leg-carry.spec.ts` green. The real 0.3.8 bump 68ee52f81 compares as 42 changed files, 0 not version-only.
+- [x] The walk works on real runs and stays inside the scope job's limit. proof: read-only dry run on `origin/develop` 3ea0ab2bd: 25 s, 21 API calls, 18 legs carried from 4 real runs, and `carriedFailures` returned none.
+- [ ] A main push carries the jobs `native-release.yml` reads. Today it keeps them (`RELEASE_GATE_JOBS`), so a release still pays the native matrix on main. This needs the release gate to follow a carried leg, and it waits for the release session's all-clear.
 - [ ] A change to one CI script on develop runs no template leg, and a change inside one template runs only that template's legs. proof: two CI run ids and their job lists.
 - [ ] `pnpm release:ship` refuses to tag a main commit whose exact tree has no cold green board (one with no carried receipt). proof: `pnpm exec vitest run scripts/__tests__/release-ship.spec.ts`, plus a dry `pnpm release:ship` on a carried-only commit that names the missing cold board.
 - [ ] The weekly cold audit compares each cold verdict with the cached verdict of the same key and fails on a mismatch, naming the key. proof: one scheduled audit run id, plus a spec that feeds it a planted mismatch.

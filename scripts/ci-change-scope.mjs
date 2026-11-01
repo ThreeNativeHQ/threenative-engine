@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { RELEASE_GATE_JOBS, applyCarried, findCarried } from "./ci-leg-carry.mjs";
 
 const EXCLUDED_MARKDOWN = [
   /^docs\/PRDs\/realism-effects\/README\.md$/u,
@@ -362,6 +363,21 @@ export function selectionPlan(
   };
 }
 
+/** What a plan owed before any leg was carried: the full requirement a carried leg answers to. */
+export function owedPlan(value) {
+  return selectionPlan(
+    value.selection,
+    value.reason,
+    value.files,
+    value.candidateSha,
+    value.native,
+    value.reusedRunId,
+    value.target,
+    value.qualification,
+    value.nightly,
+  );
+}
+
 export function validatePlan(value) {
   if (
     !value ||
@@ -398,17 +414,7 @@ export function validatePlan(value) {
       "CI_SCOPE_INVALID_PLAN: missing or malformed selection, paths, native requirement, reason, reused run or candidate SHA",
     );
   }
-  const expected = selectionPlan(
-    value.selection,
-    value.reason,
-    value.files,
-    value.candidateSha,
-    value.native,
-    value.reusedRunId,
-    value.target,
-    value.qualification,
-    value.nightly,
-  );
+  const expected = applyCarried(owedPlan(value), value.carried);
   for (const field of [
     "scope",
     "checks",
@@ -418,6 +424,7 @@ export function validatePlan(value) {
     "templateMatrix",
     "goldenMatrix",
     "unitMatrix",
+    "carriedJobs",
   ]) {
     if (JSON.stringify(value[field]) !== JSON.stringify(expected[field])) {
       throw new Error(`CI_SCOPE_INVALID_PLAN: ${field} does not match the selected check families`);
@@ -428,6 +435,12 @@ export function validatePlan(value) {
 
 export function validateEventPlan(value, { eventName, baseRef, forceFull = false } = {}) {
   const plan = validatePlan(value);
+  // A scheduled audit exists to find drift that an unchanged tree cannot show, and a forced full run
+  // is a person asking for fresh work, so neither takes a carried leg.
+  if (plan.carried?.length && (eventName === "schedule" || forceFull))
+    throw new Error(
+      "CI_REQUIRED_QUALIFICATION_MINIMUM: event requires fresh exhaustive candidate verification",
+    );
   // Event minima are independent of the plan's self-description. A valid review plan does not
   // qualify a queue candidate, promotion, audit or unknown event, even with green aggregate jobs.
   const event = eventName;
@@ -448,19 +461,22 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
   // that pull request from the commit itself.
   const yielded = event === "push" && target === "develop" && plan.selection === "warm";
   if ((!review && !queue && !yielded) || forceFull) {
+    // The minimum reads what the plan owed: a carried leg still owes its proof, and `ci-required`
+    // reads that proof from the source run.
+    const owed = owedPlan(plan);
     if (
-      !plan.qualification ||
-      plan.selection !== "full" ||
-      !plan.native ||
-      plan.nativeTier !== "full" ||
-      plan.reusedRunId !== 0 ||
+      !owed.qualification ||
+      owed.selection !== "full" ||
+      !owed.native ||
+      owed.nativeTier !== "full" ||
+      owed.reusedRunId !== 0 ||
       // Only the nightly owes the engine-cost row.
-      Object.entries(plan.jobs).some(
+      Object.entries(owed.jobs).some(
         ([name, job]) => !job.required && (name !== "template-engine-cost" || event === "schedule"),
       ) ||
-      JSON.stringify(plan.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
-      JSON.stringify(plan.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||
-      JSON.stringify(plan.unitMatrix.shard) !== JSON.stringify(["1/4", "2/4", "3/4", "4/4"])
+      JSON.stringify(owed.templateMatrix.template) !== JSON.stringify(TEMPLATE_NAMES) ||
+      JSON.stringify(owed.goldenMatrix.template) !== JSON.stringify(["starter", "platformer"]) ||
+      JSON.stringify(owed.unitMatrix.shard) !== JSON.stringify(["1/4", "2/4", "3/4", "4/4"])
     )
       throw new Error(
         "CI_REQUIRED_QUALIFICATION_MINIMUM: event requires fresh exhaustive candidate verification",
@@ -1373,6 +1389,39 @@ function reuseOrKeep(plan, options, candidateSha) {
   );
 }
 
+/** What the carry rules read from outside themselves, for the planner and for the verdict. */
+export async function carryDeps(root, plan) {
+  const { integrationJobNamesByLane, integrationSelection } = await import(
+    "./ci-integration-scope.mjs"
+  );
+  const { nativeInventory } = await import("./ci-native-qualification.mjs");
+  return {
+    git: (args) => git(root, args),
+    gh: ghApi,
+    runJobs,
+    receiptCandidate,
+    isProse: (file) => pathFamily(file, true) === "prose",
+    integrationWorkflow: ".github/workflows/integration.yml",
+    integrationSelection,
+    integrationJobs: integrationJobNamesByLane,
+    nativeJobs: (owed) => nativeInventory(owed ?? plan).map((leg) => leg.name),
+  };
+}
+
+/** PRD-776: a full board drops each leg that already passed on the same inputs. */
+export async function withCarriedLegs(plan, options) {
+  if (plan.selection !== "full" || options.noReuse || !reuseEligible(options)) return plan;
+  if (options.eventName === "schedule") return plan;
+  try {
+    const deps = await carryDeps(options.root, plan);
+    if (options.eventName === "push" && plan.target === "main") deps.reserved = RELEASE_GATE_JOBS;
+    return applyCarried(plan, findCarried(plan, deps));
+  } catch (error) {
+    console.error(`per-job reuse unavailable, the board runs: ${String(error?.message ?? error)}`);
+    return plan;
+  }
+}
+
 function output(result, format, base = "") {
   if (format === "json") return console.log(JSON.stringify(result));
   if (format === "github") {
@@ -1391,7 +1440,7 @@ function output(result, format, base = "") {
     console.log(`${job.required ? "Required" : "Exempt"}: ${name} — ${job.reason}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+async function main() {
   try {
     const options = parseArgs(process.argv.slice(2));
     if (options.plan !== undefined) {
@@ -1412,10 +1461,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           options.head,
         );
       }
-      output(classify(options), options.format, options.base);
+      output(await withCarriedLegs(classify(options), options), options.format, options.base);
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 2;
   }
 }
+
+// Not a top-level await: the carry rules import modules that import this one, and a module still
+// awaiting at its top level would deadlock them.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) void main();
