@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { esc, meetsGoal, progressToward, readLedger, writeAtomic } from "./ci-speed-loop.mjs";
-import { laneOf, loadOf, renderDashboard } from "./stress-dashboard.mjs";
+import { laneOf, loadOf, renderDashboard, verdictOf, verdictStrip } from "./stress-dashboard.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = process.env.TN_STRESS_LEDGER ?? resolve(ROOT, "docs/stress-loop/ledger.json");
@@ -479,14 +479,19 @@ function comparisonTable(arms) {
     )}</tr></thead><tbody>${ALL.map((item) => comparisonRow(item, arms)).join("")}</tbody></table></div>`;
 }
 
+const labContext = {
+  loadVoid: LOAD_VOID,
+  shadowOf: (row) => row.shadow ?? shadowModeOf(engineOf(row), variantOf(row)),
+};
+
+/** The strip every dashboard tab shows on top: is ThreeNative winning? */
+export const verdictHtml = (ledger) => verdictStrip(verdictOf(ledger.iterations, labContext));
+
 export function renderHtml(ledger, now = new Date()) {
+  const ctx = labContext;
   const rows = ledger.iterations;
   const baseline = rows[0];
   const latest = rows.at(-1);
-  const ctx = {
-    loadVoid: LOAD_VOID,
-    shadowOf: (row) => row.shadow ?? shadowModeOf(engineOf(row), variantOf(row)),
-  };
   // The goal is ThreeNative's frame on the normal scene: another engine or a load ramp row must not read as the KPI.
   const anchor =
     laneOf(rows, ctx, "virtual", "uncapped").baseline ??

@@ -495,11 +495,10 @@ const unrealRow = (rows, ctx, setup) =>
       isValid(row, ctx.loadVoid),
   );
 
-/** One bar per engine on the same scene. A group ranks only engines with the same shadow technique. */
-function scorePanel(rows, ctx) {
+function scoreGroups(rows, ctx) {
   const plain = laneOf(rows, ctx, "plain", "uncapped");
   const virtual = laneOf(rows, ctx, "virtual", "uncapped");
-  const groups = [
+  return [
     [
       "One sun shadow map, the same on both",
       [
@@ -516,6 +515,52 @@ function scorePanel(rows, ctx) {
       ],
     ],
   ];
+}
+
+/**
+ * The one-second answer: ThreeNative against each rival in its group. Scores compare as shown (rounded). A rival with
+ * no valid run is `pending` and never counts as a win.
+ */
+export function verdictOf(rows, ctx) {
+  const rivals = scoreGroups(rows, ctx).flatMap(([, [[, own], ...others]]) =>
+    others.map(([name, row]) => {
+      const mine = own === undefined ? null : scoreOf(own.metrics);
+      const theirs = row === undefined ? null : scoreOf(row.metrics);
+      if (mine === null || theirs === null) return { name, mine, theirs, result: "pending" };
+      const [a, b] = [Math.round(mine), Math.round(theirs)];
+      return { name, mine: a, theirs: b, result: a > b ? "win" : a < b ? "lose" : "tie" };
+    }),
+  );
+  const count = (result) => rivals.filter((rival) => rival.result === result).length;
+  const measured = rivals.length - count("pending");
+  const status =
+    measured === 0
+      ? "none"
+      : count("win") === measured
+        ? "winning"
+        : count("lose") === measured
+          ? "losing"
+          : "mixed";
+  return { status, wins: count("win"), measured, pending: count("pending"), rivals };
+}
+
+/** The verdict strip: inline styles, so it reads the same on every dashboard tab, whatever that page's CSS is. */
+export function verdictStrip(verdict) {
+  const [bg, fg, word] = {
+    winning: ["#14803f", "#fff", "✅ WINNING"],
+    losing: ["#c0341d", "#fff", "❌ LOSING"],
+    mixed: ["#e0b400", "#1d1d1b", "⚠️ MIXED"],
+    none: ["#6b6b66", "#fff", "NO DATA"],
+  }[verdict.status];
+  const rival = ({ name, mine, theirs, result }) =>
+    `<span style="padding:2px 9px;border-radius:999px;background:rgba(0,0,0,.2);white-space:nowrap">${{ win: "✅", lose: "❌", tie: "⚠️", pending: "⏳" }[result]} vs ${esc(name)}: ${result === "pending" ? "not measured" : `<b>${mine}</b> to ${theirs}`}</span>`;
+  const tally = `${verdict.wins} of ${verdict.measured} measured${verdict.pending > 0 ? `, ${verdict.pending} not measured` : ""}`;
+  return `<a class="tn-verdict" data-verdict="${verdict.status}" href="/stress-lab" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;max-width:1240px;margin:0 auto 12px;padding:9px 16px;box-sizing:border-box;background:${bg};color:${fg};text-decoration:none;font:600 13px/1.4 system-ui,sans-serif"><span style="font-size:22px;font-weight:800;white-space:nowrap">ThreeNative: ${word}</span><span>${esc(tally)}</span>${verdict.rivals.map(rival).join("")}</a>`;
+}
+
+/** One bar per engine on the same scene. A group ranks only engines with the same shadow technique. */
+function scorePanel(rows, ctx) {
+  const groups = scoreGroups(rows, ctx);
   /** What a reader sees: the rounded score, the rounded share of each goal. Equal numbers are a tie. */
   const shown = (row) => {
     const score = row === undefined ? null : scoreOf(row.metrics);

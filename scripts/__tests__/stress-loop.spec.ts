@@ -14,7 +14,9 @@ const {
   readLedger,
   writeLedger,
 } = await import(new URL("../stress-loop.mjs", import.meta.url).href);
-const { rankOf, scoreOf } = await import(new URL("../stress-dashboard.mjs", import.meta.url).href);
+const { rankOf, scoreOf, verdictOf, verdictStrip } = await import(
+  new URL("../stress-dashboard.mjs", import.meta.url).href
+);
 
 const report = (overrides: Record<string, unknown> = {}) => ({
   schema: "stress-lab-report/1",
@@ -384,6 +386,39 @@ describe("stress-loop", () => {
     ).toBeCloseTo(52.5);
     expect(scoreOf({ ...goal, hitchesPerMin: 1 })).toBeCloseTo(97.5);
     expect(scoreOf({ ...goal, gpuP95Ms: null })).toBeNull();
+  });
+
+  it("answers in one word whether ThreeNative wins against each measured rival", () => {
+    const ctx = { loadVoid: 6, shadowOf: (row: { shadow: string }) => row.shadow };
+    const row = (engine: string, shadow: string, fps: number, variant: string) => ({
+      engine,
+      shadow,
+      variant,
+      pass: "uncapped",
+      load: { peak: 1 },
+      decision: "measure",
+      metrics: { presentedP95Ms: 12, fps, frameP95Ms: 12, gpuP95Ms: 12, hitchesPerMin: 0 },
+    });
+    const tn = row(WASM, "plain", 100, "plainShadow&arm=develop&uncapped");
+    const tnVsm = row(WASM, "virtual", 60, "arm=develop&uncapped");
+    const vanilla = (fps: number) => row("three-vanilla", "plain", fps, "arm=v&uncapped");
+    const unreal = (fps: number) => row("unreal", "virtual", fps, "tnmatched&uncapped");
+
+    expect(verdictOf([], ctx).status).toBe("none");
+    // A rival with no valid run counts as neither a win nor a loss.
+    const onlyVanilla = verdictOf([tn, tnVsm, vanilla(50)], ctx);
+    expect(onlyVanilla).toMatchObject({ status: "winning", wins: 1, measured: 1, pending: 2 });
+    expect(verdictOf([tn, tnVsm, vanilla(110)], ctx).status).toBe("losing");
+    expect(verdictOf([tn, tnVsm, vanilla(50), unreal(90)], ctx)).toMatchObject({
+      status: "mixed",
+      wins: 1,
+      measured: 2,
+    });
+    expect(verdictOf([tn, tnVsm, vanilla(100)], ctx).status).toBe("mixed");
+    const strip = verdictStrip(onlyVanilla);
+    expect(strip).toContain("WINNING");
+    expect(strip).toContain("not measured");
+    expect(strip).toContain('data-verdict="winning"');
   });
 
   it("colors a bar green for the winner, yellow for a tie at the top and red for a loser", () => {
