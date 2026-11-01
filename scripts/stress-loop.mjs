@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { esc, meetsGoal, progressToward, readLedger, writeAtomic } from "./ci-speed-loop.mjs";
-import { renderDashboard } from "./stress-dashboard.mjs";
+import { laneOf, loadOf, renderDashboard } from "./stress-dashboard.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = process.env.TN_STRESS_LEDGER ?? resolve(ROOT, "docs/stress-loop/ledger.json");
@@ -483,14 +483,28 @@ export function renderHtml(ledger, now = new Date()) {
   const rows = ledger.iterations;
   const baseline = rows[0];
   const latest = rows.at(-1);
+  const ctx = {
+    loadVoid: LOAD_VOID,
+    shadowOf: (row) => row.shadow ?? shadowModeOf(engineOf(row), variantOf(row)),
+  };
+  // The goal is ThreeNative's frame on the normal scene: another engine or a load ramp row must not read as the KPI.
+  const anchor =
+    laneOf(rows, ctx, "virtual", "uncapped").baseline ??
+    rows.findLast(
+      (row) =>
+        engineOf(row) === ENGINES[0].key &&
+        loadOf(row.variant) === 1 &&
+        row.decision !== "reject" &&
+        row.preset === baseline.preset,
+    );
   const kpi = (item, goal) => {
     const base = baseline?.metrics[item.key];
-    const current = latest?.metrics[item.key];
+    const current = anchor?.metrics[item.key];
     const met = goal && meetsGoal(item, current);
     const progress = goal ? progressToward(item, base, current) : null;
     return `<tr><td title="${esc(item.label ?? item.short)}">${esc(item.short)}</td><td class="n"><b>${esc(fmt(current, item.unit))}</b></td><td class="n dim">${goal ? `${item.better === "lower" ? "≤" : "≥"} ${esc(fmt(item.goal, item.unit))}` : "tracked"}</td><td class="n dim">${esc(fmt(base, item.unit))}</td><td class="n">${esc(delta(base, current, item.unit))}</td><td class="n dim">${progress === null ? "n/a" : `${Math.round(progress * 100)}%`}</td><td>${goal ? `<span class="chip${met ? " keep" : ""}">${met ? "met" : "open"}</span>` : ""}</td></tr>`;
   };
-  const kpis = `<details open><summary>KPI against goal (latest row against the first)</summary><div class="scroll"><table class="t"><thead><tr><th>Metric</th><th class="n">Latest</th><th class="n">Goal</th><th class="n">Baseline</th><th class="n">Delta</th><th class="n">To goal</th><th></th></tr></thead><tbody>${GOALS.map((goal) => kpi(goal, true)).join("")}${TRACKED.map((item) => kpi(item, false)).join("")}</tbody></table></div></details>`;
+  const kpis = `<details open><summary>KPI against goal: ThreeNative, VSM, load 1, uncapped${anchor === undefined ? "" : ` (row #${anchor.id})`}, against row #1</summary><div class="scroll"><table class="t"><thead><tr><th>Metric</th><th class="n">Latest</th><th class="n">Goal</th><th class="n">Baseline</th><th class="n">Delta</th><th class="n">To goal</th><th></th></tr></thead><tbody>${GOALS.map((goal) => kpi(goal, true)).join("")}${TRACKED.map((item) => kpi(item, false)).join("")}</tbody></table></div></details>`;
   // PRD-770: with fair-window rows for ThreeNative's plain-shadow arm, the like-for-like table for vanilla three.js.
   const plainAnchor = rows.findLast(
     (row) =>
@@ -508,16 +522,8 @@ ${comparisonTable(comparisonArms(rows, "stress"))}`;
   const header =
     latest === undefined
       ? PENDING
-      : `Latest iteration #${latest.id} of ${rows.length}: ${latest.preset} on ${latest.adapter} at ${latest.viewport}.`;
-  return renderDashboard(
-    ledger,
-    now,
-    {
-      loadVoid: LOAD_VOID,
-      shadowOf: (row) => row.shadow ?? shadowModeOf(engineOf(row), variantOf(row)),
-    },
-    { header, overview: kpis, goals: GOALS, comparison },
-  );
+      : `Latest iteration #${latest.id} of ${rows.length}: ${engineOf(latest)} ${latest.preset} on ${latest.adapter} at ${latest.viewport}.`;
+  return renderDashboard(ledger, now, ctx, { header, overview: kpis, goals: GOALS, comparison });
 }
 
 function readReport(file) {

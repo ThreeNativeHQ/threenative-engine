@@ -336,6 +336,37 @@ describe("stress-loop", () => {
     expect(html.indexOf("Apples to apples")).toBeLessThan(html.indexOf("Virtual shadow maps"));
   });
 
+  it("anchors the KPI table on ThreeNative's VSM load 1 develop row, not the newest row of any arm", () => {
+    const metrics = (fps: number) => ({ metrics: { ...report().metrics, fps } });
+    const ledger = [
+      { variant: "arm=stack3&uncapped", pass: "uncapped", engine: WASM, fps: 62.7 },
+      { variant: "arm=comb2&uncapped", pass: "uncapped", engine: WASM, fps: 68.8 },
+      { variant: "plainShadow&arm=stack3&uncapped", pass: "uncapped", engine: WASM, fps: 103 },
+      { variant: "plainShadow&load=8&arm=l8", pass: "uncapped", engine: WASM, fps: 9.5 },
+      { variant: "load=8&arm=vanilla-l8", pass: "uncapped", engine: "three-vanilla", fps: 7.92 },
+    ].reduce(
+      (acc, { variant, pass, engine, fps }) =>
+        recordRun(
+          acc,
+          run(
+            {
+              pass,
+              url: `http://127.0.0.1:5740/main.html?stress&${variant}`,
+              build: { kind: engine === WASM ? "wasm" : "js", sha256: "4fb0aba5a921", commit: "a" },
+            },
+            metrics(fps),
+          ),
+          { label: variant, variant, engine, decision: "measure" },
+        ),
+      readLedger(ledgerPath()),
+    );
+    const html = renderHtml(ledger, new Date(0));
+    const kpiTable = html.slice(html.indexOf("KPI against goal"), html.indexOf("</details>"));
+    expect(kpiTable).toContain("62.7 fps");
+    expect(kpiTable).not.toContain("7.92");
+    expect(kpiTable).toContain("#1");
+  });
+
   it("defines the comparison colors for the light and the dark theme", () => {
     const html = renderHtml({ schemaVersion: 1, iterations: [] }, new Date(0));
     expect(html).toMatch(/:root\{[^}]*--ok-bg:/u);

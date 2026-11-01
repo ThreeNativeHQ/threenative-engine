@@ -282,7 +282,7 @@ function rampTab(rows, ctx) {
 }
 
 /** One Overview lane: where the develop baseline, the best kept arm and vanilla stand on the ladder. */
-function laneOf(rows, ctx, shadow, pass) {
+export function laneOf(rows, ctx, shadow, pass) {
   const mine = rows.filter(
     (row) => isValid(row, ctx.loadVoid) && passOf(row) === pass && loadOf(row.variant) === 1,
   );
