@@ -3310,6 +3310,76 @@ const root = createCssUiRoot();
 root.render(createElement("section", { className: "fixed inset-0 bg-zinc-900/90" }, "READY"));
 ```
 
+## `@threenative/core/spells`
+
+### `CastPool`
+
+`class` — Step a spell's timeline: charge, release, travel, impact, linger, done.
+
+```ts
+export class CastPool { … }
+```
+
+- **Use when:** a fireball or a lightning bolt that charges, flies, lands and lingers · several spells mid-flight, with no allocation per cast
+- **Constraints:** the pool is fixed and recycles the cast alive longest; it never grows · a ball that has passed its target lands on the target, however late the frame notices
+- **Overrides:** timing, shape, speed and radius come from the spell; a cast may override shape and seed
+
+```ts
+const casts = new CastPool(world);
+casts.cast(fireball, target, { from: hand });
+casts.update(dt);
+```
+
+### `ReactionField`
+
+`class` — The marks a spell leaves on the floor: heat, char, wet, frost, crack and glow.
+
+```ts
+export class ReactionField { … }
+```
+
+- **Use when:** a fireball impact that leaves a scorch and fades over time · ice that melts where lightning spread, or a lava geyser's crack
+- **Constraints:** it draws nothing; the game decides what a mark looks like · the patch is finite and every channel decays on its own half-life
+- **Overrides:** halfLife, resolution and size tune the patch; pattern, radius, seed and angle set each mark
+
+```ts
+field.splat({ heat: 1, char: 0.6, radius: 2.5, x: hit.x, z: hit.z });
+field.update(dt);
+```
+
+### `SpellLights`
+
+`class` — A fixed pool of spell lights, created once at zero intensity.
+
+```ts
+export class SpellLights { … }
+```
+
+- **Use when:** a spell impact that glows without changing the light count · a charge glow or a falling meteor lighting what it passes
+- **Constraints:** the whole pool exists before the first cast; a cast changes intensity, never the list · flash returns undefined when the pool is busy; a spell carries on without one
+- **Overrides:** count is the pool size; each flash supplies position, colour, intensity, range and seconds
+
+```ts
+lights.flash({ x, y, z, color, intensity: 40, range: 12, seconds: 0.35 });
+```
+
+### `SpellWorld`
+
+`class` — Everything a spell may touch: the scene, the floor, the light pool, the surface field, one shake and one flash limiter.
+
+```ts
+export class SpellWorld implements ICastEnvironment { … }
+```
+
+- **Use when:** cast an engine spell without passing a scene into every call · honour an accessibility setting that limits flashing
+- **Constraints:** damage, mana, cooldowns and who the target is stay in the game · with reducedFlashes on, a fourth flash inside one second is refused, never dimmed
+- **Overrides:** groundAt, castSlots, lightCount, reaction, shake and reducedFlashes are named options
+
+```ts
+const world = new SpellWorld({ scene, groundAt });
+const casts = new CastPool(world);
+```
+
 ## `@threenative/core/ui-layer`
 
 ### `connectUiBridge`

@@ -75,6 +75,10 @@
       "types": "./dist/net.d.ts",
       "import": "./dist/net.js"
     },
+    "./spells": {
+      "types": "./dist/spells/index.d.ts",
+      "import": "./dist/spells/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

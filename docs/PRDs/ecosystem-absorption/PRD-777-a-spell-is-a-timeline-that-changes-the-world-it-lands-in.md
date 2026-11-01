@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-777 — A spell is a timeline that changes the world it lands in
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — the foundation is on the branch and tested; not one spell factory exists yet, so no box that needs a spell on screen can be ticked.
 **Priority:** P2 — Every box is open: the engine has no spell category, and PRD-778 to PRD-781 need the `@threenative/core/spells` foundation that this PRD builds.
 **Complexity:** 7 (HIGH) — 11+ implementation files (+3), a new spell category in core (+2), cast and surface state that carries across frames (+2). Risk override: none.
 **Owner:** unassigned
@@ -116,24 +116,26 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 
 #### Phase 1: One spell runs its whole timeline from a core import
 
-**Status:** NOT STARTED
-**Files:** `AGENTS.md` (the look exception, then `pnpm sync:agents`), `packages/core/package.json` and `tsup.config.ts` (subpath), `packages/core/src/spells/index.ts`, `cast-pool.ts`, `spell-world.ts` and `fireball.ts` (new), `packages/core/src/particles.ts` (kind table), `THIRD_PARTY_NOTICES.md` (upstream MIT notice), `examples/spell-lab/` (new), kit `src/scenes/Play.ts`, kit `src/ui/AbilityBar.tsx`.
+**Status:** IN PROGRESS — the pool exists and is proven; the kind table, Fireball, the lab and the kit slot do not.
+**Files:** `AGENTS.md` (the look exception, then `pnpm sync:agents`), `packages/core/package.json` and `tsup.config.ts` (subpath), `packages/core/src/spells/index.ts`, `cast-pool.ts`, `spell-world.ts`, `spell-lights.ts`, `reaction-field.ts` (new), `packages/core/src/particle-kinds.ts` (kind table, new — kept out of `particles.ts`, which is already 648 lines against the 400-line notice), `THIRD_PARTY_NOTICES.md` (upstream MIT notice, new — the file did not exist), `examples/spell-lab/` (new), kit `src/scenes/Play.ts`, kit `src/ui/AbilityBar.tsx`.
 **Implementation:** Port the `cast.js` phase rules. Add the kind table. Build Fireball on them, then bind it to a kit slot. Use the real `GPUParticles3D`, `prewarm` and `CameraShake`.
 
-- [ ] `CastPool` steps charge, travel, impact, linger and done, recycles the oldest at capacity, and allocates nothing per cast. proof: `pnpm exec vitest run packages/core/__tests__/cast-pool.spec.ts`
-- [ ] A game retunes Fireball through named overrides, and no new pipeline builds. proof: `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`
-- [ ] A build that imports only Fireball contains no other spell's code. proof: `pnpm --filter spell-lab build` with a one-spell entry, then search the bundle for a marker string
-- [ ] Pressing a kit spell key casts Fireball, and its impact changes the pixels at the target. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/templates/action-rpg/playtests/spells.playtest.json --browser-recipe webgpu`
+- [x] `CastPool` steps charge, travel, impact, linger and done, recycles the oldest at capacity, and allocates nothing per cast. proof: `pnpm exec vitest run packages/core/__tests__/cast-pool.spec.ts` — Evidence: 8 tests pass. The pool's slots, records, `from`/`to` vectors and `data` scratch keep their identity across a recast, and a ball that has passed its target lands on the target rather than flying past it.
+- [ ] A game retunes Fireball through named overrides, and no new pipeline builds. proof: `pnpm exec vitest run packages/core/__tests__/particles.spec.ts` — OPEN: there is no kind table and no Fireball yet.
+- [ ] A build that imports only Fireball contains no other spell's code. proof: `pnpm --filter spell-lab build` with a one-spell entry, then search the bundle for a marker string — OPEN: no spell and no lab.
+- [ ] Pressing a kit spell key casts Fireball, and its impact changes the pixels at the target. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/templates/action-rpg/playtests/spells.playtest.json --browser-recipe webgpu` — OPEN: no spell and no kit slot, so no screenshot and no playtest exist to attach.
+
+**Phase 1 notes.** The subpath ships and the manifest lists four symbols under `@threenative/core/spells`: `CastPool`, `ReactionField`, `SpellLights`, `SpellWorld`. The five drawable mechanisms a spell needs — the particle kind table, a projectile core, a shock shell, a bolt ribbon and a shield bubble — are not written. Each is TSL that has to be iterated against a real WebGPU adapter, and writing them without that iteration would have shipped guesses, so they were left for the next pass rather than committed unverified.
 
 #### Phase 2: The world responds, and the other five spells land
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — the surface field and the flash limiter exist and are proven; no spell writes to them.
 **Files:** `packages/core/src/spells/reaction-field.ts`, `spell-lights.ts` and five spell factories (new), `examples/spell-lab/`, kit `src/render/materials.ts`, kit `src/scenes/Play.ts`, kit `AGENTS.md`, `scripts/fixtures/capability-recall/corpus.json`.
 **Implementation:** Port the heat, char, wet and frost channels with decay and splats. Bind Thunderstrike and Glacial Spike to kit slots. Add a recall row per spell.
 
-- [ ] A Fireball impact leaves a scorch on the floor that fades over time. proof: `node packages/playtest/dist/runner/cli.js examples/spell-lab/playtests/spell-lab.playtest.json --browser-recipe webgpu`, scorch step
-- [ ] Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno each cast and change the pixels at the target. proof: `spell-lab.playtest.json`, per-spell steps
-- [ ] With reduced flashes on, a spell burst shows at most 3 flashes per second (WCAG 2.3.1, kept from upstream). proof: `pnpm exec vitest run packages/core/__tests__/spell-world.spec.ts`
+- [ ] A Fireball impact leaves a scorch on the floor that fades over time. proof: `node packages/playtest/dist/runner/cli.js examples/spell-lab/playtests/spell-lab.playtest.json --browser-recipe webgpu`, scorch step — OPEN: `ReactionField` splats and decays heat and char and reports the changed rectangle for a strip upload, all proven by unit test, but no spell calls it and there is no lab.
+- [ ] Thunderstrike, Glacial Spike, Arcane Barrage, Aegis and Inferno each cast and change the pixels at the target. proof: `spell-lab.playtest.json`, per-spell steps — OPEN: none of the five exists.
+- [x] With reduced flashes on, a spell burst shows at most 3 flashes per second (WCAG 2.3.1, kept from upstream). proof: `pnpm exec vitest run packages/core/__tests__/spell-world.spec.ts` — Evidence: 9 tests pass. A fourth flash inside one second is refused and counted in `suppressedFlashes`, never dimmed, and the limiter allows the next flash once the window has passed.
 
 #### Phase 3: It holds on native, on budget and to the eye
 
@@ -147,4 +149,6 @@ This PRD has 11 boxes, over the cap of about 8. The foundation, its one-spell co
 
 ## Acceptance criteria
 
-- [ ] AC-1 [local]: `engine_search_capabilities` returns the matching factory for each of the six spell names, and the manifest lists it under `@threenative/core/spells`. proof: `pnpm caps:recall` — Evidence: pending.
+- [ ] AC-1 [local]: `engine_search_capabilities` returns the matching factory for each of the six spell names, and the manifest lists it under `@threenative/core/spells`. proof: `pnpm caps:recall` — Evidence: PARTIAL and RED.
+  The manifest half holds: `packages/create-threenative/capabilities.json` lists `CastPool`, `ReactionField`, `SpellLights` and `SpellWorld` under `@threenative/core/spells`. The six factories do not exist, so no spell name is recalled.
+  ⚠️ `pnpm caps:recall` is also **red by one row** on this branch: `brief.topdown-action.1` now returns `Billboard3D` as a fifth result, so `rejectHits` reads 16 against a floor of 15 (it reads 15 on `origin/develop`). Adding any capability raises the total situation count that `tokenWeights` divides by, which scales every entry's score by about 2% and re-breaks one tie at the result limit. `--update-budget` refuses to record a regression, so the floor was left alone instead of being relaxed. This must be settled before the branch merges: the honest fixes are to tighten the scorer's tie-break or to record the drift deliberately.

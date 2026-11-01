@@ -45,6 +45,7 @@
         "./playtest",
         "./react",
         "./react-css",
+        "./spells",
         "./ui-layer",
         "./worker",
         "./world"
@@ -61,6 +62,10 @@
         "@threenative/core/react#supportedStyleKeys": "export function supportedStyleKeys(): readonly string[] { … }",
         "@threenative/core/react#Text": "export function Text(props: ITextProps): ReactNode { … }",
         "@threenative/core/react#View": "export function View(props: IViewProps): ReactNode { … }",
+        "@threenative/core/spells#CastPool": "export class CastPool { … }",
+        "@threenative/core/spells#ReactionField": "export class ReactionField { … }",
+        "@threenative/core/spells#SpellLights": "export class SpellLights { … }",
+        "@threenative/core/spells#SpellWorld": "export class SpellWorld implements ICastEnvironment { … }",
         "@threenative/core/ui-layer#connectUiBridge": "export function connectUiBridge(options: IConnectOptions): IUiBridge { … }",
         "@threenative/core/ui-layer#onUiIntent": "export function onUiIntent( bridge: IUiBridge, listener: (intent: string, payload: unknown) => void, ): () => void { … }",
         "@threenative/core/ui-layer#publishHitRegions": "export function publishHitRegions(options: IRegistryOptions): IHitRegionRegistry { … }",

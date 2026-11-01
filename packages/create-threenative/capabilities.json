@@ -4256,6 +4256,94 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "the pool is fixed and recycles the cast alive longest; it never grows",
+        "a ball that has passed its target lands on the target, however late the frame notices"
+      ],
+      "example": "const casts = new CastPool(world);\ncasts.cast(fireball, target, { from: hand });\ncasts.update(dt);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "timing, shape, speed and radius come from the spell; a cast may override shape and seed"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class CastPool { … }",
+      "situations": [
+        "a fireball or a lightning bolt that charges, flies, lands and lingers",
+        "several spells mid-flight, with no allocation per cast"
+      ],
+      "summary": "Step a spell's timeline: charge, release, travel, impact, linger, done.",
+      "supersedes": [],
+      "symbol": "CastPool"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "it draws nothing; the game decides what a mark looks like",
+        "the patch is finite and every channel decays on its own half-life"
+      ],
+      "example": "field.splat({ heat: 1, char: 0.6, radius: 2.5, x: hit.x, z: hit.z });\nfield.update(dt);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "halfLife, resolution and size tune the patch; pattern, radius, seed and angle set each mark"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class ReactionField { … }",
+      "situations": [
+        "a fireball impact that leaves a scorch and fades over time",
+        "ice that melts where lightning spread, or a lava geyser's crack"
+      ],
+      "summary": "The marks a spell leaves on the floor: heat, char, wet, frost, crack and glow.",
+      "supersedes": [],
+      "symbol": "ReactionField"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the whole pool exists before the first cast; a cast changes intensity, never the list",
+        "flash returns undefined when the pool is busy; a spell carries on without one"
+      ],
+      "example": "lights.flash({ x, y, z, color, intensity: 40, range: 12, seconds: 0.35 });",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "count is the pool size; each flash supplies position, colour, intensity, range and seconds"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpellLights { … }",
+      "situations": [
+        "a spell impact that glows without changing the light count",
+        "a charge glow or a falling meteor lighting what it passes"
+      ],
+      "summary": "A fixed pool of spell lights, created once at zero intensity.",
+      "supersedes": [],
+      "symbol": "SpellLights"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "damage, mana, cooldowns and who the target is stay in the game",
+        "with reducedFlashes on, a fourth flash inside one second is refused, never dimmed"
+      ],
+      "example": "const world = new SpellWorld({ scene, groundAt });\nconst casts = new CastPool(world);",
+      "importPath": "@threenative/core/spells",
+      "kind": "class",
+      "overrides": [
+        "groundAt, castSlots, lightCount, reaction, shake and reducedFlashes are named options"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpellWorld implements ICastEnvironment { … }",
+      "situations": [
+        "cast an engine spell without passing a scene into every call",
+        "honour an accessibility setting that limits flashing"
+      ],
+      "summary": "Everything a spell may touch: the scene, the floor, the light pool, the surface field, one shake and one flash limiter.",
+      "supersedes": [],
+      "symbol": "SpellWorld"
+    },
+    {
+      "aliases": [],
       "constraints": ["the transport is discovered, never configured; no game names the web view"],
       "example": "const bridge = connectUiBridge({ end: \"ui\" });",
       "importPath": "@threenative/core/ui-layer",
