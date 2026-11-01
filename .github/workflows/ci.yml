@@ -1437,8 +1437,9 @@ jobs:
           ctest --test-dir build/native-engine-wasm -L native-engine --no-tests=error --output-on-failure
 
   integration:
-    needs: scope
-    if: needs.scope.result == 'success' && fromJSON(needs.scope.outputs.plan).jobs.integration.required
+    needs: [scope, build-artifacts]
+    # `!cancelled()`: a skipped or failed build-artifacts only means each leg builds its own workspace.
+    if: ${{ !cancelled() && needs.scope.result == 'success' && fromJSON(needs.scope.outputs.plan).jobs.integration.required }}
     permissions:
       contents: read
       actions: read
@@ -1448,6 +1449,7 @@ jobs:
       candidate_sha: ${{ needs.scope.outputs.candidate_sha }}
       runner_admission: ${{ needs.scope.outputs.runner_admission }}
       base_sha: ${{ needs.scope.outputs.base_sha }}
+      workspace_artifact: ${{ needs.build-artifacts.result == 'success' && 'workspace-packages' || '' }}
 
   supply-chain:
     needs: scope

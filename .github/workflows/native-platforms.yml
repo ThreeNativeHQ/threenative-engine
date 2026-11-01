@@ -1197,6 +1197,7 @@ jobs:
       - name: Zero the compiler cache counters
         shell: bash
         run: ccache --zero-stats
+      - uses: ./.github/actions/native-rust-cache
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
       - name: Verify the shipped Crowd rate scenario on desktop
@@ -1481,6 +1482,7 @@ jobs:
         run: >-
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install
           "curl:x64-windows-static" "zlib:x64-windows-static"
+      - uses: ./.github/actions/native-rust-cache
       - name: Build native runtime with MSVC
         if: runner.os == 'Windows'
         shell: cmd
@@ -2262,6 +2264,7 @@ jobs:
       - name: Zero the compiler cache counters
         shell: bash
         run: ccache --zero-stats
+      - uses: ./.github/actions/native-rust-cache
       - name: Build and pack the scaffold dependencies
         run: |
           pnpm --filter @threenative/runtime-native native:build
