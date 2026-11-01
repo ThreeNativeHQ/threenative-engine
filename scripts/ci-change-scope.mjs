@@ -444,7 +444,10 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
     throw new Error(
       "CI_REQUIRED_REVIEW_LANE: the review lane only gates a pull request into develop; the queue, pushes, audits and main need the full selected board",
     );
-  if ((!review && !queue) || forceFull) {
+  // PRD-776: a develop push may leave the board to its promotion pull request. `ci-required` confirms
+  // that pull request from the commit itself.
+  const yielded = event === "push" && target === "develop" && plan.selection === "warm";
+  if ((!review && !queue && !yielded) || forceFull) {
     if (
       !plan.qualification ||
       plan.selection !== "full" ||
@@ -580,6 +583,48 @@ function ghApi(pathname) {
  */
 function isWarmRun(run) {
   return run?.event === "push" && run?.head_branch === "develop";
+}
+
+/**
+ * PRD-776. The one ready develop -> main pull request whose head is this commit. It runs the full
+ * board on the same head and minute as the push, so a second board only competes with it for the
+ * same hosted slots: PR #600 ran both on every head. Anything unreadable or doubtful is no promotion,
+ * and no promotion runs the board. GitHub runs no pull-request event for a conflict, so a known
+ * conflict keeps the board. `mergeable` is null while GitHub computes it, which is normal this soon
+ * after a push, and develop contains main, so a conflict is the rare case.
+ */
+function promotionOnHead(candidateSha) {
+  const repository = process.env.GITHUB_REPOSITORY ?? "";
+  const owner = repository.split("/")[0];
+  const listed = ghApi(`pulls?state=open&base=main&head=${owner}:develop&per_page=2`);
+  if ("error" in listed || !Array.isArray(listed.value) || listed.value.length !== 1)
+    return undefined;
+  const number = listed.value[0]?.number;
+  if (!Number.isInteger(number)) return undefined;
+  const pull = ghApi(`pulls/${number}`);
+  if ("error" in pull) return undefined;
+  const { base, draft, head, mergeable } = pull.value ?? {};
+  return draft === false &&
+    mergeable !== false &&
+    base?.ref === "main" &&
+    head?.ref === "develop" &&
+    head?.sha === candidateSha &&
+    head?.repo?.full_name === repository
+    ? number
+    : undefined;
+}
+
+/**
+ * The verdict's own read, independent of the plan. It runs after the scope job, when the pull request
+ * may already have moved on or merged, so it asks what the commit belongs to, not what is open now.
+ */
+export function promotionOwnsCommit(sha) {
+  const listed = ghApi(`commits/${sha}/pulls`);
+  return (
+    !("error" in listed) &&
+    Array.isArray(listed.value) &&
+    listed.value.some((pull) => pull?.base?.ref === "main" && pull?.head?.ref === "develop")
+  );
 }
 
 /**
@@ -1005,8 +1050,20 @@ export function classify(input) {
   // tree and qualifies that tree with every supported system, every kit and every native row. A
   // full selection still runs `build-artifacts` and `test-native`, so the base-branch caches every
   // pull request into develop reads keep being published here.
-  if (options.eventName === "push" && options.target === "develop")
+  if (options.eventName === "push" && options.target === "develop") {
+    const promotion = options.local ? undefined : promotionOnHead(candidateSha);
+    if (promotion !== undefined)
+      return selectionPlan(
+        "warm",
+        `promotion pull request #${String(promotion)} runs the full board on this head`,
+        [],
+        candidateSha,
+        false,
+        0,
+        target,
+      );
     return full("a develop push qualifies the exact tree with the full board");
+  }
   // Every event except a pull request and a merge group stays full, and so does every target but
   // develop. The narrowings below review a change on develop; the exhaustive board belongs to the
   // tree-qualifying events — a push, the nightly, an explicit audit and a promotion into main — which

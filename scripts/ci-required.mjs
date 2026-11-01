@@ -7,6 +7,7 @@ import {
   assertMergeParentCandidate,
   classify,
   currentRun,
+  promotionOwnsCommit,
   queueHeadReuse,
   sourceVerdict,
   validateEventPlan,
@@ -54,6 +55,14 @@ try {
     baseRef: process.env.TN_CI_BASE_REF,
     forceFull: process.env.TN_CI_FORCE_FULL === "true",
   });
+  if (
+    process.env.TN_CI_EVENT === "push" &&
+    plan.selection === "warm" &&
+    !promotionOwnsCommit(plan.candidateSha)
+  )
+    throw new Error(
+      `CI_REQUIRED_PROMOTION_MISSING: ${plan.candidateSha} skipped the board for a promotion pull request it does not belong to`,
+    );
   if (process.env.TN_CI_EVENT === "pull_request") {
     // The candidate is frozen by the exact base/head parent assertion below, not by the head
     // branch's name. A `promotion/<head-sha>` ref restated a SHA that check already verifies.

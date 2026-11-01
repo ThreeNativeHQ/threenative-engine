@@ -838,9 +838,13 @@ describe("CI pipeline structure", () => {
       );
     }
     expect(duplicateCommitTriggers(ci)).toEqual([]);
-    // Each push run gets its own concurrency group (the group ends in its run id unless it is a
-    // ready pull request) and nothing but a pull request cancels in progress, so a second push to
-    // develop cannot kill the first one while it is saving.
+    // Develop pushes share one group, so the next push waits instead of starting a board beside the
+    // running one. Nothing but a pull request cancels in progress, so that push cannot kill the
+    // running board while it is saving.
+    const group = /^concurrency:\n {2}group: (.*)$/mu.exec(ci)?.[1] ?? "";
+    expect(group).toContain(
+      "github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest'",
+    );
     expect(ci).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
   });
 

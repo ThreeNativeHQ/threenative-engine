@@ -27,8 +27,12 @@ on:
   schedule:
     - cron: "17 3 * * *"
 
+# A develop push shares one group and cancels nothing: one board runs, the newest push waits, and a
+# push it replaces never starts. Each push once had its own group, so three quick pushes ran three
+# full boards at once and a board that overlapped others took 105 min against 57 alone. The newer
+# board covers the skipped commits, and the running one still saves its caches.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.run_id }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && 'latest' || github.event_name == 'push' && github.ref == 'refs/heads/develop' && 'latest' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Read-only. The workflow used to hold Actions write access so a failing job could cancel its own
