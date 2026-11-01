@@ -929,8 +929,7 @@ jobs:
           # in, or this lane would quietly stop covering 21 scenarios it has always covered.
           extras="$GITHUB_WORKSPACE/packages/create-threenative/template-playtests/${{ matrix.template }}"
           if [ -d "$extras" ]; then cp -r "$extras/." "$target/playtests/"; fi
-          # PRD-748: the engine-cost contract row runs on every PR, for every kit that does not opt out.
-          pnpm exec tsx scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}" "$target/playtests"
+          # The PRD-748 engine-cost row runs in `template-engine-cost`, beside this leg.
           scenario_list=$(node "$GITHUB_WORKSPACE/scripts/non-visual-scenarios.mjs" "$target")
           mapfile -t scenarios <<< "$scenario_list"
           test "${#scenarios[@]}" -gt 0
@@ -970,6 +969,69 @@ jobs:
           target="$RUNNER_TEMP/threenative-platformer"
           pnpm --dir "$target" exec threenative build --target web
           test -s "$target/dist/index.html"
+
+  # PRD-748's engine-cost contract row, every PR, per kit. It draws all 1260 ticks one by one for
+  # its four counter windows, and on hosted SwiftShader that alone took 14m51s (run 41170629638,
+  # adventure): inside a kit's 30-minute `template-nonvisual` leg it cancelled adventure and
+  # collectathon. It runs here in parallel, with the same scenario, bounds and ticks. A kit that
+  # opts out prints its reason and passes; `ci-required` gates this job like any other.
+  template-engine-cost:
+    needs: [scope, build-artifacts]
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-engine-cost:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    timeout-minutes: 30
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
+      - run: pnpm install --frozen-lockfile
+      - name: Write the kit's engine-cost row
+        id: row
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/engine-cost-row"
+          pnpm exec tsx scripts/kit-contract-row.ts engine-cost "${{ matrix.template }}" "$RUNNER_TEMP/engine-cost-row"
+          if [ -f "$RUNNER_TEMP/engine-cost-row/contract-engine-cost.playtest.json" ]; then echo "applies=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Take the packed workspace from build
+        if: steps.row.outputs.applies == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-packages
+      - name: Scaffold the template from local tarballs
+        if: steps.row.outputs.applies == 'true'
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ github.workspace }}/artifacts/workspace-packages
+          specs-file: ${{ github.workspace }}/artifacts/workspace-packages/specs
+          target: ${{ runner.temp }}/threenative-${{ matrix.template }}
+          template: ${{ matrix.template }}
+      - uses: ./.github/actions/playwright-chromium
+        if: steps.row.outputs.applies == 'true'
+      - name: Run the engine-cost row
+        if: steps.row.outputs.applies == 'true'
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
+          pnpm --dir "$target" install
+          cp "$RUNNER_TEMP/engine-cost-row/contract-engine-cost.playtest.json" "$target/playtests/"
+          # `--server-timeout` as in template-nonvisual: the first asset cook holds the dev port.
+          pnpm --dir "$target" exec threenative-playtest --scenario playtests/contract-engine-cost.playtest.json \
+            --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
+            --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
 
   # `golden-path` is a required status check in the `main protection` ruleset, and required checks
   # match the reported context by exact string. A matrix job does not report its own name — it
@@ -1491,7 +1553,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
+    needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, template-engine-cost, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     # 15, not 5: `fetch-depth: 0` pulls every branch and tag, which takes over five minutes on a
@@ -1561,6 +1623,7 @@ jobs:
       - test-playtest
       - golden-path-template
       - template-nonvisual
+      - template-engine-cost
       - golden-path
       - benchmark
       - build

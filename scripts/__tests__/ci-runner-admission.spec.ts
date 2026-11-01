@@ -22,13 +22,13 @@ const selected = [
   "ci:typecheck",
 ];
 
-it("lists the 50 eligible HEAVY instances as 33 ci + 13 integration + 4 native", () => {
+it("lists the 66 eligible HEAVY instances as 49 ci + 13 integration + 4 native", () => {
   expect(ADMISSION_NAMESPACES).toEqual(["ci", "integration", "native"]);
-  expect(ADMISSION_INVENTORY).toHaveLength(50);
-  expect(here("ci")).toHaveLength(33);
+  expect(ADMISSION_INVENTORY).toHaveLength(66);
+  expect(here("ci")).toHaveLength(49);
   expect(here("integration")).toHaveLength(13);
   expect(here("native")).toHaveLength(4);
-  expect(new Set(ADMISSION_INVENTORY).size).toBe(50);
+  expect(new Set(ADMISSION_INVENTORY).size).toBe(66);
 });
 
 it("counts each matrix leg as its own instance", () => {
@@ -37,6 +37,7 @@ it("counts each matrix leg as its own instance", () => {
   for (const leg of ["starter", "platformer"])
     expect(ADMISSION_INVENTORY).toContain(`ci:golden-path-template:${leg}`);
   expect(ADMISSION_INVENTORY).toContain("ci:template-nonvisual:racing");
+  expect(ADMISSION_INVENTORY).toContain("ci:template-engine-cost:racing");
   expect(ADMISSION_INVENTORY).toContain("native:starter-linux:linux-x64");
 });
 
