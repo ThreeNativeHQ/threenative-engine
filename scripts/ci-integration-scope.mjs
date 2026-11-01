@@ -378,11 +378,15 @@ export function integrationCandidatePreflight({
     : integrationGitSelection(baseSha, candidate);
   // Owner cut (2026-11-01): cold boot runs when exposure code changes and nightly. A push states no
   // base, so its own diff is against its first parent: the squash on develop, the promotion on main.
-  if (plan.qualification && eventName === "push" && selection.lanes["cold-boot"])
-    selection.lanes["cold-boot"] = integrationGitSelection(
-      git("rev-parse", `${candidate}^1`).trim(),
-      candidate,
-    ).lanes["cold-boot"];
+  if (plan.qualification && eventName === "push" && selection.lanes["cold-boot"]) {
+    // A leg's one-commit checkout has no parent, and a missing base keeps cold boot selected. Only
+    // that leg's receipt writer reads this; the paths job and both joins fetch full history.
+    let parent = "";
+    try {
+      parent = git("rev-parse", "--verify", "--quiet", `${candidate}^1`).trim();
+    } catch {}
+    selection.lanes["cold-boot"] = integrationGitSelection(parent, candidate).lanes["cold-boot"];
+  }
   return {
     candidateSha: candidate,
     lanes: selection.lanes,

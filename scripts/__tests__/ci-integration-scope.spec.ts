@@ -355,6 +355,22 @@ describe("integration exact Git source selection", () => {
           target: "main",
         }).lanes["cold-boot"],
       ).toBe(true);
+      // Every integration leg writes its receipt from a one-commit checkout with no parent to read.
+      const shallow = `${root}-shallow`;
+      git("clone", "-q", "--depth", "1", `file://${root}`, shallow);
+      process.chdir(shallow);
+      try {
+        expect(
+          integrationCandidatePreflight({
+            plan: selectionPlan("full", "push", [], exposureHead, true, 0, "main", true),
+            eventName: "push",
+            target: "main",
+          }).lanes["cold-boot"],
+        ).toBe(true);
+      } finally {
+        process.chdir(root);
+        rmSync(shallow, { recursive: true, force: true });
+      }
       git("checkout", "-q", head);
       const reviewPlan = selectionPlan(
         "ci",
