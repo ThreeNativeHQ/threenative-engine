@@ -51,6 +51,12 @@ describe("engine parity guard", () => {
     expect(worldDrawn(frames(100, 30, 40, 0, 20))).toBe(false);
     // Drawn frames older than the inspected window do not count.
     expect(worldDrawn([...frames(90, 90), ...frames(0, 0, 0, 0, 0, 0, 0, 0)])).toBe(false);
+    // CI run 41262005879: shooter's first frames draw each mesh (780 main draws), then the same
+    // triangles batch into 157. A busiest sample older than the window must not hold the world
+    // undrawn for the whole wait, which a 1,024-sample series on a software adapter never rolls.
+    expect(
+      worldDrawn([...frames(867, 863, 863), ...frames(101, 101, 101, 101, 0, 101, 101, 101)]),
+    ).toBe(true);
   });
 
   it("waits for the world to draw, then fails closed when it never does", async () => {
